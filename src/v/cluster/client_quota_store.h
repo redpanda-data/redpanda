@@ -24,6 +24,7 @@ public:
       = chunked_vector<std::pair<entity_key, entity_value>>;
     using range_callback_type
       = std::function<bool(const std::pair<entity_key, entity_value>&)>;
+    using on_change_callback_type = std::function<void()>;
 
     /// Constructs an empty store
     store() = default;
@@ -36,7 +37,10 @@ public:
     /// All quota types are overwritten with the given entity_value, so on alter
     /// operations we need to read the current state of the quota and merge it
     /// with the alterations
-    void set_quota(const entity_key&, const entity_value&);
+    /// Optionally the call to notify_watchers can be avoided by setting the
+    /// trigger_notify optional parameter to false
+    void set_quota(
+      const entity_key&, const entity_value&, bool trigger_notify = true);
 
     /// Removes the configured quota at the given entity key
     void remove_quota(const entity_key&);
@@ -58,6 +62,9 @@ public:
 
     /// Applies the given alter controller command to the store
     void apply_delta(const alter_delta_cmd_data&);
+
+    /// Call the callback whenever the quotas change in the store
+    void watch(on_change_callback_type&& f);
 
     static constexpr auto entity_part_filter =
       [](
@@ -84,11 +91,11 @@ public:
         };
     }
 
-    // TODO: provide an observer mechanism so that quota_manager can listen to
-    // quota changes and update its state accordingly
-
 private:
+    void notify_watchers() const;
+
     container_type _quotas;
+    std::vector<on_change_callback_type> _on_change_watchers;
 };
 
 } // namespace cluster::client_quota

@@ -255,6 +255,7 @@ void client_quota_translator::watch(on_change_fn&& fn) {
     _target_partition_mutation_quota.watch(watcher);
     _default_target_produce_tp_rate.watch(watcher);
     _default_target_fetch_tp_rate.watch(watcher);
+    _quota_store.local().watch(watcher);
 }
 
 const client_quota_translator::quota_config&
