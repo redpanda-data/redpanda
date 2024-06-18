@@ -111,7 +111,7 @@ struct cluster_partition_manager_api {
       = delete;
 
     virtual ss::shared_ptr<cluster_partition_api>
-    get_partition(const model::ktp&) = 0;
+    get_partition(const model::ntp&) = 0;
 };
 
 using upload_result = cloud_storage::upload_result;
