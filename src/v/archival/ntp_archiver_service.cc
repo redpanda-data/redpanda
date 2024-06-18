@@ -1340,19 +1340,16 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // manifest.
 }
 
-std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
-    auto original_term = _parent.term();
-    auto lost_leadership = !_parent.is_leader()
-                           || _parent.term() != original_term;
-    if (unlikely(lost_leadership)) {
+std::optional<ss::sstring> ntp_archiver::upload_should_abort() const {
+    if (unlikely(lost_leadership())) {
         return fmt::format(
           "lost leadership or term changed during upload, "
           "current leadership status: {}, "
           "current term: {}, "
-          "original term: {}",
+          "start term: {}",
           _parent.is_leader(),
           _parent.term(),
-          original_term);
+          _start_term);
     } else {
         return std::nullopt;
     }
@@ -3120,6 +3117,10 @@ void ntp_archiver::complete_transfer_leadership() {
       _uploads_active.current());
     _paused = false;
     _leader_cond.signal();
+}
+
+bool ntp_archiver::lost_leadership() const {
+    return !_parent.is_leader() || _parent.term() != _start_term;
 }
 
 bool ntp_archiver::local_storage_pressure() const {

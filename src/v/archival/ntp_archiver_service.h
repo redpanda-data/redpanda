@@ -556,6 +556,9 @@ private:
     ss::future<cloud_storage::upload_result>
     delete_segment(const remote_segment_path& path);
 
+    // If true, we are not the leader, or are no longer the leader.
+    bool lost_leadership() const;
+
     /// If true, we are holding up trimming of local storage
     bool local_storage_pressure() const;
 
@@ -581,7 +584,7 @@ private:
       model::term_id archiver_term, const upload_candidate& candidate);
 
     /// Method to use with lazy_abort_source
-    std::optional<ss::sstring> upload_should_abort();
+    std::optional<ss::sstring> upload_should_abort() const;
 
     // Adjacent segment merging
 
