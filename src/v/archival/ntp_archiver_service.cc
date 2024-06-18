@@ -1143,7 +1143,8 @@ remote_segment_path ntp_archiver::segment_path_for_candidate(
       .sname_format = cloud_storage::segment_name_format::v3,
     };
 
-    return manifest().generate_segment_path(val);
+    return remote_segment_path{
+      remote_path_provider().segment_path(manifest(), val)};
 }
 
 static std::pair<ss::input_stream<char>, ss::input_stream<char>>
@@ -2117,11 +2118,9 @@ ntp_archiver::maybe_truncate_manifest() {
           _conf->manifest_upload_timeout(),
           _conf->upload_loop_initial_backoff(),
           &rtc);
-        auto sname = cloud_storage::generate_local_segment_name(
-          meta.base_offset, meta.segment_term);
-        auto spath = m.generate_segment_path(meta);
+        auto spath = remote_path_provider().segment_path(m, meta);
         auto result = co_await _remote.segment_exists(
-          get_bucket_name(), spath, fib);
+          get_bucket_name(), remote_segment_path{spath}, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
               ctxlog.info,
@@ -2354,7 +2353,8 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
                       continue;
                   }
                   if (meta.committed_offset < start_offset) {
-                      const auto path = manifest.generate_segment_path(meta);
+                      const remote_segment_path path{
+                        remote_path_provider().segment_path(manifest, meta)};
                       vlog(
                         _rtclog.info,
                         "Enqueuing spillover segment delete from cloud "
@@ -2738,7 +2738,10 @@ ss::future<> ntp_archiver::garbage_collect() {
 
     std::deque<cloud_storage_clients::object_key> objects_to_remove;
     for (const auto& meta : to_remove) {
-        const auto path = manifest().generate_segment_path(meta);
+        const auto path = remote_segment_path{
+          remote_path_provider().segment_path(
+            manifest(),
+            cloud_storage::partition_manifest::lw_segment_meta::convert(meta))};
         vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
 
         objects_to_remove.emplace_back(path);
