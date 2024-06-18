@@ -247,6 +247,16 @@ static constexpr auto compatibility_test_cases
       .writer_schema = R"({"type": "string", "pattern": "^test"})",
       .reader_is_compatible_with_writer = true,
     },
+    // metadata is ignored
+    {
+      .reader_schema
+      = R"({"title": "myschema", "description": "this is my schema",
+            "default": true, "type": "boolean"})",
+      .writer_schema
+      = R"({"title": "MySchema", "description": "this schema is mine",
+            "default": false, "type": "boolean"})",
+      .reader_is_compatible_with_writer = true,
+    },
   });
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;

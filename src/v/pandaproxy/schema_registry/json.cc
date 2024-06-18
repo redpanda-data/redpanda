@@ -696,11 +696,7 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
     }
 
     for (auto not_yet_handled_keyword : {
-           "id",
            "$schema",
-           "title",
-           "description",
-           "default",
            "additionalItems",
            "items",
            "maxItems",
