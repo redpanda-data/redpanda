@@ -996,6 +996,7 @@ public:
             config::mock_binding(10ms),
             test_dir,
             storage::make_sanitized_file_config()),
+          ss::sharded_parameter([] { return ss::this_shard_id(); }),
           ss::sharded_parameter([this] { return std::ref(sr.local()); }),
           std::ref(ft));
         co_await kvs->invoke_on_all(
