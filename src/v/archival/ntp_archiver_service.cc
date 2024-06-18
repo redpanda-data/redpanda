@@ -1087,15 +1087,19 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
 
     auto upload_insync_offset = manifest().get_insync_offset();
 
+    auto path = remote_path_provider().partition_manifest_path(_ntp, _rev);
     vlog(
       _rtclog.debug,
       "[{}] Uploading partition manifest, insync_offset={}, path={}",
       upload_ctx,
       upload_insync_offset,
-      manifest().get_manifest_path());
+      path);
 
     auto result = co_await _remote.upload_manifest(
-      get_bucket_name(), manifest(), fib);
+      get_bucket_name(),
+      manifest(),
+      cloud_storage::remote_manifest_path{path},
+      fib);
 
     // now that manifest() is updated in cloud, updated the
     // compacted_away_cloud_bytes metric
