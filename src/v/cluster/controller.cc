@@ -555,6 +555,24 @@ ss::future<> controller::start(
       &shard_balancer::start,
       conf_invariants.core_count);
 
+    if (conf_invariants.core_count > ss::smp::count) {
+        // Successfully starting shard_balancer with reduced core count means
+        // that all partition info from extra kvstores has been copied and we
+        // can finally update the configuration invariants.
+        auto new_invariants = configuration_invariants(
+          *config::node().node_id(), ss::smp::count);
+        co_await _storage.local().kvs().put(
+          storage::kvstore::key_space::controller,
+          invariants_key,
+          reflection::to_iobuf(configuration_invariants{new_invariants}));
+        conf_invariants = new_invariants;
+        vlog(
+          clusterlog.info,
+          "successfully decreased core count, "
+          "updated configuration invariants: {}",
+          conf_invariants);
+    }
+
     co_await _backend.invoke_on_all(&controller_backend::start);
 
     co_await _api.start(
@@ -1110,6 +1128,10 @@ controller::validate_configuration_invariants() {
           storage::kvstore::key_space::controller,
           invariants_key,
           reflection::to_iobuf(configuration_invariants{current}));
+        vlog(
+          clusterlog.info,
+          "persisted initial configuration invariants: {}",
+          current);
         co_return current;
     }
     auto invariants = reflection::from_iobuf<configuration_invariants>(
@@ -1125,26 +1147,23 @@ controller::validate_configuration_invariants() {
           current.node_id);
         throw configuration_invariants_changed(invariants, current);
     }
-    if (invariants.core_count > current.core_count) {
-        vlog(
-          clusterlog.error,
-          "Detected change in number of cores dedicated to run redpanda."
-          "Decreasing redpanda core count is not allowed. Expected core "
-          "count "
-          "{}, currently have {} cores.",
-          invariants.core_count,
-          ss::smp::count);
-        throw configuration_invariants_changed(invariants, current);
-    } else if (invariants.core_count != current.core_count) {
+    if (current.core_count > invariants.core_count) {
         // Update the persistent invariants to reflect increased core
         // count -- this tracks the high water mark of core count, to
-        // reject subsequent decreases.
+        // track the number of extra kvstore shards that we need to process if
+        // the core count later decreases.
         co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
           invariants_key,
           reflection::to_iobuf(configuration_invariants{current}));
+        invariants = current;
+        vlog(clusterlog.info, "updated configuration invariants: {}", current);
+    } else if (current.core_count < invariants.core_count) {
+        // If core count decreased, do nothing just now. shard_balancer will
+        // check if decreasing is possible and we will update
+        // configuration_invariants in kvstore later.
     }
-    co_return current;
+    co_return invariants;
 }
 
 } // namespace cluster
