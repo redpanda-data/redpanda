@@ -31,6 +31,14 @@ var (
 
 func main() {
 	c = sr.NewClient()
+	e := avro.Example{}
+	_, err := c.CreateSchema(topicName+"-value", sr.Schema{
+		Type:   sr.TypeAvro,
+		Schema: e.Schema(),
+	})
+	if err != nil {
+		println("unable to register schema ", err)
+	}
 	transform.OnRecordWritten(avroToJsonTransform)
 }
 
