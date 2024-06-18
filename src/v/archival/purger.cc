@@ -16,6 +16,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cluster/members_table.h"
@@ -26,7 +27,6 @@
 #include "hashing/xx.h"
 
 namespace {
-static constexpr std::string_view serde_extension = ".bin";
 static constexpr std::string_view json_extension = ".json";
 
 static constexpr auto partition_purge_timeout = 20s;
@@ -81,8 +81,10 @@ ss::future<purger::purge_result> purger::purge_partition(
         co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 
+    cloud_storage::remote_path_provider path_provider(
+      lifecycle_marker.config.properties.remote_label);
     auto collected = co_await collect_manifest_paths(
-      bucket, ntp, remote_revision, partition_purge_rtc);
+      bucket, path_provider, ntp, remote_revision, partition_purge_rtc);
     if (!collected) {
         co_return purge_result{
           .status = purge_status::retryable_failure, .ops = 0};
@@ -184,24 +186,16 @@ ss::future<purger::purge_result> purger::purge_partition(
 ss::future<std::optional<purger::collected_manifests>>
 purger::collect_manifest_paths(
   const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage::remote_path_provider& path_provider,
   model::ntp ntp,
   model::initial_revision_id remote_revision,
   retry_chain_node& parent_rtc) {
     retry_chain_node collection_rtc(&parent_rtc);
     retry_chain_logger ctxlog(archival_log, collection_rtc);
 
-    cloud_storage::partition_manifest manifest(ntp, remote_revision);
-    auto path = manifest.get_manifest_path(
-      cloud_storage::manifest_format::serde);
+    auto base_path = path_provider.partition_manifest_prefix(
+      ntp, remote_revision);
 
-    std::string_view base_path{path().native()};
-
-    vassert(
-      base_path.ends_with(serde_extension)
-        && base_path.length() > serde_extension.length(),
-      "Generated manifest path should end in .bin");
-
-    base_path.remove_suffix(serde_extension.length());
     auto list_result = co_await _api.list_objects(
       bucket,
       collection_rtc,

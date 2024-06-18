@@ -92,6 +92,7 @@ private:
 
     ss::future<std::optional<collected_manifests>> collect_manifest_paths(
       const cloud_storage_clients::bucket_name&,
+      const cloud_storage::remote_path_provider&,
       model::ntp,
       model::initial_revision_id,
       retry_chain_node&);
