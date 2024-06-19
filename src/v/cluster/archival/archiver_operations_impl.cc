@@ -468,9 +468,38 @@ public:
     }
 
     /// Reupload manifest and replicate configuration batch
-    ss::future<result<manifest_upload_result>>
-    upload_manifest(retry_chain_node&, model::ntp) noexcept override {
-        co_return error_outcome::unexpected_failure; // Not implemented
+    ss::future<result<manifest_upload_result>> upload_manifest(
+      retry_chain_node& workflow_rtc, model::ntp ntp) noexcept override {
+        auto gate = _gate.hold();
+        try {
+            auto partition = _pm->get_partition(ntp);
+            const auto& manifest = partition->manifest();
+            const auto estimated_size = manifest.estimate_serialized_size();
+            auto key = partition->get_remote_manifest_path(manifest);
+            auto res = co_await _api->upload_manifest(
+              _bucket, manifest, std::move(key), workflow_rtc);
+            switch (res) {
+            case upload_result::cancelled:
+                co_return error_outcome::shutting_down;
+            case upload_result::timedout:
+                co_return error_outcome::timed_out;
+            case upload_result::failed:
+                co_return error_outcome::unexpected_failure;
+            default:
+                co_return manifest_upload_result{
+                  .ntp = ntp,
+                  .num_put_requests = 1,
+                  .size_bytes = estimated_size,
+                };
+            }
+        } catch (...) {
+            vlog(
+              _rtclog.error,
+              "Can't upload manifest due to exception {}",
+              std::current_exception());
+            co_return error_outcome::unexpected_failure;
+        }
+        __builtin_unreachable();
     }
 
 private:
