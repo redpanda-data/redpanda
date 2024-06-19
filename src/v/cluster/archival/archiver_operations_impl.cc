@@ -375,9 +375,117 @@ public:
 
     /// Add metadata to the manifest by replicating archival metadata
     /// configuration batch
-    ss::future<result<admit_uploads_result>>
-    admit_uploads(retry_chain_node&, upload_results_list) noexcept override {
-        co_return error_outcome::unexpected_failure;
+    ss::future<result<admit_uploads_result>> admit_uploads(
+      retry_chain_node& workflow_rtc,
+      upload_results_list upl_res) noexcept override {
+        // Generate archival metadata for every uploaded segment and
+        // apply it in offset order.
+        // Stop on first error.
+        // Validate consistency.
+        try {
+            size_t num_segments = upl_res.results.size();
+            if (
+              num_segments != upl_res.stats.size()
+              || num_segments != upl_res.metadata.size()) {
+                vlog(
+                  _rtclog.error,
+                  "Bad 'admit_uploads' input. Number of segments: {}, number "
+                  "of "
+                  "stats: {}, number of metadata records: {}",
+                  num_segments,
+                  upl_res.stats.size(),
+                  upl_res.metadata.size());
+                co_return error_outcome::unexpected_failure;
+            }
+            bool validation_required
+              = !config::shard_local_cfg()
+                   .cloud_storage_disable_upload_consistency_checks();
+            auto part = _pm->get_partition(upl_res.ntp);
+            std::vector<cloud_storage::segment_meta> metadata;
+            for (size_t ix = 0; ix < num_segments; ix++) {
+                auto sg = upl_res.results.at(ix);
+                auto st = upl_res.stats.at(ix);
+                auto meta = upl_res.metadata.at(ix);
+
+                if (sg != upload_result::success) {
+                    break;
+                }
+                // validate meta against the record stats
+                if (st.has_value() && validation_required) {
+                    if (!this->segment_meta_matches_stats(
+                          meta, st.value(), _rtclog)) {
+                        break;
+                    }
+                } else {
+                    vlog(
+                      _rtclog.debug,
+                      "Segment self-validation skipped, meta: {}, record stats "
+                      "available: {}, validation_required: {}",
+                      meta,
+                      st.has_value(),
+                      validation_required);
+                }
+                metadata.push_back(meta);
+            }
+            // optionally validate the data
+            bool is_validated = false;
+            if (validation_required) {
+                auto num_accepted = part->manifest().safe_segment_meta_to_add(
+                  metadata);
+                if (num_accepted == 0) {
+                    vlog(
+                      _rtclog.error,
+                      "Metadata can't be replicated because of the validation "
+                      "error");
+                    co_return cloud_storage::error_outcome::failure;
+                } else if (num_accepted < metadata.size()) {
+                    vlog(
+                      _rtclog.warn,
+                      "Only {} segments can be admitted, segments: {}",
+                      num_accepted,
+                      metadata);
+                    metadata.resize(num_accepted);
+                }
+                // TODO: probe->gap_detected(...)
+                is_validated = true;
+            }
+            auto num_succeeded = metadata.size();
+            auto num_failed = upl_res.results.size() - num_succeeded;
+            // replicate metadata
+            // add clean command if needed
+            auto offset_to_opt = [](model::offset o) {
+                std::optional<model::offset> r;
+                if (o != model::offset{}) {
+                    r = o;
+                }
+                return r;
+            };
+
+            auto replication_result = co_await part->add_segments(
+              std::move(metadata),
+              offset_to_opt(upl_res.manifest_clean_offset),
+              offset_to_opt(upl_res.read_write_fence),
+              part->get_highest_producer_id(),
+              workflow_rtc.get_deadline(),
+              _as,
+              is_validated);
+
+            if (replication_result.has_error()) {
+                vlog(
+                  _rtclog.error,
+                  "Failed to replicate archival metadata: {}",
+                  replication_result.error());
+            }
+            co_return admit_uploads_result{
+              .ntp = upl_res.ntp,
+              .num_succeeded = num_succeeded,
+              .num_failed = num_failed,
+              .manifest_dirty_offset = replication_result.value(),
+            };
+        } catch (...) {
+            co_return error_outcome::unexpected_failure;
+        }
+        __builtin_unreachable();
     }
 
     /// Reupload manifest and replicate configuration batch
