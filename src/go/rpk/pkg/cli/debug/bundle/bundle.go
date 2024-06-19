@@ -84,8 +84,6 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if cpuProfilerWait < 15*time.Second {
 				out.Die("--cpu-profiler-wait must be higher than 15 seconds")
 			}
-			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
-			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
@@ -100,6 +98,9 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if !ok {
 				yActual = y
 			}
+
+			path, err := determineFilepath(fs, yActual, outFile, cmd.Flags().Changed(outputFlag))
+			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
 			partitions, err := parsePartitionFlag(partitionFlag)
 			out.MaybeDie(err, "unable to parse partition flag %v: %v", partitionFlag, err)
@@ -160,8 +161,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
 	f.DurationVar(&timeout, "timeout", 31*time.Second, "How long to wait for child commands to execute (e.g. 30s, 1.5m)")
 	f.DurationVar(&metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics snapshots (e.g. 30s, 1.5m)")
-	f.StringVar(&logsSince, "logs-since", "", "Include log entries on or newer than the specified date (journalctl date format, e.g. YYYY-MM-DD")
-	f.StringVar(&logsUntil, "logs-until", "", "Include log entries on or older than the specified date (journalctl date format, e.g. YYYY-MM-DD")
+	f.StringVar(&logsSince, "logs-since", "yesterday", "Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options")
+	f.StringVar(&logsUntil, "logs-until", "", "Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options")
 	f.StringVar(&logsSizeLimit, "logs-size-limit", "100MiB", "Read the logs until the given size is reached (e.g. 3MB, 1GiB)")
 	f.StringVar(&controllerLogsSizeLimit, "controller-logs-size-limit", "20MB", "The size limit of the controller logs that can be stored in the bundle (e.g. 3MB, 1GiB)")
 	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
@@ -268,9 +269,10 @@ BARE-METAL
 
  - Disk usage: The disk usage for the data directory, as output by 'du'.
 
- - redpanda logs: The node's redpanda logs written to journald. If --logs-since 
-   or --logs-until are passed, then only the logs within the resulting time frame
-   will be included.
+ - Redpanda logs: The node's Redpanda logs written to journald since yesterday
+   (00:00:00 of the previous day based on systemd.time). If '--logs-since' or 
+   '--logs-until' are passed, then only the logs within the resulting time frame
+   are included.
 
  - Socket info: The active sockets data output by 'ss'.
 
