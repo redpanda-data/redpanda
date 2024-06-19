@@ -35,7 +35,7 @@
 namespace archival {
 
 // Forward declaration for test class that we will befriend
-class archival_fixture;
+class archiver_fixture;
 
 using namespace std::chrono_literals;
 
@@ -745,7 +745,7 @@ private:
 
     ss::shared_ptr<cloud_storage::async_manifest_view> _manifest_view;
 
-    friend class archival_fixture;
+    friend class archiver_fixture;
 };
 
 } // namespace archival
