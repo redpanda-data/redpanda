@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/types.h"
 #include "model/metadata.h"
 
 #include <stdexcept>
@@ -50,6 +51,32 @@ public:
     spillover_manifest(const model::ntp& ntp, model::initial_revision_id rev)
       : partition_manifest(ntp, rev) {}
 
+    static ss::sstring filename(const spillover_manifest_path_components& c) {
+        return fmt::format(
+          "{}.{}.{}.{}.{}.{}.{}",
+          partition_manifest::filename(),
+          c.base(),
+          c.last(),
+          c.base_kafka(),
+          c.next_kafka(),
+          c.base_ts.value(),
+          c.last_ts.value());
+    }
+
+    ss::sstring get_manifest_filename() const override {
+        const auto ls = last_segment();
+        vassert(ls.has_value(), "Spillover manifest can't be empty");
+        const auto fs = *begin();
+        spillover_manifest_path_components c{
+          .base = fs.base_offset,
+          .last = ls->committed_offset,
+          .base_kafka = fs.base_kafka_offset(),
+          .next_kafka = ls->next_kafka_offset(),
+          .base_ts = fs.base_timestamp,
+          .last_ts = ls->max_timestamp,
+        };
+        return filename(c);
+    }
     remote_manifest_path get_manifest_path() const override {
         const auto ls = last_segment();
         vassert(ls.has_value(), "Spillover manifest can't be empty");
