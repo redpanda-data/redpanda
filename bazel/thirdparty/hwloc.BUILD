@@ -20,4 +20,7 @@ configure_make(
     visibility = [
         "//visibility:public",
     ],
+    deps = [
+        "@libpciaccess",
+    ],
 )
