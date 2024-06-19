@@ -1,8 +1,8 @@
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda_types import PLAINTEXT_SECURITY, KafkaClientSecurity
+from rptest.services.redpanda_types import PLAINTEXT_SECURITY, KafkaClientSecurity, RedpandaServiceForClients
 
 
-class KafkaServiceAdapter:
+class KafkaServiceAdapter(RedpandaServiceForClients):
     '''
         Simple adapter to match KafkaService interface with
         what is required by Redpanda test clients
