@@ -630,6 +630,47 @@ bool is_object_superset(
       pj{newer})));
 }
 
+bool is_enum_superset(json::Value const& older, json::Value const& newer) {
+    auto older_it = older.FindMember("enum");
+    auto newer_it = newer.FindMember("enum");
+    auto older_is_enum = older_it != older.MemberEnd();
+    auto newer_is_enum = newer_it != newer.MemberEnd();
+
+    if (!older_is_enum && !newer_is_enum) {
+        // both are not an "enum" schema, compatible
+        return true;
+    }
+
+    if (!(older_is_enum && newer_is_enum)) {
+        // only one is an "enum" schema, not compatible
+        return false;
+    }
+
+    // both "enum"
+    // check that all "enum" values of newer are present in older.
+    auto older_set = older_it->value.GetArray();
+    auto newer_set = newer_it->value.GetArray();
+
+    if (newer_set.Size() > older_set.Size()) {
+        // quick check:
+        // newer has some value not in older
+        return false;
+    }
+
+    // TODO: current implementation is O(n^2), but could be O(n) with normalized
+    // input json
+    for (auto& v : newer_set) {
+        // NOTE: values equality is performed with an O(n^2) search, this can
+        // also be improved with normalization of the input
+        if (older_set.end() == std::ranges::find(older_set, v)) {
+            // newer has an element not in older
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace is_superset_impl
 
 using namespace is_superset_impl;
@@ -695,6 +736,10 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
         }
     }
 
+    if (!is_enum_superset(older, newer)) {
+        return false;
+    }
+
     for (auto not_yet_handled_keyword : {
            "$schema",
            "additionalItems",
@@ -710,7 +755,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "properties",
            "patternProperties",
            "dependencies",
-           "enum",
            "allOf",
            "anyOf",
            "oneOf",
