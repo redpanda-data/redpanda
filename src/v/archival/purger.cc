@@ -108,6 +108,7 @@ ss::future<purger::purge_result> purger::purge_partition(
 
         const auto local_res = co_await purge_manifest(
           bucket,
+          path_provider,
           ntp,
           remote_revision,
           remote_manifest_path{*rit},
@@ -232,6 +233,7 @@ purger::collect_manifest_paths(
 
 ss::future<purger::purge_result> purger::purge_manifest(
   const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage::remote_path_provider& path_provider,
   model::ntp ntp,
   model::initial_revision_id remote_revision,
   remote_manifest_path manifest_key,
@@ -275,7 +277,12 @@ ss::future<purger::purge_result> purger::purge_manifest(
       static_cast<size_t>(manifest.size() / 1000), size_t{1});
 
     const auto erase_result = co_await cloud_storage::remote_partition::erase(
-      _api, bucket, std::move(manifest), manifest_key, manifest_purge_rtc);
+      _api,
+      bucket,
+      path_provider,
+      std::move(manifest),
+      manifest_key,
+      manifest_purge_rtc);
 
     result.ops += estimate_delete_ops;
 

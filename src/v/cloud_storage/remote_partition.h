@@ -132,6 +132,7 @@ public:
     static ss::future<erase_result> erase(
       cloud_storage::remote&,
       cloud_storage_clients::bucket_name,
+      const remote_path_provider& path_provider,
       partition_manifest,
       remote_manifest_path,
       retry_chain_node&);

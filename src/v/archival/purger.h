@@ -99,6 +99,7 @@ private:
 
     ss::future<purge_result> purge_manifest(
       const cloud_storage_clients::bucket_name&,
+      const cloud_storage::remote_path_provider&,
       model::ntp,
       model::initial_revision_id,
       remote_manifest_path,
