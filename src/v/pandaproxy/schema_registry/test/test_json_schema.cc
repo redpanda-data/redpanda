@@ -173,6 +173,11 @@ static constexpr auto compatibility_test_cases
       .writer_schema = R"({"type": "number", "multipleOf": 21})",
       .reader_is_compatible_with_writer = false,
     },
+    {
+      .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
+      .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
+      .reader_is_compatible_with_writer = false,
+    },
     // string checks
     {
       .reader_schema = R"({"type": "string", "minLength": 2})",
@@ -235,6 +240,11 @@ static constexpr auto compatibility_test_cases
     {
       .reader_schema = R"({"type": "number", "multipleOf": 10})",
       .writer_schema = R"({"type": "number", "multipleOf": 20})",
+      .reader_is_compatible_with_writer = true,
+    },
+    {
+      .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
+      .writer_schema = R"({"type": "number", "multipleOf": 20.2})",
       .reader_is_compatible_with_writer = true,
     },
     // string checks

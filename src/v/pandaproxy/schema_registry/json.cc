@@ -26,6 +26,7 @@
 #include <seastar/util/defer.hh>
 
 #include <absl/container/inlined_vector.h>
+#include <boost/math/special_functions/relative_difference.hpp>
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/core.h>
@@ -33,7 +34,6 @@
 #include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
 
-#include <numeric>
 #include <string_view>
 namespace pandaproxy::schema_registry {
 
@@ -538,27 +538,17 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
-    // TODO handle double with a big decimal lib. older["multipleOf"]: 1.1,
-    // newer["multipleOf"]: 2.2 would throw but they valid values that are
-    // compatible
-    if (
-      !is_numeric_property_value_superset(
-        older, newer, "multipleOf", [](double older, double newer) {
-            auto older_trunc = std::trunc(older);
-            auto newer_trunc = std::trunc(newer);
-
-            if (older_trunc != older || newer_trunc != newer) {
-                throw as_exception(invalid_schema(fmt::format(
-                  R"({}-multipleOf not implemented for non-integers. input: older: '{}', newer: '{}')",
-                  __FUNCTION__,
-                  older,
-                  newer)));
-            }
-            // the caller function restricts the range of values so that this
-            // cast to uint64 is safe
-            return std::gcd(uint64_t(older_trunc), uint64_t(newer_trunc))
-                   == uint64_t(older_trunc);
-        })) {
+    if (!is_numeric_property_value_superset(
+          older, newer, "multipleOf", [](double older, double newer) {
+              // check that the reminder of newer/older is close enough to 0, as
+              // in some multiples of epsilon.
+              // TODO: this is an approximate check, if a bigdecimal
+              // representation it would be possible to perform an exact
+              // reminder(newer, older)==0 check
+              return boost::math::epsilon_difference(
+                       std::remainder(newer, older), 0.)
+                     <= 10.;
+          })) {
         return false;
     }
 
