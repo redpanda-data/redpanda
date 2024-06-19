@@ -48,6 +48,14 @@ ss::sstring remote_path_provider::spillover_manifest_path(
       c.base_ts.value(),
       c.last_ts.value());
 }
+ss::sstring remote_path_provider::spillover_manifest_path(
+  const partition_manifest& spillover_manifest) const {
+    return fmt::format(
+      "{}/{}",
+      partition_manifest_prefix(
+        spillover_manifest.get_ntp(), spillover_manifest.get_revision_id()),
+      spillover_manifest.get_manifest_filename());
+}
 
 ss::sstring remote_path_provider::partition_manifest_path(
   const partition_manifest& manifest) const {
