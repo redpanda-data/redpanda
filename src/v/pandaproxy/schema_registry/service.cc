@@ -549,10 +549,10 @@ ss::future<> service::create_internal_topic() {
              .value{retain_forever}},
             {.name{ss::sstring{
                kafka::topic_property_initial_retention_local_target_bytes}},
-             .value{retain_forever}},
+             .value{std::nullopt}},
             {.name{ss::sstring{
                kafka::topic_property_initial_retention_local_target_ms}},
-             .value{retain_forever}}}};
+             .value{std::nullopt}}}};
     };
     auto res = co_await _client.local().create_topic(make_internal_topic());
     if (res.data.topics.size() != 1) {
