@@ -380,6 +380,7 @@ ss::future<> controller::start(
             std::ref(_partition_manager),
             std::ref(_shard_table),
             std::ref(_shard_balancer),
+            std::ref(_storage),
             ss::sharded_parameter(
               [this] { return std::ref(_plugin_table.local()); }),
             ss::sharded_parameter(

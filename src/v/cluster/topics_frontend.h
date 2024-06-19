@@ -23,6 +23,7 @@
 #include "model/timeout_clock.h"
 #include "partition_balancer_types.h"
 #include "rpc/fwd.h"
+#include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -67,6 +68,7 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
       ss::sharded<shard_balancer>&,
+      ss::sharded<storage::api>&,
       plugin_table&,
       metadata_cache&,
       config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -298,6 +300,7 @@ private:
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<shard_balancer>& _shard_balancer;
+    ss::sharded<storage::api>& _storage;
     plugin_table& _plugin_table;
     metadata_cache& _metadata_cache;
 

@@ -76,6 +76,7 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<shard_balancer>& sb,
+  ss::sharded<storage::api>& storage,
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -92,6 +93,7 @@ topics_frontend::topics_frontend(
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
   , _shard_balancer(sb)
+  , _storage(storage)
   , _plugin_table(plugin_table)
   , _metadata_cache(metadata_cache)
   , _members_table(members_table)
@@ -522,6 +524,25 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           "Configured topic recovery for {}, topic configuration: {}",
           assignable_config.cfg.tp_ns,
           assignable_config.cfg);
+    }
+    bool configured_label_from_manifest
+      = assignable_config.is_read_replica()
+        || assignable_config.is_recovery_enabled();
+    if (
+      !configured_label_from_manifest
+      && !assignable_config.cfg.properties.remote_label.has_value()
+      && _storage.local().get_cluster_uuid().has_value()
+      && _features.local().is_active(features::feature::remote_labels)
+      && !config::shard_local_cfg()
+            .cloud_storage_disable_remote_labels_for_tests.value()) {
+        auto remote_label = std::make_optional<cloud_storage::remote_label>(
+          _storage.local().get_cluster_uuid().value());
+        assignable_config.cfg.properties.remote_label = remote_label;
+        vlog(
+          clusterlog.debug,
+          "Configuring topic {} with remote label {}",
+          assignable_config.cfg.tp_ns,
+          remote_label);
     }
 
     auto units = co_await _allocator.invoke_on(
