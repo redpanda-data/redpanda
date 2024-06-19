@@ -132,6 +132,9 @@ py_binary(
     ],
 )
 
+# the fix to the generated parsers applied in the cmake build appears to be
+# unnecessary with recent versions of ragel. omitting until needed. see
+# https://github.com/scylladb/seastar/commit/1cb8b0e for more info.
 genrule(
     name = "http_request_parser",
     srcs = ["src/http/request_parser.rl"],
@@ -538,7 +541,9 @@ cc_library(
         ":use_numa": ["SEASTAR_HAVE_NUMA"],
         "//conditions:default": [],
     }) + select({
-        # these only need to be applied to memory.cc and reactor.cc
+        # this only needs to be applied to memory.cc and reactor.cc. could be
+        # split out into a separate cc_library, but we'd need to inherit all the
+        # build settings. defining for all compilation units seems harmless.
         ":use_heap_profiling": ["SEASTAR_HEAPPROF"],
         "//conditions:default": [],
     }),
@@ -596,7 +601,8 @@ cc_library(
         "include/seastar/testing/test_case.hh",
         "include/seastar/testing/test_runner.hh",
         "include/seastar/testing/thread_test_case.hh",
-        # cc file is in core, but should only be used in testing
+        # the corresponding cc file is in the core directory, but it is only
+        # needed in the testing library
         "include/seastar/testing/on_internal_error.hh",
     ],
     includes = [
