@@ -265,7 +265,7 @@ cc_library(
         "src/util/tmp_file.cc",
         "src/websocket/server.cc",
     ] + select({
-        "use_openssl": ["src/net/ossl.cc"],
+        ":use_openssl": ["src/net/ossl.cc"],
         "//conditions:default": ["src/net/tls.cc"],
     }),
     hdrs = [
@@ -510,16 +510,16 @@ cc_library(
         "SEASTAR_API_LEVEL=$(API_LEVEL)",
         "SEASTAR_SCHEDULING_GROUPS_COUNT=$(SCHEDULING_GROUPS)",
     ] + select({
-        "use_task_backtrace": ["SEASTAR_TASK_BACKTRACE"],
+        ":use_task_backtrace": ["SEASTAR_TASK_BACKTRACE"],
         "//conditions:default": [],
     }) + select({
-        "use_sstring": ["SEASTAR_SSTRING"],
+        ":use_sstring": ["SEASTAR_SSTRING"],
         "//conditions:default": [],
     }) + select({
-        "use_logger_compile_time_fmt": ["SEASTAR_LOGGER_COMPILE_TIME_FMT"],
+        ":use_logger_compile_time_fmt": ["SEASTAR_LOGGER_COMPILE_TIME_FMT"],
         "//conditions:default": [],
     }) + select({
-        "use_openssl": ["SEASTAR_WITH_TLS_OSSL"],
+        ":use_openssl": ["SEASTAR_WITH_TLS_OSSL"],
         "//conditions:default": [],
     }),
     includes = [
@@ -529,20 +529,20 @@ cc_library(
     local_defines = [
         "SEASTAR_DEFERRED_ACTION_REQUIRE_NOEXCEPT",
     ] + select({
-        "use_debug_allocations": ["SEASTAR_DEBUG_ALLOCATIONS"],
+        ":use_debug_allocations": ["SEASTAR_DEBUG_ALLOCATIONS"],
         "//conditions:default": [],
     }) + select({
-        "use_hwloc": ["SEASTAR_HAVE_HWLOC"],
+        ":use_hwloc": ["SEASTAR_HAVE_HWLOC"],
         "//conditions:default": [],
     }) + select({
-        "use_io_uring": ["SEASTAR_HAVE_URING"],
+        ":use_io_uring": ["SEASTAR_HAVE_URING"],
         "//conditions:default": [],
     }) + select({
-        "use_numa": ["SEASTAR_HAVE_NUMA"],
+        ":use_numa": ["SEASTAR_HAVE_NUMA"],
         "//conditions:default": [],
     }) + select({
         # these only need to be applied to memory.cc and reactor.cc
-        "use_heap_profiling": ["SEASTAR_HEAPPROF"],
+        ":use_heap_profiling": ["SEASTAR_HEAPPROF"],
         "//conditions:default": [],
     }),
     toolchains = [
@@ -569,16 +569,16 @@ cc_library(
         "@protobuf",
         "@yaml-cpp",
     ] + select({
-        "use_hwloc": ["@hwloc"],
+        ":use_hwloc": ["@hwloc"],
         "//conditions:default": [],
     }) + select({
-        "use_io_uring": ["@liburing"],
+        ":use_io_uring": ["@liburing"],
         "//conditions:default": [],
     }) + select({
-        "use_numa": ["@numactl"],
+        ":use_numa": ["@numactl"],
         "//conditions:default": [],
     }) + select({
-        "use_openssl": ["@openssl"],
+        ":use_openssl": ["@openssl"],
         "//conditions:default": ["@gnutls"],
     }),
 )
