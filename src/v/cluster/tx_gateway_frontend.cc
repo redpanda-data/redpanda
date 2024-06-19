@@ -3576,6 +3576,8 @@ ss::future<tx::errc> tx_gateway_frontend::do_delete_partition_from_tx(
             co_return tx::errc::partition_not_found;
         case tm_stm::op_status::conflict:
             co_return tx::errc::conflict;
+        case cluster::tm_stm::op_status::not_found:
+            co_return tx::errc::tx_id_not_found;
         default:
             co_return tx::errc::unknown_server_error;
         }

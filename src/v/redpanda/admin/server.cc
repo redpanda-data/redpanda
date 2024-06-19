@@ -1127,6 +1127,9 @@ ss::future<> admin_server::throw_on_error(
         case cluster::tx::errc::pid_not_found:
             throw ss::httpd::not_found_exception(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
+        case cluster::tx::errc::tx_id_not_found:
+            throw ss::httpd::not_found_exception(fmt_with_ctx(
+              fmt::format, "Unable to find requested transactional id"));
         case cluster::tx::errc::partition_not_found: {
             ss::sstring error_msg;
             if (
