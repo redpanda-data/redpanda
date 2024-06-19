@@ -196,6 +196,13 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "integer", "enum": [4, 1, 3]})",
     .reader_is_compatible_with_writer = false,
   },
+  // objects checks: size increase is not allowed
+  {
+    .reader_schema
+    = R"({"type": "object", "minProperties": 2, "maxProperties": 10})",
+    .writer_schema = R"({"type": "object", "maxProperties": 11})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema

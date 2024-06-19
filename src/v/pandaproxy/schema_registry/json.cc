@@ -663,9 +663,19 @@ bool is_array_superset(
       pj{older},
       pj{newer})));
 }
-bool is_object_superset(
-  [[maybe_unused]] json::Value const& older,
-  [[maybe_unused]] json::Value const& newer) {
+
+bool is_object_superset(json::Value const& older, json::Value const& newer) {
+    if (!is_numeric_property_value_superset(
+          older, newer, "minProperties", std::less_equal<>{})) {
+        // newer requires less properties to be set
+        return false;
+    }
+    if (!is_numeric_property_value_superset(
+          older, newer, "maxProperties", std::greater_equal<>{})) {
+        // newer requires more properties to be set
+        return false;
+    }
+
     throw as_exception(invalid_schema(fmt::format(
       "{} not implemented. input: older: '{}', newer: '{}'",
       __FUNCTION__,
@@ -816,8 +826,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "maxItems",
            "minItems",
            "uniqueItems",
-           "maxProperties",
-           "minProperties",
            "required",
            "additionalProperties",
            "definitions",
