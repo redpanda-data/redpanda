@@ -15,6 +15,7 @@
 #include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cluster/cluster_recovery_manager.h"
 #include "cluster/cluster_recovery_table.h"
@@ -3968,6 +3969,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
 
 ss::httpd::shadow_indexing_json::cloud_storage_partition_anomalies
 map_anomalies_to_json(
+  const cloud_storage::remote_path_provider& path_provider,
   const model::ntp& ntp,
   const model::initial_revision_id& initial_rev,
   const cloud_storage::anomalies& detected) {
@@ -4000,24 +4002,21 @@ map_anomalies_to_json(
         json.missing_partition_manifest = true;
     }
 
+    cloud_storage::partition_manifest tmp{ntp, initial_rev};
     if (detected.missing_spillover_manifests.size() > 0) {
         const auto& missing_spills = detected.missing_spillover_manifests;
         for (auto iter = missing_spills.begin(); iter != missing_spills.end();
              ++iter) {
             json.missing_spillover_manifests.push(
-              cloud_storage::generate_spillover_manifest_path(
-                ntp, initial_rev, *iter)()
-                .string());
+              path_provider.spillover_manifest_path(tmp, *iter));
         }
     }
 
     if (detected.missing_segments.size() > 0) {
-        cloud_storage::partition_manifest tmp{ntp, initial_rev};
         const auto& missing_segs = detected.missing_segments;
         for (auto iter = missing_segs.begin(); iter != missing_segs.end();
              ++iter) {
-            json.missing_segments.push(
-              tmp.generate_segment_path(*iter)().string());
+            json.missing_segments.push(path_provider.segment_path(tmp, *iter));
         }
     }
 
@@ -4217,11 +4216,12 @@ admin_server::get_cloud_storage_anomalies(
 
     const auto& topic_table = _controller->get_topics_state().local();
     const auto initial_rev = topic_table.get_initial_revision(ntp);
-    if (!initial_rev) {
+    const auto& tp = topic_table.get_topic_cfg(
+      model::topic_namespace{ntp.ns, ntp.tp.topic});
+    if (!initial_rev.has_value() || !tp.has_value()) {
         throw ss::httpd::not_found_exception(
           fmt::format("topic {} not found", ntp.tp));
     }
-
     const auto shard = _shard_table.local().shard_for(ntp);
     if (!shard) {
         throw ss::httpd::not_found_exception(fmt::format(
@@ -4230,6 +4230,8 @@ admin_server::get_cloud_storage_anomalies(
           ntp));
     }
 
+    cloud_storage::remote_path_provider path_provider(
+      tp->properties.remote_label);
     auto status = co_await _partition_manager.invoke_on(
       *shard,
       [&ntp](const auto& pm) -> std::optional<cloud_storage::anomalies> {
@@ -4248,7 +4250,7 @@ admin_server::get_cloud_storage_anomalies(
           "Cloud partition {} could not be found on shard {}.", ntp, *shard));
     }
 
-    co_return map_anomalies_to_json(ntp, *initial_rev, *status);
+    co_return map_anomalies_to_json(path_provider, ntp, *initial_rev, *status);
 }
 
 ss::future<std::unique_ptr<ss::http::reply>>
