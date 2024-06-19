@@ -105,7 +105,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bytes",
-        "//src/v/strings",
+        "//src/v/strings:utf8",
         "//src/v/utils:vint",
     ],
 )
