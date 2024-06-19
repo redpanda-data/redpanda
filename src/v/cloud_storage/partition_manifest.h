@@ -219,6 +219,8 @@ public:
         }
     }
 
+    virtual ss::sstring get_manifest_filename() const { return "manifest.bin"; }
+
     remote_manifest_path get_manifest_path() const override {
         return get_manifest_format_and_path().second;
     }

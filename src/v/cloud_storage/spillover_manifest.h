@@ -50,6 +50,28 @@ public:
     spillover_manifest(const model::ntp& ntp, model::initial_revision_id rev)
       : partition_manifest(ntp, rev) {}
 
+    ss::sstring get_manifest_filename() const override {
+        const auto ls = last_segment();
+        vassert(ls.has_value(), "Spillover manifest can't be empty");
+        const auto fs = *begin();
+        spillover_manifest_path_components c{
+          .base = fs.base_offset,
+          .last = ls->committed_offset,
+          .base_kafka = fs.base_kafka_offset(),
+          .next_kafka = ls->next_kafka_offset(),
+          .base_ts = fs.base_timestamp,
+          .last_ts = ls->max_timestamp,
+        };
+        return fmt::format(
+          "{}.{}.{}.{}.{}.{}.{}",
+          partition_manifest::get_manifest_filename(),
+          c.base(),
+          c.last(),
+          c.base_kafka(),
+          c.next_kafka(),
+          c.base_ts.value(),
+          c.last_ts.value());
+    }
     remote_manifest_path get_manifest_path() const override {
         const auto ls = last_segment();
         vassert(ls.has_value(), "Spillover manifest can't be empty");
