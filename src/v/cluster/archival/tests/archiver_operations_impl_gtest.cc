@@ -1650,4 +1650,346 @@ TEST_CORO(
     }
 }
 
+enum class metadata_anomaly_type {
+    none = 0,
+    // gap between two segments
+    gap,
+    // overlap between two segments
+    overlap,
+    // the segment doesn't match record stats
+    record_stats_mismatch
+};
+
+ss::future<> test_admit_uploads_full_cycle(
+  std::deque<upload_result> results,
+  std::deque<metadata_anomaly_type> anomalies,
+  bool inline_manifest) {
+    scoped_config cfg;
+    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
+    cfg.get("cloud_storage_segment_size_target")
+      .set_value(std::make_optional<size_t>(expected_target_size));
+    cfg.get("cloud_storage_segment_size_min")
+      .set_value(std::make_optional<size_t>(expected_min_size));
+    cfg.get("cloud_storage_bucket")
+      .set_value(std::make_optional(expected_bucket));
+
+    auto remote = ss::make_shared<remote_mock>();
+    auto pm = ss::make_shared<partition_manager_mock>();
+    auto builder = ss::make_shared<upload_builder_mock>();
+    auto partition = ss::make_shared<partition_mock>();
+
+    // set expectations
+    partition->expect_manifest(expected_manifest);
+
+    // Generate segment metadata and segments record stats
+    // which are mutually consistent if the 'add_anomaly' parameter is set to
+    // false or inconsistent otherwise.
+    auto gen_random_segment_meta = [](
+                                     const cloud_storage::segment_meta& prev,
+                                     metadata_anomaly_type add_anomaly) {
+        cloud_storage::segment_meta m;
+        m.is_compacted = false;
+        m.base_offset = model::next_offset(prev.committed_offset);
+        // Empty segments are disallowed and not tested
+        auto num_records = random_generators::get_int(1, 100);
+        auto num_configs = random_generators::get_int(num_records);
+        m.committed_offset = m.base_offset + model::offset(num_records);
+        m.delta_offset = prev.delta_offset_end;
+        m.delta_offset_end = m.delta_offset + model::offset_delta(num_configs);
+        m.size_bytes = random_generators::get_int(1, 0x8000);
+        m.base_timestamp = model::timestamp::now();
+        m.max_timestamp = model::timestamp::now();
+
+        cloud_storage::segment_record_stats s{
+          .base_rp_offset = m.base_offset,
+          .last_rp_offset = m.committed_offset,
+          .total_data_records = size_t(num_records - num_configs),
+          .total_conf_records = size_t(num_configs),
+          .size_bytes = m.size_bytes,
+          .base_timestamp = m.base_timestamp,
+          .last_timestamp = m.max_timestamp,
+        };
+        // Maybe add anomaly
+        switch (add_anomaly) {
+        case metadata_anomaly_type::none:
+            break;
+        case metadata_anomaly_type::gap:
+            m.base_offset = model::next_offset(m.base_offset);
+            s.base_rp_offset = m.base_offset;
+            s.total_data_records--;
+            break;
+        case metadata_anomaly_type::overlap:
+            m.base_offset = model::prev_offset(m.base_offset);
+            s.base_rp_offset = m.base_offset;
+            s.total_data_records++;
+            break;
+        case metadata_anomaly_type::record_stats_mismatch:
+            s.size_bytes--;
+            break;
+        }
+        return std::make_pair(m, s);
+    };
+
+    std::deque<cloud_storage::segment_meta> metadata;
+    std::vector<cloud_storage::segment_meta> expected_metadata;
+    std::deque<std::optional<cloud_storage::segment_record_stats>> stats;
+    auto prev = expected_manifest.last_segment().value();
+    size_t num_bytes_sent = 0;
+    size_t num_put_requests = 0;
+    bool truncate = false;
+    for (int ix = 0; ix < (int)results.size(); ix++) {
+        auto anomaly = anomalies.at(ix);
+        auto result = results.at(ix);
+        if (
+          anomaly != metadata_anomaly_type::none
+          || result != upload_result::success) {
+            truncate = true;
+        }
+        auto [m, s] = gen_random_segment_meta(prev, anomaly);
+        metadata.push_back(m);
+        if (!truncate) {
+            expected_metadata.push_back(m);
+        }
+        stats.emplace_back(s);
+        num_bytes_sent += m.size_bytes;
+        num_put_requests += 3;
+        prev = m;
+    }
+
+    auto clean_offset = [&]() -> std::optional<model::offset> {
+        if (inline_manifest) {
+            return std::make_optional(expected_manifest.get_insync_offset());
+        }
+        return std::nullopt;
+    }();
+
+    model::offset expected_dirty_offset
+      = expected_metadata.empty() ? model::offset{}
+                                  : expected_metadata.back().committed_offset;
+    if (!expected_metadata.empty()) {
+        partition->expect_get_highest_producer_id(expected_producer_id);
+        partition->expect_add_segments(
+          expected_metadata,
+          clean_offset,
+          expected_read_write_fence,
+          expected_producer_id,
+          true,
+          expected_dirty_offset);
+    }
+
+    pm->expect_get_partition(partition);
+
+    // create the ops api
+    auto ops = detail::make_archiver_operations_api(
+      remote, pm, builder, c_expected_bucket);
+
+    // invoke admit uploads
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 1ms);
+
+    upload_results_list input(
+      expected_ntp.to_ntp(),
+      stats,
+      results,
+      metadata,
+      clean_offset.value_or(model::offset{}),
+      expected_read_write_fence,
+      num_put_requests,
+      num_bytes_sent);
+    input.results = results;
+    input.metadata = metadata;
+    input.stats = stats;
+    auto result = co_await ops->admit_uploads(rtc, std::move(input));
+
+    if (!expected_metadata.empty()) {
+        ASSERT_TRUE_CORO(result.has_value());
+        ASSERT_EQ_CORO(
+          result.value().manifest_dirty_offset, expected_dirty_offset);
+        ASSERT_EQ_CORO(result.value().num_succeeded, expected_metadata.size());
+        ASSERT_EQ_CORO(
+          result.value().num_failed, results.size() - expected_metadata.size());
+    } else {
+        ASSERT_FALSE_CORO(result.has_value());
+    }
+}
+
+TEST_CORO(archiver_operations_impl_test, admit_uploads_empty) {
+    std::deque<upload_result> results = {};
+    std::deque<metadata_anomaly_type> anomalies = {};
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_1_segment_1_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_1_segment_0_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_2_segment_1_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_2_segment_0_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_3_segment_1_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_3_segment_0_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_1_segment_0_manifest_1_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::gap,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_0_segment_0_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::failed,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_3_segment_0_manifest_1_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::gap,
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, admit_uploads_3_segment_1_manifest_1_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::record_stats_mismatch,
+    };
+    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+}
+
+TEST_CORO(archiver_operations_impl_test, admit_uploads_randomized) {
+    for (int i = 0; i < 1000; i++) {
+        std::deque<upload_result> results;
+        std::deque<metadata_anomaly_type> anomalies;
+        bool inline_manifest = random_generators::get_int(1);
+        int num_segments = random_generators::get_int(10);
+        for (int j = 0; j < num_segments; j++) {
+            // 70% chance to have successful upload. It's important to
+            // have relatively high success rate because otherwise the
+            // set of replicated segments will be empty and the method
+            // will return error.  In this case the test won't be able
+            // to do all validations (check all fields of the returned
+            // value).
+            bool success = random_generators::get_int(100) < 70;
+            if (success) {
+                results.push_back(upload_result::success);
+                anomalies.push_back(metadata_anomaly_type::none);
+            } else {
+                // Failed upload is either upload error, or anomaly.
+                // The anomaly could be a gap, an overlap, or a metadata
+                // mismatch (segment doesn't match the metadata).
+                int type = random_generators::get_int(4);
+                if (type == 0) {
+                    results.push_back(upload_result::failed);
+                    anomalies.push_back(metadata_anomaly_type::none);
+                } else if (type == 1) {
+                    results.push_back(upload_result::success);
+                    anomalies.push_back(metadata_anomaly_type::gap);
+                } else if (type == 2) {
+                    results.push_back(upload_result::success);
+                    anomalies.push_back(metadata_anomaly_type::overlap);
+                } else if (type == 3) {
+                    results.push_back(upload_result::success);
+                    anomalies.push_back(
+                      metadata_anomaly_type::record_stats_mismatch);
+                }
+            }
+        }
+        co_await test_admit_uploads_full_cycle(
+          results, anomalies, inline_manifest);
+    }
+}
+
 } // namespace archival
