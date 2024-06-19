@@ -112,6 +112,10 @@ public:
       , _bucket(std::move(bucket))
       , _sg(sg) {}
 
+    ss::future<> start() override { co_return; }
+
+    ss::future<> stop() override { co_await _gate.close(); }
+
     /// Return upload candidate(s) if data is available or not_enough_data
     /// error if there is not enough data to start an upload.
     ss::future<result<reconciled_upload_candidates_list>>
@@ -120,6 +124,7 @@ public:
       upload_candidate_search_parameters arg) noexcept override {
         vlog(_rtclog.debug, "find_upload_candidates {}", arg);
         try {
+            auto gate = _gate.hold();
             auto partition = _pm->get_partition(arg.ntp);
             if (partition == nullptr) {
                 // maybe race condition (partition was stopped or moved)
@@ -226,6 +231,7 @@ public:
       reconciled_upload_candidates_list bundle,
       bool inline_manifest_upl) noexcept override {
         try {
+            auto gate = _gate.hold();
             upload_results_list result;
             auto partition = _pm->get_partition(bundle.ntp);
             if (partition == nullptr) {
@@ -383,6 +389,7 @@ public:
         // Stop on first error.
         // Validate consistency.
         try {
+            auto gate = _gate.hold();
             size_t num_segments = upl_res.results.size();
             if (
               num_segments != upl_res.stats.size()
@@ -491,8 +498,8 @@ public:
     /// Reupload manifest and replicate configuration batch
     ss::future<result<manifest_upload_result>> upload_manifest(
       retry_chain_node& workflow_rtc, model::ntp ntp) noexcept override {
-        auto gate = _gate.hold();
         try {
+            auto gate = _gate.hold();
             auto partition = _pm->get_partition(ntp);
             const auto& manifest = partition->manifest();
             const auto estimated_size = manifest.estimate_serialized_size();
