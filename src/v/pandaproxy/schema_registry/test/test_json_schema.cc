@@ -186,6 +186,12 @@ static constexpr auto compatibility_test_cases
       .writer_schema = R"({"type": "string", "pattern": "^test  +"})",
       .reader_is_compatible_with_writer = false,
     },
+    // enum checks
+    {
+      .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
+      .writer_schema = R"({"type": "integer", "enum": [4, 1, 3]})",
+      .reader_is_compatible_with_writer = false,
+    },
     //***** compatible section *****
     // same type
     {
@@ -245,6 +251,22 @@ static constexpr auto compatibility_test_cases
     {
       .reader_schema = R"({"type": "string", "pattern": "^test"})",
       .writer_schema = R"({"type": "string", "pattern": "^test"})",
+      .reader_is_compatible_with_writer = true,
+    },
+    // metadata is ignored
+    {
+      .reader_schema
+      = R"({"title": "myschema", "description": "this is my schema",
+            "default": true, "type": "boolean"})",
+      .writer_schema
+      = R"({"title": "MySchema", "description": "this schema is mine",
+            "default": false, "type": "boolean"})",
+      .reader_is_compatible_with_writer = true,
+    },
+    // enum checks
+    {
+      .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
+      .writer_schema = R"({"type": "integer", "enum": [4, 1]})",
       .reader_is_compatible_with_writer = true,
     },
   });
