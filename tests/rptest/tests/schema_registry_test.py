@@ -74,6 +74,8 @@ HTTP_POST_HEADERS = {
     "Content-Type": "application/vnd.schemaregistry.v1+json"
 }
 
+HTTP_DELETE_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
+
 schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
 # Schema 2 is only backwards compatible
 schema2_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":["null","string"]},{"name":"f2","type":"string","default":"foo"}]}'
@@ -306,7 +308,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
     def _delete_config_subject(self,
                                subject,
-                               headers=HTTP_POST_HEADERS,
+                               headers=HTTP_DELETE_HEADERS,
                                **kwargs):
         return self._request("DELETE",
                              f"config/{subject}",
@@ -352,7 +354,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
     def _delete_mode_subject(self,
                              subject,
-                             headers=HTTP_POST_HEADERS,
+                             headers=HTTP_DELETE_HEADERS,
                              **kwargs):
         return self._request("DELETE",
                              f"mode/{subject}",
@@ -476,7 +478,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
                                 subject,
                                 version,
                                 permanent=False,
-                                headers=HTTP_GET_HEADERS,
+                                headers=HTTP_DELETE_HEADERS,
                                 **kwargs):
         return self._request(
             "DELETE",

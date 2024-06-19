@@ -178,7 +178,6 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 delete_config_subject(server::request_t rq, server::reply_t rp) {
-    parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
 
@@ -682,6 +681,7 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 compatibility_subject_version(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto sub = parse::request_param<subject>(*rq.req, "subject");
