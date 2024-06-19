@@ -642,7 +642,7 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
     auto target_shard = ss::smp::count - 1;
     // move state to target shard
     storage::offset_translator::move_persistent_state(
-      raft::group_id(0), ss::this_shard_id(), target_shard, _api)
+      raft::group_id(0), _api.local().kvs(), target_shard, _api)
       .get();
 
     // validate translation on target shard

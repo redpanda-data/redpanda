@@ -107,7 +107,7 @@ public:
     /// Note when move state on the source shard is deleted
     static ss::future<> move_persistent_state(
       raft::group_id,
-      ss::shard_id source_shard,
+      storage::kvstore& source_kvs,
       ss::shard_id target_shard,
       ss::sharded<storage::api>&);
 

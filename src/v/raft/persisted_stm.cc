@@ -60,39 +60,25 @@ stm_snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp) {
 ss::future<> do_move_persistent_stm_state(
   ss::sstring snapshot_name,
   model::ntp ntp,
-  ss::shard_id source_shard,
+  storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>& api) {
-    using state_ptr = std::unique_ptr<iobuf>;
-    using state_fptr = ss::foreign_ptr<state_ptr>;
-
     const auto key_as_str = stm_snapshot_key(snapshot_name, ntp);
     bytes key;
     key.append(
       reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
 
-    state_fptr snapshot = co_await api.invoke_on(
-      source_shard, [key](storage::api& api) {
-          const auto ks = storage::kvstore::key_space::stms;
-          auto snapshot_data = api.kvs().get(ks, key);
-          auto snapshot_ptr = !snapshot_data ? nullptr
-                                             : std::make_unique<iobuf>(
-                                               std::move(*snapshot_data));
-          return ss::make_foreign<state_ptr>(std::move(snapshot_ptr));
-      });
+    const auto ks = storage::kvstore::key_space::stms;
+    auto snapshot = source_kvs.get(ks, key);
 
     if (snapshot) {
         co_await api.invoke_on(
-          target_shard,
-          [key, snapshot = std::move(snapshot)](storage::api& api) {
+          target_shard, [key, &snapshot](storage::api& api) {
               const auto ks = storage::kvstore::key_space::stms;
               return api.kvs().put(ks, key, snapshot->copy());
           });
 
-        co_await api.invoke_on(source_shard, [key](storage::api& api) {
-            const auto ks = storage::kvstore::key_space::stms;
-            return api.kvs().remove(ks, key);
-        });
+        co_await source_kvs.remove(ks, key);
     }
 }
 
@@ -625,7 +611,7 @@ template persisted_stm<kvstore_backed_stm_snapshot>::persisted_stm(
 
 ss::future<> move_persistent_stm_state(
   model::ntp ntp,
-  ss::shard_id source_shard,
+  storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>& api) {
     static const std::vector<ss::sstring> stm_snapshot_names{
@@ -636,10 +622,10 @@ ss::future<> move_persistent_stm_state(
 
     return ss::parallel_for_each(
       stm_snapshot_names,
-      [ntp = std::move(ntp), source_shard, target_shard, &api](
+      [ntp = std::move(ntp), &source_kvs, target_shard, &api](
         const ss::sstring& snapshot_name) {
           return do_move_persistent_stm_state(
-            snapshot_name, ntp, source_shard, target_shard, api);
+            snapshot_name, ntp, source_kvs, target_shard, api);
       });
 }
 
