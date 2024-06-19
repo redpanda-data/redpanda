@@ -788,12 +788,12 @@ ss::future<> ntp_archiver::sync_manifest_until_term_change() {
             vlog(
               _rtclog.error,
               "Failed to download manifest {}",
-              manifest().get_manifest_path());
+              remote_path_provider().partition_manifest_path(manifest()));
         } else {
             vlog(
               _rtclog.debug,
               "Successfuly downloaded manifest {}",
-              manifest().get_manifest_path());
+              remote_path_provider().partition_manifest_path(manifest()));
         }
         co_await ss::sleep_abortable(_sync_manifest_timeout(), _as);
     }
@@ -2389,7 +2389,8 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         if (stop) {
             break;
         }
-        const auto path = cursor->manifest()->get_manifest_path();
+        const auto path = remote_path_provider().spillover_manifest_path(
+          *cursor->manifest());
         vlog(
           _rtclog.info,
           "Enqueuing spillover manifest delete from cloud "
@@ -2577,8 +2578,10 @@ ss::future<> ntp_archiver::apply_spillover() {
 
         retry_chain_node upload_rtc(
           manifest_upload_timeout, manifest_upload_backoff, &_rtcnode);
+        auto path = remote_manifest_path{
+          remote_path_provider().spillover_manifest_path(tail)};
         auto res = co_await _remote.upload_manifest(
-          get_bucket_name(), tail, upload_rtc);
+          get_bucket_name(), tail, path, upload_rtc);
         if (res != cloud_storage::upload_result::success) {
             vlog(_rtclog.error, "Failed to upload spillover manifest {}", res);
             co_return;
@@ -2587,10 +2590,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         // Put manifest into cache to avoid roundtrip to the cloud storage
         auto reservation = co_await _cache.reserve_space(len, 1);
         co_await _cache.put(
-          tail.get_manifest_path()(),
-          str,
-          reservation,
-          _conf->upload_io_priority);
+          path(), str, reservation, _conf->upload_io_priority);
 
         // Spillover manifests were uploaded to S3
         // Replicate metadata
@@ -2622,9 +2622,7 @@ ss::future<> ntp_archiver::apply_spillover() {
               error.message());
         } else {
             vlog(
-              _rtclog.info,
-              "Uploaded spillover manifest: {}",
-              tail.get_manifest_path());
+              _rtclog.info, "Uploaded spillover manifest: {}", path().native());
         }
     }
 }
