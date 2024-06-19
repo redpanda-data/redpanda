@@ -61,7 +61,6 @@
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
 #include "cluster/tm_stm.h"
-#include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topic_recovery_service.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topic_recovery_status_rpc_handler.h"
@@ -1506,10 +1505,6 @@ void application::wire_up_redpanda_services(
           .get();
     }
 
-    syschecks::systemd_message("Creating tm_stm_cache_manager").get();
-
-    construct_service(tm_stm_cache_manager).get();
-
     syschecks::systemd_message("Initializing producer state manager").get();
     construct_service(
       producer_manager,
@@ -1978,7 +1973,6 @@ void application::wire_up_redpanda_services(
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager),
       std::ref(tx_topic_manager),
       ss::sharded_parameter([] {
           return config::shard_local_cfg()
@@ -2668,8 +2662,7 @@ void application::start_runtime_services(
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager
       .invoke_on_all([this](cluster::partition_manager& pm) {
-          pm.register_factory<cluster::tm_stm_factory>(
-            tm_stm_cache_manager, feature_table);
+          pm.register_factory<cluster::tm_stm_factory>(feature_table);
           pm.register_factory<cluster::id_allocator_stm_factory>();
           pm.register_factory<transform::transform_offsets_stm_factory>(
             controller->get_topics_state());

@@ -100,7 +100,7 @@ admin_server::get_all_transactions_handler(
         new_tx.tx_seq = tx.tx_seq;
         new_tx.etag = tx.etag;
 
-        // The motivation behind mapping killed to aborting is to make
+        // The motivation behind mapping expired to preparing_abort is to make
         // user not to think about the subtle differences between both
         // statuses
         if (tx.status == cluster::tx_status::preparing_internal_abort) {

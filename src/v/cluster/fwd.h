@@ -25,8 +25,6 @@ class id_allocator_frontend;
 class rm_partition_frontend;
 class log_eviction_stm;
 class tx_coordinator_mapper;
-class tm_stm_cache;
-class tm_stm_cache_manager;
 class tx_gateway_frontend;
 class partition_leaders_table;
 class partition_allocator;

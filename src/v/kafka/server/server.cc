@@ -1398,7 +1398,9 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                 request.data.transactional_id.value(),
                 request.data.transaction_timeout_ms,
                 config::shard_local_cfg().create_topic_timeout_ms(),
-                expected_pid)
+                expected_pid == model::no_pid
+                  ? std::optional<model::producer_identity>()
+                  : expected_pid)
               .then([&ctx](cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
                   reply.data.error_code = map_tx_errc(r.ec);

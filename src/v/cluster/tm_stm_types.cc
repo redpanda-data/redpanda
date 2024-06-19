@@ -10,6 +10,10 @@
  */
 #include "cluster/tm_stm_types.h"
 
+#include "model/timeout_clock.h"
+
+#include <seastar/core/lowres_clock.hh>
+
 #include <optional>
 
 namespace cluster {
@@ -79,6 +83,10 @@ bool is_state_transition_valid(
     __builtin_unreachable();
 }
 
+bool tx_metadata::is_finished() const {
+    return status == completed_commit || status == completed_abort;
+}
+
 std::string_view tx_metadata::get_status() const {
     switch (status) {
     case tx_status::ongoing:
@@ -146,10 +154,11 @@ bool tx_metadata::delete_partition(const tx_partition& part) {
 std::optional<state_transition_error>
 tx_metadata::try_update_status(tx_status requested) {
     auto is_valid = is_state_transition_valid(*this, requested);
-    if (is_valid) {
+    if (!is_valid) {
         return state_transition_error(status, requested);
     }
     status = requested;
+    last_update_ts = ss::lowres_system_clock::now();
     return std::nullopt;
 }
 
