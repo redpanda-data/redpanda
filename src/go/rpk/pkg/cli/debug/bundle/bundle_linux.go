@@ -310,7 +310,7 @@ func writeCommandOutputToZipLimit(
 	err = cmd.Wait()
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
-			return fmt.Errorf("couldn't save '%s': %w", filename, err)
+			return fmt.Errorf("couldn't save '%s': %w; %[1]v contains the full error message", filename, err)
 		}
 		zap.L().Sugar().Debugf(
 			"Got '%v' while running '%s'. This is probably due to the"+
@@ -557,6 +557,9 @@ func saveSlabInfo(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/slabinfo")
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				return fmt.Errorf("%v: you may need to run the command as root to read this file", err)
+			}
 			return err
 		}
 		return writeFileToZip(ps, "proc/slabinfo", bs)
@@ -940,13 +943,16 @@ func sliceControllerDir(cFiles []fileSize, logLimitBytes int64) (slice []fileSiz
 
 func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes int) step {
 	return func() error {
+		if y.Redpanda.Directory == "" {
+			return fmt.Errorf("failed to save controller logs: 'redpanda.data_directory' is empty on the provided configuration file")
+		}
 		controllerDir := filepath.Join(y.Redpanda.Directory, "redpanda", "controller", "0_0")
 
 		// We don't need the .base_index files to parse out the messages.
 		exclude := regexp.MustCompile(`^*.base_index$`)
 		cFiles, size, err := walkSizeDir(controllerDir, exclude)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to save controller logs: %v", err)
 		}
 
 		if int(size) < logLimitBytes {
@@ -966,11 +972,11 @@ func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes 
 		for _, cLog := range slice {
 			file, err := os.ReadFile(cLog.path)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
 			err = writeFileToZip(ps, filepath.Join("controller", filepath.Base(cLog.path)), file)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
 		}
 		return nil
