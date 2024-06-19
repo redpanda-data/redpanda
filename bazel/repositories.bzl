@@ -156,9 +156,9 @@ def data_dependency():
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "166ac9f38ac5f7e900d8f9c892afaaa7c8d9909b0dd4b6315bcb335f50ddf728",
-        strip_prefix = "seastar-16a722bc0a8792daa20c165dabc07e4b1e5dff26",
-        url = "https://github.com/redpanda-data/seastar/archive/16a722bc0a8792daa20c165dabc07e4b1e5dff26.tar.gz",
+        sha256 = "34fe74d82caa50873b74520f5233c609213bc6ff7b46762f467e4fccd3a70d30",
+        strip_prefix = "seastar-debb8f3792fb18b1490e13ce33580883c80e089a",
+        url = "https://github.com/redpanda-data/seastar/archive/debb8f3792fb18b1490e13ce33580883c80e089a.tar.gz",
     )
 
     http_archive(

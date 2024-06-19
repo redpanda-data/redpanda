@@ -25,6 +25,7 @@ use_repo(
 )
 
 bazel_dep(name = "abseil-cpp", version = "20240116.1")
+bazel_dep(name = "bazel_skylib", version = "1.4.2")
 bazel_dep(name = "crc32c", version = "1.1.0")
 bazel_dep(name = "fmt", version = "8.1.1")
 bazel_dep(name = "googletest", version = "1.14.0.bcr.1")
