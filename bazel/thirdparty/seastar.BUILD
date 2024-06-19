@@ -501,9 +501,6 @@ cc_library(
         "include/seastar/util/variant_utils.hh",
         "include/seastar/websocket/server.hh",
     ],
-    copts = [
-        "-std=c++20",
-    ],
     defines = [
         "BOOST_TEST_DYN_LINK",
         "BOOST_TEST_NO_LIB",
