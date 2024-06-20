@@ -1,4 +1,4 @@
-load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel:build.bzl", "redpanda_cc_btest_no_seastar", "redpanda_cc_library")
 
 redpanda_cc_library(
     name = "base",
@@ -18,5 +18,16 @@ redpanda_cc_library(
     deps = [
         "@boost//:outcome",
         "@seastar",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "outcome_test",
+    timeout = "short",
+    srcs = [
+        "tests/outcome_test.cc",
+    ],
+    deps = [
+        ":base",
     ],
 )
