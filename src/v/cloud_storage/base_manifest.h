@@ -60,13 +60,6 @@ public:
     /// Manifest object format and name in S3
     virtual remote_manifest_path get_manifest_path() const = 0;
 
-    /// default implementation for derived classed that don't support multiple
-    /// formats
-    virtual std::pair<manifest_format, remote_manifest_path>
-    get_manifest_format_and_path() const {
-        return {manifest_format::json, get_manifest_path()};
-    }
-
     /// Get manifest type
     virtual manifest_type get_manifest_type() const = 0;
 };
