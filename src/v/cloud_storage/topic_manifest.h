@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
@@ -56,6 +57,7 @@ public:
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
+    remote_manifest_path get_manifest_path(const remote_path_provider&) const;
 
     /// Serialize manifest object in json format. only fields up to
     /// first_version are serialized
@@ -86,6 +88,10 @@ private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
     void do_update(const topic_manifest_handler& handler);
+
+    /// Name to address this manifest by. Note that the exact path is not
+    /// tracked by the manifest.
+    ss::sstring display_name() const;
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
