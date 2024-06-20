@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cluster/types.h"
 
 #include <seastar/core/abort_source.hh>
@@ -63,6 +64,7 @@ public:
       ss::abort_source& as,
       model::ntp ntp,
       model::initial_revision_id rev_id,
+      const cloud_storage::remote_path_provider&,
       recovery_checks checks);
 
     /// Perform validation on the ntp as specified with checks
@@ -81,15 +83,14 @@ private:
     ss::future<validation_result> do_validate_manifest_metadata();
 
     // utility method for logging
-    cloud_storage::remote_manifest_path get_path(
-      cloud_storage::manifest_format format
-      = cloud_storage::manifest_format::serde);
+    cloud_storage::remote_manifest_path get_path();
 
     cloud_storage::remote* remote_;
     cloud_storage_clients::bucket_name const* bucket_;
     ss::abort_source* as_;
     model::ntp ntp_;
     model::initial_revision_id rev_id_;
+    const cloud_storage::remote_path_provider& remote_path_provider_;
     retry_chain_node op_rtc_;
     retry_chain_logger op_logger_;
     recovery_checks checks_;
