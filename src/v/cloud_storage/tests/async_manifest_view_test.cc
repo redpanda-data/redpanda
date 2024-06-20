@@ -86,7 +86,7 @@ public:
     expectation spill_manifest(const spillover_manifest& spm, bool hydrate) {
         stm_manifest.spillover(spm.make_manifest_metadata());
         // update cache
-        auto path = spm.get_manifest_path();
+        auto path = spm.get_manifest_path(path_provider);
         if (hydrate) {
             auto stream = spm.serialize().get();
             auto reservation = cache.local().reserve_space(123, 1).get();
@@ -131,7 +131,7 @@ public:
     }
 
     void put_spill_to_cache(const spillover_manifest& spm) {
-        auto path = spm.get_manifest_path();
+        auto path = spm.get_manifest_path(path_provider);
         auto stream = spm.serialize().get();
         auto reservation = cache.local().reserve_space(123, 1).get();
         cache.local()
@@ -209,7 +209,7 @@ public:
         stm_manifest.spillover(spm.make_manifest_metadata());
 
         // update cache
-        auto path = spm.get_manifest_path();
+        auto path = spm.get_manifest_path(path_provider);
         if (hydrate) {
             auto stream = spm.serialize().get();
             auto reservation = cache.local().reserve_space(123, 1).get();

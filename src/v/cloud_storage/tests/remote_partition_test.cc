@@ -2359,13 +2359,13 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
         vlog(
           test_util_log.info,
           "Uploading spillover manifest at {}:\n{}",
-          spm.get_manifest_path(),
+          spm.get_manifest_path(path_provider),
           ostr.str());
 
         auto s_data = spm.serialize().get();
         auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
         add_expectations({cloud_storage_fixture::expectation{
-          .url = spm.get_manifest_path()().string(),
+          .url = spm.get_manifest_path(path_provider)().string(),
           .body = ss::sstring(buf.begin(), buf.end()),
         }});
     }

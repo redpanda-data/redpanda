@@ -432,7 +432,8 @@ private:
 
             auto spill_path = cloud_storage::generate_spillover_manifest_path(
               _stm_manifest.get_ntp(), _stm_manifest.get_revision_id(), comp);
-            BOOST_REQUIRE_EQUAL(spill_path, spill.get_manifest_path());
+            BOOST_REQUIRE_EQUAL(
+              spill_path, spill.get_manifest_path(path_provider));
         }
     }
 
@@ -611,7 +612,8 @@ FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {
       first_spill.get_ntp(),
       first_spill.get_revision_id(),
       *missing_spills.begin());
-    BOOST_REQUIRE_EQUAL(first_spill.get_manifest_path(), expected_path);
+    BOOST_REQUIRE_EQUAL(
+      first_spill.get_manifest_path(path_provider), expected_path);
 
     auto partial_results = run_detector_until_log_end(archival::run_quota_t{6});
 

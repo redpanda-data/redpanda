@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "model/metadata.h"
 
 #include <stdexcept>
@@ -86,6 +87,11 @@ public:
         };
         return generate_spillover_manifest_path(
           get_ntp(), get_revision_id(), smc);
+    }
+    remote_manifest_path
+    get_manifest_path(const remote_path_provider& path_provider) const {
+        return remote_manifest_path{
+          path_provider.spillover_manifest_path(*this)};
     }
 
     manifest_type get_manifest_type() const override {
