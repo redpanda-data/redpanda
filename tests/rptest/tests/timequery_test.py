@@ -103,6 +103,18 @@ class BaseTimeQuery:
         base_ts = 1664453149000
         msg_count = (self.log_segment_size * total_segments) // record_size
         local_retention = self.log_segment_size * 4
+        kcat = KafkaCat(cluster)
+
+        # Test the base case with an empty topic.
+        empty_topic = TopicSpec(name="tq_empty_topic",
+                                partition_count=1,
+                                replication_factor=3)
+        self.client().create_topic(empty_topic)
+        offset = kcat.query_offset(empty_topic.name, 0, base_ts)
+        self.logger.info(f"Time query returned offset {offset}")
+        assert offset == -1, f"Expected -1, got {offset}"
+
+        # Create a topic and produce a run of messages we will query.
         topic, timestamps = self._create_and_produce(cluster, cloud_storage,
                                                      local_retention, base_ts,
                                                      record_size, msg_count)
@@ -163,7 +175,6 @@ class BaseTimeQuery:
         # offset should cause cloud downloads.
         hit_offsets = set()
 
-        kcat = KafkaCat(cluster)
         cloud_metrics = None
         local_metrics = None
 
@@ -514,6 +525,12 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         kcat = KafkaCat(self.redpanda)
         offset = kcat.query_offset(topic.name, 0, timestamps[0] - 1000)
         assert offset == msg_count - 1, f"Expected {msg_count - 1}, got {offset}"
+
+        # Trim everything, leaving an empty log.
+        rpk.trim_prefix(topic.name, offset=p.high_watermark, partitions=[0])
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(topic.name, 0, timestamps[0] - 1000)
+        assert offset == -1, f"Expected -1, got {offset}"
 
     @cluster(
         num_nodes=4,
