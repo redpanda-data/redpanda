@@ -31,10 +31,14 @@
 #include <absl/container/node_hash_map.h>
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string_view>
 
 namespace kafka {
+
+template<typename clock>
+class client_quotas_probe;
 
 // quota_manager tracks quota usage
 //
@@ -138,6 +142,7 @@ private:
 
     client_quotas_t& _client_quotas;
     client_quota_translator _translator;
+    std::unique_ptr<client_quotas_probe<clock>> _probe;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;

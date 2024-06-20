@@ -208,6 +208,15 @@ public:
      */
     seastar::metrics::histogram read_dist_histogram_logform() const;
 
+    /*
+     * Generates a Prometheus histogram with 15 buckets. The first bucket has an
+     * upper bound of 1 - 1 and subsequent buckets have an upper bound of 2
+     * times the upper bound of the previous bucket.
+     *
+     * This is the histogram type used for the Kafka client quota distribution.
+     */
+    seastar::metrics::histogram client_quota_histogram_logform() const;
+
 private:
     friend measurement;
 
@@ -241,3 +250,11 @@ using log_hist_internal = log_hist<std::chrono::microseconds, 26, 8ul>;
  * the first bucket to greater than 91 days in the last bucket.
  */
 using log_hist_read_dist = log_hist<std::chrono::minutes, 16, 4ul>;
+
+/*
+ * This histogram has units of milliseconds instead of microseconds, and is
+ * used for measuring the Kafka client quota delays on the scale of less than
+ * 1 milliseconds in the first bucket to greater than 32 seconds in the last
+ * bucket.
+ */
+using log_hist_client_quota = log_hist<std::chrono::milliseconds, 15, 1ul>;
