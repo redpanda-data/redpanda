@@ -123,6 +123,6 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing Boost::unit_test_framework v::kafka
 
   # the args below are just to keep it fast
-  ARGS "-c 1 --duration=1 --runs=1 --memory=4G"
+  ARGS "-c 2 --duration=1 --runs=1 --memory=4G"
   LABELS kafka
 )
