@@ -401,18 +401,7 @@ std::optional<ss::sstring> check_result_configuration(
           new_configuration.id());
     }
     auto& current_configuration = it->second.broker;
-    /**
-     * do no allow to decrease node core count
-     */
-    if (
-      current_configuration.properties().cores
-      > new_configuration.properties().cores) {
-        return fmt::format(
-          "core count must not decrease on any broker, currently configured "
-          "core count: {}, requested core count: {}",
-          current_configuration.properties().cores,
-          new_configuration.properties().cores);
-    }
+
     /**
      * When cluster member configuration changes Redpanda by default doesn't
      * allow the change if a new cluster configuration would have two
