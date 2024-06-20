@@ -101,6 +101,7 @@
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
 #include "raft/service.h"
@@ -654,6 +655,15 @@ void application::setup_public_metrics() {
                  [] { return 1; },
                  sm::description("Redpanda build information"),
                  build_labels)
+                 .aggregate({sm::shard_label}),
+               sm::make_gauge(
+                 "fips_mode",
+                 [] {
+                     return static_cast<unsigned int>(
+                       config::node().fips_mode());
+                 },
+                 sm::description("Identifies whether or not Redpanda is "
+                                 "running in FIPS mode."))
                  .aggregate({sm::shard_label})});
         })
       .get();
@@ -693,22 +703,26 @@ void application::setup_internal_metrics() {
 
     _metrics.add_group(
       "application",
-      {
-        sm::make_gauge(
-          "uptime",
-          [] {
-              return std::chrono::duration_cast<std::chrono::milliseconds>(
-                       ss::engine().uptime())
-                .count();
-          },
-          sm::description("Redpanda uptime in milliseconds")),
+      {sm::make_gauge(
+         "uptime",
+         [] {
+             return std::chrono::duration_cast<std::chrono::milliseconds>(
+                      ss::engine().uptime())
+               .count();
+         },
+         sm::description("Redpanda uptime in milliseconds")),
 
-        sm::make_gauge(
-          "build",
-          [] { return 1; },
-          sm::description("Redpanda build information"),
-          build_labels),
-      });
+       sm::make_gauge(
+         "build",
+         [] { return 1; },
+         sm::description("Redpanda build information"),
+         build_labels),
+
+       sm::make_gauge(
+         "fips_mode",
+         [] { return static_cast<unsigned int>(config::node().fips_mode()); },
+         sm::description(
+           "Identifies whether or not Redpanda is running in FIPS mode."))});
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
@@ -2170,6 +2184,7 @@ void application::trigger_abort_source() {
 void application::wire_up_and_start_crypto_services() {
     construct_single_service(thread_worker);
     thread_worker->start({.name = "worker"}).get();
+    auto fips_mode_flag = config::node().fips_mode();
     // config file and module path are not necessary when not
     // running in FIPS mode
     construct_service(
@@ -2177,15 +2192,14 @@ void application::wire_up_and_start_crypto_services() {
       std::ref(*thread_worker),
       ss::sstring{config::node().openssl_config_file().value_or("")},
       ss::sstring{config::node().openssl_module_directory().value_or("")},
-      config::fips_mode_enabled(config::node().fips_mode())
-        ? crypto::is_fips_mode::yes
-        : crypto::is_fips_mode::no)
+      config::fips_mode_enabled(fips_mode_flag) ? crypto::is_fips_mode::yes
+                                                : crypto::is_fips_mode::no)
       .get();
     ossl_context_service.invoke_on_all(&crypto::ossl_context_service::start)
       .get();
     ossl_context_service.map([](auto& s) { return s.fips_mode(); })
-      .then([](auto fips_mode_vals) {
-          auto expected = config::fips_mode_enabled(config::node().fips_mode())
+      .then([fips_mode_flag](auto fips_mode_vals) {
+          auto expected = config::fips_mode_enabled(fips_mode_flag)
                             ? crypto::is_fips_mode::yes
                             : crypto::is_fips_mode::no;
           for (auto fips_mode : fips_mode_vals) {
