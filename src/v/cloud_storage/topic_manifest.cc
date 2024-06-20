@@ -225,7 +225,11 @@ struct topic_manifest_handler
     key_string _key;
 
     // required fields
+
+    // NOTE: version is no longer explicitly tracked, now that we use the
+    // versioned topic_manifest_state to serialize.
     std::optional<int32_t> _version;
+
     std::optional<model::ns> _namespace{};
     std::optional<model::topic> _topic;
     std::optional<int32_t> _partition_count;
@@ -253,13 +257,9 @@ struct topic_manifest_handler
 topic_manifest::topic_manifest(
   const cluster::topic_configuration& cfg,
   model::initial_revision_id rev,
-  const features::feature_table& ft)
+  const features::feature_table&)
   : _topic_config(cfg)
-  , _rev(rev)
-  , _manifest_version(
-      ft.is_active(features::feature::cluster_topic_manifest_format_v2)
-        ? serde_version
-        : first_version) {}
+  , _rev(rev) {}
 
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
@@ -271,10 +271,6 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
           "topic manifest version {} is not supported",
           handler._version));
     }
-
-    // just to be explicit, set _manifest_version to first_version, even if it's
-    // already the default construction value
-    _manifest_version = topic_manifest::first_version;
 
     _rev = handler._revision_id.value();
 
@@ -432,7 +428,6 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
           std::move(result));
         _topic_config = std::move(m_state.cfg);
         _rev = m_state.initial_revision;
-        _manifest_version = topic_manifest::serde_version;
         break;
     }
 
@@ -441,27 +436,6 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
 
 ss::future<serialized_data_stream> topic_manifest::serialize() const {
     vassert(_topic_config.has_value(), "_topic_config is not initialized");
-
-    if (_manifest_version == first_version) {
-        // serialize in json format. this could still be required in unit-tests
-        // and mixed-versions clusters, when the old node is not yet running
-        // with features::feature::cluster_topic_manifest_format_v2
-        iobuf serialized;
-        iobuf_ostreambuf obuf(serialized);
-        std::ostream os(&obuf);
-        serialize_v1_json(os);
-        if (!os.good()) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "could not serialize topic manifest {}",
-              get_manifest_path()));
-        }
-        size_t size_bytes = serialized.size_bytes();
-        co_return serialized_data_stream{
-          .stream = make_iobuf_input_stream(std::move(serialized)),
-          .size_bytes = size_bytes};
-    }
-
     // serialize in binary format
     auto serialized = serde::to_iobuf(topic_manifest_state{
       .cfg = _topic_config.value(), .initial_revision = _rev});
@@ -551,9 +525,7 @@ void topic_manifest::serialize_v1_json(std::ostream& out) const {
 
     // do not serialize fields that are not deserializable by previous versions
     // of redpanda
-    if (
-      _manifest_version > first_version
-      && _topic_config->properties.mpx_virtual_cluster_id) {
+    if (_topic_config->properties.mpx_virtual_cluster_id) {
         w.Key("virtual_cluster_id");
         w.String(fmt::format(
           "{}", _topic_config->properties.mpx_virtual_cluster_id.value()));
@@ -580,17 +552,11 @@ remote_manifest_path topic_manifest::get_manifest_path() const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
     vassert(_topic_config, "Topic config is not set");
     return get_topic_manifest_path(
-      _topic_config->tp_ns.ns,
-      _topic_config->tp_ns.tp,
-      _manifest_version == first_version ? manifest_format::json
-                                         : manifest_format::serde);
+      _topic_config->tp_ns.ns, _topic_config->tp_ns.tp, manifest_format::serde);
 }
 
 std::pair<manifest_format, remote_manifest_path>
 topic_manifest::get_manifest_format_and_path() const {
-    return std::make_pair(
-      _manifest_version == first_version ? manifest_format::json
-                                         : manifest_format::serde,
-      get_manifest_path());
+    return std::make_pair(manifest_format::serde, get_manifest_path());
 }
 } // namespace cloud_storage

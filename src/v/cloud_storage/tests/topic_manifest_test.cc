@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
@@ -156,10 +157,12 @@ SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
 
 SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
     topic_manifest m;
-    m.update(make_manifest_stream(min_topic_manifest_json)).get();
+    m.update(
+       manifest_format::json, make_manifest_stream(min_topic_manifest_json))
+      .get();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "70000000/meta/test-namespace/test-topic/topic_manifest.json");
+      path, "70000000/meta/test-namespace/test-topic/topic_manifest.bin");
 }
 
 SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
@@ -179,7 +182,9 @@ SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
 
 SEASTAR_THREAD_TEST_CASE(update_serialize_update_same_object) {
     topic_manifest m;
-    m.update(make_manifest_stream(min_topic_manifest_json)).get();
+    m.update(
+       manifest_format::json, make_manifest_stream(min_topic_manifest_json))
+      .get();
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -194,7 +199,9 @@ SEASTAR_THREAD_TEST_CASE(update_serialize_update_same_object) {
 
 SEASTAR_THREAD_TEST_CASE(min_config_update_all_fields_correct) {
     topic_manifest m;
-    m.update(make_manifest_stream(min_topic_manifest_json)).get();
+    m.update(
+       manifest_format::json, make_manifest_stream(min_topic_manifest_json))
+      .get();
 
     auto topic_config = m.get_topic_config().value();
     BOOST_REQUIRE_EQUAL(m.get_revision(), model::initial_revision_id(0));
@@ -215,7 +222,9 @@ SEASTAR_THREAD_TEST_CASE(min_config_update_all_fields_correct) {
 
 SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
     topic_manifest m;
-    m.update(make_manifest_stream(full_topic_manifest_json)).get();
+    m.update(
+       manifest_format::json, make_manifest_stream(full_topic_manifest_json))
+      .get();
 
     auto topic_config = m.get_topic_config().value();
     BOOST_REQUIRE_EQUAL(m.get_revision(), model::initial_revision_id(1));
@@ -261,14 +270,14 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
 
     features::feature_table local_ft;
     topic_manifest m(min_cfg, model::initial_revision_id{0}, local_ft);
-    auto [is, size] = m.serialize().get();
     iobuf buf;
-    auto os = make_iobuf_ref_output_stream(buf);
-    ss::copy(is, os).get();
+    iobuf_ostreambuf obuf(buf);
+    std::ostream os(&obuf);
+    m.serialize_v1_json(os);
 
     auto rstr = make_iobuf_input_stream(std::move(buf));
     topic_manifest restored;
-    restored.update(std::move(rstr)).get();
+    restored.update(manifest_format::json, std::move(rstr)).get();
     BOOST_CHECK_EQUAL(m.get_revision(), restored.get_revision());
     auto restored_cfg = restored.get_topic_config().value();
     // as a safety net, negative values for retention_duration are converted to
@@ -292,21 +301,23 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
       std::numeric_limits<size_t>::max());
     auto local_ft = features::feature_table{};
     topic_manifest m(max_cfg, model::initial_revision_id{0}, local_ft);
-    auto [is, size] = m.serialize().get();
     iobuf buf;
-    auto os = make_iobuf_ref_output_stream(buf);
-    ss::copy(is, os).get();
+    iobuf_ostreambuf obuf(buf);
+    std::ostream os(&obuf);
+    m.serialize_v1_json(os);
 
     auto rstr = make_iobuf_input_stream(std::move(buf));
     topic_manifest restored;
-    restored.update(std::move(rstr)).get();
+    restored.update(manifest_format::json, std::move(rstr)).get();
     BOOST_REQUIRE(m == restored);
 }
 
 SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
     topic_manifest m;
     BOOST_REQUIRE_EXCEPTION(
-      m.update(make_manifest_stream(missing_partition_count)).get(),
+      m.update(
+         manifest_format::json, make_manifest_stream(missing_partition_count))
+        .get(),
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
@@ -319,7 +330,8 @@ SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
 SEASTAR_THREAD_TEST_CASE(wrong_version_throws) {
     topic_manifest m;
     BOOST_REQUIRE_EXCEPTION(
-      m.update(make_manifest_stream(wrong_version)).get(),
+      m.update(manifest_format::json, make_manifest_stream(wrong_version))
+        .get(),
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
@@ -331,21 +343,22 @@ SEASTAR_THREAD_TEST_CASE(wrong_version_throws) {
 SEASTAR_THREAD_TEST_CASE(wrong_compaction_strategy_throws) {
     topic_manifest m;
     BOOST_REQUIRE_EXCEPTION(
-      m.update(make_manifest_stream(wrong_compaction_strategy)).get(),
+      m.update(
+         manifest_format::json, make_manifest_stream(wrong_compaction_strategy))
+        .get(),
       std::runtime_error,
       [](std::runtime_error ex) {
-          return std::string(ex.what()).find(
-                   "Failed to parse topic manifest "
-                   "\"30000000/meta/full-test-namespace/full-test-topic/"
-                   "topic_manifest.json\": Invalid compaction_strategy: "
-                   "wrong_value")
+          return std::string(ex.what()).find("Invalid compaction_strategy: "
+                                             "wrong_value")
                  != std::string::npos;
       });
 }
 
 SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
     topic_manifest m;
-    m.update(make_manifest_stream(full_topic_manifest_json)).get();
+    m.update(
+       manifest_format::json, make_manifest_stream(full_topic_manifest_json))
+      .get();
 
     auto [is, size] = m.serialize().get();
     iobuf buf;
@@ -362,7 +375,9 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
 SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
     auto local_ft = features::feature_table{};
     topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
-    m.update(make_manifest_stream(full_topic_manifest_json)).get();
+    m.update(
+       manifest_format::json, make_manifest_stream(full_topic_manifest_json))
+      .get();
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -378,7 +393,10 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
 SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
     auto local_ft = features::feature_table{};
     topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
-    m.update(make_manifest_stream(negative_properties_manifest)).get();
+    m.update(
+       manifest_format::json,
+       make_manifest_stream(negative_properties_manifest))
+      .get();
     auto tp_cfg = m.get_topic_config();
     BOOST_REQUIRE(tp_cfg.has_value());
     BOOST_REQUIRE_EQUAL(64, tp_cfg->partition_count);
@@ -476,8 +494,6 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
     // topic_manifest and check that the result is equal
     auto manifest = topic_manifest{
       random_topic_configuration, random_initial_revision_id, local_ft};
-    BOOST_CHECK(
-      manifest.get_manifest_version() == topic_manifest::serde_version);
     BOOST_CHECK(manifest.get_revision() == random_initial_revision_id);
     BOOST_CHECK(manifest.get_manifest_path()().extension() == ".bin");
     BOOST_CHECK(
@@ -489,9 +505,6 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
     reconstructed_serde_manifest
       .update(manifest_format::serde, std::move(serialized_manifest))
       .get();
-    BOOST_CHECK(
-      reconstructed_serde_manifest.get_manifest_version()
-      == topic_manifest::serde_version);
     BOOST_CHECK(
       reconstructed_serde_manifest.get_revision()
       == random_initial_revision_id);
