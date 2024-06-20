@@ -96,7 +96,9 @@ protected:
               b, group::aborted_tx_record_version);
             return handle_abort(b.header(), std::move(data));
         }
-        if (b.header().type == model::record_batch_type::tx_fence) {
+        if (
+          b.header().type == model::record_batch_type::tx_fence
+          || b.header().type == model::record_batch_type::group_fence_tx) {
             return parse_fence(std::move(b));
         }
         if (b.header().type == model::record_batch_type::version_fence) {

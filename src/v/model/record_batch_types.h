@@ -51,7 +51,8 @@ enum class record_batch_type : int8_t {
     role_management_cmd = 30, // role management command
     client_quota = 31,        // client quota command
     data_migration_cmd = 32,  // data migration manipulation command
-    MAX = data_migration_cmd,
+    group_fence_tx = 33,      // fence batch in group transactions
+    MAX = group_fence_tx,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
