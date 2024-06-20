@@ -56,7 +56,6 @@ public:
     ss::future<serialized_data_stream> serialize() const override;
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const;
     remote_manifest_path get_manifest_path(const remote_path_provider&) const;
 
     /// Serialize manifest object in json format. only fields up to
@@ -84,14 +83,14 @@ public:
                == std::tie(other._topic_config, other._rev);
     };
 
+    /// Name to address this manifest by. Note that the exact path is not
+    /// tracked by the manifest.
+    ss::sstring display_name() const;
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
     void do_update(const topic_manifest_handler& handler);
-
-    /// Name to address this manifest by. Note that the exact path is not
-    /// tracked by the manifest.
-    ss::sstring display_name() const;
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;

@@ -540,13 +540,6 @@ ss::sstring topic_manifest::display_name() const {
     return fmt::format("tp_ns: {}, rev: {}", _topic_config->tp_ns, _rev);
 }
 
-remote_manifest_path topic_manifest::get_manifest_path() const {
-    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
-    vassert(_topic_config, "Topic config is not set");
-    return remote_manifest_path{
-      prefixed_topic_manifest_bin_path(_topic_config->tp_ns)};
-}
-
 remote_manifest_path topic_manifest::get_manifest_path(
   const remote_path_provider& path_provider) const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
