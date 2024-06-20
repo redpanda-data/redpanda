@@ -698,14 +698,22 @@ ss::future<std::error_code> service::deploy_transform(
     auto [key, offset] = result.value();
     meta.uuid = key;
     meta.source_ptr = offset;
-    meta.offset_options = model::transform_offset_options{
-      // Set the transform to start processing new records starting now,
-      // this is the default expectations for developers, as once deploy
-      // completes, they should be able to produce without waiting for the
-      // vm to start. If we start from the end of the log, then records produced
-      // between now and the vm start would be skipped.
-      .position = model::new_timestamp(),
-    };
+
+    // Use latest_offset as a sentinel value during user-driven deploy. We won't
+    // expose this option through the API anyway, and already-serialized
+    // transform metadata (i.e. legacy deployments) won't traverse this code.
+    // Otherwise, respect whatever offset was specifified in the request.
+    if (std::holds_alternative<model::transform_offset_options::latest_offset>(
+          meta.offset_options.position)) {
+        meta.offset_options = model::transform_offset_options{
+          // Set the transform to start processing new records starting now,
+          // this is the default expectations for developers, as once deploy
+          // completes, they should be able to produce without waiting for the
+          // vm to start. If we start from the end of the log, then records
+          // produced between now and the vm start would be skipped.
+          .position = model::new_timestamp(),
+        };
+    }
     vlog(
       tlog.debug,
       "stored wasm binary for transform {} at offset {}",
