@@ -32,6 +32,8 @@ public:
     // Topic manifest path.
     ss::sstring topic_manifest_path(
       const model::topic_namespace& topic, model::initial_revision_id) const;
+    std::optional<ss::sstring>
+    topic_manifest_path_json(const model::topic_namespace& topic) const;
 
     // Prefix of the partition manifest path. This can be used to filter
     // objects to find partition or spillover manifests.

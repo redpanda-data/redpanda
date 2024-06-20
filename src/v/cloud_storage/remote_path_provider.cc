@@ -37,6 +37,14 @@ ss::sstring remote_path_provider::topic_manifest_path(
     return prefixed_topic_manifest_bin_path(topic);
 }
 
+std::optional<ss::sstring> remote_path_provider::topic_manifest_path_json(
+  const model::topic_namespace& topic) const {
+    if (label_.has_value()) {
+        return std::nullopt;
+    }
+    return prefixed_topic_manifest_json_path(topic);
+}
+
 ss::sstring remote_path_provider::partition_manifest_prefix(
   const model::ntp& ntp, model::initial_revision_id rev) const {
     if (label_.has_value()) {

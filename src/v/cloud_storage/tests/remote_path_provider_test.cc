@@ -58,6 +58,10 @@ TEST(RemotePathProviderTest, TestPrefixedTopicManifestPaths) {
     EXPECT_STREQ(
       path_provider.topic_manifest_prefix(test_tp_ns).c_str(),
       "e0000000/meta/kafka/tp");
+    const auto json_str = path_provider.topic_manifest_path_json(test_tp_ns);
+    ASSERT_TRUE(json_str.has_value());
+    EXPECT_STREQ(
+      json_str->c_str(), "e0000000/meta/kafka/tp/topic_manifest.json");
 }
 
 TEST(RemotePathProviderTest, TestLabeledTopicManifestPaths) {
@@ -69,6 +73,11 @@ TEST(RemotePathProviderTest, TestLabeledTopicManifestPaths) {
     EXPECT_STREQ(
       path_provider.topic_manifest_prefix(test_tp_ns).c_str(),
       "meta/kafka/tp/deadbeef-0000-0000-0000-000000000000");
+
+    // We don't expect to read or write JSON topic manifests with the cluster
+    // uuid labels.
+    const auto json_str = path_provider.topic_manifest_path_json(test_tp_ns);
+    ASSERT_FALSE(json_str.has_value());
 }
 
 TEST(RemotePathProviderTest, TestPrefixedPartitionManifestPaths) {
