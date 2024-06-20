@@ -3113,6 +3113,11 @@ const storage::ntp_config& ntp_archiver::ntp_config() const {
     return _parent.log()->config();
 }
 
+const cloud_storage::remote_path_provider&
+ntp_archiver::remote_path_provider() const {
+    return _parent.archival_meta_stm()->path_provider();
+}
+
 void ntp_archiver::complete_transfer_leadership() {
     vlog(
       _rtclog.trace,

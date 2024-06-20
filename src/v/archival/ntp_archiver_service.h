@@ -17,6 +17,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cluster/fwd.h"
@@ -329,6 +330,7 @@ public:
     void complete_transfer_leadership();
 
     const storage::ntp_config& ntp_config() const;
+    const cloud_storage::remote_path_provider& remote_path_provider() const;
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.
