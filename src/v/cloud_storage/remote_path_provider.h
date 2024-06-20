@@ -28,6 +28,8 @@ public:
     topic_manifest_prefix(const model::topic_namespace& topic) const;
     ss::sstring topic_manifest_path(
       const model::topic_namespace& topic, model::initial_revision_id) const;
+    std::optional<ss::sstring>
+    topic_manifest_path_json(const model::topic_namespace& topic) const;
 
     ss::sstring partition_manifest_prefix(
       const model::ntp& ntp, model::initial_revision_id) const;
