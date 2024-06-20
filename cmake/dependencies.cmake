@@ -53,6 +53,11 @@ fetch_dep(avro
   TAG release-1.11.1-redpanda
   SOURCE_SUBDIR redpanda_build)
 
+fetch_dep(arrow
+  REPO https://github.com/apache/arrow
+  TAG 5ce6ff434c1e7daaa2d7f134349f3ce4c22683da
+  SOURCE_SUBDIR cpp)
+
 fetch_dep(rapidjson
   REPO https://github.com/redpanda-data/rapidjson.git
   TAG 14a5dd756e9bef26f9b53d3b4eb1b73c6a1794d5
@@ -137,6 +142,7 @@ FetchContent_MakeAvailable(
     base64
     roaring
     avro
+    arrow
     tinygo
     wasmtime
     hdrhistogram

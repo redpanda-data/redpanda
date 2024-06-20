@@ -83,6 +83,8 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+find_package(Arrow REQUIRED)
+find_package(Parquet REQUIRED)
 v_cc_library(
   NAME cluster_topic_properties
   SRCS
@@ -204,6 +206,7 @@ v_cc_library(
     plugin_backend.cc
     ../archival/archival_metadata_stm.cc
     ../archival/archival_policy.cc
+    ../archival/arrow_writer.cc
     ../archival/ntp_archiver_service.cc
     ../archival/probe.cc
     ../archival/types.cc
@@ -251,6 +254,8 @@ v_cc_library(
     v::cluster_topic_properties
     v::features
     v::version
+    Arrow::arrow_shared
+    Parquet::parquet_shared
   )
 add_subdirectory(tests)
 add_subdirectory(cloud_metadata/tests)
