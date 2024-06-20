@@ -13,7 +13,9 @@
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "model/compression.h"
@@ -37,6 +39,10 @@
 #include <system_error>
 
 using namespace cloud_storage;
+
+namespace {
+const remote_path_provider path_provider(std::nullopt);
+} // anonymous namespace
 
 // update manifest, serialize, compare jsons
 
@@ -143,13 +149,11 @@ SEASTAR_THREAD_TEST_CASE(manifest_type_topic) {
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
-    auto path = topic_manifest::get_topic_manifest_path(
-      cfg.tp_ns.ns, cfg.tp_ns.tp, manifest_format::json);
+    auto path = prefixed_topic_manifest_json_path(cfg.tp_ns);
     BOOST_REQUIRE_EQUAL(
       path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.json");
-    auto serde_path = topic_manifest::get_topic_manifest_path(
-      cfg.tp_ns.ns, cfg.tp_ns.tp, manifest_format::serde);
+    auto serde_path = prefixed_topic_manifest_bin_path(cfg.tp_ns);
     BOOST_REQUIRE_EQUAL(
       serde_path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.bin");
@@ -160,7 +164,7 @@ SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
     m.update(
        manifest_format::json, make_manifest_stream(min_topic_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "70000000/meta/test-namespace/test-topic/topic_manifest.bin");
 }
@@ -495,7 +499,8 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
     auto manifest = topic_manifest{
       random_topic_configuration, random_initial_revision_id, local_ft};
     BOOST_CHECK(manifest.get_revision() == random_initial_revision_id);
-    BOOST_CHECK(manifest.get_manifest_path()().extension() == ".bin");
+    BOOST_CHECK(
+      manifest.get_manifest_path(path_provider)().extension() == ".bin");
 
     auto serialized_manifest = manifest.serialize().get().stream;
 

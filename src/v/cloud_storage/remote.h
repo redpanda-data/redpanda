@@ -272,12 +272,8 @@ public:
     ///
     /// \param bucket is a bucket name
     /// \param manifest is a manifest to upload
+    /// \param key is the remote object name
     /// \return future that returns success code
-    ss::future<upload_result> upload_manifest(
-      const cloud_storage_clients::bucket_name& bucket,
-      const base_manifest& manifest,
-      retry_chain_node& parent);
-
     ss::future<upload_result> upload_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,

@@ -56,11 +56,7 @@ public:
     ss::future<serialized_data_stream> serialize() const override;
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
     remote_manifest_path get_manifest_path(const remote_path_provider&) const;
-
-    static remote_manifest_path
-    get_topic_manifest_path(model::ns ns, model::topic topic, manifest_format);
 
     /// Serialize manifest object in json format. only fields up to
     /// first_version are serialized
@@ -86,6 +82,10 @@ public:
         return std::tie(_topic_config, _rev)
                == std::tie(other._topic_config, other._rev);
     };
+
+    /// Name to address this manifest by. Note that the exact path is not
+    /// tracked by the manifest.
+    ss::sstring display_name() const;
 
 private:
     /// Update manifest content from json document that supposed to be generated

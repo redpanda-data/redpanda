@@ -57,9 +57,6 @@ public:
     /// \return asynchronous input_stream with the serialized json
     virtual ss::future<serialized_data_stream> serialize() const = 0;
 
-    /// Manifest object format and name in S3
-    virtual remote_manifest_path get_manifest_path() const = 0;
-
     /// Get manifest type
     virtual manifest_type get_manifest_type() const = 0;
 };

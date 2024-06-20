@@ -16,6 +16,7 @@
 #include "cloud_storage/download_exception.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
@@ -418,7 +419,8 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
       body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
     // overwrite uploaded manifest with a json version
     expectations.back() = {
-      .url = manifest.get_legacy_manifest_format_and_path().second().string(),
+      .url = prefixed_partition_manifest_json_path(
+        manifest.get_ntp(), manifest.get_revision_id()),
       .body = body};
     set_expectations_and_listen(expectations);
     BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
@@ -2284,10 +2286,10 @@ FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2357,13 +2359,13 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
         vlog(
           test_util_log.info,
           "Uploading spillover manifest at {}:\n{}",
-          spm.get_manifest_path(),
+          spm.get_manifest_path(path_provider),
           ostr.str());
 
         auto s_data = spm.serialize().get();
         auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
         add_expectations({cloud_storage_fixture::expectation{
-          .url = spm.get_manifest_path()().string(),
+          .url = spm.get_manifest_path(path_provider)().string(),
           .body = ss::sstring(buf.begin(), buf.end()),
         }});
     }
@@ -2388,10 +2390,10 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2476,7 +2478,7 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
     remove_expectations({manifest_url});

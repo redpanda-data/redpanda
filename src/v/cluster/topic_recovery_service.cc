@@ -314,7 +314,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     vlog(cst_log.info, "found {} topics to create", manifests.size());
     for (const auto& manifest : manifests) {
-        vlog(cst_log.debug, "topic manifest: {}", manifest.get_manifest_path());
+        vlog(cst_log.debug, "topic manifest: {}", manifest.display_name());
     }
     _download_counts.clear();
 
@@ -366,7 +366,7 @@ static cluster::topic_configuration make_topic_config(
         vlog(
           cst_log.warn,
           "skipping topic creation for {}, missing values in manifest",
-          tm.get_manifest_path());
+          tm.display_name());
     }
 
     cluster::topic_configuration topic_to_create_cfg(
@@ -580,7 +580,7 @@ void topic_recovery_service::populate_recovery_status() {
             vlog(
               cst_log.warn,
               "skipping {}, missing ntp config in manifest",
-              m.get_manifest_path());
+              m.display_name());
             continue;
         }
         auto topic = ntp_cfg->tp_ns.tp;

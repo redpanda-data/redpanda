@@ -174,7 +174,10 @@ anomalies_detector::check_manifest(
   const partition_manifest& manifest,
   std::optional<model::offset> scrub_from,
   retry_chain_node& rtc_node) {
-    vlog(_logger.debug, "Checking manifest {}", manifest.get_manifest_path());
+    vlog(
+      _logger.debug,
+      "Checking manifest {}",
+      manifest.get_manifest_path(_remote_path_provider));
     if (
       scrub_from
       && (manifest.get_start_offset() > *scrub_from || manifest.get_last_offset() == scrub_from)) {
@@ -185,7 +188,7 @@ anomalies_detector::check_manifest(
           "Skipping ...",
           manifest.get_start_offset(),
           manifest.get_last_offset(),
-          manifest.get_manifest_path(),
+          manifest.get_manifest_path(_remote_path_provider),
           scrub_from);
 
         co_return stop_detector::no;
@@ -211,7 +214,7 @@ anomalies_detector::check_manifest(
           manifest.get_start_offset(),
           manifest.get_last_offset(),
           manifest.size(),
-          manifest.get_manifest_path());
+          manifest.get_manifest_path(_remote_path_provider));
         co_return stop_detector::no;
     }
     std::optional<segment_meta> previous_seg_meta;
@@ -261,7 +264,7 @@ anomalies_detector::check_manifest(
     vlog(
       _logger.debug,
       "Finished checking manifest {}",
-      manifest.get_manifest_path());
+      manifest.get_manifest_path(_remote_path_provider));
     co_return stop_detector::no;
 }
 

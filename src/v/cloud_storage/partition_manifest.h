@@ -67,9 +67,6 @@ remote_segment_path generate_remote_segment_path(
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
-remote_manifest_path generate_partition_manifest_path(
-  const model::ntp&, model::initial_revision_id, manifest_format);
-
 // This structure can be impelenented
 // to allow access to private fields of the manifest.
 struct partition_manifest_accessor;
@@ -200,32 +197,11 @@ public:
         }
     }
 
-    /// Manifest object name in S3
-    std::pair<manifest_format, remote_manifest_path>
-    get_manifest_format_and_path() const;
-
-    remote_manifest_path get_manifest_path(manifest_format fmt) const {
-        switch (fmt) {
-        case manifest_format::json:
-            return get_legacy_manifest_format_and_path().second;
-        case manifest_format::serde:
-            return get_manifest_format_and_path().second;
-        }
-    }
-
     virtual remote_manifest_path
     get_manifest_path(const remote_path_provider&) const;
 
     static ss::sstring filename() { return "manifest.bin"; }
     virtual ss::sstring get_manifest_filename() const { return filename(); }
-
-    remote_manifest_path get_manifest_path() const override {
-        return get_manifest_format_and_path().second;
-    }
-
-    /// Manifest object name before feature::cloud_storage_manifest_format_v2
-    std::pair<manifest_format, remote_manifest_path>
-    get_legacy_manifest_format_and_path() const;
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -615,6 +591,7 @@ public:
       anomalies detected);
 
 private:
+    ss::sstring display_name() const;
     std::optional<kafka::offset> compute_start_kafka_offset_local() const;
 
     void set_start_offset(model::offset start_offset);

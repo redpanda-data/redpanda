@@ -1441,7 +1441,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
     cloud_storage::tx_range_manifest manifest(path, std::move(tx_range));
 
     co_return co_await _remote.upload_manifest(
-      get_bucket_name(), manifest, fib);
+      get_bucket_name(), manifest, manifest.get_manifest_path(), fib);
 }
 
 ss::future<std::optional<ntp_archiver::make_segment_index_result>>

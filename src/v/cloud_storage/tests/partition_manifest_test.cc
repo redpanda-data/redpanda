@@ -14,6 +14,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -31,6 +32,10 @@
 #include <boost/test/unit_test.hpp>
 
 using namespace cloud_storage;
+
+namespace {
+const remote_path_provider path_provider(std::nullopt);
+} // anonymous namespace
 
 static constexpr std::string_view empty_manifest_json = R"json({
     "version": 1,
@@ -503,7 +508,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing_failure_2) {
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
     partition_manifest m(manifest_ntp, model::initial_revision_id(0));
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.bin");
 }
@@ -512,7 +517,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
     partition_manifest m;
     m.update(manifest_format::json, make_manifest_stream(empty_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.bin");
 }
@@ -539,7 +544,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     m.update(
        manifest_format::json, make_manifest_stream(complete_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 5);
@@ -633,7 +638,7 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
        manifest_format::json,
        make_manifest_stream(max_segment_meta_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 1);
@@ -702,7 +707,7 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
        manifest_format::json,
        make_manifest_stream(segment_meta_gets_smaller_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 2);
@@ -752,8 +757,8 @@ SEASTAR_THREAD_TEST_CASE(test_no_closing_bracket_meta) {
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
                    "Failed to parse partition manifest "
-                   "\"b0000000/meta///-2147483648_-9223372036854775808/"
-                   "manifest.json\": Missing a comma or '}' after an object "
+                   "b0000000/meta///-2147483648_-9223372036854775808/"
+                   "manifest.json: Missing a comma or '}' after an object "
                    "member. at offset 325")
                  != std::string::npos;
       });
@@ -764,7 +769,7 @@ SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
     m.update(
        manifest_format::json, make_manifest_stream(fields_after_segments_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 1);
@@ -2013,7 +2018,7 @@ SEASTAR_THREAD_TEST_CASE(test_reset_manifest) {
     m.update(
        manifest_format::json, make_manifest_stream(complete_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 5);

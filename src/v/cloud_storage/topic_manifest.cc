@@ -14,6 +14,7 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
@@ -319,7 +320,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid compaction_strategy: "
               "{}",
-              get_manifest_path(),
+              display_name(),
               handler.compaction_strategy_sv.value()));
         }
     }
@@ -333,7 +334,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid timestamp_type "
               "value: {}",
-              get_manifest_path(),
+              display_name(),
               handler.timestamp_type_sv.value()));
         }
     }
@@ -347,7 +348,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid compression value: "
               "{}",
-              get_manifest_path(),
+              display_name(),
               handler.compression_sv.value()));
         }
     }
@@ -361,7 +362,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid "
               "cleanup_policy_bitflags value: {}",
-              get_manifest_path(),
+              display_name(),
               handler.cleanup_policy_bitflags_sv.value()));
         }
     }
@@ -376,7 +377,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid "
               "virtual_cluster_id_sv value: {}",
-              get_manifest_path(),
+              display_name(),
               handler.virtual_cluster_id_sv.value()));
         }
     }
@@ -409,7 +410,7 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
                 throw std::runtime_error(fmt_with_ctx(
                   fmt::format,
                   "Failed to parse topic manifest {}: {} at offset {}",
-                  get_manifest_path(),
+                  display_name(),
                   rapidjson::GetParseError_En(e),
                   o));
             } else {
@@ -533,27 +534,10 @@ void topic_manifest::serialize_v1_json(std::ostream& out) const {
     }
     w.EndObject();
 }
-
-remote_manifest_path topic_manifest::get_topic_manifest_path(
-  model::ns ns, model::topic topic, manifest_format format) {
-    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json or
-    // topic_manifest.bin depending on format
-    constexpr uint32_t bitmask = 0xF0000000;
-    auto path = fmt::format("{}/{}", ns(), topic());
-    uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    // use format to decide if the path is json or bin
-    return remote_manifest_path(fmt::format(
-      "{:08x}/meta/{}/topic_manifest.{}",
-      hash,
-      path,
-      format == manifest_format::json ? "json" : "bin"));
-}
-
-remote_manifest_path topic_manifest::get_manifest_path() const {
+ss::sstring topic_manifest::display_name() const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
     vassert(_topic_config, "Topic config is not set");
-    return get_topic_manifest_path(
-      _topic_config->tp_ns.ns, _topic_config->tp_ns.tp, manifest_format::serde);
+    return fmt::format("tp_ns: {}, rev: {}", _topic_config->tp_ns, _rev);
 }
 
 remote_manifest_path topic_manifest::get_manifest_path(

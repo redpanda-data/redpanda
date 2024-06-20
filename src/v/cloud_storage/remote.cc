@@ -339,14 +339,6 @@ ss::future<download_result> remote::do_download_manifest(
 ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
-  retry_chain_node& parent) {
-    auto key = manifest.get_manifest_path();
-    co_return co_await upload_manifest(bucket, manifest, key, parent);
-}
-
-ss::future<upload_result> remote::upload_manifest(
-  const cloud_storage_clients::bucket_name& bucket,
-  const base_manifest& manifest,
   const remote_manifest_path& key,
   retry_chain_node& parent) {
     auto guard = _gate.hold();
