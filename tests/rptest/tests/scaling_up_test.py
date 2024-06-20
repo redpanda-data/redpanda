@@ -576,7 +576,7 @@ class ScalingUpTest(PreallocNodesTest):
                 self.logger.info(
                     f"node: {n} total partitions size: {b/(1024*1024):02} Mb")
 
-        def verify_node_disk_usage(nodes, node_id):
+        def disk_usage_correct(nodes, node_id):
             size_per_node = self._partition_sizes(topic.name, nodes)
             print_disk_usage(size_per_node)
             replicas_per_node = self._topic_replicas_per_node()
@@ -591,12 +591,15 @@ class ScalingUpTest(PreallocNodesTest):
             self.logger.info(
                 f"node {node_id} target size: {target_size}, current size: {size_per_node[node_id]}, expected range ({min}, {max})"
             )
-            assert current_usage > min and current_usage < max, \
-                f"node {node_id} disk usage should be withing the range ({min}, {max}). Current value: {current_usage} "
+            return current_usage > min and current_usage < max
 
         first_new_id = self.redpanda.node_id(self.redpanda.nodes[4])
 
-        verify_node_disk_usage(self.redpanda.nodes[0:5], first_new_id)
+        wait_until(
+            lambda: disk_usage_correct(self.redpanda.nodes[0:5], first_new_id),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="Timeout waiting for correct disk usage to be reported")
 
         # add sixth node
         self.redpanda.start_node(self.redpanda.nodes[5])
@@ -604,7 +607,12 @@ class ScalingUpTest(PreallocNodesTest):
                                             timeout_sec=self.rebalance_timeout)
 
         next_new_id = self.redpanda.node_id(self.redpanda.nodes[5])
-        verify_node_disk_usage(self.redpanda.nodes, next_new_id)
+
+        wait_until(
+            lambda: disk_usage_correct(self.redpanda.nodes, next_new_id),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="Timeout waiting for correct disk usage to be reported")
         # verify that data can be read
         self.consumer = KgoVerifierSeqConsumer(self.test_context,
                                                self.redpanda,
