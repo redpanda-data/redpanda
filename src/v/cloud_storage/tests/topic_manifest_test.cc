@@ -14,6 +14,7 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "model/compression.h"
@@ -143,13 +144,13 @@ SEASTAR_THREAD_TEST_CASE(manifest_type_topic) {
 }
 
 SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
-    auto path = topic_manifest::get_topic_manifest_path(
-      cfg.tp_ns.ns, cfg.tp_ns.tp, manifest_format::json);
+    auto path = prefixed_topic_manifest_json_path(cfg.tp_ns);
+    ;
     BOOST_REQUIRE_EQUAL(
       path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.json");
-    auto serde_path = topic_manifest::get_topic_manifest_path(
-      cfg.tp_ns.ns, cfg.tp_ns.tp, manifest_format::serde);
+    auto serde_path = prefixed_topic_manifest_bin_path(cfg.tp_ns);
+    ;
     BOOST_REQUIRE_EQUAL(
       serde_path,
       "50000000/meta/cfg-test-namespace/cfg-test-topic/topic_manifest.bin");

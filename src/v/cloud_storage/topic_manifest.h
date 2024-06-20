@@ -57,9 +57,6 @@ public:
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
 
-    static remote_manifest_path
-    get_topic_manifest_path(model::ns ns, model::topic topic, manifest_format);
-
     /// Serialize manifest object in json format. only fields up to
     /// first_version are serialized
     ///
