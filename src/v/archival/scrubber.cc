@@ -30,7 +30,7 @@ scrubber::scrubber(
   , _archiver(archiver)
   , _remote(remote)
   , _feature_table(feature_table)
-  , _detector{_archiver.get_bucket_name(), _archiver.get_ntp(), _archiver.get_revision_id(), _remote, _logger, _as}
+  , _detector{_archiver.get_bucket_name(), _archiver.get_ntp(), _archiver.get_revision_id(), _archiver.remote_path_provider(),  _remote, _logger, _as}
   , _scheduler(
       [this] {
           const auto at = _archiver.manifest().last_partition_scrub();

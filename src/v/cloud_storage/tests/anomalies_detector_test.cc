@@ -13,6 +13,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "http/tests/http_imposter.h"
@@ -41,6 +42,8 @@ bool operator==(const anomalies& lhs, const anomalies& rhs) {
 } // namespace cloud_storage
 
 namespace {
+
+cloud_storage::remote_path_provider path_provider(std::nullopt);
 
 ss::logger test_logger{"anomaly_detection_test"};
 
@@ -278,6 +281,7 @@ public:
           cloud_storage_clients::bucket_name{"test-bucket"},
           _stm_manifest.get_ntp(),
           _stm_manifest.get_revision_id(),
+          path_provider,
           _remote.local(),
           _rtc_logger,
           _as);

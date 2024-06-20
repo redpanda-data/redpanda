@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -40,6 +41,7 @@ public:
       cloud_storage_clients::bucket_name bucket,
       model::ntp ntp,
       model::initial_revision_id initial_rev,
+      const remote_path_provider&,
       remote& remote,
       retry_chain_logger& logger,
       ss::abort_source& as);
@@ -102,6 +104,7 @@ private:
     cloud_storage_clients::bucket_name _bucket;
     model::ntp _ntp;
     model::initial_revision_id _initial_rev;
+    const remote_path_provider& _remote_path_provider;
 
     remote& _remote;
     retry_chain_logger& _logger;
