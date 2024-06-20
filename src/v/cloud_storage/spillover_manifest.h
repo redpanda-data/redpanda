@@ -73,7 +73,7 @@ public:
           c.base_ts.value(),
           c.last_ts.value());
     }
-    remote_manifest_path get_manifest_path() const override {
+    remote_manifest_path get_manifest_path() const {
         const auto ls = last_segment();
         vassert(ls.has_value(), "Spillover manifest can't be empty");
         const auto fs = *begin();

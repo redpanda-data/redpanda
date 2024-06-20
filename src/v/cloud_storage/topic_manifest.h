@@ -56,7 +56,7 @@ public:
     ss::future<serialized_data_stream> serialize() const override;
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
+    remote_manifest_path get_manifest_path() const;
     remote_manifest_path get_manifest_path(const remote_path_provider&) const;
 
     /// Serialize manifest object in json format. only fields up to
