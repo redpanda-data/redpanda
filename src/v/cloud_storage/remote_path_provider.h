@@ -29,6 +29,8 @@ public:
     ss::sstring topic_manifest_path(
       const model::topic_namespace& topic, model::initial_revision_id) const;
 
+    ss::sstring partition_manifest_prefix(
+      const model::ntp& ntp, model::initial_revision_id) const;
     ss::sstring
     partition_manifest_path(const partition_manifest& manifest) const;
     ss::sstring partition_manifest_path(

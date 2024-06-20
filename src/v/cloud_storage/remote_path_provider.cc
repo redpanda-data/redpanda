@@ -63,6 +63,14 @@ ss::sstring remote_path_provider::partition_manifest_path(
       manifest.get_ntp(), manifest.get_revision_id());
 }
 
+ss::sstring remote_path_provider::partition_manifest_prefix(
+  const model::ntp& ntp, model::initial_revision_id rev) const {
+    if (label_.has_value()) {
+        return labeled_partition_manifest_prefix(*label_, ntp, rev);
+    }
+    return prefixed_partition_manifest_prefix(ntp, rev);
+}
+
 ss::sstring remote_path_provider::partition_manifest_path(
   const model::ntp& ntp, model::initial_revision_id rev) const {
     if (label_.has_value()) {
