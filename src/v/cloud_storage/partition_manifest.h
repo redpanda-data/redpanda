@@ -210,15 +210,6 @@ public:
     std::pair<manifest_format, remote_manifest_path>
     get_manifest_format_and_path() const;
 
-    remote_manifest_path get_manifest_path(manifest_format fmt) const {
-        switch (fmt) {
-        case manifest_format::json:
-            return get_legacy_manifest_format_and_path().second;
-        case manifest_format::serde:
-            return get_manifest_format_and_path().second;
-        }
-    }
-
     virtual ss::sstring get_manifest_filename() const { return "manifest.bin"; }
 
     remote_manifest_path get_manifest_path() const override {

@@ -12,6 +12,7 @@
 #include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
@@ -368,9 +369,9 @@ public:
 private:
     void remove_json_stm_manifest(
       const cloud_storage::partition_manifest& manifest) {
-        auto path = manifest.get_manifest_path(
-          cloud_storage::manifest_format::json);
-        remove_object(ssx::sformat("/{}", path().string()));
+        auto path = cloud_storage::prefixed_partition_manifest_json_path(
+          manifest.get_ntp(), manifest.get_revision_id());
+        remove_object(ssx::sformat("/{}", path));
     }
 
     void remove_object(ss::sstring full_path) {
