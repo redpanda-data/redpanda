@@ -145,10 +145,12 @@ def redpanda_cc_btest_no_seastar(
         name,
         timeout,
         srcs = [],
+        defines = [],
         deps = []):
     native.cc_test(
         name = name,
         timeout = timeout,
         srcs = srcs,
+        defines = defines,
         deps = ["@boost//:test.so"] + deps,
     )
