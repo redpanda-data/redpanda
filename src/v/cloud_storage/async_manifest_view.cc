@@ -16,6 +16,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
@@ -391,8 +392,10 @@ async_manifest_view::async_manifest_view(
   ss::sharded<remote>& remote,
   ss::sharded<cache>& cache,
   const partition_manifest& stm_manifest,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  const remote_path_provider& path_provider)
   : _bucket(bucket)
+  , _remote_path_provider(path_provider)
   , _remote(remote)
   , _cache(cache)
   , _ts_probe(remote.local().materialized().get_read_path_probe())

@@ -422,7 +422,8 @@ ss::future<> partition::start(state_machine_registry& stm_registry) {
             _cloud_storage_api,
             _cloud_storage_cache,
             _archival_meta_stm->manifest(),
-            cloud_storage_clients::bucket_name{*bucket});
+            cloud_storage_clients::bucket_name{*bucket},
+            _archival_meta_stm->path_provider());
 
         _cloud_storage_partition
           = ss::make_shared<cloud_storage::remote_partition>(

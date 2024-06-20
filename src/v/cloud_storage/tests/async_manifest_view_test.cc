@@ -43,6 +43,7 @@ using eof = async_manifest_view_cursor::eof;
 
 static ss::logger test_log("async_manifest_view_log");
 static const model::initial_revision_id manifest_rev(111);
+static const remote_path_provider path_provider(std::nullopt);
 
 class set_config_mixin {
 public:
@@ -71,7 +72,7 @@ public:
       , rtc(as)
       , ctxlog(test_log, rtc)
       , probe(manifest_ntp)
-      , view(api, cache, stm_manifest, bucket) {
+      , view(api, cache, stm_manifest, bucket, path_provider) {
         stm_manifest.set_archive_start_offset(
           model::offset{0}, model::offset_delta{0});
         stm_manifest.set_archive_clean_offset(model::offset{0}, 0);

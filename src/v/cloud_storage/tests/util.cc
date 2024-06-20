@@ -25,6 +25,8 @@
 
 namespace cloud_storage {
 
+static const remote_path_provider path_provider(std::nullopt);
+
 segment_layout
 generate_segment_layout(int num_segments, int seed, bool exclude_tx_fence) {
     static constexpr size_t max_segment_size = 20;
@@ -657,7 +659,11 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
       imposter.api.local(), imposter.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
@@ -741,7 +747,11 @@ std::vector<model::record_batch_header> scan_remote_partition(
       imposter.api.local(), imposter.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
     auto manifest_view_stop = ss::defer(
       [&manifest_view] { manifest_view->stop().get(); });
     manifest_view->start().get();
@@ -798,7 +808,11 @@ scan_result scan_remote_partition(
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
     auto manifest_view_stop = ss::defer(
       [&manifest_view] { manifest_view->stop().get(); });
 
@@ -857,7 +871,11 @@ scan_remote_partition_incrementally_with_closest_lso(
     partition_probe probe(manifest.get_ntp());
 
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
 
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
