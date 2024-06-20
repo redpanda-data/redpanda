@@ -598,6 +598,7 @@ public:
       anomalies detected);
 
 private:
+    ss::sstring display_name() const;
     std::optional<kafka::offset> compute_start_kafka_offset_local() const;
 
     void set_start_offset(model::offset start_offset);
