@@ -66,10 +66,9 @@ send_requests(kafka::quota_manager& qm, size_t count, bool use_unique) {
 
 ss::future<> test_quota_manager(size_t count, bool use_unique) {
     ss::sharded<cluster::client_quota::store> quota_store;
-    kafka::quota_manager::client_quotas_t buckets_map;
     ss::sharded<kafka::quota_manager> sqm;
     co_await quota_store.start();
-    co_await sqm.start(std::ref(buckets_map), std::ref(quota_store));
+    co_await sqm.start(std::ref(quota_store));
     co_await sqm.invoke_on_all(&kafka::quota_manager::start);
 
     perf_tests::start_measuring_time();
@@ -151,10 +150,9 @@ const static size_t n_repeats = 100;
 
 future<size_t> run_latency_test(latency_test_case tc) {
     ss::sharded<cluster::client_quota::store> quota_store;
-    kafka::quota_manager::client_quotas_t buckets_map;
     ss::sharded<kafka::quota_manager> sqm;
     co_await quota_store.start();
-    co_await sqm.start(std::ref(buckets_map), std::ref(quota_store));
+    co_await sqm.start(std::ref(quota_store));
     co_await sqm.invoke_on_all(&kafka::quota_manager::start);
 
     auto shard = tc.on_shard_0 ? 0 : 1;
