@@ -78,58 +78,59 @@ ss::future<> test_quota_manager(size_t count, bool use_unique) {
     co_await quota_store.stop();
 }
 
-struct test_case {
+struct throughput_test_case {
     std::optional<uint32_t> fetch_tp;
     bool use_unique;
 };
 
-future<> run_tc(test_case tc) {
+future<size_t> run_tc(throughput_test_case tc) {
     co_await ss::smp::invoke_on_all([fetch_tp{tc.fetch_tp}]() {
         config::shard_local_cfg().target_fetch_quota_byte_rate.set_value(
           fetch_tp);
     });
     co_await test_quota_manager(total_requests / ss::smp::count, tc.use_unique);
+    co_return total_requests;
 }
 
-struct quota_group {};
+struct throughput_group {};
 
-PERF_TEST_C(quota_group, test_quota_manager_on_unlimited_shared) {
-    co_await run_tc(test_case{
+PERF_TEST_CN(throughput_group, test_quota_manager_on_unlimited_shared) {
+    return run_tc(throughput_test_case{
       .fetch_tp = std::numeric_limits<uint32_t>::max(),
       .use_unique = false,
     });
 }
 
-PERF_TEST_C(quota_group, test_quota_manager_on_unlimited_unique) {
-    co_await run_tc(test_case{
+PERF_TEST_CN(throughput_group, test_quota_manager_on_unlimited_unique) {
+    return run_tc(throughput_test_case{
       .fetch_tp = std::numeric_limits<uint32_t>::max(),
       .use_unique = true,
     });
 }
 
-PERF_TEST_C(quota_group, test_quota_manager_on_limited_shared) {
-    co_await run_tc(test_case{
+PERF_TEST_CN(throughput_group, test_quota_manager_on_limited_shared) {
+    return run_tc(throughput_test_case{
       .fetch_tp = 1000,
       .use_unique = false,
     });
 }
 
-PERF_TEST_C(quota_group, test_quota_manager_on_limited_unique) {
-    co_await run_tc(test_case{
+PERF_TEST_CN(throughput_group, test_quota_manager_on_limited_unique) {
+    return run_tc(throughput_test_case{
       .fetch_tp = 1000,
       .use_unique = true,
     });
 }
 
-PERF_TEST_C(quota_group, test_quota_manager_off_shared) {
-    co_await run_tc(test_case{
+PERF_TEST_CN(throughput_group, test_quota_manager_off_shared) {
+    return run_tc(throughput_test_case{
       .fetch_tp = std::nullopt,
       .use_unique = false,
     });
 }
 
-PERF_TEST_C(quota_group, test_quota_manager_off_unique) {
-    co_await run_tc(test_case{
+PERF_TEST_CN(throughput_group, test_quota_manager_off_unique) {
+    return run_tc(throughput_test_case{
       .fetch_tp = std::nullopt,
       .use_unique = true,
     });
