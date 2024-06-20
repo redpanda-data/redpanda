@@ -2298,6 +2298,15 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
       || in_state(group_state::preparing_rebalance)) {
         auto check_res = validate_expected_group(r);
         if (check_res != error_code::none) {
+            vlog(
+              _ctx_txlog.warn,
+              "fenced producer {} with out of date group metadata "
+              "{{generation: {}, group_instance_id: {}, member_id: {}}} - {}",
+              r.data.producer_id,
+              r.data.generation_id,
+              r.data.group_instance_id,
+              r.data.member_id,
+              check_res);
             co_return txn_offset_commit_response(r, check_res);
         }
 
