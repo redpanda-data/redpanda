@@ -36,6 +36,10 @@ public:
     std::optional<ss::sstring> partition_manifest_path_json(
       const model::ntp& ntp, model::initial_revision_id) const;
 
+    ss::sstring spillover_manifest_path(
+      const partition_manifest& stm_manifest,
+      const spillover_manifest_path_components& c) const;
+
     ss::sstring segment_path(
       const partition_manifest& manifest, const segment_meta& segment) const;
     ss::sstring segment_path(

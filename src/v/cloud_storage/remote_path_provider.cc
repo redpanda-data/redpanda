@@ -35,6 +35,20 @@ ss::sstring remote_path_provider::topic_manifest_path(
     return prefixed_topic_manifest_bin_path(topic);
 }
 
+ss::sstring remote_path_provider::spillover_manifest_path(
+  const partition_manifest& stm_manifest,
+  const spillover_manifest_path_components& c) const {
+    return fmt::format(
+      "{}.{}.{}.{}.{}.{}.{}",
+      partition_manifest_path(stm_manifest),
+      c.base(),
+      c.last(),
+      c.base_kafka(),
+      c.next_kafka(),
+      c.base_ts.value(),
+      c.last_ts.value());
+}
+
 ss::sstring remote_path_provider::partition_manifest_path(
   const partition_manifest& manifest) const {
     return partition_manifest_path(
