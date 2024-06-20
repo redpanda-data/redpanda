@@ -555,8 +555,4 @@ remote_manifest_path topic_manifest::get_manifest_path() const {
       _topic_config->tp_ns.ns, _topic_config->tp_ns.tp, manifest_format::serde);
 }
 
-std::pair<manifest_format, remote_manifest_path>
-topic_manifest::get_manifest_format_and_path() const {
-    return std::make_pair(manifest_format::serde, get_manifest_path());
-}
 } // namespace cloud_storage

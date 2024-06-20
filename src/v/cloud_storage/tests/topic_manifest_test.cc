@@ -496,8 +496,6 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
       random_topic_configuration, random_initial_revision_id, local_ft};
     BOOST_CHECK(manifest.get_revision() == random_initial_revision_id);
     BOOST_CHECK(manifest.get_manifest_path()().extension() == ".bin");
-    BOOST_CHECK(
-      manifest.get_manifest_format_and_path().first == manifest_format::serde);
 
     auto serialized_manifest = manifest.serialize().get().stream;
 
