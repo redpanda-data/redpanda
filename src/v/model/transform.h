@@ -142,7 +142,7 @@ struct transform_from_end
 struct transform_offset_options
   : serde::envelope<
       transform_offset_options,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     // Signifies that a transform should start at the latest offset available.
     //
@@ -154,18 +154,33 @@ struct transform_offset_options
           envelope<latest_offset, serde::version<0>, serde::compat_version<0>> {
         bool operator==(const latest_offset&) const = default;
     };
-    // A transform can either start at the latest offset or at a timestamp.
+    // A transform can either start at the latest offset, at a timestamp, or at
+    // some delta from the start or end of an input partition.
     //
     // When a timestamp is used, a timequery is used to resolve the offset for
     // each partition.
-    serde::variant<latest_offset, model::timestamp> position;
+    //
+    // When transform_from_start is used, the offset_delta therein is added to
+    // the start offset for each partition.
+    //
+    // When transform_from_end is used, the offset_denta therein is subtracted
+    // from the latest offset of each partition.
+    serde::variant<
+      latest_offset,
+      model::timestamp,
+      model::transform_from_start,
+      model::transform_from_end>
+      position;
+
+    bool is_legacy_compat() const;
 
     bool operator==(const transform_offset_options&) const = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const transform_offset_options&);
 
-    auto serde_fields() { return std::tie(position); }
+    void serde_read(iobuf_parser& in, const serde::header& h);
+    void serde_write(iobuf& out) const;
 };
 
 /**
@@ -203,6 +218,8 @@ struct transform_metadata
       = default;
 
     friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
+
+    void serde_write(iobuf& out) const;
 
     auto serde_fields() {
         return std::tie(

@@ -203,6 +203,7 @@ processor::load_latest_committed() {
     co_await _offset_tracker->wait_for_previous_flushes(&_as);
     auto latest_committed = co_await _offset_tracker->load_committed_offsets();
     auto latest = _source->latest_offset();
+    auto start = _source->start_offset();
     std::optional<kafka::offset> initial_offset;
     for (const auto& [_, output] : _outputs) {
         auto it = latest_committed.find(output.index);
@@ -231,6 +232,19 @@ processor::load_latest_committed() {
                               o.has_value() ? kafka::prev_offset(o.value())
                                             : latest);
                         });
+                  },
+                  [this, &latest, &start](model::transform_from_start off) {
+                      vlog(_logger.debug, "starting at offset: {}", off);
+                      auto actual_offset = std::min(start + off.delta, latest);
+                      // We want to *start at* this offset, so record that we're
+                      // going to commit progress at the offset before, so we
+                      // start inclusive of this offset.
+                      return ssx::now(kafka::prev_offset(actual_offset));
+                  },
+                  [this, &latest, &start](model::transform_from_end off) {
+                      vlog(_logger.debug, "starting at offset: {}", off);
+                      auto actual_offset = std::max(latest - off.delta, start);
+                      return ssx::now(actual_offset);
                   });
                 vlog(
                   _logger.debug, "resolved start offset: {}", *initial_offset);
