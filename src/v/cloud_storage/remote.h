@@ -382,28 +382,6 @@ public:
       const remote_segment_path& path,
       retry_chain_node& parent);
 
-    struct partition_manifest_existence {
-        download_result download_result;
-        manifest_format manifest_format;
-    };
-
-    /// \brief Specialization of object_exists for partition_manifest.
-    /// Checks the existence of either serde or json format.
-    /// This a chained operation, possible results are
-    /// <success, manifest_format::serde>, <success, manifest_format::json>,
-    /// <notfound/failed/timedout, [don't care]> the serde format is checked
-    /// first, if found the function will not check the existence of the json
-    /// format.
-    /// \param ntp ntp to query.
-    /// \param rev_id initial revision id of the remote partition.
-    /// \return partition_manifest_exists_result that
-    /// contains the result of the download and the format of the manifest.
-    ss::future<partition_manifest_existence> partition_manifest_exists(
-      const cloud_storage_clients::bucket_name& bucket,
-      model::ntp npt,
-      model::initial_revision_id rev_id,
-      retry_chain_node& parent);
-
     /// \brief Delete object from S3
     ///
     /// The method deletes the object. It can retry after some errors.

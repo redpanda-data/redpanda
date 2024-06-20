@@ -979,40 +979,6 @@ ss::future<download_result> remote::segment_exists(
       existence_check_type::segment);
 }
 
-ss::future<remote::partition_manifest_existence>
-remote::partition_manifest_exists(
-  const cloud_storage_clients::bucket_name& bucket,
-  model::ntp ntp,
-  model::initial_revision_id rev_id,
-  retry_chain_node& parent) {
-    // first check serde and exit early if it exists
-    auto serde_res = co_await object_exists(
-      bucket,
-      cloud_storage_clients::object_key{generate_partition_manifest_path(
-        ntp, rev_id, manifest_format::serde)()},
-      parent,
-      existence_check_type::manifest);
-
-    switch (serde_res) {
-    case download_result::success:
-        co_return partition_manifest_existence{
-          download_result::success, manifest_format::serde};
-    case download_result::notfound: {
-        auto json_res = co_await object_exists(
-          bucket,
-          cloud_storage_clients::object_key{generate_partition_manifest_path(
-            ntp, rev_id, manifest_format::json)()},
-          parent,
-          existence_check_type::manifest);
-        co_return partition_manifest_existence{json_res, manifest_format::json};
-    }
-    case download_result::failed:
-    case download_result::timedout:
-        // do not try to check for json in case of failures
-        co_return partition_manifest_existence{serde_res, {}};
-    }
-}
-
 ss::future<upload_result> remote::delete_object(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& path,
