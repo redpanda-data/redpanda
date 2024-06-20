@@ -78,7 +78,10 @@ struct disk
 
 // Helps to identify transactional stms in the registered list of stms.
 // Avoids an ugly dynamic cast to the base class.
-enum class stm_type : int8_t { transactional = 0, non_transactional = 1 };
+enum class stm_type : int8_t {
+    user_topic_transactional = 0,
+    non_transactional = 1,
+};
 
 class snapshotable_stm {
 public:
@@ -139,7 +142,7 @@ public:
 class stm_manager {
 public:
     void add_stm(ss::shared_ptr<snapshotable_stm> stm) {
-        if (stm->type() == stm_type::transactional) {
+        if (stm->type() == stm_type::user_topic_transactional) {
             vassert(!_tx_stm, "Multiple transactional stms not allowed.");
             _tx_stm = stm;
         }
