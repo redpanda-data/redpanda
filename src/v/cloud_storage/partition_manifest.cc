@@ -15,8 +15,10 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_path_utils.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
@@ -280,6 +282,11 @@ remote_manifest_path generate_partition_manifest_path(
               return "bin";
           }
       }()));
+}
+
+remote_manifest_path partition_manifest::get_manifest_path(
+  const remote_path_provider& path_provider) const {
+    return remote_manifest_path{path_provider.partition_manifest_path(*this)};
 }
 
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
