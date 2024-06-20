@@ -209,10 +209,6 @@ public:
 
     virtual ss::sstring get_manifest_filename() const { return "manifest.bin"; }
 
-    remote_manifest_path get_manifest_path() const {
-        return generate_partition_manifest_path(
-          _ntp, _rev, manifest_format::serde);
-    }
     remote_manifest_path get_manifest_path(const remote_path_provider&) const;
 
     /// Get NTP
