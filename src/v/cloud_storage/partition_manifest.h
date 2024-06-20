@@ -216,10 +216,6 @@ public:
         return get_manifest_format_and_path().second;
     }
 
-    /// Manifest object name before feature::cloud_storage_manifest_format_v2
-    std::pair<manifest_format, remote_manifest_path>
-    get_legacy_manifest_format_and_path() const;
-
     /// Get NTP
     const model::ntp& get_ntp() const;
 

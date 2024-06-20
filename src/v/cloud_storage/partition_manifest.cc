@@ -16,6 +16,7 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
@@ -288,12 +289,6 @@ partition_manifest::get_manifest_format_and_path() const {
       generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
 }
 
-std::pair<manifest_format, remote_manifest_path>
-partition_manifest::get_legacy_manifest_format_and_path() const {
-    return {
-      manifest_format::json,
-      generate_partition_manifest_path(_ntp, _rev, manifest_format::json)};
-}
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
 model::offset partition_manifest::get_last_offset() const {
@@ -2017,7 +2012,7 @@ void partition_manifest::update_with_json(iobuf buf) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Failed to parse partition manifest {}: {} at offset {}",
-          get_legacy_manifest_format_and_path().second,
+          prefixed_partition_manifest_json_path(get_ntp(), get_revision_id()),
           rapidjson::GetParseError_En(e),
           o));
     }

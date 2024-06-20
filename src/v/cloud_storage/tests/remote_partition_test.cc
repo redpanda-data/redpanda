@@ -16,6 +16,7 @@
 #include "cloud_storage/download_exception.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
@@ -418,7 +419,8 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
       body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
     // overwrite uploaded manifest with a json version
     expectations.back() = {
-      .url = manifest.get_legacy_manifest_format_and_path().second().string(),
+      .url = prefixed_partition_manifest_json_path(
+        manifest.get_ntp(), manifest.get_revision_id()),
       .body = body};
     set_expectations_and_listen(expectations);
     BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
