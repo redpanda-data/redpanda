@@ -163,7 +163,7 @@ public:
         in_stream.close().get();
         out_stream.close().get();
         ss::sstring body = linearize_iobuf(std::move(tmp_buf));
-        auto path = pm.get_manifest_path();
+        auto path = pm.get_manifest_path(path_provider);
         _expectations.push_back({
           .url = path().string(),
           .body = body,

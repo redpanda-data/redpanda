@@ -441,13 +441,14 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         return ss::sstring(buf.begin(), buf.end());
     };
     results.push_back(cloud_storage_fixture::expectation{
-      .url = m.get_manifest_path()().string(), .body = serialized()});
+      .url = m.get_manifest_path(path_provider)().string(),
+      .body = serialized()});
     std::stringstream ostr;
     m.serialize_json(ostr);
     vlog(
       test_util_log.info,
       "Uploaded manifest at {}:\n{}",
-      m.get_manifest_path(),
+      m.get_manifest_path(path_provider),
       ostr.str());
     return results;
 }
@@ -502,14 +503,15 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         return ss::sstring(buf.begin(), buf.end());
     };
     results.push_back(cloud_storage_fixture::expectation{
-      .url = m.get_manifest_path()().string(), .body = serialized()});
+      .url = m.get_manifest_path(path_provider)().string(),
+      .body = serialized()});
     std::ostringstream ostr;
     m.serialize_json(ostr);
 
     vlog(
       test_util_log.info,
       "Uploaded manifest at {}:\n{}",
-      m.get_manifest_path(),
+      m.get_manifest_path(path_provider),
       ostr.str());
     return results;
 }
@@ -574,7 +576,7 @@ std::vector<in_memory_segment> replace_segments(
     fixture.remove_expectations(segments_to_remove);
 
     // remove manifest from the list
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
 
     auto expectations = make_imposter_expectations(
       manifest, segments, false, base_delta);

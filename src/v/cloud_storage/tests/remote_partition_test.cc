@@ -2286,10 +2286,10 @@ FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2390,10 +2390,10 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2478,7 +2478,7 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
     remove_expectations({manifest_url});

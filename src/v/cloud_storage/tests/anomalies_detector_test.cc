@@ -362,7 +362,7 @@ public:
     }
 
     void remove_manifest(const cloud_storage::partition_manifest& manifest) {
-        auto path = manifest.get_manifest_path();
+        auto path = manifest.get_manifest_path(path_provider);
         remove_object(ssx::sformat("/{}", path().string()));
     }
 
@@ -438,7 +438,7 @@ private:
 
     void set_expectations_for_manifest(
       const cloud_storage::partition_manifest& manifest) {
-        const auto path = manifest.get_manifest_path()().string();
+        const auto path = manifest.get_manifest_path(path_provider)().string();
         const auto reply_body = iobuf_to_string(manifest.to_iobuf());
 
         when()

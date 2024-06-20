@@ -120,7 +120,7 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
           cst_log.debug,
           "topic recovery service is active, uploading result: {} for {}",
           result.logs_recovered,
-          result.manifest.get_manifest_path());
+          result.manifest.get_manifest_path(path_provider));
         co_await cloud_storage::place_download_result(
           _remote.local(), _bucket, ntp_cfg, result.logs_recovered, fib);
     }
@@ -611,7 +611,7 @@ partition_downloader::find_recovery_material() {
     vlog(
       _ctxlog.info,
       "Downloading partition manifest {}",
-      tmp.get_manifest_path());
+      tmp.get_manifest_path(_remote_path_provider));
     cloud_storage::partition_manifest_downloader dl(
       _bucket,
       _remote_path_provider,
