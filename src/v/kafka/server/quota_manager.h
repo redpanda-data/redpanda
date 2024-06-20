@@ -128,7 +128,8 @@ private:
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
     void gc();
-    ss::future<> do_gc(clock::time_point expire_threshold);
+    ss::future<> do_local_gc(clock::time_point expire_threshold);
+    ss::future<> do_global_gc();
 
     ss::future<clock::duration> maybe_add_and_retrieve_quota(
       tracker_key quota_id,

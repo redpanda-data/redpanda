@@ -200,6 +200,8 @@ ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
               return me.add_quota_id(std::move(qid), now);
           });
 
+        vlog(
+          client_quota_log.trace, "Inserting new key into local map: {}", qid);
         it = _local_map.emplace(qid, std::move(new_q)).first;
     } else {
         // bump to prevent gc
@@ -223,6 +225,8 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
     if (existing_quota != _global_map->end()) {
         co_return existing_quota->second;
     }
+
+    vlog(client_quota_log.trace, "Inserting new key into global map: {}", qid);
 
     auto limits = _translator.find_quota_value(qid);
     auto replenish_threshold = static_cast<uint64_t>(
@@ -512,23 +516,21 @@ quota_manager::get_global_map_for_testing() const {
     return _global_map;
 }
 
-// TODO: reimplement gc()
-void quota_manager::gc() {}
-ss::future<> quota_manager::do_gc(clock::time_point) { co_return; }
-
-/*
-
 // erase inactive tracked quotas. windows are considered inactive if
 // they have not received any updates in ten window's worth of time.
 void quota_manager::gc() {
     vassert(
-      ss::this_shard_id() == _client_quotas.shard_id(),
+      ss::this_shard_id() == quotas_shard,
       "gc should only be performed on the owner shard");
     auto full_window = _default_num_windows() * _default_window_width();
     auto expire_threshold = clock::now() - 10 * full_window;
     ssx::background
       = ssx::spawn_with_gate_then(_gate, [this, expire_threshold]() {
-            return do_gc(expire_threshold);
+            return container()
+              .invoke_on_all([expire_threshold](quota_manager& qm) {
+                  return qm.do_local_gc(expire_threshold);
+              })
+              .then([this]() { return do_global_gc(); });
         }).handle_exception([](const std::exception_ptr& e) {
             vlog(klog.warn, "Error garbage collecting quotas - {}", e);
         });
@@ -560,60 +562,44 @@ ItR set_intersection(It1 first1, It1 last1, It2 first2, It2 last2, ItR result) {
 
 } // namespace
 
-ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
+ss::future<> quota_manager::do_global_gc() {
     vassert(
-      ss::this_shard_id() == _client_quotas.shard_id(),
-      "do_gc() should only be called on the owner shard");
+      ss::this_shard_id() == quotas_shard,
+      "do_global_gc() should only be called on the owner shard");
 
-    using key_set = chunked_vector<tracker_key>;
+    // Hold to lock to ensure there are no updates to the map while iterating
+    auto lock = co_await _global_map_mutex->get_units();
 
-    auto mapper = [expire_threshold](const quota_manager& qm) -> key_set {
-        auto res = key_set{};
-        auto map_shared_ptr = qm._client_quotas.local().get();
-        for (const auto& kv : *map_shared_ptr) {
-            auto last_seen_tp = kv.second->last_seen_ms.local();
-            if (last_seen_tp < expire_threshold) {
-                res.push_back(kv.first);
-            }
+    for (auto it = _global_map->begin(); it != _global_map->end();) {
+        auto& [key, value] = *it;
+        if (value.unique()) {
+            // The pointer in the global map is effectively a weak pointer in
+            // that we want to destroy the quota when only the global map holds
+            // a reference to it. The reason why we have a std::shared_ptr<>
+            // instead of a std::weak_ptr<> in the global map is to ensure that
+            // deallocation happens on shard 0 (here in do_global_gc).
+            vlog(client_quota_log.trace, "Global GC expiring key: {}", key);
+            it = _global_map->erase(it);
+        } else {
+            ++it;
         }
-        // Note: need to pre-sort the vector for the std::set_intersection
-        // in the reduce step
-        std::sort(res.begin(), res.end());
-        return res;
-    };
 
-    auto reducer = [](key_set acc, const key_set& next) -> key_set {
-        // In-place set intersection assumes that the inputs are sorted and
-        // guarantees that the output is also sorted
-        auto it = set_intersection(
-          acc.begin(), acc.end(), next.begin(), next.end(), acc.begin());
-        acc.erase_to_end(it);
-        return acc;
-    };
-
-    auto expired_keys = co_await container().map_reduce0(
-      mapper, key_set{}, reducer);
-
-    if (expired_keys.empty()) {
-        // Nothing to gc, so we're done
-        co_return;
+        co_await ss::coroutine::maybe_yield();
     }
-
-    // Note: it is possible that we remove client ids here that we have not
-    // seen for a long time before the map_reduce step, but that we see
-    // again between the map_reduce step and this map update. This race
-    // between the two steps can cause recently seen client ids to be
-    // deleted. That's acceptable because this should be rare and the client
-    // will be tracked correctly again from when we next see it.
-    co_await _client_quotas.update(
-      [expired_keys{std::move(expired_keys)}](client_quotas_map_t new_map) {
-          for (auto& k : expired_keys) {
-              new_map.erase(k);
-          }
-          return new_map;
-      });
 }
 
-*/
+ss::future<> quota_manager::do_local_gc(clock::time_point expire_threshold) {
+    for (auto it = _local_map.begin(); it != _local_map.end();) {
+        auto& [key, value] = *it;
+        if (value->last_seen_ms.local() < expire_threshold) {
+            vlog(client_quota_log.trace, "Local GC expiring key: {}", key);
+            it = _local_map.erase(it);
+        } else {
+            ++it;
+        }
+
+        co_await ss::coroutine::maybe_yield();
+    }
+}
 
 } // namespace kafka
