@@ -16,7 +16,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:fragmented_vector",
-        "//src/v/random",
+        "//src/v/random:generators",
         "//src/v/utils:tristate",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:node_hash_map",

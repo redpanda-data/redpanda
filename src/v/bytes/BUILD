@@ -62,7 +62,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bytes",
-        "//src/v/random",
+        "//src/v/random:generators",
     ],
 )
 
@@ -152,7 +152,7 @@ redpanda_cc_btest(
         ":bytes",
         ":hash",
         ":iostream",
-        "//src/v/random",
+        "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
     ],
 )

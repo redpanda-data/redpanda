@@ -88,7 +88,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":fragmented_vector",
-        "//src/v/random",
+        "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/test_utils:gtest",
     ],
@@ -103,7 +103,7 @@ redpanda_cc_gtest(
     deps = [
         ":contiguous_range_map",
         ":zip",
-        "//src/v/random",
+        "//src/v/random:generators",
         "//src/v/test_utils:gtest",
     ],
 )
@@ -116,7 +116,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":interval_set",
-        "//src/v/random",
+        "//src/v/random:generators",
         "//src/v/test_utils:gtest",
     ],
 )
@@ -143,7 +143,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/random",
+        "//src/v/random:generators",
         "@seastar//:benchmark",
     ],
 )
