@@ -1095,7 +1095,10 @@ TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
       subscription2.get().type == api_activity_type::manifest_download);
 
     auto upl_res
-      = remote.local().upload_manifest(bucket_name, actual, root_rtc).get();
+      = remote.local()
+          .upload_manifest(
+            bucket_name, actual, json_manifest_format_path.second, root_rtc)
+          .get();
     ASSERT_TRUE(upl_res == upload_result::success);
     ASSERT_TRUE(subscription1.available());
     ASSERT_TRUE(subscription1.get().type == api_activity_type::manifest_upload);
