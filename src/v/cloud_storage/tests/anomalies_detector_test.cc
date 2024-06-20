@@ -430,8 +430,8 @@ private:
               .last_ts = iter->max_timestamp,
             };
 
-            auto spill_path = cloud_storage::generate_spillover_manifest_path(
-              _stm_manifest.get_ntp(), _stm_manifest.get_revision_id(), comp);
+            auto spill_path = cloud_storage::remote_manifest_path{
+              path_provider.spillover_manifest_path(_stm_manifest, comp)};
             BOOST_REQUIRE_EQUAL(
               spill_path, spill.get_manifest_path(path_provider));
         }
@@ -608,10 +608,9 @@ FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {
 
     const auto& missing_spills = result.detected.missing_spillover_manifests;
     BOOST_REQUIRE_EQUAL(missing_spills.size(), 1);
-    const auto expected_path = cloud_storage::generate_spillover_manifest_path(
-      first_spill.get_ntp(),
-      first_spill.get_revision_id(),
-      *missing_spills.begin());
+    auto expected_path = cloud_storage::remote_manifest_path{
+      path_provider.spillover_manifest_path(
+        first_spill, *missing_spills.begin())};
     BOOST_REQUIRE_EQUAL(
       first_spill.get_manifest_path(path_provider), expected_path);
 

@@ -250,40 +250,6 @@ partition_manifest::partition_manifest(
   , _segments()
   , _last_offset(0) {}
 
-// NOTE: the methods that generate remote paths use the xxhash function
-// to randomize the prefix. S3 groups the objects into chunks based on
-// these prefixes. It also applies rate limit to chunks so if all segments
-// and manifests will have the same prefix we will be able to do around
-// 3000-5000 req/sec. AWS doc mentions that having only two prefix
-// characters should be enough for most workloads
-// (https://aws.amazon.com/blogs/aws/amazon-s3-performance-tips-tricks-seattle-hiring-event/)
-// We're using eight because it's free and because AWS S3 is not the only
-// backend and other S3 API implementations might benefit from that.
-
-remote_manifest_path generate_partition_manifest_path(
-  const model::ntp& ntp,
-  model::initial_revision_id rev,
-  manifest_format format) {
-    // NOTE: the idea here is to split all possible hash values into
-    // 16 bins. Every bin should have lowest 28-bits set to 0.
-    // As result, for segment names all prefixes are possible, but
-    // for manifests, only 0x00000000, 0x10000000, ... 0xf0000000
-    // are used. This will allow us to quickly find all manifests
-    // that S3 bucket contains.
-    constexpr uint32_t bitmask = 0xF0000000;
-    auto path = ssx::sformat("{}_{}", ntp.path(), rev());
-    uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    return remote_manifest_path(fmt::format(
-      "{:08x}/meta/{}_{}/manifest.{}", hash, ntp.path(), rev(), [&] {
-          switch (format) {
-          case manifest_format::json:
-              return "json";
-          case manifest_format::serde:
-              return "bin";
-          }
-      }()));
-}
-
 remote_manifest_path partition_manifest::get_manifest_path(
   const remote_path_provider& path_provider) const {
     return remote_manifest_path{path_provider.partition_manifest_path(*this)};

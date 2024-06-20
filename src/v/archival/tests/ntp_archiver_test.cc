@@ -96,18 +96,18 @@ static void log_segment_set(storage::log_manager& lm) {
 }
 
 static remote_manifest_path generate_spill_manifest_path(
-  model::ntp ntp,
-  model::initial_revision_id rev_id,
-  const cloud_storage::segment_meta& meta) {
+  const cloud_storage::partition_manifest& stm_manifest,
+  const cloud_storage::segment_meta& spillover_manifest) {
     cloud_storage::spillover_manifest_path_components comp{
-      .base = meta.base_offset,
-      .last = meta.committed_offset,
-      .base_kafka = meta.base_kafka_offset(),
-      .next_kafka = meta.next_kafka_offset(),
-      .base_ts = meta.base_timestamp,
-      .last_ts = meta.max_timestamp,
+      .base = spillover_manifest.base_offset,
+      .last = spillover_manifest.committed_offset,
+      .base_kafka = spillover_manifest.base_kafka_offset(),
+      .next_kafka = spillover_manifest.next_kafka_offset(),
+      .base_ts = spillover_manifest.base_timestamp,
+      .last_ts = spillover_manifest.max_timestamp,
     };
-    return cloud_storage::generate_spillover_manifest_path(ntp, rev_id, comp);
+    return remote_manifest_path{
+      path_provider.spillover_manifest_path(stm_manifest, comp)};
 }
 
 void log_upload_candidate(const archival::upload_candidate& up) {
@@ -633,7 +633,7 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(spills.begin()->base_offset, model::offset{0});
     BOOST_REQUIRE_EQUAL(spills.begin()->committed_offset, model::offset{1999});
     auto spill_path = generate_spill_manifest_path(
-      manifest_ntp, manifest_revision, *(spills.begin()));
+      part->archival_meta_stm()->manifest(), *(spills.begin()));
 
     config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{5min});

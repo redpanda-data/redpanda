@@ -71,9 +71,6 @@ remote_segment_path generate_remote_segment_path(
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
-remote_manifest_path generate_partition_manifest_path(
-  const model::ntp&, model::initial_revision_id, manifest_format);
-
 // This structure can be impelenented
 // to allow access to private fields of the manifest.
 struct partition_manifest_accessor;
