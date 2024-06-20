@@ -51,6 +51,7 @@ purger::purger(
 ss::future<purger::purge_result> purger::purge_partition(
   const cluster::nt_lifecycle_marker& lifecycle_marker,
   const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage::remote_path_provider& path_provider,
   model::ntp ntp,
   model::initial_revision_id remote_revision,
   retry_chain_node& parent_rtc) {
@@ -81,8 +82,6 @@ ss::future<purger::purge_result> purger::purge_partition(
         co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 
-    cloud_storage::remote_path_provider path_provider(
-      lifecycle_marker.config.properties.remote_label);
     auto collected = co_await collect_manifest_paths(
       bucket, path_provider, ntp, remote_revision, partition_purge_rtc);
     if (!collected) {
@@ -398,6 +397,8 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
         inc_hash.update(nt_revision.initial_revision_id);
         uint32_t hash = static_cast<uint32_t>(inc_hash.digest() & 0xffffffff);
 
+        cloud_storage::remote_path_provider path_provider(
+          marker.config.properties.remote_label);
         if (my_global_position.self == hash % my_global_position.total) {
             vlog(
               archival_log.info,
@@ -436,7 +437,12 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
                 }
 
                 auto purge_r = co_await purge_partition(
-                  marker, bucket, ntp, marker.initial_revision_id, _root_rtc);
+                  marker,
+                  bucket,
+                  path_provider,
+                  ntp,
+                  marker.initial_revision_id,
+                  _root_rtc);
 
                 result.consumed += run_quota_t(purge_r.ops);
                 result.remaining
@@ -464,32 +470,34 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
             // At this point, all partition deletions either succeeded or
             // permanently failed: clean up the topic manifest and erase
             // the controller tombstone.
-            auto topic_manifest_path_serde
-              = cloud_storage::topic_manifest::get_topic_manifest_path(
-                topic_config.tp_ns.ns,
-                topic_config.tp_ns.tp,
-                cloud_storage::manifest_format::serde);
-            auto topic_manifest_path_json
-              = cloud_storage::topic_manifest::get_topic_manifest_path(
-                topic_config.tp_ns.ns,
-                topic_config.tp_ns.tp,
-                cloud_storage::manifest_format::json);
+            const auto& tp_ns = topic_config.tp_ns;
+            auto topic_manifest_path_serde = path_provider.topic_manifest_path(
+              tp_ns, marker.initial_revision_id);
             vlog(
               archival_log.debug,
               "Erasing topic manifest {}",
               topic_manifest_path_serde);
 
             retry_chain_node topic_manifest_rtc(5s, 1s, &_root_rtc);
+            ss::future<upload_result> delete_result = _api.delete_object(
+              bucket,
+              cloud_storage_clients::object_key(topic_manifest_path_serde),
+              topic_manifest_rtc);
+
+            auto topic_manifest_path_json
+              = path_provider.topic_manifest_path_json(tp_ns);
+            ss::future<upload_result> delete_result_json
+              = ss::make_ready_future<upload_result>(upload_result::success);
+            if (topic_manifest_path_json.has_value()) {
+                delete_result_json = _api.delete_object(
+                  bucket,
+                  cloud_storage_clients::object_key(
+                    topic_manifest_path_json.value()),
+                  topic_manifest_rtc);
+            }
             auto [manifest_delete_result_serde, manifest_delete_result_json]
               = co_await ss::when_all_succeed(
-                _api.delete_object(
-                  bucket,
-                  cloud_storage_clients::object_key(topic_manifest_path_serde),
-                  topic_manifest_rtc),
-                _api.delete_object(
-                  bucket,
-                  cloud_storage_clients::object_key(topic_manifest_path_json),
-                  topic_manifest_rtc));
+                std::move(delete_result), std::move(delete_result_json));
             if (
               manifest_delete_result_serde != upload_result::success
               || manifest_delete_result_json != upload_result::success) {
