@@ -206,14 +206,11 @@ public:
         }
     }
 
-    /// Manifest object name in S3
-    std::pair<manifest_format, remote_manifest_path>
-    get_manifest_format_and_path() const;
-
     virtual ss::sstring get_manifest_filename() const { return "manifest.bin"; }
 
     remote_manifest_path get_manifest_path() const override {
-        return get_manifest_format_and_path().second;
+        return generate_partition_manifest_path(
+          _ntp, _rev, manifest_format::serde);
     }
 
     /// Get NTP

@@ -282,13 +282,6 @@ remote_manifest_path generate_partition_manifest_path(
       }()));
 }
 
-std::pair<manifest_format, remote_manifest_path>
-partition_manifest::get_manifest_format_and_path() const {
-    return {
-      manifest_format::serde,
-      generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
-}
-
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
 model::offset partition_manifest::get_last_offset() const {
