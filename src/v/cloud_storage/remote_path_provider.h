@@ -8,8 +8,10 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_label.h"
+#include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 
 #include <seastar/core/sstring.hh>
@@ -35,8 +37,11 @@ public:
       const model::ntp& ntp, model::initial_revision_id) const;
 
     ss::sstring segment_path(
-      const partition_manifest& manifest,
-      const partition_manifest::value& segment) const;
+      const partition_manifest& manifest, const segment_meta& segment) const;
+    ss::sstring segment_path(
+      const model::ntp& ntp,
+      model::initial_revision_id rev,
+      const segment_meta& segment) const;
 
 private:
     std::optional<remote_label> label_;
