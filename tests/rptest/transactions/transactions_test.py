@@ -269,6 +269,8 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
     @cluster(num_nodes=3)
     def rejoin_member_test(self):
+        self.redpanda.set_cluster_config(
+            {"group_new_member_join_timeout": 5000})
         self.generate_data(self.input_t, self.max_records)
 
         producer = ck.Producer({
@@ -282,6 +284,8 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             'group.id': group_name,
             'auto.offset.reset': 'earliest',
             'enable.auto.commit': False,
+            'max.poll.interval.ms': 10000,
+            'session.timeout.ms': 8000
         })
 
         producer.init_transactions()
@@ -303,18 +307,20 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             'group.id': group_name,
             'auto.offset.reset': 'earliest',
             'enable.auto.commit': False,
+            'max.poll.interval.ms': 10000,
+            'session.timeout.ms': 8000
         })
 
         consumer2.subscribe([self.input_t])
         # Rejoin can take some time, so we should pass big timeout
-        self.consume(consumer2, timeout_s=360)
+        self.consume(consumer2, timeout_s=60)
 
         try:
             producer.send_offsets_to_transaction(offsets, metadata, 2)
             assert False, "send_offsetes should fail"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
+            assert kafka_error.code() == ck.KafkaError.UNKNOWN_MEMBER_ID
 
         try:
             # if abort fails an app should recreate a producer otherwise
