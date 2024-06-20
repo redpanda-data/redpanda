@@ -87,7 +87,7 @@ public:
     }
 
     std::pair<manifest_format, remote_manifest_path>
-    get_manifest_format_and_path() const override;
+    get_manifest_format_and_path() const;
 
     bool operator==(const topic_manifest& other) const {
         return std::tie(_topic_config, _rev)
