@@ -22,6 +22,7 @@
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/spillover_manifest.h"
@@ -516,10 +517,10 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         cfg_copy.replication_factor = replication_factor;
         cloud_storage::topic_manifest tm(
           cfg_copy, _rev, _feature_table.local());
-        auto key = tm.get_manifest_path();
+        auto key = tm.get_manifest_path(remote_path_provider());
         vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
         auto res = co_await _remote.upload_manifest(
-          _conf->bucket_name, tm, fib);
+          _conf->bucket_name, tm, key, fib);
         if (res != cloud_storage::upload_result::success) {
             vlog(ctxlog.warn, "Topic manifest upload failed: {}", key);
         } else {
@@ -818,12 +819,12 @@ ss::future<> ntp_archiver::sync_manifest_until_term_change() {
             vlog(
               _rtclog.error,
               "Failed to download manifest {}",
-              manifest().get_manifest_path());
+              manifest().get_manifest_path(remote_path_provider()));
         } else {
             vlog(
               _rtclog.debug,
               "Successfuly downloaded manifest {}",
-              manifest().get_manifest_path());
+              manifest().get_manifest_path(remote_path_provider()));
         }
         co_await ss::sleep_abortable(_sync_manifest_timeout(), _as);
     }
@@ -1110,15 +1111,16 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
 
     auto upload_insync_offset = manifest().get_insync_offset();
 
+    auto path = manifest().get_manifest_path(remote_path_provider());
     vlog(
       _rtclog.debug,
       "[{}] Uploading partition manifest, insync_offset={}, path={}",
       upload_ctx,
       upload_insync_offset,
-      manifest().get_manifest_path());
+      path());
 
     auto result = co_await _remote.upload_manifest(
-      get_bucket_name(), manifest(), fib);
+      get_bucket_name(), manifest(), path, fib);
 
     // now that manifest() is updated in cloud, updated the
     // compacted_away_cloud_bytes metric
@@ -1162,7 +1164,7 @@ remote_segment_path ntp_archiver::segment_path_for_candidate(
       .sname_format = cloud_storage::segment_name_format::v3,
     };
 
-    return manifest().generate_segment_path(val);
+    return manifest().generate_segment_path(val, remote_path_provider());
 }
 
 static std::pair<ss::input_stream<char>, ss::input_stream<char>>
@@ -2134,9 +2136,7 @@ ntp_archiver::maybe_truncate_manifest() {
           _conf->manifest_upload_timeout(),
           _conf->upload_loop_initial_backoff(),
           &rtc);
-        auto sname = cloud_storage::generate_local_segment_name(
-          meta.base_offset, meta.segment_term);
-        auto spath = m.generate_segment_path(meta);
+        auto spath = m.generate_segment_path(meta, remote_path_provider());
         auto result = co_await _remote.segment_exists(
           get_bucket_name(), spath, fib);
         if (result == cloud_storage::download_result::notfound) {
@@ -2402,7 +2402,8 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
                       continue;
                   }
                   if (meta.committed_offset < start_offset) {
-                      const auto path = manifest.generate_segment_path(meta);
+                      const auto path = manifest.generate_segment_path(
+                        meta, remote_path_provider());
                       vlog(
                         _rtclog.info,
                         "Enqueuing spillover segment delete from cloud "
@@ -2437,7 +2438,8 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         if (stop) {
             break;
         }
-        const auto path = cursor->manifest()->get_manifest_path();
+        const auto path = cursor->manifest()->get_manifest_path(
+          remote_path_provider());
         vlog(
           _rtclog.info,
           "Enqueuing spillover manifest delete from cloud "
@@ -2625,8 +2627,9 @@ ss::future<> ntp_archiver::apply_spillover() {
 
         retry_chain_node upload_rtc(
           manifest_upload_timeout, manifest_upload_backoff, &_rtcnode);
+        const auto path = tail.get_manifest_path(remote_path_provider());
         auto res = co_await _remote.upload_manifest(
-          get_bucket_name(), tail, upload_rtc);
+          get_bucket_name(), tail, path, upload_rtc);
         if (res != cloud_storage::upload_result::success) {
             vlog(_rtclog.error, "Failed to upload spillover manifest {}", res);
             co_return;
@@ -2635,7 +2638,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         // Put manifest into cache to avoid roundtrip to the cloud storage
         auto reservation = co_await _cache.reserve_space(len, 1);
         co_await _cache.put(
-          tail.get_manifest_path()(),
+          tail.get_manifest_path(remote_path_provider())(),
           str,
           reservation,
           _conf->upload_io_priority);
@@ -2672,7 +2675,7 @@ ss::future<> ntp_archiver::apply_spillover() {
             vlog(
               _rtclog.info,
               "Uploaded spillover manifest: {}",
-              tail.get_manifest_path());
+              tail.get_manifest_path(remote_path_provider()));
         }
     }
 }
@@ -2864,7 +2867,8 @@ ss::future<> ntp_archiver::garbage_collect() {
 
     std::deque<cloud_storage_clients::object_key> objects_to_remove;
     for (const auto& meta : to_remove) {
-        const auto path = manifest().generate_segment_path(meta);
+        const auto path = manifest().generate_segment_path(
+          meta, remote_path_provider());
         vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
 
         objects_to_remove.emplace_back(path);
@@ -3255,6 +3259,11 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
 
 const storage::ntp_config& ntp_archiver::ntp_config() const {
     return _parent.log()->config();
+}
+
+const cloud_storage::remote_path_provider&
+ntp_archiver::remote_path_provider() const {
+    return _parent.archival_meta_stm()->path_provider();
 }
 
 void ntp_archiver::complete_transfer_leadership() {
