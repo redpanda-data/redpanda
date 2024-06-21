@@ -52,8 +52,8 @@ public:
           c.last_ts.value());
     }
 
-    remote_manifest_path
-    get_manifest_path(const remote_path_provider& path_provider) const {
+    remote_manifest_path get_manifest_path(
+      const remote_path_provider& path_provider) const override {
         return remote_manifest_path{
           path_provider.spillover_manifest_path(*this)};
     }

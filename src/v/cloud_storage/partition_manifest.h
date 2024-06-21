@@ -206,7 +206,8 @@ public:
 
     virtual ss::sstring get_manifest_filename() const { return "manifest.bin"; }
 
-    remote_manifest_path get_manifest_path(const remote_path_provider&) const;
+    virtual remote_manifest_path
+    get_manifest_path(const remote_path_provider&) const;
 
     /// Get NTP
     const model::ntp& get_ntp() const;
