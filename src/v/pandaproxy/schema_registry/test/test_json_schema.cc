@@ -203,6 +203,19 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "object", "maxProperties": 11})",
     .reader_is_compatible_with_writer = false,
   },
+  // objects checks: additional properties not compatible
+  {
+    .reader_schema = R"({"type": "object", "additionalProperties": false})",
+    .writer_schema
+    = R"({"type": "object", "additionalProperties": {"type": "string"}})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema
+    = R"({"type": "object", "additionalProperties": {"type": "string"}})",
+    .writer_schema = R"({"type": "object" })",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema
