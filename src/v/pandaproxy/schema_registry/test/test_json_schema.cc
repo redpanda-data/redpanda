@@ -196,6 +196,21 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "integer", "enum": [4, 1, 3]})",
     .reader_is_compatible_with_writer = false,
   },
+  // combinators: "not" is required on both schema
+  {
+    .reader_schema
+    = R"({"not": {"type": ["string", "integer", "number", "object", "array", "null"]}})",
+    .writer_schema = R"({"type": "boolean"})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // combinators: "not" subschema has to get less strict
+  {
+    .reader_schema
+    = R"({"type": ["integer", "number"], "not": {"type": "number"}})",
+    .writer_schema
+    = R"({"type": ["integer", "number"], "not": {"type": "integer"}})",
+    .reader_is_compatible_with_writer = false,
+  },
   //***** compatible section *****
   // same type
   {
@@ -274,6 +289,14 @@ static constexpr auto compatibility_test_cases = std::to_array<
   {
     .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
     .writer_schema = R"({"type": "integer", "enum": [4, 1]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // combinators: "not"
+  {
+    .reader_schema
+    = R"({"type": "integer", "not": {"type": "integer", "minimum": 10}})",
+    .writer_schema
+    = R"({"type": "integer", "not": {"type": "integer", "minimum": 5}})",
     .reader_is_compatible_with_writer = true,
   },
 });

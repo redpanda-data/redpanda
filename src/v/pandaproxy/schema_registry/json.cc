@@ -661,6 +661,28 @@ bool is_enum_superset(json::Value const& older, json::Value const& newer) {
     return true;
 }
 
+bool is_not_combinator_superset(
+  json::Value const& older, json::Value const& newer) {
+    auto older_it = older.FindMember("not");
+    auto newer_it = newer.FindMember("not");
+    auto older_has_not = older_it != older.MemberEnd();
+    auto newer_has_not = newer_it != newer.MemberEnd();
+
+    if (older_has_not != newer_has_not) {
+        // only one has a "not" schema, not compatible
+        return false;
+    }
+
+    if (older_has_not && newer_has_not) {
+        // for not combinator, we want to check if the "not" newer subschema is
+        // less strict than the older subschema, because this means that newer
+        // validated less data than older
+        return is_superset(newer_it->value, older_it->value);
+    }
+
+    // both do not have a "not" key, compatible
+    return true;
+}
 } // namespace is_superset_impl
 
 using namespace is_superset_impl;
@@ -730,6 +752,10 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
+    if (!is_not_combinator_superset(older, newer)) {
+        return false;
+    }
+
     for (auto not_yet_handled_keyword : {
            "$schema",
            "additionalItems",
@@ -748,7 +774,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "allOf",
            "anyOf",
            "oneOf",
-           "not",
          }) {
         if (
           newer.HasMember(not_yet_handled_keyword)
