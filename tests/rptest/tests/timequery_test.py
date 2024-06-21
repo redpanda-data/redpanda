@@ -467,8 +467,8 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         assert not any([e > 0 for e in errors])
 
     @cluster(num_nodes=4)
-    # @parametrize(cloud_storage=True, spillover=False)
-    # @parametrize(cloud_storage=True, spillover=True)
+    @parametrize(cloud_storage=True, spillover=False)
+    @parametrize(cloud_storage=True, spillover=True)
     @parametrize(cloud_storage=False, spillover=False)
     def test_timequery_with_trim_prefix(self, cloud_storage: bool,
                                         spillover: bool):
