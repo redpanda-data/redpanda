@@ -201,11 +201,31 @@ operator<<(std::ostream& o, const segment_upload_builder_api&) {
 
 /// Create archiver_operations_api instance with mock objects
 ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
-  ss::shared_ptr<cloud_storage_remote_api>,
-  ss::shared_ptr<cluster_partition_manager_api>,
-  ss::shared_ptr<segment_upload_builder_api>,
+  std::unique_ptr<cloud_storage_remote_api>,
+  std::unique_ptr<cluster_partition_manager_api>,
+  std::unique_ptr<segment_upload_builder_api>,
   cloud_storage_clients::bucket_name);
 
+/// Create a wrapper for cluster::partition
+///
+/// This function is intended for testing only
+std::unique_ptr<cluster_partition_api>
+  make_cluster_partition_wrapper(ss::lw_shared_ptr<cluster::partition>);
+
+/// Create a wrapper for upload_builder
+///
+/// This is needed for testing because the wrapper is relatively
+/// complex and requires some additional testing (without mocking)
+std::unique_ptr<segment_upload_builder_api>
+make_segment_upload_builder_wrapper();
+
 } // namespace detail
+
+/// Create archiver_operations_api instance
+ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
+  ss::sharded<cloud_storage::remote>& remote,
+  ss::sharded<cluster::partition_manager>& pm,
+  cloud_storage_clients::bucket_name bucket,
+  ss::scheduling_group sg);
 
 } // namespace archival
