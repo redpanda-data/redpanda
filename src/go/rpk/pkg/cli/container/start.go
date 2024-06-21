@@ -119,10 +119,11 @@ Start a three-broker cluster:
 Start a single-broker cluster, selecting random ports for every listener:
   rpk container start --any-port
 
-Start a three-broker cluster, selecting the seed kafka and console port only:
+Start a three-broker cluster, selecting the seed Kafka and Redpanda Console 
+ports only:
   rpk container start --kafka-ports 9092 --console-port 8080
 
-Start a three-broker cluster, selecting every admin API port:
+Start a three-broker cluster, selecting the Admin API port for each broker:
   rpk container start --admin-ports 9644,9645,9646
 `,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
@@ -187,7 +188,7 @@ You can retry profile creation by running:
 		},
 	}
 
-	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of brokers(nodes) to start")
+	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of brokers (nodes) to start")
 	command.Flags().UintVar(&retries, "retries", 10, "The amount of times to check for the cluster before considering it unstable and exiting")
 	command.Flags().StringVar(&image, "image", common.DefaultRedpandaImage(), "An arbitrary Redpanda container image to use")
 	command.Flags().StringVar(&consoleImage, "console-image", common.DefaultConsoleImage(), "An arbitrary Redpanda Console container image to use")
@@ -321,9 +322,9 @@ func startCluster(
 		seedID,
 		nodeAddr(seedKafkaPort),
 	}
-	kafkaAddr := []string{fmt.Sprintf("%v:%d", seedState.ContainerIP, seedKafkaPort)}
-	srAddr := []string{fmt.Sprintf("http://rp-node-%d:%d", seedID, seedSchemaRegPort)}
-	adminAddr := []string{fmt.Sprintf("http://rp-node-%d:%d", seedID, seedAdminPort)}
+	kafkaAddr := []string{fmt.Sprintf("%v:%d", seedState.ContainerIP, config.DefaultKafkaPort)}
+	srAddr := []string{fmt.Sprintf("http://rp-node-%d:%d", seedID, config.DefaultSchemaRegPort)}
+	adminAddr := []string{fmt.Sprintf("http://rp-node-%d:%d", seedID, config.DefaultAdminPort)}
 
 	nodes := []node{seedNode}
 
@@ -373,9 +374,9 @@ func startCluster(
 				id:   id,
 				addr: nodeAddr(state.HostKafkaPort),
 			})
-			kafkaAddr = append(kafkaAddr, fmt.Sprintf("%v:%d", state.ContainerIP, kafkaPort))
-			srAddr = append(srAddr, fmt.Sprintf("http://rp-node-%d:%d", id, schemaRegPort))
-			adminAddr = append(adminAddr, fmt.Sprintf("http://rp-node-%d:%d", id, adminPort))
+			kafkaAddr = append(kafkaAddr, fmt.Sprintf("%v:%d", state.ContainerIP, config.DefaultKafkaPort))
+			srAddr = append(srAddr, fmt.Sprintf("http://rp-node-%d:%d", id, config.DefaultSchemaRegPort))
+			adminAddr = append(adminAddr, fmt.Sprintf("http://rp-node-%d:%d", id, config.DefaultAdminPort))
 			mu.Unlock()
 			return nil
 		})
