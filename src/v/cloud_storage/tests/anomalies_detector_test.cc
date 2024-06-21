@@ -270,7 +270,7 @@ public:
         check_spills_are_matching();
 
         set_expectations_for_manifest(_stm_manifest);
-        remove_json_stm_manifest(_stm_manifest);
+        remove_stm_manifest(_stm_manifest);
 
         for (const auto& spill : _spillover_manifests) {
             set_expectations_for_manifest(spill);
@@ -357,8 +357,8 @@ public:
     void remove_segment(
       const cloud_storage::partition_manifest& manifest,
       const cloud_storage::segment_meta& meta) {
-        auto path = manifest.generate_segment_path(meta);
-        remove_object(ssx::sformat("/{}", path().string()));
+        auto path = path_provider.segment_path(manifest, meta);
+        remove_object(ssx::sformat("/{}", path));
     }
 
     void remove_manifest(const cloud_storage::partition_manifest& manifest) {
@@ -367,10 +367,9 @@ public:
     }
 
 private:
-    void remove_json_stm_manifest(
-      const cloud_storage::partition_manifest& manifest) {
-        auto path = cloud_storage::prefixed_partition_manifest_json_path(
-          manifest.get_ntp(), manifest.get_revision_id());
+    void
+    remove_stm_manifest(const cloud_storage::partition_manifest& manifest) {
+        auto path = manifest.get_manifest_path(path_provider);
         remove_object(ssx::sformat("/{}", path));
     }
 
@@ -461,7 +460,7 @@ private:
     void set_expectations_for_segments(
       const cloud_storage::partition_manifest& manifest) {
         for (const auto& seg : manifest) {
-            auto path = manifest.generate_segment_path(seg)().string();
+            auto path = path_provider.segment_path(manifest, seg);
             when()
               .request(fmt::format("/{}", path))
               .with_method(ss::httpd::operation_type::HEAD)
