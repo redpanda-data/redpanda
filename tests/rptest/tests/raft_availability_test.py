@@ -250,7 +250,7 @@ class RaftAvailabilityTest(RedpandaTest):
         # elections taking more iterations than expected, once we have a less contended
         # test environment to execute in.
         observer_metrics.expect([
-            ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
+            ("vectorized_raft_leadership_changes_total", lambda a, b: b == a),
             ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
             ("vectorized_raft_received_vote_requests_total",
              lambda a, b: b > a),
@@ -361,6 +361,48 @@ class RaftAvailabilityTest(RedpandaTest):
             self.redpanda.start_node(initial_leader_node)
             time.sleep(ELECTION_TIMEOUT)
             assert new_leader_id == self._get_leader()[0]
+
+    @cluster(num_nodes=3)
+    def test_leadership_transfer(self):
+        """
+        Validate that when a leadership is transfered to another node, the new leader is able to
+        continue serving requests.
+        """
+        initial_leader_id, replicas = self._wait_for_leader()
+        initial_leader_node = self.redpanda.get_node(initial_leader_id)
+
+        metric_checks = {}
+        for n in self.redpanda.nodes:
+            metric_checks[self.redpanda.node_id(n)] = MetricCheck(
+                self.logger, self.redpanda, n,
+                re.compile("vectorized_raft_leadership_changes_total"),
+                {'topic': self.topic})
+
+        self.logger.info(f"Transferring leadership  of {self.topic}/0")
+        admin = Admin(self.redpanda)
+        admin.transfer_leadership_to(topic=self.topic,
+                                     namespace="kafka",
+                                     partition=0,
+                                     target_id=None,
+                                     leader_id=initial_leader_id)
+        new_leader_id, _ = self._wait_for_leader(
+            lambda l: l is not None and l != initial_leader_id)
+        self.logger.info(
+            f"New leader is {new_leader_id} {self.redpanda.get_node(new_leader_id).account.hostname}"
+        )
+        time.sleep(ELECTION_TIMEOUT)
+        for [id, metric_check] in metric_checks.items():
+            # the metric should be updated only on the node that was elected as a leader
+            if id == new_leader_id:
+                metric_check.expect([
+                    ("vectorized_raft_leadership_changes_total",
+                     lambda initial, current: current == initial + 1),
+                ])
+            else:
+                metric_check.expect([
+                    ("vectorized_raft_leadership_changes_total",
+                     lambda initial, current: current == initial),
+                ])
 
     @cluster(num_nodes=4)
     @parametrize(acks=1)

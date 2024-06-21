@@ -3114,7 +3114,9 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
-    _probe->leadership_changed();
+    if (_leader_id == _self) {
+        _probe->leadership_changed();
+    }
     vlog(
       _ctxlog.debug,
       "triggering leadership notification with term: {}, new leader: {}",
