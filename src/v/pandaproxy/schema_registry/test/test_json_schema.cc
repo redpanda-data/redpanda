@@ -216,6 +216,29 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "object" })",
     .reader_is_compatible_with_writer = false,
   },
+  // object checks: new properties not compatible for a closed reader
+  {
+    .reader_schema = R"({"type": "object", "additionalProperties": false})",
+    .writer_schema
+    = R"({"type": "object", "properties": {"a": {}}, "additionalProperties": false})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // object checks: existing properties need to be compatible
+  {
+    .reader_schema
+    = R"({"type": "object", "properties": {"aaaa": {"type": "integer"}}})",
+    .writer_schema
+    = R"({"type": "object", "properties": {"aaaa": {"type": "string"}}})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // object checks: new properties need to be compatible
+  {
+    .reader_schema
+    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}}})",
+    .writer_schema
+    = R"({"type": "object", "properties": {"aaaa": {"type": "string"}}})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema
