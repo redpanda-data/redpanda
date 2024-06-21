@@ -52,7 +52,7 @@ shard_balancer::shard_balancer(
   config::binding<std::chrono::milliseconds> debounce_timeout)
   : _shard_placement(spt.local())
   , _features(features.local())
-  , _kvstore(storage.local().kvs())
+  , _storage(storage.local())
   , _topics(topics)
   , _controller_backend(cb)
   , _self(*config::node().node_id())
@@ -70,7 +70,7 @@ shard_balancer::shard_balancer(
     });
 }
 
-ss::future<> shard_balancer::start() {
+ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
     vassert(
       ss::this_shard_id() == shard_id,
       "method can only be invoked on shard {}",
@@ -79,13 +79,13 @@ ss::future<> shard_balancer::start() {
     auto gate_holder = _gate.hold();
     auto lock = co_await _mtx.get_units();
 
+    // Collect the set of node-local ntps from topic_table
+
     // We expect topic_table to remain unchanged throughout the method
     // invocation because it is supposed to be called after local controller
     // replay is finished but before we start getting new controller updates
     // from the leader.
     auto tt_version = _topics.local().topics_map_revision();
-
-    // 1. collect the set of node-local ntps from topic_table
 
     chunked_hash_map<raft::group_id, model::ntp> local_group2ntp;
     chunked_hash_map<model::ntp, model::revision_id> local_ntp2log_revision;
@@ -115,14 +115,102 @@ ss::future<> shard_balancer::start() {
           });
     }
 
-    // 2. restore shard_placement_table from the kvstore or from topic_table.
+    if (kvstore_shard_count > ss::smp::count) {
+        // Check that we can decrease shard count
+
+        std::string_view reject_reason;
+        if (!_features.is_active(
+              features::feature::node_local_core_assignment)) {
+            reject_reason
+              = "node_local_core_assignment feature flag is not yet active";
+        }
+        if (!_balancing_on_core_count_change()) {
+            reject_reason = "balancing on core count change is disabled";
+        }
+
+        if (!reject_reason.empty()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Detected decrease in number of cores dedicated to run Redpanda "
+              "from {} to {}, but it is impossible because {}.",
+              kvstore_shard_count,
+              ss::smp::count,
+              reject_reason));
+        }
+    }
+
+    std::vector<std::unique_ptr<storage::kvstore>> extra_kvstores;
+    for (ss::shard_id s = ss::smp::count; s < kvstore_shard_count; ++s) {
+        extra_kvstores.push_back(co_await _storage.make_extra_kvstore(s));
+    }
+
+    co_await init_shard_placement(
+      lock, local_group2ntp, local_ntp2log_revision, extra_kvstores)
+      .finally([&] {
+          return ss::parallel_for_each(
+            extra_kvstores, [](auto& kvs) { return kvs->stop(); });
+      });
+
+    if (kvstore_shard_count > ss::smp::count) {
+        // Now that all partition info is copied from extra kvstores, we can
+        // remove them.
+        co_await _storage.log_mgr().remove_orphan_files(
+          config::node().data_directory().as_sstring(),
+          {model::redpanda_ns},
+          [](model::ntp ntp, storage::partition_path::metadata) {
+              return ntp.tp.topic == model::kvstore_topic
+                     && ntp.tp.partition() >= static_cast<int>(ss::smp::count);
+          });
+    }
+
+    // we shouldn't be receiving any controller updates at this point, so no
+    // risk of missing a notification between initializing shard_placement_table
+    // and subscribing.
+    _topic_table_notify_handle = _topics.local().register_delta_notification(
+      [this](topic_table::delta_range_t deltas_range) {
+          for (const auto& delta : deltas_range) {
+              // Filter out only deltas that might change the set of partition
+              // replicas on this node.
+              switch (delta.type) {
+              case topic_table_delta_type::disabled_flag_updated:
+              case topic_table_delta_type::properties_updated:
+                  continue;
+              default:
+                  _to_assign.insert(delta.ntp);
+                  _wakeup_event.set();
+                  break;
+              }
+          }
+      });
+
+    vassert(
+      tt_version == _topics.local().topics_map_revision(),
+      "topic_table unexpectedly changed");
+
+    ssx::background = assign_fiber();
+}
+
+ss::future<> shard_balancer::init_shard_placement(
+  mutex::units& lock,
+  const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,
+  const chunked_hash_map<model::ntp, model::revision_id>&
+    local_ntp2log_revision,
+  const std::vector<std::unique_ptr<storage::kvstore>>& extra_kvstores) {
+    // 1. restore shard_placement_table from the kvstore or from topic_table.
+
+    if (
+      _features.is_active(features::feature::node_local_core_assignment)
+      && !_shard_placement.is_persistence_enabled()) {
+        // Joiner node joining a cluster that has already enabled the feature?
+        // Enable persistence before initializing.
+        co_await _shard_placement.enable_persistence();
+    }
+
+    std::vector<std::unique_ptr<shard_placement_table>> extra_spts;
 
     if (_shard_placement.is_persistence_enabled()) {
-        co_await _shard_placement.initialize_from_kvstore(local_group2ntp, {});
-    } else if (_features.is_active(
-                 features::feature::node_local_core_assignment)) {
-        // joiner node? enable persistence without initializing
-        co_await _shard_placement.enable_persistence();
+        extra_spts = co_await _shard_placement.initialize_from_kvstore(
+          local_group2ntp, extra_kvstores);
     } else {
         // topic_table is still the source of truth
         co_await _shard_placement.initialize_from_topic_table(_topics, _self);
@@ -136,13 +224,12 @@ ss::future<> shard_balancer::start() {
         }
     }
 
-    // 3. Initialize shard partition counts and assign non-assigned local ntps.
+    // 2. Initialize shard partition counts and assign non-assigned local ntps.
     //
     // Note: old assignments for ntps not in local_group2ntp have already been
     // removed during shard_placement_table initialization.
 
-    co_await ssx::async_for_each_counter(
-      counter,
+    co_await ssx::async_for_each(
       local_ntp2log_revision.begin(),
       local_ntp2log_revision.end(),
       [&](const std::pair<const model::ntp&, model::revision_id> kv) {
@@ -165,37 +252,23 @@ ss::future<> shard_balancer::start() {
 
     co_await do_assign_ntps(lock);
 
+    // 3. Do balancing on startup if needed
+
     if (
       _balancing_on_core_count_change()
       && _features.is_active(features::feature::node_local_core_assignment)) {
-        co_await balance_on_core_count_change(lock);
+        co_await balance_on_core_count_change(
+          lock, ss::smp::count + extra_kvstores.size());
     }
 
-    vassert(
-      tt_version == _topics.local().topics_map_revision(),
-      "topic_table unexpectedly changed");
+    // 4. Move partition info from extra kvstores
 
-    // we shouldn't be receiving any controller updates at this point, so no
-    // risk of missing a notification between initializing shard_placement_table
-    // and subscribing.
-    _topic_table_notify_handle = _topics.local().register_delta_notification(
-      [this](topic_table::delta_range_t deltas_range) {
-          for (const auto& delta : deltas_range) {
-              // Filter out only deltas that might change the set of partition
-              // replicas on this node.
-              switch (delta.type) {
-              case topic_table_delta_type::disabled_flag_updated:
-              case topic_table_delta_type::properties_updated:
-                  continue;
-              default:
-                  _to_assign.insert(delta.ntp);
-                  _wakeup_event.set();
-                  break;
-              }
-          }
-      });
-
-    ssx::background = assign_fiber();
+    for (size_t i = 0; i < extra_kvstores.size(); ++i) {
+        auto& extra_kvs = *extra_kvstores.at(i);
+        auto& extra_spt = *extra_spts.at(i);
+        co_await _controller_backend.local()
+          .transfer_partitions_from_extra_shard(extra_kvs, extra_spt);
+    }
 }
 
 ss::future<> shard_balancer::stop() {
@@ -398,9 +471,10 @@ void shard_balancer::maybe_assign(
     new_targets.emplace(ntp, target);
 }
 
-ss::future<> shard_balancer::balance_on_core_count_change(mutex::units& lock) {
+ss::future<> shard_balancer::balance_on_core_count_change(
+  mutex::units& lock, size_t kvstore_shard_count) {
     uint32_t last_rebalance_core_count = 0;
-    auto state_buf = _kvstore.get(
+    auto state_buf = _storage.kvs().get(
       storage::kvstore::key_space::shard_placement, state_kvstore_key());
     if (state_buf) {
         last_rebalance_core_count = serde::from_iobuf<persisted_state>(
@@ -408,11 +482,13 @@ ss::future<> shard_balancer::balance_on_core_count_change(mutex::units& lock) {
                                       .last_rebalance_core_count;
     }
 
-    // If there is no state in kvstore, this means that we are restarting with
-    // shard balancing enabled for the first time, and this is a good time to
-    // rebalance as well.
+    // If there is no state in kvstore (and therefore last_rebalance_core_count
+    // is 0), this means that we are restarting with shard balancing enabled for
+    // the first time, and this is a good time to rebalance as well.
 
-    if (last_rebalance_core_count == ss::smp::count) {
+    if (
+      last_rebalance_core_count == ss::smp::count
+      && kvstore_shard_count == ss::smp::count) {
         co_return;
     }
 
@@ -476,7 +552,7 @@ ss::future<> shard_balancer::do_balance(mutex::units& lock) {
           return set_target(ntp, target, lock);
       });
 
-    co_await _kvstore.put(
+    co_await _storage.kvs().put(
       storage::kvstore::key_space::shard_placement,
       state_kvstore_key(),
       serde::to_iobuf(persisted_state{
@@ -581,14 +657,18 @@ void shard_balancer::update_counts(
   topic_data_t& topic_data,
   const std::optional<shard_placement_target>& prev,
   const std::optional<shard_placement_target>& next) {
-    if (prev) {
+    // Shard values that are >= ss::smp::count are possible when initializing
+    // shard placement after a core count decrease. We ignore them because
+    // partition counts on extra shards are not needed for balancing.
+
+    if (prev && prev->shard < ss::smp::count) {
         topic_data.shard2count.at(prev->shard) -= 1;
         topic_data.total_count -= 1;
         // TODO: check negative values
         _total_counts.at(prev->shard) -= 1;
     }
 
-    if (next) {
+    if (next && next->shard < ss::smp::count) {
         topic_data.shard2count.at(next->shard) += 1;
         topic_data.total_count += 1;
         _total_counts.at(next->shard) += 1;

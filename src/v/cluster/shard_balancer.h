@@ -44,7 +44,7 @@ public:
       config::binding<bool> balancing_continuous,
       config::binding<std::chrono::milliseconds> debounce_timeout);
 
-    ss::future<> start();
+    ss::future<> start(size_t kvstore_shard_count);
     ss::future<> stop();
 
     /// Persist current shard_placement_table contents to kvstore. Executed once
@@ -62,10 +62,18 @@ public:
 private:
     void process_delta(const topic_table::delta&);
 
+    ss::future<> init_shard_placement(
+      mutex::units& lock,
+      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,
+      const chunked_hash_map<model::ntp, model::revision_id>&
+        local_ntp2log_revision,
+      const std::vector<std::unique_ptr<storage::kvstore>>& extra_kvstores);
+
     ss::future<> assign_fiber();
     ss::future<> do_assign_ntps(mutex::units& lock);
 
-    ss::future<> balance_on_core_count_change(mutex::units& lock);
+    ss::future<> balance_on_core_count_change(
+      mutex::units& lock, size_t kvstore_shard_count);
     void balance_timer_callback();
     ss::future<> do_balance(mutex::units& lock);
 
@@ -102,7 +110,7 @@ private:
 private:
     shard_placement_table& _shard_placement;
     features::feature_table& _features;
-    storage::kvstore& _kvstore;
+    storage::api& _storage;
     ss::sharded<topic_table>& _topics;
     ss::sharded<controller_backend>& _controller_backend;
     model::node_id _self;

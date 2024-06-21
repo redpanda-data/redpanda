@@ -231,7 +231,7 @@ ss::future<> controller::start(
       std::back_inserter(seed_nodes),
       [](const model::broker& b) { return b.id(); });
 
-    co_await validate_configuration_invariants();
+    auto conf_invariants = co_await validate_configuration_invariants();
 
     _raft0 = co_await create_raft0(
       _partition_manager,
@@ -549,7 +549,9 @@ ss::future<> controller::start(
     // shard_placement_table and controller_backend can start with already
     // initialized table.
     co_await _shard_balancer.invoke_on(
-      shard_balancer::shard_id, &shard_balancer::start);
+      shard_balancer::shard_id,
+      &shard_balancer::start,
+      conf_invariants.core_count);
 
     co_await _backend.invoke_on_all(&controller_backend::start);
 
@@ -1089,7 +1091,8 @@ controller::do_get_controller_partition_state(model::node_id target_node) {
  * from startup up far enough to disrupt the rest of the cluster.
  * @return
  */
-ss::future<> controller::validate_configuration_invariants() {
+ss::future<configuration_invariants>
+controller::validate_configuration_invariants() {
     auto invariants_buf = _storage.local().kvs().get(
       storage::kvstore::key_space::controller, invariants_key);
     vassert(
@@ -1101,10 +1104,11 @@ ss::future<> controller::validate_configuration_invariants() {
 
     if (!invariants_buf) {
         // store configuration invariants
-        return _storage.local().kvs().put(
+        co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
           invariants_key,
-          reflection::to_iobuf(std::move(current)));
+          reflection::to_iobuf(configuration_invariants{current}));
+        co_return current;
     }
     auto invariants = reflection::from_iobuf<configuration_invariants>(
       std::move(*invariants_buf));
@@ -1117,8 +1121,7 @@ ss::future<> controller::validate_configuration_invariants() {
           "supported",
           invariants.node_id,
           current.node_id);
-        return ss::make_exception_future(
-          configuration_invariants_changed(invariants, current));
+        throw configuration_invariants_changed(invariants, current);
     }
     if (invariants.core_count > current.core_count) {
         vlog(
@@ -1129,18 +1132,17 @@ ss::future<> controller::validate_configuration_invariants() {
           "{}, currently have {} cores.",
           invariants.core_count,
           ss::smp::count);
-        return ss::make_exception_future(
-          configuration_invariants_changed(invariants, current));
+        throw configuration_invariants_changed(invariants, current);
     } else if (invariants.core_count != current.core_count) {
         // Update the persistent invariants to reflect increased core
         // count -- this tracks the high water mark of core count, to
         // reject subsequent decreases.
-        return _storage.local().kvs().put(
+        co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
           invariants_key,
-          reflection::to_iobuf(std::move(current)));
+          reflection::to_iobuf(configuration_invariants{current}));
     }
-    return ss::now();
+    co_return current;
 }
 
 } // namespace cluster
