@@ -78,6 +78,7 @@ type Config struct {
 	Language     WasmLang          `yaml:"language"`
 	Env          map[string]string `yaml:"env,omitempty"`
 	Compression  string            `yaml:"compression,omitempty"`
+	FromOffset   string            `yaml:"from-offset,omitempty"`
 }
 
 var ConfigFileName = "transform.yaml"
