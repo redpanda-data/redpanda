@@ -444,6 +444,13 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
     batch_builder rb(write_at, sub);
     rb(std::move(key), std::move(value));
 
+    {
+        // Clear config if this is a delete of the last version
+        auto vec = co_await _store.get_versions(sub, include_deleted::no);
+        if (vec.size() == 1 && vec.front() == version) {
+            rb(co_await _store.get_subject_config_written_at(sub));
+        }
+    }
     if (co_await produce_and_apply(write_at, std::move(rb).build())) {
         co_return true;
     } else {
