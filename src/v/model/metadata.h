@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "base/units.h"
+#include "config/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
@@ -47,7 +48,7 @@ struct broker_properties
     // key=value properties in /etc/redpanda/machine_properties.yaml
     std::unordered_map<ss::sstring, ss::sstring> etc_props;
     uint64_t available_memory_bytes = 0;
-    bool in_fips_mode = false;
+    fips_mode_flag in_fips_mode = fips_mode_flag::disabled;
 
     bool operator==(const broker_properties& other) const = default;
 
@@ -668,7 +669,8 @@ struct hash<model::broker_properties> {
             boost::hash_combine(h, std::hash<ss::sstring>()(k));
             boost::hash_combine(h, std::hash<ss::sstring>()(v));
         }
-        boost::hash_combine(h, std::hash<bool>()(b.in_fips_mode));
+        boost::hash_combine(
+          h, std::hash<model::fips_mode_flag>()(b.in_fips_mode));
         return h;
     }
 };

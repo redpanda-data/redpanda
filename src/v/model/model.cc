@@ -570,4 +570,22 @@ std::istream& operator>>(std::istream& is, recovery_validation_mode& vm) {
     return is;
 }
 
+std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f) {
+    return os << to_string_view(f);
+}
+
+std::istream& operator>>(std::istream& is, fips_mode_flag& f) {
+    ss::sstring s;
+    is >> s;
+    f = string_switch<fips_mode_flag>(s)
+          .match(
+            to_string_view(fips_mode_flag::disabled), fips_mode_flag::disabled)
+          .match(
+            to_string_view(fips_mode_flag::enabled), fips_mode_flag::enabled)
+          .match(
+            to_string_view(fips_mode_flag::permissive),
+            fips_mode_flag::permissive);
+    return is;
+}
+
 } // namespace model

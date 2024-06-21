@@ -15,11 +15,13 @@
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
+#include "config/node_config.h"
 #include "metrics/metrics.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_set.h>
 
 namespace cluster {
@@ -102,6 +104,22 @@ void controller_probe::setup_metrics() {
           },
           sm::description(
             "Number of partitions that lack quorum among replicants"))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "non_homogenous_fips_mode",
+          [this] {
+              const auto& members_table
+                = _controller.get_members_table().local();
+              const auto& nodes = members_table.nodes();
+              auto fips_mode_val = model::from_config(
+                config::node().fips_mode());
+              return absl::c_count_if(nodes, [fips_mode_val](const auto& iter) {
+                  return iter.second.broker.properties().in_fips_mode
+                         != fips_mode_val;
+              });
+          },
+          sm::description(
+            "Number of nodes that have a non-homogenous FIPS mode value"))
           .aggregate({sm::shard_label}),
       });
 
