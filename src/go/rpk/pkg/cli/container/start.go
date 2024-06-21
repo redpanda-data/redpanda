@@ -87,8 +87,9 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Start a local container cluster",
 		Long: `Start a local container cluster.
 
-This command utilizes Docker to initiate a local container cluster. Use the
-'--nodes'/'-n' flag to specify the number of brokers.
+This command uses Docker to initiate a local Redpanda container cluster,
+including Redpanda Console. Use the '--nodes'/'-n' flag to specify the number of
+brokers.
 
 The initial broker starts on default ports, with subsequent brokers' ports
 offset by 1000. You can use the listeners flag to specify ports:
@@ -98,27 +99,30 @@ offset by 1000. You can use the listeners flag to specify ports:
   * --rpc-ports
   * --schema-registry-ports
   * --proxy-ports
+  * --console-port
 
 Each flag accepts a comma-separated list of ports for your listeners. Use the
-'--any-port' flag to let rpk select random available ports on the host machine.
+'--any-port' flag to let rpk select random available ports for every listener on
+the host machine.
 
-Optionally, specify a container image; the default image is
-redpandadata/redpanda:latest.
+By default, this command uses the redpandadata/redpanda:latest and 
+redpandadata/console:latest container images. You can specify a container image 
+by using the '--image' flag.
 
 In case of IP address pool conflict, you may specify a custom subnet and gateway
 using the '--subnet' and '--gateway' flags respectively.
 `,
 		Example: `
-Start a 3-broker cluster:
+Start a three-broker cluster:
   rpk container start -n 3
 
-Start a 1-broker cluster, selecting random ports for every listener:
+Start a single-broker cluster, selecting random ports for every listener:
   rpk container start --any-port
 
-Start a 3-broker cluster, selecting the seed kafka and console port only:
+Start a three-broker cluster, selecting the seed kafka and console port only:
   rpk container start --kafka-ports 9092 --console-port 8080
 
-Start a 3-broker cluster, selecting every admin API port:
+Start a three-broker cluster, selecting every admin API port:
   rpk container start --admin-ports 9644,9645,9646
 `,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
@@ -183,16 +187,16 @@ You can retry profile creation by running:
 		},
 	}
 
-	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of nodes to start")
+	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of brokers(nodes) to start")
 	command.Flags().UintVar(&retries, "retries", 10, "The amount of times to check for the cluster before considering it unstable and exiting")
-	command.Flags().StringVar(&image, "image", common.DefaultRedpandaImage(), "An arbitrary container Redpanda image to use")
-	command.Flags().StringVar(&consoleImage, "console-image", common.DefaultConsoleImage(), "An arbitrary container Redpanda Console image to use")
+	command.Flags().StringVar(&image, "image", common.DefaultRedpandaImage(), "An arbitrary Redpanda container image to use")
+	command.Flags().StringVar(&consoleImage, "console-image", common.DefaultConsoleImage(), "An arbitrary Redpanda Console container image to use")
 	command.Flags().BoolVar(&pull, "pull", false, "Force pull the container image used")
 	command.Flags().BoolVar(&noProfile, "no-profile", false, "If true, rpk will not create an rpk profile after creating a cluster")
 	command.Flags().StringSliceVar(&kPorts, flagKafkaPorts, nil, "Kafka protocol ports to listen on; check help text for more information")
 	command.Flags().StringSliceVar(&aPorts, flagAdminPorts, nil, "Redpanda Admin API ports to listen on; check help text for more information")
-	command.Flags().StringSliceVar(&srPorts, flagSRPorts, nil, "Schema registry ports to listen on; check help text for more information")
-	command.Flags().StringSliceVar(&pPorts, flagProxyPorts, nil, "Pandaproxy ports to listen on; check help text for more information")
+	command.Flags().StringSliceVar(&srPorts, flagSRPorts, nil, "Schema Registry ports to listen on; check help text for more information")
+	command.Flags().StringSliceVar(&pPorts, flagProxyPorts, nil, "HTTP Proxy ports to listen on; check help text for more information")
 	command.Flags().StringSliceVar(&rPorts, flagRPCPorts, nil, "RPC ports to listen on; check help text for more information")
 	command.Flags().StringVar(&consolePort, flagConsolePort, "8080", "Redpanda console ports to listen on; check help text for more information")
 	// opt-in for 'any' in all listeners
