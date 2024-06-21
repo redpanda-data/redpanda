@@ -14,10 +14,13 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/remote_probe.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
+#include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_operations_api.h"
 #include "cluster/archival/async_data_uploader.h"
 #include "cluster/archival/types.h"
@@ -27,11 +30,14 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "partition.h"
 #include "storage/batch_consumer_utils.h"
+#include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/all.hh>
@@ -898,5 +904,318 @@ ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
 }
 
 } // namespace detail
+
+struct one_time_stream_provider : public storage::stream_provider {
+    explicit one_time_stream_provider(ss::input_stream<char> s)
+      : _st(std::move(s)) {}
+    ss::input_stream<char> take_stream() override { return std::move(*_st); }
+    ss::future<> close() override {
+        if (_st.has_value()) {
+            return _st->close();
+        }
+        return ss::now();
+    }
+    std::optional<ss::input_stream<char>> _st;
+};
+
+class remote_gateway_adapter : public detail::cloud_storage_remote_api {
+public:
+    using upload_result = cloud_storage::upload_result;
+
+    explicit remote_gateway_adapter(cloud_storage::remote& remote)
+      : _remote(remote) {}
+
+    /// Upload object to the cloud storage
+    ///
+    /// This method is similar to 'cloud_storage::remote::upload_segment' but
+    /// it's not performing any retries. The upload workflow should retry in
+    /// case of error. Otherwise the retries are invisible to the scheduler and
+    /// the workflow. The method can be used to upload different types of
+    /// objects. Not only segments. The type of object is encoded in the 'type'
+    /// parameter and the key is generic.
+    ss::future<upload_result> upload_stream(
+      const cloud_storage_clients::bucket_name& bucket,
+      cloud_storage_clients::object_key key,
+      uint64_t content_length,
+      ss::input_stream<char> stream,
+      cloud_storage::upload_type type,
+      retry_chain_node& parent) override {
+        // Without retries we don't have to use lazy abort source
+        cloud_storage::lazy_abort_source noop(
+          []() -> std::optional<ss::sstring> { return std::nullopt; });
+
+        // Segment upload
+        auto path = cloud_storage::remote_segment_path(key());
+
+        auto handle_exceptions_fn = [type](ss::future<upload_result> fut) {
+            if (fut.failed()) {
+                const char* upl_type = "Segment";
+                if (type == cloud_storage::upload_type::segment_index) {
+                    upl_type = "Segment index";
+                }
+                vlog(
+                  archival_log.error,
+                  "{} upload failure, error: {}",
+                  upl_type,
+                  fut.get_exception());
+                return upload_result::failed;
+            }
+            return fut.get();
+        };
+        constexpr size_t num_retries = 1;
+
+        auto result = upload_result::success;
+        if (type == cloud_storage::upload_type::segment_index) {
+            // The index object is small so it's OK to materialize it
+            iobuf payload;
+            auto pst = make_iobuf_ref_output_stream(payload);
+            co_await ss::copy(stream, pst);
+            result
+              = co_await _remote
+                  .upload_object(
+                    {.transfer_details = {
+                       .bucket = bucket,
+                       .key = key,
+                       .parent_rtc = parent,
+                       .success_cb = [](auto& p) { p.index_upload(); },
+                       .failure_cb = [](auto& p) { p.failed_index_upload(); }},
+                     .type = cloud_storage::upload_type::segment_index,
+                     .payload = std::move(payload)})
+                  .then_wrapped(handle_exceptions_fn);
+        } else {
+            auto s = std::make_unique<one_time_stream_provider>(
+              std::move(stream));
+
+            auto reset_fn = [str = std::move(s)]() mutable {
+                return ss::make_ready_future<
+                  std::unique_ptr<storage::stream_provider>>(std::move(str));
+            };
+            result = co_await _remote
+                       .upload_segment(
+                         bucket,
+                         path,
+                         content_length,
+                         std::move(reset_fn),
+                         parent,
+                         noop,
+                         num_retries)
+                       .then_wrapped(handle_exceptions_fn);
+        }
+
+        co_return result;
+    }
+
+    /// Upload manifest to the cloud storage location
+    ///
+    /// The location is defined by the manifest itself
+    ss::future<upload_result> upload_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage::base_manifest& manifest,
+      cloud_storage::remote_manifest_path path,
+      retry_chain_node& parent) override {
+        co_return co_await _remote.upload_manifest(
+          bucket, manifest, path, parent);
+    }
+
+private:
+    cloud_storage::remote& _remote;
+};
+
+class cluster_partition : public detail::cluster_partition_api {
+public:
+    explicit cluster_partition(ss::lw_shared_ptr<cluster::partition> p)
+      : _part(std::move(p)) {}
+
+    const cloud_storage::partition_manifest& manifest() const override {
+        return _part->archival_meta_stm()->manifest();
+    }
+
+    model::offset get_uploaded_offset() const override {
+        return _part->archival_meta_stm()->manifest().get_last_offset();
+    }
+
+    model::offset get_applied_offset() const override {
+        return _part->archival_meta_stm()->manifest().get_applied_offset();
+    }
+
+    model::producer_id get_highest_producer_id() const override {
+        return _part->archival_meta_stm()->manifest().highest_producer_id();
+    }
+
+    /// Same as log->offset_delta
+    /// \throws std::runtime_error if offset is out of range
+    model::offset_delta offset_delta(model::offset o) const override {
+        return _part->log()->offset_delta(o);
+    }
+
+    /// Get term of the locally available offset
+    std::optional<model::term_id>
+    get_offset_term(model::offset o) const override {
+        return _part->log()->get_term(o);
+    }
+
+    model::initial_revision_id get_initial_revision() const override {
+        return _part->log()->config().get_initial_revision();
+    }
+
+    // aborted transactions
+    ss::future<fragmented_vector<model::tx_range>> aborted_transactions(
+      model::offset base, model::offset last) const override {
+        return _part->aborted_transactions(base, last);
+    }
+
+    ss::future<result<model::offset>> add_segments(
+      std::vector<cloud_storage::segment_meta> meta,
+      std::optional<model::offset> clean_offset,
+      std::optional<model::offset> read_write_fence,
+      model::producer_id highest_pid,
+      ss::lowres_clock::time_point deadline,
+      ss::abort_source& as,
+      bool is_validated) noexcept override {
+        auto batch_builder = _part->archival_meta_stm()->batch_start(
+          deadline, as);
+        if (
+          read_write_fence.has_value()
+          && read_write_fence.value() != model::offset{}) {
+            batch_builder.read_write_fence(read_write_fence.value());
+        }
+        if (
+          clean_offset.has_value() && clean_offset.value() != model::offset{}) {
+            batch_builder.mark_clean(clean_offset.value());
+        }
+        batch_builder.add_segments(
+          std::move(meta),
+          is_validated ? cluster::segment_validated::yes
+                       : cluster::segment_validated::no);
+        batch_builder.update_highest_producer_id(highest_pid);
+        auto error_code = co_await batch_builder.replicate();
+        if (error_code) {
+            vlog(
+              archival_log.error,
+              "Failed to replicate archival metadata: {}",
+              error_code);
+            co_return error_code;
+        }
+        co_return _part->archival_meta_stm()->manifest().get_applied_offset();
+    }
+
+    ss::lw_shared_ptr<cluster::partition> underlying() { return _part; }
+
+    cloud_storage::remote_segment_path
+    get_remote_segment_path(const cloud_storage::segment_meta& sm) override {
+        const auto& pp = _part->archival_meta_stm()->path_provider();
+        return _part->archival_meta_stm()->manifest().generate_segment_path(
+          sm, pp);
+    }
+
+    cloud_storage::remote_manifest_path
+    get_remote_manifest_path(const cloud_storage::base_manifest& m) override {
+        const auto& pp = _part->archival_meta_stm()->path_provider();
+        switch (m.get_manifest_type()) {
+        case cloud_storage::manifest_type::partition:
+            return dynamic_cast<const cloud_storage::partition_manifest&>(m)
+              .get_manifest_path(pp);
+        case cloud_storage::manifest_type::tx_range:
+            return dynamic_cast<const cloud_storage::tx_range_manifest&>(m)
+              .get_manifest_path();
+        default:
+            break;
+        };
+        throw std::runtime_error("manifest type not supported");
+    }
+
+private:
+    ss::lw_shared_ptr<cluster::partition> _part;
+};
+
+class cluster_partition_manager : public detail::cluster_partition_manager_api {
+public:
+    explicit cluster_partition_manager(cluster::partition_manager& pm)
+      : _pm(pm) {}
+
+    ss::shared_ptr<detail::cluster_partition_api>
+    get_partition(const model::ntp& ntp) override {
+        auto part = _pm.get(ntp);
+        return ss::make_shared<cluster_partition>(part);
+    }
+
+private:
+    cluster::partition_manager& _pm;
+};
+
+class upload_builder : public detail::segment_upload_builder_api {
+    ss::future<result<std::unique_ptr<detail::prepared_segment_upload>>>
+    prepare_segment_upload(
+      ss::shared_ptr<detail::cluster_partition_api> part,
+      size_limited_offset_range range,
+      size_t read_buffer_size,
+      ss::scheduling_group sg,
+      model::timeout_clock::time_point deadline) override {
+        // This is supposed to work only with cluster_partition implementation
+        // defined above.
+        auto pp = part.get();
+        auto wrapper = dynamic_cast<cluster_partition*>(pp);
+        auto cp = wrapper->underlying();
+        //
+        auto upl = co_await segment_upload::make_segment_upload(
+          cp, range, read_buffer_size, sg, deadline);
+        if (upl.has_error()) {
+            vlog(
+              archival_log.error,
+              "Can't find upload candidate: {}",
+              upl.error());
+            co_return upl.error();
+        }
+
+        auto meta = upl.value()->get_meta();
+        auto payload_stream = co_await std::move(*upl.value()).detach_stream();
+
+        // Meta is not required for correctness but it's logged later
+        cloud_storage::segment_meta segm_meta{
+          .is_compacted = meta.is_compacted,
+          .size_bytes = meta.size_bytes,
+          .base_offset = meta.offsets.base,
+          .committed_offset = meta.offsets.last,
+          // Timestamps will be populated during the upload
+          .base_timestamp = {},
+          .max_timestamp = {},
+          .delta_offset = part->offset_delta(meta.offsets.base),
+          .ntp_revision = part->get_initial_revision(),
+          .archiver_term = cp->term(),
+          .segment_term
+          = part->get_offset_term(meta.offsets.base).value_or(model::term_id{}),
+          .delta_offset_end = part->offset_delta(meta.offsets.last),
+          .sname_format = cloud_storage::segment_name_format::v3,
+          /// Size of the tx-range (in v3 format)
+          .metadata_size_hint = 0,
+        };
+
+        co_return std::make_unique<detail::prepared_segment_upload>(
+          detail::prepared_segment_upload{
+            .offsets = meta.offsets,
+            .size_bytes = meta.size_bytes,
+            .is_compacted = meta.is_compacted,
+            .meta = segm_meta,
+            .payload = std::move(payload_stream),
+          });
+    }
+};
+
+ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
+  ss::sharded<cloud_storage::remote>& remote,
+  ss::sharded<cluster::partition_manager>& pm,
+  cloud_storage_clients::bucket_name bucket,
+  ss::scheduling_group sg) {
+    auto a_remote = ss::make_shared<remote_gateway_adapter>(remote.local());
+    auto a_pm = ss::make_shared<cluster_partition_manager>(pm.local());
+    auto a_upl = ss::make_shared<upload_builder>();
+
+    return ss::make_shared<detail::archiver_operations_impl>(
+      std::move(a_remote),
+      std::move(a_pm),
+      std::move(a_upl),
+      sg,
+      std::move(bucket));
+}
 
 } // namespace archival

@@ -208,4 +208,11 @@ ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
 
 } // namespace detail
 
+/// Create archiver_operations_api instance
+ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
+  ss::sharded<cloud_storage::remote>& remote,
+  ss::sharded<cluster::partition_manager>& pm,
+  cloud_storage_clients::bucket_name bucket,
+  ss::scheduling_group sg);
+
 } // namespace archival
