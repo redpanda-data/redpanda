@@ -231,571 +231,502 @@ ss::future<> controller::start(
       std::back_inserter(seed_nodes),
       [](const model::broker& b) { return b.id(); });
 
-    return validate_configuration_invariants()
-      .then([this, initial_raft0_brokers]() mutable {
-          return create_raft0(
-            _partition_manager,
-            _shard_table,
-            config::node().data_directory().as_sstring(),
-            std::move(initial_raft0_brokers));
-      })
-      .then([this](consensus_ptr c) { _raft0 = c; })
-      .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
-      .then(
-        [this] { return _drain_manager.start(std::ref(_partition_manager)); })
-      .then([this, application_start_time] {
-          return _members_manager.start_single(
-            _raft0,
-            std::ref(_stm),
-            std::ref(_feature_table),
-            std::ref(_members_table),
-            std::ref(_connections),
-            std::ref(_partition_allocator),
-            std::ref(_storage),
-            std::ref(_drain_manager),
-            std::ref(_partition_balancer_state),
-            std::ref(_as),
-            application_start_time);
-      })
-      .then([this] {
-          return _feature_backend.start_single(
-            std::ref(_feature_table), std::ref(_storage));
-      })
-      .then([this] {
-          return _bootstrap_backend.start_single(
-            std::ref(_credentials),
-            std::ref(_storage),
-            std::ref(_members_manager),
-            std::ref(_feature_table),
-            std::ref(_feature_backend),
-            std::ref(_recovery_table));
-      })
-      .then([this] { return _recovery_table.start(); })
-      .then([this] {
-          return _recovery_manager.start_single(
-            std::ref(_as),
-            std::ref(_stm),
-            std::ref(_feature_table),
-            std::ref(_cloud_storage_api),
-            std::ref(_recovery_table),
-            std::ref(_storage),
-            _raft0);
-      })
-      .then([this] { return _plugin_table.start(); })
-      .then([this] { return _plugin_backend.start_single(&_plugin_table); })
-      .then([this] { return _quota_store.start(); })
-      .then(
-        [this] { return _quota_backend.start_single(std::ref(_quota_store)); })
-      .then([this] {
-          return _config_frontend.start(
-            std::ref(_stm),
-            std::ref(_connections),
-            std::ref(_partition_leaders),
-            std::ref(_feature_table),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _config_manager.start_single(
-            std::ref(_config_preload),
-            std::ref(_config_frontend),
-            std::ref(_connections),
-            std::ref(_partition_leaders),
-            std::ref(_feature_table),
-            std::ref(_members_table),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _data_migration_frontend.start(
-            _raft0->self().id(),
-            std::ref(*_data_migration_table),
-            std::ref(_feature_table),
-            std::ref(_stm),
-            std::ref(_partition_leaders),
-            std::ref(_connections),
-            std::ref(_as));
-      })
-      .then([this] {
-          limiter_configuration limiter_conf{
-            config::shard_local_cfg()
-              .enable_controller_log_rate_limiting.bind(),
-            config::shard_local_cfg().rps_limit_topic_operations.bind(),
-            config::shard_local_cfg()
-              .controller_log_accummulation_rps_capacity_topic_operations
-              .bind(),
-            config::shard_local_cfg()
-              .rps_limit_acls_and_users_operations.bind(),
-            config::shard_local_cfg()
-              .controller_log_accummulation_rps_capacity_acls_and_users_operations
-              .bind(),
-            config::shard_local_cfg()
-              .rps_limit_node_management_operations.bind(),
-            config::shard_local_cfg()
-              .controller_log_accummulation_rps_capacity_node_management_operations
-              .bind(),
-            config::shard_local_cfg().rps_limit_move_operations.bind(),
-            config::shard_local_cfg()
-              .controller_log_accummulation_rps_capacity_move_operations.bind(),
-            config::shard_local_cfg().rps_limit_configuration_operations.bind(),
-            config::shard_local_cfg()
-              .controller_log_accummulation_rps_capacity_configuration_operations
-              .bind(),
-          };
-          return _stm.start_single(
-            std::move(limiter_conf),
-            std::ref(_feature_table),
-            config::shard_local_cfg().controller_snapshot_max_age_sec.bind(),
-            std::ref(clusterlog),
-            _raft0.get(),
-            raft::persistent_last_applied::yes,
-            absl::flat_hash_set<model::record_batch_type>{
-              model::record_batch_type::checkpoint,
-              model::record_batch_type::raft_configuration,
-              model::record_batch_type::data_policy_management_cmd},
-            std::ref(_tp_updates_dispatcher),
-            std::ref(_security_manager),
-            std::ref(_members_manager),
-            std::ref(_config_manager),
-            std::ref(_feature_backend),
-            std::ref(_bootstrap_backend),
-            std::ref(_plugin_backend),
-            std::ref(_recovery_manager),
-            std::ref(_quota_backend),
-            std::ref(*_data_migration_table));
-      })
-      .then([this] {
-          return _members_frontend.start(
-            std::ref(_stm),
-            std::ref(_connections),
-            std::ref(_partition_leaders),
-            std::ref(_feature_table),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _security_frontend.start(
-            _raft0->self().id(),
-            this,
-            std::ref(_stm),
-            std::ref(_connections),
-            std::ref(_partition_leaders),
-            std::ref(_feature_table),
-            std::ref(_as),
-            std::ref(_authorizer));
-      })
-      .then([this] {
-          return _ephemeral_credential_frontend.start(
-            self(),
-            std::ref(_credentials),
-            std::ref(_ephemeral_credentials),
-            std::ref(_feature_table),
-            std::ref(_connections));
-      })
-      .then([this] {
-          return _tp_frontend.start(
-            _raft0->self().id(),
-            std::ref(_stm),
-            std::ref(_connections),
-            std::ref(_partition_allocator),
-            std::ref(_partition_leaders),
-            std::ref(_tp_state),
-            std::ref(_hm_frontend),
-            std::ref(_as),
-            std::ref(_cloud_storage_api),
-            std::ref(_feature_table),
-            std::ref(_members_table),
-            std::ref(_partition_manager),
-            std::ref(_shard_table),
-            std::ref(_shard_balancer),
-            ss::sharded_parameter(
-              [this] { return std::ref(_data_migrated_resources.local()); }),
-            ss::sharded_parameter(
-              [this] { return std::ref(_plugin_table.local()); }),
-            ss::sharded_parameter(
-              [this] { return std::ref(_metadata_cache.local()); }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .storage_space_alert_free_threshold_percent.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .minimum_topic_replication.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .partition_autobalancing_topic_aware.bind();
-            }));
-      })
-      .then([this] {
-          return _plugin_frontend.start(
-            _raft0->self().id(),
-            ss::sharded_parameter(
-              [this] { return &_partition_leaders.local(); }),
-            ss::sharded_parameter([this] { return &_plugin_table.local(); }),
-            ss::sharded_parameter([this] { return &_tp_state.local(); }),
-            ss::sharded_parameter([this] {
-                return _stm.local_is_initialized() ? &_stm.local() : nullptr;
-            }),
-            ss::sharded_parameter([this] { return &_connections.local(); }),
-            ss::sharded_parameter([this] { return &_as.local(); }));
-      })
-      .then(
-        [this] { return _quota_frontend.start(std::ref(_stm), std::ref(_as)); })
-      .then([this] {
-          return _members_backend.start_single(
-            std::ref(_tp_frontend),
-            std::ref(_tp_state),
-            std::ref(_partition_allocator),
-            std::ref(_members_table),
-            std::ref(_api),
-            std::ref(_members_manager),
-            std::ref(_members_frontend),
-            std::ref(_feature_table),
-            _raft0,
-            std::ref(_as));
-      })
-      .then([this] {
-          return _backend.start(
-            std::ref(_tp_state),
-            std::ref(_shard_placement),
-            std::ref(_shard_table),
-            std::ref(_partition_manager),
-            std::ref(_members_table),
-            std::ref(_partition_leaders),
-            std::ref(_tp_frontend),
-            std::ref(_storage),
-            std::ref(_feature_table),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .controller_backend_housekeeping_interval_ms.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .initial_retention_local_target_bytes_default.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .initial_retention_local_target_ms_default.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .retention_local_target_bytes_default.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg()
-                  .retention_local_target_ms_default.bind();
-            }),
-            ss::sharded_parameter([] {
-                return config::shard_local_cfg().retention_local_strict.bind();
-            }),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _shard_balancer.start_single(
-            std::ref(_shard_placement),
-            std::ref(_feature_table),
-            std::ref(_storage),
-            std::ref(_tp_state),
-            std::ref(_backend),
-            config::shard_local_cfg()
-              .core_balancing_on_core_count_change.bind(),
-            config::shard_local_cfg().core_balancing_continuous.bind(),
-            config::shard_local_cfg().core_balancing_debounce_timeout.bind());
-      })
-      .then(
-        [this] { return _drain_manager.invoke_on_all(&drain_manager::start); })
-      .then([this, initial_raft0_brokers]() mutable {
-          return _members_manager.invoke_on(
-            members_manager::shard,
-            [initial_raft0_brokers = std::move(initial_raft0_brokers)](
-              members_manager& manager) mutable {
-                return manager.start(std::move(initial_raft0_brokers));
-            });
-      })
-      .then([this] {
-          /**
-           * Controller state machine MUST be started after all entities that
-           * receives `apply_update` notifications
-           */
-          return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
-      })
-      .then([this, &as = shard0_as] {
-          auto disk_dirty_offset = _raft0->log()->offsets().dirty_offset;
+    co_await validate_configuration_invariants();
 
-          return _stm
-            .invoke_on(
-              controller_stm_shard,
-              [disk_dirty_offset, &as = as](controller_stm& stm) {
-                  // we do not have to use timeout in here as all the batches to
-                  // apply have to be accesssible
-                  auto last_applied = stm.bootstrap_last_applied();
+    _raft0 = co_await create_raft0(
+      _partition_manager,
+      _shard_table,
+      config::node().data_directory().as_sstring(),
+      initial_raft0_brokers);
 
-                  // Consistency check: on a bug-free system, the last_applied
-                  // value in the kvstore always points to data on disk.
-                  // However, if there is a bug, or someone has removed some log
-                  // segments out of band, we will hang trying to read up to
-                  // last_applied. Mitigate this by clamping it to the top of
-                  // the log on disk.
-                  if (last_applied > disk_dirty_offset) {
-                      vlog(
-                        clusterlog.error,
-                        "Inconsistency detected between KVStore last_applied "
-                        "({}) and actual log size ({}).  If the storage "
-                        "directory was not modified intentionally, this is a "
-                        "bug.",
-                        last_applied,
-                        disk_dirty_offset);
+    co_await _partition_leaders.start(std::ref(_tp_state));
+    co_await _drain_manager.start(std::ref(_partition_manager));
+    co_await _members_manager.start_single(
+      _raft0,
+      std::ref(_stm),
+      std::ref(_feature_table),
+      std::ref(_members_table),
+      std::ref(_connections),
+      std::ref(_partition_allocator),
+      std::ref(_storage),
+      std::ref(_drain_manager),
+      std::ref(_partition_balancer_state),
+      std::ref(_as),
+      application_start_time);
+    co_await _feature_backend.start_single(
+      std::ref(_feature_table), std::ref(_storage));
+    co_await _bootstrap_backend.start_single(
+      std::ref(_credentials),
+      std::ref(_storage),
+      std::ref(_members_manager),
+      std::ref(_feature_table),
+      std::ref(_feature_backend),
+      std::ref(_recovery_table));
 
-                      // Try waiting for replay to reach the disk_dirty_offset,
-                      // ignore last_applied.
-                      return stm
-                        .wait(disk_dirty_offset, model::time_from_now(5s))
-                        .handle_exception_type([](const ss::timed_out_error&) {
-                            // Ignore timeout: it just means the controller
-                            // log replay is done without hitting the disk
-                            // log hwm (truncation happened), or that we were
-                            // slow and controller replay will continue in
-                            // the background while the rest of redpanda
-                            // starts up.
-                        });
-                  }
+    co_await _recovery_table.start();
+    co_await _recovery_manager.start_single(
+      std::ref(_as),
+      std::ref(_stm),
+      std::ref(_feature_table),
+      std::ref(_cloud_storage_api),
+      std::ref(_recovery_table),
+      std::ref(_storage),
+      _raft0);
 
-                  vlog(
-                    clusterlog.info,
-                    "Controller log replay starting (to offset {})",
-                    last_applied);
+    co_await _plugin_table.start();
+    co_await _plugin_backend.start_single(&_plugin_table);
 
-                  if (last_applied == model::offset{}) {
-                      return ss::now();
-                  } else {
-                      // The abort source we use here is specific to our startup
-                      // phase, where we can't yet safely use our member abort
-                      // source.
-                      return stm.wait(last_applied, model::no_timeout, as);
-                  }
-              })
-            .then([this] {
-                vlog(clusterlog.info, "Controller log replay complete.");
-                /// Once the controller log is replayed and topics are recovered
-                /// print the RF minimum warning
-                _tp_frontend.local().print_rf_warning_message();
-            });
-      })
-      .then([this, &discovery] { return cluster_creation_hook(discovery); })
-      .then([this] {
-          // start shard_balancer before controller_backend so that it boostraps
-          // shard_placement_table and controller_backend can start with already
-          // initialized table.
-          return _shard_balancer.invoke_on(
-            shard_balancer::shard_id, &shard_balancer::start);
-      })
-      .then(
-        [this] { return _backend.invoke_on_all(&controller_backend::start); })
-      .then([this] {
-          return _api.start(
-            _raft0->self().id(),
-            std::ref(_backend),
-            std::ref(_tp_state),
-            std::ref(_shard_table),
-            std::ref(_connections),
-            std::ref(_hm_frontend),
-            std::ref(_members_table),
-            std::ref(_partition_balancer),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _members_backend.invoke_on(
-            members_manager::shard, &members_backend::start);
-      })
-      .then([this] {
-          return _config_manager.invoke_on(
-            config_manager::shard, &config_manager::start);
-      })
-      .then([this] {
-          return _feature_manager.start_single(
-            std::ref(_stm),
-            std::ref(_as),
-            std::ref(_members_table),
-            std::ref(_raft_manager),
-            std::ref(_hm_frontend),
-            std::ref(_hm_backend),
-            std::ref(_feature_table),
-            std::ref(_connections),
-            std::ref(_roles),
-            _raft0->group());
-      })
-      .then([this] {
-          return _health_manager.start_single(
-            _raft0->self().id(),
-            config::shard_local_cfg().internal_topic_replication_factor(),
-            config::shard_local_cfg().health_manager_tick_interval(),
-            config::shard_local_cfg()
-              .partition_autobalancing_concurrent_moves.bind(),
-            std::ref(_tp_state),
-            std::ref(_tp_frontend),
-            std::ref(_partition_allocator),
-            std::ref(_partition_leaders),
-            std::ref(_members_table),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _health_manager.invoke_on(
-            health_manager::shard, &health_manager::start);
-      })
-      .then([this] {
-          return _hm_backend.start_single(
-            _raft0,
-            std::ref(_members_table),
-            std::ref(_connections),
-            std::ref(_partition_manager),
-            std::ref(_raft_manager),
-            std::ref(_as),
-            std::ref(_local_monitor),
-            std::ref(_drain_manager),
-            std::ref(_feature_table),
-            std::ref(_partition_leaders),
-            std::ref(_tp_state));
-      })
-      .then([this] {
-          _leader_balancer = std::make_unique<leader_balancer>(
-            _tp_state.local(),
-            _partition_leaders.local(),
-            _members_table.local(),
-            _hm_backend.local(),
-            _feature_table.local(),
-            std::ref(_connections),
-            std::ref(_shard_table),
-            std::ref(_partition_manager),
-            std::ref(_as),
-            config::shard_local_cfg().enable_leader_balancer.bind(),
-            config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
-            config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
-            config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
-            config::shard_local_cfg()
-              .leader_balancer_transfer_limit_per_shard.bind(),
-            _raft0);
-          return _leader_balancer->start();
-      })
-      .then([this] {
-          return _hm_frontend.start(
-            std::ref(_hm_backend),
-            std::ref(_node_status_table),
-            ss::sharded_parameter([]() {
-                return config::shard_local_cfg().alive_timeout_ms.bind();
-            }));
-      })
-      .then([this] {
-          return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
-      })
-      .then([this] {
-          return _oidc_service.invoke_on_all(&security::oidc::service::start);
-      })
-      .then([this, seed_nodes = std::move(seed_nodes)]() mutable {
-          return _feature_manager.invoke_on(
-            feature_manager::backend_shard,
-            &feature_manager::start,
-            std::move(seed_nodes));
-      })
-      .then([this] {
-          return _metrics_reporter.start_single(
-            _raft0,
-            std::ref(_stm),
-            std::ref(_members_table),
-            std::ref(_tp_state),
-            std::ref(_hm_frontend),
-            std::ref(_config_frontend),
-            std::ref(_feature_table),
-            std::ref(_roles),
-            std::addressof(_plugin_table),
-            std::ref(_as));
-      })
-      .then([this] {
-          return _metrics_reporter.invoke_on(0, &metrics_reporter::start);
-      })
-      .then([this] {
-          return _partition_balancer.start_single(
-            _raft0,
-            std::ref(_stm),
-            std::ref(_partition_balancer_state),
-            std::ref(_hm_backend),
-            std::ref(_partition_allocator),
-            std::ref(_tp_frontend),
-            std::ref(_members_frontend),
-            config::shard_local_cfg().partition_autobalancing_mode.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_node_availability_timeout_sec.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_max_disk_usage_percent.bind(),
-            config::shard_local_cfg()
-              .storage_space_alert_free_threshold_percent.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_tick_interval_ms.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_concurrent_moves.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_tick_moves_drop_threshold.bind(),
-            config::shard_local_cfg().segment_fallocation_step.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_min_size_threshold.bind(),
-            config::shard_local_cfg().node_status_interval.bind(),
-            config::shard_local_cfg().raft_learner_recovery_rate.bind(),
-            config::shard_local_cfg()
-              .partition_autobalancing_topic_aware.bind());
-      })
-      .then([this] {
-          return _partition_balancer.invoke_on(
-            partition_balancer_backend::shard,
-            &partition_balancer_backend::start);
-      })
-      .then([this, offsets_uploader, producer_id_recovery, offsets_recovery] {
-          if (config::node().recovery_mode_enabled()) {
-              return;
-          }
-          auto bucket_opt = get_configured_bucket();
-          if (!bucket_opt.has_value()) {
-              return;
-          }
-          cloud_storage_clients::bucket_name bucket = bucket_opt.value();
-          _metadata_uploader = std::make_unique<cloud_metadata::uploader>(
-            _raft_manager.local(),
-            _storage.local(),
-            bucket,
-            _cloud_storage_api.local(),
-            _raft0,
-            _tp_state.local(),
-            offsets_uploader);
-          if (config::shard_local_cfg().enable_cluster_metadata_upload_loop()) {
-              _metadata_uploader->start();
-          }
-          _recovery_backend
-            = std::make_unique<cloud_metadata::cluster_recovery_backend>(
-              _recovery_manager.local(),
-              _raft_manager.local(),
-              _cloud_storage_api.local(),
-              _cloud_cache.local(),
-              _members_table.local(),
-              _feature_table.local(),
-              _credentials.local(),
-              _tp_state.local(),
-              _api.local(),
-              _feature_manager.local(),
-              _config_frontend.local(),
-              _security_frontend.local(),
-              _tp_frontend.local(),
-              producer_id_recovery,
-              offsets_recovery,
-              std::ref(_recovery_table),
-              _raft0);
-          if (!config::shard_local_cfg()
-                 .disable_cluster_recovery_loop_for_tests()) {
-              _recovery_backend->start();
-          }
-      })
-      .then([this] {
-          _data_migration_backend = std::make_unique<data_migrations::backend>(
-            std::ref(*_data_migration_table),
-            std::ref(_data_migration_frontend.local()),
-            std::ref(_as.local()));
-          return _data_migration_backend->start();
+    co_await _quota_store.start();
+    co_await _quota_backend.start_single(std::ref(_quota_store));
+
+    co_await _config_frontend.start(
+      std::ref(_stm),
+      std::ref(_connections),
+      std::ref(_partition_leaders),
+      std::ref(_feature_table),
+      std::ref(_as));
+    co_await _config_manager.start_single(
+      std::ref(_config_preload),
+      std::ref(_config_frontend),
+      std::ref(_connections),
+      std::ref(_partition_leaders),
+      std::ref(_feature_table),
+      std::ref(_members_table),
+      std::ref(_as));
+
+    co_await _data_migration_frontend.start(
+      _raft0->self().id(),
+      std::ref(*_data_migration_table),
+      std::ref(_feature_table),
+      std::ref(_stm),
+      std::ref(_partition_leaders),
+      std::ref(_connections),
+      std::ref(_as));
+
+    {
+        limiter_configuration limiter_conf{
+          config::shard_local_cfg().enable_controller_log_rate_limiting.bind(),
+          config::shard_local_cfg().rps_limit_topic_operations.bind(),
+          config::shard_local_cfg()
+            .controller_log_accummulation_rps_capacity_topic_operations.bind(),
+          config::shard_local_cfg().rps_limit_acls_and_users_operations.bind(),
+          config::shard_local_cfg()
+            .controller_log_accummulation_rps_capacity_acls_and_users_operations
+            .bind(),
+          config::shard_local_cfg().rps_limit_node_management_operations.bind(),
+          config::shard_local_cfg()
+            .controller_log_accummulation_rps_capacity_node_management_operations
+            .bind(),
+          config::shard_local_cfg().rps_limit_move_operations.bind(),
+          config::shard_local_cfg()
+            .controller_log_accummulation_rps_capacity_move_operations.bind(),
+          config::shard_local_cfg().rps_limit_configuration_operations.bind(),
+          config::shard_local_cfg()
+            .controller_log_accummulation_rps_capacity_configuration_operations
+            .bind(),
+        };
+        co_await _stm.start_single(
+          std::move(limiter_conf),
+          std::ref(_feature_table),
+          config::shard_local_cfg().controller_snapshot_max_age_sec.bind(),
+          std::ref(clusterlog),
+          _raft0.get(),
+          raft::persistent_last_applied::yes,
+          absl::flat_hash_set<model::record_batch_type>{
+            model::record_batch_type::checkpoint,
+            model::record_batch_type::raft_configuration,
+            model::record_batch_type::data_policy_management_cmd},
+          std::ref(_tp_updates_dispatcher),
+          std::ref(_security_manager),
+          std::ref(_members_manager),
+          std::ref(_config_manager),
+          std::ref(_feature_backend),
+          std::ref(_bootstrap_backend),
+          std::ref(_plugin_backend),
+          std::ref(_recovery_manager),
+          std::ref(_quota_backend),
+          std::ref(*_data_migration_table));
+    }
+
+    co_await _members_frontend.start(
+      std::ref(_stm),
+      std::ref(_connections),
+      std::ref(_partition_leaders),
+      std::ref(_feature_table),
+      std::ref(_as));
+
+    co_await _security_frontend.start(
+      _raft0->self().id(),
+      this,
+      std::ref(_stm),
+      std::ref(_connections),
+      std::ref(_partition_leaders),
+      std::ref(_feature_table),
+      std::ref(_as),
+      std::ref(_authorizer));
+    co_await _ephemeral_credential_frontend.start(
+      self(),
+      std::ref(_credentials),
+      std::ref(_ephemeral_credentials),
+      std::ref(_feature_table),
+      std::ref(_connections));
+
+    co_await _tp_frontend.start(
+      _raft0->self().id(),
+      std::ref(_stm),
+      std::ref(_connections),
+      std::ref(_partition_allocator),
+      std::ref(_partition_leaders),
+      std::ref(_tp_state),
+      std::ref(_hm_frontend),
+      std::ref(_as),
+      std::ref(_cloud_storage_api),
+      std::ref(_feature_table),
+      std::ref(_members_table),
+      std::ref(_partition_manager),
+      std::ref(_shard_table),
+      std::ref(_shard_balancer),
+      ss::sharded_parameter(
+        [this] { return std::ref(_data_migrated_resources.local()); }),
+      ss::sharded_parameter([this] { return std::ref(_plugin_table.local()); }),
+      ss::sharded_parameter(
+        [this] { return std::ref(_metadata_cache.local()); }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .storage_space_alert_free_threshold_percent.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg().minimum_topic_replication.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .partition_autobalancing_topic_aware.bind();
+      }));
+
+    co_await _plugin_frontend.start(
+      _raft0->self().id(),
+      ss::sharded_parameter([this] { return &_partition_leaders.local(); }),
+      ss::sharded_parameter([this] { return &_plugin_table.local(); }),
+      ss::sharded_parameter([this] { return &_tp_state.local(); }),
+      ss::sharded_parameter([this] {
+          return _stm.local_is_initialized() ? &_stm.local() : nullptr;
+      }),
+      ss::sharded_parameter([this] { return &_connections.local(); }),
+      ss::sharded_parameter([this] { return &_as.local(); }));
+
+    co_await _quota_frontend.start(std::ref(_stm), std::ref(_as));
+
+    co_await _members_backend.start_single(
+      std::ref(_tp_frontend),
+      std::ref(_tp_state),
+      std::ref(_partition_allocator),
+      std::ref(_members_table),
+      std::ref(_api),
+      std::ref(_members_manager),
+      std::ref(_members_frontend),
+      std::ref(_feature_table),
+      _raft0,
+      std::ref(_as));
+
+    co_await _backend.start(
+      std::ref(_tp_state),
+      std::ref(_shard_placement),
+      std::ref(_shard_table),
+      std::ref(_partition_manager),
+      std::ref(_members_table),
+      std::ref(_partition_leaders),
+      std::ref(_tp_frontend),
+      std::ref(_storage),
+      std::ref(_feature_table),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .controller_backend_housekeeping_interval_ms.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .initial_retention_local_target_bytes_default.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .initial_retention_local_target_ms_default.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .retention_local_target_bytes_default.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .retention_local_target_ms_default.bind();
+      }),
+      ss::sharded_parameter(
+        [] { return config::shard_local_cfg().retention_local_strict.bind(); }),
+      std::ref(_as));
+
+    co_await _shard_balancer.start_single(
+      std::ref(_shard_placement),
+      std::ref(_feature_table),
+      std::ref(_storage),
+      std::ref(_tp_state),
+      std::ref(_backend),
+      config::shard_local_cfg().core_balancing_on_core_count_change.bind(),
+      config::shard_local_cfg().core_balancing_continuous.bind(),
+      config::shard_local_cfg().core_balancing_debounce_timeout.bind());
+
+    co_await _drain_manager.invoke_on_all(&drain_manager::start);
+
+    co_await _members_manager.invoke_on(
+      members_manager::shard,
+      [initial_raft0_brokers](members_manager& manager) mutable {
+          return manager.start(std::move(initial_raft0_brokers));
       });
+
+    /**
+     * Controller state machine MUST be started after all entities that
+     * receives `apply_update` notifications
+     */
+    co_await _stm.invoke_on(controller_stm_shard, &controller_stm::start);
+
+    auto disk_dirty_offset = _raft0->log()->offsets().dirty_offset;
+    co_await _stm.invoke_on(
+      controller_stm_shard,
+      [disk_dirty_offset, &as = shard0_as](controller_stm& stm) {
+          // we do not have to use timeout in here as all the batches to
+          // apply have to be accesssible
+          auto last_applied = stm.bootstrap_last_applied();
+
+          // Consistency check: on a bug-free system, the last_applied
+          // value in the kvstore always points to data on disk.
+          // However, if there is a bug, or someone has removed some log
+          // segments out of band, we will hang trying to read up to
+          // last_applied. Mitigate this by clamping it to the top of
+          // the log on disk.
+          if (last_applied > disk_dirty_offset) {
+              vlog(
+                clusterlog.error,
+                "Inconsistency detected between KVStore last_applied "
+                "({}) and actual log size ({}).  If the storage "
+                "directory was not modified intentionally, this is a "
+                "bug.",
+                last_applied,
+                disk_dirty_offset);
+
+              // Try waiting for replay to reach the disk_dirty_offset,
+              // ignore last_applied.
+              return stm.wait(disk_dirty_offset, model::time_from_now(5s))
+                .handle_exception_type([](const ss::timed_out_error&) {
+                    // Ignore timeout: it just means the controller
+                    // log replay is done without hitting the disk
+                    // log hwm (truncation happened), or that we were
+                    // slow and controller replay will continue in
+                    // the background while the rest of redpanda
+                    // starts up.
+                });
+          }
+
+          vlog(
+            clusterlog.info,
+            "Controller log replay starting (to offset {})",
+            last_applied);
+
+          if (last_applied == model::offset{}) {
+              return ss::now();
+          } else {
+              // The abort source we use here is specific to our startup
+              // phase, where we can't yet safely use our member abort
+              // source.
+              return stm.wait(last_applied, model::no_timeout, as);
+          }
+      });
+    vlog(clusterlog.info, "Controller log replay complete.");
+
+    /// Once the controller log is replayed and topics are recovered
+    /// print the RF minimum warning
+    _tp_frontend.local().print_rf_warning_message();
+
+    co_await cluster_creation_hook(discovery);
+
+    // start shard_balancer before controller_backend so that it bootstraps
+    // shard_placement_table and controller_backend can start with already
+    // initialized table.
+    co_await _shard_balancer.invoke_on(
+      shard_balancer::shard_id, &shard_balancer::start);
+
+    co_await _backend.invoke_on_all(&controller_backend::start);
+
+    co_await _api.start(
+      _raft0->self().id(),
+      std::ref(_backend),
+      std::ref(_tp_state),
+      std::ref(_shard_table),
+      std::ref(_connections),
+      std::ref(_hm_frontend),
+      std::ref(_members_table),
+      std::ref(_partition_balancer),
+      std::ref(_as));
+
+    co_await _members_backend.invoke_on(
+      members_manager::shard, &members_backend::start);
+    co_await _config_manager.invoke_on(
+      config_manager::shard, &config_manager::start);
+    co_await _feature_manager.start_single(
+      std::ref(_stm),
+      std::ref(_as),
+      std::ref(_members_table),
+      std::ref(_raft_manager),
+      std::ref(_hm_frontend),
+      std::ref(_hm_backend),
+      std::ref(_feature_table),
+      std::ref(_connections),
+      std::ref(_roles),
+      _raft0->group());
+
+    co_await _health_manager.start_single(
+      _raft0->self().id(),
+      config::shard_local_cfg().internal_topic_replication_factor(),
+      config::shard_local_cfg().health_manager_tick_interval(),
+      config::shard_local_cfg().partition_autobalancing_concurrent_moves.bind(),
+      std::ref(_tp_state),
+      std::ref(_tp_frontend),
+      std::ref(_partition_allocator),
+      std::ref(_partition_leaders),
+      std::ref(_members_table),
+      std::ref(_as));
+    co_await _health_manager.invoke_on(
+      health_manager::shard, &health_manager::start);
+
+    co_await _hm_backend.start_single(
+      _raft0,
+      std::ref(_members_table),
+      std::ref(_connections),
+      std::ref(_partition_manager),
+      std::ref(_raft_manager),
+      std::ref(_as),
+      std::ref(_local_monitor),
+      std::ref(_drain_manager),
+      std::ref(_feature_table),
+      std::ref(_partition_leaders),
+      std::ref(_tp_state));
+
+    _leader_balancer = std::make_unique<leader_balancer>(
+      _tp_state.local(),
+      _partition_leaders.local(),
+      _members_table.local(),
+      _hm_backend.local(),
+      _feature_table.local(),
+      std::ref(_connections),
+      std::ref(_shard_table),
+      std::ref(_partition_manager),
+      std::ref(_as),
+      config::shard_local_cfg().enable_leader_balancer.bind(),
+      config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
+      config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
+      config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
+      config::shard_local_cfg().leader_balancer_transfer_limit_per_shard.bind(),
+      _raft0);
+    co_await _leader_balancer->start();
+
+    co_await _hm_frontend.start(
+      std::ref(_hm_backend),
+      std::ref(_node_status_table),
+      ss::sharded_parameter(
+        []() { return config::shard_local_cfg().alive_timeout_ms.bind(); }));
+    co_await _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
+
+    co_await _oidc_service.invoke_on_all(&security::oidc::service::start);
+
+    co_await _feature_manager.invoke_on(
+      feature_manager::backend_shard,
+      &feature_manager::start,
+      std::vector{seed_nodes});
+
+    co_await _metrics_reporter.start_single(
+      _raft0,
+      std::ref(_stm),
+      std::ref(_members_table),
+      std::ref(_tp_state),
+      std::ref(_hm_frontend),
+      std::ref(_config_frontend),
+      std::ref(_feature_table),
+      std::ref(_roles),
+      std::addressof(_plugin_table),
+      std::ref(_as));
+    co_await _metrics_reporter.invoke_on(0, &metrics_reporter::start);
+
+    co_await _partition_balancer.start_single(
+      _raft0,
+      std::ref(_stm),
+      std::ref(_partition_balancer_state),
+      std::ref(_hm_backend),
+      std::ref(_partition_allocator),
+      std::ref(_tp_frontend),
+      std::ref(_members_frontend),
+      config::shard_local_cfg().partition_autobalancing_mode.bind(),
+      config::shard_local_cfg()
+        .partition_autobalancing_node_availability_timeout_sec.bind(),
+      config::shard_local_cfg()
+        .partition_autobalancing_max_disk_usage_percent.bind(),
+      config::shard_local_cfg()
+        .storage_space_alert_free_threshold_percent.bind(),
+      config::shard_local_cfg().partition_autobalancing_tick_interval_ms.bind(),
+      config::shard_local_cfg().partition_autobalancing_concurrent_moves.bind(),
+      config::shard_local_cfg()
+        .partition_autobalancing_tick_moves_drop_threshold.bind(),
+      config::shard_local_cfg().segment_fallocation_step.bind(),
+      config::shard_local_cfg()
+        .partition_autobalancing_min_size_threshold.bind(),
+      config::shard_local_cfg().node_status_interval.bind(),
+      config::shard_local_cfg().raft_learner_recovery_rate.bind(),
+      config::shard_local_cfg().partition_autobalancing_topic_aware.bind());
+    co_await _partition_balancer.invoke_on(
+      partition_balancer_backend::shard, &partition_balancer_backend::start);
+
+    if (!config::node().recovery_mode_enabled()) {
+        auto bucket_opt = get_configured_bucket();
+        if (bucket_opt.has_value()) {
+            cloud_storage_clients::bucket_name bucket = bucket_opt.value();
+            _metadata_uploader = std::make_unique<cloud_metadata::uploader>(
+              _raft_manager.local(),
+              _storage.local(),
+              bucket,
+              _cloud_storage_api.local(),
+              _raft0,
+              _tp_state.local(),
+              offsets_uploader);
+            if (config::shard_local_cfg()
+                  .enable_cluster_metadata_upload_loop()) {
+                _metadata_uploader->start();
+            }
+            _recovery_backend
+              = std::make_unique<cloud_metadata::cluster_recovery_backend>(
+                _recovery_manager.local(),
+                _raft_manager.local(),
+                _cloud_storage_api.local(),
+                _cloud_cache.local(),
+                _members_table.local(),
+                _feature_table.local(),
+                _credentials.local(),
+                _tp_state.local(),
+                _api.local(),
+                _feature_manager.local(),
+                _config_frontend.local(),
+                _security_frontend.local(),
+                _tp_frontend.local(),
+                producer_id_recovery,
+                offsets_recovery,
+                std::ref(_recovery_table),
+                _raft0);
+            if (!config::shard_local_cfg()
+                   .disable_cluster_recovery_loop_for_tests()) {
+                _recovery_backend->start();
+            }
+        }
+    }
+
+    _data_migration_backend = std::make_unique<data_migrations::backend>(
+      std::ref(*_data_migration_table),
+      std::ref(_data_migration_frontend.local()),
+      std::ref(_as.local()));
+    co_await _data_migration_backend->start();
 }
 
 ss::future<> controller::set_ready() {
