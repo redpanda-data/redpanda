@@ -142,7 +142,7 @@ public:
 
     using ntp2state_t = absl::node_hash_map<model::ntp, placement_state>;
 
-    explicit shard_placement_table(storage::kvstore&);
+    explicit shard_placement_table(ss::shard_id, storage::kvstore&);
 
     /// Must be called on assignment_shard_id.
     bool is_persistence_enabled() const;
@@ -150,8 +150,10 @@ public:
 
     /// Must be called on assignment_shard_id.
     /// precondition: is_persistence_enabled() == true
-    ss::future<> initialize_from_kvstore(
-      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp);
+    ss::future<std::vector<std::unique_ptr<shard_placement_table>>>
+    initialize_from_kvstore(
+      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,
+      const std::vector<std::unique_ptr<storage::kvstore>>& extra_kvstores);
 
     /// Must be called on assignment_shard_id.
     /// precondition: is_persistence_enabled() == false
@@ -192,8 +194,10 @@ public:
     // performed
     // * if it returns errc::success, transfer has already been performed
     // * else, we must wait before we begin the transfer.
-    ss::future<result<ss::shard_id>>
-    prepare_transfer(const model::ntp&, model::revision_id expected_log_rev);
+    ss::future<result<ss::shard_id>> prepare_transfer(
+      const model::ntp&,
+      model::revision_id expected_log_rev,
+      ss::sharded<shard_placement_table>&);
 
     ss::future<> finish_transfer_on_destination(
       const model::ntp&, model::revision_id expected_log_rev);
@@ -208,6 +212,8 @@ public:
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
+    void assert_is_assignment_shard() const;
+
     ss::future<> do_delete(
       const model::ntp&,
       placement_state&,
@@ -237,6 +243,7 @@ private:
     // modifications.
     ssx::rwlock _persistence_lock;
     bool _persistence_enabled = false;
+    ss::shard_id _shard;
     storage::kvstore& _kvstore;
 
     // only on shard 0, _ntp2entry will hold targets for all ntps on this node.

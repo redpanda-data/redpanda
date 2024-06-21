@@ -118,7 +118,7 @@ ss::future<> shard_balancer::start() {
     // 2. restore shard_placement_table from the kvstore or from topic_table.
 
     if (_shard_placement.is_persistence_enabled()) {
-        co_await _shard_placement.initialize_from_kvstore(local_group2ntp);
+        co_await _shard_placement.initialize_from_kvstore(local_group2ntp, {});
     } else if (_features.is_active(
                  features::feature::node_local_core_assignment)) {
         // joiner node? enable persistence without initializing

@@ -1725,7 +1725,7 @@ ss::future<std::error_code> controller_backend::transfer_partition(
       log_revision);
 
     auto maybe_dest = co_await _shard_placement.prepare_transfer(
-      ntp, log_revision);
+      ntp, log_revision, _shard_placement.container());
     if (maybe_dest.has_error()) {
         co_return maybe_dest.error();
     }

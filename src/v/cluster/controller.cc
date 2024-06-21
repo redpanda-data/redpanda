@@ -204,8 +204,10 @@ ss::future<> controller::wire_up() {
             std::ref(_node_status_table));
       })
       .then([this] {
-          return _shard_placement.start(ss::sharded_parameter(
-            [this] { return std::ref(_storage.local().kvs()); }));
+          return _shard_placement.start(
+            ss::sharded_parameter([] { return ss::this_shard_id(); }),
+            ss::sharded_parameter(
+              [this] { return std::ref(_storage.local().kvs()); }));
       })
       .then([this] { _probe.start(); });
 }

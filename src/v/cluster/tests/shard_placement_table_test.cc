@@ -453,7 +453,7 @@ private:
       model::revision_id log_revision,
       bool state_expected) {
         auto maybe_dest = co_await _shard_placement.prepare_transfer(
-          ntp, log_revision);
+          ntp, log_revision, _shard_placement.container());
         if (maybe_dest.has_error()) {
             vlog(
               _logger.trace,
@@ -1004,6 +1004,7 @@ public:
 
         spt = std::make_unique<decltype(spt)::element_type>();
         co_await spt->start(
+          ss::sharded_parameter([] { return ss::this_shard_id(); }),
           ss::sharded_parameter([this] { return std::ref(kvs->local()); }));
 
         if (!first_start) {
@@ -1011,7 +1012,7 @@ public:
             for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
                 local_group2ntp.emplace(meta.group, ntp);
             }
-            co_await spt->local().initialize_from_kvstore(local_group2ntp);
+            co_await spt->local().initialize_from_kvstore(local_group2ntp, {});
 
             for (auto& [ntp, shards] : _ntp2shards.local()) {
                 if (
