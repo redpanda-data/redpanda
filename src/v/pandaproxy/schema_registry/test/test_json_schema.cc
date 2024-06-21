@@ -350,6 +350,58 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "integer", "enum": [4, 1]})",
     .reader_is_compatible_with_writer = true,
   },
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "additionalProperties": {"type": "boolean"}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "additionalProperties": false
+})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // objects checks:
+  // - size decrease
+  // - properties change and new properties added
+  // - patternProperties evolve
+  // - additionalProperties evolve
+  // - required list increase
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "minProperties": 2,
+  "maxProperties": 10,
+  "properties": {
+    "aaaa": {"type": "number"}
+  },
+  "patternProperties": {
+    "^b": {"type": "string"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "minProperties": 2,
+  "maxProperties": 9,
+  "properties": {
+    "aaaa": {"type": "integer"},
+    "bbbb": {"type": "string"},
+    "cccc": {"type": "boolean"}
+  },
+  "patternProperties": {
+    "^b": {"type": "string", "minLength":10}
+  },
+  "additionalProperties": false,
+  "required": ["aaaa", "cccc"]
+})",
+    .reader_is_compatible_with_writer = true,
+  },
   // combinators: "not"
   {
     .reader_schema
