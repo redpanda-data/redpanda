@@ -131,155 +131,152 @@ struct compatibility_test_case {
     bool reader_is_compatible_with_writer;
 };
 
-static constexpr auto compatibility_test_cases
-  = std::to_array<compatibility_test_case>({
-    //***** not compatible section *****
-    // not allowed promotion
-    {
-      .reader_schema = R"({"type": "integer"})",
-      .writer_schema = R"({"type": "number"})",
-      .reader_is_compatible_with_writer = false,
-    },
-    {
-      .reader_schema = R"({"type": ["integer", "string"]})",
-      .writer_schema = R"({"type": ["number", "string"]})",
-      .reader_is_compatible_with_writer = false,
-    },
-    // not allowed new types
-    {
-      .reader_schema = R"({"type": "integer"})",
-      .writer_schema = R"({})",
-      .reader_is_compatible_with_writer = false,
-    },
-    {
-      .reader_schema = R"({"type": "boolean"})",
-      .writer_schema = R"({"type": ["boolean", "null"]})",
-      .reader_is_compatible_with_writer = false,
-    },
-    // not allowed numeric evolutions
-    {
-      .reader_schema = R"({"type": "number", "minimum": 11.2})",
-      .writer_schema = R"({"type": "number", "maximum": 30})",
-      .reader_is_compatible_with_writer = false,
-    },
-    {
-      .reader_schema
-      = R"({"type": "number", "minumum": 1.1, "maximum": 3.199})",
-      .writer_schema = R"({"type": "integer", "minimum": 1.1, "maximum": 3.2})",
-      .reader_is_compatible_with_writer = false,
-    },
-    {
-      .reader_schema = R"({"type": "number", "multipleOf": 10})",
-      .writer_schema = R"({"type": "number", "multipleOf": 21})",
-      .reader_is_compatible_with_writer = false,
-    },
-    {
-      .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
-      .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
-      .reader_is_compatible_with_writer = false,
-    },
-    // string checks
-    {
-      .reader_schema = R"({"type": "string", "minLength": 2})",
-      .writer_schema = R"({"type": "string", "minLength": 1})",
-      .reader_is_compatible_with_writer = false,
-    },
-    // string + pattern check: reader regex is a superset of writer regex, but
-    // the rules specify to reject this
-    {
-      .reader_schema = R"({"type": "string", "pattern": "^test +"})",
-      .writer_schema = R"({"type": "string", "pattern": "^test  +"})",
-      .reader_is_compatible_with_writer = false,
-    },
-    // enum checks
-    {
-      .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
-      .writer_schema = R"({"type": "integer", "enum": [4, 1, 3]})",
-      .reader_is_compatible_with_writer = false,
-    },
-    //***** compatible section *****
-    // same type
-    {
-      .reader_schema = R"({"type": "boolean"})",
-      .writer_schema = R"({"type": "boolean"})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "null"})",
-      .writer_schema = R"({"type": "null"})",
-      .reader_is_compatible_with_writer = true,
-    },
-    // restrict types
-    {
-      .reader_schema = R"({"type": ["null", "boolean"]})",
-      .writer_schema = R"({"type": "null"})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": ["number", "boolean"], "minimum": 10.2})",
-      .writer_schema = R"({"type": ["integer", "boolean"], "minimum": 11})",
-      .reader_is_compatible_with_writer = true,
-    },
-    // numeric checks
-    {
-      .reader_schema = R"({"type": "number"})",
-      .writer_schema
-      = R"({"type": "number", "minimum": 11, "exclusiveMinimum": true})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "number"})",
-      .writer_schema = R"({"type": "number", "maximum": 11})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 4})",
-      .writer_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.2})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "number", "multipleOf": 10})",
-      .writer_schema = R"({"type": "number", "multipleOf": 20})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
-      .writer_schema = R"({"type": "number", "multipleOf": 20.2})",
-      .reader_is_compatible_with_writer = true,
-    },
-    // string checks
-    {
-      .reader_schema = R"({"type": "string"})",
-      .writer_schema = R"({"type": "string", "minLength": 1, "maxLength": 10})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "string", "minLength": 1})",
-      .writer_schema = R"({"type": "string", "minLength": 2})",
-      .reader_is_compatible_with_writer = true,
-    },
-    {
-      .reader_schema = R"({"type": "string", "pattern": "^test"})",
-      .writer_schema = R"({"type": "string", "pattern": "^test"})",
-      .reader_is_compatible_with_writer = true,
-    },
-    // metadata is ignored
-    {
-      .reader_schema
-      = R"({"title": "myschema", "description": "this is my schema",
-            "default": true, "type": "boolean"})",
-      .writer_schema
-      = R"({"title": "MySchema", "description": "this schema is mine",
-            "default": false, "type": "boolean"})",
-      .reader_is_compatible_with_writer = true,
-    },
-    // enum checks
-    {
-      .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
-      .writer_schema = R"({"type": "integer", "enum": [4, 1]})",
-      .reader_is_compatible_with_writer = true,
-    },
-  });
+static constexpr auto compatibility_test_cases = std::to_array<
+  compatibility_test_case>({
+  //***** not compatible section *****
+  // not allowed promotion
+  {
+    .reader_schema = R"({"type": "integer"})",
+    .writer_schema = R"({"type": "number"})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": ["integer", "string"]})",
+    .writer_schema = R"({"type": ["number", "string"]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // not allowed new types
+  {
+    .reader_schema = R"({"type": "integer"})",
+    .writer_schema = R"({})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "boolean"})",
+    .writer_schema = R"({"type": ["boolean", "null"]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // not allowed numeric evolutions
+  {
+    .reader_schema = R"({"type": "number", "minimum": 11.2})",
+    .writer_schema = R"({"type": "number", "maximum": 30})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 3.199})",
+    .writer_schema = R"({"type": "integer", "minimum": 1.1, "maximum": 3.2})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 10})",
+    .writer_schema = R"({"type": "number", "multipleOf": 21})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
+    .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // string checks
+  {
+    .reader_schema = R"({"type": "string", "minLength": 2})",
+    .writer_schema = R"({"type": "string", "minLength": 1})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // string + pattern check: reader regex is a superset of writer regex, but
+  // the rules specify to reject this
+  {
+    .reader_schema = R"({"type": "string", "pattern": "^test +"})",
+    .writer_schema = R"({"type": "string", "pattern": "^test  +"})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // enum checks
+  {
+    .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
+    .writer_schema = R"({"type": "integer", "enum": [4, 1, 3]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  //***** compatible section *****
+  // same type
+  {
+    .reader_schema = R"({"type": "boolean"})",
+    .writer_schema = R"({"type": "boolean"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "null"})",
+    .writer_schema = R"({"type": "null"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // restrict types
+  {
+    .reader_schema = R"({"type": ["null", "boolean"]})",
+    .writer_schema = R"({"type": "null"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": ["number", "boolean"], "minimum": 10.2})",
+    .writer_schema = R"({"type": ["integer", "boolean"], "minimum": 11})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // numeric checks
+  {
+    .reader_schema = R"({"type": "number"})",
+    .writer_schema
+    = R"({"type": "number", "minimum": 11, "exclusiveMinimum": true})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number"})",
+    .writer_schema = R"({"type": "number", "maximum": 11})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 4})",
+    .writer_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.2})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 10})",
+    .writer_schema = R"({"type": "number", "multipleOf": 20})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
+    .writer_schema = R"({"type": "number", "multipleOf": 20.2})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // string checks
+  {
+    .reader_schema = R"({"type": "string"})",
+    .writer_schema = R"({"type": "string", "minLength": 1, "maxLength": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "string", "minLength": 1})",
+    .writer_schema = R"({"type": "string", "minLength": 2})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "string", "pattern": "^test"})",
+    .writer_schema = R"({"type": "string", "pattern": "^test"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // metadata is ignored
+  {
+    .reader_schema
+    = R"({"title": "myschema", "description": "this is my schema", "default": true, "type": "boolean"})",
+    .writer_schema
+    = R"({"title": "MySchema", "description": "this schema is mine", "default": false, "type": "boolean"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // enum checks
+  {
+    .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
+    .writer_schema = R"({"type": "integer", "enum": [4, 1]})",
+    .reader_is_compatible_with_writer = true,
+  },
+});
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;
     auto make_json_schema = [&](std::string_view schema) {
