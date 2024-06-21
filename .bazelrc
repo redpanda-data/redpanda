@@ -12,10 +12,6 @@ build --action_env=CXXFLAGS=-Wno-int-conversion
 build --host_action_env=CFLAGS=-Wno-int-conversion
 build --action_env=CFLAGS=-Wno-int-conversion
 
-# https://github.com/bazelbuild/bazel/issues/19915
-# https://github.com/bazelbuild/bazel/issues/20886
-build --noincompatible_sandbox_hermetic_tmp
-
 common --registry=https://bcr.bazel.build
 
 # =================================
