@@ -480,23 +480,30 @@ private:
       const model::ntp& ntp,
       model::revision_id log_revision,
       bool state_expected) {
-        auto maybe_dest = co_await _shard_placement.prepare_transfer(
+        auto transfer_info = co_await _shard_placement.prepare_transfer(
           ntp, log_revision, _shard_placement.container());
-        if (maybe_dest.has_error()) {
+        if (transfer_info.source_error != errc::success) {
             vlog(
               _logger.trace,
-              "[{}] preparing transfer error: {}",
+              "[{}] preparing transfer source error: {}",
               ntp,
-              maybe_dest.error());
-            co_return maybe_dest.error();
+              transfer_info.source_error);
+            co_return transfer_info.source_error;
         }
 
+        ss::shard_id destination = transfer_info.destination.value();
         vlog(
           _logger.trace,
-          "[{}] preparing transfer dest: {}",
+          "[{}] preparing transfer dest: {} (error: {})",
           ntp,
-          maybe_dest.value());
-        ss::shard_id destination = maybe_dest.value();
+          destination,
+          transfer_info.dest_error);
+        if (transfer_info.dest_error != errc::success) {
+            co_return transfer_info.dest_error;
+        }
+        if (transfer_info.is_finished) {
+            co_return errc::success;
+        }
 
         bool launched_expected = _launched.erase(ntp);
         if (launched_expected) {
@@ -583,34 +590,16 @@ private:
               shards.next_state_on = std::nullopt;
           });
 
-        co_await container().invoke_on(
-          destination, [&ntp, log_revision](reconciliation_backend& dest) {
-              return dest._shard_placement
-                .finish_transfer_on_destination(ntp, log_revision)
-                .then([&] {
-                    auto it = dest._states.find(ntp);
-                    if (it != dest._states.end()) {
-                        it->second->wakeup_event.set();
-                    }
-                });
-          });
+        auto shard_callback = [this](const model::ntp& ntp) {
+            auto& dest = container().local();
+            auto it = dest._states.find(ntp);
+            if (it != dest._states.end()) {
+                it->second->wakeup_event.set();
+            }
+        };
 
-        co_await _ntp2shards.invoke_on(
-          0,
-          [ntp, shard = ss::this_shard_id(), state_expected](
-            ntp2shards_t& ntp2shards) {
-              auto& ntp_shards = ntp2shards[ntp];
-              bool erased = ntp_shards.shards_with_some_state.erase(shard);
-              if (!state_expected) {
-                  vassert(
-                    !erased,
-                    "[{}] unexpected set contents, source: {}",
-                    ntp,
-                    shard);
-              }
-          });
-
-        co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
+        co_await _shard_placement.finish_transfer(
+          ntp, log_revision, _shard_placement.container(), shard_callback);
         vlog(_logger.trace, "[{}] transferred", ntp);
         co_return errc::success;
     }

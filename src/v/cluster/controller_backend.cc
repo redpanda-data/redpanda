@@ -1735,12 +1735,16 @@ ss::future<std::error_code> controller_backend::transfer_partition(
       ntp,
       log_revision);
 
-    auto maybe_dest = co_await _shard_placement.prepare_transfer(
+    auto transfer_info = co_await _shard_placement.prepare_transfer(
       ntp, log_revision, _shard_placement.container());
-    if (maybe_dest.has_error()) {
-        co_return maybe_dest.error();
+    if (transfer_info.source_error != errc::success) {
+        co_return transfer_info.source_error;
+    } else if (transfer_info.dest_error != errc::success) {
+        co_return transfer_info.dest_error;
+    } else if (transfer_info.is_finished) {
+        co_return errc::success;
     }
-    ss::shard_id destination = maybe_dest.value();
+    ss::shard_id destination = transfer_info.destination.value();
 
     auto partition = _partition_manager.local().get(ntp);
     if (partition) {
@@ -1750,21 +1754,16 @@ ss::future<std::error_code> controller_backend::transfer_partition(
     co_await copy_persistent_state(
       ntp, group, _storage.local().kvs(), destination, _storage);
 
-    co_await container().invoke_on(
-      destination, [&ntp, log_revision](controller_backend& dest) {
-          return dest._shard_placement
-            .finish_transfer_on_destination(ntp, log_revision)
-            .then([&] {
-                auto it = dest._states.find(ntp);
-                if (it != dest._states.end()) {
-                    it->second->wakeup_event.set();
-                }
-            });
-      });
+    auto shard_callback = [this](const model::ntp& ntp) {
+        auto& dest = container().local();
+        auto it = dest._states.find(ntp);
+        if (it != dest._states.end()) {
+            it->second->wakeup_event.set();
+        }
+    };
 
-    co_await remove_persistent_state(ntp, group, _storage.local().kvs());
-
-    co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
+    co_await _shard_placement.finish_transfer(
+      ntp, log_revision, _shard_placement.container(), shard_callback);
     co_return errc::success;
 }
 
