@@ -374,6 +374,31 @@ constexpr auto parse_json_type(json::Value const& v) {
     return *type;
 }
 
+json::Value const& get_true_schema() {
+    // A `true` schema is one that validates every possible input, it's literal
+    // json value is `{}` Then `"additionalProperty": true` is equivalent to
+    // `"additionalProperties": {}` it's used during mainly in
+    // is_object_superset(older, newer) and in is_superset to short circuit
+    // validation
+    static auto true_schema = json::Value{rapidjson::kObjectType};
+    return true_schema;
+}
+
+json::Value const& get_false_schema() {
+    // A `false` schema is one that doesn't validate any input, it's literal
+    // json value is `{"not": {}}`
+    // `"additionalProperty": false` is equivalent to `"additionalProperties":
+    // {"not": {}}` it's used during mainly in is_object_superset(older, newer)
+    // and in is_superset to short circuit validation
+    static auto false_schema = [] {
+        auto tmp = json::Document{};
+        tmp.Parse(R"({"not": {}})");
+        vassert(!tmp.HasParseError(), "Malformed `false` json schema");
+        return tmp;
+    }();
+    return false_schema;
+}
+
 // parse None | schema_type | array[schema_type] into a set of types.
 // the return type is implemented as a inlined_vector<json_type> with sorted set
 // semantics
@@ -402,6 +427,34 @@ json_type_list normalized_type(json::Value const& v) {
     // to support set difference operations, sort the elements
     std::ranges::sort(ret);
     return ret;
+}
+
+// helper to retrieve the object value for a key, or an empty object if the key
+// is not present
+json::Value::ConstObject
+get_object_or_empty(json::Value const& v, std::string_view key) {
+    auto it = v.FindMember(
+      json::Value{key.data(), rapidjson::SizeType(key.size())});
+    if (it != v.MemberEnd()) {
+        return it->value.GetObject();
+    }
+
+    static const auto empty_obj = json::Value{rapidjson::kObjectType};
+    return empty_obj.GetObject();
+}
+
+// helper to retrieve the array value for a key, or an empty array if the key
+// is not present
+json::Value::ConstArray
+get_array_or_empty(json::Value const& v, std::string_view key) {
+    auto it = v.FindMember(
+      json::Value{key.data(), rapidjson::SizeType(key.size())});
+    if (it != v.MemberEnd()) {
+        return it->value.GetArray();
+    }
+
+    static const auto empty_array = json::Value{rapidjson::kArrayType};
+    return empty_array.GetArray();
 }
 
 // extract the Values pointed from older[prop_name] and newer[prop_name].
