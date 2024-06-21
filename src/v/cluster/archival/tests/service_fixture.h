@@ -180,12 +180,12 @@ public:
               if (!sync_result.has_value()) {
                   return ss::make_ready_future<>();
               }
-              return archiver.upload_until_term_change();
+              return archiver.upload_until_term_change_legacy();
           });
     }
 
     ss::future<> upload_until_abort(archival::ntp_archiver& archiver) {
-        return archiver.upload_until_abort();
+        return archiver.upload_until_abort(true);
     }
 
     void broadcast_flush_condition_variable(archival::ntp_archiver& archiver) {
