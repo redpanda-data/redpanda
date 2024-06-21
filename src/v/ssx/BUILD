@@ -1,4 +1,4 @@
-load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel:build.bzl", "redpanda_cc_btest", "redpanda_cc_library")
 
 redpanda_cc_library(
     name = "thread_worker",
@@ -19,5 +19,31 @@ redpanda_cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
+    ],
+)
+
+redpanda_cc_btest(
+    name = "thread_worker_test",
+    timeout = "short",
+    srcs = [
+        "tests/thread_worker.cc",
+    ],
+    deps = [
+        ":thread_worker",
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "sformat_test",
+    timeout = "short",
+    srcs = [
+        "tests/sformat.cc",
+    ],
+    deps = [
+        ":sformat",
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
     ],
 )
