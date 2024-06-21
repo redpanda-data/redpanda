@@ -20,7 +20,7 @@ bool_flag(
 
 # TODO the default should be true, but need to fix a numactl undefined reference
 bool_flag(
-    name = "numa",
+    name = "numactl",
     build_setting_default = False,
 )
 
@@ -83,9 +83,9 @@ config_setting(
 )
 
 config_setting(
-    name = "use_numa",
+    name = "use_numactl",
     flag_values = {
-        ":numa": "true",
+        ":numactl": "true",
     },
 )
 
@@ -538,7 +538,7 @@ cc_library(
         ":use_io_uring": ["SEASTAR_HAVE_URING"],
         "//conditions:default": [],
     }) + select({
-        ":use_numa": ["SEASTAR_HAVE_NUMA"],
+        ":use_numactl": ["SEASTAR_HAVE_NUMA"],
         "//conditions:default": [],
     }) + select({
         # this only needs to be applied to memory.cc and reactor.cc. could be
@@ -577,7 +577,7 @@ cc_library(
         ":use_io_uring": ["@liburing"],
         "//conditions:default": [],
     }) + select({
-        ":use_numa": ["@numactl"],
+        ":use_numactl": ["@numactl"],
         "//conditions:default": [],
     }) + select({
         ":use_openssl": ["@openssl"],
