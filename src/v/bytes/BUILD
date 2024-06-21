@@ -1,4 +1,5 @@
-load("//bazel:build.bzl", "redpanda_cc_btest", "redpanda_cc_library")
+load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest")
 
 redpanda_cc_library(
     name = "iobuf",
