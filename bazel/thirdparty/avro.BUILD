@@ -25,6 +25,6 @@ cc_library(
         "//visibility:public",
     ],
     deps = [
-        "@boost",
+        "@boost//:algorithm",
     ],
 )
