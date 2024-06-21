@@ -247,6 +247,14 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "object", "patternProperties": {"^a": {"type": "number"}}})",
     .reader_is_compatible_with_writer = false,
   },
+  // object checks: required needs to be compatible
+  {
+    .reader_schema
+    = R"({"type": "object", "properties": {"a": {"type": "integer"}}})",
+    .writer_schema
+    = R"({"type": "object", "properties": {"a": {"type": "integer", "default": 10}}, "required": ["a"]})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema

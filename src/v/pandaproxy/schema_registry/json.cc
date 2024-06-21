@@ -36,6 +36,7 @@
 #include <rapidjson/error/en.h>
 #include <re2/re2.h>
 
+#include <ranges>
 #include <string_view>
 namespace pandaproxy::schema_registry {
 
@@ -840,6 +841,55 @@ bool is_object_pattern_properties_superset(
     return true;
 }
 
+bool is_object_required_superset(
+  json::Value const& older, json::Value const& newer) {
+    // to pass the check, a required property from newer has to be present in
+    // older, or if new it needs to be without a default value note that:
+    // 1. we check only required properties that are in both newer["properties"]
+    // and older["properties"]
+    // 2. there is no explicit check that older has an open content model
+    //    there might be a property name outside of (1) that could be rejected
+    //    by older, if older["additionalProperties"] is false
+
+    auto older_req = get_array_or_empty(older, "required");
+    auto newer_req = get_array_or_empty(newer, "required");
+    auto older_props = get_object_or_empty(older, "properties");
+    auto newer_props = get_object_or_empty(newer, "properties");
+
+    // TODO O(n^2) lookup that can be a set_intersection
+    auto newer_props_in_older = older_props
+                                | std::views::transform([&](auto& n_v) {
+                                      return newer_props.FindMember(n_v.name);
+                                  })
+                                | std::views::filter(
+                                  [end = newer_props.end()](auto it) {
+                                      return it != end;
+                                  });
+    // intersections of older["properties"] and newer["properties"]
+    for (auto prop_it : newer_props_in_older) {
+        auto& [name, newer_schema] = *prop_it;
+
+        auto older_is_required = std::ranges::find(older_req, name)
+                                 != older_req.end();
+        auto newer_is_required = std::ranges::find(newer_req, name)
+                                 != newer_req.end();
+        if (older_is_required && !newer_is_required) {
+            // required property not present in newer, not compatible
+            return false;
+        }
+
+        if (!older_is_required && newer_is_required) {
+            if (newer_schema.HasMember("default")) {
+                // newer required property with a default makes newer
+                // incompatible
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 bool is_object_superset(json::Value const& older, json::Value const& newer) {
     if (!is_numeric_property_value_superset(
           older, newer, "minProperties", std::less_equal<>{})) {
@@ -868,12 +918,12 @@ bool is_object_superset(json::Value const& older, json::Value const& newer) {
         // pattern properties checks are not compatible
         return false;
     }
+    if (!is_object_required_superset(older, newer)) {
+        // required properties are not compatible
+        return false;
+    }
 
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
+    return true;
 }
 
 bool is_enum_superset(json::Value const& older, json::Value const& newer) {
@@ -1019,7 +1069,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "maxItems",
            "minItems",
            "uniqueItems",
-           "required",
            "definitions",
            "dependencies",
            "allOf",
