@@ -20,6 +20,7 @@
 #include "kafka/server/replicated_partition.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "model/fundamental.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
 
@@ -129,10 +130,22 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           offset,
           kafka_partition->leader_epoch());
     }
+    auto min_offset = kafka_partition->start_offset();
+    auto max_offset = model::prev_offset(offset);
+
+    // Empty partition.
+    if (max_offset < min_offset) {
+        co_return list_offsets_response::make_partition(
+          ktp.get_partition(),
+          model::timestamp(-1),
+          model::offset(-1),
+          kafka_partition->leader_epoch());
+    }
+
     auto res = co_await kafka_partition->timequery(storage::timequery_config{
-      kafka_partition->start_offset(),
+      min_offset,
       timestamp,
-      model::prev_offset(offset),
+      max_offset,
       kafka_read_priority(),
       {model::record_batch_type::raft_data},
       octx.rctx.abort_source().local()});
