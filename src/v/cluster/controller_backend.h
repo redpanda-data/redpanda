@@ -238,6 +238,12 @@ public:
 
     void notify_reconciliation(const model::ntp&);
 
+    /// Copy partition kvstore data from an extra shard (i.e. kvstore shard that
+    /// is >= ss::smp::count). This method is expected to be called *before*
+    /// start().
+    ss::future<> transfer_partitions_from_extra_shard(
+      storage::kvstore&, shard_placement_table&);
+
 private:
     struct ntp_reconciliation_state;
 
@@ -308,6 +314,12 @@ private:
 
     ss::future<> remove_partition_kvstore_state(
       model::ntp, raft::group_id, model::revision_id log_revision);
+
+    ss::future<> transfer_partition_from_extra_shard(
+      const model::ntp&,
+      shard_placement_table::placement_state,
+      storage::kvstore&,
+      shard_placement_table&);
 
     ss::future<result<ss::stop_iteration>> reconcile_partition_reconfiguration(
       ntp_reconciliation_state&,
@@ -394,7 +406,8 @@ private:
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
 
-    cluster::notification_id_type _topic_table_notify_handle;
+    cluster::notification_id_type _topic_table_notify_handle
+      = notification_id_type_invalid;
     // Limits the number of concurrently executing reconciliation fibers.
     // Initially reconciliation is blocked and we deposit a non-zero amount of
     // units when we are ready to start reconciling.

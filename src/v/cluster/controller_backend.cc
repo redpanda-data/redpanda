@@ -1767,6 +1767,111 @@ ss::future<std::error_code> controller_backend::transfer_partition(
     co_return errc::success;
 }
 
+ss::future<> controller_backend::transfer_partitions_from_extra_shard(
+  storage::kvstore& extra_kvs, shard_placement_table& extra_spt) {
+    vassert(
+      _topic_table_notify_handle == notification_id_type_invalid,
+      "method is expected to be called before controller_backend is started");
+
+    co_await ss::max_concurrent_for_each(
+      extra_spt.shard_local_states(),
+      256,
+      [&](const shard_placement_table::ntp2state_t::value_type& kv) {
+          const auto& [ntp, state] = kv;
+          return transfer_partition_from_extra_shard(
+            ntp, state, extra_kvs, extra_spt);
+      });
+}
+
+ss::future<> controller_backend::transfer_partition_from_extra_shard(
+  const model::ntp& ntp,
+  shard_placement_table::placement_state placement,
+  storage::kvstore& extra_kvs,
+  shard_placement_table& extra_spt) {
+    vlog(
+      clusterlog.debug,
+      "[{}] transferring partition from extra shard, placement: {}",
+      ntp,
+      placement);
+
+    auto target = _shard_placement.get_target(ntp);
+    if (!target) {
+        co_return;
+    }
+    model::revision_id log_rev = target->log_revision;
+
+    using reconciliation_action = shard_placement_table::reconciliation_action;
+
+    if (
+      placement.get_reconciliation_action(log_rev)
+      != reconciliation_action::transfer) {
+        // this can happen if the partition is already superceded by a partition
+        // with greater log revision.
+        co_return;
+    }
+
+    auto transfer_info = co_await extra_spt.prepare_transfer(
+      ntp, log_rev, _shard_placement.container());
+    if (transfer_info.source_error != errc::success) {
+        // This can happen if this extra shard was the destination of an
+        // unfinished x-shard transfer. We can ignore this partition as we
+        // already have a valid copy of kvstore data on one of the valid shards.
+        co_return;
+    }
+
+    if (transfer_info.dest_error != errc::success) {
+        // clear kvstore state on destination
+        co_await container().invoke_on(
+          transfer_info.destination.value(),
+          [&ntp, log_rev](controller_backend& dest) {
+              auto dest_placement = dest._shard_placement.state_on_this_shard(
+                ntp);
+              vassert(dest_placement, "[{}] expected placement", ntp);
+              switch (dest_placement->get_reconciliation_action(log_rev)) {
+              case reconciliation_action::create:
+              case reconciliation_action::transfer:
+              case reconciliation_action::wait_for_target_update:
+                  vassert(
+                    false,
+                    "[{}] unexpected reconciliation action, placement: {}",
+                    ntp,
+                    *dest_placement);
+              case reconciliation_action::remove_partition:
+                  // TODO: remove obsolete log directory
+              case reconciliation_action::remove_kvstore_state:
+                  break;
+              }
+              return remove_persistent_state(
+                       ntp,
+                       dest_placement->current.value().group,
+                       dest._storage.local().kvs())
+                .then([&dest, &ntp, log_rev] {
+                    return dest._shard_placement.finish_delete(ntp, log_rev);
+                });
+          });
+
+        transfer_info = co_await extra_spt.prepare_transfer(
+          ntp, log_rev, _shard_placement.container());
+    }
+
+    vassert(
+      transfer_info.destination && transfer_info.dest_error == errc::success,
+      "[{}] expected successful prepare_transfer, destination error: {}",
+      ntp,
+      transfer_info.dest_error);
+
+    if (transfer_info.is_finished) {
+        co_return;
+    }
+
+    ss::shard_id destination = transfer_info.destination.value();
+    co_await copy_persistent_state(
+      ntp, target->group, extra_kvs, destination, _storage);
+
+    co_await extra_spt.finish_transfer(
+      ntp, log_rev, _shard_placement.container(), [](const model::ntp&) {});
+}
+
 ss::future<>
 controller_backend::shutdown_partition(ss::lw_shared_ptr<partition> partition) {
     vlog(
