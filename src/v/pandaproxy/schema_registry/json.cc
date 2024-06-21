@@ -811,6 +811,35 @@ bool is_object_properties_superset(
     return true;
 }
 
+bool is_object_pattern_properties_superset(
+  json::Value const& older, json::Value const& newer) {
+    // check that every pattern property in newer["patternProperties"]
+    // appears in older["patternProperties"] and is compatible with the schema
+
+    // "patternProperties" is a map of <pattern, schema>
+    auto newer_pattern_properties = get_object_or_empty(
+      newer, "patternProperties");
+    auto older_pattern_properties = get_object_or_empty(
+      older, "patternProperties");
+
+    // TODO O(n^2) lookup
+    for (auto const& [pattern, schema] : newer_pattern_properties) {
+        // search for pattern in older_pattern_properties and check schemas
+        auto older_pp_it = older_pattern_properties.FindMember(pattern);
+        if (older_pp_it == older_pattern_properties.MemberEnd()) {
+            // pattern not in older["patternProperties"], not compatible
+            return false;
+        }
+
+        if (!is_superset(older_pp_it->value, schema)) {
+            // not compatible
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool is_object_superset(json::Value const& older, json::Value const& newer) {
     if (!is_numeric_property_value_superset(
           older, newer, "minProperties", std::less_equal<>{})) {
@@ -833,6 +862,10 @@ bool is_object_superset(json::Value const& older, json::Value const& newer) {
         // that matches the new name) or older["additionalProperties"] (older
         // has partial open model that does not allow some new properties in
         // newer)
+        return false;
+    }
+    if (!is_object_pattern_properties_superset(older, newer)) {
+        // pattern properties checks are not compatible
         return false;
     }
 
