@@ -250,14 +250,14 @@ class RedpandaUpgradeTest(PreallocNodesTest):
     def cluster_version(self) -> int:
         return Admin(self.redpanda).get_features()['cluster_version']
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @skip_debug_mode
     @cluster(num_nodes=4)
     # TODO(vlad): Allow this test on ABS once we have at least two versions
     # of Redpanda that support Azure Hierarchical Namespaces.
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
-    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @ok_to_fail_fips
     def test_workloads_through_releases(self, cloud_storage_type):
         # this callback will be called between each upgrade, in a mixed version state
         def mid_upgrade_check(raw_versions: dict[Any, RedpandaVersion]):
