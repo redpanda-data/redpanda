@@ -112,6 +112,10 @@ generate_no_manifests_expectations(
           .body = no_manifests,
         });
     }
+    expectations.emplace_back(s3_imposter_fixture::expectation{
+      .url = fmt::format("?list-type=2&prefix={}/{}/", tp_ns.ns(), tp_ns.tp()),
+      .body = no_manifests,
+    });
     for (auto& e : additional_expectations) {
         expectations.emplace_back(std::move(e));
     }
