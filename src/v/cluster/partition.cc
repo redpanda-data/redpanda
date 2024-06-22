@@ -9,12 +9,12 @@
 
 #include "cluster/partition.h"
 
-#include "archival/archival_metadata_stm.h"
-#include "archival/ntp_archiver_service.h"
-#include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
+#include "cluster/archival/archival_metadata_stm.h"
+#include "cluster/archival/ntp_archiver_service.h"
+#include "cluster/archival/upload_housekeeping_service.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/logger.h"

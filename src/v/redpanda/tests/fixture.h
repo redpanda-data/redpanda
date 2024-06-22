@@ -10,11 +10,11 @@
  */
 
 #pragma once
-#include "archival/types.h"
 #include "cloud_roles/types.h"
 #include "cloud_storage/configuration.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage_clients/configuration.h"
+#include "cluster/archival/types.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/controller_stm.h"
