@@ -30,6 +30,17 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "named_type",
+    hdrs = [
+        "named_type.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+    ],
+)
+
 redpanda_cc_btest_no_seastar(
     name = "tristate_test",
     timeout = "short",
@@ -41,6 +52,21 @@ redpanda_cc_btest_no_seastar(
     ],
     deps = [
         ":tristate",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "named_type_test",
+    timeout = "short",
+    srcs = [
+        "tests/named_type_tests.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=named_type",
+    ],
+    deps = [
+        ":named_type",
+        "//src/v/base",
     ],
 )
 
