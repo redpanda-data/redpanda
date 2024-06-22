@@ -21,7 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-var supportedTypes = []string{"avro", "protobuf"}
+var supportedTypes = []string{"avro", "protobuf", "json"}
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
@@ -117,6 +117,8 @@ func typeFromFlag(typeFlag string) (sr.SchemaType, error) {
 		return sr.TypeAvro, nil
 	case "proto", "protobuf":
 		return sr.TypeProtobuf, nil
+	case "json":
+		return sr.TypeJSON, nil
 	default:
 		return 0, fmt.Errorf("unrecognized type %q", typeFlag)
 	}
@@ -128,6 +130,8 @@ func typeFromFile(schemaFile string) (sr.SchemaType, error) {
 		return sr.TypeAvro, nil
 	case strings.HasSuffix(schemaFile, ".proto") || strings.HasSuffix(schemaFile, ".protobuf"):
 		return sr.TypeProtobuf, nil
+	case strings.HasSuffix(schemaFile, ".json"):
+		return sr.TypeJSON, nil
 	default:
 		return 0, fmt.Errorf("unable to determine the schema type from %q", schemaFile)
 	}

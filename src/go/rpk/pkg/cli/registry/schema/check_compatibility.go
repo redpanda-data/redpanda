@@ -34,7 +34,7 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 		sversion   string
 	)
 	cmd := &cobra.Command{
-		Use:   "check-compatibility SUBJECT",
+		Use:   "check-compatibility [SUBJECT]",
 		Short: "Check schema compatibility with existing schemas in the subject",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -80,7 +80,7 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 		},
 	}
 
-	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema filepath to check, must be .avro or .proto")
+	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema filepath to check, must be .avro, .json, or .proto")
 	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().StringVar(&sversion, "schema-version", "", "Schema version to check compatibility with (latest, 0, 1...)")
 	cmd.Flags().StringVar(&refs, "references", "", "Comma-separated list of references (name:subject:version) or path to reference file")
