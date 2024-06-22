@@ -226,6 +226,7 @@ v_cc_library(
     archival/async_data_uploader.cc
     archival/archiver_operations_api.cc
     archival/archiver_operations_impl.cc
+    archival/archiver_scheduler_api.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
