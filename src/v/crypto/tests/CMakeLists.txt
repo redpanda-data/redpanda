@@ -32,7 +32,7 @@ rp_test(
     ${FIPS_BUILD_DEF}
   LABELS crypto
   ARGS "-- -c 2"
-  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib64/ossl-modules"
+  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib/ossl-modules"
 )
 
 rp_test(
@@ -48,7 +48,7 @@ rp_test(
     ${FIPS_BUILD_DEF}
   LABELS crypto
   ARGS "-- -c 2"
-  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib64/ossl-modules"
+  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib/ossl-modules"
 )
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/test_openssl_conf.cnf.in
@@ -61,7 +61,7 @@ rp_test(
   LIBRARIES
     Seastar::seastar_perf_testing v::crypto v::random GnuTLS::GnuTLS
   LABELS crypto
-  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib64/ossl-modules"
+  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib/ossl-modules"
 )
 
 if(Redpanda_BUILD_COMPLIANCE)
@@ -74,6 +74,6 @@ rp_test(
   LIBRARIES
     Seastar::seastar_perf_testing v::crypto v::random GnuTLS::GnuTLS
   LABELS crypto
-  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib64/ossl-modules"
+  ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib/ossl-modules"
 )
 endif()
