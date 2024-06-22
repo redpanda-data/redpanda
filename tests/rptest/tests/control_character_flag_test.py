@@ -133,12 +133,12 @@ class ControlCharacterNag(ControlCharacterPermittedBase):
         return self.redpanda.search_log_all(
             "You have enabled unsafe log operations")
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(initial_version=(22, 2, 9))
     @parametrize(initial_version=(22, 3, 11))
     @parametrize(initial_version=(23, 1, 1))
-    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @ok_to_fail_fips
     def test_validate_nag_message(self, initial_version):
         """
         Validates that the nag message is present after upgrading a cluster

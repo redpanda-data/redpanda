@@ -407,13 +407,13 @@ class TestReadReplicaService(EndToEndTest):
             # count is permitted to increase.
             assert len(objects_after) >= len(objects_before)
 
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[10],
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ))
-    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
-    @ok_to_fail_fips
     def test_simple_end_to_end(
         self, partition_count: int,
         cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
@@ -485,11 +485,11 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             cloud_storage_housekeeping_interval_ms=1)
         self.second_cluster = None
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
-    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @ok_to_fail_fips
     def test_upgrades(self, cloud_storage_type):
         partition_count = 1
         install_opts = InstallOptions(install_previous_version=True)
