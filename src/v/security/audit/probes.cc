@@ -9,7 +9,7 @@
  */
 
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "security/audit/audit_log_manager.h"
 #include "security/audit/client_probe.h"
 #include "security/audit/probe.h"

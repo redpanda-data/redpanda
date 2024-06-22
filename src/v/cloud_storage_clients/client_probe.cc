@@ -11,7 +11,7 @@
 #include "cloud_storage_clients/client_probe.h"
 
 #include "metrics/metrics.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_types.hh>

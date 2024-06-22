@@ -10,7 +10,7 @@
 #include "raft/recovery_scheduler.h"
 
 #include "base/vassert.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
 

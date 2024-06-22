@@ -10,7 +10,7 @@
 
 #include "base/vlog.h"
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 

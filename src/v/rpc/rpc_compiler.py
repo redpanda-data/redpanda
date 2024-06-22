@@ -35,7 +35,7 @@ RPC_TEMPLATE = """
 #include "strings/string_switch.h"
 #include "random/fast_prng.h"
 #include "base/outcome.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "base/seastarx.h"
 
 // extra includes

@@ -17,7 +17,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "config/node_config.h"
 #include "metrics/metrics.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 

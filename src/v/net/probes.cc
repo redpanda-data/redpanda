@@ -10,11 +10,11 @@
 #include "config/configuration.h"
 #include "hashing/crc32.h"
 #include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "net/client_probe.h"
 #include "net/server_probe.h"
 #include "net/tls_certificate_probe.h"
 #include "net/types.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/lowres_clock.hh>
