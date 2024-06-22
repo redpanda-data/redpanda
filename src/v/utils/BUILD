@@ -41,6 +41,18 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "object_pool",
+    hdrs = [
+        "object_pool.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+    ],
+)
+
 redpanda_cc_btest_no_seastar(
     name = "tristate_test",
     timeout = "short",
@@ -67,6 +79,19 @@ redpanda_cc_btest_no_seastar(
     deps = [
         ":named_type",
         "//src/v/base",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "object_pool_test",
+    timeout = "short",
+    srcs = [
+        "tests/object_pool_test.cc",
+    ],
+    deps = [
+        ":object_pool",
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
     ],
 )
 
