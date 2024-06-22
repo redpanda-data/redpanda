@@ -1,5 +1,3 @@
-load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
-
 # TODO
 # - inspect implementation to see what should go into config.h
 # - understand more if we are using versions.ldscript correctly
