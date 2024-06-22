@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/metrics_registration.hh>
 
