@@ -170,8 +170,7 @@ SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
-    auto local_ft = features::feature_table{};
-    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
+    topic_manifest m(cfg, model::initial_revision_id(0));
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -272,8 +271,7 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_min_serialization) {
     min_cfg.properties.segment_size = std::make_optional(
       std::numeric_limits<size_t>::min());
 
-    features::feature_table local_ft;
-    topic_manifest m(min_cfg, model::initial_revision_id{0}, local_ft);
+    topic_manifest m(min_cfg, model::initial_revision_id{0});
     iobuf buf;
     iobuf_ostreambuf obuf(buf);
     std::ostream os(&obuf);
@@ -303,8 +301,7 @@ SEASTAR_THREAD_TEST_CASE(topic_manifest_max_serialization) {
       std::chrono::milliseconds::max());
     max_cfg.properties.segment_size = std::make_optional(
       std::numeric_limits<size_t>::max());
-    auto local_ft = features::feature_table{};
-    topic_manifest m(max_cfg, model::initial_revision_id{0}, local_ft);
+    topic_manifest m(max_cfg, model::initial_revision_id{0});
     iobuf buf;
     iobuf_ostreambuf obuf(buf);
     std::ostream os(&obuf);
@@ -377,8 +374,7 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
 }
 
 SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
-    auto local_ft = features::feature_table{};
-    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
+    topic_manifest m(cfg, model::initial_revision_id(0));
     m.update(
        manifest_format::json, make_manifest_stream(full_topic_manifest_json))
       .get();
@@ -395,8 +391,7 @@ SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
-    auto local_ft = features::feature_table{};
-    topic_manifest m(cfg, model::initial_revision_id(0), local_ft);
+    topic_manifest m(cfg, model::initial_revision_id(0));
     m.update(
        manifest_format::json,
        make_manifest_stream(negative_properties_manifest))
@@ -424,8 +419,7 @@ SEASTAR_THREAD_TEST_CASE(test_retention_ms_bytes_manifest) {
     test_cfg.properties.retention_duration
       = tristate<std::chrono::milliseconds>{disable_tristate};
 
-    auto local_ft = features::feature_table{};
-    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}, local_ft};
+    auto m = topic_manifest{test_cfg, model::initial_revision_id{0}};
 
     auto serialized = m.serialize().get().stream;
     auto buf = iobuf{};
@@ -489,15 +483,10 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
     auto random_initial_revision_id
       = tests::random_named_int<model::initial_revision_id>();
 
-    // activate the new format via feature_table and test that the
-    // serialization is in serde format
-    auto local_ft = features::feature_table{};
-    local_ft.testing_activate_all();
-
     // create serde image of random_topic_configuration, deserialize it through
     // topic_manifest and check that the result is equal
     auto manifest = topic_manifest{
-      random_topic_configuration, random_initial_revision_id, local_ft};
+      random_topic_configuration, random_initial_revision_id};
     BOOST_CHECK(manifest.get_revision() == random_initial_revision_id);
     BOOST_CHECK(
       manifest.get_manifest_path(path_provider)().extension() == ".bin");
