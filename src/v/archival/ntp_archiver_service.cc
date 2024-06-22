@@ -505,8 +505,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         vlog(ctxlog.info, "Uploading topic manifest {}", _parent.ntp());
         auto cfg_copy = topic_cfg.get();
         cfg_copy.replication_factor = replication_factor;
-        cloud_storage::topic_manifest tm(
-          cfg_copy, _rev, _feature_table.local());
+        cloud_storage::topic_manifest tm(cfg_copy, _rev);
         const auto& topic = cfg_copy.tp_ns;
         auto key = remote_path_provider().topic_manifest_path(topic, _rev);
         vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);

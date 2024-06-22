@@ -14,7 +14,6 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
-#include "features/feature_table.h"
 
 #include <optional>
 
@@ -32,12 +31,9 @@ public:
 
     constexpr static auto current_version = serde_version;
 
-    /// Create manifest for specific ntp. feature_table is used to decide which
-    /// encoding format to use
+    /// Create manifest for specific topic.
     explicit topic_manifest(
-      const cluster::topic_configuration& cfg,
-      model::initial_revision_id rev,
-      const features::feature_table& ft);
+      const cluster::topic_configuration& cfg, model::initial_revision_id rev);
 
     /// Create empty manifest that supposed to be updated later
     topic_manifest();
