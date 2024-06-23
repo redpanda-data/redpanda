@@ -216,13 +216,20 @@ processor::load_latest_committed() {
                       vlog(_logger.debug, "starting at latest: {}", latest);
                       return ssx::now(latest);
                   },
-                  [this](model::timestamp ts) {
+                  [this, &latest](model::timestamp ts) {
                       vlog(_logger.debug, "starting at timestamp: {}", ts);
                       // We want to *start at* this timestamp, so record that
                       // we're going to commit progress at the offset before, so
-                      // we start inclusive of this offset.
+                      // we start inclusive of this offset. If nothing has been
+                      // committed since the start timestamp, commit progress at
+                      // latest (i.e. start from the end)
                       return _source->offset_at_timestamp(ts, &_as).then(
-                        kafka::prev_offset);
+                        [&latest](std::optional<kafka::offset> o)
+                          -> ss::future<kafka::offset> {
+                            return ssx::now(
+                              o.has_value() ? kafka::prev_offset(o.value())
+                                            : latest);
+                        });
                   });
                 vlog(
                   _logger.debug, "resolved start offset: {}", *initial_offset);
