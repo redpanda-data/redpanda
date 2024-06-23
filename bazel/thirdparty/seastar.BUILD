@@ -129,8 +129,6 @@ py_binary(
     name = "seastar-json2code",
     srcs = ["scripts/seastar-json2code.py"],
     visibility = ["//visibility:public"],
-    deps = [
-    ],
 )
 
 # the fix to the generated parsers applied in the cmake build appears to be
