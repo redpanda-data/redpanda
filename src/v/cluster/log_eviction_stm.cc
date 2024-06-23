@@ -254,14 +254,17 @@ log_eviction_stm::sync_kafka_start_offset_override(
     /// useful to know if the start offset is up to date in the case
     /// leadership has recently changed for example.
     auto term = _raft->term();
-    if (!co_await sync(timeout)) {
-        if (term != _raft->term()) {
-            co_return errc::not_leader;
-        } else {
-            co_return errc::timeout;
-        }
-    }
-    co_return kafka_start_offset_override();
+    return sync(timeout).then(
+      [this, term](bool success) -> result<kafka::offset, std::error_code> {
+          if (!success) {
+              if (term != _raft->term()) {
+                  return errc::not_leader;
+              } else {
+                  return errc::timeout;
+              }
+          }
+          return kafka_start_offset_override();
+      });
 }
 
 model::offset log_eviction_stm::effective_start_offset() const {
