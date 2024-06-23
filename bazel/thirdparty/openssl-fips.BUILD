@@ -16,9 +16,10 @@ config_setting(
 )
 
 configure_make(
-    name = "openssl",
+    name = "openssl-fips",
     configure_command = "Configure",
     configure_options = [
+        "enable-fips",
         "--libdir=lib",
     ] + select({
         ":debug_mode": ["--debug"],
@@ -27,8 +28,11 @@ configure_make(
     }),
     lib_source = ":srcs",
     out_shared_libs = [
-        "libssl.so",
-        "libcrypto.so",
+        "ossl-modules/fips.so",
+    ],
+    targets = [
+        "",
+        "install_fips",
     ],
     visibility = [
         "//visibility:public",

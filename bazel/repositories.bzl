@@ -123,15 +123,31 @@ def data_dependency():
         url = "https://vectorized-public.s3.amazonaws.com/dependencies/numactl-v2.0.14.tar.gz",
     )
 
-    ###############################################################################
-    # IMPORTANT
-    # DO NOT CHANGE THIS VERSION
-    # As of 2/26 - 3.0.9 is the latest FIPS _approved_ version:
+    #
+    # ** IMPORTANT - OpenSSL and FIPS **
+    #
+    # Below there are two OpenSSL archives that are retrieved. The first, named
+    # simply "openssl", may reference any version of OpenSSL that is desired.
+    #
+    # The second archive retrieved is named "openssl-fips", and *MUST* reference
+    # the specific version of OpenSSL, 3.0.9, which is the latest FIPS approved
+    # version as of 2/26/24. Do not change this version. For more info visit:
     # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4282
-    ###############################################################################
+    #
+    # This 2 build approach is described in more detail in the FIPS README here:
+    # https://github.com/openssl/openssl/blob/master/README-FIPS.md
+    #
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
+        sha256 = "7375e6200ccd1540245a39c01bc8e37750d9aad5f747ad10a168a520e95dba43",
+        strip_prefix = "openssl-9cff14fd97814baf8a9a07d8447960a64d616ada",
+        url = "https://github.com/openssl/openssl/archive/9cff14fd97814baf8a9a07d8447960a64d616ada.tar.gz",
+    )
+
+    http_archive(
+        name = "openssl-fips",
+        build_file = "//bazel/thirdparty:openssl-fips.BUILD",
         sha256 = "eb1ab04781474360f77c318ab89d8c5a03abc38e63d65a603cabbf1b00a1dc90",
         strip_prefix = "openssl-3.0.9",
         url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/openssl-3.0.9.tar.gz",
