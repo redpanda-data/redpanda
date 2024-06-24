@@ -1,12 +1,14 @@
 use crate::batch_reader::BatchStream;
 use crate::error::BucketReaderError;
 use crate::fundamental::{
-    raw_to_kafka, KafkaOffset, RaftTerm, RawOffset, Timestamp, NTP, NTPR, NTR,
+    raw_to_kafka, KafkaOffset, LabeledNTPR, LabeledNTR, RaftTerm, RawOffset, Timestamp, NTP, NTPR,
+    NTR,
 };
 use crate::ntp_mask::NTPFilter;
 use crate::remote_types::{
     parse_segment_shortname, ArchivePartitionManifest, ClusterMetadataManifest, LifecycleMarker,
-    LifecycleStatus, PartitionManifest, PartitionManifestSegment, RpSerde, TopicManifest,
+    LifecycleStatus, PartitionManifest, PartitionManifestSegment, RemoteLabel, RpSerde,
+    TopicManifest,
 };
 use crate::repair::{maybe_adjust_manifest, project_repairs, RepairEdit};
 use async_stream::stream;
@@ -236,10 +238,10 @@ pub struct Anomalies {
     pub malformed_topic_manifests: HashSet<String>,
 
     /// NTPR that had segment objects, but no partition manifest
-    pub ntpr_no_manifest: HashSet<NTPR>,
+    pub ntpr_no_manifest: HashSet<LabeledNTPR>,
 
     /// NTR that had segment objects and/or partition manifests, but no topic manifest
-    pub ntr_no_topic_manifest: HashSet<NTR>,
+    pub ntr_no_topic_manifest: HashSet<LabeledNTR>,
 
     /// Keys that do not look like any object we expect
     pub unknown_keys: HashSet<String>,
@@ -248,17 +250,17 @@ pub struct Anomalies {
     pub missing_segments: HashSet<String>,
 
     /// NTPR that failed consistency checks on its segments' metadata
-    pub ntpr_bad_deltas: HashSet<NTPR>,
+    pub ntpr_bad_deltas: HashSet<LabeledNTPR>,
 
     /// Consistency checks found overlapping segments, which may be readable but
     /// indicate a bug in the code that wrote them.
-    pub ntpr_overlap_offsets: HashSet<NTPR>,
+    pub ntpr_overlap_offsets: HashSet<LabeledNTPR>,
 
     /// Where a partition manifest has two segments whose commited+base offsets
     /// are discontinuous.  This gap is reported as an anomaly, and may also be
     /// used to cue subsequent data scans.
     /// Ref Incident 259
-    pub metadata_offset_gaps: HashMap<NTPR, Vec<MetadataGap>>,
+    pub metadata_offset_gaps: HashMap<LabeledNTPR, Vec<MetadataGap>>,
 
     /// Files referenced by the cluster manifest with the highest metadata ID which do not exist in
     /// the bucket.
@@ -290,7 +292,7 @@ pub struct PartitionMetadataSummary {
 #[derive(Serialize)]
 pub struct MetadataSummary {
     pub anomalies: Anomalies,
-    pub partitions: BTreeMap<NTPR, PartitionMetadataSummary>,
+    pub partitions: BTreeMap<LabeledNTPR, PartitionMetadataSummary>,
 }
 
 impl Anomalies {
@@ -508,10 +510,10 @@ pub struct ClusterMetadata {
 
 /// Find all the partitions and their segments within a bucket
 pub struct BucketReader {
-    pub partitions: HashMap<NTPR, PartitionObjects>,
-    pub partition_manifests: HashMap<NTPR, PartitionMetadata>,
-    pub topic_manifests: HashMap<NTR, TopicManifest>,
-    pub lifecycle_markers: HashMap<NTR, LifecycleMarker>,
+    pub partitions: HashMap<LabeledNTPR, PartitionObjects>,
+    pub partition_manifests: HashMap<LabeledNTPR, PartitionMetadata>,
+    pub topic_manifests: HashMap<LabeledNTR, TopicManifest>,
+    pub lifecycle_markers: HashMap<LabeledNTR, LifecycleMarker>,
     pub cluster_metadata: HashMap<String, ClusterMetadata>,
     pub anomalies: Anomalies,
     pub client: Arc<dyn ObjectStore>,
@@ -519,10 +521,10 @@ pub struct BucketReader {
 
 #[derive(Serialize, Deserialize)]
 struct SavedBucketReader {
-    pub partitions: HashMap<NTPR, PartitionObjects>,
-    pub partition_manifests: HashMap<NTPR, PartitionMetadata>,
-    pub topic_manifests: HashMap<NTR, TopicManifest>,
-    pub lifecycle_markers: HashMap<NTR, LifecycleMarker>,
+    pub partitions: HashMap<LabeledNTPR, PartitionObjects>,
+    pub partition_manifests: HashMap<LabeledNTPR, PartitionMetadata>,
+    pub topic_manifests: HashMap<LabeledNTR, TopicManifest>,
+    pub lifecycle_markers: HashMap<LabeledNTR, LifecycleMarker>,
     pub cluster_metadata: HashMap<String, ClusterMetadata>,
 }
 
@@ -585,19 +587,19 @@ impl BucketReader {
         self.partitions = self
             .partitions
             .drain()
-            .filter(|i| filter.match_ntpr(&i.0))
+            .filter(|i| filter.match_lntpr(&i.0))
             .collect();
 
         self.partition_manifests = self
             .partition_manifests
             .drain()
-            .filter(|i| filter.match_ntpr(&i.0))
+            .filter(|i| filter.match_lntpr(&i.0))
             .collect();
 
         self.topic_manifests = self
             .topic_manifests
             .drain()
-            .filter(|i| filter.match_ntr(&i.0))
+            .filter(|i| filter.match_lntr(&i.0))
             .collect();
     }
 
@@ -754,6 +756,10 @@ impl BucketReader {
                     topic: manifest.namespace.clone(),
                     revision_id: manifest.revision,
                 };
+                let labeled_ntr = LabeledNTR {
+                    ntr,
+                    label: ntpr.label.clone(),
+                };
 
                 let kafka_offsets = manifest.kafka_watermarks();
                 partitions.insert(
@@ -766,7 +772,7 @@ impl BucketReader {
                         kafka_hwm: kafka_offsets.map(|x| x.1),
                         lifecycle_status: self
                             .lifecycle_markers
-                            .get(&ntr)
+                            .get(&labeled_ntr)
                             .and_then(|m| Some(m.status.clone())),
                     },
                 );
@@ -789,31 +795,31 @@ impl BucketReader {
         let mut latest_revision: HashMap<(String, String), i64> = HashMap::new();
         for ntpr in self.partitions.keys() {
             // FIXME: these clones are gratuitous
-            let nt = (ntpr.ntp.namespace.clone(), ntpr.ntp.topic.clone());
+            let nt = (ntpr.ntpr.ntp.namespace.clone(), ntpr.ntpr.ntp.topic.clone());
             if let Some(current_max) = latest_revision.get(&nt) {
-                if current_max >= &ntpr.revision_id {
+                if current_max >= &ntpr.ntpr.revision_id {
                     continue;
                 }
             }
 
-            latest_revision.insert(nt, ntpr.revision_id);
+            latest_revision.insert(nt, ntpr.ntpr.revision_id);
         }
 
-        let match_ntpr = |ntpr: &NTPR| {
+        let match_ntpr = |ntpr: &LabeledNTPR| {
             // FIXME: these clones are gratuitous
-            let nt = (ntpr.ntp.namespace.clone(), ntpr.ntp.topic.clone());
+            let nt = (ntpr.ntpr.ntp.namespace.clone(), ntpr.ntpr.ntp.topic.clone());
             if let Some(latest) = latest_revision.get(&nt) {
-                ntpr.revision_id == *latest
+                ntpr.ntpr.revision_id == *latest
             } else {
                 true
             }
         };
 
-        let match_ntr = |ntr: &NTR| {
+        let match_ntr = |ntr: &LabeledNTR| {
             // FIXME: these clones are gratuitous
-            let nt = (ntr.namespace.clone(), ntr.topic.clone());
+            let nt = (ntr.ntr.namespace.clone(), ntr.ntr.topic.clone());
             if let Some(latest) = latest_revision.get(&nt) {
-                ntr.revision_id == *latest
+                ntr.ntr.revision_id == *latest
             } else {
                 true
             }
@@ -845,7 +851,7 @@ impl BucketReader {
     pub async fn repair_manifest_ntp(
         &mut self,
         gaps: &Vec<MetadataGap>,
-        ntpr: &NTPR,
+        ntpr: &LabeledNTPR,
     ) -> Result<Vec<RepairEdit>, BucketReaderError> {
         let initial_repairs = maybe_adjust_manifest(&ntpr, &gaps, self).await?;
         info!(
@@ -864,8 +870,9 @@ impl BucketReader {
             if let Some(manifest) = metadata.head_manifest.as_mut() {
                 project_repairs(manifest, &initial_repairs);
 
+                let remote_label = RemoteLabel::from_string(&ntpr.label);
                 for seg in manifest.segments.values() {
-                    if let Some(segment_key) = manifest.segment_key(seg) {
+                    if let Some(segment_key) = manifest.segment_key(seg, &remote_label) {
                         // Our repair might mean that a segment from the 'dropped' list
                         // is now referenced by the manifest: use the 'adjust' side effect
                         // of this function to swap that segment into the main list.:w
@@ -889,11 +896,11 @@ impl BucketReader {
         let mut discovered_objects: Vec<ObjectMeta> = vec![];
 
         for (ntpr, partition_objects) in &mut self.partitions {
-            if !filter.match_ntpr(ntpr) {
+            if !filter.match_lntpr(ntpr) {
                 continue;
             }
 
-            if ntpr.ntp.partition_id == 0 {
+            if ntpr.ntpr.ntp.partition_id == 0 {
                 let t_manifest_o = self.topic_manifests.get(&ntpr.to_ntr());
                 if let None = t_manifest_o {
                     self.anomalies.ntr_no_topic_manifest.insert(ntpr.to_ntr());
@@ -905,8 +912,8 @@ impl BucketReader {
                 None => {
                     // The manifest may be missing because we couldn't load it, in which
                     // case that is already tracked in malformed_manifests
-                    let manifest_key_bin = PartitionManifest::manifest_key(ntpr, "bin");
-                    let manifest_key_json = PartitionManifest::manifest_key(ntpr, "json");
+                    let manifest_key_bin = PartitionManifest::manifest_key(&ntpr, "bin");
+                    let manifest_key_json = PartitionManifest::manifest_key(&ntpr, "json");
                     if self
                         .anomalies
                         .malformed_manifests
@@ -944,7 +951,7 @@ impl BucketReader {
         for (ntpr, partition_metadata) in &self.partition_manifests {
             let mut raw_objects = self.partitions.get_mut(&ntpr);
 
-            if !filter.match_ntpr(&ntpr) {
+            if !filter.match_lntpr(&ntpr) {
                 continue;
             }
 
@@ -989,7 +996,7 @@ impl BucketReader {
         self.anomalies.merge(new_anomalies);
 
         for (ntpr, _) in &mut self.partition_manifests {
-            if !filter.match_ntpr(ntpr) {
+            if !filter.match_lntpr(ntpr) {
                 continue;
             }
             let t_manifest_o = self.topic_manifests.get(&ntpr.to_ntr());
@@ -1045,7 +1052,7 @@ impl BucketReader {
 
     async fn analyze_archive_manifest(
         client: Arc<dyn object_store::ObjectStore>,
-        ntpr: &NTPR,
+        ntpr: &LabeledNTPR,
         head_manifest: &PartitionManifest,
         archive_manifest: &ArchivePartitionManifest,
         raw_objects: &mut Option<&mut PartitionObjects>,
@@ -1065,7 +1072,7 @@ impl BucketReader {
 
     async fn analyze_manifest(
         client: Arc<dyn object_store::ObjectStore>,
-        ntpr: &NTPR,
+        ntpr: &LabeledNTPR,
         partition_manifest: &PartitionManifest,
         raw_objects: &mut Option<&mut PartitionObjects>,
         discovered: &mut Vec<ObjectMeta>,
@@ -1097,7 +1104,8 @@ impl BucketReader {
                 partition_manifest.ntp(),
                 segment_short_name
             );
-            if let Some(expect_key) = partition_manifest.segment_key(segment) {
+            let remote_label = RemoteLabel::from_string(&ntpr.label);
+            if let Some(expect_key) = partition_manifest.segment_key(segment, &remote_label) {
                 debug!("Calculated segment {}", expect_key);
                 let so = archive_start_offset.unwrap_or(RawOffset::MIN);
                 let bo = segment.base_offset;
@@ -1286,14 +1294,14 @@ impl BucketReader {
         fn maybe_stash_partition_key(keys: &mut Vec<FetchKey>, k: FetchKey, filter: &NTPFilter) {
             lazy_static! {
                 static ref META_NTP_PREFIX: Regex =
-                    Regex::new("[a-f0-9]+/meta/([^]]+)/([^]]+)/(\\d+)_(\\d+)/.+").unwrap();
+                    Regex::new("[-a-f0-9]+/(meta/)?([^]]+)/([^]]+)/(\\d+)_(\\d+)/.+").unwrap();
             }
             if let Some(grps) = META_NTP_PREFIX.captures(k.as_str()) {
-                let ns = grps.get(1).unwrap().as_str();
-                let topic = grps.get(2).unwrap().as_str();
+                let ns = grps.get(2).unwrap().as_str();
+                let topic = grps.get(3).unwrap().as_str();
                 // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-                let partition_id = grps.get(3).unwrap().as_str().parse::<u32>().unwrap();
-                let partition_revision = grps.get(4).unwrap().as_str().parse::<i64>().unwrap();
+                let partition_id = grps.get(4).unwrap().as_str().parse::<u32>().unwrap();
+                let partition_revision = grps.get(5).unwrap().as_str().parse::<i64>().unwrap();
 
                 if filter.match_parts(ns, topic, Some(partition_id), Some(partition_revision)) {
                     debug!("Stashing partition manifest key {}", k.as_str());
@@ -1309,10 +1317,10 @@ impl BucketReader {
 
         fn maybe_stash_topic_key(keys: &mut Vec<FetchKey>, k: FetchKey, filter: &NTPFilter) {
             lazy_static! {
-                static ref META_NTP_PREFIX: Regex =
+                static ref META_TP_PREFIX: Regex =
                     Regex::new("[a-f0-9]+/meta/([^]]+)/([^]]+)/.+").unwrap();
             }
-            if let Some(grps) = META_NTP_PREFIX.captures(k.as_str()) {
+            if let Some(grps) = META_TP_PREFIX.captures(k.as_str()) {
                 let ns = grps.get(1).unwrap().as_str();
                 let topic = grps.get(2).unwrap().as_str();
 
@@ -1402,7 +1410,7 @@ impl BucketReader {
     /// Yield a byte stream for each segment
     pub fn stream(
         &self,
-        ntpr: &NTPR,
+        ntpr: &LabeledNTPR,
         seek: Option<RawOffset>, //) -> Pin<Box<dyn Stream<Item = Result<BoxStream<'static, object_store::Result<bytes::Bytes>>, BucketReaderError> + '_>>
     ) -> impl Stream<Item = SegmentStream> + '_ {
         // TODO error handling for parittion DNE
@@ -1527,13 +1535,16 @@ impl BucketReader {
         };
 
         let key = PartitionManifest::manifest_key(
-            &NTPR {
-                ntp: NTP {
-                    namespace: manifest.namespace,
-                    topic: manifest.topic,
-                    partition_id: manifest.partition,
+            &LabeledNTPR {
+                ntpr: NTPR {
+                    ntp: NTP {
+                        namespace: manifest.namespace,
+                        topic: manifest.topic,
+                        partition_id: manifest.partition,
+                    },
+                    revision_id: manifest.revision,
                 },
-                revision_id: manifest.revision,
+                label: None,
             },
             extension,
         );
@@ -1547,17 +1558,19 @@ impl BucketReader {
         body: bytes::Bytes,
     ) -> Result<(), BucketReaderError> {
         lazy_static! {
-            static ref PARTITION_MANIFEST_KEY: Regex =
-                Regex::new("[a-f0-9]+/meta/([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(json|bin)")
-                    .unwrap();
+            static ref PARTITION_MANIFEST_KEY: Regex = Regex::new(
+                "([-a-f0-9]+)/(meta/)?([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(json|bin)"
+            )
+            .unwrap();
         }
         if let Some(grps) = PARTITION_MANIFEST_KEY.captures(key) {
+            let prefix = grps.get(1).unwrap().as_str().to_string();
             // Group::get calls are safe to unwrap() because regex always has those groups if it matched
-            let ns = grps.get(1).unwrap().as_str().to_string();
-            let topic = grps.get(2).unwrap().as_str().to_string();
+            let ns = grps.get(3).unwrap().as_str().to_string();
+            let topic = grps.get(4).unwrap().as_str().to_string();
             // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-            let partition_id = grps.get(3).unwrap().as_str().parse::<u32>().unwrap();
-            let partition_revision = grps.get(4).unwrap().as_str().parse::<i64>().unwrap();
+            let partition_id = grps.get(5).unwrap().as_str().parse::<u32>().unwrap();
+            let partition_revision = grps.get(6).unwrap().as_str().parse::<i64>().unwrap();
             let ntpr = NTPR {
                 ntp: NTP {
                     namespace: ns,
@@ -1565,6 +1578,15 @@ impl BucketReader {
                     partition_id,
                 },
                 revision_id: partition_revision,
+            };
+            let labeled_ntpr = LabeledNTPR {
+                ntpr,
+                // Prefixes of exactly 8 characters are hashes rather than labels.
+                label: if prefix.len() != 8 {
+                    Some(prefix)
+                } else {
+                    None
+                },
             };
 
             let manifest = match Self::decode_partition_manifest(key, body) {
@@ -1577,7 +1599,7 @@ impl BucketReader {
             };
 
             // Note: assuming memory is sufficient for manifests
-            match self.partition_manifests.get_mut(&ntpr) {
+            match self.partition_manifests.get_mut(&labeled_ntpr) {
                 Some(meta) => {
                     // Avoid overwriting a binary manifest with a JSON manifest
                     if meta.head_manifest.is_none()
@@ -1588,7 +1610,7 @@ impl BucketReader {
                 }
                 None => {
                     self.partition_manifests.insert(
-                        ntpr,
+                        labeled_ntpr,
                         PartitionMetadata {
                             head_manifest: Some(manifest),
                             archive_manifests: vec![],
@@ -1610,22 +1632,23 @@ impl BucketReader {
     ) -> Result<(), BucketReaderError> {
         lazy_static! {
             static ref PARTITION_MANIFEST_KEY: Regex =
-                Regex::new("[a-f0-9]+/meta/([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(?:json|bin)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)").unwrap();
+                Regex::new("([-a-f0-9]+)/(meta/)?([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(?:json|bin)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)").unwrap();
         }
         if let Some(grps) = PARTITION_MANIFEST_KEY.captures(key) {
+            let prefix = grps.get(1).unwrap().as_str().to_string();
             // Group::get calls are safe to unwrap() because regex always has those groups if it matched
-            let ns = grps.get(1).unwrap().as_str().to_string();
-            let topic = grps.get(2).unwrap().as_str().to_string();
+            let ns = grps.get(3).unwrap().as_str().to_string();
+            let topic = grps.get(4).unwrap().as_str().to_string();
             // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-            let partition_id = grps.get(3).unwrap().as_str().parse::<u32>().unwrap();
-            let partition_revision = grps.get(4).unwrap().as_str().parse::<i64>().unwrap();
+            let partition_id = grps.get(5).unwrap().as_str().parse::<u32>().unwrap();
+            let partition_revision = grps.get(6).unwrap().as_str().parse::<i64>().unwrap();
 
-            let base_offset = grps.get(5).unwrap().as_str().parse::<u64>().unwrap();
-            let committed_offset = grps.get(6).unwrap().as_str().parse::<u64>().unwrap();
-            let base_kafka_offset = grps.get(7).unwrap().as_str().parse::<u64>().unwrap();
-            let next_kafka_offset = grps.get(8).unwrap().as_str().parse::<u64>().unwrap();
-            let base_ts = grps.get(9).unwrap().as_str().parse::<u64>().unwrap();
-            let last_ts = grps.get(10).unwrap().as_str().parse::<u64>().unwrap();
+            let base_offset = grps.get(7).unwrap().as_str().parse::<u64>().unwrap();
+            let committed_offset = grps.get(8).unwrap().as_str().parse::<u64>().unwrap();
+            let base_kafka_offset = grps.get(9).unwrap().as_str().parse::<u64>().unwrap();
+            let next_kafka_offset = grps.get(10).unwrap().as_str().parse::<u64>().unwrap();
+            let base_ts = grps.get(11).unwrap().as_str().parse::<u64>().unwrap();
+            let last_ts = grps.get(12).unwrap().as_str().parse::<u64>().unwrap();
 
             let ntpr = NTPR {
                 ntp: NTP {
@@ -1635,9 +1658,21 @@ impl BucketReader {
                 },
                 revision_id: partition_revision,
             };
+            let labeled_ntpr = LabeledNTPR {
+                ntpr,
+                // Prefixes of exactly 8 characters are hashes rather than labels.
+                label: if prefix.len() != 8 {
+                    Some(prefix)
+                } else {
+                    None
+                },
+            };
 
             // Note: assuming memory is sufficient for manifests
-            debug!("Storing archive manifest for {} from key {}", ntpr, key);
+            debug!(
+                "Storing archive manifest for {} from key {}",
+                labeled_ntpr, key
+            );
 
             let manifest: PartitionManifest = match Self::decode_partition_manifest(key, body) {
                 Ok(m) => m,
@@ -1660,13 +1695,13 @@ impl BucketReader {
             };
 
             // Note: assuming memory is sufficient for manifests
-            match self.partition_manifests.get_mut(&ntpr) {
+            match self.partition_manifests.get_mut(&labeled_ntpr) {
                 Some(meta) => {
                     meta.archive_manifests.push(archive_manifest);
                 }
                 None => {
                     self.partition_manifests.insert(
-                        ntpr,
+                        labeled_ntpr,
                         PartitionMetadata {
                             head_manifest: None,
                             archive_manifests: vec![archive_manifest],
@@ -1759,10 +1794,18 @@ impl BucketReader {
                     topic,
                     revision_id: manifest.revision_id as i64,
                 };
+                // TODO: this tool doesn't support binary format manifests at all.
+                let labeled_ntr = LabeledNTR {
+                    ntr: ntr.clone(),
+                    label: None,
+                };
 
-                debug!("Storing topic manifest for {} from key {}", ntr, key);
+                debug!(
+                    "Storing topic manifest for {} from key {}",
+                    &labeled_ntr, key
+                );
 
-                if let Some(_) = self.topic_manifests.insert(ntr, manifest) {
+                if let Some(_) = self.topic_manifests.insert(labeled_ntr, manifest) {
                     warn!("Two topic manifests for same NTR seen ({})", key);
                 }
             } else {
@@ -1806,6 +1849,11 @@ impl BucketReader {
                 topic,
                 revision_id: initial_revision as i64,
             };
+            // TODO: this tool doesn't support binary format manifests at all.
+            let labeled_ntr = LabeledNTR {
+                ntr: ntr.clone(),
+                label: None,
+            };
 
             let mut cursor = std::io::Cursor::new(body.as_ref());
             let marker = match LifecycleMarker::from_bytes(&mut cursor) {
@@ -1821,7 +1869,7 @@ impl BucketReader {
 
             debug!("Storing lifecycle marker for {} from key {}", ntr, key);
 
-            if let Some(_) = self.lifecycle_markers.insert(ntr, marker) {
+            if let Some(_) = self.lifecycle_markers.insert(labeled_ntr, marker) {
                 warn!("Two lifecycle markers for same NTR seen ({})", key);
             }
         } else {
@@ -1845,21 +1893,22 @@ impl BucketReader {
 
         lazy_static! {
             static ref SEGMENT_KEY: Regex = Regex::new(
-                "[a-f0-9]+/([^]]+)/([^]]+)/(\\d+)_(\\d+)/(\\d+)-(\\d+)-(\\d+)-(\\d+)-v1.log.(\\d+)"
+                "([-a-f0-9]+)/([^]]+)/([^]]+)/(\\d+)_(\\d+)/(\\d+)-(\\d+)-(\\d+)-(\\d+)-v1.log.(\\d+)"
             )
             .unwrap();
         }
         let (ntpr, segment) = if let Some(grps) = SEGMENT_KEY.captures(key) {
-            let ns = grps.get(1).unwrap().as_str().to_string();
-            let topic = grps.get(2).unwrap().as_str().to_string();
+            let prefix = grps.get(1).unwrap().as_str().to_string();
+            let ns = grps.get(2).unwrap().as_str().to_string();
+            let topic = grps.get(3).unwrap().as_str().to_string();
             // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-            let partition_id = grps.get(3).unwrap().as_str().parse::<u32>().unwrap();
-            let partition_revision = grps.get(4).unwrap().as_str().parse::<i64>().unwrap();
-            let start_offset = grps.get(5).unwrap().as_str().parse::<RawOffset>().unwrap();
-            let _committed_offset = grps.get(6).unwrap().as_str();
-            let size_bytes = grps.get(7).unwrap().as_str().parse::<u64>().unwrap();
-            let original_term = grps.get(8).unwrap().as_str().parse::<RaftTerm>().unwrap();
-            let upload_term = grps.get(9).unwrap().as_str().parse::<RaftTerm>().unwrap();
+            let partition_id = grps.get(4).unwrap().as_str().parse::<u32>().unwrap();
+            let partition_revision = grps.get(5).unwrap().as_str().parse::<i64>().unwrap();
+            let start_offset = grps.get(6).unwrap().as_str().parse::<RawOffset>().unwrap();
+            let _committed_offset = grps.get(7).unwrap().as_str();
+            let size_bytes = grps.get(8).unwrap().as_str().parse::<u64>().unwrap();
+            let original_term = grps.get(9).unwrap().as_str().parse::<RaftTerm>().unwrap();
+            let upload_term = grps.get(10).unwrap().as_str().parse::<RaftTerm>().unwrap();
             debug!(
                 "ingest_segment v2+ {}/{}/{} {} (key {}",
                 ns, topic, partition_id, start_offset, key
@@ -1873,13 +1922,22 @@ impl BucketReader {
                 },
                 revision_id: partition_revision,
             };
+            let labeled_ntpr = LabeledNTPR {
+                ntpr,
+                // Prefixes of exactly 8 characters are hashes rather than labels.
+                label: if prefix.len() != 8 {
+                    Some(prefix)
+                } else {
+                    None
+                },
+            };
 
-            if !filter.match_ntp(&ntpr.ntp) {
+            if !filter.match_ntp(&labeled_ntpr.ntpr.ntp) {
                 return;
             }
 
             (
-                ntpr,
+                labeled_ntpr,
                 SegmentObject {
                     key: key.to_string(),
                     base_offset: start_offset,
@@ -1910,13 +1968,14 @@ impl BucketReader {
                 },
                 revision_id: partition_revision,
             };
+            let labeled_ntpr = LabeledNTPR { ntpr, label: None };
 
-            if !filter.match_ntp(&ntpr.ntp) {
+            if !filter.match_ntp(&labeled_ntpr.ntpr.ntp) {
                 return;
             }
 
             (
-                ntpr,
+                labeled_ntpr,
                 SegmentObject {
                     key: key.to_string(),
                     base_offset: start_offset,

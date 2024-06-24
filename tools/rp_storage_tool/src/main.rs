@@ -21,10 +21,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::bucket_reader::{AnomalyStatus, BucketReader, MetadataGap, PartitionObjects};
 use crate::error::BucketReaderError;
-use crate::fundamental::{raw_to_kafka, KafkaOffset, RaftTerm, RawOffset, NTPR, NTR};
+use crate::fundamental::{
+    raw_to_kafka, KafkaOffset, LabeledNTPR, LabeledNTR, RaftTerm, RawOffset, NTPR, NTR,
+};
 use crate::ntp_mask::NTPFilter;
 use crate::remote_types::{
-    segment_shortname, LifecycleMarker, PartitionManifest, PartitionManifestSegment, TopicManifest,
+    segment_shortname, LifecycleMarker, PartitionManifest, PartitionManifestSegment, RemoteLabel,
+    TopicManifest,
 };
 use crate::repair::{
     DataAddNullSegment, ManifestEditAlterSegment, ManifestSegmentDiff, RepairEdit,
@@ -259,8 +262,8 @@ impl DataScanTopicSummary {
 
 #[derive(Serialize)]
 pub struct DataScanReport {
-    ntps: BTreeMap<NTPR, NTPDataScanResult>,
-    summary: BTreeMap<NTR, DataScanTopicSummary>,
+    ntps: BTreeMap<LabeledNTPR, NTPDataScanResult>,
+    summary: BTreeMap<LabeledNTR, DataScanTopicSummary>,
 }
 
 impl NTPDataScanResult {
@@ -320,7 +323,7 @@ impl NTPDataScanResult {
 }
 
 async fn seek(
-    ntpr: &NTPR,
+    ntpr: &LabeledNTPR,
     objects: &PartitionObjects,
     manifest: &PartitionManifest,
     bounds: (RawOffset, RawOffset),
@@ -360,7 +363,7 @@ async fn seek(
 }
 
 async fn scan_data_ntp(
-    ntpr: &NTPR,
+    ntpr: &LabeledNTPR,
     objects: &PartitionObjects,
     bucket_reader: &BucketReader,
     bounds: Option<(RawOffset, RawOffset)>,
@@ -592,7 +595,7 @@ async fn scan_data_ntp(
                                             delta_offset_end: curr_seg.delta_offset,
                                             max_timestamp: curr_seg.base_timestamp,
                                             base_timestamp: prev_seg.max_timestamp,
-                                            ntp_revision: Some(ntpr.revision_id as u64),
+                                            ntp_revision: Some(ntpr.ntpr.revision_id as u64),
                                             sname_format: curr_seg.sname_format,
                                             segment_term: curr_seg.segment_term,
                                             archiver_term: curr_seg.archiver_term,
@@ -605,8 +608,11 @@ async fn scan_data_ntp(
                                         );
 
                                         // Unwrap safe because we know we have current_segment_meta
-                                        let object_key =
-                                            manifest_opt.unwrap().segment_key(&null_seg).unwrap();
+                                        let remote_label = RemoteLabel::from_string(&ntpr.label);
+                                        let object_key = manifest_opt
+                                            .unwrap()
+                                            .segment_key(&null_seg, &remote_label)
+                                            .unwrap();
 
                                         ntp_report.proposed_repairs.push(
                                             RepairEdit::AddNullSegment(DataAddNullSegment {
@@ -770,12 +776,12 @@ async fn scan_data(
     // TODO: wire up the batch/record read to consider any EOFs etc as errors
     // when reading from S3, and set failed=true here
 
-    let mut report: BTreeMap<NTPR, NTPDataScanResult> = BTreeMap::new();
+    let mut report: BTreeMap<LabeledNTPR, NTPDataScanResult> = BTreeMap::new();
 
-    let ntprs: Vec<NTPR> = bucket_reader
+    let ntprs: Vec<LabeledNTPR> = bucket_reader
         .partitions
         .keys()
-        .filter(|k| cli.filter.match_ntpr(k))
+        .filter(|k| cli.filter.match_lntpr(k))
         .map(|k| k.clone())
         .collect();
 
@@ -806,7 +812,7 @@ async fn scan_data(
     // TODO: validate index objects
     // TODO: validate tx manifest objects
 
-    let mut topic_summaries: BTreeMap<NTR, DataScanTopicSummary> = BTreeMap::new();
+    let mut topic_summaries: BTreeMap<LabeledNTR, DataScanTopicSummary> = BTreeMap::new();
     for (ntpr, ntp_report) in &report {
         let ntr = ntpr.to_ntr();
         if !topic_summaries.contains_key(&ntr) {
@@ -858,7 +864,7 @@ async fn scan_gaps(
         scan_result: NTPDataScanResult,
     }
 
-    let mut results: HashMap<NTPR, GapScanPartitionReport> = HashMap::new();
+    let mut results: HashMap<LabeledNTPR, GapScanPartitionReport> = HashMap::new();
 
     let mut offset_gaps = HashMap::new();
     std::mem::swap(&mut offset_gaps, &mut reader.anomalies.metadata_offset_gaps);
@@ -980,7 +986,7 @@ async fn extract(
     let sink_client = object_store::local::LocalFileSystem::new_with_prefix(sink)?;
 
     for (ntpr, _objects) in bucket_reader.partitions.iter() {
-        if !cli.filter.match_ntpr(ntpr) {
+        if !cli.filter.match_lntpr(ntpr) {
             // If metadata was loaded from a file, it might not be filtered
             // in a way that lines up with cli.filter: re-filter so that one
             // can have a monolithic metadata file but extract individual partitions
@@ -1019,12 +1025,14 @@ async fn extract(
     }
 
     for (ntr, _tp_man) in &bucket_reader.topic_manifests {
-        if !cli.filter.match_ntr(ntr) {
+        if !cli.filter.match_lntr(ntr) {
             continue;
         }
 
-        let path =
-            object_store::path::Path::from(TopicManifest::manifest_key(&ntr.namespace, &ntr.topic));
+        let path = object_store::path::Path::from(TopicManifest::manifest_key(
+            &ntr.ntr.namespace,
+            &ntr.ntr.topic,
+        ));
         let get_r = bucket_reader.client.get(&path).await?;
         let bytes = get_r.bytes().await?;
         sink_client.put(&path, bytes).await?;
@@ -1032,7 +1040,7 @@ async fn extract(
 
     if !metadata_only {
         for (ntpr, objects) in bucket_reader.partitions.iter() {
-            if !cli.filter.match_ntpr(ntpr) {
+            if !cli.filter.match_lntpr(ntpr) {
                 continue;
             }
 

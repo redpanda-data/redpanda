@@ -1,7 +1,9 @@
 use crate::bucket_reader::{BucketReader, MetadataGap, SegmentObject};
 use crate::error::BucketReaderError;
-use crate::fundamental::{DeltaOffset, RaftTerm, RawOffset, NTPR};
-use crate::remote_types::{segment_shortname, PartitionManifest, PartitionManifestSegment};
+use crate::fundamental::{DeltaOffset, LabeledNTPR, RaftTerm, RawOffset, NTPR};
+use crate::remote_types::{
+    segment_shortname, PartitionManifest, PartitionManifestSegment, RemoteLabel,
+};
 use log::{info, warn};
 use serde::Serialize;
 
@@ -98,7 +100,7 @@ pub fn project_repairs(manifest: &mut PartitionManifest, repairs: &Vec<RepairEdi
 
 /// Substitute segments into manifest if they appear to solve metadata gaps
 pub async fn maybe_adjust_manifest(
-    ntpr: &NTPR,
+    ntpr: &LabeledNTPR,
     gaps: &Vec<MetadataGap>,
     bucket_reader: &BucketReader,
 ) -> Result<Vec<RepairEdit>, BucketReaderError> {
@@ -131,8 +133,11 @@ pub async fn maybe_adjust_manifest(
         // segment's metadata
         let current_metadata = manifest.get_segment_by_offset(prev_seg).unwrap();
 
+        let remote_label = RemoteLabel::from_string(&ntpr.label);
         let current_segment = SegmentObject {
-            key: manifest.segment_key(current_metadata).unwrap(),
+            key: manifest
+                .segment_key(current_metadata, &remote_label)
+                .unwrap(),
             size_bytes: current_metadata.size_bytes as u64,
             base_offset: current_metadata.base_offset as i64,
             upload_term: current_metadata.archiver_term as RaftTerm,
