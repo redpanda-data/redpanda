@@ -40,6 +40,8 @@ message Test2 {
   Simple id =  1;
 }"""
 
+json_number_schema_def = '{"type": "number"}'
+
 
 class RpkRegistryTest(RedpandaTest):
     username = "red"
@@ -112,6 +114,7 @@ class RpkRegistryTest(RedpandaTest):
         subject_1 = "test_subject_1"
         subject_2 = "test_subject_2"
         subject_3 = "test_subject_3"
+        subject_4 = "test_subject_4"
 
         self.create_schema(subject_1, schema1_avro_def,
                            ".avro")  # version: 1, ID: 1
@@ -199,6 +202,14 @@ class RpkRegistryTest(RedpandaTest):
         self._rpk.delete_schema(subject_1, version="1", permanent=True)
         out = self._rpk.list_schemas(deleted=True)
         assert not find_subject(out, subject_1)  # Not in the deleted list.
+
+        self.create_schema(subject_4, json_number_schema_def,
+                           ".json")  # version: 1, ID: 4
+        out = self._rpk.get_schema(subject_4, version="1")
+        assert len(out) == 1
+        assert out[0]["subject"] == subject_4
+        assert out[0]["id"] == 4
+        assert out[0]["type"] == "JSON"
 
     @cluster(num_nodes=1)
     def test_registry_compatibility_level(self):

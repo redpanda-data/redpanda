@@ -305,7 +305,7 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
     rq.req.reset();
 
     static const std::vector<std::string_view> schemas_types{
-      "PROTOBUF", "AVRO"};
+      "JSON", "PROTOBUF", "AVRO"};
     auto json_rslt = ppj::rjson_serialize(schemas_types);
     rp.rep->write_body("json", json_rslt);
     return ss::make_ready_future<server::reply_t>(std::move(rp));

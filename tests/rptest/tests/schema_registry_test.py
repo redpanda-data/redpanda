@@ -100,6 +100,8 @@ message Test2 {
   Simple id =  1;
 }"""
 
+json_number_schema_def = '{"type": "number"}'
+
 log_config = LoggingConfig('info',
                            logger_levels={
                                'security': 'trace',
@@ -517,7 +519,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result_raw = self._get_schemas_types()
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
     @cluster(num_nodes=3)
     def test_get_schema_id_versions(self):
@@ -1483,6 +1485,40 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.not_found
         assert result_raw.json()["error_code"] == 40402
 
+    @cluster(num_nodes=3)
+    def test_json(self):
+        """
+        Verify basic json functionality
+        """
+
+        self.logger.info("Posting number as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject="simple",
+            data=json.dumps({
+                "schema": json_number_schema_def,
+                "schemaType": "JSON"
+            }))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        result_raw = self._request("GET",
+                                   f"subjects/simple/versions/1/schema",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.text.strip() == json_number_schema_def.strip()
+
+        result_raw = self._request("GET",
+                                   f"schemas/ids/1",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["schemaType"] == "JSON"
+        assert result["schema"].strip() == json_number_schema_def.strip()
+
     @cluster(num_nodes=4)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Python)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Java)
@@ -2169,7 +2205,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         result_raw = self._get_schemas_types(auth=self.super_auth)
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
     @cluster(num_nodes=3)
     def test_get_schema_id_versions(self):
@@ -2780,7 +2816,7 @@ class SchemaRegistryMTLSTest(SchemaRegistryMTLSBase):
                   self.admin_user.certificate.key))
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
 
 class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
@@ -2801,7 +2837,7 @@ class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
                   self.admin_user.certificate.key))
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
 
 class SchemaValidationEnableWithoutSchemaRegistry(RedpandaTest):
