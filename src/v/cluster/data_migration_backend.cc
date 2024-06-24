@@ -10,7 +10,11 @@
  */
 #include "cluster/data_migration_backend.h"
 
+#include "cluster/partition_leaders_table.h"
+#include "config/node_config.h"
+#include "data_migration_frontend.h"
 #include "data_migration_types.h"
+#include "data_migration_worker.h"
 #include "fwd.h"
 #include "logger.h"
 
@@ -19,9 +23,20 @@
 namespace cluster::data_migrations {
 
 backend::backend(
-  migrations_table& table, frontend& frontend, ss::abort_source& as)
-  : _table(table)
+  migrations_table& table,
+  frontend& frontend,
+  ss::sharded<worker>& worker,
+  partition_leaders_table& leaders_table,
+  topic_table& topic_table,
+  shard_table& shard_table,
+  ss::abort_source& as)
+  : _self(*config::node().node_id())
+  , _table(table)
   , _frontend(frontend)
+  , _worker(worker)
+  , _leaders_table(leaders_table)
+  , _topic_table(topic_table)
+  , _shard_table(shard_table)
   , _as(as) {}
 
 void backend::start() {

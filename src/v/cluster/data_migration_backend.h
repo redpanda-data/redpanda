@@ -24,7 +24,14 @@ namespace cluster::data_migrations {
  */
 class backend {
 public:
-    backend(migrations_table& table, frontend& frontend, ss::abort_source&);
+    backend(
+      migrations_table& table,
+      frontend& frontend,
+      ss::sharded<worker>& worker,
+      partition_leaders_table& leaders_table,
+      topic_table& topic_table,
+      shard_table& shard_table,
+      ss::abort_source& as);
 
     void start();
     ss::future<> stop();
@@ -41,8 +48,14 @@ private:
 private:
     ss::future<check_ntp_states_reply>
     check_ntp_states_locally(check_ntp_states_request&& req);
+
+    model::node_id _self;
     migrations_table& _table;
     frontend& _frontend;
+    ss::sharded<worker>& _worker;
+    partition_leaders_table& _leaders_table;
+    topic_table& _topic_table;
+    shard_table& _shard_table;
     ss::abort_source& _as;
     migrations_table::notification_id _id;
 
