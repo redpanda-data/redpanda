@@ -224,39 +224,36 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
         co_return existing_quota->second;
     }
 
-        auto limits = _translator.find_quota_value(qid);
-        auto replenish_threshold = static_cast<uint64_t>(
-          _replenish_threshold().value_or(1));
+    auto limits = _translator.find_quota_value(qid);
+    auto replenish_threshold = static_cast<uint64_t>(
+      _replenish_threshold().value_or(1));
 
-        auto new_value = std::make_shared<client_quota>(
-          ssx::sharded_value<clock::time_point>(now),
-          std::nullopt,
-          std::nullopt,
-          std::nullopt);
+    auto new_value = std::make_shared<client_quota>(
+      ssx::sharded_value<clock::time_point>(now),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
 
-        if (limits.produce_limit.has_value()) {
-            new_value->tp_produce_rate.emplace(
-              *limits.produce_limit,
-              *limits.produce_limit,
-              replenish_threshold,
-              true);
-        }
-        if (limits.fetch_limit.has_value()) {
-            new_value->tp_fetch_rate.emplace(
-              *limits.fetch_limit,
-              *limits.fetch_limit,
-              replenish_threshold,
-              true);
-        }
-        if (limits.partition_mutation_limit.has_value()) {
-            new_value->pm_rate.emplace(
-              *limits.partition_mutation_limit,
-              *limits.partition_mutation_limit,
-              replenish_threshold,
-              true);
-        }
+    if (limits.produce_limit.has_value()) {
+        new_value->tp_produce_rate.emplace(
+          *limits.produce_limit,
+          *limits.produce_limit,
+          replenish_threshold,
+          true);
+    }
+    if (limits.fetch_limit.has_value()) {
+        new_value->tp_fetch_rate.emplace(
+          *limits.fetch_limit, *limits.fetch_limit, replenish_threshold, true);
+    }
+    if (limits.partition_mutation_limit.has_value()) {
+        new_value->pm_rate.emplace(
+          *limits.partition_mutation_limit,
+          *limits.partition_mutation_limit,
+          replenish_threshold,
+          true);
+    }
 
-        auto [it, _] = _global_map->emplace(qid, std::move(new_value));
+    auto [it, _] = _global_map->emplace(qid, std::move(new_value));
 
     co_return it->second;
 }
@@ -274,41 +271,41 @@ void quota_manager::update_client_quotas() {
 }
 
 ss::future<> quota_manager::do_update_client_quotas() {
-            constexpr auto set_bucket = [](
-                                          std::optional<atomic_token_bucket>& bucket,
-                                          std::optional<uint64_t> rate,
-                                          std::optional<uint64_t> replenish_threshold) {
-                if (!rate) {
-                    bucket.reset();
-                    return;
-                }
+    constexpr auto set_bucket = [](
+                                  std::optional<atomic_token_bucket>& bucket,
+                                  std::optional<uint64_t> rate,
+                                  std::optional<uint64_t> replenish_threshold) {
+        if (!rate) {
+            bucket.reset();
+            return;
+        }
 
-                if (bucket.has_value() && bucket->rate() == rate) {
-                    return;
-                }
-                bucket.emplace(*rate, *rate, replenish_threshold.value_or(1), true);
-                return;
-            };
+        if (bucket.has_value() && bucket->rate() == rate) {
+            return;
+        }
+        bucket.emplace(*rate, *rate, replenish_threshold.value_or(1), true);
+        return;
+    };
 
     return ssx::async_for_each(
       _global_map->begin(),
       _global_map->end(),
       [this, &set_bucket](auto& quota) {
-                auto limits = _translator.find_quota_value(quota.first);
-                set_bucket(
-                  quota.second->tp_produce_rate,
-                  limits.produce_limit,
-                  _replenish_threshold());
+          auto limits = _translator.find_quota_value(quota.first);
+          set_bucket(
+            quota.second->tp_produce_rate,
+            limits.produce_limit,
+            _replenish_threshold());
 
-                set_bucket(
-                  quota.second->tp_fetch_rate,
-                  limits.fetch_limit,
-                  _replenish_threshold());
+          set_bucket(
+            quota.second->tp_fetch_rate,
+            limits.fetch_limit,
+            _replenish_threshold());
 
-                set_bucket(
-                  quota.second->pm_rate,
-                  limits.partition_mutation_limit,
-                  _replenish_threshold());
+          set_bucket(
+            quota.second->pm_rate,
+            limits.partition_mutation_limit,
+            _replenish_threshold());
       });
 }
 
