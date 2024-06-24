@@ -19,10 +19,23 @@ namespace raft {
 class timeout_jitter {
 public:
     explicit timeout_jitter(config::binding<std::chrono::milliseconds> timeout)
-      : _base_timeout(timeout)
+      : _base_timeout(std::move(timeout))
       , _time_jitter(_base_timeout()) {
-        timeout.watch([this] { update_base_timeout(); });
+        _base_timeout.watch([this] { update_base_timeout(); });
     }
+
+    timeout_jitter(const timeout_jitter&) = delete;
+    timeout_jitter& operator=(const timeout_jitter&) = delete;
+
+    timeout_jitter(timeout_jitter&& rhs) noexcept
+      : _base_timeout(std::move(rhs._base_timeout))
+      , _time_jitter(std::move(rhs._time_jitter)) {
+        _base_timeout.watch([this] { update_base_timeout(); });
+    };
+    timeout_jitter& operator=(timeout_jitter&& rhs) = delete;
+
+    ~timeout_jitter() = default;
+
     raft::clock_type::time_point operator()() { return _time_jitter(); }
 
     raft::clock_type::duration base_duration() const {
