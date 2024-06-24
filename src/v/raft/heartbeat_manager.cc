@@ -52,8 +52,7 @@ heartbeat_manager::follower_request_meta::follower_request_meta(
   , follower_vnode(target)
   , hb_guard(c->suppress_heartbeats(follower_vnode)) {}
 
-heartbeat_manager::heartbeat_requests_v2
-heartbeat_manager::requests_for_range() {
+heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
     absl::node_hash_map<
       model::node_id,
       ss::chunked_fifo<
@@ -129,7 +128,7 @@ heartbeat_manager::requests_for_range() {
         }
     }
 
-    std::vector<heartbeat_manager::node_heartbeat_v2> reqs;
+    std::vector<heartbeat_manager::node_heartbeat> reqs;
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
         ss::chunked_fifo<group_heartbeat> requests;
@@ -146,7 +145,7 @@ heartbeat_manager::requests_for_range() {
         reqs.emplace_back(p.first, std::move(req), std::move(meta_map));
     }
 
-    return heartbeat_requests_v2{
+    return heartbeat_requests{
       .requests{std::move(reqs)}, .reconnect_nodes{reconnect_nodes}};
 }
 
@@ -192,9 +191,9 @@ heartbeat_manager::heartbeat_manager(
 }
 
 ss::future<>
-heartbeat_manager::send_heartbeats(std::vector<node_heartbeat_v2> reqs) {
+heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
     return ss::do_with(
-      std::move(reqs), [this](std::vector<node_heartbeat_v2>& reqs) mutable {
+      std::move(reqs), [this](std::vector<node_heartbeat>& reqs) mutable {
           std::vector<ss::future<>> futures;
           futures.reserve(reqs.size());
           for (auto& r : reqs) {
@@ -217,7 +216,7 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
     co_await send_heartbeats(std::move(reqs.requests));
 }
 
-ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat_v2 r) {
+ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat r) {
     auto gate = _bghbeats.hold();
     vlog(
       hbeatlog.trace,

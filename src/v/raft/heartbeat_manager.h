@@ -107,8 +107,8 @@ public:
         consensus::suppress_heartbeats_guard hb_guard;
     };
     // Heartbeats from all groups for single node
-    struct node_heartbeat_v2 {
-        node_heartbeat_v2(
+    struct node_heartbeat {
+        node_heartbeat(
           model::node_id t,
           heartbeat_request_v2 req,
           absl::node_hash_map<raft::group_id, follower_request_meta> seqs)
@@ -140,9 +140,9 @@ public:
     bool is_stopped() const { return _bghbeats.is_closed(); }
 
 private:
-    struct heartbeat_requests_v2 {
+    struct heartbeat_requests {
         /// Requests to dispatch.  Can include request to self.
-        std::vector<heartbeat_manager::node_heartbeat_v2> requests;
+        std::vector<heartbeat_manager::node_heartbeat> requests;
 
         /// These nodes' heartbeat status indicates they need
         /// a transport reconnection before sending next heartbeat
@@ -156,10 +156,10 @@ private:
     /// \brief unprotected, must be used inside the gate & semaphore
 
     ss::future<> do_dispatch_heartbeats();
-    ss::future<> send_heartbeats(std::vector<node_heartbeat_v2>);
+    ss::future<> send_heartbeats(std::vector<node_heartbeat>);
 
     /// \brief sends a batch to one node
-    ss::future<> do_heartbeat(node_heartbeat_v2);
+    ss::future<> do_heartbeat(node_heartbeat);
 
     bool needs_full_heartbeat(
       const follower_index_metadata& follower_metadata,
@@ -187,7 +187,7 @@ private:
       group_id group,
       reply_result status);
 
-    heartbeat_requests_v2 requests_for_range();
+    heartbeat_requests requests_for_range();
     // private members
 
     mutex _lock{"heartbeat_manager"};
