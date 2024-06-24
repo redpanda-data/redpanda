@@ -247,6 +247,7 @@ vbuild/
 /.vtools.yml
 /vtools
 /benthos
+/connect
 /Taskfile.yml
 /.dockerignore
 /.task/
