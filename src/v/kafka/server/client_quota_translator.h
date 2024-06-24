@@ -153,6 +153,8 @@ private:
     client_quota_value get_client_quota_value(
       const tracker_key& quota_id, client_quota_type qt) const;
 
+    void maybe_log_deprecated_configs_nag() const;
+
     ss::sharded<cluster::client_quota::store>& _quota_store;
 
     std::vector<config_callback> _config_callbacks;

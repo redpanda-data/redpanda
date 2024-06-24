@@ -13,7 +13,9 @@
 
 #include "cluster/client_quota_store.h"
 #include "config/configuration.h"
+#include "kafka/server/logger.h"
 
+#include <seastar/core/shard_id.hh>
 #include <seastar/util/variant_utils.hh>
 
 namespace kafka {
@@ -98,6 +100,13 @@ client_quota_translator::client_quota_translator(
   , _target_fetch_tp_rate_per_client_group(
       config::shard_local_cfg()
         .kafka_client_group_fetch_byte_rate_quota.bind()) {
+    if (ss::this_shard_id() == 0) {
+        maybe_log_deprecated_configs_nag();
+
+        _config_callbacks.emplace_back(
+          [this]() { maybe_log_deprecated_configs_nag(); });
+    }
+
     // Each config binding only supports a single watch() callback, so we
     // create a vector of callbacks to execute whenever they update
     auto call_config_callbacks = [this]() {
@@ -289,6 +298,30 @@ client_quota_translator::get_default_config(client_quota_type qt) const {
         return _default_target_fetch_tp_rate();
     case kafka::client_quota_type::partition_mutation_quota:
         return _target_partition_mutation_quota();
+    }
+}
+
+void client_quota_translator::maybe_log_deprecated_configs_nag() const {
+    auto emit_nag
+      = _default_target_produce_tp_rate()
+          != config::configuration::target_produce_quota_byte_rate_default
+        || _default_target_fetch_tp_rate() || _target_partition_mutation_quota()
+        || !_target_produce_tp_rate_per_client_group().empty()
+        || !_target_fetch_tp_rate_per_client_group().empty();
+
+    if (emit_nag) {
+        vlog(
+          client_quota_log.warn,
+          "You have configured client quotas using cluster configs. The "
+          "behaviour of these cluster configs changed in v24.2 to throttle "
+          "node-wide instead of per-shard. Furthermore, this mode of "
+          "configuring quotas is going to be deprecated in v25.1. You should "
+          "use `rpk cluster quotas` to recreate your client quotas and remove "
+          "the cluster configs. You can find more information about this "
+          "change in the Redpanda Docs page. Deprecated configs: "
+          "target_quota_byte_rate, target_fetch_quota_byte_rate, "
+          "kafka_admin_topic_api_rate, kafka_client_group_byte_rate_quota and "
+          "kafka_client_group_fetch_byte_rate_quota.");
     }
 }
 

@@ -500,7 +500,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "1073741824",
        .visibility = visibility::user},
-      2_GiB,
+      target_produce_quota_byte_rate_default,
       {.min = 1_MiB})
   , target_fetch_quota_byte_rate(
       *this,
