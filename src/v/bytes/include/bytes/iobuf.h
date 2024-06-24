@@ -76,6 +76,12 @@ public:
     using byte_iterator = details::io_byte_iterator;
     using placeholder = details::io_placeholder;
 
+    static iobuf from(std::string_view view) {
+        iobuf i;
+        i.append(view.data(), view.size());
+        return i;
+    }
+
     // NOLINTNEXTLINE
     iobuf() noexcept {
         // nothing allocates memory, but boost intrusive list is not marked as
