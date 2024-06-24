@@ -79,6 +79,7 @@ public:
     kafka::offset latest_offset() override;
     ss::future<std::optional<kafka::offset>>
     offset_at_timestamp(model::timestamp, ss::abort_source*) override;
+    kafka::offset start_offset() const override;
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) override;
 

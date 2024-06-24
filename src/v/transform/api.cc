@@ -163,6 +163,11 @@ public:
         co_return model::offset_cast(result->offset);
     }
 
+    kafka::offset start_offset() const final {
+        auto result = _partition.start_offset();
+        return model::offset_cast(result);
+    }
+
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) final {
         auto _ = _gate.hold();
