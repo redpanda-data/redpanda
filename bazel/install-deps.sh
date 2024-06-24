@@ -36,6 +36,8 @@ deb_deps=(
   xfslibs-dev
   valgrind
   git
+  libc++-16-dev
+  libc++abi-16-dev
 )
 
 fedora_deps=(
@@ -50,6 +52,8 @@ fedora_deps=(
   valgrind-devel
   git
   clang
+  libcxx-devel
+  libcxxabi-devel
 )
 
 case "$ID" in

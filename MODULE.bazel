@@ -40,6 +40,53 @@ bazel_dep(name = "xxhash", version = "0.8.2")
 bazel_dep(name = "yaml-cpp", version = "0.8.0")
 bazel_dep(name = "zlib", version = "1.3")
 bazel_dep(name = "zstd", version = "1.5.6")
+bazel_dep(name = "toolchains_llvm", version = "1.0.0")
+
+# ====================================
+# LLVM toolchains
+# ====================================
+LLVM_VERSIONS = {"": "16.0.4"}
+BASE_COMPILER_FLAGS = {"": {
+}}
+
+# toolchains_llvm module
+# TODO: for now uses my private fork that allow us to disable linking against libunwind
+git_override(
+    module_name = "toolchains_llvm",
+    commit = "24b42c4db17f89bb4e829c0629ff5ea3b5291bce",
+    remote = "https://github.com/mmaslankaprv/toolchains_llvm",
+)
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+
+# base LLVM toolchain, this one will download the LLVM binaries specific for the host platform
+llvm.toolchain(
+    name = "llvm_toolchain",
+    llvm_versions = LLVM_VERSIONS,
+    cxx_standard = {"": "c++20"},
+    stdlib = {"": "builtin-libc++"},
+)
+
+use_repo(llvm, "llvm_toolchain", "llvm_toolchain_llvm")
+
+register_toolchains("@llvm_toolchain//:all")
+
+# toolchain using system LLVM
+# TODO: submit a llvm_toolchain PR to exlcude libunwind
+llvm.toolchain(
+    name = "llvm_toolchain_system",
+    llvm_versions = LLVM_VERSIONS,
+    cxx_standard = {"": "c++20"},
+    stdlib = {"": "builtin-libc++"},
+    use_libunwind = {"": "false"},
+)
+
+llvm.toolchain_root(
+    name = "llvm_toolchain_system",
+    path = "/usr/lib/llvm-16/",
+)
+
+use_repo(llvm, "llvm_toolchain_system")
 
 non_module_dependencies = use_extension("//bazel:extensions.bzl", "non_module_dependencies")
 use_repo(non_module_dependencies, "ada")
