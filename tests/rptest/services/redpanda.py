@@ -3514,7 +3514,7 @@ class RedpandaService(RedpandaServiceBase):
 
                 # Decode binary manifests for convenience, but don't give up
                 # if we fail
-                if ".bin" in m:
+                if "/manifest.bin" in m:
                     try:
                         decoded = RpStorageTool(
                             self.logger).decode_partition_manifest(body)

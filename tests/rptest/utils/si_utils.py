@@ -267,11 +267,19 @@ def make_segment_summary(ntpr: NTPR, reader: SegmentReader) -> SegmentSummary:
 def parse_s3_manifest_path(path: str) -> NTPR:
     """Parse S3 manifest path. Return ntp and revision.
     Sample name: 50000000/meta/kafka/panda-topic/0_19/manifest.json
+    Sample name: 6e94ccdc-443a-4807-b105-0bb86e8f97f7/kafka/panda-topic/0_18/manifest.bin
     """
     items = path.split('/')
-    ns = items[2]
-    topic = items[3]
-    part_rev = items[4].split('_')
+    if len(items[0]) == 8 and items[1].endswith('0000000'):
+        ns = items[2]
+        topic = items[3]
+        part_rev = items[4].split('_')
+        partition = int(part_rev[0])
+        revision = int(part_rev[1])
+        return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
+    ns = items[1]
+    topic = items[2]
+    part_rev = items[3].split('_')
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
@@ -427,21 +435,29 @@ def verify_file_layout(baseline_per_host,
 
 
 def gen_topic_manifest_path(topic: NT,
-                            manifest_format: Literal['json', 'bin'] = 'bin'):
+                            manifest_format: Literal['json', 'bin'] = 'bin',
+                            remote_label: Optional[str] = None,
+                            rev: int = 0):
     assert manifest_format in ['json', 'bin']
-    x = xxhash.xxh32()
     path = f"{topic.ns}/{topic.topic}"
-    x.update(path.encode('ascii'))
-    hash = x.hexdigest()[0] + '0000000'
-    return f"{hash}/meta/{path}/topic_manifest.{manifest_format}"
+    if not remote_label:
+        x = xxhash.xxh32()
+        x.update(path.encode('ascii'))
+        hash = x.hexdigest()[0] + '0000000'
+        return f"{hash}/meta/{path}/topic_manifest.{manifest_format}"
+    return f"{path}/{remote_label}/{rev}/topic_manifest.{manifest_format}"
 
 
-def gen_topic_lifecycle_marker_path(topic: NT):
-    x = xxhash.xxh32()
+def gen_topic_lifecycle_marker_path(topic: NT,
+                                    rev: int,
+                                    remote_label: Optional[str] = None):
     path = f"{topic.ns}/{topic.topic}"
-    x.update(path.encode('ascii'))
-    hash = x.hexdigest()[0] + '0000000'
-    return f"{hash}/meta/{path}/topic_manifest.json"
+    if not remote_label:
+        x = xxhash.xxh32()
+        x.update(path.encode('ascii'))
+        hash = x.hexdigest()[0] + '0000000'
+        return f"{hash}/meta/{path}/{rev}_lifecycle.bin"
+    return f"{path}/{remote_label}/{rev}_lifecycle.bin"
 
 
 def gen_segment_name_from_meta(meta: dict, key: str) -> str:
@@ -607,10 +623,17 @@ class PathMatcher:
             return any(tn in key for tn in self.topic_names)
 
     def _match_topic_manifest(self, key):
-        if self.topic_manifest_paths is None:
+        if self.topic_names is None:
             return True
         else:
-            return any(key.endswith(t) for t in self.topic_manifest_paths)
+            for t in self.topic_names:
+                if not key.endswith(
+                        "/topic_manifest.bin") and not key.endswith(
+                            "/topic_manifest.json"):
+                    continue
+                if t in key:
+                    return True
+            return False
 
     def is_cluster_metadata_manifest(self, o: ObjectMetadata) -> bool:
         return o.key.endswith('/cluster_manifest.json')
@@ -750,9 +773,9 @@ class SpillMeta:
     path: str
 
     @staticmethod
-    def make(ntpr: NTPR, path: str):
+    def make(ntpr: NTPR, path: str, remote_label: Optional[str] = None):
         base, last, base_kafka, last_kafka, base_ts, last_ts = SpillMeta._parse_path(
-            ntpr, path)
+            ntpr, path, remote_label)
         return SpillMeta(base=int(base),
                          last=int(last),
                          base_kafka=int(base_kafka),
@@ -763,14 +786,16 @@ class SpillMeta:
                          path=path)
 
     @staticmethod
-    def _parse_path(ntpr: NTPR, path: str) -> list[str]:
+    def _parse_path(ntpr: NTPR,
+                    path: str,
+                    remote_label: Optional[str] = None) -> list[str]:
         """
         Extract metadata from spillover manifest path.
         Expected format is:
         {base}.{base_rp_offset}.{last_rp_offest}.{base_kafka_offset}.{last_kafka_offset}.{first_ts}.{last_ts}
         where base = {hash}/meta/{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}/manifest"
         """
-        base = BucketView.gen_manifest_path(ntpr)
+        base = BucketView.gen_manifest_path(ntpr, remote_label=remote_label)
         suffix = path.removeprefix(f"{base}.")
 
         split = suffix.split(".")
@@ -826,7 +851,9 @@ class BucketView:
     def __init__(self,
                  redpanda,
                  topics: Optional[Sequence[TopicSpec]] = None,
-                 scan_segments: bool = False):
+                 scan_segments: bool = False,
+                 remote_label: Optional[str] = None,
+                 with_remote_labels: bool = True):
         """
         Always construct this with a `redpanda` -- the explicit logger/bucket/client
         arguments are only here to enable the structure of topic_recovery_test.py to work,
@@ -840,6 +867,12 @@ class BucketView:
         self.logger = redpanda.logger
         self.bucket = redpanda.si_settings.cloud_storage_bucket
         self.client: S3Client | ABSClient = redpanda.cloud_storage_client
+        self.remote_label: Optional[str] = None
+        if with_remote_labels:
+            if remote_label:
+                self.remote_label = remote_label
+            else:
+                self.remote_label = self.redpanda._admin.get_cluster_uuid()
 
         self.path_matcher = PathMatcher(topics)
 
@@ -972,6 +1005,9 @@ class BucketView:
 
     def _do_listing(self):
         for o in self.client.list_objects(self.bucket):
+            if self.remote_label and self.remote_label not in o.key:
+                self.logger.debug(f"Skipping object {o.key}")
+                continue
             self.logger.debug(f"Loading object {o.key}")
             if self.path_matcher.is_partition_manifest(o):
                 ntpr = parse_s3_manifest_path(o.key)
@@ -1017,14 +1053,15 @@ class BucketView:
 
         if path is None:
             # implicit path, try .bin and fall back to .json
-            path = BucketView.gen_manifest_path(ntpr, "bin")
+            path = BucketView.gen_manifest_path(ntpr, "bin", self.remote_label)
             format = ManifestFormat.BINARY
             try:
                 data = self.client.get_object_data(self.bucket, path)
             except Exception as e:
                 self.logger.debug(f"Exception loading {path}: {e}")
                 try:
-                    path = BucketView.gen_manifest_path(ntpr, "json")
+                    path = BucketView.gen_manifest_path(
+                        ntpr, "json", self.remote_label)
                     format = ManifestFormat.JSON
                     data = self.client.get_object_data(self.bucket, path)
                 except Exception as e:
@@ -1075,7 +1112,7 @@ class BucketView:
         if ntp not in self._state.spillover_manifests:
             self._state.spillover_manifests[ntp] = {}
 
-        meta = SpillMeta.make(ntpr, path)
+        meta = SpillMeta.make(ntpr, path, self.remote_label)
         self._state.spillover_manifests[ntp][meta] = manifest
 
         self.logger.debug(
@@ -1100,7 +1137,9 @@ class BucketView:
 
     def _discover_spillover_manifests(self, ntpr: NTPR) -> list[SpillMeta]:
         list_res = self.client.list_objects(
-            bucket=self.bucket, prefix=BucketView.gen_manifest_path(ntpr))
+            bucket=self.bucket,
+            prefix=BucketView.gen_manifest_path(
+                ntpr, remote_label=self.remote_label))
 
         def is_spillover_manifest_path(path: str) -> bool:
             return not (path.endswith(".json") or path.endswith(".bin"))
@@ -1108,7 +1147,8 @@ class BucketView:
         spill_metas = []
         for manifest_obj in list_res:
             if is_spillover_manifest_path(manifest_obj.key):
-                spill_metas.append(SpillMeta.make(ntpr, manifest_obj.key))
+                spill_metas.append(
+                    SpillMeta.make(ntpr, manifest_obj.key, self.remote_label))
 
         return sorted(spill_metas)
 
@@ -1145,12 +1185,16 @@ class BucketView:
         return meta.content_length
 
     @staticmethod
-    def gen_manifest_path(ntpr: NTPR, extension: str = "bin"):
-        x = xxhash.xxh32()
+    def gen_manifest_path(ntpr: NTPR,
+                          extension: str = "bin",
+                          remote_label: Optional[str] = None):
         path = f"{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}"
-        x.update(path.encode('ascii'))
-        hash = x.hexdigest()[0] + '0000000'
-        return f"{hash}/meta/{path}/manifest.{extension}"
+        if not remote_label:
+            x = xxhash.xxh32()
+            x.update(path.encode('ascii'))
+            hash = x.hexdigest()[0] + '0000000'
+            return f"{hash}/meta/{path}/manifest.{extension}"
+        return f"{remote_label}/{path}/manifest.{extension}"
 
     def get_partition_manifest(self, ntp: NTP | NTPR) -> dict:
         """
@@ -1265,18 +1309,31 @@ class BucketView:
         if topic in self._state.topic_manifests:
             return self._state.topic_manifests[topic]
 
-        try:
-            path = gen_topic_manifest_path(topic, manifest_format='bin')
-            return self._load_topic_manifest(topic,
-                                             path,
-                                             manifest_format='bin')
-        except KeyError:
-            path = gen_topic_manifest_path(topic, manifest_format='json')
-            return self._load_topic_manifest(topic,
-                                             path,
-                                             manifest_format='json')
+        path = f"{topic.ns}/{topic.topic}"
+        if self.remote_label:
+            prefix = f"{path}/{self.remote_label}/"
+        else:
+            x = xxhash.xxh32()
+            x.update(path.encode('ascii'))
+            hash = x.hexdigest()[0] + '0000000'
+            prefix = f"{hash}/meta/{path}/"
 
-    def get_lifecycle_marker_objects(self, topic: NT) -> list[ObjectMetadata]:
+        for obj_meta in self.client.list_objects(self.bucket, prefix=prefix):
+            self.logger.debug(f"Found topic manifest candidate {obj_meta.key}")
+            if obj_meta.key.endswith("topic_manifest.bin"):
+                return self._load_topic_manifest(topic,
+                                                 obj_meta.key,
+                                                 manifest_format='bin')
+            if obj_meta.key.endswith("topic_manifest.json"):
+                return self._load_topic_manifest(topic,
+                                                 obj_meta.key,
+                                                 manifest_format='json')
+        raise KeyError(f"Topic manifest not found for {topic}")
+
+    def get_lifecycle_marker_objects(
+            self,
+            topic: NT,
+            remote_label: Optional[str] = None) -> list[ObjectMetadata]:
         """
         Topic manifests are identified by namespace-topic, whereas lifecycle
         markers are identified by namespace-topic-revision.
@@ -1284,11 +1341,14 @@ class BucketView:
         It is convenient in tests to retrieve by NT though.
         """
 
-        x = xxhash.xxh32()
         path = f"{topic.ns}/{topic.topic}"
-        x.update(path.encode('ascii'))
-        hash = x.hexdigest()[0] + '0000000'
-        prefix = f"{hash}/meta/{path}/"
+        if remote_label:
+            prefix = f"{path}/{remote_label}/"
+        else:
+            x = xxhash.xxh32()
+            x.update(path.encode('ascii'))
+            hash = x.hexdigest()[0] + '0000000'
+            prefix = f"{hash}/meta/{path}/"
         results = []
         for obj_meta in self.client.list_objects(self.bucket, prefix=prefix):
             if obj_meta.key.endswith("lifecycle.bin"):
@@ -1296,12 +1356,14 @@ class BucketView:
 
         return results
 
-    def get_lifecycle_marker(self, topic: NT) -> dict:
+    def get_lifecycle_marker(self,
+                             topic: NT,
+                             remote_label: Optional[str] = None) -> dict:
         """
         Convenience: when we expect only one lifecycle marker for an NT (i.e. there
         are not multiple revisions).  Return exactly one, or assert
         """
-        objects = self.get_lifecycle_marker_objects(topic)
+        objects = self.get_lifecycle_marker_objects(topic, remote_label)
         if len(objects) != 1:
             raise RuntimeError(
                 f"Expected exactly 1 lifecycle marker for {topic}, found {len(objects)}"
