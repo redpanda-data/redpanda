@@ -364,7 +364,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
               = _inflight_snapshot_last_included_index;
         }
         vlog(_ctxlog.trace, "sending install_snapshot request: {}", req);
-        auto hb_guard = _ptr->suppress_heartbeats(_node_id);
+        auto append_guard = _ptr->track_append_inflight(_node_id);
         return _ptr->_client_protocol
           .install_snapshot(
             _node_id.id(),
@@ -375,7 +375,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
                 _ptr->validate_reply_target_node(
                   "install_snapshot", reply, _node_id.id()));
           })
-          .finally([hb_guard = std::move(hb_guard)] {});
+          .finally([append_guard = std::move(append_guard)] {});
     });
 }
 ss::future<iobuf> recovery_stm::read_snapshot_chunk() {
@@ -576,12 +576,12 @@ ss::future<> recovery_stm::replicate(
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
-    auto hb_guard = _ptr->suppress_heartbeats(_node_id);
+    auto append_guard = _ptr->track_append_inflight(_node_id);
 
     std::vector<ssx::semaphore_units> units;
     units.push_back(std::move(mem_units));
     return dispatch_append_entries(std::move(r), std::move(units))
-      .finally([hb_guard = std::move(hb_guard)] {})
+      .finally([append_guard = std::move(append_guard)] {})
       .then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
           if (!r) {
               vlog(

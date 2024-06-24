@@ -81,8 +81,8 @@ struct follower_index_metadata {
     // resets the follower state i.e. all indicies and sequence numbers
     void reset();
 
-    bool are_heartbeats_suppressed() const {
-        return suppress_heartbeats_count > 0;
+    bool has_inflight_appends() const {
+        return inflight_append_request_count > 0;
     }
 
     follower_req_seq next_follower_sequence() { return ++last_sent_seq; }
@@ -181,7 +181,7 @@ struct follower_index_metadata {
      * We prevent race conditions by counting the number of suppressing requests
      * in flight.
      */
-    size_t suppress_heartbeats_count = 0;
+    size_t inflight_append_request_count = 0;
 
     std::optional<protocol_metadata> last_sent_protocol_meta;
 

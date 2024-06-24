@@ -348,7 +348,7 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
             state.last_received_seq = md.last_received_seq;
             state.last_successful_received_seq
               = md.last_successful_received_seq;
-            state.suppress_heartbeats = md.are_heartbeats_suppressed();
+            state.suppress_heartbeats = md.has_inflight_appends();
             followers.push_back(std::move(state));
         }
         raft_state.followers = std::move(followers);

@@ -104,7 +104,7 @@ public:
         follower_req_seq seq;
         model::offset dirty_offset;
         vnode follower_vnode;
-        consensus::suppress_heartbeats_guard hb_guard;
+        consensus::inflight_appends_guard append_guard;
     };
     // Heartbeats from all groups for single node
     struct node_heartbeat {
