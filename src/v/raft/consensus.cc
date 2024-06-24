@@ -2364,10 +2364,10 @@ consensus::do_install_snapshot(install_snapshot_request r) {
     _hbeat = clock_type::now();
 
     // request received from new leader
+    do_step_down("install_snapshot_received");
     if (r.term > _term) {
         _term = r.term;
         _voted_for = {};
-        do_step_down("install_snapshot_term_greater");
         maybe_update_leader(r.source_node());
         co_return co_await do_install_snapshot(std::move(r));
     }
