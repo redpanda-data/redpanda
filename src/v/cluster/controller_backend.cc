@@ -1736,12 +1736,11 @@ ss::future<std::error_code> controller_backend::transfer_partition(
         co_await shutdown_partition(std::move(partition));
     }
 
-    // TODO: copy, not move
-    co_await raft::details::move_persistent_state(
+    co_await raft::details::copy_persistent_state(
       group, _storage.local().kvs(), destination, _storage);
-    co_await storage::offset_translator::move_persistent_state(
+    co_await storage::offset_translator::copy_persistent_state(
       group, _storage.local().kvs(), destination, _storage);
-    co_await raft::move_persistent_stm_state(
+    co_await raft::copy_persistent_stm_state(
       ntp, _storage.local().kvs(), destination, _storage);
 
     co_await container().invoke_on(
@@ -1755,6 +1754,12 @@ ss::future<std::error_code> controller_backend::transfer_partition(
                 }
             });
       });
+
+    co_await raft::details::remove_persistent_state(
+      group, _storage.local().kvs());
+    co_await storage::offset_translator::remove_persistent_state(
+      group, _storage.local().kvs());
+    co_await raft::remove_persistent_stm_state(ntp, _storage.local().kvs());
 
     co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
     co_return errc::success;

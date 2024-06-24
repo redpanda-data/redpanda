@@ -236,7 +236,7 @@ bytes serialize_group_key(raft::group_id group, metadata_key key_type) {
     return iobuf_to_bytes(buf);
 }
 
-ss::future<> move_persistent_state(
+ss::future<> copy_persistent_state(
   raft::group_id group,
   storage::kvstore& source_kvs,
   ss::shard_id target_shard,
@@ -309,22 +309,25 @@ ss::future<> move_persistent_state(
           }
           return ss::when_all_succeed(std::move(write_futures));
       });
+}
 
-    // remove on source shard
+ss::future<>
+remove_persistent_state(raft::group_id group, storage::kvstore& kvs) {
+    const auto ks = storage::kvstore::key_space::consensus;
     std::vector<ss::future<>> remove_futures;
     remove_futures.reserve(6);
-    remove_futures.push_back(source_kvs.remove(
-      ks, serialize_group_key(group, metadata_key::voted_for)));
-    remove_futures.push_back(source_kvs.remove(
+    remove_futures.push_back(
+      kvs.remove(ks, serialize_group_key(group, metadata_key::voted_for)));
+    remove_futures.push_back(kvs.remove(
       ks, serialize_group_key(group, metadata_key::last_applied_offset)));
-    remove_futures.push_back(source_kvs.remove(
+    remove_futures.push_back(kvs.remove(
       ks, serialize_group_key(group, metadata_key::unique_local_id)));
-    remove_futures.push_back(source_kvs.remove(
-      ks, serialize_group_key(group, metadata_key::config_map)));
-    remove_futures.push_back(source_kvs.remove(
+    remove_futures.push_back(
+      kvs.remove(ks, serialize_group_key(group, metadata_key::config_map)));
+    remove_futures.push_back(kvs.remove(
       ks,
       serialize_group_key(group, metadata_key::config_latest_known_offset)));
-    remove_futures.push_back(source_kvs.remove(
+    remove_futures.push_back(kvs.remove(
       ks, serialize_group_key(group, metadata_key::config_next_cfg_idx)));
     co_await ss::when_all_succeed(std::move(remove_futures));
 }

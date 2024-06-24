@@ -377,7 +377,7 @@ ss::future<> offset_translator::do_checkpoint() {
     _checkpoint_hint = false;
 }
 
-ss::future<> offset_translator::move_persistent_state(
+ss::future<> offset_translator::copy_persistent_state(
   raft::group_id group,
   storage::kvstore& source_kvs,
   ss::shard_id target_shard,
@@ -420,14 +420,17 @@ ss::future<> offset_translator::move_persistent_state(
 
           return ss::when_all_succeed(std::move(write_futures));
       });
+}
 
-    // remove on source shard
+ss::future<> offset_translator::remove_persistent_state(
+  raft::group_id group, storage::kvstore& kvs) {
+    static constexpr auto ks = storage::kvstore::key_space::offset_translator;
     std::vector<ss::future<>> remove_futures;
     remove_futures.reserve(2);
-    remove_futures.push_back(source_kvs.remove(
+    remove_futures.push_back(kvs.remove(
       ks,
       serialize_kvstore_key(group, kvstore_key_type::highest_known_offset)));
-    remove_futures.push_back(source_kvs.remove(
+    remove_futures.push_back(kvs.remove(
       ks, serialize_kvstore_key(group, kvstore_key_type::offsets_map)));
     co_await ss::when_all_succeed(std::move(remove_futures));
 }
