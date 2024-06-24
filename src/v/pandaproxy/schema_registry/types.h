@@ -277,8 +277,10 @@ private:
 
 ///\brief A schema that has been validated.
 class valid_schema {
-    using impl
-      = std::variant<avro_schema_definition, protobuf_schema_definition>;
+    using impl = std::variant<
+      avro_schema_definition,
+      protobuf_schema_definition,
+      json_schema_definition>;
 
     template<typename T>
     using disable_if_valid_schema = std::
