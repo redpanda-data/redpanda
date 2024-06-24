@@ -2331,7 +2331,6 @@ void consensus::update_offset_from_snapshot(
     _last_snapshot_index = metadata.last_included_index;
     _last_snapshot_term = metadata.last_included_term;
 
-    // TODO: add applying snapshot content to state machine
     auto prev_commit_index = _commit_index;
     _commit_index = std::max(_last_snapshot_index, _commit_index);
     maybe_update_last_visible_index(_commit_index);
