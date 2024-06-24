@@ -486,6 +486,8 @@ ss::future<> copy_persistent_state(
   ss::shard_id target_shard,
   ss::sharded<storage::api>& storage) {
     return ss::when_all_succeed(
+             storage::disk_log_impl::copy_kvstore_state(
+               ntp, source_kvs, target_shard, storage),
              raft::details::copy_persistent_state(
                group, source_kvs, target_shard, storage),
              storage::offset_translator::copy_persistent_state(
@@ -498,6 +500,7 @@ ss::future<> copy_persistent_state(
 ss::future<> remove_persistent_state(
   const model::ntp& ntp, raft::group_id group, storage::kvstore& source_kvs) {
     return ss::when_all_succeed(
+             storage::disk_log_impl::remove_kvstore_state(ntp, source_kvs),
              raft::details::remove_persistent_state(group, source_kvs),
              storage::offset_translator::remove_persistent_state(
                group, source_kvs),
