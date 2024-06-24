@@ -18,6 +18,8 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <optional>
+
 namespace kafka {
 
 using cluster::client_quota::entity_key;
@@ -292,8 +294,11 @@ client_quota_translator::get_quota_config(client_quota_type qt) const {
 std::optional<uint64_t>
 client_quota_translator::get_default_config(client_quota_type qt) const {
     switch (qt) {
-    case kafka::client_quota_type::produce_quota:
-        return _default_target_produce_tp_rate();
+    case kafka::client_quota_type::produce_quota: {
+        auto produce_quota = _default_target_produce_tp_rate();
+        return (produce_quota > 0) ? std::make_optional<uint64_t>(produce_quota)
+                                   : std::nullopt;
+    }
     case kafka::client_quota_type::fetch_quota:
         return _default_target_fetch_tp_rate();
     case kafka::client_quota_type::partition_mutation_quota:

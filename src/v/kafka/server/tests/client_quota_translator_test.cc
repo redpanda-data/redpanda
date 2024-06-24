@@ -87,7 +87,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_default_test) {
     fixture f;
 
     auto default_limits = client_quota_limits{
-      .produce_limit = scale_to_smp_count(2147483648),
+      .produce_limit = std::nullopt,
       .fetch_limit = std::nullopt,
       .partition_mutation_limit = std::nullopt,
     };

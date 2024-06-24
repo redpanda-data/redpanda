@@ -496,12 +496,12 @@ configuration::configuration()
   , target_quota_byte_rate(
       *this,
       "target_quota_byte_rate",
-      "Target request size quota byte rate (bytes per second) - 2GB default",
+      "Target request size quota byte rate (bytes per second)",
       {.needs_restart = needs_restart::no,
        .example = "1073741824",
        .visibility = visibility::user},
       target_produce_quota_byte_rate_default,
-      {.min = 1_MiB})
+      {.min = 0})
   , target_fetch_quota_byte_rate(
       *this,
       "target_fetch_quota_byte_rate",
