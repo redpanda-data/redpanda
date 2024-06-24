@@ -11,6 +11,7 @@ import os
 from time import sleep
 
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -50,6 +51,7 @@ class RedpandaFIPSStartupTest(RedpandaTest):
                     self.redpanda.get_openssl_modules_directory()
                 })
 
+    @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
     def test_startup(self):
         """
@@ -101,6 +103,7 @@ class RedpandaFIPSStartupTest(RedpandaTest):
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
             expected_mode=RedpandaServiceBase.FIPSMode.permissive)
 
+    @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
     def test_non_homogenous(self):
         """
