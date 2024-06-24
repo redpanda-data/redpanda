@@ -398,6 +398,24 @@ class DataTransformsTest(BaseDataTransformsTest):
                        err_msg="some partitions did not clear their envs",
                        retry_on_exc=True)
 
+    @cluster(num_nodes=4)
+    def test_consume_from_end(self):
+        """
+        Test that by default transforms read from the end of the topic if no records
+        are produced between deploy time and transform start time.
+        """
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=input_topic,
+                          output_topic=output_topic,
+                          wait_running=True)
+
+        with expect_exception(TimeoutError, lambda _: True):
+            consumer_status = self._consume_output_topic(
+                topic=self.topics[1], status=producer_status)
+
 
 class DataTransformsChainingTest(BaseDataTransformsTest):
     """
