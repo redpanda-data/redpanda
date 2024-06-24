@@ -83,9 +83,11 @@ class tm_stm;
 class rm_stm;
 namespace data_migrations {
 class migrated_resources;
+class migration_frontend;
+class worker;
+class backend;
 class migrations_table;
 class frontend;
-class backend;
 } // namespace data_migrations
 
 namespace tx {

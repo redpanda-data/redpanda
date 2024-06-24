@@ -34,6 +34,8 @@
 #include "cluster/data_migration_backend.h"
 #include "cluster/data_migration_frontend.h"
 #include "cluster/data_migration_table.h"
+#include "cluster/data_migration_types.h"
+#include "cluster/data_migration_worker.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
@@ -303,6 +305,8 @@ ss::future<> controller::start(
       std::ref(_connections),
       std::ref(_as));
 
+    co_await _data_migration_worker.start(
+      _raft0->self().id(), std::ref(_partition_leaders), std::ref(_as));
     {
         limiter_configuration limiter_conf{
           config::shard_local_cfg().enable_controller_log_rate_limiting.bind(),
@@ -823,6 +827,7 @@ ss::future<> controller::stop() {
           .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
+          .then([this] { return _data_migration_worker.stop(); })
           .then([this] { return _data_migration_frontend.stop(); })
           .then([this] { return _config_manager.stop(); })
           .then([this] { return _api.stop(); })
