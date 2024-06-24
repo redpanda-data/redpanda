@@ -233,6 +233,8 @@ public:
     /// dispatched.
     void on_dispatch(dispatch_callback_t);
 
+    ss::shared_ptr<in_memory_test_protocol> get_protocol() { return _protocol; }
+
 private:
     model::node_id _id;
     model::revision_id _revision;
