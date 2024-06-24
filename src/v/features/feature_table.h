@@ -60,7 +60,6 @@ enum class feature : std::uint64_t {
     force_partition_reconfiguration = 1ULL << 26U,
     raft_append_entries_serde = 1ULL << 28U,
     delete_records = 1ULL << 29U,
-    lightweight_heartbeats = 1ULL << 30U,
     raft_coordinated_recovery = 1ULL << 31U,
     cloud_storage_scrubbing = 1ULL << 32U,
     enhanced_force_reconfiguration = 1ULL << 33U,
@@ -101,6 +100,7 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "transaction_ga",
   "idempotency_v2",
   "transaction_partitioning",
+  "lightweight_heartbeats",
 };
 
 /**
@@ -290,12 +290,6 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "delete_records",
     feature::delete_records,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{11},
-    "lightweight_heartbeats",
-    feature::lightweight_heartbeats,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{

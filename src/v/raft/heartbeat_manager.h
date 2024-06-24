@@ -107,21 +107,6 @@ public:
         consensus::suppress_heartbeats_guard hb_guard;
     };
     // Heartbeats from all groups for single node
-    struct node_heartbeat {
-        node_heartbeat(
-          model::node_id t,
-          heartbeat_request req,
-          absl::node_hash_map<raft::group_id, follower_request_meta> seqs)
-          : target(t)
-          , request(std::move(req))
-          , meta_map(std::move(seqs)) {}
-
-        model::node_id target;
-        heartbeat_request request;
-        // each raft group has its own follower metadata hence we need map to
-        // track a sequence per group
-        absl::node_hash_map<raft::group_id, follower_request_meta> meta_map;
-    };
     struct node_heartbeat_v2 {
         node_heartbeat_v2(
           model::node_id t,
@@ -155,14 +140,6 @@ public:
     bool is_stopped() const { return _bghbeats.is_closed(); }
 
 private:
-    struct heartbeat_requests {
-        /// Requests to dispatch.  Can include request to self.
-        std::vector<heartbeat_manager::node_heartbeat> requests;
-
-        /// These nodes' heartbeat status indicates they need
-        /// a transport reconnection before sending next heartbeat
-        absl::flat_hash_set<model::node_id> reconnect_nodes;
-    };
     struct heartbeat_requests_v2 {
         /// Requests to dispatch.  Can include request to self.
         std::vector<heartbeat_manager::node_heartbeat_v2> requests;
@@ -178,15 +155,10 @@ private:
 
     /// \brief unprotected, must be used inside the gate & semaphore
 
-    ss::future<> do_dispatch_versioned();
     ss::future<> do_dispatch_heartbeats();
-    ss::future<> do_dispatch_heartbeats_v2();
-
-    ss::future<> send_heartbeats(std::vector<node_heartbeat>);
     ss::future<> send_heartbeats(std::vector<node_heartbeat_v2>);
 
     /// \brief sends a batch to one node
-    ss::future<> do_heartbeat(node_heartbeat&&);
     ss::future<> do_heartbeat(node_heartbeat_v2);
 
     bool needs_full_heartbeat(
@@ -215,9 +187,7 @@ private:
       group_id group,
       reply_result status);
 
-    heartbeat_requests requests_for_range();
-
-    heartbeat_requests_v2 requests_for_range_v2();
+    heartbeat_requests_v2 requests_for_range();
     // private members
 
     mutex _lock{"heartbeat_manager"};
