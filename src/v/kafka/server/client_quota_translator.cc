@@ -18,6 +18,8 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/algorithm/container.h>
+
 #include <optional>
 
 namespace kafka {
@@ -328,6 +330,13 @@ void client_quota_translator::maybe_log_deprecated_configs_nag() const {
           "kafka_admin_topic_api_rate, kafka_client_group_byte_rate_quota and "
           "kafka_client_group_fetch_byte_rate_quota.");
     }
+}
+
+bool client_quota_translator::is_empty() const {
+    return _quota_store.local().size() == 0
+           && absl::c_all_of(all_client_quota_types, [this](auto qt) {
+                  return !get_default_config(qt);
+              });
 }
 
 } // namespace kafka
