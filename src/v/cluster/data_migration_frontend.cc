@@ -287,6 +287,7 @@ frontend::do_update_migration_state(id id, state state) {
     validate_migration_shard();
     auto ec = co_await insert_barrier();
     if (ec) {
+        vlog(dm_log.warn, "failed waiting for barrier: {}", ec);
         co_return ec;
     }
     /**
@@ -294,10 +295,17 @@ frontend::do_update_migration_state(id id, state state) {
      */
     auto migration = _table.get_migration(id);
     if (!migration) {
+        vlog(dm_log.warn, "migration {} id not found", id);
         co_return errc::data_migration_not_exists;
     }
-    if (!migrations_table::is_valid_state_transition(
-          migration.value().get().state, state)) {
+    auto cur_state = migration.value().get().state;
+    if (!migrations_table::is_valid_state_transition(cur_state, state)) {
+        vlog(
+          dm_log.warn,
+          "migration {} cannot be transitioned from state {} to {}",
+          id,
+          state,
+          cur_state);
         co_return errc::invalid_data_migration_state;
     }
     ec = co_await replicate_and_wait(
@@ -308,8 +316,18 @@ frontend::do_update_migration_state(id id, state state) {
       _operation_timeout + model::timeout_clock::now());
 
     if (ec) {
+        vlog(
+          dm_log.warn,
+          "failed to send update_data_migration_state_cmd: {}",
+          ec);
         co_return ec;
     }
+    vlog(
+      dm_log.debug,
+      "successfully sent migration {} transition request from state {} to {}",
+      id,
+      cur_state,
+      state);
 
     co_return errc::success;
 }

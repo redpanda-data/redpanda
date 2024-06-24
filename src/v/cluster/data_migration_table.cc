@@ -244,6 +244,12 @@ migrations_table::apply(update_data_migration_state_cmd cmd) {
       requested_state);
     auto it = _migrations.find(id);
     if (it == _migrations.end()) {
+        vlog(
+          dm_log.warn,
+          "can not update migration {} state to {}, migration not "
+          "found",
+          id,
+          requested_state);
         co_return errc::data_migration_not_exists;
     }
 
