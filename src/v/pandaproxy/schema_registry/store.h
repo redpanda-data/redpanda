@@ -400,8 +400,8 @@ public:
       const subject& sub, schema_id id, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& vs = sub_it->second.versions;
-        return std::any_of(vs.cbegin(), vs.cend(), [id](const auto& entry) {
-            return entry.id == id;
+        return absl::c_any_of(vs, [id, inc_del](const auto& entry) {
+            return entry.id == id && (inc_del || !entry.deleted);
         });
     }
 
