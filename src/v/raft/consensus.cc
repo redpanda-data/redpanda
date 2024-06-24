@@ -3026,6 +3026,10 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
           _ctxlog.trace,
           "current node is not longer group member, stepping down");
         do_step_down("not_longer_member");
+        if (_leader_id) {
+            _leader_id = std::nullopt;
+            trigger_leadership_notification();
+        }
     }
 }
 
