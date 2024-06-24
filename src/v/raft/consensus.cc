@@ -2247,6 +2247,7 @@ ss::future<> consensus::hydrate_snapshot() {
         co_await truncate_to_latest_snapshot(truncate_cfg.value());
     }
     _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
+    update_follower_stats(_configuration_manager.get_latest());
 }
 
 std::optional<storage::truncate_prefix_config>
@@ -2339,8 +2340,6 @@ void consensus::update_offset_from_snapshot(
         _replication_monitor.notify_committed();
         _event_manager.notify_commit_index();
     }
-
-    update_follower_stats(metadata.latest_configuration);
 }
 
 ss::future<install_snapshot_reply>
