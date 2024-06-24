@@ -18,6 +18,10 @@
 
 namespace cluster::data_migrations {
 
+/*
+ * Cluster-wide coordinator for migrations,
+ * as well as node coordinator for local partition-specific actions
+ */
 class backend {
 public:
     backend(migrations_table& table, frontend& frontend, ss::abort_source&);

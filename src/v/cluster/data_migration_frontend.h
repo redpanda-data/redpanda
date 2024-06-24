@@ -54,6 +54,7 @@ private:
     ss::future<std::error_code> do_remove_migration(id);
 
     ss::future<std::error_code> insert_barrier();
+
     template<
       typename Request,
       typename Reply,
