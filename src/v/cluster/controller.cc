@@ -33,6 +33,7 @@
 #include "cluster/data_migrated_resources.h"
 #include "cluster/data_migration_backend.h"
 #include "cluster/data_migration_frontend.h"
+#include "cluster/data_migration_irpc_frontend.h"
 #include "cluster/data_migration_table.h"
 #include "cluster/data_migration_types.h"
 #include "cluster/data_migration_worker.h"
@@ -82,6 +83,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
@@ -760,6 +762,8 @@ ss::future<> controller::start(
       std::ref(_as.local()));
     co_await _data_migration_backend.invoke_on_instance(
       &data_migrations::backend::start);
+    co_await _data_migration_irpc_frontend.start(
+      std::ref(_feature_table), std::ref(_data_migration_backend));
 }
 
 ss::future<> controller::set_ready() {
@@ -808,6 +812,7 @@ ss::future<> controller::stop() {
               }
               return ss::make_ready_future();
           })
+          .then([this] { return _data_migration_irpc_frontend.stop(); })
           .then([this] { return _data_migration_backend.stop(); })
           .then([this] {
               if (_recovery_backend) {

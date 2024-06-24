@@ -214,6 +214,29 @@ frontend::remove_migration(id id, can_dispatch_to_leader can_dispatch) {
       });
 }
 
+ss::future<check_ntp_states_reply> frontend::check_ntp_states_on_foreign_node(
+  model::node_id node, check_ntp_states_request&& req) {
+    vlog(dm_log.debug, "dispatching node request {} to node {}", req, node);
+
+    return _connections.local()
+      .with_node_client<data_migrations_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        node,
+        _operation_timeout,
+        [req = std::move(req),
+         this](data_migrations_client_protocol client) mutable {
+            return client
+              .check_ntp_states(
+                std::move(req), rpc::client_opts(_operation_timeout))
+              .then(&rpc::get_ctx_data<check_ntp_states_reply>);
+        })
+      .then([](result<check_ntp_states_reply> res) {
+          return res.has_value() ? std::move(res.assume_value())
+                                 : check_ntp_states_reply{};
+      });
+}
+
 ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
     validate_migration_shard();
     auto ec = co_await insert_barrier();

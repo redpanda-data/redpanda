@@ -38,4 +38,13 @@ void backend::handle_migration_update(id id) {
     vlog(dm_log.debug, "received data migration {} notification", id);
 }
 
+ss::future<check_ntp_states_reply>
+backend::check_ntp_states_locally(check_ntp_states_request&& req) {
+    vlog(dm_log.debug, "processing node request {}", req);
+    check_ntp_states_reply reply;
+
+    vlog(dm_log.debug, "node request reply: {}", reply);
+    return ssx::now(std::move(reply));
+}
+
 } // namespace cluster::data_migrations

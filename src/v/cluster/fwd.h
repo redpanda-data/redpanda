@@ -88,6 +88,7 @@ class worker;
 class backend;
 class migrations_table;
 class frontend;
+class irpc_frontend;
 } // namespace data_migrations
 
 namespace tx {

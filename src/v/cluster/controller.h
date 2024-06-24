@@ -148,6 +148,11 @@ public:
         return _data_migration_frontend;
     }
 
+    ss::sharded<data_migrations::irpc_frontend>&
+    get_data_migration_irpc_frontend() {
+        return _data_migration_irpc_frontend;
+    }
+
     std::optional<std::reference_wrapper<cloud_metadata::uploader>>
     metadata_uploader() {
         if (_metadata_uploader) {
@@ -317,6 +322,7 @@ private:
     ss::sharded<client_quota::backend> _quota_backend;   // single instance
     ss::sharded<data_migrations::worker> _data_migration_worker;
     ssx::single_sharded<data_migrations::backend> _data_migration_backend;
+    ss::sharded<data_migrations::irpc_frontend> _data_migration_irpc_frontend;
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;

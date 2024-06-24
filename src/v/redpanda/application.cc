@@ -2869,7 +2869,8 @@ void application::start_runtime_services(
             std::make_unique<cluster::data_migrations::service_handler>(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(controller->get_data_migration_frontend())));
+              std::ref(controller->get_data_migration_frontend()),
+              std::ref(controller->get_data_migration_irpc_frontend())));
 
           s.add_services(std::move(runtime_services));
 

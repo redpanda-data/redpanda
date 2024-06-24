@@ -37,9 +37,15 @@ private:
 
     chunked_hash_map<id, reconciliation_state> _states;
     ss::gate _gate;
+
+private:
+    ss::future<check_ntp_states_reply>
+    check_ntp_states_locally(check_ntp_states_request&& req);
     migrations_table& _table;
     frontend& _frontend;
     ss::abort_source& _as;
     migrations_table::notification_id _id;
+
+    friend irpc_frontend;
 };
 } // namespace cluster::data_migrations
