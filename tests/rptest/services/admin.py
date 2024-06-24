@@ -1343,7 +1343,7 @@ class Admin:
         return self._request("GET", f"debug/controller_status",
                              node=node).json()
 
-    def get_cluster_uuid(self, node):
+    def get_cluster_uuid(self, node=None):
         try:
             r = self._request("GET", "cluster/uuid", node=node)
         except HTTPError as ex:
