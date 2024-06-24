@@ -536,32 +536,6 @@ void quota_manager::gc() {
         });
 }
 
-namespace {
-
-/// A simplified copy paste of `std::set_intersection`. Copied here because we
-/// rely on the fact that we're allowed to have first1 == result for in-place
-/// set intersection in `do_gc()` which the contract of `std::set_intersection`
-/// does not allow despite that its implementation does.
-/// Requires: the inputs to be sorted
-/// Guarantees: the output to be sorted
-template<typename It1, typename It2, typename ItR>
-ItR set_intersection(It1 first1, It1 last1, It2 first2, It2 last2, ItR result) {
-    while (first1 != last1 && first2 != last2) {
-        if (*first1 < *first2) {
-            ++first1;
-        } else if (*first2 < *first1) {
-            ++first2;
-        } else { // *first1 == *first2
-            *result = *first1;
-            ++first1;
-            ++first2;
-        }
-    }
-    return result;
-}
-
-} // namespace
-
 ss::future<> quota_manager::do_global_gc() {
     vassert(
       ss::this_shard_id() == quotas_shard,
