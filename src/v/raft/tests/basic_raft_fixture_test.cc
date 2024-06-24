@@ -451,14 +451,8 @@ TEST_P_CORO(quorum_acks_fixture, test_progress_on_truncation) {
     // truncation.
     for (auto& [id, node] : nodes()) {
         if (id == leader_id) {
-            node->on_dispatch([](model::node_id, raft::msg_type t) {
-                if (
-                  t == raft::msg_type::append_entries
-                  || t == raft::msg_type::vote) {
-                    return ss::sleep(5s);
-                }
-                return ss::now();
-            });
+            node->on_dispatch(
+              [](model::node_id, raft::msg_type) { return ss::sleep(5s); });
         }
     }
 
