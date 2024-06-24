@@ -69,6 +69,7 @@ else()
       SOURCES
         archival_metadata_stm_gtest.cc
         archiver_operations_impl_gtest.cc
+        archiver_scheduler_impl_gtest.cc
       LIBRARIES
         v::raft
         v::raft_fixture
