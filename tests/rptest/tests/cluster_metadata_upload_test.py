@@ -103,7 +103,9 @@ class ClusterMetadataUploadTest(RedpandaTest):
         # Stop the cluster so we can check consistency of the bucket without
         # Redpanda deleting objects beneath us.
         self.redpanda.stop()
-        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        s3_snapshot = BucketView(self.redpanda,
+                                 topics=self.topics,
+                                 with_remote_labels=False)
         cluster_uuid, orig_highest_manifest_id = check_cluster_metadata_is_consistent(
             s3_snapshot)
         orig_lowest_manifest_id = \
@@ -121,7 +123,9 @@ class ClusterMetadataUploadTest(RedpandaTest):
                 # possible that listing the bucket and parsing everything don't
                 # quite match up. Ignore errors until we parse the snapshot
                 # successfully without any NoSuchKey errors.
-                s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+                s3_snapshot = BucketView(self.redpanda,
+                                         topics=self.topics,
+                                         with_remote_labels=False)
                 s3_snapshot._ensure_listing()
             except Exception as e:
                 self.logger.warn(f"Error while populating snapshot: {str(e)}")
