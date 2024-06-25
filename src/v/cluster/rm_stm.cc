@@ -1205,7 +1205,8 @@ rm_stm::get_expired_producers() const {
       "expired producers: {}, next expiration duration ms: {}",
       result.size(),
       min_pending_expiration.count());
-    return std::make_pair(std::move(result), min_pending_expiration);
+    return std::make_pair(
+      std::move(result), std::max(min_pending_expiration, 200ms));
 }
 
 ss::future<std::chrono::milliseconds> rm_stm::do_abort_old_txes() {
