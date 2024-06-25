@@ -14,9 +14,12 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/wire.h"
 #include "kafka/types.h"
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "serde/rw/rw.h"
+#include "serde/serde.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>

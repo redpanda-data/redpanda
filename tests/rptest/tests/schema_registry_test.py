@@ -100,6 +100,8 @@ message Test2 {
   Simple id =  1;
 }"""
 
+json_number_schema_def = '{"type": "number"}'
+
 log_config = LoggingConfig('info',
                            logger_levels={
                                'security': 'trace',
@@ -517,7 +519,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result_raw = self._get_schemas_types()
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
     @cluster(num_nodes=3)
     def test_get_schema_id_versions(self):
@@ -1105,7 +1107,18 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                                                   version=1)
         assert result_raw.status_code == requests.codes.ok
 
-        self.logger.debug("Posting schema 1 again, expect same version")
+        self.logger.debug("Posting schema 1 again, expect incompatible")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        assert result_raw.status_code == requests.codes.conflict
+
+        self.logger.debug("Set subject config - NONE")
+        result_raw = self._set_config_subject(subject=f"{topic}-key",
+                                              data=json.dumps(
+                                                  {"compatibility": "NONE"}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 1 again, expect same id")
         result_raw = self._post_subjects_subject_versions(
             subject=f"{topic}-key", data=schema_1_data)
         assert result_raw.status_code == requests.codes.ok
@@ -1482,6 +1495,40 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.not_found
         assert result_raw.json()["error_code"] == 40402
+
+    @cluster(num_nodes=3)
+    def test_json(self):
+        """
+        Verify basic json functionality
+        """
+
+        self.logger.info("Posting number as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject="simple",
+            data=json.dumps({
+                "schema": json_number_schema_def,
+                "schemaType": "JSON"
+            }))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        result_raw = self._request("GET",
+                                   f"subjects/simple/versions/1/schema",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.text.strip() == json_number_schema_def.strip()
+
+        result_raw = self._request("GET",
+                                   f"schemas/ids/1",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["schemaType"] == "JSON"
+        assert result["schema"].strip() == json_number_schema_def.strip()
 
     @cluster(num_nodes=4)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Python)
@@ -2169,7 +2216,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         result_raw = self._get_schemas_types(auth=self.super_auth)
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
     @cluster(num_nodes=3)
     def test_get_schema_id_versions(self):
@@ -2649,6 +2696,125 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [2]
 
+    @cluster(num_nodes=3)
+    def test_delete_subject_bug(self):
+        topic = 'foo'
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_2_data = json.dumps({"schema": schema2_def})
+
+        self.logger.debug("Posting schema 2 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete subject 1 version 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == 1, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Soft delete subject 1 version 2")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2,
+                                                  auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == 2, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Posting schema 1 - again - as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {'id': 1}, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Get subject versions")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == [3], f"Json: {result_raw.json()}"
+
+        self.logger.debug("Posting schema 2 - again - as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {'id': 2}, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Get subject versions")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == [3, 4], f"Json: {result_raw.json()}"
+
+    @cluster(num_nodes=3)
+    def test_delete_subject_last_clears_config(self):
+        topic = 'foo'
+
+        self.logger.debug("Set subject config - NONE")
+        result_raw = self._set_config_subject(subject=f"{topic}-key",
+                                              data=json.dumps(
+                                                  {"compatibility": "NONE"}),
+                                              auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_3_data = json.dumps({"schema": schema3_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Get subject config - should be overriden")
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              auth=self.super_auth)
+        assert result_raw.json()["compatibilityLevel"] == "NONE"
+
+        self.logger.debug("Soft delete subject 1 version 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == 1, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Get subject config - should fail")
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40408
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug(
+            "Posting incompatible schema 3 as a subject key - expect conflict")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_3_data, auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.conflict
+
+        self.logger.debug("Get subject config - should fail")
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40408
+
 
 class SchemaRegistryTest(SchemaRegistryTestMethods):
     """
@@ -2780,7 +2946,7 @@ class SchemaRegistryMTLSTest(SchemaRegistryMTLSBase):
                   self.admin_user.certificate.key))
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
 
 class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
@@ -2801,7 +2967,7 @@ class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
                   self.admin_user.certificate.key))
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert set(result) == {"PROTOBUF", "AVRO"}
+        assert set(result) == {"JSON", "PROTOBUF", "AVRO"}
 
 
 class SchemaValidationEnableWithoutSchemaRegistry(RedpandaTest):

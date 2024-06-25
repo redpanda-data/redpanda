@@ -15,7 +15,7 @@
 #include "cluster/producer_state.h"
 #include "cluster/types.h"
 #include "config/property.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics.hh>

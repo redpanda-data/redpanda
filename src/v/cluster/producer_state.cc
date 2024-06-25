@@ -178,7 +178,7 @@ result<request_ptr> requests::try_emplace(
             return *match_it;
         }
         if (!is_valid_sequence(first)) {
-            return errc::sequence_out_of_order;
+            return cluster::errc::sequence_out_of_order;
         }
     }
 
@@ -226,7 +226,7 @@ void requests::gc_requests_from_older_terms(model::term_id current_term) {
 void requests::shutdown() {
     for (auto& request : _inflight_requests) {
         if (!request->has_completed()) {
-            request->_result.set_value(errc::shutting_down);
+            request->_result.set_value(cluster::errc::shutting_down);
         }
     }
     _inflight_requests.clear();
@@ -332,7 +332,7 @@ result<request_ptr> producer_state::try_emplace_request(
   const model::batch_identity& bid, model::term_id current_term, bool reset) {
     if (bid.first_seq > bid.last_seq) {
         // malformed batch
-        return errc::invalid_request;
+        return cluster::errc::invalid_request;
     }
     vlog(
       _logger.trace,

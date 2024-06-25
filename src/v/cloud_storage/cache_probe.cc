@@ -11,7 +11,7 @@
 #include "cloud_storage/cache_probe.h"
 
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 

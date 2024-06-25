@@ -546,13 +546,13 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         self.stop_flag = True
         self.thread_pool.shutdown()
 
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ),
         test_case=get_tiered_storage_test_cases(fast_run=True))
-    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
-    @ok_to_fail_fips
     def test_tiered_storage(self, cloud_storage_type_and_url_style: List[
         CloudStorageTypeAndUrlStyle], test_case: TestCase):
         """This is a main entry point of the test.

@@ -153,7 +153,7 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     auto op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
+    BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
@@ -229,7 +229,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
+    BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
     BOOST_REQUIRE(stm
                     .wait_no_throw(
                       _raft.get()->committed_offset(),
@@ -317,7 +317,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
+    BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
     BOOST_REQUIRE(stm
                     .wait_no_throw(
                       _raft.get()->committed_offset(),
@@ -479,7 +479,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto op = stm.abort_tx(pid20, tx_seq, 2'000ms).get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
+    BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
 
     rreader = make_rreader(pid20, 0, 5, true);
     offset_r = stm
@@ -559,7 +559,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
 
     auto commit_tx = [&](auto pid) {
         BOOST_REQUIRE_EQUAL(
-          stm.commit_tx(pid, tx_seq, timeout).get0(), cluster::tx_errc::none);
+          stm.commit_tx(pid, tx_seq, timeout).get0(), cluster::tx::errc::none);
     };
 
     auto abort_tx = [&](auto pid) {
@@ -567,7 +567,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
         BOOST_REQUIRE(
           stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
         BOOST_REQUIRE_EQUAL(
-          stm.abort_tx(pid, tx_seq, timeout).get0(), cluster::tx_errc::none);
+          stm.abort_tx(pid, tx_seq, timeout).get0(), cluster::tx::errc::none);
     };
 
     auto roll_log = [&]() {

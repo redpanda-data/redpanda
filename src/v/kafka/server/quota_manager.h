@@ -13,11 +13,11 @@
 #include "base/seastarx.h"
 #include "config/client_group_byte_rate_quota.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/client_quota_translator.h"
-#include "ssx/sharded_ptr.h"
 #include "ssx/sharded_value.h"
-#include "utils/absl_sstring_hash.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -27,8 +27,6 @@
 #include <seastar/core/timer.hh>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/shared_token_bucket.hh>
-
-#include <absl/container/node_hash_map.h>
 
 #include <chrono>
 #include <memory>
@@ -73,12 +71,13 @@ public:
         std::optional<atomic_token_bucket> pm_rate;
     };
 
-    using client_quotas_map_t
-      = absl::node_hash_map<tracker_key, ss::lw_shared_ptr<client_quota>>;
-    using client_quotas_t = ssx::sharded_ptr<client_quotas_map_t>;
+    using local_map_t
+      = chunked_hash_map<tracker_key, std::shared_ptr<client_quota>>;
 
-    quota_manager(
-      client_quotas_t& client_quotas,
+    using global_map_t
+      = chunked_hash_map<tracker_key, std::shared_ptr<client_quota>>;
+
+    explicit quota_manager(
       ss::sharded<cluster::client_quota::store>& client_quota_store);
     quota_manager(const quota_manager&) = delete;
     quota_manager& operator=(const quota_manager&) = delete;
@@ -115,6 +114,8 @@ public:
       uint32_t mutations,
       clock::time_point now = clock::now());
 
+    const std::optional<global_map_t>& get_global_map_for_testing() const;
+
 private:
     using quota_mutation_callback_t
       = ss::noncopyable_function<clock::duration(client_quota&)>;
@@ -127,20 +128,24 @@ private:
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
     void gc();
-    ss::future<> do_gc(clock::time_point expire_threshold);
+    ss::future<> do_local_gc(clock::time_point expire_threshold);
+    ss::future<> do_global_gc();
 
     ss::future<clock::duration> maybe_add_and_retrieve_quota(
       tracker_key quota_id,
       clock::time_point now,
       quota_mutation_callback_t cb);
-    ss::future<> add_quota_id(tracker_key quota_id, clock::time_point now);
+    ss::future<std::shared_ptr<quota_manager::client_quota>>
+    add_quota_id(tracker_key quota_id, clock::time_point now);
     void update_client_quotas();
+    ss::future<> do_update_client_quotas();
 
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
     config::binding<std::optional<int64_t>> _replenish_threshold;
 
-    client_quotas_t& _client_quotas;
+    local_map_t _local_map;
+    std::optional<global_map_t> _global_map; // Only on shard 0
     client_quota_translator _translator;
     std::unique_ptr<client_quotas_probe<clock>> _probe;
 
@@ -148,6 +153,7 @@ private:
     clock::duration _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
     ss::gate _gate;
+    std::optional<mutex> _global_map_mutex; // Only on shard 0
 };
 
 } // namespace kafka

@@ -35,8 +35,8 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 This uploads a schema to the registry, creating the schema if it does not
 exist. The schema type is detected by the filename extension: ".avro" or ".avsc"
-for Avro and ".proto" for Protobuf. You can manually specify the type with the 
---type flag.
+for Avro, ".json" for JSON, and ".proto" for Protobuf. You can manually specify 
+the type with the --type flag.
 
 You may pass the references using the --reference flag, which accepts either a
 comma separated list of <name>:<subject>:<version> or a path to a file. The file 
@@ -67,11 +67,11 @@ version 1:
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			file, err := os.ReadFile(schemaFile)
-			out.MaybeDie(err, "unable to read %q: %v", schemaFile, err)
-
 			t, err := resolveSchemaType(schemaType, schemaFile)
 			out.MaybeDieErr(err)
+
+			file, err := os.ReadFile(schemaFile)
+			out.MaybeDie(err, "unable to read %q: %v", schemaFile, err)
 
 			references, err := parseReferenceFlag(fs, refs)
 			out.MaybeDie(err, "unable to parse reference flag %q: %v", refs, err)

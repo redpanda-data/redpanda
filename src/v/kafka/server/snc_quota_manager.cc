@@ -11,7 +11,7 @@
 
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 #include "ssx/sharded_ptr.h"
 #include "utils/tristate.h"

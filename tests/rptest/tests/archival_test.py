@@ -229,12 +229,12 @@ class ArchivalTest(RedpandaTest):
             self.rpk.alter_topic_config(topic.name, 'redpanda.remote.write',
                                         'true')
 
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     @cluster(num_nodes=3)
     @matrix(
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ))
-    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
-    @ok_to_fail_fips
     def test_write(
             self,
             cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]

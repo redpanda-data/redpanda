@@ -91,6 +91,7 @@
 #include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
+#include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
 #include "model/fundamental.h"
@@ -101,7 +102,6 @@
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
 #include "raft/service.h"
@@ -1717,11 +1717,7 @@ void application::wire_up_redpanda_services(
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota managers").get();
-    construct_service(
-      quota_mgr,
-      std::ref(quota_mgr_state),
-      std::ref(controller->get_quota_store()))
-      .get();
+    construct_service(quota_mgr, std::ref(controller->get_quota_store())).get();
     construct_service(snc_quota_mgr, std::ref(snc_node_quota)).get();
 
     syschecks::systemd_message("Creating auditing subsystem").get();

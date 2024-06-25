@@ -13,9 +13,9 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
-#include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 

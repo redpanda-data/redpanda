@@ -18,13 +18,8 @@ import re
 import requests
 from ducktape.utils.util import wait_until
 
-NON_EXISTENT_TID_LOG_ALLOW_LIST = [
-    re.compile(
-        r".*Unexpected tx_error error: {tx_errc::unknown_server_error}.*")
-]
-
 TIMEOUT_ALLOW_LIST = [
-    re.compile(r".*Unexpected tx_error error: {tx_errc::timeout}.*")
+    re.compile(r".*Unexpected tx_error error: {tx::errc::timeout}.*")
 ]
 
 
@@ -272,9 +267,7 @@ class TxAdminTest(RedpandaTest):
 
         producer.commit_transaction()
 
-    @cluster(num_nodes=3,
-             log_allow_list=DEFAULT_LOG_ALLOW_LIST +
-             NON_EXISTENT_TID_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3)
     def test_delete_non_existent_tid(self):
         tx_id = "0"
         producer = ck.Producer({
@@ -302,8 +295,9 @@ class TxAdminTest(RedpandaTest):
                     self.admin.delete_partition_from_transaction(
                         error_tx_id, partition["ns"], partition["topic"],
                         partition["partition_id"], partition["etag"])
+                    assert False
                 except requests.exceptions.HTTPError as e:
-                    assert e.response.text == '{"message": "Unexpected tx_error error: {tx_errc::unknown_server_error}", "code": 500}'
+                    assert e.response.status_code == 404
 
         producer.commit_transaction()
 

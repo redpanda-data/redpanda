@@ -15,6 +15,7 @@
 #include "cluster/tests/randoms.h"
 #include "cluster/tests/topic_properties_generator.h"
 #include "cluster/tests/utils.h"
+#include "cluster/tx_protocol_types.h"
 #include "cluster/types.h"
 #include "compat/check.h"
 #include "container/fragmented_vector.h"
@@ -625,28 +626,28 @@ model::timeout_clock::duration random_timeout_clock_duration() {
       random_generators::get_int<int64_t>(-100000, 100000) * 1000000);
 }
 
-cluster::tx_errc random_tx_errc() {
-    return random_generators::random_choice(std::vector<cluster::tx_errc>{
-      cluster::tx_errc::none,
-      cluster::tx_errc::leader_not_found,
-      cluster::tx_errc::shard_not_found,
-      cluster::tx_errc::partition_not_found,
-      cluster::tx_errc::stm_not_found,
-      cluster::tx_errc::partition_not_exists,
-      cluster::tx_errc::pid_not_found,
-      cluster::tx_errc::timeout,
-      cluster::tx_errc::conflict,
-      cluster::tx_errc::fenced,
-      cluster::tx_errc::stale,
-      cluster::tx_errc::not_coordinator,
-      cluster::tx_errc::coordinator_not_available,
-      cluster::tx_errc::preparing_rebalance,
-      cluster::tx_errc::rebalance_in_progress,
-      cluster::tx_errc::coordinator_load_in_progress,
-      cluster::tx_errc::unknown_server_error,
-      cluster::tx_errc::request_rejected,
-      cluster::tx_errc::invalid_producer_id_mapping,
-      cluster::tx_errc::invalid_txn_state});
+cluster::tx::errc random_tx_errc() {
+    return random_generators::random_choice(std::vector<cluster::tx::errc>{
+      cluster::tx::errc::none,
+      cluster::tx::errc::leader_not_found,
+      cluster::tx::errc::shard_not_found,
+      cluster::tx::errc::partition_not_found,
+      cluster::tx::errc::stm_not_found,
+      cluster::tx::errc::partition_not_exists,
+      cluster::tx::errc::pid_not_found,
+      cluster::tx::errc::timeout,
+      cluster::tx::errc::conflict,
+      cluster::tx::errc::fenced,
+      cluster::tx::errc::stale,
+      cluster::tx::errc::not_coordinator,
+      cluster::tx::errc::coordinator_not_available,
+      cluster::tx::errc::preparing_rebalance,
+      cluster::tx::errc::rebalance_in_progress,
+      cluster::tx::errc::coordinator_load_in_progress,
+      cluster::tx::errc::unknown_server_error,
+      cluster::tx::errc::request_rejected,
+      cluster::tx::errc::invalid_producer_id_mapping,
+      cluster::tx::errc::invalid_txn_state});
 }
 
 cluster::partitions_filter random_partitions_filter() {

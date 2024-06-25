@@ -14,10 +14,10 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>

@@ -3978,7 +3978,7 @@ class RedpandaService(RedpandaServiceBase):
                 dict(fips_mode="enabled",
                      openssl_config_file=self.get_openssl_config_file_path(),
                      openssl_module_directory=self.
-                     get_openssl_modules_directory))
+                     get_openssl_modules_directory()))
             conf = yaml.dump(doc)
 
         if override_cfg_params or node in self._extra_node_conf:

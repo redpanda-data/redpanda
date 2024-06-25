@@ -67,12 +67,12 @@ ss::future<> fill_info_about_tx(
         }
     } else {
         switch (tx_info.error()) {
-        case cluster::tx_errc::not_coordinator:
-        case cluster::tx_errc::partition_not_found:
-        case cluster::tx_errc::stm_not_found:
+        case cluster::tx::errc::not_coordinator:
+        case cluster::tx::errc::partition_not_found:
+        case cluster::tx::errc::stm_not_found:
             tx_info_resp.error_code = kafka::error_code::not_coordinator;
             break;
-        case cluster::tx_errc::tx_id_not_found:
+        case cluster::tx::errc::tx_id_not_found:
             tx_info_resp.error_code
               = kafka::error_code::transactional_id_not_found;
             break;
@@ -80,7 +80,7 @@ ss::future<> fill_info_about_tx(
             vlog(
               klog.warn,
               "Can not find transaction with tx_id:({}) for "
-              "describe_transactions request. Got error (tx_errc): {}",
+              "describe_transactions request. Got error (tx::errc): {}",
               tx_id,
               tx_info.error());
             tx_info_resp.error_code = kafka::error_code::unknown_server_error;

@@ -13,7 +13,7 @@
 
 #include "config/configuration.h"
 #include "metrics/metrics.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "resource_mgmt/cpu_scheduling.h"
 
 class scheduling_groups_probe {

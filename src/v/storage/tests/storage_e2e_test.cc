@@ -4604,7 +4604,7 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
     };
     std::vector<size_target> size_classes = {
       {100, 0, 100},
-      {2000, 1_KiB, 2000},
+      {2000, 256, 2000},
       {10_KiB, 1_KiB, 10_KiB},
       {50_KiB, 1_KiB, 50_KiB},
       {500_KiB, 1_KiB, 500_KiB},

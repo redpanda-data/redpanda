@@ -15,7 +15,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "metrics/metrics.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 namespace cluster {
 
