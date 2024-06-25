@@ -1717,11 +1717,7 @@ void application::wire_up_redpanda_services(
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota managers").get();
-    construct_service(
-      quota_mgr,
-      std::ref(quota_mgr_state),
-      std::ref(controller->get_quota_store()))
-      .get();
+    construct_service(quota_mgr, std::ref(controller->get_quota_store())).get();
     construct_service(snc_quota_mgr, std::ref(snc_node_quota)).get();
 
     syschecks::systemd_message("Creating auditing subsystem").get();

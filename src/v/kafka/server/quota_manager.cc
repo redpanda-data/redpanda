@@ -18,6 +18,7 @@
 #include "kafka/server/logger.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 #include "utils/log_hist.h"
 
@@ -27,6 +28,7 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/util/later.hh>
 
 #include <fmt/chrono.h>
 
@@ -37,6 +39,8 @@
 #include <variant>
 
 using namespace std::chrono_literals;
+
+const static unsigned quotas_shard = 0;
 
 namespace kafka {
 
@@ -151,18 +155,19 @@ private:
 using clock = quota_manager::clock;
 
 quota_manager::quota_manager(
-  client_quotas_t& client_quotas,
   ss::sharded<cluster::client_quota::store>& client_quota_store)
   : _default_num_windows(config::shard_local_cfg().default_num_windows.bind())
   , _default_window_width(config::shard_local_cfg().default_window_sec.bind())
   , _replenish_threshold(
       config::shard_local_cfg().kafka_throughput_replenish_threshold.bind())
-  , _client_quotas{client_quotas}
   , _translator{client_quota_store}
   , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
-    if (seastar::this_shard_id() == _client_quotas.shard_id()) {
+    if (seastar::this_shard_id() == quotas_shard) {
+        _global_map = global_map_t{};
+
         _gc_timer.set_callback([this]() { gc(); });
+        _global_map_mutex = mutex{"quota_manager/global_map"};
     }
 }
 
@@ -177,39 +182,27 @@ ss::future<> quota_manager::stop() {
 ss::future<> quota_manager::start() {
     _probe = std::make_unique<client_quotas_probe<clock>>();
     _probe->setup_metrics();
-    if (ss::this_shard_id() == _client_quotas.shard_id()) {
-        co_await _client_quotas.reset(client_quotas_map_t{});
+    if (ss::this_shard_id() == quotas_shard) {
         _gc_timer.arm_periodic(_gc_freq);
 
         auto update_quotas = [this]() { update_client_quotas(); };
         _translator.watch(update_quotas);
     }
+    return ss::now();
 }
 
 ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
   tracker_key qid, clock::time_point now, quota_mutation_callback_t cb) {
-    vassert(_client_quotas, "_client_quotas should have been initialized");
-
-    auto it = _client_quotas->find(qid);
-    if (it == _client_quotas->end()) {
-        co_await container().invoke_on(
-          _client_quotas.shard_id(), [qid, now](quota_manager& me) mutable {
+    auto it = _local_map.find(qid);
+    if (it == _local_map.end()) {
+        auto new_q = co_await container().invoke_on(
+          quotas_shard, [qid, now](quota_manager& me) mutable {
               return me.add_quota_id(std::move(qid), now);
           });
 
-        it = _client_quotas->find(qid);
-        if (it == _client_quotas->end()) {
-            // The newly inserted quota map entry should always be available
-            // here because the update to the map is guarded by a mutex, so
-            // there is no chance of losing updates. There is a low chance
-            // that we insert into the map, then there is an unusually long
-            // pause on the handler core, gc() gets scheduled and cleans up
-            // the inserted quota, and by the time the handler gets here the
-            // inserted entry is gone. In that case, we give up and don't
-            // throttle.
-            vlog(klog.debug, "Failed to find quota id after insert...");
-            co_return clock::duration::zero();
-        }
+        vlog(
+          client_quota_log.trace, "Inserting new key into local map: {}", qid);
+        it = _local_map.emplace(qid, std::move(new_q)).first;
     } else {
         // bump to prevent gc
         it->second->last_seen_ms.local() = now;
@@ -218,98 +211,106 @@ ss::future<clock::duration> quota_manager::maybe_add_and_retrieve_quota(
     co_return cb(*it->second);
 }
 
-ss::future<>
+ss::future<std::shared_ptr<quota_manager::client_quota>>
 quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
     vassert(
-      ss::this_shard_id() == _client_quotas.shard_id(),
+      ss::this_shard_id() == quotas_shard,
       "add_quota_id should only be called on the owner shard");
 
-    auto update_func = [this, qid = std::move(qid), now](
-                         client_quotas_map_t new_map) -> client_quotas_map_t {
-        auto limits = _translator.find_quota_value(qid);
-        auto replenish_threshold = static_cast<uint64_t>(
-          _replenish_threshold().value_or(1));
+    // Hold to lock to not distrupt background fibres (gc and update_quotas)
+    // with new entries in the map
+    auto lock = co_await _global_map_mutex->get_units();
 
-        auto new_value = ss::make_lw_shared<client_quota>(
-          ssx::sharded_value<clock::time_point>(now),
-          std::nullopt,
-          std::nullopt,
-          std::nullopt);
+    auto existing_quota = _global_map->find(qid);
+    if (existing_quota != _global_map->end()) {
+        co_return existing_quota->second;
+    }
 
-        if (limits.produce_limit.has_value()) {
-            new_value->tp_produce_rate.emplace(
-              *limits.produce_limit,
-              *limits.produce_limit,
-              replenish_threshold,
-              true);
-        }
-        if (limits.fetch_limit.has_value()) {
-            new_value->tp_fetch_rate.emplace(
-              *limits.fetch_limit,
-              *limits.fetch_limit,
-              replenish_threshold,
-              true);
-        }
-        if (limits.partition_mutation_limit.has_value()) {
-            new_value->pm_rate.emplace(
-              *limits.partition_mutation_limit,
-              *limits.partition_mutation_limit,
-              replenish_threshold,
-              true);
-        }
+    vlog(client_quota_log.trace, "Inserting new key into global map: {}", qid);
 
-        new_map.emplace(qid, std::move(new_value));
+    auto limits = _translator.find_quota_value(qid);
+    auto replenish_threshold = static_cast<uint64_t>(
+      _replenish_threshold().value_or(1));
 
-        return new_map;
-    };
+    auto new_value = std::make_shared<client_quota>(
+      ssx::sharded_value<clock::time_point>(now),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
 
-    co_await _client_quotas.update(std::move(update_func));
+    if (limits.produce_limit.has_value()) {
+        new_value->tp_produce_rate.emplace(
+          *limits.produce_limit,
+          *limits.produce_limit,
+          replenish_threshold,
+          true);
+    }
+    if (limits.fetch_limit.has_value()) {
+        new_value->tp_fetch_rate.emplace(
+          *limits.fetch_limit, *limits.fetch_limit, replenish_threshold, true);
+    }
+    if (limits.partition_mutation_limit.has_value()) {
+        new_value->pm_rate.emplace(
+          *limits.partition_mutation_limit,
+          *limits.partition_mutation_limit,
+          replenish_threshold,
+          true);
+    }
+
+    auto [it, _] = _global_map->emplace(qid, std::move(new_value));
+
+    co_return it->second;
 }
 
 void quota_manager::update_client_quotas() {
     vassert(
-      ss::this_shard_id() == _client_quotas.shard_id(),
+      ss::this_shard_id() == quotas_shard,
       "update_client_quotas must only be called on the owner shard");
 
+    // Hold to lock to ensure there are no updates to the map while iterating
     ssx::spawn_with_gate(_gate, [this] {
-        return _client_quotas.update([this](client_quotas_map_t quotas) {
-            constexpr auto set_bucket =
-              [](
-                std::optional<atomic_token_bucket>& bucket,
-                std::optional<uint64_t> rate,
-                std::optional<uint64_t> replenish_threshold) {
-                  if (!rate) {
-                      bucket.reset();
-                      return;
-                  }
-                  if (bucket.has_value() && bucket->rate() == rate) {
-                      return;
-                  }
-                  bucket.emplace(
-                    *rate, *rate, replenish_threshold.value_or(1), true);
-              };
-
-            for (auto& quota : quotas) {
-                auto limits = _translator.find_quota_value(quota.first);
-                set_bucket(
-                  quota.second->tp_produce_rate,
-                  limits.produce_limit,
-                  _replenish_threshold());
-
-                set_bucket(
-                  quota.second->tp_fetch_rate,
-                  limits.fetch_limit,
-                  _replenish_threshold());
-
-                set_bucket(
-                  quota.second->pm_rate,
-                  limits.partition_mutation_limit,
-                  _replenish_threshold());
-            }
-
-            return quotas;
-        });
+        return _global_map_mutex->with(
+          [this] { return do_update_client_quotas(); });
     });
+}
+
+ss::future<> quota_manager::do_update_client_quotas() {
+    constexpr auto set_bucket = [](
+                                  std::optional<atomic_token_bucket>& bucket,
+                                  std::optional<uint64_t> rate,
+                                  std::optional<uint64_t> replenish_threshold) {
+        if (!rate) {
+            bucket.reset();
+            return;
+        }
+
+        if (bucket.has_value() && bucket->rate() == rate) {
+            return;
+        }
+        bucket.emplace(*rate, *rate, replenish_threshold.value_or(1), true);
+        return;
+    };
+
+    return ssx::async_for_each(
+      _global_map->begin(),
+      _global_map->end(),
+      [this, &set_bucket](auto& quota) {
+          auto limits = _translator.find_quota_value(quota.first);
+          set_bucket(
+            quota.second->tp_produce_rate,
+            limits.produce_limit,
+            _replenish_threshold());
+
+          set_bucket(
+            quota.second->tp_fetch_rate,
+            limits.fetch_limit,
+            _replenish_threshold());
+
+          set_bucket(
+            quota.second->pm_rate,
+            limits.partition_mutation_limit,
+            _replenish_threshold());
+      });
 }
 
 ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
@@ -510,100 +511,69 @@ ss::future<clock::duration> quota_manager::throttle_fetch_tp(
     co_return capped_delay;
 }
 
+const std::optional<quota_manager::global_map_t>&
+quota_manager::get_global_map_for_testing() const {
+    return _global_map;
+}
+
 // erase inactive tracked quotas. windows are considered inactive if
 // they have not received any updates in ten window's worth of time.
 void quota_manager::gc() {
     vassert(
-      ss::this_shard_id() == _client_quotas.shard_id(),
+      ss::this_shard_id() == quotas_shard,
       "gc should only be performed on the owner shard");
     auto full_window = _default_num_windows() * _default_window_width();
     auto expire_threshold = clock::now() - 10 * full_window;
     ssx::background
       = ssx::spawn_with_gate_then(_gate, [this, expire_threshold]() {
-            return do_gc(expire_threshold);
+            return container()
+              .invoke_on_all([expire_threshold](quota_manager& qm) {
+                  return qm.do_local_gc(expire_threshold);
+              })
+              .then([this]() { return do_global_gc(); });
         }).handle_exception([](const std::exception_ptr& e) {
             vlog(klog.warn, "Error garbage collecting quotas - {}", e);
         });
 }
 
-namespace {
+ss::future<> quota_manager::do_global_gc() {
+    vassert(
+      ss::this_shard_id() == quotas_shard,
+      "do_global_gc() should only be called on the owner shard");
 
-/// A simplified copy paste of `std::set_intersection`. Copied here because we
-/// rely on the fact that we're allowed to have first1 == result for in-place
-/// set intersection in `do_gc()` which the contract of `std::set_intersection`
-/// does not allow despite that its implementation does.
-/// Requires: the inputs to be sorted
-/// Guarantees: the output to be sorted
-template<typename It1, typename It2, typename ItR>
-ItR set_intersection(It1 first1, It1 last1, It2 first2, It2 last2, ItR result) {
-    while (first1 != last1 && first2 != last2) {
-        if (*first1 < *first2) {
-            ++first1;
-        } else if (*first2 < *first1) {
-            ++first2;
-        } else { // *first1 == *first2
-            *result = *first1;
-            ++first1;
-            ++first2;
+    // Hold to lock to ensure there are no updates to the map while iterating
+    auto lock = co_await _global_map_mutex->get_units();
+
+    for (auto it = _global_map->begin(); it != _global_map->end();) {
+        auto& [key, value] = *it;
+        if (value.unique()) {
+            // The pointer in the global map is effectively a weak pointer in
+            // that we want to destroy the quota when only the global map holds
+            // a reference to it. The reason why we have a std::shared_ptr<>
+            // instead of a std::weak_ptr<> in the global map is to ensure that
+            // deallocation happens on shard 0 (here in do_global_gc).
+            vlog(client_quota_log.trace, "Global GC expiring key: {}", key);
+            it = _global_map->erase(it);
+        } else {
+            ++it;
         }
+
+        co_await ss::coroutine::maybe_yield();
     }
-    return result;
 }
 
-} // namespace
-
-ss::future<> quota_manager::do_gc(clock::time_point expire_threshold) {
-    vassert(
-      ss::this_shard_id() == _client_quotas.shard_id(),
-      "do_gc() should only be called on the owner shard");
-
-    using key_set = chunked_vector<tracker_key>;
-
-    auto mapper = [expire_threshold](const quota_manager& qm) -> key_set {
-        auto res = key_set{};
-        auto map_shared_ptr = qm._client_quotas.local().get();
-        for (const auto& kv : *map_shared_ptr) {
-            auto last_seen_tp = kv.second->last_seen_ms.local();
-            if (last_seen_tp < expire_threshold) {
-                res.push_back(kv.first);
-            }
+ss::future<> quota_manager::do_local_gc(clock::time_point expire_threshold) {
+    for (auto it = _local_map.begin(); it != _local_map.end();) {
+        auto& [key, value] = *it;
+        if (value->last_seen_ms.local() < expire_threshold) {
+            vlog(client_quota_log.trace, "Local GC expiring key: {}", key);
+            it = _local_map.erase(it);
+        } else {
+            ++it;
         }
-        // Note: need to pre-sort the vector for the std::set_intersection
-        // in the reduce step
-        std::sort(res.begin(), res.end());
-        return res;
-    };
 
-    auto reducer = [](key_set acc, const key_set& next) -> key_set {
-        // In-place set intersection assumes that the inputs are sorted and
-        // guarantees that the output is also sorted
-        auto it = set_intersection(
-          acc.begin(), acc.end(), next.begin(), next.end(), acc.begin());
-        acc.erase_to_end(it);
-        return acc;
-    };
-
-    auto expired_keys = co_await container().map_reduce0(
-      mapper, key_set{}, reducer);
-
-    if (expired_keys.empty()) {
-        // Nothing to gc, so we're done
-        co_return;
+        co_await ss::coroutine::maybe_yield();
     }
-
-    // Note: it is possible that we remove client ids here that we have not
-    // seen for a long time before the map_reduce step, but that we see
-    // again between the map_reduce step and this map update. This race
-    // between the two steps can cause recently seen client ids to be
-    // deleted. That's acceptable because this should be rare and the client
-    // will be tracked correctly again from when we next see it.
-    co_await _client_quotas.update(
-      [expired_keys{std::move(expired_keys)}](client_quotas_map_t new_map) {
-          for (auto& k : expired_keys) {
-              new_map.erase(k);
-          }
-          return new_map;
-      });
 }
 
 } // namespace kafka
