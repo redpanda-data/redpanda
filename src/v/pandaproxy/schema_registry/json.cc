@@ -24,16 +24,19 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/exception.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/inlined_vector.h>
+#include <boost/math/special_functions/relative_difference.hpp>
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
+#include <re2/re2.h>
 
-#include <numeric>
+#include <ranges>
 #include <string_view>
 namespace pandaproxy::schema_registry {
 
@@ -295,7 +298,7 @@ result<json::Document> parse_json(std::string_view v) {
 
     // schema_json is a valid json and a syntactically valid json schema draft4.
     // TODO AB cross validate "$ref" fields, this is not done automatically
-
+    // TODO validate that "pattern" and "patternProperties" are valid regex
     return {std::move(schema_json)};
 }
 
@@ -374,6 +377,31 @@ constexpr auto parse_json_type(json::Value const& v) {
     return *type;
 }
 
+json::Value const& get_true_schema() {
+    // A `true` schema is one that validates every possible input, it's literal
+    // json value is `{}` Then `"additionalProperty": true` is equivalent to
+    // `"additionalProperties": {}` it's used during mainly in
+    // is_object_superset(older, newer) and in is_superset to short circuit
+    // validation
+    static auto true_schema = json::Value{rapidjson::kObjectType};
+    return true_schema;
+}
+
+json::Value const& get_false_schema() {
+    // A `false` schema is one that doesn't validate any input, it's literal
+    // json value is `{"not": {}}`
+    // `"additionalProperty": false` is equivalent to `"additionalProperties":
+    // {"not": {}}` it's used during mainly in is_object_superset(older, newer)
+    // and in is_superset to short circuit validation
+    static auto false_schema = [] {
+        auto tmp = json::Document{};
+        tmp.Parse(R"({"not": {}})");
+        vassert(!tmp.HasParseError(), "Malformed `false` json schema");
+        return tmp;
+    }();
+    return false_schema;
+}
+
 // parse None | schema_type | array[schema_type] into a set of types.
 // the return type is implemented as a inlined_vector<json_type> with sorted set
 // semantics
@@ -402,6 +430,34 @@ json_type_list normalized_type(json::Value const& v) {
     // to support set difference operations, sort the elements
     std::ranges::sort(ret);
     return ret;
+}
+
+// helper to retrieve the object value for a key, or an empty object if the key
+// is not present
+json::Value::ConstObject
+get_object_or_empty(json::Value const& v, std::string_view key) {
+    auto it = v.FindMember(
+      json::Value{key.data(), rapidjson::SizeType(key.size())});
+    if (it != v.MemberEnd()) {
+        return it->value.GetObject();
+    }
+
+    static const auto empty_obj = json::Value{rapidjson::kObjectType};
+    return empty_obj.GetObject();
+}
+
+// helper to retrieve the array value for a key, or an empty array if the key
+// is not present
+json::Value::ConstArray
+get_array_or_empty(json::Value const& v, std::string_view key) {
+    auto it = v.FindMember(
+      json::Value{key.data(), rapidjson::SizeType(key.size())});
+    if (it != v.MemberEnd()) {
+        return it->value.GetArray();
+    }
+
+    static const auto empty_array = json::Value{rapidjson::kArrayType};
+    return empty_array.GetArray();
 }
 
 // extract the Values pointed from older[prop_name] and newer[prop_name].
@@ -538,27 +594,17 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
-    // TODO handle double with a big decimal lib. older["multipleOf"]: 1.1,
-    // newer["multipleOf"]: 2.2 would throw but they valid values that are
-    // compatible
-    if (
-      !is_numeric_property_value_superset(
-        older, newer, "multipleOf", [](double older, double newer) {
-            auto older_trunc = std::trunc(older);
-            auto newer_trunc = std::trunc(newer);
-
-            if (older_trunc != older || newer_trunc != newer) {
-                throw as_exception(invalid_schema(fmt::format(
-                  R"({}-multipleOf not implemented for non-integers. input: older: '{}', newer: '{}')",
-                  __FUNCTION__,
-                  older,
-                  newer)));
-            }
-            // the caller function restricts the range of values so that this
-            // cast to uint64 is safe
-            return std::gcd(uint64_t(older_trunc), uint64_t(newer_trunc))
-                   == uint64_t(older_trunc);
-        })) {
+    if (!is_numeric_property_value_superset(
+          older, newer, "multipleOf", [](double older, double newer) {
+              // check that the reminder of newer/older is close enough to 0, as
+              // in some multiples of epsilon.
+              // TODO: this is an approximate check, if a bigdecimal
+              // representation it would be possible to perform an exact
+              // reminder(newer, older)==0 check
+              return boost::math::epsilon_difference(
+                       std::remainder(newer, older), 0.)
+                     <= 10.;
+          })) {
         return false;
     }
 
@@ -620,14 +666,264 @@ bool is_array_superset(
       pj{older},
       pj{newer})));
 }
-bool is_object_superset(
-  [[maybe_unused]] json::Value const& older,
-  [[maybe_unused]] json::Value const& newer) {
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
+
+bool is_object_additional_properties_superset(
+  json::Value const& older, json::Value const& newer) {
+    // "additionalProperties" can be either true (if omitted it's true), false
+    // or a schema. The check is performed with this table.
+    // older ap | newer ap | compatible
+    // -------- | -------- | ----------
+    //   true   |   ____   |    yes
+    //   false  |   ____   | newer==false
+    //  schema  |  schema  |  recurse
+    //  schema  |   true   |  recurse with {}
+    //  schema  |   false  |  recurse with {"not":{}}
+
+    // helper to parse additionalProperties
+    auto get_additional_props =
+      [](json::Value const& v) -> std::variant<bool, json::Value const*> {
+        auto it = v.FindMember("additionalProperties");
+        if (it == v.MemberEnd()) {
+            return true;
+        }
+        if (it->value.IsBool()) {
+            return it->value.GetBool();
+        }
+        return &it->value;
+    };
+
+    // poor man's case matching. this is an optimization in case both
+    // additionalProperties are boolean
+    return std::visit(
+      ss::make_visitor(
+        [](bool older, bool newer) {
+            if (older == newer) {
+                // same value is compatible
+                return true;
+            }
+            // older=true  -> newer=false - compatible
+            // older=false -> newer=true  - not compatible
+            return older;
+        },
+        [](bool older, json::Value const* newer) {
+            if (older) {
+                // true is compatible with any schema
+                return true;
+            }
+            // likely false, but need to check
+            return is_superset(get_false_schema(), *newer);
+        },
+        [](json::Value const* older, bool newer) {
+            if (!newer) {
+                // any schema is compatible with false
+                return true;
+            }
+            // convert newer to {} and check against that
+            return is_superset(*older, get_true_schema());
+        },
+        [](json::Value const* older, json::Value const* newer) {
+            // check subschemas for compatibility
+            return is_superset(*older, *newer);
+        }),
+      get_additional_props(older),
+      get_additional_props(newer));
+}
+
+bool is_object_properties_superset(
+  json::Value const& older, json::Value const& newer) {
+    // check that every property in newer["properties"]
+    // if it appears in older["properties"],
+    //    then it has to be compatible with the schema
+    // or if for every match with a pattern in older["patternProperties"],
+    //    then it has to be compatible with the schema,
+    // or
+    //    it has to be compatible with older["additionalProperties"]
+
+    auto newer_properties = get_object_or_empty(newer, "properties");
+    if (newer_properties.ObjectEmpty()) {
+        // no "properties" in newer, all good
+        return true;
+    }
+
+    // older["properties"] is a map of <prop, schema>
+    auto older_properties = get_object_or_empty(older, "properties");
+    // older["patternProperties"] is a map of <pattern, schema>
+    auto older_pattern_properties = get_object_or_empty(
+      older, "patternProperties");
+    // older["additionalProperties"] is a schema
+    auto get_older_additional_properties = [&]() -> json::Value const& {
+        auto older_it = older.FindMember("additionalProperties");
+        if (older_it == older.MemberEnd()) {
+            // default is `true`
+            return get_true_schema();
+        }
+
+        if (older_it->value.IsBool()) {
+            return older_it->value.GetBool() ? get_true_schema()
+                                             : get_false_schema();
+        }
+
+        return older_it->value;
+    };
+
+    // scan every prop in newer["properties"]
+    for (auto const& [prop, schema] : newer_properties) {
+        // it is either an evolution of a schema in older["properties"]
+        if (auto older_it = older_properties.FindMember(prop);
+            older_it != older_properties.MemberEnd()) {
+            // prop exists in both
+            if (!is_superset(older_it->value, schema)) {
+                // not compatible
+                return false;
+            }
+            // check next property
+            continue;
+        }
+
+        // or it should be checked against every schema in
+        // older["patternProperties"] that matches
+        auto pattern_match_found = false;
+        for (auto pname
+             = std::string_view{prop.GetString(), prop.GetStringLength()};
+             auto const& [propPattern, schemaPattern] :
+             older_pattern_properties) {
+            // TODO this rebuilds the regex each time, could be cached
+            auto regex = re2::RE2(std::string_view{
+              propPattern.GetString(), propPattern.GetStringLength()});
+            if (re2::RE2::PartialMatch(pname, regex)) {
+                pattern_match_found = true;
+                if (!is_superset(schemaPattern, schema)) {
+                    // not compatible
+                    return false;
+                }
+            }
+        }
+
+        // or it should check against older["additionalProperties"], if no match
+        // in patternProperties was found
+        if (
+          !pattern_match_found
+          && !is_superset(get_older_additional_properties(), schema)) {
+            // not compatible
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool is_object_pattern_properties_superset(
+  json::Value const& older, json::Value const& newer) {
+    // check that every pattern property in newer["patternProperties"]
+    // appears in older["patternProperties"] and is compatible with the schema
+
+    // "patternProperties" is a map of <pattern, schema>
+    auto newer_pattern_properties = get_object_or_empty(
+      newer, "patternProperties");
+    auto older_pattern_properties = get_object_or_empty(
+      older, "patternProperties");
+
+    // TODO O(n^2) lookup
+    for (auto const& [pattern, schema] : newer_pattern_properties) {
+        // search for pattern in older_pattern_properties and check schemas
+        auto older_pp_it = older_pattern_properties.FindMember(pattern);
+        if (older_pp_it == older_pattern_properties.MemberEnd()) {
+            // pattern not in older["patternProperties"], not compatible
+            return false;
+        }
+
+        if (!is_superset(older_pp_it->value, schema)) {
+            // not compatible
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool is_object_required_superset(
+  json::Value const& older, json::Value const& newer) {
+    // to pass the check, a required property from newer has to be present in
+    // older, or if new it needs to be without a default value note that:
+    // 1. we check only required properties that are in both newer["properties"]
+    // and older["properties"]
+    // 2. there is no explicit check that older has an open content model
+    //    there might be a property name outside of (1) that could be rejected
+    //    by older, if older["additionalProperties"] is false
+
+    auto older_req = get_array_or_empty(older, "required");
+    auto newer_req = get_array_or_empty(newer, "required");
+    auto older_props = get_object_or_empty(older, "properties");
+    auto newer_props = get_object_or_empty(newer, "properties");
+
+    // TODO O(n^2) lookup that can be a set_intersection
+    auto newer_props_in_older = older_props
+                                | std::views::transform([&](auto& n_v) {
+                                      return newer_props.FindMember(n_v.name);
+                                  })
+                                | std::views::filter(
+                                  [end = newer_props.end()](auto it) {
+                                      return it != end;
+                                  });
+    // intersections of older["properties"] and newer["properties"]
+    for (auto prop_it : newer_props_in_older) {
+        auto& [name, newer_schema] = *prop_it;
+
+        auto older_is_required = std::ranges::find(older_req, name)
+                                 != older_req.end();
+        auto newer_is_required = std::ranges::find(newer_req, name)
+                                 != newer_req.end();
+        if (older_is_required && !newer_is_required) {
+            // required property not present in newer, not compatible
+            return false;
+        }
+
+        if (!older_is_required && newer_is_required) {
+            if (newer_schema.HasMember("default")) {
+                // newer required property with a default makes newer
+                // incompatible
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool is_object_superset(json::Value const& older, json::Value const& newer) {
+    if (!is_numeric_property_value_superset(
+          older, newer, "minProperties", std::less_equal<>{})) {
+        // newer requires less properties to be set
+        return false;
+    }
+    if (!is_numeric_property_value_superset(
+          older, newer, "maxProperties", std::greater_equal<>{})) {
+        // newer requires more properties to be set
+        return false;
+    }
+    if (!is_object_additional_properties_superset(older, newer)) {
+        // additional properties are not compatible
+        return false;
+    }
+    if (!is_object_properties_superset(older, newer)) {
+        // "properties" in newer might not be compatible with
+        // older["properties"] (incompatible evolution) or
+        // older["patternProperties"] (it is not compatible with the pattern
+        // that matches the new name) or older["additionalProperties"] (older
+        // has partial open model that does not allow some new properties in
+        // newer)
+        return false;
+    }
+    if (!is_object_pattern_properties_superset(older, newer)) {
+        // pattern properties checks are not compatible
+        return false;
+    }
+    if (!is_object_required_superset(older, newer)) {
+        // required properties are not compatible
+        return false;
+    }
+
+    return true;
 }
 
 bool is_enum_superset(json::Value const& older, json::Value const& newer) {
@@ -671,6 +967,28 @@ bool is_enum_superset(json::Value const& older, json::Value const& newer) {
     return true;
 }
 
+bool is_not_combinator_superset(
+  json::Value const& older, json::Value const& newer) {
+    auto older_it = older.FindMember("not");
+    auto newer_it = newer.FindMember("not");
+    auto older_has_not = older_it != older.MemberEnd();
+    auto newer_has_not = newer_it != newer.MemberEnd();
+
+    if (older_has_not != newer_has_not) {
+        // only one has a "not" schema, not compatible
+        return false;
+    }
+
+    if (older_has_not && newer_has_not) {
+        // for not combinator, we want to check if the "not" newer subschema is
+        // less strict than the older subschema, because this means that newer
+        // validated less data than older
+        return is_superset(newer_it->value, older_it->value);
+    }
+
+    // both do not have a "not" key, compatible
+    return true;
+}
 } // namespace is_superset_impl
 
 using namespace is_superset_impl;
@@ -740,6 +1058,10 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
+    if (!is_not_combinator_superset(older, newer)) {
+        return false;
+    }
+
     for (auto not_yet_handled_keyword : {
            "$schema",
            "additionalItems",
@@ -747,18 +1069,11 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "maxItems",
            "minItems",
            "uniqueItems",
-           "maxProperties",
-           "minProperties",
-           "required",
-           "additionalProperties",
            "definitions",
-           "properties",
-           "patternProperties",
            "dependencies",
            "allOf",
            "anyOf",
            "oneOf",
-           "not",
          }) {
         if (
           newer.HasMember(not_yet_handled_keyword)
