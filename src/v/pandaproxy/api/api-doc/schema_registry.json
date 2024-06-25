@@ -574,6 +574,12 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "subjectPrefix",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "produces": [
