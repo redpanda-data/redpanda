@@ -73,7 +73,7 @@ public:
     archiver_scheduler_api& operator=(const archiver_scheduler_api&) = delete;
     archiver_scheduler_api& operator=(archiver_scheduler_api&&) noexcept
       = delete;
-    virtual ~archiver_scheduler_api(){};
+    virtual ~archiver_scheduler_api() {};
 
     /// Applies throttling or backoff to uploads
     ///
