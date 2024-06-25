@@ -23,3 +23,14 @@ rp_test(
   LABELS compression
   ARGS "-- -c 1"
 )
+
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gzip_stream_decompression_tests
+  SOURCES gzip_stream_decompression_tests.cc
+  LIBRARIES v::compression v::gtest_main v::utils
+  LABELS compression
+  ARGS "-- -c 1"
+)
