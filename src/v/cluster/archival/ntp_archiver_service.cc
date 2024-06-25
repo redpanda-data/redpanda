@@ -207,7 +207,8 @@ ntp_archiver::ntp_archiver(
   cloud_storage::cache& c,
   cluster::partition& parent,
   ss::shared_ptr<cloud_storage::async_manifest_view> amv,
-  ss::shared_ptr<archiver_operations_api> ops)
+  ss::shared_ptr<archiver_operations_api> ops,
+  ss::shared_ptr<archiver_scheduler_api> sched)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
@@ -218,6 +219,7 @@ ntp_archiver::ntp_archiver(
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
   , _ops(std::move(ops))
+  , _sched(std::move(sched))
   , _conf(conf)
   , _sync_manifest_timeout(
       config::shard_local_cfg()
@@ -859,6 +861,24 @@ static segment_size_limits get_segment_size_limits() {
       .lowest = opt_min.value_or(opt_target.value() * 100 / 80)};
 }
 
+namespace {
+static size_t num_put_requests_per_iter(std::optional<size_t> requests_quota) {
+    constexpr size_t max_requests_per_segment = 3;
+    constexpr size_t segments_per_iter = 4;
+    constexpr auto max_requests_per_iter = max_requests_per_segment
+                                           * segments_per_iter;
+    return std::min(
+      max_requests_per_iter, requests_quota.value_or(max_requests_per_iter));
+}
+static size_t num_uploaded_bytes_per_iter(std::optional<size_t> bytes_quota) {
+    constexpr size_t segments_per_iter = 4;
+    const size_t segment_size
+      = config::shard_local_cfg().log_segment_size.value();
+    const size_t bytes_per_iter = segment_size * segments_per_iter;
+    return std::min(bytes_per_iter, bytes_quota.value_or(bytes_per_iter));
+}
+} // namespace
+
 ss::future<> ntp_archiver::upload_until_term_change() {
     vassert(_ops, "The method can't be called in legacy mode");
 
@@ -892,18 +912,33 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         co_await flush_manifest_clean_offset();
     }
 
-    // This variable is set by the previous iteration of the upload loop.
-    // It's only used if the legacy mode is disabled.
-    std::optional<std::chrono::milliseconds> carried_over_backoff;
+    upload_resource_usage usage{
+      .ntp = _ntp,
+      .put_requests_used = 0,
+      .uploaded_bytes = 0,
+      .errc = {},
+      .archiver_rtc = std::ref(_rtcnode),
+    };
 
     while (may_begin_uploads()) {
         // Handle backoff before acquiring units from the semaphore. This
         // will allow housekeeping to continue working.
-        if (carried_over_backoff.has_value()) {
-            co_await ss::sleep_abortable(carried_over_backoff.value(), _as);
+        auto quota = co_await _sched->maybe_suspend_upload(usage);
+        if (quota.has_error()) {
+            // This error can't be handled because we will not be protected
+            // against resource usage spike.
+            vlog(
+              _rtclog.error,
+              "Upload loop can't be suspended due to scheduler failure: {}",
+              quota.error());
+            throw std::system_error(quota.error());
         }
 
-        // Hold sempahore units to enable other code to know that we are in
+        usage.errc = {};
+        usage.uploaded_bytes = 0;
+        usage.put_requests_used = 0;
+
+        // Hold semaphore units to enable other code to know that we are in
         // the process of doing uploads + wait for us to drop out if they
         // e.g. set _paused.
         vassert(!_paused, "may_begin_uploads must ensure !_paused");
@@ -944,22 +979,13 @@ ss::future<> ntp_archiver::upload_until_term_change() {
           _start_term,
           target_size,
           min_size,
-          // TODO: use proper quota
-          std::nullopt,
-          std::nullopt,
+          num_uploaded_bytes_per_iter(quota.value().upload_size_quota),
+          num_put_requests_per_iter(quota.value().requests_quota),
           false,
           manifest_upload_required());
 
         auto upload_candidate_list = co_await _ops->find_upload_candidates(
           _rtcnode, search_params);
-
-        auto throttle_upload_loop = [this, &carried_over_backoff]() {
-            carried_over_backoff = carried_over_backoff.value_or(0ms)
-                                   + carried_over_backoff.value_or(
-                                     _initial_backoff());
-            carried_over_backoff = std::clamp(
-              carried_over_backoff.value(), _initial_backoff(), _max_backoff());
-        };
 
         if (upload_candidate_list.has_error()) {
             if (
@@ -971,7 +997,7 @@ ss::future<> ntp_archiver::upload_until_term_change() {
                   "Upload candidate can't be created: {}",
                   upload_candidate_list.error());
             }
-            throttle_upload_loop();
+            usage.errc = upload_candidate_list.error();
             continue;
         }
 
@@ -984,8 +1010,11 @@ ss::future<> ntp_archiver::upload_until_term_change() {
               _rtclog.error,
               "Failed to schedule uploads: {}",
               upload_list.error());
-            throttle_upload_loop();
+            usage.errc = upload_list.error();
             continue;
+        } else {
+            usage.put_requests_used = upload_list.value().num_put_requests;
+            usage.uploaded_bytes = upload_list.value().num_bytes_sent;
         }
 
         // If the manifest was uploaded in parallel with segments we want to
@@ -1003,7 +1032,7 @@ ss::future<> ntp_archiver::upload_until_term_change() {
               _rtclog.error,
               "Failed to admit uploads: {}",
               admit_result.error());
-            throttle_upload_loop();
+            usage.errc = admit_result.error();
             continue;
         }
 
@@ -1026,7 +1055,6 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         }
 
         update_probe();
-        carried_over_backoff = std::nullopt;
     }
 }
 
