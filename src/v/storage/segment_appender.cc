@@ -331,11 +331,8 @@ ss::future<> segment_appender::close() {
 
 ss::future<> segment_appender::do_next_adaptive_fallocation() {
     auto step = _opts.resources.get_falloc_step(_opts.segment_size);
-    if (step == 0) {
-        // Don't fallocate.  This happens if we're low on disk, or if
-        // the user has configured a 0 max falloc step.
-        return ss::make_ready_future<>();
-    }
+    vassert(
+      step != 0, "falloc step must be non-zero for appender to make progress");
 
     return ss::with_semaphore(
              _concurrent_flushes,

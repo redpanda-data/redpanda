@@ -130,7 +130,7 @@ size_t storage_resources::calc_falloc_step() {
     if (_partition_count == 0) {
         // Called before log_manager, this is an internal kvstore, give it a
         // full falloc step.
-        return step;
+        return std::max(step, _append_chunk_size);
     }
 
     // Initial disk stats read happens very early in startup, we should
@@ -187,7 +187,9 @@ storage_resources::get_falloc_step(std::optional<uint64_t> segment_size_hint) {
         // we don't roll segments until they overshoot the size.
         step = std::min(step, segment_size_hint.value() + _append_chunk_size);
     }
-    return step;
+
+    // Allocate at least one chunk's worth of space.
+    return std::max(step, _append_chunk_size);
 }
 
 bool storage_resources::offset_translator_take_bytes(
