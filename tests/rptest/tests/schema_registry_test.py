@@ -392,9 +392,19 @@ class SchemaRegistryEndpoints(RedpandaTest):
             headers=headers,
             **kwargs)
 
-    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
+    def _get_subjects(self,
+                      deleted=False,
+                      subject_prefix=None,
+                      headers=HTTP_GET_HEADERS,
+                      **kwargs):
+        params = {}
+        if deleted:
+            params['deleted'] = 'true'
+        if subject_prefix:
+            params['subjectPrefix'] = subject_prefix
         return self._request("GET",
-                             f"subjects{'?deleted=true' if deleted else ''}",
+                             "subjects",
+                             params=params,
                              headers=headers,
                              **kwargs)
 
@@ -2211,6 +2221,45 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                                        auth=self.super_auth)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [{"subject": subject, "version": 1}]
+
+    @cluster(num_nodes=3)
+    def test_get_subjects(self):
+        """
+        Verify getting subjects
+        """
+        self._init_users()
+
+        topics = ['a', 'aa', 'b', 'ab', 'bb']
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        self.logger.debug("Posting schemas 1 as subject keys")
+
+        def post(topic):
+            result_raw = self._post_subjects_subject_versions(
+                subject=f"{topic}-key",
+                data=schema_1_data,
+                auth=self.super_auth)
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+
+        for t in topics:
+            post(t)
+
+        def get_subjects(prefix: Optional[str]):
+            result_raw = self._get_subjects(subject_prefix=prefix,
+                                            auth=self.super_auth)
+            assert result_raw.status_code == requests.codes.ok
+
+            return result_raw.json()
+
+        assert len(get_subjects(prefix=None)) == 5
+        assert len(get_subjects(prefix="")) == 5
+        assert len(get_subjects(prefix="a")) == 3
+        assert len(get_subjects(prefix="aa")) == 1
+        assert len(get_subjects(prefix="aaa")) == 0
+        assert len(get_subjects(prefix="b")) == 2
+        assert len(get_subjects(prefix="bb")) == 1
 
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions(self):
