@@ -519,6 +519,13 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
             },
                                        node=new_version_node)
 
+        # 24.1.x -> 24.2.x: versions 24.1 and below will not support remote
+        # labels, so we'll explicitly tune our bucket view to not filter with
+        # labels.
+        initial_supports_remote_label = False
+        if initial_version > Version("24.2.0"):
+            initial_supports_remote_label = True
+
         if block_uploads_during_upgrade:
             # If uploads are blocked during upgrade, we expect the new
             # nodes not to be able to trim their local logs.
@@ -546,7 +553,8 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                 timeout_sec=60)
 
         # capture the cloud storage state to run a progress check later
-        bucket_view = BucketView(self.redpanda)
+        bucket_view = BucketView(
+            self.redpanda, with_remote_labels=initial_supports_remote_label)
         manifest_mid_upgrade = bucket_view.manifest_for_ntp(
             topic=topic, partition=newdata_p)
 
