@@ -627,8 +627,7 @@ partition_downloader::find_recovery_material() {
       download_res.value()
       == find_partition_manifest_outcome::no_matching_manifest) {
         throw missing_partition_exception(
-          remote_manifest_path{_remote_path_provider.partition_manifest_path(
-            _ntpc.ntp(), _remote_revision_id)});
+          tmp.get_manifest_path(_remote_path_provider));
     }
     recovery_mat.partition_manifest = std::move(tmp);
     co_return recovery_mat;
