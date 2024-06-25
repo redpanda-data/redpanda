@@ -122,6 +122,7 @@ remote_topic_configuration_source::set_recovered_topic_properties(
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
           manifest.get_revision(),
           manifest.get_topic_config()->partition_count);
+        cfg.cfg.properties.remote_label = rc.value().properties.remote_label;
     }
     co_return errc::success;
 }
