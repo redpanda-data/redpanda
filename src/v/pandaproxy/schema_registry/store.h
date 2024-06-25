@@ -176,7 +176,9 @@ public:
     }
 
     ///\brief Return a list of subjects.
-    chunked_vector<subject> get_subjects(include_deleted inc_del) const {
+    chunked_vector<subject> get_subjects(
+      include_deleted inc_del,
+      const std::optional<ss::sstring>& subject_prefix = std::nullopt) const {
         chunked_vector<subject> res;
         res.reserve(_subjects.size());
         for (const auto& sub : _subjects) {
@@ -184,7 +186,9 @@ public:
                 auto has_version = absl::c_any_of(
                   sub.second.versions,
                   [inc_del](auto const& v) { return inc_del || !v.deleted; });
-                if (has_version) {
+                if (
+                  has_version
+                  && sub.first().starts_with(subject_prefix.value_or(""))) {
                     res.push_back(sub.first);
                 }
             }
