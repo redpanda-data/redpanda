@@ -18,6 +18,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/archival/archival_policy.h"
 #include "cluster/archival/archiver_operations_api.h"
+#include "cluster/archival/archiver_scheduler_api.h"
 #include "cluster/archival/probe.h"
 #include "cluster/archival/scrubber.h"
 #include "cluster/archival/types.h"
@@ -146,7 +147,8 @@ public:
       cloud_storage::cache& c,
       cluster::partition& parent,
       ss::shared_ptr<cloud_storage::async_manifest_view> amv,
-      ss::shared_ptr<archiver_operations_api> ops = nullptr);
+      ss::shared_ptr<archiver_operations_api> ops = nullptr,
+      ss::shared_ptr<archiver_scheduler_api<ss::lowres_clock>> sched = nullptr);
 
     /// Spawn background fibers, which depending on the mode (read replica or
     /// not) will either do uploads, or periodically read back the manifest.
@@ -674,6 +676,9 @@ private:
 
     // This interface is used by the new background upload loop
     ss::shared_ptr<archiver_operations_api> _ops;
+    // This object coordinates throttling and backoff in the new
+    // upload loop
+    ss::shared_ptr<archiver_scheduler_api<ss::lowres_clock>> _sched;
 
     // Ensures that operations on the archival state are only performed by a
     // single driving fiber (archiver loop, housekeeping job, etc) at a time.
