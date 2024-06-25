@@ -698,7 +698,10 @@ class PathMatcher:
         return self._match_partition_manifest(path)
 
 
-def quiesce_uploads(redpanda, topic_names: list[str], timeout_sec):
+def quiesce_uploads(redpanda,
+                    topic_names: list[str],
+                    timeout_sec,
+                    with_remote_labels: bool = True):
     """
     Wait until all local data for all topics in `topic_names` has been uploaded
     to remote storage.  This function expects that no new data is being produced:
@@ -713,7 +716,7 @@ def quiesce_uploads(redpanda, topic_names: list[str], timeout_sec):
 
     def remote_has_reached_hwm(ntp: NTP, hwm: int):
         nonlocal last_msg
-        view = BucketView(redpanda)
+        view = BucketView(redpanda, with_remote_labels=with_remote_labels)
         try:
             manifest = view.get_partition_manifest(ntp)
         except Exception as e:
