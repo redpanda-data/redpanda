@@ -306,6 +306,9 @@ private:
       model::revision_id cmd_revision,
       partition_removal_mode mode);
 
+    ss::future<> remove_partition_kvstore_state(
+      model::ntp, raft::group_id, model::revision_id log_revision);
+
     ss::future<result<ss::stop_iteration>> reconcile_partition_reconfiguration(
       ntp_reconciliation_state&,
       ss::lw_shared_ptr<partition>,

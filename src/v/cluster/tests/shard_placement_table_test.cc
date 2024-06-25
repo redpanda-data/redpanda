@@ -259,7 +259,7 @@ private:
           expected_log_revision);
 
         switch (placement.get_reconciliation_action(expected_log_revision)) {
-        case shard_placement_table::reconciliation_action::remove: {
+        case shard_placement_table::reconciliation_action::remove_partition: {
             auto cmd_revision = expected_log_revision.value_or(_ntpt.revision);
             auto ec = co_await delete_partition(ntp, placement, cmd_revision);
             if (ec) {
@@ -267,6 +267,10 @@ private:
             }
             co_return ss::stop_iteration::no;
         }
+        case shard_placement_table::reconciliation_action::remove_kvstore_state:
+            co_await remove_partition_kvstore_state(
+              ntp, placement.current.value().log_revision);
+            co_return ss::stop_iteration::no;
         case shard_placement_table::reconciliation_action::
           wait_for_target_update:
             co_return errc::waiting_for_shard_placement_update;
@@ -446,6 +450,30 @@ private:
         co_await _shard_placement.finish_delete(
           ntp, placement.current->log_revision);
         co_return ec;
+    }
+
+    ss::future<> remove_partition_kvstore_state(
+      const model::ntp& ntp, model::revision_id log_revision) {
+        vlog(
+          _logger.trace,
+          "[{}] removing partition kvstore state, log_revision: {}",
+          ntp,
+          log_revision);
+
+        vassert(!_launched.contains(ntp), "[{}] unexpected launched", ntp);
+
+        co_await _ntp2shards.invoke_on(
+          0, [ntp, shard = ss::this_shard_id()](ntp2shards_t& ntp2shards) {
+              auto& shards = ntp2shards[ntp];
+
+              vassert(
+                shards.shards_with_some_state.erase(shard),
+                "[{}] unexpected set contents, shard: {}",
+                ntp,
+                shard);
+          });
+
+        co_await _shard_placement.finish_delete(ntp, log_revision);
     }
 
     ss::future<std::error_code> transfer_partition(

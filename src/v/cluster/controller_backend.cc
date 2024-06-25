@@ -1057,7 +1057,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
       = log_revision_on_node(replicas_view, _self);
 
     switch (placement.get_reconciliation_action(expected_log_revision)) {
-    case shard_placement_table::reconciliation_action::remove: {
+    case shard_placement_table::reconciliation_action::remove_partition: {
         // Cleanup obsolete revisions that should not exist on this node. This
         // is typically done after the replicas update is finished.
         rs.set_cur_operation(
@@ -1074,6 +1074,17 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         }
         co_return ss::stop_iteration::no;
     }
+    case shard_placement_table::reconciliation_action::remove_kvstore_state:
+        // Cleanup obsolete kvstore state (without removing the partition data
+        // itself). This can be required after a cross-shard transfer is
+        // retried.
+        rs.set_cur_operation(
+          replicas_view.last_update_finished_revision(),
+          partition_operation_type::finish_update,
+          replicas_view.assignment);
+        co_await remove_partition_kvstore_state(
+          ntp, placement.current.value().group, expected_log_revision.value());
+        co_return ss::stop_iteration::no;
     case shard_placement_table::reconciliation_action::wait_for_target_update:
         co_return errc::waiting_for_shard_placement_update;
     case shard_placement_table::reconciliation_action::transfer: {
@@ -1828,12 +1839,27 @@ ss::future<std::error_code> controller_backend::delete_partition(
     if (part) {
         co_await remove_from_shard_table(ntp, part->group(), log_revision);
         co_await _partition_manager.local().remove(ntp, mode);
-    }
+    } else {
+        // TODO: delete log directory even when there is no partition object
 
-    // TODO: delete kvstore state even when there is no partition object
+        co_await remove_persistent_state(
+          ntp, placement->current->group, _storage.local().kvs());
+    }
 
     co_await _shard_placement.finish_delete(ntp, log_revision);
     co_return errc::success;
+}
+
+ss::future<> controller_backend::remove_partition_kvstore_state(
+  model::ntp ntp, raft::group_id group, model::revision_id log_revision) {
+    vlog(
+      clusterlog.debug,
+      "[{}] removing obsolete partition kvstore state, log_revision: {}",
+      ntp,
+      log_revision);
+
+    co_await remove_persistent_state(ntp, group, _storage.local().kvs());
+    co_await _shard_placement.finish_delete(ntp, log_revision);
 }
 
 bool controller_backend::should_skip(const model::ntp& ntp) const {

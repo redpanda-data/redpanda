@@ -94,7 +94,9 @@ public:
 
     enum class reconciliation_action {
         /// Partition must be removed from this node
-        remove,
+        remove_partition,
+        /// Partition kvstore state must be removed from this shard
+        remove_kvstore_state,
         /// Partition must be transferred to other shard
         transfer,
         /// Wait until target catches up with topic_table

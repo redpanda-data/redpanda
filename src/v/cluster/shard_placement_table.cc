@@ -63,13 +63,22 @@ shard_placement_table::placement_state::get_reconciliation_action(
         if (assigned) {
             return reconciliation_action::wait_for_target_update;
         }
-        return reconciliation_action::remove;
+        return reconciliation_action::remove_partition;
     }
-    if (current && current->log_revision < expected_log_revision) {
-        return reconciliation_action::remove;
-    }
-    if (_is_initial_for && _is_initial_for < expected_log_revision) {
-        return reconciliation_action::remove;
+    if (current) {
+        if (current->log_revision < expected_log_revision) {
+            return reconciliation_action::remove_partition;
+        } else if (current->log_revision > expected_log_revision) {
+            return reconciliation_action::wait_for_target_update;
+        } else if (current->status == hosted_status::obsolete) {
+            return reconciliation_action::remove_kvstore_state;
+        }
+    } else if (_is_initial_for) {
+        if (_is_initial_for < expected_log_revision) {
+            return reconciliation_action::remove_partition;
+        } else if (_is_initial_for > expected_log_revision) {
+            return reconciliation_action::wait_for_target_update;
+        }
     }
     if (assigned) {
         if (assigned->log_revision != expected_log_revision) {
@@ -968,11 +977,11 @@ ss::future<result<ss::shard_id>> shard_placement_table::prepare_transfer(
             co_return errc::waiting_for_partition_shutdown;
         }
 
-        if (state.current->status == hosted_status::obsolete) {
-            // Previous finish_transfer_on_source() failed? Retry it.
-            co_await do_delete(ntp, state, persistence_lock_holder);
-            co_return errc::success;
-        }
+        vassert(
+          state.current->status == hosted_status::hosted,
+          "[{}] unexpected current: {} (expected hosted status)",
+          ntp,
+          state.current);
     } else {
         vassert(
           state._is_initial_for >= expected_log_rev,
@@ -1166,14 +1175,6 @@ ss::future<std::error_code> shard_placement_table::prepare_delete(
     vassert(it != _states.end(), "[{}] expected state", ntp);
     auto& state = it->second;
 
-    if (state._is_initial_for && state._is_initial_for < cmd_revision) {
-        state._is_initial_for = std::nullopt;
-        if (state.is_empty()) {
-            _states.erase(it);
-            co_return errc::success;
-        }
-    }
-
     if (state.current) {
         if (state.current->log_revision >= cmd_revision) {
             // New log revision transferred from another shard, but we didn't
@@ -1188,6 +1189,33 @@ ss::future<std::error_code> shard_placement_table::prepare_delete(
         }
 
         state.current->status = hosted_status::obsolete;
+    }
+
+    if (state._next) {
+        // notify destination shard that the transfer won't finish
+        co_await container().invoke_on(
+          state._next.value(),
+          [&ntp, expected_log_rev = state.current.value().log_revision](
+            shard_placement_table& dest) {
+              auto it = dest._states.find(ntp);
+              if (
+                it != dest._states.end() && it->second.current
+                && it->second.current->log_revision == expected_log_rev
+                && it->second.current->status == hosted_status::receiving) {
+                  it->second.current->status = hosted_status::obsolete;
+              }
+
+              // TODO: notify reconciliation fiber
+          });
+
+        state._next = std::nullopt;
+    }
+
+    if (state._is_initial_for && state._is_initial_for < cmd_revision) {
+        state._is_initial_for = std::nullopt;
+        if (state.is_empty()) {
+            _states.erase(it);
+        }
     }
 
     co_return errc::success;
@@ -1207,23 +1235,6 @@ ss::future<> shard_placement_table::finish_delete(
       ntp,
       state.current,
       expected_log_rev);
-
-    if (state._next) {
-        // notify destination shard that the transfer won't finish
-        co_await container().invoke_on(
-          state._next.value(),
-          [&ntp, expected_log_rev](shard_placement_table& dest) {
-              auto it = dest._states.find(ntp);
-              if (
-                it != dest._states.end() && it->second.current
-                && it->second.current->log_revision == expected_log_rev
-                && it->second.current->status == hosted_status::receiving) {
-                  it->second.current->status = hosted_status::obsolete;
-              }
-
-              // TODO: notify reconciliation fiber
-          });
-    }
 
     co_await do_delete(ntp, state, persistence_lock_holder);
 }
