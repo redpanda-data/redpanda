@@ -17,7 +17,8 @@ ss::sstring labeled_partition_manifest_prefix(
   const remote_label& label,
   const model::ntp& ntp,
   model::initial_revision_id rev) {
-    return fmt::format("{}/{}_{}", label.cluster_uuid(), ntp.path(), rev());
+    return fmt::format(
+      "{}/meta/{}_{}", label.cluster_uuid(), ntp.path(), rev());
 }
 
 ss::sstring labeled_partition_manifest_path(

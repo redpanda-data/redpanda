@@ -36,7 +36,7 @@ const std::regex manifest_path_expr{
   R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.(json|bin))REGEX"};
 
 const std::regex labeled_manifest_path_expr{
-  R"REGEX(([^/]+)/([^/]+)/[^/]+/\d+/topic_manifest\.bin)REGEX"};
+  R"REGEX(meta/([^/]+)/([^/]+)/[^/]+/\d+/topic_manifest\.bin)REGEX"};
 
 // Possible prefix for a path which contains a topic manifest file
 const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
@@ -443,7 +443,7 @@ topic_recovery_service::create_topics(const recovery_request& request) {
 ss::future<std::vector<cloud_storage::topic_manifest>>
 topic_recovery_service::find_labeled_recovery_manifests(
   const recovery_request& request) {
-    cloud_storage_clients::object_key prefix{"kafka/"};
+    cloud_storage_clients::object_key prefix{"meta/kafka/"};
     retry_chain_node list_retry(
       _as, _config.operation_timeout_ms, _config.backoff_ms);
     vlog(cst_log.debug, "Listing contents with prefix {}", prefix);

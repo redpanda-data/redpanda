@@ -53,7 +53,7 @@ topic_manifest_downloader::download_manifest(
           "{}/", remote_label_.value().cluster_uuid);
     }
     const auto labeled_manifest_filter = fmt::format(
-      "{}/{}/{}", topic_.ns(), topic_.tp(), remote_label_str);
+      "meta/{}/{}/{}", topic_.ns(), topic_.tp(), remote_label_str);
     auto list_res = co_await remote_.list_objects(
       bucket_,
       retry_node,

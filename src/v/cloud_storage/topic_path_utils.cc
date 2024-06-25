@@ -15,7 +15,7 @@
 namespace cloud_storage {
 
 ss::sstring labeled_topic_manifest_root(const model::topic_namespace& topic) {
-    return fmt::format("{}/{}", topic.ns(), topic.tp());
+    return fmt::format("meta/{}/{}", topic.ns(), topic.tp());
 }
 
 ss::sstring labeled_topic_manifest_prefix(

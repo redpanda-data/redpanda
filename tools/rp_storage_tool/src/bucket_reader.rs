@@ -1294,14 +1294,14 @@ impl BucketReader {
         fn maybe_stash_partition_key(keys: &mut Vec<FetchKey>, k: FetchKey, filter: &NTPFilter) {
             lazy_static! {
                 static ref META_NTP_PREFIX: Regex =
-                    Regex::new("[-a-f0-9]+/(meta/)?([^]]+)/([^]]+)/(\\d+)_(\\d+)/.+").unwrap();
+                    Regex::new("[-a-f0-9]+/meta/([^]]+)/([^]]+)/(\\d+)_(\\d+)/.+").unwrap();
             }
             if let Some(grps) = META_NTP_PREFIX.captures(k.as_str()) {
-                let ns = grps.get(2).unwrap().as_str();
-                let topic = grps.get(3).unwrap().as_str();
+                let ns = grps.get(1).unwrap().as_str();
+                let topic = grps.get(2).unwrap().as_str();
                 // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-                let partition_id = grps.get(4).unwrap().as_str().parse::<u32>().unwrap();
-                let partition_revision = grps.get(5).unwrap().as_str().parse::<i64>().unwrap();
+                let partition_id = grps.get(3).unwrap().as_str().parse::<u32>().unwrap();
+                let partition_revision = grps.get(4).unwrap().as_str().parse::<i64>().unwrap();
 
                 if filter.match_parts(ns, topic, Some(partition_id), Some(partition_revision)) {
                     debug!("Stashing partition manifest key {}", k.as_str());
@@ -1559,18 +1559,18 @@ impl BucketReader {
     ) -> Result<(), BucketReaderError> {
         lazy_static! {
             static ref PARTITION_MANIFEST_KEY: Regex = Regex::new(
-                "([-a-f0-9]+)/(meta/)?([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(json|bin)"
+                "([-a-f0-9]+)/meta/([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(json|bin)"
             )
             .unwrap();
         }
         if let Some(grps) = PARTITION_MANIFEST_KEY.captures(key) {
             let prefix = grps.get(1).unwrap().as_str().to_string();
             // Group::get calls are safe to unwrap() because regex always has those groups if it matched
-            let ns = grps.get(3).unwrap().as_str().to_string();
-            let topic = grps.get(4).unwrap().as_str().to_string();
+            let ns = grps.get(2).unwrap().as_str().to_string();
+            let topic = grps.get(3).unwrap().as_str().to_string();
             // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-            let partition_id = grps.get(5).unwrap().as_str().parse::<u32>().unwrap();
-            let partition_revision = grps.get(6).unwrap().as_str().parse::<i64>().unwrap();
+            let partition_id = grps.get(4).unwrap().as_str().parse::<u32>().unwrap();
+            let partition_revision = grps.get(5).unwrap().as_str().parse::<i64>().unwrap();
             let ntpr = NTPR {
                 ntp: NTP {
                     namespace: ns,
@@ -1632,23 +1632,23 @@ impl BucketReader {
     ) -> Result<(), BucketReaderError> {
         lazy_static! {
             static ref PARTITION_MANIFEST_KEY: Regex =
-                Regex::new("([-a-f0-9]+)/(meta/)?([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(?:json|bin)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)").unwrap();
+                Regex::new("([-a-f0-9]+)/meta/([^]]+)/([^]]+)/(\\d+)_(\\d+)/manifest.(?:json|bin)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)").unwrap();
         }
         if let Some(grps) = PARTITION_MANIFEST_KEY.captures(key) {
             let prefix = grps.get(1).unwrap().as_str().to_string();
             // Group::get calls are safe to unwrap() because regex always has those groups if it matched
-            let ns = grps.get(3).unwrap().as_str().to_string();
-            let topic = grps.get(4).unwrap().as_str().to_string();
+            let ns = grps.get(2).unwrap().as_str().to_string();
+            let topic = grps.get(3).unwrap().as_str().to_string();
             // (TODO: these aren't really-truly safe to unwrap because the string might have had too many digits)
-            let partition_id = grps.get(5).unwrap().as_str().parse::<u32>().unwrap();
-            let partition_revision = grps.get(6).unwrap().as_str().parse::<i64>().unwrap();
+            let partition_id = grps.get(4).unwrap().as_str().parse::<u32>().unwrap();
+            let partition_revision = grps.get(5).unwrap().as_str().parse::<i64>().unwrap();
 
-            let base_offset = grps.get(7).unwrap().as_str().parse::<u64>().unwrap();
-            let committed_offset = grps.get(8).unwrap().as_str().parse::<u64>().unwrap();
-            let base_kafka_offset = grps.get(9).unwrap().as_str().parse::<u64>().unwrap();
-            let next_kafka_offset = grps.get(10).unwrap().as_str().parse::<u64>().unwrap();
-            let base_ts = grps.get(11).unwrap().as_str().parse::<u64>().unwrap();
-            let last_ts = grps.get(12).unwrap().as_str().parse::<u64>().unwrap();
+            let base_offset = grps.get(6).unwrap().as_str().parse::<u64>().unwrap();
+            let committed_offset = grps.get(7).unwrap().as_str().parse::<u64>().unwrap();
+            let base_kafka_offset = grps.get(8).unwrap().as_str().parse::<u64>().unwrap();
+            let next_kafka_offset = grps.get(9).unwrap().as_str().parse::<u64>().unwrap();
+            let base_ts = grps.get(10).unwrap().as_str().parse::<u64>().unwrap();
+            let last_ts = grps.get(11).unwrap().as_str().parse::<u64>().unwrap();
 
             let ntpr = NTPR {
                 ntp: NTP {

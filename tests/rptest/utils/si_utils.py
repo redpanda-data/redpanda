@@ -267,7 +267,7 @@ def make_segment_summary(ntpr: NTPR, reader: SegmentReader) -> SegmentSummary:
 def parse_s3_manifest_path(path: str) -> NTPR:
     """Parse S3 manifest path. Return ntp and revision.
     Sample name: 50000000/meta/kafka/panda-topic/0_19/manifest.json
-    Sample name: 6e94ccdc-443a-4807-b105-0bb86e8f97f7/kafka/panda-topic/0_18/manifest.bin
+    Sample name: 6e94ccdc-443a-4807-b105-0bb86e8f97f7/meta/kafka/panda-topic/0_18/manifest.bin
     """
     items = path.split('/')
     if len(items[0]) == 8 and items[1].endswith('0000000'):
@@ -277,9 +277,9 @@ def parse_s3_manifest_path(path: str) -> NTPR:
         partition = int(part_rev[0])
         revision = int(part_rev[1])
         return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
-    ns = items[1]
-    topic = items[2]
-    part_rev = items[3].split('_')
+    ns = items[2]
+    topic = items[3]
+    part_rev = items[4].split('_')
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
@@ -445,7 +445,7 @@ def gen_topic_manifest_path(topic: NT,
         x.update(path.encode('ascii'))
         hash = x.hexdigest()[0] + '0000000'
         return f"{hash}/meta/{path}/topic_manifest.{manifest_format}"
-    return f"{path}/{remote_label}/{rev}/topic_manifest.{manifest_format}"
+    return f"meta/{path}/{remote_label}/{rev}/topic_manifest.{manifest_format}"
 
 
 def gen_topic_lifecycle_marker_path(topic: NT,
@@ -457,7 +457,7 @@ def gen_topic_lifecycle_marker_path(topic: NT,
         x.update(path.encode('ascii'))
         hash = x.hexdigest()[0] + '0000000'
         return f"{hash}/meta/{path}/{rev}_lifecycle.bin"
-    return f"{path}/{remote_label}/{rev}_lifecycle.bin"
+    return f"meta/{path}/{remote_label}/{rev}_lifecycle.bin"
 
 
 def gen_segment_name_from_meta(meta: dict, key: str) -> str:
@@ -1194,7 +1194,7 @@ class BucketView:
             x.update(path.encode('ascii'))
             hash = x.hexdigest()[0] + '0000000'
             return f"{hash}/meta/{path}/manifest.{extension}"
-        return f"{remote_label}/{path}/manifest.{extension}"
+        return f"{remote_label}/meta/{path}/manifest.{extension}"
 
     def get_partition_manifest(self, ntp: NTP | NTPR) -> dict:
         """
@@ -1311,7 +1311,7 @@ class BucketView:
 
         path = f"{topic.ns}/{topic.topic}"
         if self.remote_label:
-            prefix = f"{path}/{self.remote_label}/"
+            prefix = f"meta/{path}/{self.remote_label}/"
         else:
             x = xxhash.xxh32()
             x.update(path.encode('ascii'))
@@ -1343,7 +1343,7 @@ class BucketView:
 
         path = f"{topic.ns}/{topic.topic}"
         if remote_label:
-            prefix = f"{path}/{remote_label}/"
+            prefix = f"meta/{path}/{remote_label}/"
         else:
             x = xxhash.xxh32()
             x.update(path.encode('ascii'))

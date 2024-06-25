@@ -890,7 +890,7 @@ impl PartitionManifest {
         } else {
             format!("{:08x}/meta", hash & bitmask)
         };
-        format!("{}/{}/manifest.{}", prefix, path, extension)
+        format!("{}/meta/{}/manifest.{}", prefix, path, extension)
     }
     pub fn segment_key(
         &self,
