@@ -71,7 +71,11 @@ class ClusterMetadataUploadTest(RedpandaTest):
         itself, so ignores exceptions.
         """
         try:
-            s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+            # NOTE: don't use cluster uuid remote labels, since the metadata
+            # will be from different clusters.
+            s3_snapshot = BucketView(self.redpanda,
+                                     topics=self.topics,
+                                     with_remote_labels=False)
             num_cluster_metas = 0
             for _, meta in s3_snapshot.cluster_metadata.items():
                 if len(meta.cluster_metadata_manifests) > 0 and len(
@@ -153,12 +157,15 @@ class ClusterMetadataUploadTest(RedpandaTest):
         wait_until(lambda: self.bucket_has_metadata(1),
                    timeout_sec=10,
                    backoff_sec=1)
-        orig_cluster_uuid_resp: str = admin.get_cluster_uuid(
-            self.redpanda.nodes[0])
+        orig_cluster_uuid_resp = admin.get_cluster_uuid(self.redpanda.nodes[0])
 
         # Wipe the directory away, simulating a full cluster outage.
+        # NOTE: don't use cluster uuid remote labels, since the metadata will
+        # be from different clusters.
         self.redpanda.stop()
-        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        s3_snapshot = BucketView(self.redpanda,
+                                 topics=self.topics,
+                                 with_remote_labels=False)
         orig_cluster_uuid, orig_highest_manifest_id = \
             check_cluster_metadata_is_consistent(s3_snapshot)
         assert orig_cluster_uuid == orig_cluster_uuid_resp, \
@@ -178,7 +185,11 @@ class ClusterMetadataUploadTest(RedpandaTest):
 
         # The new cluster should upload starting at a higher metadata ID than
         # that used by the first cluster.
-        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        # NOTE: don't use cluster uuid remote labels, since the metadata will
+        # be from different clusters.
+        s3_snapshot = BucketView(self.redpanda,
+                                 topics=self.topics,
+                                 with_remote_labels=False)
         new_cluster_uuid, new_highest_manifest_id = check_cluster_metadata_is_consistent(
             s3_snapshot)
         assert new_cluster_uuid != orig_cluster_uuid
