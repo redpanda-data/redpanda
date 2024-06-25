@@ -427,3 +427,20 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_priority_order) {
       53,
       client_quota_rule::kafka_client_id);
 }
+
+SEASTAR_THREAD_TEST_CASE(quota_translator_watch_test) {
+    reset_configs();
+
+    fixture f;
+
+    bool first_called = false;
+    bool second_called = false;
+
+    f.tr.watch([&first_called]() mutable { first_called = true; });
+    f.tr.watch([&second_called]() mutable { second_called = true; });
+
+    config::shard_local_cfg().target_quota_byte_rate.set_value(P_DEF);
+
+    BOOST_CHECK(first_called);
+    BOOST_CHECK(second_called);
+}

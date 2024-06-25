@@ -97,7 +97,20 @@ client_quota_translator::client_quota_translator(
       config::shard_local_cfg().kafka_client_group_byte_rate_quota.bind())
   , _target_fetch_tp_rate_per_client_group(
       config::shard_local_cfg()
-        .kafka_client_group_fetch_byte_rate_quota.bind()) {}
+        .kafka_client_group_fetch_byte_rate_quota.bind()) {
+    // Each config binding only supports a single watch() callback, so we
+    // create a vector of callbacks to execute whenever they update
+    auto call_config_callbacks = [this]() {
+        for (auto& f : _config_callbacks) {
+            f();
+        }
+    };
+    _target_produce_tp_rate_per_client_group.watch(call_config_callbacks);
+    _target_fetch_tp_rate_per_client_group.watch(call_config_callbacks);
+    _target_partition_mutation_quota.watch(call_config_callbacks);
+    _default_target_produce_tp_rate.watch(call_config_callbacks);
+    _default_target_fetch_tp_rate.watch(call_config_callbacks);
+}
 
 client_quota_value client_quota_translator::get_client_quota_value(
   const tracker_key& quota_id, client_quota_type qt) const {
@@ -250,11 +263,7 @@ client_quota_translator::find_quota_value(const tracker_key& key) const {
 
 void client_quota_translator::watch(on_change_fn&& fn) {
     auto watcher = [fn = std::move(fn)]() { fn(); };
-    _target_produce_tp_rate_per_client_group.watch(watcher);
-    _target_fetch_tp_rate_per_client_group.watch(watcher);
-    _target_partition_mutation_quota.watch(watcher);
-    _default_target_produce_tp_rate.watch(watcher);
-    _default_target_fetch_tp_rate.watch(watcher);
+    _config_callbacks.emplace_back(watcher);
     _quota_store.local().watch(watcher);
 }
 

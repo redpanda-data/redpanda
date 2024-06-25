@@ -145,6 +145,8 @@ private:
     using quota_config
       = std::unordered_map<ss::sstring, config::client_group_quota>;
 
+    using config_callback = std::function<void(void)>;
+
     const quota_config& get_quota_config(client_quota_type qt) const;
     std::optional<uint64_t> get_default_config(client_quota_type qt) const;
 
@@ -153,6 +155,7 @@ private:
 
     ss::sharded<cluster::client_quota::store>& _quota_store;
 
+    std::vector<config_callback> _config_callbacks;
     config::binding<uint32_t> _default_target_produce_tp_rate;
     config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
     config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
