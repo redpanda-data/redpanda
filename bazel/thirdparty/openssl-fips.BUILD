@@ -1,18 +1,33 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
-filegroup(
-    name = "srcs",
-    srcs = glob(["**"]),
+string_flag(
+    name = "build_mode",
+    build_setting_default = "default",
+    values = [
+        "debug",
+        "release",
+        "default",
+    ],
 )
 
 config_setting(
     name = "debug_mode",
-    values = {"compilation_mode": "dbg"},
+    flag_values = {
+        ":build_mode": "debug",
+    },
 )
 
 config_setting(
     name = "release_mode",
-    values = {"compilation_mode": "opt"},
+    flag_values = {
+        ":build_mode": "release",
+    },
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["**"]),
 )
 
 configure_make(
