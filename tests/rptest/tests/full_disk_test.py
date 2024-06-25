@@ -349,7 +349,7 @@ class LocalDiskReportTimeTest(RedpandaTest):
         # params. the size is about 900k larger than what was written,
         # attributable to per record overheads etc... and determined emperically
         # by looking at trace log stats.
-        size = 32441102
+        size = 32664482
         time = 61
         retention = 3600
         expected = retention * (size / time)
