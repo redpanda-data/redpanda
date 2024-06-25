@@ -158,7 +158,9 @@ class Anomalies:
                                    view: BucketView) -> list[OffsetRange]:
         impacted_ranges: list[OffsetRange] = []
         for spill in self.missing_spillover_manifests:
-            meta = SpillMeta.make(ntpr=ntpr, path=spill)
+            meta = SpillMeta.make(ntpr=ntpr,
+                                  path=spill,
+                                  remote_label=view.remote_label)
             impacted_ranges.append(
                 OffsetRange(first_inclusive=meta.base,
                             last_inclusive=meta.last))
