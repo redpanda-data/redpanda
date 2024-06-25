@@ -59,7 +59,7 @@ rp_test(
   BINARY_NAME crypto_bench
   SOURCES crypto_bench.cc
   LIBRARIES
-    Seastar::seastar_perf_testing v::crypto v::random GnuTLS::GnuTLS
+    Seastar::seastar_perf_testing v::crypto v::random
   LABELS crypto
   ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib/ossl-modules"
 )
@@ -72,7 +72,7 @@ rp_test(
   DEFINITIONS
     PERF_FIPS_MODE
   LIBRARIES
-    Seastar::seastar_perf_testing v::crypto v::random GnuTLS::GnuTLS
+    Seastar::seastar_perf_testing v::crypto v::random
   LABELS crypto
   ENV "OPENSSL_CONF=${CMAKE_CURRENT_BINARY_DIR}/test/openssl_conf.cnf;MODULE_DIR=${REDPANDA_DEPS_INSTALL_DIR}/lib/ossl-modules"
 )

@@ -26,15 +26,11 @@ tls_config::get_credentials_builder() const& {
         return ss::do_with(
           ss::tls::credentials_builder{},
           [this](ss::tls::credentials_builder& builder) {
-#ifdef SEASTAR_WITH_TLS_OSSL
               builder.enable_server_precedence();
               builder.set_cipher_string(
                 {tlsv1_2_cipher_string.data(), tlsv1_2_cipher_string.size()});
               builder.set_ciphersuites(
                 {tlsv1_3_ciphersuites.data(), tlsv1_3_ciphersuites.size()});
-#else
-              builder.set_priority_string("PERFORMANCE:%SERVER_PRECEDENCE");
-#endif
               builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
               if (_require_client_auth) {
                   builder.set_client_auth(ss::tls::client_auth::REQUIRE);

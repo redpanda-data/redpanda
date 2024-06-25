@@ -26,27 +26,19 @@ build_tls_credentials(
   std::optional<cloud_storage_clients::ca_trust_file> trust_file,
   ss::logger& log) {
     ss::tls::credentials_builder cred_builder;
-#ifdef SEASTAR_WITH_TLS_OSSL
     cred_builder.set_cipher_string(
       {config::tlsv1_2_cipher_string.data(),
        config::tlsv1_2_cipher_string.size()});
     cred_builder.set_ciphersuites(
       {config::tlsv1_3_ciphersuites.data(),
        config::tlsv1_3_ciphersuites.size()});
-#else
-    // NOTE: this is a pre-defined gnutls priority string that
-    // picks the ciphersuites with 128-bit ciphers which
-    // leads to up to 10x improvement in upload speed, compared
-    // to 256-bit ciphers
-    cred_builder.set_priority_string("PERFORMANCE");
-#endif
     if (trust_file.has_value()) {
         auto file = trust_file.value();
         vlog(log.info, "Use non-default trust file {}", file());
         co_await cred_builder.set_x509_trust_file(
           file().string(), ss::tls::x509_crt_format::PEM);
     } else {
-        // Use GnuTLS defaults, might not work on all systems
+        // Use system defaults, might not work on all systems
         auto ca_file = co_await net::find_ca_file();
         if (ca_file) {
             vlog(
@@ -58,7 +50,7 @@ build_tls_credentials(
         } else {
             vlog(
               log.info,
-              "Trust file can't be detected automatically, using GnuTLS "
+              "Trust file can't be detected automatically, using system "
               "default");
             co_await cred_builder.set_system_trust();
         }
