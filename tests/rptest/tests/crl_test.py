@@ -107,6 +107,8 @@ class CertificateRevocationTest(RedpandaTest):
 
     def setUp(self):
         super().setUp()
+        for n in self.redpanda.nodes:
+            n.account.ssh("sysctl fs.inotify.max_user_instances=512")
         self.admin.create_user("walterP", self.password, self.algorithm)
         self.rpk = RpkTool(
             self.redpanda,
