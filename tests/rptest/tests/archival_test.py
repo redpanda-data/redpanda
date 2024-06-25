@@ -814,8 +814,8 @@ class ArchivalTest(RedpandaTest):
         """Get MD5 checksums of log segments stored in S3 (minio). The paths are
         normalized (<namespace>/<topic>/<partition>_<rev>/...)."""
         def normalize(path):
-            # strip archiver term id from the segment path
-            path = path[9:]
+            # strip archiver cluster UUID prefix from the segment path
+            path = path[37:]
             match = LOG_EXPRESSION.match(path)
             if match:
                 return match[1]
