@@ -113,7 +113,13 @@ generate_no_manifests_expectations(
         });
     }
     expectations.emplace_back(s3_imposter_fixture::expectation{
-      .url = fmt::format("?list-type=2&prefix={}/{}/", tp_ns.ns(), tp_ns.tp()),
+      .url = fmt::format(
+        "?list-type=2&prefix=meta/{}/{}/", tp_ns.ns(), tp_ns.tp()),
+      .body = no_manifests,
+    });
+    expectations.emplace_back(s3_imposter_fixture::expectation{
+      .url = fmt::format(
+        "?list-type=2&prefix=meta/{}/", tp_ns.ns(), tp_ns.tp()),
       .body = no_manifests,
     });
     for (auto& e : additional_expectations) {
@@ -232,7 +238,8 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
 
     const auto& list_topics_req = get_requests()[0];
     BOOST_REQUIRE_EQUAL(
-      list_topics_req.url, "/" + url_base() + "?list-type=2&prefix=00000000/");
+      list_topics_req.url,
+      "/" + url_base() + "?list-type=2&prefix=meta/kafka/");
 
     // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
@@ -240,7 +247,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     }).get();
 
     // No other calls were made
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 16);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 17);
 }
 
 void do_test(fixture& f) {
@@ -254,11 +261,12 @@ void do_test(fixture& f) {
     BOOST_REQUIRE_EQUAL(result, expected);
 
     // Wait until three requests are received:
+    // meta/kafka for labeled topic manifests
     // 1..16. to list bucket for topic meta prefixes
     // 17. to download manifest
-    f.wait_for_n_requests(17, fixture::equals::yes);
+    f.wait_for_n_requests(18, fixture::equals::yes);
 
-    const auto& get_manifest_req = f.get_requests()[16];
+    const auto& get_manifest_req = f.get_requests()[17];
     BOOST_REQUIRE_EQUAL(
       get_manifest_req.url, "/" + f.url_base() + manifest.url);
 
@@ -267,7 +275,7 @@ void do_test(fixture& f) {
         return service.local().is_active() == false;
     }).get();
 
-    BOOST_REQUIRE_EQUAL(f.get_requests().size(), 17);
+    BOOST_REQUIRE_EQUAL(f.get_requests().size(), 18);
 }
 
 FIXTURE_TEST(recovery_with_unparseable_topic_manifest, fixture) {
@@ -362,11 +370,11 @@ FIXTURE_TEST(recovery_result_clear_before_start, fixture) {
       {meta_level, manifest, recovery_state}));
 
     start_recovery();
-    wait_for_n_requests(22);
+    wait_for_n_requests(23);
 
     // 16 to check each manifest prefix, 1 to download the topic manifest, 1 to
     // check recovery results, 1 to delete.
-    const auto& delete_request = get_requests()[18];
+    const auto& delete_request = get_requests()[19];
     BOOST_REQUIRE_EQUAL(delete_request.url, "/" + url_base() + "?delete");
     BOOST_REQUIRE_EQUAL(delete_request.method, "POST");
 }
@@ -408,7 +416,7 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
         return !service.local().is_active();
     }).get();
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 16);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 17);
 }
 
 FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
