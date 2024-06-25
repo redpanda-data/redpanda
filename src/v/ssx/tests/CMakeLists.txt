@@ -32,6 +32,7 @@ rp_test(
   SOURCES
     abort_source_test.cc
     sharded_ptr_test.cc
+    single_sharded.cc
   LIBRARIES v::seastar_testing_main
   ARGS "-- -c 2"
   LABELS ssx
