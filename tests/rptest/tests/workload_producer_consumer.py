@@ -8,6 +8,8 @@
 # by the Apache License, Version 2.0
 
 import uuid
+from packaging.version import Version
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
@@ -71,6 +73,8 @@ class ProducerConsumerWorkload(PWorkload):
         assert topic_cfg["redpanda.remote.read"].value == "true" and topic_cfg[
             "redpanda.remote.write"].value == "true"
 
+        self.begin_version = Version(
+            self.ctx.redpanda.get_version(self.ctx.redpanda.nodes[0]))
         self._producer.start(clean=False)
         self._producer.wait_for_offset_map()
         self._seq_consumer.start(clean=False)
@@ -92,13 +96,20 @@ class ProducerConsumerWorkload(PWorkload):
         query remote storage and compute uploaded_kafka_offset, to check that progress is made
         """
         major_version = version[0:2]
-        quiesce_uploads(self.ctx.redpanda, [self.topic.name], 120)
+        begin_supports_remote_label = self.begin_version > Version("24.2.0")
+        quiesce_uploads(self.ctx.redpanda, [self.topic.name],
+                        120,
+                        with_remote_labels=begin_supports_remote_label)
 
         # get the manifest for a topic and do some checking
         topic_description = self.rpk.describe_topic(self.topic.name)
         partition_zero = next(topic_description)
 
-        bucket = BucketView(self.ctx.redpanda)
+        # If topics were created on a version that doesn't support labels, opt
+        # out of using them in the bucket view.
+        bucket = BucketView(self.ctx.redpanda,
+                            with_remote_labels=begin_supports_remote_label)
+
         manifest = bucket.manifest_for_ntp(self.topic.name, partition_zero.id)
 
         if major_version < (23, 2):
