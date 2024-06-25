@@ -117,6 +117,9 @@ struct topic_recovery_service
 private:
     void set_state(state);
 
+    ss::future<std::vector<cloud_storage::topic_manifest>>
+    find_labeled_recovery_manifests(const recovery_request& request);
+
     /// \brief Returns a list of manifests for topics to create, filtering
     /// against existing topics in cluster. The manifests are downloaded from
     /// the bucket, and the downloads which fail are skipped from the recovery

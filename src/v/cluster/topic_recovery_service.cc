@@ -18,6 +18,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/http/request.hh>
 #include <seastar/util/defer.hh>
 
@@ -33,6 +34,9 @@ namespace {
 
 const std::regex manifest_path_expr{
   R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.(json|bin))REGEX"};
+
+const std::regex labeled_manifest_path_expr{
+  R"REGEX(([^/]+)/([^/]+)/[^/]+/\d+/topic_manifest\.bin)REGEX"};
 
 // Possible prefix for a path which contains a topic manifest file
 const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
@@ -298,12 +302,22 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     _recovery_request.emplace(request);
 
     set_state(state::scanning_bucket);
-    vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
-    auto bucket_contents = co_await collect_manifest_paths(
-      _remote.local(), _as, _config);
+    std::vector<cloud_storage::topic_manifest> manifests;
 
-    auto manifests = co_await filter_existing_topics(
-      bucket_contents, request, model::ns{"kafka"});
+    vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
+    manifests = co_await find_labeled_recovery_manifests(request);
+    if (manifests.empty()) {
+        vlog(
+          cst_log.info,
+          "No matching labeled topic manifests, scanning bucket for hashed "
+          "topic manifests {}",
+          _config.bucket);
+        auto bucket_contents = co_await collect_manifest_paths(
+          _remote.local(), _as, _config);
+
+        manifests = co_await filter_existing_topics(
+          bucket_contents, request, model::ns{"kafka"});
+    }
 
     if (manifests.empty()) {
         vlog(cst_log.info, "exiting recovery, no topics to create");
@@ -424,6 +438,90 @@ topic_recovery_service::create_topics(const recovery_request& request) {
     co_return co_await _topics_frontend.local().autocreate_topics(
       std::move(topic_configs),
       config::shard_local_cfg().create_topic_timeout_ms());
+}
+
+ss::future<std::vector<cloud_storage::topic_manifest>>
+topic_recovery_service::find_labeled_recovery_manifests(
+  const recovery_request& request) {
+    cloud_storage_clients::object_key prefix{"kafka/"};
+    retry_chain_node list_retry(
+      _as, _config.operation_timeout_ms, _config.backoff_ms);
+    vlog(cst_log.debug, "Listing contents with prefix {}", prefix);
+    auto list_res = co_await ss::coroutine::as_future(
+      _remote.local().list_objects(_config.bucket, list_retry, prefix));
+    vlog(cst_log.debug, "Listed contents with prefix {}", prefix);
+    if (list_res.failed()) {
+        vlog(cst_log.error, "Failed to list meta items");
+        vlog(cst_log.error, "AWONG {}", list_res.get_exception());
+        co_return std::vector<cloud_storage::topic_manifest>{};
+    }
+    const auto list_outcome = list_res.get();
+    if (list_outcome.has_error()) {
+        vlog(cst_log.error, "Failed to list meta items");
+        vlog(cst_log.error, "AWONG {}", list_res.get().error());
+        co_return std::vector<cloud_storage::topic_manifest>{};
+    }
+    std::optional<std::regex> requested_pattern = std::nullopt;
+    vlog(cst_log.debug, "AWONG");
+    if (request.topic_names_pattern().has_value()) {
+        vlog(cst_log.debug, "AWONG");
+        requested_pattern.emplace(
+          request.topic_names_pattern().value().data(),
+          request.topic_names_pattern().value().size());
+    }
+    vlog(cst_log.debug, "AWONG");
+    const auto& list_contents = list_outcome.value().contents;
+    vlog(
+      cst_log.debug,
+      "Found {} object with prefix {}",
+      list_contents.size(),
+      prefix);
+    absl::flat_hash_map<ss::sstring, absl::flat_hash_set<ss::sstring>>
+      topic_index;
+    for (const auto& topic : _topic_state.local().all_topics()) {
+        topic_index.try_emplace(topic.ns, absl::flat_hash_set<ss::sstring>{});
+        topic_index[topic.ns].insert(topic.tp);
+    }
+
+    std::vector<topic_manifest> manifests;
+    manifests.reserve(list_contents.size());
+    for (const auto& item : list_contents) {
+        std::smatch matches;
+        const std::string path = item.key;
+        const auto is_topic_manifest = std::regex_match(
+          path.cbegin(), path.cend(), matches, labeled_manifest_path_expr);
+        if (!is_topic_manifest) {
+            continue;
+        }
+
+        const auto& ns = matches[1].str();
+        const auto& tp = matches[2].str();
+        if (
+          requested_pattern.has_value()
+          && !std::regex_search(tp, requested_pattern.value())) {
+            vlog(
+              cst_log.debug,
+              "will skip topic {}, it does not match pattern {}",
+              tp,
+              request.topic_names_pattern().value());
+            continue;
+        }
+
+        if (topic_index.contains(ns) && topic_index[ns].contains(tp)) {
+            vlog(
+              cst_log.debug,
+              "will skip creating {}:{}, topic already exists",
+              ns,
+              tp);
+            continue;
+        }
+
+        if (auto download_r = co_await download_manifest(path);
+            download_r.has_value()) {
+            manifests.push_back(std::move(download_r.value()));
+        }
+    }
+    co_return manifests;
 }
 
 ss::future<std::vector<cloud_storage::topic_manifest>>
