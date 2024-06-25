@@ -38,6 +38,7 @@ fetch_dep(fmt
 set(Seastar_TESTING ON CACHE BOOL "" FORCE)
 set(Seastar_API_LEVEL 6 CACHE STRING "" FORCE)
 set(Seastar_CXX_FLAGS -Wno-error)
+set(Seastar_WITH_OSSL ON CACHE BOOL "" FORCE)
 set(CMAKE_CXX_STANDARD
   "${CMAKE_CXX_STANDARD}"
   CACHE
