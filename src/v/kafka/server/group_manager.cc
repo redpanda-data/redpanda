@@ -1321,7 +1321,8 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
           cluster::txlog.trace,
           "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::commit_group_tx_reply>(
-          make_commit_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+          make_commit_tx_reply(
+            cluster::tx::errc::coordinator_load_in_progress));
     }
     p->catchup_lock->read_unlock();
 
@@ -1332,17 +1333,17 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
           if (error != error_code::none) {
               if (error == error_code::not_coordinator) {
                   return ss::make_ready_future<cluster::commit_group_tx_reply>(
-                    make_commit_tx_reply(cluster::tx_errc::not_coordinator));
+                    make_commit_tx_reply(cluster::tx::errc::not_coordinator));
               } else {
                   return ss::make_ready_future<cluster::commit_group_tx_reply>(
-                    make_commit_tx_reply(cluster::tx_errc::timeout));
+                    make_commit_tx_reply(cluster::tx::errc::timeout));
               }
           }
 
           auto group = get_group(r.group_id);
           if (!group) {
               return ss::make_ready_future<cluster::commit_group_tx_reply>(
-                make_commit_tx_reply(cluster::tx_errc::timeout));
+                make_commit_tx_reply(cluster::tx::errc::timeout));
           }
 
           return group->handle_commit_tx(std::move(r))
@@ -1360,7 +1361,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
           cluster::txlog.trace,
           "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::begin_group_tx_reply>(
-          make_begin_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+          make_begin_tx_reply(cluster::tx::errc::coordinator_load_in_progress));
     }
     p->catchup_lock->read_unlock();
 
@@ -1370,8 +1371,8 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
               auto ec = error == error_code::not_coordinator
-                          ? cluster::tx_errc::not_coordinator
-                          : cluster::tx_errc::timeout;
+                          ? cluster::tx::errc::not_coordinator
+                          : cluster::tx::errc::timeout;
               return ss::make_ready_future<cluster::begin_group_tx_reply>(
                 make_begin_tx_reply(ec));
           }
@@ -1408,7 +1409,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
           cluster::txlog.trace,
           "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::abort_group_tx_reply>(
-          make_abort_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+          make_abort_tx_reply(cluster::tx::errc::coordinator_load_in_progress));
     }
     p->catchup_lock->read_unlock();
 
@@ -1418,8 +1419,8 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
               auto ec = error == error_code::not_coordinator
-                          ? cluster::tx_errc::not_coordinator
-                          : cluster::tx_errc::timeout;
+                          ? cluster::tx::errc::not_coordinator
+                          : cluster::tx::errc::timeout;
               return ss::make_ready_future<cluster::abort_group_tx_reply>(
                 make_abort_tx_reply(ec));
           }
@@ -1427,7 +1428,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
           auto group = get_group(r.group_id);
           if (!group) {
               return ss::make_ready_future<cluster::abort_group_tx_reply>(
-                make_abort_tx_reply(cluster::tx_errc::timeout));
+                make_abort_tx_reply(cluster::tx::errc::timeout));
           }
 
           return group->handle_abort_tx(std::move(r))

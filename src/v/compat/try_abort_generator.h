@@ -35,9 +35,9 @@ struct instance_generator<cluster::try_abort_reply> {
         return cluster::try_abort_reply(
           cluster::try_abort_reply::committed_type(tests::random_bool()),
           cluster::try_abort_reply::aborted_type(tests::random_bool()),
-          cluster::tx_errc(random_generators::get_int<int>(
-            static_cast<int>(cluster::tx_errc::none),
-            static_cast<int>(cluster::tx_errc::invalid_txn_state))));
+          cluster::tx::errc(random_generators::get_int<int>(
+            static_cast<int>(cluster::tx::errc::none),
+            static_cast<int>(cluster::tx::errc::invalid_txn_state))));
     }
     static std::vector<cluster::try_abort_reply> limits() { return {}; }
 };

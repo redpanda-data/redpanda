@@ -53,10 +53,10 @@ auto group_router::route_tx(Request&& r, FwdFunc func) {
     if (!m) {
         resp_type reply;
         // route_tx routes internal intra cluster so it uses
-        // cluster::tx_errc instead of kafka::error_code
+        // cluster::tx::errc instead of kafka::error_code
         // because the latter is part of the kafka protocol
         // we can't extend it
-        reply.ec = cluster::tx_errc::not_coordinator;
+        reply.ec = cluster::tx::errc::not_coordinator;
         return ss::make_ready_future<resp_type>(reply);
     }
     r.ntp = std::move(m->first);

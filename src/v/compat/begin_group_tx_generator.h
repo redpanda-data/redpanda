@@ -54,16 +54,16 @@ struct instance_generator<cluster::begin_group_tx_reply> {
     static cluster::begin_group_tx_reply random() {
         return cluster::begin_group_tx_reply(
           tests::random_named_int<model::term_id>(),
-          instance_generator<cluster::tx_errc>::random());
+          instance_generator<cluster::tx::errc>::random());
     }
     static std::vector<cluster::begin_group_tx_reply> limits() {
         return {
           cluster::begin_group_tx_reply(
             model::term_id(std::numeric_limits<int64_t>::min()),
-            cluster::tx_errc::none),
+            cluster::tx::errc::none),
           cluster::begin_group_tx_reply(
             model::term_id(std::numeric_limits<int64_t>::max()),
-            cluster::tx_errc::invalid_txn_state),
+            cluster::tx::errc::invalid_txn_state),
         };
     }
 };

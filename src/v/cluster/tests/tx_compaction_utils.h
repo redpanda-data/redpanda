@@ -272,7 +272,7 @@ public:
             RPTEST_REQUIRE_EQ_CORO(
               co_await _ctx._stm->commit_tx(
                 _ctx._pid, model::tx_seq{0}, tx_timeout),
-              cluster::tx_errc::none);
+              cluster::tx::errc::none);
         }
         tx_op_type type() override { return tx_op_type::commit; }
         ss::sstring debug() override {
@@ -288,7 +288,7 @@ public:
             RPTEST_REQUIRE_EQ_CORO(
               co_await _ctx._stm->abort_tx(
                 _ctx._pid, model::tx_seq{0}, tx_timeout),
-              cluster::tx_errc::none);
+              cluster::tx::errc::none);
         }
         tx_op_type type() override { return tx_op_type::abort; }
         ss::sstring debug() override {

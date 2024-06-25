@@ -138,14 +138,14 @@ public:
       ss::sharded<tx::producer_state_manager>&,
       std::optional<model::vcluster_id>);
 
-    ss::future<checked<model::term_id, tx_errc>> begin_tx(
+    ss::future<checked<model::term_id, tx::errc>> begin_tx(
       model::producer_identity,
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<tx_errc> commit_tx(
+    ss::future<tx::errc> commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
-    ss::future<tx_errc> abort_tx(
+    ss::future<tx::errc> abort_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     /**
      * Returns the next after the last one decided. If there are no ongoing
@@ -233,19 +233,19 @@ private:
     tx::producer_ptr maybe_create_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity);
     ss::future<> reset_producers();
-    ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
+    ss::future<checked<model::term_id, tx::errc>> do_begin_tx(
       model::term_id,
       model::producer_identity pid,
       tx::producer_ptr,
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<tx_errc> do_commit_tx(
+    ss::future<tx::errc> do_commit_tx(
       model::term_id synced_term,
       tx::producer_ptr,
       model::tx_seq,
       model::timeout_clock::duration);
-    ss::future<tx_errc> do_abort_tx(
+    ss::future<tx::errc> do_abort_tx(
       model::term_id,
       tx::producer_ptr,
       std::optional<model::tx_seq>,
@@ -314,7 +314,7 @@ private:
     void abort_old_txes();
     ss::future<std::chrono::milliseconds> do_abort_old_txes();
     ss::future<> try_abort_old_tx(tx::producer_ptr);
-    ss::future<tx_errc> do_try_abort_old_tx(tx::producer_ptr);
+    ss::future<tx::errc> do_try_abort_old_tx(tx::producer_ptr);
     void maybe_rearm_autoabort_timer(tx::time_point_type);
 
     abort_origin get_abort_origin(tx::producer_ptr, model::tx_seq) const;

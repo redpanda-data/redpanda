@@ -13,8 +13,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
-#include "cluster/types.h"
-#include "model/metadata.h"
+#include "cluster/tx_protocol_types.h"
 #include "rpc/fwd.h"
 
 #include <seastar/core/abort_source.hh>

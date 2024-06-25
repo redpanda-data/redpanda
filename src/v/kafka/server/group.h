@@ -13,8 +13,8 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_protocol_types.h"
 #include "cluster/tx_utils.h"
-#include "cluster/types.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "kafka/group_probe.h"
@@ -106,9 +106,9 @@ using enable_group_metrics = ss::bool_class<struct enable_gr_metrics_tag>;
 std::ostream& operator<<(std::ostream&, group_state gs);
 
 ss::sstring group_state_to_kafka_name(group_state);
-cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
-cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
-cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
+cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx::errc);
+cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx::errc);
+cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx::errc);
 kafka::error_code map_store_offset_error_code(std::error_code);
 
 /// \brief A Kafka group.
@@ -865,7 +865,7 @@ private:
     void abort_old_txes();
     ss::future<> do_abort_old_txes();
     ss::future<> try_abort_old_tx(model::producer_identity);
-    ss::future<cluster::tx_errc> do_try_abort_old_tx(model::producer_identity);
+    ss::future<cluster::tx::errc> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 

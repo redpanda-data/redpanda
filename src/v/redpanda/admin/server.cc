@@ -1121,14 +1121,17 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
         }
-    } else if (ec.category() == cluster::tx_error_category()) {
-        switch (cluster::tx_errc(ec.value())) {
-        case cluster::tx_errc::leader_not_found:
+    } else if (ec.category() == cluster::tx::error_category()) {
+        switch (cluster::tx::errc(ec.value())) {
+        case cluster::tx::errc::leader_not_found:
             throw co_await redirect_to_leader(req, ntp);
-        case cluster::tx_errc::pid_not_found:
+        case cluster::tx::errc::pid_not_found:
             throw ss::httpd::not_found_exception(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
-        case cluster::tx_errc::partition_not_found: {
+        case cluster::tx::errc::tx_id_not_found:
+            throw ss::httpd::not_found_exception(fmt_with_ctx(
+              fmt::format, "Unable to find requested transactional id"));
+        case cluster::tx::errc::partition_not_found: {
             ss::sstring error_msg;
             if (
               ntp.tp.topic == model::tx_manager_topic
@@ -1140,7 +1143,7 @@ ss::future<> admin_server::throw_on_error(
             }
             throw ss::httpd::bad_request_exception(error_msg);
         }
-        case cluster::tx_errc::not_coordinator:
+        case cluster::tx::errc::not_coordinator:
             throw ss::httpd::base_exception(
               fmt::format(
                 "Node not a coordinator or coordinator leader is not "
