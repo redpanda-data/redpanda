@@ -46,6 +46,8 @@ namespace config {
 /// can not depend on any other module to prevent cyclic dependencies.
 
 struct configuration final : public config_store {
+    constexpr static auto target_produce_quota_byte_rate_default = 2_GiB;
+
     // WAL
     bounded_property<uint64_t> log_segment_size;
     property<std::optional<uint64_t>> log_segment_size_min;
@@ -498,6 +500,11 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
     bounded_property<size_t> leader_balancer_transfer_limit_per_shard;
+
+    property<bool> core_balancing_on_core_count_change;
+    property<bool> core_balancing_continuous;
+    property<std::chrono::milliseconds> core_balancing_debounce_timeout;
+
     property<int> internal_topic_replication_factor;
     property<std::chrono::milliseconds> health_manager_tick_interval;
 

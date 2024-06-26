@@ -70,8 +70,9 @@ result<schema_version> parse_numerical_schema_version(const ss::sstring& ver) {
 
 result<std::optional<schema_version>>
 parse_schema_version(const ss::sstring& ver) {
-    return ver == "latest" ? std::optional<schema_version>{}
-                           : parse_numerical_schema_version(ver).value();
+    return (ver == "latest" || ver == "-1")
+             ? std::optional<schema_version>{}
+             : parse_numerical_schema_version(ver).value();
 }
 
 ss::future<server::reply_t>
@@ -421,12 +422,15 @@ get_subjects(server::request_t rq, server::reply_t rp) {
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
         .value_or(include_deleted::no)};
+    auto subject_prefix{
+      parse::query_param<std::optional<ss::sstring>>(*rq.req, "subjectPrefix")};
     rq.req.reset();
 
     // List-type request: must ensure we see latest writes
     co_await rq.service().writer().read_sync();
 
-    auto subjects = co_await rq.service().schema_store().get_subjects(inc_del);
+    auto subjects = co_await rq.service().schema_store().get_subjects(
+      inc_del, subject_prefix);
     rp.rep->write_body(
       "json",
       ss::json::stream_range_as_array(

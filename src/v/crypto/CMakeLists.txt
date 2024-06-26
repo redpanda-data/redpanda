@@ -1,8 +1,4 @@
-if (RP_OPENSSL_VERSION)
-  find_package(OpenSSL ${RP_OPENSSL_VERSION} EXACT REQUIRED)
-else()
-  find_package(OpenSSL 3.0.0 REQUIRED)
-endif()
+find_package(OpenSSL 3.0.0 REQUIRED)
 
 v_cc_library(
     NAME crypto

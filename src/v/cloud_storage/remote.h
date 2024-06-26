@@ -258,13 +258,6 @@ public:
     /// \return future that returns success code
     ss::future<download_result> maybe_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
-      const std::pair<manifest_format, remote_manifest_path>& format_key,
-      base_manifest& manifest,
-      retry_chain_node& parent);
-
-    /// compatibility version of maybe_download_manifest for json format
-    ss::future<download_result> maybe_download_manifest(
-      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
@@ -289,6 +282,12 @@ public:
     ss::future<upload_result> upload_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,
+      retry_chain_node& parent);
+
+    ss::future<upload_result> upload_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
+      const base_manifest& manifest,
+      const remote_manifest_path& key,
       retry_chain_node& parent);
 
     /// \brief Upload segment to S3

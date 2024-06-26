@@ -302,7 +302,9 @@ class Store:
             for topic in listdirs(join(self.base_dir, nspace)):
                 for part_ntp_id in listdirs(join(self.base_dir, nspace,
                                                  topic)):
-                    assert re.match("^\\d+_\\d+$", part_ntp_id)
+                    assert re.match("^\\d+_\\d+$", part_ntp_id), \
+                        "ntp dir at {} does not match expected format. Wrong --path or extra directories present?"\
+                        .format(join(self.base_dir, nspace, topic, part_ntp_id))
                     [part, ntp_id] = part_ntp_id.split("_")
                     ntp = Ntp(self.base_dir, nspace, topic, int(part),
                               int(ntp_id))

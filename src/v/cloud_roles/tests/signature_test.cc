@@ -226,7 +226,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation_many_query_params) {
 
 /// Test is based on this example
 /// https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html
-SEASTAR_THREAD_TEST_CASE(test_gnutls) {
+SEASTAR_THREAD_TEST_CASE(test_sig_gen) {
     std::string ksecret = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
     std::string date = "20150830";
     std::string region = "us-east-1";

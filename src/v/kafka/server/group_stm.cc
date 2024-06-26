@@ -3,6 +3,7 @@
 #include "cluster/logger.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/types.h"
+#include "model/record.h"
 
 namespace kafka {
 
@@ -23,31 +24,21 @@ void group_stm::update_offset(
       .log_offset = offset, .metadata = std::move(meta)};
 }
 
-void group_stm::update_prepared(
-  model::offset offset, group_tx::offsets_metadata val) {
-    auto tx = group::ongoing_tx_offsets{.pid = val.pid, .tx_seq = val.tx_seq};
-
-    auto [prepared_it, inserted] = _ongoing_tx_offsets.try_emplace(
-      tx.pid.get_id(), tx);
-    if (!inserted && prepared_it->second.pid.epoch > tx.pid.epoch) {
+void group_stm::update_tx_offset(
+  model::offset offset, group_tx::offsets_metadata offset_md) {
+    auto it = _producers.find(offset_md.pid.get_id());
+    if (
+      it == _producers.end() || it->second.tx == nullptr
+      || offset_md.pid.epoch != it->second.epoch) {
         vlog(
           cluster::txlog.warn,
-          "a logged tx {} is fenced off by prev logged tx {}",
-          val.pid,
-          prepared_it->second.pid);
+          "producer {} not found, skipping offsets update",
+          offset_md.pid);
         return;
-    } else if (!inserted && prepared_it->second.pid.epoch < tx.pid.epoch) {
-        vlog(
-          cluster::txlog.warn,
-          "a logged tx {} overwrites prev logged tx {}",
-          val.pid,
-          prepared_it->second.pid);
-        prepared_it->second.pid = tx.pid;
-        prepared_it->second.offsets.clear();
     }
 
     const auto now = model::timestamp::now();
-    for (const auto& tx_offset : val.offsets) {
+    for (const auto& tx_offset : offset_md.offsets) {
         group::offset_metadata md{
           .log_offset = offset,
           .offset = tx_offset.offset,
@@ -56,26 +47,25 @@ void group_stm::update_prepared(
           .commit_timestamp = now,
           .expiry_timestamp = std::nullopt,
         };
-        prepared_it->second.offsets[tx_offset.tp] = md;
+        it->second.tx->offsets[tx_offset.tp] = md;
     }
 }
 
 void group_stm::commit(model::producer_identity pid) {
-    auto prepared_it = _ongoing_tx_offsets.find(pid.get_id());
-    if (prepared_it == _ongoing_tx_offsets.end()) {
+    auto it = _producers.find(pid.get_id());
+    if (
+      it == _producers.end() || it->second.tx == nullptr
+      || pid.epoch != it->second.epoch) {
         // missing prepare may happen when the consumer log gets truncated
-        vlog(cluster::txlog.trace, "can't find ongoing tx {}", pid);
-        return;
-    } else if (prepared_it->second.pid.epoch != pid.epoch) {
         vlog(
           cluster::txlog.warn,
-          "a comitting tx {} doesn't match ongoing tx {}",
-          pid,
-          prepared_it->second.pid);
+          "unable to find ongoing transaction for producer: {}, skipping "
+          "commit",
+          pid);
         return;
     }
 
-    for (const auto& [tp, md] : prepared_it->second.offsets) {
+    for (const auto& [tp, md] : it->second.tx->offsets) {
         offset_metadata_value val{
           .offset = md.offset,
           .leader_epoch
@@ -90,25 +80,41 @@ void group_stm::commit(model::producer_identity pid) {
         _offsets[tp] = logged_metadata{
           .log_offset = md.log_offset, .metadata = std::move(val)};
     }
-
-    _ongoing_tx_offsets.erase(prepared_it);
-    _tx_data.erase(pid);
-    _timeouts.erase(pid);
+    it->second.tx.reset();
 }
 
 void group_stm::abort(
   model::producer_identity pid, [[maybe_unused]] model::tx_seq tx_seq) {
-    auto prepared_it = _ongoing_tx_offsets.find(pid.get_id());
-    if (
-      prepared_it
-      == _ongoing_tx_offsets.end()) { // NOLINT(bugprone-branch-clone)
-        return;
-    } else if (prepared_it->second.pid.epoch != pid.epoch) {
-        return;
+    auto it = _producers.find(pid.get_id());
+    if (it != _producers.end() && it->second.epoch == pid.get_epoch()) {
+        it->second.tx.reset();
     }
-    _ongoing_tx_offsets.erase(prepared_it);
-    _tx_data.erase(pid);
-    _timeouts.erase(pid);
+}
+
+void group_stm::try_set_fence(
+  model::producer_id id, model::producer_epoch epoch) {
+    auto [it, _] = _producers.try_emplace(id, epoch);
+    if (it->second.epoch < epoch) {
+        it->second.epoch = epoch;
+    }
+}
+
+void group_stm::try_set_fence(
+  model::producer_id id,
+  model::producer_epoch epoch,
+  model::tx_seq txseq,
+  model::timeout_clock::duration transaction_timeout_ms,
+  model::partition_id tm_partition) {
+    auto [it, _] = _producers.try_emplace(id, epoch);
+    if (it->second.epoch <= epoch) {
+        it->second.epoch = epoch;
+        it->second.tx = std::make_unique<ongoing_tx>(ongoing_tx{
+          .tx_seq = txseq,
+          .tm_partition = tm_partition,
+          .timeout = transaction_timeout_ms,
+          .offsets = {},
+        });
+    }
 }
 
 } // namespace kafka

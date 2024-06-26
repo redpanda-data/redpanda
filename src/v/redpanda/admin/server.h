@@ -532,6 +532,8 @@ private:
 
     ss::future<ss::json::json_return_type>
       trigger_on_demand_rebalance_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      trigger_shard_rebalance_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type>
       get_reconfigurations_handler(std::unique_ptr<ss::http::request>);

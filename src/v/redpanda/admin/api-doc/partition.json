@@ -300,6 +300,21 @@
             ]
         },
         {
+            "path": "/v1/partitions/rebalance_cores",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Trigger core placement rebalancing for partitions in this broker.",
+                    "type": "void",
+                    "nickname": "trigger_partitions_shard_rebalance",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration",
             "operations": [
                 {

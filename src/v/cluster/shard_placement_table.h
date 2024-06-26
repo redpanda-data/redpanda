@@ -172,6 +172,12 @@ public:
     /// Must be called on assignment_shard_id.
     std::optional<shard_placement_target> get_target(const model::ntp&) const;
 
+    /// Must be called on assignment_shard_id. Requires external synchronization
+    /// i.e. the assumption is that there are no concurrent set_target() calls.
+    ss::future<>
+      for_each_ntp(ss::noncopyable_function<void(
+                     const model::ntp&, const shard_placement_target&)>) const;
+
     std::optional<placement_state> state_on_this_shard(const model::ntp&) const;
 
     const ntp2state_t& shard_local_states() const { return _states; }
@@ -247,5 +253,15 @@ private:
 };
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);
+
+/// Enum with all key types in the shard_placement key space. All keys in this
+/// key space must be prefixed with the serialized type. Enum type is
+/// irrelevant, as serde will serialize to 32 bit anyway.
+enum class shard_placement_kvstore_key_type {
+    persistence_enabled = 0,
+    assignment = 1,
+    current_state = 2,
+    balancer_state = 3,
+};
 
 } // namespace cluster

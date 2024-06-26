@@ -813,6 +813,14 @@ class Admin:
 
         return self._request('post', path, node=node)
 
+    def trigger_cores_rebalance(self, node):
+        """
+        Trigger core placement rebalancing for partitions in this node.
+        """
+        path = f"partitions/rebalance_cores"
+
+        return self._request('post', path, node=node)
+
     def list_reconfigurations(self, node=None):
         """
         List pending reconfigurations

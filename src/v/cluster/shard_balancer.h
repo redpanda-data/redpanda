@@ -14,6 +14,7 @@
 #include "cluster/controller_backend.h"
 #include "cluster/shard_placement_table.h"
 #include "container/chunked_hash_map.h"
+#include "random/simple_time_jitter.h"
 #include "ssx/event.h"
 #include "utils/mutex.h"
 
@@ -36,8 +37,12 @@ public:
     shard_balancer(
       ss::sharded<shard_placement_table>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<storage::api>&,
       ss::sharded<topic_table>&,
-      ss::sharded<controller_backend>&);
+      ss::sharded<controller_backend>&,
+      config::binding<bool> balancing_on_core_count_change,
+      config::binding<bool> balancing_continuous,
+      config::binding<std::chrono::milliseconds> debounce_timeout);
 
     ss::future<> start();
     ss::future<> stop();
@@ -50,14 +55,23 @@ public:
     /// Manually set shard placement for an ntp that has a replica on this node.
     ss::future<errc> reassign_shard(model::ntp, ss::shard_id);
 
+    /// Manually trigger shard placement rebalancing for partitions in this
+    /// node.
+    errc trigger_rebalance();
+
 private:
     void process_delta(const topic_table::delta&);
 
     ss::future<> assign_fiber();
     ss::future<> do_assign_ntps(mutex::units& lock);
 
+    ss::future<> balance_on_core_count_change(mutex::units& lock);
+    void balance_timer_callback();
+    ss::future<> do_balance(mutex::units& lock);
+
     void maybe_assign(
       const model::ntp&,
+      bool can_reassign,
       chunked_hash_map<model::ntp, std::optional<shard_placement_target>>&);
 
     ss::future<> set_target(
@@ -88,11 +102,18 @@ private:
 private:
     shard_placement_table& _shard_placement;
     features::feature_table& _features;
+    storage::kvstore& _kvstore;
     ss::sharded<topic_table>& _topics;
     ss::sharded<controller_backend>& _controller_backend;
     model::node_id _self;
 
+    config::binding<bool> _balancing_on_core_count_change;
+    config::binding<bool> _balancing_continuous;
+    config::binding<std::chrono::milliseconds> _debounce_timeout;
+    simple_time_jitter<ss::lowres_clock> _debounce_jitter;
+
     cluster::notification_id_type _topic_table_notify_handle;
+    ss::timer<ss::lowres_clock> _balance_timer;
     ssx::event _wakeup_event{"shard_balancer"};
     mutex _mtx{"shard_balancer"};
     ss::gate _gate;

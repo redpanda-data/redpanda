@@ -500,7 +500,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "1073741824",
        .visibility = visibility::user},
-      2_GiB,
+      target_produce_quota_byte_rate_default,
       {.min = 1_MiB})
   , target_fetch_quota_byte_rate(
       *this,
@@ -2776,6 +2776,28 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       512,
       {.min = 1, .max = 2048})
+  , core_balancing_on_core_count_change(
+      *this,
+      "core_balancing_on_core_count_change",
+      "If set to 'true', and if after a restart the number of cores changes, "
+      "Redpanda will move partitions between cores to maintain balanced "
+      "partition distribution.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
+  , core_balancing_continuous(
+      *this,
+      "core_balancing_continuous",
+      "If set to 'true', move partitions between cores in runtime to maintain "
+      "balanced partition distribution.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , core_balancing_debounce_timeout(
+      *this,
+      "core_balancing_debounce_timeout",
+      "Interval, in milliseconds, between trigger and invocation of core "
+      "balancing.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , internal_topic_replication_factor(
       *this,
       "internal_topic_replication_factor",
