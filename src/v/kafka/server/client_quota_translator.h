@@ -65,7 +65,7 @@ enum class client_quota_type {
     partition_mutation_quota
 };
 
-static constexpr std::array all_client_quota_types = {
+inline constexpr std::array all_client_quota_types = {
   client_quota_type::produce_quota,
   client_quota_type::fetch_quota,
   client_quota_type::partition_mutation_quota};
@@ -90,7 +90,7 @@ enum class client_quota_rule {
     kafka_client_id
 };
 
-static constexpr std::array all_client_quota_rules = {
+inline constexpr std::array all_client_quota_rules = {
   client_quota_rule::not_applicable,
   client_quota_rule::kafka_client_default,
   client_quota_rule::cluster_client_default,
