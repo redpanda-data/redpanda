@@ -46,6 +46,8 @@ namespace config {
 /// can not depend on any other module to prevent cyclic dependencies.
 
 struct configuration final : public config_store {
+    constexpr static auto target_produce_quota_byte_rate_default = 2_GiB;
+
     // WAL
     bounded_property<uint64_t> log_segment_size;
     property<std::optional<uint64_t>> log_segment_size_min;
