@@ -85,7 +85,9 @@ public:
       include_deleted inc_dec);
 
     ///\brief Return a list of subjects.
-    ss::future<chunked_vector<subject>> get_subjects(include_deleted inc_del);
+    ss::future<chunked_vector<subject>> get_subjects(
+      include_deleted inc_del,
+      std::optional<ss::sstring> subject_prefix = std::nullopt);
 
     ///\brief Return whether there are any subjects.
     ss::future<bool> has_subjects(include_deleted inc_del);
