@@ -254,8 +254,9 @@ ss::future<bool> sharded_store::has_schema(schema_id id) {
       });
 }
 
-ss::future<subject_schema> sharded_store::has_schema(canonical_schema schema) {
-    auto versions = co_await get_versions(schema.sub(), include_deleted::no);
+ss::future<subject_schema>
+sharded_store::has_schema(canonical_schema schema, include_deleted inc_del) {
+    auto versions = co_await get_versions(schema.sub(), inc_del);
 
     try {
         co_await validate_schema(schema);
@@ -266,8 +267,7 @@ ss::future<subject_schema> sharded_store::has_schema(canonical_schema schema) {
     std::optional<subject_schema> sub_schema;
     for (auto ver : versions) {
         try {
-            auto res = co_await get_subject_schema(
-              schema.sub(), ver, include_deleted::no);
+            auto res = co_await get_subject_schema(schema.sub(), ver, inc_del);
             if (schema.def() == res.schema.def()) {
                 sub_schema.emplace(std::move(res));
                 break;

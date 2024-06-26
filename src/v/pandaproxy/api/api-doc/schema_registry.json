@@ -467,6 +467,12 @@
             "type": "string"
           },
           {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
             "name": "schema_def",
             "in": "body",
             "schema":  {
@@ -480,6 +486,12 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/subject_schema"
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
             }
           },
           "409": {

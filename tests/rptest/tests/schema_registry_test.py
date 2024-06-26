@@ -361,13 +361,15 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _post_subjects_subject(self,
                                subject,
                                data,
+                               deleted=False,
                                headers=HTTP_POST_HEADERS,
                                **kwargs):
-        return self._request("POST",
-                             f"subjects/{subject}",
-                             headers=headers,
-                             data=data,
-                             **kwargs)
+        return self._request(
+            "POST",
+            f"subjects/{subject}{'?deleted=true' if deleted else ''}",
+            headers=headers,
+            data=data,
+            **kwargs)
 
     def _post_subjects_subject_versions(self,
                                         subject,
@@ -826,6 +828,55 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result_raw = self._post_subjects_subject(subject=subject,
                                                  data=json.dumps(
                                                      {"schema": schema3_def}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40403
+        assert result["message"] == f"Schema not found"
+
+        self.logger.info("Soft deleting the schema")
+        result_raw = self._delete_subject_version(subject=subject,
+                                                  version=1,
+                                                  permanent=False)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.info(
+            "Posting deleted existing schema should be fail (no subject)")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": schema1_def}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == f"Subject '{subject}' not found."
+
+        self.logger.info("Posting deleted existing schema should be success")
+        result_raw = self._post_subjects_subject(
+            subject=subject,
+            data=json.dumps({"schema": schema1_def}, ),
+            deleted=True)
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["subject"] == subject
+        assert result["id"] == 1
+        assert result["version"] == 1
+        assert result["schema"]
+
+        self.logger.info("Posting compatible schema should be success")
+        result_raw = self._post_subjects_subject_versions(
+            subject=subject, data=json.dumps({"schema": schema2_def}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.info(
+            "Posting deleted existing schema should be fail (no schema)")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": schema1_def}))
         self.logger.info(result_raw)
         self.logger.info(result_raw.content)
         assert result_raw.status_code == requests.codes.not_found

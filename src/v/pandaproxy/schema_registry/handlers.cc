@@ -329,12 +329,15 @@ post_subject(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
-    vlog(plog.debug, "post_subject subject='{}'", sub);
+    auto inc_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
+    vlog(plog.debug, "post_subject subject='{}', deleted='{}'", sub, inc_del);
     // We must sync
     co_await rq.service().writer().read_sync();
 
     // Force 40401 if no subject
-    co_await rq.service().schema_store().get_versions(sub, include_deleted::no);
+    co_await rq.service().schema_store().get_versions(sub, inc_del);
 
     canonical_schema schema;
     try {
@@ -353,7 +356,8 @@ post_subject(server::request_t rq, server::reply_t rp) {
 
     rq.req.reset();
 
-    auto sub_schema = co_await rq.service().schema_store().has_schema(schema);
+    auto sub_schema = co_await rq.service().schema_store().has_schema(
+      schema, inc_del);
 
     auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
       .schema{std::move(sub_schema.schema)},
