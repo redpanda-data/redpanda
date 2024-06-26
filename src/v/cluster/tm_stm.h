@@ -364,18 +364,6 @@ private:
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
     ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
-    std::chrono::milliseconds _sync_timeout;
-    config::binding<std::chrono::milliseconds> _transactional_id_expiration;
-    absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
-      _pid_tx_id;
-    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
-      _tx_locks;
-    ss::sharded<features::feature_table>& _feature_table;
-    ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
-
-    mutex _tx_thrashing_lock{"tm_stm::tx_thrashing_lock"};
-    prefix_logger _ctx_log;
-
     ss::future<> apply(const model::record_batch& b) final;
 
     ss::future<>
@@ -400,6 +388,19 @@ private:
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch);
 
     model::record_batch serialize_tx(tx_metadata tx);
+
+private:
+    std::chrono::milliseconds _sync_timeout;
+    config::binding<std::chrono::milliseconds> _transactional_id_expiration;
+    absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
+      _pid_tx_id;
+    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
+      _tx_locks;
+    ss::sharded<features::feature_table>& _feature_table;
+    ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
+
+    mutex _tx_thrashing_lock{"tm_stm::tx_thrashing_lock"};
+    prefix_logger _ctx_log;
 };
 
 inline txlock_unit::~txlock_unit() noexcept {
