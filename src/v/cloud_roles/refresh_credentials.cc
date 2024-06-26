@@ -361,7 +361,7 @@ ss::future<> refresh_credentials::impl::init_tls_certs(ss::sstring name) {
         co_await b.set_x509_trust_file(
           ca_file.value(), ss::tls::x509_crt_format::PEM);
     } else {
-        vlog(clrl_log.info, "Using GnuTLS default");
+        vlog(clrl_log.info, "Using system default");
         co_await b.set_system_trust();
     }
 

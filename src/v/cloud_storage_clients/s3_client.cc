@@ -42,7 +42,6 @@
 #include <boost/beast/http/status.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
-#include <gnutls/crypto.h>
 
 #include <bit>
 #include <exception>

@@ -38,7 +38,6 @@
 #include <boost/optional/optional.hpp>
 #include <boost/outcome/detail/value_storage.hpp>
 #include <boost/system/system_error.hpp>
-#include <gnutls/gnutls.h>
 
 #include <chrono>
 #include <exception>

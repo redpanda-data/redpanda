@@ -16,11 +16,8 @@ please keep this up to date with every new library use.
 | CRoaring        | Apache License 2                   |
 | clang           | Apache License 2                   |
 | crc32c          | BSD 3                              |
-| cryptopp        | Public Domain                      |
 | DPDK            | BSD                                |
 | fmt             | BSD                                |
-| gmp             | LGPL v3                            |
-| gnutls          | LGPL v2.1                          |
 | HdrHistogram    | BSD 2                              |
 | hwloc           | BSD                                |
 | krb5            | MIT                                |
@@ -30,7 +27,6 @@ please keep this up to date with every new library use.
 | libpciaccess    | MIT                                |
 | lksctp-tools    | LGPL v2.1                          |
 | lz4             | BSD 2                              |
-| nettle          | LGPL v3                            |
 | OpenSSL v3      | Apache License 2                   |
 | protobuf        | Apache License 2                   |
 | rapidjson       | MIT                                |
