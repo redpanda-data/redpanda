@@ -16,6 +16,7 @@
 #include "cluster/state_machine_registry.h"
 #include "cluster/tm_stm_cache.h"
 #include "cluster/tx_hash_ranges.h"
+#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -392,9 +393,9 @@ private:
 private:
     std::chrono::milliseconds _sync_timeout;
     config::binding<std::chrono::milliseconds> _transactional_id_expiration;
-    absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
+    chunked_hash_map<model::producer_identity, kafka::transactional_id>
       _pid_tx_id;
-    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
+    chunked_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
