@@ -215,7 +215,10 @@ ss::future<> state_machine_manager::apply_raft_snapshot() {
     }
 
     auto fut = co_await ss::coroutine::as_future(
-      do_apply_raft_snapshot(std::move(snapshot->metadata), snapshot->reader));
+      acquire_background_apply_mutexes().then([&, this](auto units) mutable {
+          return do_apply_raft_snapshot(
+            std::move(snapshot->metadata), snapshot->reader, std::move(units));
+      }));
     co_await snapshot->reader.close();
     if (fut.failed()) {
         const auto e = fut.get_exception();
@@ -228,7 +231,9 @@ ss::future<> state_machine_manager::apply_raft_snapshot() {
 }
 
 ss::future<> state_machine_manager::do_apply_raft_snapshot(
-  snapshot_metadata metadata, storage::snapshot_reader& reader) {
+  snapshot_metadata metadata,
+  storage::snapshot_reader& reader,
+  std::vector<ssx::semaphore_units> background_apply_units) {
     const auto snapshot_file_sz = co_await reader.get_snapshot_size();
     const auto last_offset = metadata.last_included_index;
 
@@ -276,6 +281,7 @@ ss::future<> state_machine_manager::do_apply_raft_snapshot(
           });
     }
     _next = model::next_offset(metadata.last_included_index);
+    background_apply_units.clear();
 }
 
 ss::future<> state_machine_manager::apply_snapshot_to_stm(
