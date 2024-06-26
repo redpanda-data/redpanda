@@ -9,11 +9,8 @@
 
 #include "cluster/tx_gateway_frontend.h"
 
-#include "cluster/controller.h"
-#include "cluster/controller_api.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/logger.h"
-#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
@@ -129,7 +126,6 @@ tx_gateway_frontend::do_route_globally(model::ntp tx_ntp, T&& request) {
     }
     auto leader = leader_opt.value();
 
-    auto _self = _controller->self();
     if (leader == _self) {
         co_return co_await do_route_locally(tx_ntp, std::move(request));
     }
@@ -144,13 +140,13 @@ tx_gateway_frontend::do_dispatch(model::node_id target, T&& request) {
       txlog.trace,
       "dispatching name: {}, from: {}, to: {}, request: {}",
       T::name,
-      _controller->self(),
+      _self,
       target,
       request);
     auto timeout = request.timeout;
     return _connection_cache.local()
       .with_node_client<tx_gateway_client_protocol>(
-        _controller->self(),
+        _self,
         ss::this_shard_id(),
         target,
         timeout,
@@ -243,7 +239,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<partition_leaders_table>& leaders,
-  cluster::controller* controller,
+  model::node_id self,
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
@@ -256,7 +252,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _leaders(leaders)
-  , _controller(controller)
+  , _self(self)
   , _id_allocator_frontend(id_allocator_frontend)
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend)
@@ -679,7 +675,6 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     }
 
     auto leader = leader_opt.value();
-    auto _self = _controller->self();
 
     if (leader != _self) {
         vlog(
@@ -1141,7 +1136,7 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
     }
     auto tx_ntp = std::move(tx_ntp_opt.value());
     auto leader = co_await wait_for_leader(tx_ntp);
-    if (leader != _controller->self()) {
+    if (leader != _self) {
         vlog(
           txlog.trace,
           "[tx_id={}] current node is not a leader for {}, current leader: {}",
@@ -1468,7 +1463,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
     }
     auto tx_ntp = std::move(tx_ntp_opt.value());
     auto leader = co_await wait_for_leader(tx_ntp);
-    if (leader != _controller->self()) {
+    if (leader != _self) {
         vlog(
           txlog.trace,
           "[tx_id={}] current node is not a leader for {}, current leader: {}",
@@ -1609,7 +1604,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
     auto tx_ntp = std::move(tx_ntp_opt.value());
 
     auto leader = co_await wait_for_leader(tx_ntp);
-    if (leader != _controller->self()) {
+    if (leader != _self) {
         vlog(
           txlog.trace,
           "[tx_id={}] current node is not a leader for {}, current leader: {}",
@@ -2727,7 +2722,7 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
     }
     auto tm_ntp = std::move(tm_ntp_opt.value());
     auto leader = co_await wait_for_leader(tm_ntp);
-    if (leader != _controller->self()) {
+    if (leader != _self) {
         vlog(
           txlog.trace,
           "[tx_id={}] current node is not a leader for {}, current leader: {}",
@@ -2834,7 +2829,7 @@ ss::future<tx::errc> tx_gateway_frontend::delete_partition_from_tx(
     }
 
     auto leader = co_await wait_for_leader(tm_ntp.value());
-    if (leader != _controller->self()) {
+    if (leader != _self) {
         vlog(
           txlog.trace,
           "[tx_id={}] current node is not a leader for {}, current leader: {}",

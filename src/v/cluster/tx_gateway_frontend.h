@@ -34,7 +34,7 @@ public:
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
-      cluster::controller*,
+      model::node_id,
       ss::sharded<cluster::id_allocator_frontend>&,
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
@@ -84,7 +84,7 @@ private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
-    cluster::controller* _controller;
+    model::node_id _self;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
