@@ -73,8 +73,9 @@ result<schema_version> parse_numerical_schema_version(const ss::sstring& ver) {
 
 result<std::optional<schema_version>>
 parse_schema_version(const ss::sstring& ver) {
-    return ver == "latest" ? std::optional<schema_version>{}
-                           : parse_numerical_schema_version(ver).value();
+    return (ver == "latest" || ver == "-1")
+             ? std::optional<schema_version>{}
+             : parse_numerical_schema_version(ver).value();
 }
 
 ss::future<server::reply_t>
