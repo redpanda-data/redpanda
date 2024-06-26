@@ -2299,6 +2299,14 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result["subject"] == f"{topic}-key"
         assert result["version"] == 1
 
+        self.logger.debug("Get latest (-1) schema version for subject key")
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-key", version="-1", auth=self.super_auth)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["subject"] == f"{topic}-key"
+        assert result["version"] == 1
+
         self.logger.debug("Get schema version 1")
         result_raw = self._get_schemas_ids_id(id=1, auth=self.public_auth)
         assert result_raw.json()['error_code'] == 40101
