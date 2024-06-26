@@ -215,12 +215,14 @@ class NodeOpsExecutor():
                  redpanda: RedpandaService,
                  logger,
                  lock: threading.Lock,
-                 progress_timeout=60):
+                 progress_timeout=60,
+                 wait_after_stop=0):
         self.redpanda = redpanda
         self.logger = logger
         self.timeout = 360
         self.lock = lock
         self.progress_timeout = progress_timeout
+        self.wait_after_stop = wait_after_stop
 
     def node_id(self, idx):
         return self.redpanda.node_id(self.redpanda.get_node(idx),
@@ -330,6 +332,7 @@ class NodeOpsExecutor():
         with self.lock:
             self.redpanda.remove_from_started_nodes(node)
             self.redpanda.stop_node(node)
+            time.sleep(self.wait_after_stop)
         self.redpanda.clean_node(node,
                                  preserve_logs=True,
                                  preserve_current_install=True)

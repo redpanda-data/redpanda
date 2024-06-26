@@ -463,7 +463,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.redpanda,
             self.logger,
             lock,
-            progress_timeout=120 if enable_failures else 60)
+            progress_timeout=120 if enable_failures else 60,
+            wait_after_stop=30 if enable_failures else 0)
         for i, op in enumerate(
                 generate_random_workload(
                     available_nodes=self.active_node_idxs)):
