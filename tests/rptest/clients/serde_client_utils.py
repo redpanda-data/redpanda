@@ -12,6 +12,7 @@ from enum import IntEnum
 class SchemaType(IntEnum):
     AVRO = 1
     PROTOBUF = 2
+    JSON = 3
 
     def __str__(self):
         return self.name

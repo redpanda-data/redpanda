@@ -123,6 +123,41 @@ def get_dataset(type: SchemaType) -> TestDataset:
                            schema_base=schema1_def,
                            schema_backward_compatible=schema2_def,
                            schema_not_backward_compatible=schema3_def)
+    if type == SchemaType.JSON:
+        return TestDataset(
+            type=SchemaType.JSON,
+            schema_base="""
+{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "integer"},
+    "bbbb": {"type": "boolean"}
+  },
+  "additionalProperties": false,
+  "required": ["aaaa", "bbbb"]
+}
+""",
+            schema_backward_compatible="""
+{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "number"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+}
+""",
+            schema_not_backward_compatible="""
+{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "string"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+}
+""",
+        )
     assert False, f"Unsupported schema {type=}"
 
 
@@ -1051,6 +1086,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
     @cluster(num_nodes=3)
     @parametrize(dataset_type=SchemaType.AVRO)
+    @parametrize(dataset_type=SchemaType.JSON)
     def test_post_compatibility_subject_version(self,
                                                 dataset_type: SchemaType):
         """
