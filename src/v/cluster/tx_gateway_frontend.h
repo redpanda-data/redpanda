@@ -51,8 +51,8 @@ public:
       std::chrono::milliseconds transaction_timeout_ms,
       model::timeout_clock::duration,
       model::producer_identity);
-    ss::future<add_paritions_tx_reply> add_partition_to_tx(
-      add_paritions_tx_request, model::timeout_clock::duration);
+    ss::future<add_partitions_tx_reply> add_partition_to_tx(
+      add_partitions_tx_request, model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply>
       add_offsets_to_tx(add_offsets_tx_request, model::timeout_clock::duration);
     ss::future<end_tx_reply>
@@ -233,9 +233,9 @@ private:
     template<typename T>
     ss::future<typename T::reply> do_route_locally(model::ntp, T&&);
 
-    ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
+    ss::future<add_partitions_tx_reply> do_add_partition_to_tx(
       ss::shared_ptr<tm_stm>,
-      add_paritions_tx_request,
+      add_partitions_tx_request,
       model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
       ss::shared_ptr<tm_stm>,

@@ -968,14 +968,14 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
             return ctx.respond(std::move(response));
         }
 
-        cluster::add_paritions_tx_request tx_request{
+        cluster::add_partitions_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,
           .producer_epoch = request.data.producer_epoch};
         tx_request.topics.reserve(request.data.topics.size());
 
         for (auto& topic : request.data.topics) {
-            cluster::add_paritions_tx_request::topic tx_topic{
+            cluster::add_partitions_tx_request::topic tx_topic{
               .name = std::move(topic.name),
               .partitions = std::move(topic.partitions),
             };
@@ -985,7 +985,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
         return ctx.tx_gateway_frontend()
           .add_partition_to_tx(
             tx_request, config::shard_local_cfg().create_topic_timeout_ms())
-          .then([&ctx](cluster::add_paritions_tx_reply tx_response) {
+          .then([&ctx](cluster::add_partitions_tx_reply tx_response) {
               add_partitions_to_txn_response_data data;
               for (auto& tx_topic : tx_response.results) {
                   add_partitions_to_txn_topic_result topic{

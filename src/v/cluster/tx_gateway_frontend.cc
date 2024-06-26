@@ -266,16 +266,16 @@ tx_gateway_frontend::do_route_locally(model::ntp tx_ntp, T&& request) {
       });
 }
 
-static add_paritions_tx_reply make_add_partitions_error_response(
-  add_paritions_tx_request request, tx::errc ec) {
-    add_paritions_tx_reply response;
+static add_partitions_tx_reply make_add_partitions_error_response(
+  const add_partitions_tx_request& request, tx::errc ec) {
+    add_partitions_tx_reply response;
     response.results.reserve(request.topics.size());
     for (auto& req_topic : request.topics) {
-        add_paritions_tx_reply::topic_result res_topic;
+        add_partitions_tx_reply::topic_result res_topic;
         res_topic.name = req_topic.name;
         res_topic.results.reserve(req_topic.partitions.size());
         for (model::partition_id req_partition : req_topic.partitions) {
-            add_paritions_tx_reply::partition_result res_partition;
+            add_partitions_tx_reply::partition_result res_partition;
             res_partition.partition_index = req_partition;
             res_partition.error_code = ec;
             res_topic.results.push_back(res_partition);
@@ -1370,8 +1370,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     co_return reply;
 }
 
-ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
-  add_paritions_tx_request request, model::timeout_clock::duration timeout) {
+ss::future<add_partitions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
+  add_partitions_tx_request request, model::timeout_clock::duration timeout) {
     auto tx_ntp_opt = ntp_for_tx_id(request.transactional_id);
     if (!tx_ntp_opt) {
         vlog(
@@ -1458,9 +1458,9 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
       });
 }
 
-ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
+ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
   ss::shared_ptr<tm_stm> stm,
-  add_paritions_tx_request request,
+  add_partitions_tx_request request,
   model::timeout_clock::duration timeout) {
     model::producer_identity pid{request.producer_id, request.producer_epoch};
 
@@ -1489,12 +1489,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
     auto tx = r.value();
 
-    add_paritions_tx_reply response;
+    add_partitions_tx_reply response;
 
     std::vector<model::ntp> new_partitions;
 
     for (auto& req_topic : request.topics) {
-        add_paritions_tx_reply::topic_result res_topic;
+        add_partitions_tx_reply::topic_result res_topic;
         res_topic.name = req_topic.name;
 
         model::topic topic(req_topic.name);
@@ -1511,13 +1511,13 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               tx.partitions.end(),
               [ntp](const auto& rm) { return rm.ntp == ntp; });
             if (has_ntp) {
-                add_paritions_tx_reply::partition_result res_partition;
+                add_partitions_tx_reply::partition_result res_partition;
                 res_partition.partition_index = req_partition;
                 res_partition.error_code = tx::errc::none;
                 res_topic.results.push_back(res_partition);
             } else if (
               disabled_set && disabled_set->is_disabled(req_partition)) {
-                add_paritions_tx_reply::partition_result res_partition;
+                add_partitions_tx_reply::partition_result res_partition;
                 res_partition.partition_index = req_partition;
                 res_partition.error_code = tx::errc::partition_disabled;
                 res_topic.results.push_back(res_partition);

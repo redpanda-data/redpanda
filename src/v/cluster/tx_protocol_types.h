@@ -148,7 +148,7 @@ struct init_tm_tx_reply
     auto serde_fields() { return std::tie(pid, ec); }
 };
 
-struct add_paritions_tx_request {
+struct add_partitions_tx_request {
     struct topic {
         model::topic name{};
         std::vector<model::partition_id> partitions{};
@@ -159,16 +159,16 @@ struct add_paritions_tx_request {
     int16_t producer_epoch{};
     std::vector<topic> topics{};
 };
-struct add_paritions_tx_reply {
+struct add_partitions_tx_reply {
     struct partition_result {
         model::partition_id partition_index{};
         tx::errc error_code{};
     };
     struct topic_result {
         model::topic name{};
-        std::vector<add_paritions_tx_reply::partition_result> results{};
+        std::vector<add_partitions_tx_reply::partition_result> results{};
     };
-    std::vector<add_paritions_tx_reply::topic_result> results{};
+    std::vector<add_partitions_tx_reply::topic_result> results{};
 };
 struct add_offsets_tx_request {
     kafka::transactional_id transactional_id{};
