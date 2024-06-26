@@ -101,12 +101,7 @@ namespace {
 static constexpr auto kvstore_key_space
   = storage::kvstore::key_space::shard_placement;
 
-// enum type is irrelevant, serde will serialize to 32 bit anyway
-enum class kvstore_key_type {
-    persistence_enabled = 0,
-    assignment = 1,
-    current_state = 2,
-};
+using kvstore_key_type = shard_placement_kvstore_key_type;
 
 bytes persistence_enabled_kvstore_key() {
     iobuf buf;
@@ -829,6 +824,26 @@ shard_placement_table::get_target(const model::ntp& ntp) const {
         return it->second->target;
     }
     return std::nullopt;
+}
+
+ss::future<> shard_placement_table::for_each_ntp(
+  ss::noncopyable_function<
+    void(const model::ntp&, const shard_placement_target&)> func) const {
+    vassert(
+      ss::this_shard_id() == assignment_shard_id,
+      "method can only be invoked on shard {}",
+      assignment_shard_id);
+    return ssx::async_for_each(
+      _ntp2entry.begin(),
+      _ntp2entry.end(),
+      [&func](const decltype(_ntp2entry)::value_type& kv) {
+          const auto& [ntp, entry] = kv;
+          vassert(
+            entry && entry->target && entry->mtx.ready(),
+            "[{}]: unexpected concurrent set_target()",
+            ntp);
+          func(ntp, *entry->target);
+      });
 }
 
 ss::future<std::error_code> shard_placement_table::prepare_create(

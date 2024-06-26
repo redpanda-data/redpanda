@@ -2035,4 +2035,10 @@ topics_frontend::set_local_partition_shard(model::ntp ntp, ss::shard_id shard) {
       });
 }
 
+ss::future<errc> topics_frontend::trigger_local_partition_shard_rebalance() {
+    return _shard_balancer.invoke_on(
+      shard_balancer::shard_id,
+      [](shard_balancer& sb) { return sb.trigger_rebalance(); });
+}
+
 } // namespace cluster
