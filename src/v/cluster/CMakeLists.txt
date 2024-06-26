@@ -212,6 +212,7 @@ v_cc_library(
     ../archival/retention_calculator.cc
     ../archival/upload_housekeeping_service.cc
     ../archival/adjacent_segment_merger.cc
+    ../archival/adjacent_segment_run.cc
     ../archival/purger.cc
     ../archival/scrubber.cc
     ../archival/archiver_manager.cc
