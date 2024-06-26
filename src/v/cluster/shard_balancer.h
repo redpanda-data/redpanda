@@ -42,7 +42,9 @@ public:
       ss::sharded<controller_backend>&,
       config::binding<bool> balancing_on_core_count_change,
       config::binding<bool> balancing_continuous,
-      config::binding<std::chrono::milliseconds> debounce_timeout);
+      config::binding<std::chrono::milliseconds> debounce_timeout,
+      config::binding<uint32_t> partitions_per_shard,
+      config::binding<uint32_t> partitions_reserve_shard0);
 
     ss::future<> start(size_t kvstore_shard_count);
     ss::future<> stop();
@@ -119,6 +121,8 @@ private:
     config::binding<bool> _balancing_continuous;
     config::binding<std::chrono::milliseconds> _debounce_timeout;
     simple_time_jitter<ss::lowres_clock> _debounce_jitter;
+    config::binding<uint32_t> _partitions_per_shard;
+    config::binding<uint32_t> _partitions_reserve_shard0;
 
     cluster::notification_id_type _topic_table_notify_handle;
     ss::timer<ss::lowres_clock> _balance_timer;

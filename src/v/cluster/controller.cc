@@ -470,7 +470,9 @@ ss::future<> controller::start(
       std::ref(_backend),
       config::shard_local_cfg().core_balancing_on_core_count_change.bind(),
       config::shard_local_cfg().core_balancing_continuous.bind(),
-      config::shard_local_cfg().core_balancing_debounce_timeout.bind());
+      config::shard_local_cfg().core_balancing_debounce_timeout.bind(),
+      config::shard_local_cfg().topic_partitions_per_shard.bind(),
+      config::shard_local_cfg().topic_partitions_reserve_shard0.bind());
 
     co_await _drain_manager.invoke_on_all(&drain_manager::start);
 

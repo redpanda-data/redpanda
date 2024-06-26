@@ -49,7 +49,9 @@ shard_balancer::shard_balancer(
   ss::sharded<controller_backend>& cb,
   config::binding<bool> balancing_on_core_count_change,
   config::binding<bool> balancing_continuous,
-  config::binding<std::chrono::milliseconds> debounce_timeout)
+  config::binding<std::chrono::milliseconds> debounce_timeout,
+  config::binding<uint32_t> partitions_per_shard,
+  config::binding<uint32_t> partitions_reserve_shard0)
   : _shard_placement(spt.local())
   , _features(features.local())
   , _storage(storage.local())
@@ -60,6 +62,8 @@ shard_balancer::shard_balancer(
   , _balancing_continuous(std::move(balancing_continuous))
   , _debounce_timeout(std::move(debounce_timeout))
   , _debounce_jitter(_debounce_timeout())
+  , _partitions_per_shard(std::move(partitions_per_shard))
+  , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
   , _balance_timer([this] { balance_timer_callback(); })
   , _total_counts(ss::smp::count, 0) {
     _total_counts.at(0) += 1; // controller partition
@@ -118,7 +122,7 @@ ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
     if (kvstore_shard_count > ss::smp::count) {
         // Check that we can decrease shard count
 
-        std::string_view reject_reason;
+        ss::sstring reject_reason;
         if (!_features.is_active(
               features::feature::node_local_core_assignment)) {
             reject_reason
@@ -126,6 +130,16 @@ ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
         }
         if (!_balancing_on_core_count_change()) {
             reject_reason = "balancing on core count change is disabled";
+        }
+        size_t max_capacity = ss::smp::count * _partitions_per_shard();
+        max_capacity -= std::min(
+          max_capacity, static_cast<size_t>(_partitions_reserve_shard0()));
+        if (local_group2ntp.size() > max_capacity) {
+            reject_reason = ssx::sformat(
+              "the number of partition replicas on this node ({}) is greater "
+              "than max capacity with this core count ({})",
+              local_group2ntp.size(),
+              max_capacity);
         }
 
         if (!reject_reason.empty()) {
