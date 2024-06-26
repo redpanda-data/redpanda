@@ -59,7 +59,8 @@ class TxVerifierTest(RedpandaTest):
                     test=test,
                     brokers=self.redpanda.brokers())
                 subprocess.check_output(["/bin/sh", "-c", cmd],
-                                        stderr=subprocess.STDOUT)
+                                        stderr=subprocess.STDOUT,
+                                        timeout=240)
                 self.redpanda.logger.info(
                     "txn test \"{test}\" passed".format(test=test))
             except subprocess.CalledProcessError as e:
