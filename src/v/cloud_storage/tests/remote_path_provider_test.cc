@@ -7,7 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/spillover_manifest.h"
+#include "cloud_storage/types.h"
 #include "gtest/gtest.h"
 #include "model/fundamental.h"
 #include "utils/uuid.h"
@@ -22,6 +25,24 @@ const model::cluster_uuid test_uuid{uuid_t::from_string(test_uuid_str)};
 const remote_label test_label{test_uuid};
 const model::topic_namespace test_tp_ns{model::ns{"kafka"}, model::topic{"tp"}};
 const model::initial_revision_id test_rev{21};
+const model::partition_id test_pid{5};
+const model::ntp test_ntp{test_tp_ns.ns, test_tp_ns.tp, test_pid};
+const spillover_manifest_path_components test_spill_comps{
+  .base = model::offset{10},
+  .last = model::offset{11},
+  .base_kafka = kafka::offset{0},
+  .next_kafka = kafka::offset{1},
+  .base_ts = model::timestamp{999},
+  .last_ts = model::timestamp{1000},
+};
+const segment_meta test_smeta{
+  .base_offset = test_spill_comps.base,
+  .committed_offset = test_spill_comps.last,
+  .base_timestamp = test_spill_comps.base_ts,
+  .max_timestamp = test_spill_comps.last_ts,
+  .delta_offset = model::offset_delta(10),
+  .delta_offset_end = model::offset_delta(11),
+};
 } // namespace
 
 TEST(RemotePathProviderTest, TestPrefixedTopicManifestPaths) {
@@ -45,6 +66,63 @@ TEST(RemotePathProviderTest, TestLabeledTopicManifestPaths) {
       "meta/kafka/tp/deadbeef-0000-0000-0000-000000000000");
 }
 
+TEST(RemotePathProviderTest, TestPrefixedPartitionManifestPaths) {
+    remote_path_provider path_provider(std::nullopt);
+    EXPECT_STREQ(
+      path_provider.partition_manifest_path(test_ntp, test_rev).c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin");
+    EXPECT_STREQ(
+      path_provider.partition_manifest_prefix(test_ntp, test_rev).c_str(),
+      "e0000000/meta/kafka/tp/5_21");
+
+    auto json_path = path_provider.partition_manifest_path_json(test_ntp, test_rev);
+    ASSERT_TRUE(json_path.has_value());
+    EXPECT_STREQ(json_path.value().c_str(), "e0000000/meta/kafka/tp/5_21/manifest.json");
+
+    partition_manifest pm(test_ntp, test_rev);
+    EXPECT_STREQ(
+      path_provider.partition_manifest_path(pm).c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin");
+    EXPECT_STREQ(
+      path_provider.spillover_manifest_path(pm, test_spill_comps).c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin.10.11.0.1.999.1000");
+
+    spillover_manifest spill_m(test_ntp, test_rev);
+    spill_m.add(test_smeta);
+    EXPECT_STREQ(
+      path_provider.partition_manifest_path(spill_m).c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin.10.11.0.1.999.1000");
+}
+
+TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
+    remote_path_provider path_provider(test_label);
+    EXPECT_STREQ(
+      path_provider.partition_manifest_path(test_ntp, test_rev).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/manifest.bin");
+    EXPECT_STREQ(
+      path_provider.partition_manifest_prefix(test_ntp, test_rev).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21");
+
+    auto json_path = path_provider.partition_manifest_path_json(test_ntp, test_rev);
+    ASSERT_FALSE(json_path.has_value());
+
+    partition_manifest pm(test_ntp, test_rev);
+    EXPECT_STREQ(
+      path_provider.partition_manifest_path(pm).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/manifest.bin");
+    EXPECT_STREQ(
+      path_provider.spillover_manifest_path(pm, test_spill_comps).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
+      "manifest.bin.10.11.0.1.999.1000");
+
+    spillover_manifest spill_m(test_ntp, test_rev);
+    spill_m.add(test_smeta);
+    EXPECT_STREQ(
+      path_provider.partition_manifest_path(spill_m).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
+      "manifest.bin.10.11.0.1.999.1000");
+}
+
 class ParamsRemotePathProviderTest : public ::testing::TestWithParam<bool> {
 public:
     ParamsRemotePathProviderTest()
@@ -64,6 +142,20 @@ TEST_P(ParamsRemotePathProviderTest, TestTopicPrefixPrefixesPath) {
       test_tp_ns, test_rev);
     const auto topic_prefix = path_provider.topic_manifest_prefix(test_tp_ns);
     ASSERT_TRUE(topic_path.starts_with(topic_prefix));
+}
+
+TEST_P(ParamsRemotePathProviderTest, TestPartitionPrefixPrefixesPath) {
+    // The partition manifest prefix, if used as a list prefix, should catch
+    // both STM manifests and spillover manifests.
+    const auto partition_path = path_provider.partition_manifest_path(
+      test_ntp, test_rev);
+    const auto partition_prefix = path_provider.partition_manifest_prefix(
+      test_ntp, test_rev);
+    ASSERT_TRUE(partition_path.starts_with(partition_prefix));
+
+    partition_manifest pm(test_ntp, test_rev);
+    const auto spillover_path = path_provider.spillover_manifest_path(pm, test_spill_comps);
+    ASSERT_TRUE(spillover_path.starts_with(partition_prefix));
 }
 
 INSTANTIATE_TEST_SUITE_P(
