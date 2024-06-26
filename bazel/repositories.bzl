@@ -34,30 +34,6 @@ def data_dependency():
     )
 
     http_archive(
-        name = "cryptopp",
-        build_file = "//bazel/thirdparty:cryptopp.BUILD",
-        sha256 = "11a6dbc749c27687ddf13195950589596f51361210a1f67e3c383cc4961f3e61",
-        strip_prefix = "cryptopp-CRYPTOPP_8_7_0",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/CRYPTOPP_8_7_0.tar.xz",
-    )
-
-    http_archive(
-        name = "gmp",
-        build_file = "//bazel/thirdparty:gmp.BUILD",
-        sha256 = "fd4829912cddd12f84181c3451cc752be224643e87fac497b69edddadc49b4f2",
-        strip_prefix = "gmp-6.2.1",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/gmp-6.2.1.tar.xz",
-    )
-
-    http_archive(
-        name = "gnutls",
-        build_file = "//bazel/thirdparty:gnutls.BUILD",
-        sha256 = "f74fc5954b27d4ec6dfbb11dea987888b5b124289a3703afcada0ee520f4173e",
-        strip_prefix = "gnutls-3.8.3",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/gnutls-3.8.3.tar.xz",
-    )
-
-    http_archive(
         name = "hdrhistogram",
         build_file = "//bazel/thirdparty:hdrhistogram.BUILD",
         sha256 = "f81a192b62ae25bcebe63c9f3c74f371d04f88a74c1867532ec8a0012a9e482c",
@@ -103,16 +79,6 @@ def data_dependency():
         sha256 = "0c8fac0a5c66eea339dce6be857101b308ce1064c838b81125b0dde3901e8032",
         strip_prefix = "lksctp-tools-lksctp-tools-1.0.19",
         url = "https://vectorized-public.s3.amazonaws.com/dependencies/lksctp-tools-1.0.19.tar.gz",
-    )
-
-    http_archive(
-        name = "nettle",
-        build_file = "//bazel/thirdparty:nettle.BUILD",
-        sha256 = "ccfeff981b0ca71bbd6fbcb054f407c60ffb644389a5be80d6716d5b550c6ce3",
-        strip_prefix = "nettle-3.9.1",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/nettle-3.9.1.tar.gz",
-        patches = ["//bazel/thirdparty:nettle.patch"],
-        patch_args = ["-p1"],
     )
 
     http_archive(

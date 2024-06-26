@@ -116,7 +116,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "D5feBH31ez9koAtZxGnKpIBabZKahMbpNtzkfLpet/M=",
+        "bzlTransitiveDigest": "bCN5gJtRCnjbKi0egai6Z8F2PvLY3/KL1Yspa2Obveo=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -172,16 +172,6 @@
               "url": "https://vectorized-public.s3.amazonaws.com/dependencies/xz-v5.2.5.tar.gz"
             }
           },
-          "gnutls": {
-            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-            "ruleClassName": "http_archive",
-            "attributes": {
-              "build_file": "@@//bazel/thirdparty:gnutls.BUILD",
-              "sha256": "f74fc5954b27d4ec6dfbb11dea987888b5b124289a3703afcada0ee520f4173e",
-              "strip_prefix": "gnutls-3.8.3",
-              "url": "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/gnutls-3.8.3.tar.xz"
-            }
-          },
           "hdrhistogram": {
             "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
             "ruleClassName": "http_archive",
@@ -222,22 +212,6 @@
               "url": "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz"
             }
           },
-          "nettle": {
-            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-            "ruleClassName": "http_archive",
-            "attributes": {
-              "build_file": "@@//bazel/thirdparty:nettle.BUILD",
-              "sha256": "ccfeff981b0ca71bbd6fbcb054f407c60ffb644389a5be80d6716d5b550c6ce3",
-              "strip_prefix": "nettle-3.9.1",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/nettle-3.9.1.tar.gz",
-              "patches": [
-                "@@//bazel/thirdparty:nettle.patch"
-              ],
-              "patch_args": [
-                "-p1"
-              ]
-            }
-          },
           "snappy": {
             "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
             "ruleClassName": "http_archive",
@@ -256,16 +230,6 @@
               "sha256": "a7f989b170d109696b928b4b3d1ec1d930064af7df47178e1341bd96e5c34465",
               "strip_prefix": "wasmtime-9e1084ffac08b1bf9c82de40c0efc1baff14b9ad",
               "url": "https://github.com/bytecodealliance/wasmtime/archive/9e1084ffac08b1bf9c82de40c0efc1baff14b9ad.tar.gz"
-            }
-          },
-          "gmp": {
-            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-            "ruleClassName": "http_archive",
-            "attributes": {
-              "build_file": "@@//bazel/thirdparty:gmp.BUILD",
-              "sha256": "fd4829912cddd12f84181c3451cc752be224643e87fac497b69edddadc49b4f2",
-              "strip_prefix": "gmp-6.2.1",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/gmp-6.2.1.tar.xz"
             }
           },
           "libxml2": {
@@ -316,16 +280,6 @@
               "sha256": "88d71ffe853fdffef4669009367457ac5ea461a4afb688fa74528549520244ce",
               "strip_prefix": "seastar-6a4727efd9154ab475860578f01defcbb95df730",
               "url": "https://github.com/redpanda-data/seastar/archive/6a4727efd9154ab475860578f01defcbb95df730.tar.gz"
-            }
-          },
-          "cryptopp": {
-            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-            "ruleClassName": "http_archive",
-            "attributes": {
-              "build_file": "@@//bazel/thirdparty:cryptopp.BUILD",
-              "sha256": "11a6dbc749c27687ddf13195950589596f51361210a1f67e3c383cc4961f3e61",
-              "strip_prefix": "cryptopp-CRYPTOPP_8_7_0",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/CRYPTOPP_8_7_0.tar.xz"
             }
           },
           "openssl": {
