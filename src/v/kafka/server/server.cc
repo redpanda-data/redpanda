@@ -863,32 +863,7 @@ ss::future<response_ptr> end_txn_handler::handle(
             tx_request, config::shard_local_cfg().create_topic_timeout_ms())
           .then([&ctx](cluster::end_tx_reply tx_response) {
               end_txn_response_data data;
-              switch (tx_response.error_code) {
-              case cluster::tx::errc::none:
-                  data.error_code = error_code::none;
-                  break;
-              case cluster::tx::errc::not_coordinator:
-                  data.error_code = error_code::not_coordinator;
-                  break;
-              case cluster::tx::errc::coordinator_not_available:
-                  data.error_code = error_code::coordinator_not_available;
-                  break;
-              case cluster::tx::errc::fenced:
-                  data.error_code = error_code::invalid_producer_epoch;
-                  break;
-              case cluster::tx::errc::invalid_producer_id_mapping:
-                  data.error_code = error_code::invalid_producer_id_mapping;
-                  break;
-              case cluster::tx::errc::invalid_txn_state:
-                  data.error_code = error_code::invalid_txn_state;
-                  break;
-              case cluster::tx::errc::timeout:
-                  data.error_code = error_code::request_timed_out;
-                  break;
-              default:
-                  data.error_code = error_code::unknown_server_error;
-                  break;
-              }
+              data.error_code = map_tx_errc(tx_response.error_code);
               end_txn_response response;
               response.data = data;
               return ctx.respond(response);
@@ -941,32 +916,7 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
 
         return f.then([&ctx](cluster::add_offsets_tx_reply tx_response) {
             add_offsets_to_txn_response_data data;
-            switch (tx_response.error_code) {
-            case cluster::tx::errc::none:
-                data.error_code = error_code::none;
-                break;
-            case cluster::tx::errc::not_coordinator:
-                data.error_code = error_code::not_coordinator;
-                break;
-            case cluster::tx::errc::coordinator_not_available:
-                data.error_code = error_code::coordinator_not_available;
-                break;
-            case cluster::tx::errc::coordinator_load_in_progress:
-                data.error_code = error_code::coordinator_load_in_progress;
-                break;
-            case cluster::tx::errc::invalid_producer_id_mapping:
-                data.error_code = error_code::invalid_producer_id_mapping;
-                break;
-            case cluster::tx::errc::fenced:
-                data.error_code = error_code::invalid_producer_epoch;
-                break;
-            case cluster::tx::errc::invalid_txn_state:
-                data.error_code = error_code::invalid_txn_state;
-                break;
-            default:
-                data.error_code = error_code::unknown_server_error;
-                break;
-            }
+            data.error_code = map_tx_errc(tx_response.error_code);
             add_offsets_to_txn_response res;
             res.data = data;
             return ctx.respond(res);
@@ -1044,40 +994,9 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                   for (const auto& tx_partition : tx_topic.results) {
                       add_partitions_to_txn_partition_result partition{
                         .partition_index = tx_partition.partition_index};
-                      switch (tx_partition.error_code) {
-                      case cluster::tx::errc::none:
-                          partition.error_code = error_code::none;
-                          break;
-                      case cluster::tx::errc::not_coordinator:
-                          partition.error_code = error_code::not_coordinator;
-                          break;
-                      case cluster::tx::errc::coordinator_not_available:
-                          partition.error_code
-                            = error_code::coordinator_not_available;
-                          break;
-                      case cluster::tx::errc::invalid_producer_id_mapping:
-                          partition.error_code
-                            = error_code::invalid_producer_id_mapping;
-                          break;
-                      case cluster::tx::errc::fenced:
-                          partition.error_code
-                            = error_code::invalid_producer_epoch;
-                          break;
-                      case cluster::tx::errc::invalid_txn_state:
-                          partition.error_code = error_code::invalid_txn_state;
-                          break;
-                      case cluster::tx::errc::timeout:
-                          partition.error_code = error_code::request_timed_out;
-                          break;
-                      case cluster::tx::errc::partition_disabled:
-                          partition.error_code
-                            = error_code::replica_not_available;
-                          break;
-                      default:
-                          partition.error_code
-                            = error_code::unknown_server_error;
-                          break;
-                      }
+                      partition.error_code = map_tx_errc(
+                        tx_partition.error_code);
+
                       topic.results.push_back(partition);
                   }
                   data.results.push_back(std::move(topic));
@@ -1482,37 +1401,10 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                 expected_pid)
               .then([&ctx](cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
-
-                  switch (r.ec) {
-                  case cluster::tx::errc::none:
+                  reply.data.error_code = map_tx_errc(r.ec);
+                  if (r.ec == cluster::tx::errc::none) {
                       reply.data.producer_id = kafka::producer_id(r.pid.id);
                       reply.data.producer_epoch = r.pid.epoch;
-                      vlog(
-                        klog.trace,
-                        "allocated pid {} with epoch {} via tx_gateway",
-                        reply.data.producer_id,
-                        reply.data.producer_epoch);
-                      break;
-                  case cluster::tx::errc::invalid_txn_state:
-                      reply.data.error_code = error_code::invalid_txn_state;
-                      break;
-                  case cluster::tx::errc::not_coordinator:
-                      reply.data.error_code = error_code::not_coordinator;
-                      break;
-                  case cluster::tx::errc::invalid_producer_epoch:
-                      reply.data.error_code
-                        = error_code::invalid_producer_epoch;
-                      break;
-                  case cluster::tx::errc::timeout:
-                      reply.data.error_code = error_code::request_timed_out;
-                      break;
-                  case cluster::tx::errc::shard_not_found:
-                      reply.data.error_code = error_code::not_coordinator;
-                      break;
-                  default:
-                      vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
-                      reply.data.error_code = error_code::broker_not_available;
-                      break;
                   }
 
                   return ctx.respond(reply);
@@ -2031,7 +1923,7 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
               klog.error,
               "Can not return list of transactions. Error: {}",
               txs.error());
-            response.data.error_code = kafka::error_code::unknown_server_error;
+            response.data.error_code = map_tx_errc(txs.error());
         }
     }
 
