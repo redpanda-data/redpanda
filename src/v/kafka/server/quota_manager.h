@@ -35,9 +35,6 @@
 
 namespace kafka {
 
-template<typename clock>
-class client_quotas_probe;
-
 // quota_manager tracks quota usage
 //
 // TODO:
@@ -123,6 +120,8 @@ private:
     using quota_config
       = std::unordered_map<ss::sstring, config::client_group_quota>;
 
+    class client_quotas_probe;
+
     clock::duration cap_to_max_delay(const tracker_key&, clock::duration);
 
     // erase inactive tracked quotas. windows are considered inactive if they
@@ -147,7 +146,7 @@ private:
     local_map_t _local_map;
     std::optional<global_map_t> _global_map; // Only on shard 0
     client_quota_translator _translator;
-    std::unique_ptr<client_quotas_probe<clock>> _probe;
+    std::unique_ptr<client_quotas_probe> _probe;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
