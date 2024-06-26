@@ -57,7 +57,6 @@ build:secure --config=relro
 # =================================
 build:release --compilation_mode opt
 build:release --config=secure
-build:release --copt -mllvm
-build:release --copt -inline-threshold=2500
+build:release --copt -mllvm --copt -inline-threshold=2500
 
 try-import %workspace%/user.bazelrc
