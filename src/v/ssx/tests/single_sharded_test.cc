@@ -80,7 +80,7 @@ struct caller {
 
 SEASTAR_THREAD_TEST_CASE(single_sharded) {
     ss::shard_id the_shard = ss::smp::count - 1;
-    ss::shard_id wrong_shard = std::max(ss::shard_id{0}, the_shard - 1);
+    ss::shard_id wrong_shard = ss::smp::count == 1 ? 0 : the_shard - 1;
 
     ss::sharded<counter> counters;
     ssx::single_sharded<single_service> single;
