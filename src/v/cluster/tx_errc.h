@@ -47,6 +47,7 @@ enum class errc {
     tx_not_found,
     tx_id_not_found,
     partition_disabled,
+    concurrent_transactions,
 };
 
 std::ostream& operator<<(std::ostream& o, errc err);
