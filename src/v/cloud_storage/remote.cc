@@ -204,14 +204,6 @@ ss::future<download_result> remote::download_manifest(
     return do_download_manifest(bucket, format_key, manifest, parent);
 }
 
-ss::future<download_result> remote::maybe_download_manifest(
-  const cloud_storage_clients::bucket_name& bucket,
-  const std::pair<manifest_format, remote_manifest_path>& format_key,
-  base_manifest& manifest,
-  retry_chain_node& parent) {
-    return do_download_manifest(bucket, format_key, manifest, parent, true);
-}
-
 ss::future<download_result> remote::download_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
