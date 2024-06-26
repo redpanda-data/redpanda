@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "archival/fwd.h"
 #include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cluster/archival/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/migrations/tx_manager_migrator.h"

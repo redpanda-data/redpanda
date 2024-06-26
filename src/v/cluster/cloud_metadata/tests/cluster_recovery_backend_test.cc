@@ -7,11 +7,11 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "archival/archival_metadata_stm.h"
-#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
+#include "cluster/archival/archival_metadata_stm.h"
+#include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/cloud_metadata/tests/cluster_metadata_utils.h"
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/cloud_metadata/uploader.h"

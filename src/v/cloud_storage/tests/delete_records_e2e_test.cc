@@ -8,11 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "archival/archival_metadata_stm.h"
-#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cluster/archival/archival_metadata_stm.h"
+#include "cluster/archival/ntp_archiver_service.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"

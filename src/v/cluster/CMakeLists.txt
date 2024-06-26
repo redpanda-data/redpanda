@@ -202,20 +202,20 @@ v_cc_library(
     plugin_table.cc
     plugin_frontend.cc
     plugin_backend.cc
-    ../archival/archival_metadata_stm.cc
-    ../archival/archival_policy.cc
-    ../archival/ntp_archiver_service.cc
-    ../archival/probe.cc
-    ../archival/types.cc
-    ../archival/upload_controller.cc
-    ../archival/segment_reupload.cc
-    ../archival/retention_calculator.cc
-    ../archival/upload_housekeeping_service.cc
-    ../archival/adjacent_segment_merger.cc
-    ../archival/purger.cc
-    ../archival/scrubber.cc
-    ../archival/archiver_manager.cc
-    ../archival/async_data_uploader.cc
+    archival/archival_metadata_stm.cc
+    archival/archival_policy.cc
+    archival/ntp_archiver_service.cc
+    archival/probe.cc
+    archival/types.cc
+    archival/upload_controller.cc
+    archival/segment_reupload.cc
+    archival/retention_calculator.cc
+    archival/upload_housekeeping_service.cc
+    archival/adjacent_segment_merger.cc
+    archival/purger.cc
+    archival/scrubber.cc
+    archival/archiver_manager.cc
+    archival/async_data_uploader.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
@@ -257,6 +257,7 @@ v_cc_library(
 add_subdirectory(tests)
 add_subdirectory(cloud_metadata/tests)
 add_subdirectory(self_test/tests)
+add_subdirectory(archival)
 
 # Separate library for recovery bits that may depend on Kafka subsystems.
 v_cc_library(
