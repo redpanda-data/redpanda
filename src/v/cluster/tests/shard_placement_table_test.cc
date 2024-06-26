@@ -383,26 +383,32 @@ private:
             co_return errc::success;
         }
 
-        bool launched_expected = _launched.erase(ntp);
-        if (launched_expected) {
+        bool was_launched = _launched.erase(ntp);
+        if (was_launched) {
             vlog(
               _logger.trace,
               "[{}] stopped partition log_revision: {}",
               ntp,
               placement.current->log_revision);
         }
+        if (
+          placement.current->status
+          != shard_placement_table::hosted_status::hosted) {
+            vassert(!was_launched, "[{}] unexpected launched", ntp);
+        }
+
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
         co_await _ntp2shards.invoke_on(
           0,
           [ntp,
-           log_revision = placement.current.value().log_revision,
+           current = placement.current.value(),
            shard = ss::this_shard_id(),
-           launched_expected](ntp2shards_t& ntp2shards) {
+           was_launched](ntp2shards_t& ntp2shards) {
               auto& shards = ntp2shards[ntp];
 
               bool erased = shards.shards_with_some_state.erase(shard);
-              if (launched_expected) {
+              if (was_launched) {
                   vassert(
                     erased,
                     "[{}] unexpected set contents (deleting on: {})",
@@ -410,19 +416,25 @@ private:
                     shard);
               }
 
-              auto& p_shards = shards.rev2shards[log_revision];
+              auto& p_shards = shards.rev2shards[current.log_revision];
 
-              vassert(
-                (launched_expected && p_shards.launched_on == shard)
-                  || (!launched_expected && !p_shards.launched_on),
-                "[{}] unexpected launched: {} (shard: {}, expected: {})",
-                ntp,
-                p_shards.launched_on,
-                shard,
-                launched_expected);
-              p_shards.launched_on = std::nullopt;
+              if (
+                current.status
+                != shard_placement_table::hosted_status::obsolete) {
+                  vassert(
+                    (was_launched && p_shards.launched_on == shard)
+                      || (!was_launched && !p_shards.launched_on),
+                    "[{}] unexpected launched_on: {} (shard: {}, expected: {})",
+                    ntp,
+                    p_shards.launched_on,
+                    shard,
+                    was_launched);
+              }
+              if (was_launched) {
+                  p_shards.launched_on = std::nullopt;
+              }
 
-              if (launched_expected) {
+              if (was_launched) {
                   vassert(
                     p_shards.current_state_on == shard,
                     "[{}] unexpected current: {} (deleting on: {})",
@@ -434,7 +446,7 @@ private:
                   p_shards.current_state_on = std::nullopt;
               }
 
-              if (launched_expected) {
+              if (was_launched) {
                   vassert(
                     !p_shards.next_state_on,
                     "[{}] unexpected next: {} (deleting on: {})",
@@ -554,22 +566,36 @@ private:
                     source);
               }
 
-              vassert(
-                !p_shards.next_state_on,
-                "[{}] unexpected next: {} (transferring from: {})",
-                ntp,
-                p_shards.next_state_on,
-                source);
+              if (p_shards.next_state_on == destination) {
+                  // transfer was retried
+                  vassert(
+                    shards.shards_with_some_state.contains(destination),
+                    "[{}] unexpected set contents, destination: {}",
+                    ntp,
+                    destination);
+              } else {
+                  vassert(
+                    !p_shards.next_state_on,
+                    "[{}] unexpected next: {} (transferring from: {})",
+                    ntp,
+                    p_shards.next_state_on,
+                    source);
 
-              vassert(
-                shards.shards_with_some_state.insert(destination).second,
-                "[{}] unexpected set contents, destination: {}",
-                ntp,
-                destination);
-              p_shards.next_state_on = destination;
+                  vassert(
+                    shards.shards_with_some_state.insert(destination).second,
+                    "[{}] unexpected set contents, destination: {}",
+                    ntp,
+                    destination);
+                  p_shards.next_state_on = destination;
+              }
           });
 
         co_await ss::sleep(1ms * random_generators::get_int(30));
+        if (random_generators::get_int(5) == 0) {
+            // simulate partial failure of the transfer.
+            throw std::runtime_error{
+              fmt_with_ctx(fmt::format, "[{}] transfer failed!", ntp)};
+        }
 
         co_await _ntp2shards.invoke_on(
           0, [ntp, log_revision, destination](ntp2shards_t& ntp2shards) {

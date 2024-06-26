@@ -527,7 +527,7 @@ ss::future<> shard_placement_table::scatter_init_data(
                         .revision = init_data.receiving.revision};
                   }
               } else if (
-                _shard != init_data.receiving.shard
+                _shard != init_data.receiving.shard || !init_data.hosted.shard
                 || _shard >= ss::smp::count) {
                   state.current->status = hosted_status::obsolete;
               }
