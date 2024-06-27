@@ -204,12 +204,21 @@ ss::future<download_result> remote::download_manifest(
     return do_download_manifest(bucket, format_key, manifest, parent);
 }
 
-ss::future<download_result> remote::download_manifest(
+ss::future<download_result> remote::download_manifest_json(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
     auto fk = std::pair{manifest_format::json, key};
+    co_return co_await do_download_manifest(
+      bucket, fk, manifest, parent, false);
+}
+ss::future<download_result> remote::download_manifest_bin(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    auto fk = std::pair{manifest_format::serde, key};
     co_return co_await do_download_manifest(
       bucket, fk, manifest, parent, false);
 }

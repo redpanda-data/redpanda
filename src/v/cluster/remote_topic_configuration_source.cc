@@ -74,7 +74,7 @@ download_topic_manifest(
       cloud_storage::manifest_format::json,
       cloud_storage::topic_manifest::get_topic_manifest_path(
         ns, topic, cloud_storage::manifest_format::json)};
-    res = co_await remote.download_manifest(
+    res = co_await remote.download_manifest_json(
       bucket, json_path.second, manifest, rc_node);
 
     if (res == cloud_storage::download_result::success) {
