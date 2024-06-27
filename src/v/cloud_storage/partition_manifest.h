@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
@@ -211,6 +212,9 @@ public:
             return get_manifest_format_and_path().second;
         }
     }
+
+    virtual remote_manifest_path
+    get_manifest_path(const remote_path_provider&) const;
 
     static ss::sstring filename() { return "manifest.bin"; }
     virtual ss::sstring get_manifest_filename() const { return filename(); }

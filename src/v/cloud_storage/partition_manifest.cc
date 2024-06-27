@@ -16,6 +16,7 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
@@ -217,6 +218,11 @@ partition_manifest::get_manifest_format_and_path() const {
     return {
       manifest_format::serde,
       generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
+}
+
+remote_manifest_path partition_manifest::get_manifest_path(
+  const remote_path_provider& path_provider) const {
+    return remote_manifest_path{path_provider.partition_manifest_path(*this)};
 }
 
 std::pair<manifest_format, remote_manifest_path>

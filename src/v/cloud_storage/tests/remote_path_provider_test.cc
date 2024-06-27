@@ -93,11 +93,21 @@ TEST(RemotePathProviderTest, TestPrefixedPartitionManifestPaths) {
     EXPECT_STREQ(
       path_provider.spillover_manifest_path(pm, test_spill_comps).c_str(),
       "e0000000/meta/kafka/tp/5_21/manifest.bin.10.11.0.1.999.1000");
+    EXPECT_STREQ(
+      pm.get_manifest_path(path_provider)().native().c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin");
 
     spillover_manifest spill_m(test_ntp, test_rev);
     spill_m.add(test_smeta);
     EXPECT_STREQ(
       path_provider.partition_manifest_path(spill_m).c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin.10.11.0.1.999.1000");
+    EXPECT_STREQ(
+      spill_m.get_manifest_path(path_provider)().native().c_str(),
+      "e0000000/meta/kafka/tp/5_21/manifest.bin.10.11.0.1.999.1000");
+    partition_manifest* disguised_manifest = &spill_m;
+    EXPECT_STREQ(
+      disguised_manifest->get_manifest_path(path_provider)().native().c_str(),
       "e0000000/meta/kafka/tp/5_21/manifest.bin.10.11.0.1.999.1000");
 }
 
@@ -119,6 +129,9 @@ TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
       path_provider.partition_manifest_path(pm).c_str(),
       "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/manifest.bin");
     EXPECT_STREQ(
+      pm.get_manifest_path(path_provider)().native().c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/manifest.bin");
+    EXPECT_STREQ(
       path_provider.spillover_manifest_path(pm, test_spill_comps).c_str(),
       "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
       "manifest.bin.10.11.0.1.999.1000");
@@ -127,6 +140,15 @@ TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
     spill_m.add(test_smeta);
     EXPECT_STREQ(
       path_provider.partition_manifest_path(spill_m).c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
+      "manifest.bin.10.11.0.1.999.1000");
+    EXPECT_STREQ(
+      spill_m.get_manifest_path(path_provider)().native().c_str(),
+      "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
+      "manifest.bin.10.11.0.1.999.1000");
+    partition_manifest* disguised_manifest = &spill_m;
+    EXPECT_STREQ(
+      disguised_manifest->get_manifest_path(path_provider)().native().c_str(),
       "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/"
       "manifest.bin.10.11.0.1.999.1000");
 }
