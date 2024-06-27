@@ -809,11 +809,55 @@ bool is_array_superset(json::Value const& older, json::Value const& newer) {
           get_object_or_empty(newer, "items"));
     }
 
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
+    // both are tuple schemas, validation is similar to object. one side
+    // effect is that the "items" key is present.
+
+    // first check is for "additionalItems" compatibility, it's cheaper than the
+    // rest
+    if (!is_additional_superset(older, newer, additional_field_for::array)) {
+        return false;
+    }
+
+    auto older_tuple_schema = older["items"].GetArray();
+    auto newer_tuple_schema = newer["items"].GetArray();
+    // find the first pair of schemas that do not match
+    auto [older_it, newer_it] = std::ranges::mismatch(
+      older_tuple_schema, newer_tuple_schema, is_superset);
+
+    if (
+      older_it != older_tuple_schema.end()
+      && newer_it != newer_tuple_schema.end()) {
+        // if both iterators are not end iterators, they are pointing to a
+        // pair of elements where is_superset(*older_it, *newer_it)==false,
+        // not compatible
+        return false;
+    }
+
+    // no mismatching elements. two possible cases
+    // 1. older_tuple_schema.Size() >= newer_tuple_schema.Size() ->
+    // compatible (implies newer_it==end())
+    // 2. older_tuple_schema.Size() <  newer_tuple_schema.Size() -> check
+    // excess elements with older["additionalItems"]
+
+    auto const& older_additional_schema = [&]() -> json::Value const& {
+        auto older_it = older.FindMember("additionalItems");
+        if (older_it == older.MemberEnd()) {
+            // default is `true`
+            return get_true_schema();
+        }
+        if (older_it->value.IsBool()) {
+            return older_it->value.GetBool() ? get_true_schema()
+                                             : get_false_schema();
+        }
+        return older_it->value;
+    }();
+
+    // check that all excess schemas are compatible with
+    // older["additionalItems"]
+    return std::all_of(
+      newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
+          return is_superset(older_additional_schema, n);
+      });
 }
 
 bool is_object_properties_superset(
@@ -1151,8 +1195,7 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
 
     for (auto not_yet_handled_keyword : {
            "$schema",
-           "additionalItems",
-           "items",
+           "prefixItems",
            "definitions",
            "dependencies",
            "allOf",

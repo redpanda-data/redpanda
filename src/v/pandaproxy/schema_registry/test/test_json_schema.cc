@@ -273,6 +273,28 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "array", "items": {"type": "integer"}})",
     .reader_is_compatible_with_writer = false,
   },
+  // array checks: "items": array schema should be compatible
+  {
+    .reader_schema = R"({"type": "array", "items": [{"type":"boolean"}]})",
+    .writer_schema = R"({"type": "array", "items": [{"type":"integer"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // array checks: "items": array schema additionalItems should be compatible
+  {
+    .reader_schema
+    = R"({"type": "array", "additionalItems": {"type": "boolean"}, "items": [{"type":"boolean"}]})",
+    .writer_schema
+    = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // array checks: "items": array schema extra elements should be compatible
+  {
+    .reader_schema
+    = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}]})",
+    .writer_schema
+    = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema
@@ -418,6 +440,40 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "additionalProperties": false,
   "required": ["aaaa", "cccc"]
 })",
+    .reader_is_compatible_with_writer = true,
+  },
+  // array checks:
+  // - size decrease
+  // - items change and new items added
+  {
+    .reader_schema = R"(
+  {
+    "type": "array",
+    "minItems": 2,
+    "maxItems": 10,
+    "items": [
+      {
+        "type": "array",
+        "items": {"type": "boolean"}
+      }
+    ],
+    "additionalItems": {"type": "number"}
+  })",
+    .writer_schema = R"(
+  {
+    "type": "array",
+    "minItems": 2,
+    "maxItems": 9,
+    "items": [
+      {
+        "type": "array",
+        "items": {"type": "boolean"},
+        "uniqueItems": true
+      },
+      {"type": "integer"}
+    ],
+    "additionalItems": {"type": "integer"}
+  })",
     .reader_is_compatible_with_writer = true,
   },
   // combinators: "not"
