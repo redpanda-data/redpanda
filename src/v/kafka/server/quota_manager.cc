@@ -44,8 +44,7 @@ const static unsigned quotas_shard = 0;
 
 namespace kafka {
 
-template<typename clock>
-class client_quotas_probe {
+class quota_manager::client_quotas_probe {
 public:
     client_quotas_probe() = default;
     client_quotas_probe(const client_quotas_probe&) = delete;
@@ -180,7 +179,7 @@ ss::future<> quota_manager::stop() {
 }
 
 ss::future<> quota_manager::start() {
-    _probe = std::make_unique<client_quotas_probe<clock>>();
+    _probe = std::make_unique<client_quotas_probe>();
     _probe->setup_metrics();
     if (ss::this_shard_id() == quotas_shard) {
         _gc_timer.arm_periodic(_gc_freq);
