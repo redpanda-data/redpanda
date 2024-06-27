@@ -539,6 +539,68 @@ bool is_numeric_property_value_superset(
              std::forward<VPred>(value_predicate), older_value, newer_value);
 }
 
+bool is_object_additional_properties_superset(
+  json::Value const& older, json::Value const& newer) {
+    // "additionalProperties" can be either true (if omitted it's true), false
+    // or a schema. The check is performed with this table.
+    // older ap | newer ap | compatible
+    // -------- | -------- | ----------
+    //   true   |   ____   |    yes
+    //   false  |   ____   | newer==false
+    //  schema  |  schema  |  recurse
+    //  schema  |   true   |  recurse with {}
+    //  schema  |   false  |  recurse with {"not":{}}
+
+    // helper to parse additionalProperties
+    auto get_additional_props =
+      [](json::Value const& v) -> std::variant<bool, json::Value const*> {
+        auto it = v.FindMember("additionalProperties");
+        if (it == v.MemberEnd()) {
+            return true;
+        }
+        if (it->value.IsBool()) {
+            return it->value.GetBool();
+        }
+        return &it->value;
+    };
+
+    // poor man's case matching. this is an optimization in case both
+    // additionalProperties are boolean
+    return std::visit(
+      ss::make_visitor(
+        [](bool older, bool newer) {
+            if (older == newer) {
+                // same value is compatible
+                return true;
+            }
+            // older=true  -> newer=false - compatible
+            // older=false -> newer=true  - not compatible
+            return older;
+        },
+        [](bool older, json::Value const* newer) {
+            if (older) {
+                // true is compatible with any schema
+                return true;
+            }
+            // likely false, but need to check
+            return is_superset(get_false_schema(), *newer);
+        },
+        [](json::Value const* older, bool newer) {
+            if (!newer) {
+                // any schema is compatible with false
+                return true;
+            }
+            // convert newer to {} and check against that
+            return is_superset(*older, get_true_schema());
+        },
+        [](json::Value const* older, json::Value const* newer) {
+            // check subschemas for compatibility
+            return is_superset(*older, *newer);
+        }),
+      get_additional_props(older),
+      get_additional_props(newer));
+}
+
 bool is_string_superset(json::Value const& older, json::Value const& newer) {
     // note: "format" is not part of the checks
     if (!is_numeric_property_value_superset(
@@ -665,68 +727,6 @@ bool is_array_superset(
       __FUNCTION__,
       pj{older},
       pj{newer})));
-}
-
-bool is_object_additional_properties_superset(
-  json::Value const& older, json::Value const& newer) {
-    // "additionalProperties" can be either true (if omitted it's true), false
-    // or a schema. The check is performed with this table.
-    // older ap | newer ap | compatible
-    // -------- | -------- | ----------
-    //   true   |   ____   |    yes
-    //   false  |   ____   | newer==false
-    //  schema  |  schema  |  recurse
-    //  schema  |   true   |  recurse with {}
-    //  schema  |   false  |  recurse with {"not":{}}
-
-    // helper to parse additionalProperties
-    auto get_additional_props =
-      [](json::Value const& v) -> std::variant<bool, json::Value const*> {
-        auto it = v.FindMember("additionalProperties");
-        if (it == v.MemberEnd()) {
-            return true;
-        }
-        if (it->value.IsBool()) {
-            return it->value.GetBool();
-        }
-        return &it->value;
-    };
-
-    // poor man's case matching. this is an optimization in case both
-    // additionalProperties are boolean
-    return std::visit(
-      ss::make_visitor(
-        [](bool older, bool newer) {
-            if (older == newer) {
-                // same value is compatible
-                return true;
-            }
-            // older=true  -> newer=false - compatible
-            // older=false -> newer=true  - not compatible
-            return older;
-        },
-        [](bool older, json::Value const* newer) {
-            if (older) {
-                // true is compatible with any schema
-                return true;
-            }
-            // likely false, but need to check
-            return is_superset(get_false_schema(), *newer);
-        },
-        [](json::Value const* older, bool newer) {
-            if (!newer) {
-                // any schema is compatible with false
-                return true;
-            }
-            // convert newer to {} and check against that
-            return is_superset(*older, get_true_schema());
-        },
-        [](json::Value const* older, json::Value const* newer) {
-            // check subschemas for compatibility
-            return is_superset(*older, *newer);
-        }),
-      get_additional_props(older),
-      get_additional_props(newer));
 }
 
 bool is_object_properties_superset(
