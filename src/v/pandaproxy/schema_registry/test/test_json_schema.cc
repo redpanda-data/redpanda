@@ -267,6 +267,12 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "array"})",
     .reader_is_compatible_with_writer = false,
   },
+  // array checks: "items" = schema must be superset
+  {
+    .reader_schema = R"({"type": "array", "items": {"type": "boolean"}})",
+    .writer_schema = R"({"type": "array", "items": {"type": "integer"}})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema

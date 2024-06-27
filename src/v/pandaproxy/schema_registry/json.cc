@@ -778,6 +778,37 @@ bool is_array_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
+    // check if the input is an array schema or a tuple schema
+    auto is_array = [](json::Value const& v) -> bool {
+        // TODO "prefixItems" is not in Draft4, it's from later drafts. if it's
+        // present, it's a tuple schema
+        auto items_it = v.FindMember("items");
+        // default for items is `{}` so it's not a tuple schema
+        // v is a tuple schema if "items" is an array of schemas
+        auto is_tuple = items_it != v.MemberEnd() && items_it->value.IsArray();
+        return !is_tuple;
+    };
+
+    auto older_is_array = is_array(older);
+    auto newer_is_array = is_array(newer);
+
+    if (older_is_array != newer_is_array) {
+        // one is a tuple and the other is not. not compatible
+        return false;
+    }
+    // both are tuples or both are arrays
+
+    if (older_is_array) {
+        // both are array, only "items" is relevant and it's a schema
+        // TODO after draft 4 "items" can be also a boolean so this needs to
+        // account for that note that "additionalItems" can be defined, but it's
+        // not used by validation because every element is validated against
+        // "items"
+        return is_superset(
+          get_object_or_empty(older, "items"),
+          get_object_or_empty(newer, "items"));
+    }
+
     throw as_exception(invalid_schema(fmt::format(
       "{} not implemented. input: older: '{}', newer: '{}'",
       __FUNCTION__,
