@@ -1,6 +1,24 @@
+"""
+This module contains functions for building Redpanda tests. Prefer using the
+methods in this module (e.g. redpanda_cc_gtest) over native Bazel functions
+(e.g. cc_test) because it provides a centralized place for making behavior
+changes. For example, redpanda_cc_gtest will automatically configure Seastar for
+running tests, like setting a reasonable number of cores and amount of memory.
+"""
+
 load(":internal.bzl", "redpanda_copts")
 
 def has_flags(args, *flags):
+    """
+    Check if flags are present in a set of arguments.
+
+    Args:
+      args: a list of command line argument strings.
+      *flags: a list of flags (prefixes) to check.
+
+    Returns:
+      True if at least one flag is contained in args, and False otherwise.
+    """
     for arg in args:
         for flag in flags:
             if arg.startswith(flags):
@@ -19,10 +37,22 @@ def _redpanda_cc_test(
         deps = [],
         default_memory_gb = None,
         default_cores = None,
-        # from test wrappers
         extra_args = [],
-        # from test author
         custom_args = []):
+    """
+    Helper to define a Redpanda C++ test.
+
+    Args:
+      name: name of the test
+      timeout: same as native cc_test
+      dash_dash_protocol: false for google test, true for boost test
+      srcs: test source files
+      deps: test dependencies
+      default_memory_gb: default seastar memory
+      default_cores: default seastar cores
+      extra_args: arguments from test wrappers
+      custom_args: arguments from cc_test users
+    """
     common_args = [
         "--blocked-reactor-notify-ms 2000000",
     ]

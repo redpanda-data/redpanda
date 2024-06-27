@@ -1,6 +1,13 @@
+"""
+This module contains the sources for all third party dependencies.
+"""
+
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 def data_dependency():
+    """
+    Define third party dependency soruces.
+    """
     http_archive(
         name = "ada",
         build_file = "//bazel/thirdparty:ada.BUILD",

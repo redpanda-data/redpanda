@@ -1,3 +1,8 @@
+"""
+This module contains internal helpers that should not be used outside of the
+scripts in the `bazel/` directory.
+"""
+
 def redpanda_copts():
     # TODO Bazel prefers -iquote "path" style includes in many cases. However,
     # our source tree uses bracket <path> style for dependencies. We need a way

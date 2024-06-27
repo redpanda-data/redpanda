@@ -1,6 +1,19 @@
+"""
+This module contains functions for working with Seastar.
+"""
+
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 def seastar_cc_swagger_library(name, src, definitions = [], visibility = None):
+    """
+    Generate Seastar swagger library.
+
+    Args:
+      name: name of the library
+      src: the swagger json file
+      definitions: additional json definition files
+      visibility: library visibility setting
+    """
     hh_out = src + ".hh"
     cc_out = src + ".cc"
     src_abs = "$(location " + src + ")"
