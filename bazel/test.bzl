@@ -21,7 +21,7 @@ def has_flags(args, *flags):
     """
     for arg in args:
         for flag in flags:
-            if arg.startswith(flags):
+            if arg.startswith(flag):
                 return True
     return False
 
