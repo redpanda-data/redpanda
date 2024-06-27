@@ -71,8 +71,6 @@ std::string_view to_string_view(feature f) {
         return "raft_append_entries_serde";
     case feature::delete_records:
         return "delete_records";
-    case feature::lightweight_heartbeats:
-        return "lightweight_heartbeats";
     case feature::raft_coordinated_recovery:
         return "raft_coordinated_recovery";
     case feature::cloud_storage_scrubbing:

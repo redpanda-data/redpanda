@@ -74,6 +74,29 @@ TEST_F(raft_fixture, test_empty_writes) {
       replicate(std::move(reader)).get(), "Assert failure.+Empty batch");
 }
 
+TEST_F_CORO(raft_fixture, test_stuck_append_entries) {
+    co_await create_simple_group(3);
+    auto leader = co_await wait_for_leader(10s);
+
+    for (auto& [_, node] : nodes()) {
+        node->on_dispatch([](model::node_id, raft::msg_type t) {
+            if (t == raft::msg_type::append_entries) {
+                return ss::sleep(2s);
+            }
+            return ss::now();
+        });
+    }
+    // hold up heartbeats
+    auto& leader_node = node(leader);
+    auto raft = leader_node.raft();
+    auto term_before = raft->term();
+    auto result = co_await raft->replicate(
+      make_batches({{"k", "v"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(!result.has_error());
+    ASSERT_EQ_CORO(term_before, raft->term());
+}
+
 struct test_parameters {
     consistency_level c_lvl;
     bool write_caching;
@@ -428,14 +451,8 @@ TEST_P_CORO(quorum_acks_fixture, test_progress_on_truncation) {
     // truncation.
     for (auto& [id, node] : nodes()) {
         if (id == leader_id) {
-            node->on_dispatch([](model::node_id, raft::msg_type t) {
-                if (
-                  t == raft::msg_type::append_entries
-                  || t == raft::msg_type::vote) {
-                    return ss::sleep(5s);
-                }
-                return ss::now();
-            });
+            node->on_dispatch(
+              [](model::node_id, raft::msg_type) { return ss::sleep(5s); });
         }
     }
 

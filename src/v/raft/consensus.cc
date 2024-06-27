@@ -3631,7 +3631,7 @@ void consensus::maybe_update_majority_replicated_index() {
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
-consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
+consensus::inflight_appends_guard::inflight_appends_guard(
   consensus& parent, vnode target) noexcept
   : _parent(&parent)
   , _term(_parent->term())
@@ -3650,10 +3650,10 @@ consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
         _parent = nullptr;
         return;
     }
-    ++it->second.suppress_heartbeats_count;
+    ++it->second.inflight_append_request_count;
 }
 
-void consensus::suppress_heartbeats_guard::unsuppress() {
+void consensus::inflight_appends_guard::mark_finished() {
     if (!_parent) {
         return;
     }
@@ -3671,16 +3671,16 @@ void consensus::suppress_heartbeats_guard::unsuppress() {
     }
 
     vassert(
-      it->second.suppress_heartbeats_count > 0,
+      it->second.inflight_append_request_count > 0,
       "ntp {}: suppress/unsuppress_heartbeats mismatch for vnode {}",
       _parent->ntp(),
       _target);
-    --it->second.suppress_heartbeats_count;
+    --it->second.inflight_append_request_count;
     _parent = nullptr;
 }
 
-consensus::suppress_heartbeats_guard consensus::suppress_heartbeats(vnode id) {
-    return suppress_heartbeats_guard{*this, id};
+consensus::inflight_appends_guard consensus::track_append_inflight(vnode id) {
+    return inflight_appends_guard{*this, id};
 }
 
 void consensus::update_heartbeat_status(vnode id, bool success) {
