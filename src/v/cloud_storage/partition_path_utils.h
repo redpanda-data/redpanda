@@ -17,6 +17,16 @@
 
 namespace cloud_storage {
 
+// Redpanda has supported different formats and naming schemes for partition
+// manifests through its lifetime:
+// - v24.2 and up: cluster-uuid-labeled name, binary format
+// - v23.2 and up: hash-prefixed name, binary format
+// - below v23.2: hash-prefixed name, JSON format
+//
+// Because manifests are persistent state, we must be able to access older
+// versions, in cases we need to read when newer manifests have not yet been
+// written. This header contains methods to build paths for all versions.
+
 // 806a0f4a-e691-4a2b-9352-ec4b769a5e6e/meta/kafka/panda-topic/0_123
 ss::sstring labeled_partition_manifest_prefix(
   const remote_label& cluster_hint,
