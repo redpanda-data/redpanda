@@ -345,7 +345,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
             _topic_config->properties.compression
               = boost::lexical_cast<model::compression>(
                 handler.compression_sv.value());
-        } catch (const std::runtime_error& e) {
+        } catch (const boost::bad_lexical_cast& e) {
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
               "Failed to parse topic manifest {}: Invalid compression value: "

@@ -126,6 +126,7 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
               s.lag = processor.lag;
               meta.status.push(s);
           }
+          meta.compression = t.metadata.compression_mode;
           return meta;
       }));
 }
@@ -166,6 +167,16 @@ void validate_transform_deploy_document(const json::Document& doc) {
               ],
               "additionalProperties": false
             }
+        },
+        "compression" :{
+            "type": "string",
+            "enum": [
+                "none",
+                "gzip",
+                "snappy",
+                "lz4",
+                "zstd"
+            ]
         }
     },
     "required": ["name", "input_topic", "output_topics"],
@@ -225,6 +236,19 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
             env.insert_or_assign(v["key"].GetString(), v["value"].GetString());
         }
     }
+    model::compression compression{model::compression::none};
+    if (doc.HasMember("compression")) {
+        std::string_view cs = doc["compression"].GetString();
+        try {
+            compression = boost::lexical_cast<model::compression>(cs);
+        } catch (const boost::bad_lexical_cast& e) {
+            // we expect validate_transform_deploy to prevent this entirely,
+            // so this error is mostly a convenience if the model and schema
+            // diverge in the course of development.
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Unrecognized compression mode: '{}'", cs));
+        }
+    }
 
     // Now do the deploy!
     std::error_code ec = co_await _transform_service->local().deploy_transform(
@@ -233,6 +257,7 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
         .input_topic = input_nt,
         .output_topics = output_topics,
         .environment = std::move(env),
+        .compression_mode = compression,
       },
       model::wasm_binary_iobuf(std::make_unique<iobuf>(std::move(body))));
 
@@ -301,6 +326,16 @@ void validate_transform_patch_document(const json::Document& doc) {
         },
         "is_paused": {
             "type": "boolean"
+        },
+        "compression": {
+            "type": "string",
+            "enum": [
+                "none",
+                "gzip",
+                "snappy",
+                "lz4",
+                "zstd"
+            ]
         }
     },
     "required": [],
@@ -338,6 +373,20 @@ parse_json_metadata_patch(const json::Document& doc) {
         result.paused.emplace(doc["is_paused"].GetBool());
     }
 
+    if (doc.HasMember("compression")) {
+        std::string_view csv = doc["compression"].GetString();
+        try {
+            result.compression_mode.emplace(
+              boost::lexical_cast<model::compression>(csv));
+        } catch (const boost::bad_lexical_cast&) {
+            // we expect validate_transform_patch to prevent this entirely,
+            // so this error is mostly a convenience if the model and schema
+            // diverge in the course of development.
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Unrecognized compression mode: '{}'", csv));
+        }
+    }
+
     return result;
 }
 
@@ -361,7 +410,7 @@ admin_server::patch_transform_metadata(std::unique_ptr<ss::http::request> req) {
     }
 
     auto patch = parse_json_metadata_patch(doc);
-    if (!patch.env.has_value() && !patch.paused.has_value()) {
+    if (patch.empty()) {
         vlog(adminlog.debug, "Empty metadata patch ...ignoring");
         co_return ss::json::json_void();
     }
