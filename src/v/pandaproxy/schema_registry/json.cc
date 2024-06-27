@@ -753,6 +753,31 @@ bool is_array_superset(json::Value const& older, json::Value const& newer) {
         return false;
     }
 
+    // uniqueItems makes sense mostly for arrays, but it's also allowed for
+    // tuples, so the validation is done here
+    auto get_unique_items = [](json::Value const& v) {
+        auto it = v.FindMember("uniqueItems");
+        if (it == v.MemberEnd()) {
+            // default value
+            return false;
+        }
+        return it->value.GetBool();
+    };
+
+    auto older_value = get_unique_items(older);
+    auto newer_value = get_unique_items(newer);
+    // the only failure mode is if we removed the "uniqueItems" requirement
+    // older ui | newer ui | compatible
+    // -------- | -------- | ---------
+    //  false   |   ___    |   yes
+    //  true    |   true   |   yes
+    //  true    |   false  |   no
+
+    if (older_value == true && newer_value == false) {
+        // removed unique items requirement
+        return false;
+    }
+
     throw as_exception(invalid_schema(fmt::format(
       "{} not implemented. input: older: '{}', newer: '{}'",
       __FUNCTION__,
@@ -1097,7 +1122,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "$schema",
            "additionalItems",
            "items",
-           "uniqueItems",
            "definitions",
            "dependencies",
            "allOf",

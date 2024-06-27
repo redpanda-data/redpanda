@@ -261,6 +261,12 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "array", "maxItems": 11})",
     .reader_is_compatible_with_writer = false,
   },
+  // array checks: uniqueItems must be compatible
+  {
+    .reader_schema = R"({"type": "array", "uniqueItems": true})",
+    .writer_schema = R"({"type": "array"})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema
