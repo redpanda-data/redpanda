@@ -10,7 +10,7 @@
 from enum import Enum
 import http.client
 import json
-from typing import Optional
+from typing import Literal, NamedTuple, Optional
 import uuid
 import re
 import requests
@@ -108,6 +108,57 @@ log_config = LoggingConfig('info',
                                'pandaproxy': 'trace',
                                'kafka/client': 'trace'
                            })
+
+
+class TestDataset(NamedTuple):
+    type: SchemaType
+    schema_base: str
+    schema_backward_compatible: str
+    schema_not_backward_compatible: str
+
+
+def get_dataset(type: SchemaType) -> TestDataset:
+    if type == SchemaType.AVRO:
+        return TestDataset(type=SchemaType.AVRO,
+                           schema_base=schema1_def,
+                           schema_backward_compatible=schema2_def,
+                           schema_not_backward_compatible=schema3_def)
+    if type == SchemaType.JSON:
+        return TestDataset(
+            type=SchemaType.JSON,
+            schema_base="""
+{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "integer"},
+    "bbbb": {"type": "boolean"}
+  },
+  "additionalProperties": false,
+  "required": ["aaaa", "bbbb"]
+}
+""",
+            schema_backward_compatible="""
+{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "number"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+}
+""",
+            schema_not_backward_compatible="""
+{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "string"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+}
+""",
+        )
+    assert False, f"Unsupported schema {type=}"
 
 
 class SchemaRegistryEndpoints(RedpandaTest):
@@ -1044,17 +1095,31 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )["message"] == f"Subject 'foo-key' not found.", f"{json.dumps(result_raw.json(), indent=1)}"
 
     @cluster(num_nodes=3)
-    def test_post_compatibility_subject_version(self):
+    @parametrize(dataset_type=SchemaType.AVRO)
+    @parametrize(dataset_type=SchemaType.JSON)
+    def test_post_compatibility_subject_version(self,
+                                                dataset_type: SchemaType):
         """
         Verify compatibility
         """
+        dataset = get_dataset(dataset_type)
+        self.logger.debug(f"testing with {dataset=}")
 
         topic = create_topic_names(1)[0]
 
         self.logger.debug(f"Register a schema against a subject")
-        schema_1_data = json.dumps({"schema": schema1_def})
-        schema_2_data = json.dumps({"schema": schema2_def})
-        schema_3_data = json.dumps({"schema": schema3_def})
+        schema_1_data = json.dumps({
+            "schema": dataset.schema_base,
+            "schemaType": str(dataset.type)
+        })
+        schema_2_data = json.dumps({
+            "schema": dataset.schema_backward_compatible,
+            "schemaType": str(dataset.type)
+        })
+        schema_3_data = json.dumps({
+            "schema": dataset.schema_not_backward_compatible,
+            "schemaType": str(dataset.type)
+        })
 
         self.logger.debug("Posting schema 1 as a subject key")
         result_raw = self._post_subjects_subject_versions(
