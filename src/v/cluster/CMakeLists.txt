@@ -242,6 +242,7 @@ v_cc_library(
     data_migration_table.cc
     data_migration_frontend.cc
     data_migrated_resources.cc
+    data_migration_service_handler.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
