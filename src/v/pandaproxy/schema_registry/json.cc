@@ -539,9 +539,13 @@ bool is_numeric_property_value_superset(
              std::forward<VPred>(value_predicate), older_value, newer_value);
 }
 
-bool is_object_additional_properties_superset(
-  json::Value const& older, json::Value const& newer) {
-    // "additionalProperties" can be either true (if omitted it's true), false
+enum class additional_field_for { object, array };
+
+bool is_additional_superset(
+  json::Value const& older,
+  json::Value const& newer,
+  additional_field_for field_type) {
+    // "additional___" can be either true (if omitted it's true), false
     // or a schema. The check is performed with this table.
     // older ap | newer ap | compatible
     // -------- | -------- | ----------
@@ -551,10 +555,18 @@ bool is_object_additional_properties_superset(
     //  schema  |   true   |  recurse with {}
     //  schema  |   false  |  recurse with {"not":{}}
 
-    // helper to parse additionalProperties
+    auto field_name = [&] {
+        switch (field_type) {
+        case additional_field_for::object:
+            return "additionalProperties";
+        case additional_field_for::array:
+            return "additionalItems";
+        }
+    }();
+    // helper to parse additional__
     auto get_additional_props =
-      [](json::Value const& v) -> std::variant<bool, json::Value const*> {
-        auto it = v.FindMember("additionalProperties");
+      [&](json::Value const& v) -> std::variant<bool, json::Value const*> {
+        auto it = v.FindMember(field_name);
         if (it == v.MemberEnd()) {
             return true;
         }
@@ -901,7 +913,7 @@ bool is_object_superset(json::Value const& older, json::Value const& newer) {
         // newer requires more properties to be set
         return false;
     }
-    if (!is_object_additional_properties_superset(older, newer)) {
+    if (!is_additional_superset(older, newer, additional_field_for::object)) {
         // additional properties are not compatible
         return false;
     }
