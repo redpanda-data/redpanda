@@ -387,10 +387,12 @@ class RaftAvailabilityTest(RedpandaTest):
                                      leader_id=initial_leader_id)
         new_leader_id, _ = self._wait_for_leader(
             lambda l: l is not None and l != initial_leader_id)
+        new_leader_node = self.redpanda.get_node_by_id(new_leader_id)
+        assert new_leader_node is not None
         self.logger.info(
-            f"New leader is {new_leader_id} {self.redpanda.get_node(new_leader_id).account.hostname}"
+            f"New leader is {new_leader_id} {new_leader_node.account.hostname}"
         )
-        time.sleep(ELECTION_TIMEOUT)
+
         for [id, metric_check] in metric_checks.items():
             # the metric should be updated only on the node that was elected as a leader
             if id == new_leader_id:
