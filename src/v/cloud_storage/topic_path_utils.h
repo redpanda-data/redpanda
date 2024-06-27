@@ -17,6 +17,16 @@
 
 namespace cloud_storage {
 
+// Redpanda has supported different formats and naming schemes for topic
+// manifests through its lifetime:
+// - v24.2 and up: cluster-uuid-labeled name, binary format
+// - v24.1 and up: hash-prefixed name, binary format
+// - below v24.1: hash-prefixed name, JSON format
+//
+// Because manifests are persistent state, we must be able to access older
+// versions, in cases we need to read when newer manifests have not yet been
+// written. This header contains methods to build paths for all versions.
+
 // meta/kafka/panda-topic
 ss::sstring labeled_topic_manifest_root(const model::topic_namespace& topic);
 
