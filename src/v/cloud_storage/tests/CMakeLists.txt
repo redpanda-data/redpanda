@@ -79,9 +79,10 @@ rp_test(
   TIMEOUT 1000
   BINARY_NAME gtest_cloud_storage
   SOURCES
-    util.cc
-    s3_imposter.cc
+    remote_path_provider_test.cc
     remote_test.cc
+    s3_imposter.cc
+    util.cc
   LIBRARIES
     v::gtest_main
     v::seastar_testing_main
