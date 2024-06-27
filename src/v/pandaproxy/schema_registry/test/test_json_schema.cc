@@ -362,6 +362,11 @@ static constexpr auto compatibility_test_cases = std::to_array<
   },
   // string checks
   {
+    .reader_schema = R"({"type": "string", "minLength": 0})",
+    .writer_schema = R"({"type": "string"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
     .reader_schema = R"({"type": "string"})",
     .writer_schema = R"({"type": "string", "minLength": 1, "maxLength": 10})",
     .reader_is_compatible_with_writer = true,

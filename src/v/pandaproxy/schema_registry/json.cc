@@ -494,7 +494,11 @@ extract_property_and_gate_check(
     return {std::nullopt, &older_it->value, &newer_it->value};
 }
 
-// helper for numeric property that fits into a double:
+// helper for numeric property that fits into a double.
+// if the property has a default value, it can be passed as last parameter.
+// This is necessary to make {"type": "string", "minLength": 0} equivalent to
+// {"type": "string"}.
+// if no default value is passed, the result is given by this table
 //  older  |  newer  | is_superset
 // ------- | ------- | -----------
 // nothing | nothing |    yes
@@ -507,36 +511,51 @@ bool is_numeric_property_value_superset(
   json::Value const& older,
   json::Value const& newer,
   std::string_view prop_name,
-  VPred&& value_predicate) {
-    auto [maybe_is_compatible, older_val_p, newer_val_p]
-      = extract_property_and_gate_check(older, newer, prop_name);
-    if (maybe_is_compatible.has_value()) {
-        return maybe_is_compatible.value();
+  VPred&& value_predicate,
+  std::optional<double> default_value = std::nullopt) {
+    // get value or default_value
+    auto get_value = [&](json::Value const& v) -> std::optional<double> {
+        auto it = v.FindMember(
+          json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
+
+        if (it == v.MemberEnd()) {
+            return default_value;
+        }
+
+        // Gate on values that can't be represented with doubles.
+        // rapidjson can serialize a uint64_t even thought it's not a widely
+        // supported type, so deserializing that would trigger this. note also
+        // that 0.1 is a valid json literal, but does not have an exact double
+        // representation. this cannot be caught with this, and it would require
+        // some sort of decimal type
+        if (!it->value.IsLosslessDouble()) {
+            throw as_exception(invalid_schema(fmt::format(
+              R"(is_numeric_property_value_superset-{} not implemented for type {}. input: older: '{}', newer: '{}')",
+              prop_name,
+              it->value.GetType(),
+              pj{older},
+              pj{newer})));
+        }
+
+        return it->value.GetDouble();
+    };
+
+    auto older_value = get_value(older);
+    auto newer_value = get_value(newer);
+    if (older_value == newer_value) {
+        // either both not set or with the same value
+        return true;
     }
 
-    // Gate on values that can't be represented with doubles.
-    // rapidjson can serialize a uint64_t even thought it's not a widely
-    // supported type, so deserializing that would trigger this. note also that
-    // 0.1 is a valid json literal, but does not have an exact double
-    // representation. this cannot be caught with this, and it would require
-    // some sort of decimal type
-    if (!older_val_p->IsLosslessDouble() || !newer_val_p->IsLosslessDouble()) {
-        // both have value but they can't be decoded as T
-        throw as_exception(invalid_schema(fmt::format(
-          R"({}-{} not implemented for types [{},{}]. input: older: '{}', newer: '{}')",
-          __FUNCTION__,
-          prop_name,
-          older_val_p->GetType(),
-          newer_val_p->GetType(),
-          pj{older},
-          pj{newer})));
+    if (older_value.has_value() && newer_value.has_value()) {
+        return std::invoke(
+          std::forward<VPred>(value_predicate), *older_value, *newer_value);
     }
 
-    auto older_value = older_val_p->GetDouble();
-    auto newer_value = newer_val_p->GetDouble();
-    return older_value == newer_value
-           || std::invoke(
-             std::forward<VPred>(value_predicate), older_value, newer_value);
+    // (relevant only if default_value is not used)
+    // only one is set. if older is not set then newer has a value that is more
+    // restrictive, so older is a superset of newer
+    return !older_value.has_value();
 }
 
 enum class additional_field_for { object, array };
@@ -616,7 +635,7 @@ bool is_additional_superset(
 bool is_string_superset(json::Value const& older, json::Value const& newer) {
     // note: "format" is not part of the checks
     if (!is_numeric_property_value_superset(
-          older, newer, "minLength", std::less_equal<>{})) {
+          older, newer, "minLength", std::less_equal<>{}, 0)) {
         // older is less strict
         return false;
     }
@@ -744,7 +763,7 @@ bool is_array_superset(json::Value const& older, json::Value const& newer) {
 
     // size checks are common to both types
     if (!is_numeric_property_value_superset(
-          older, newer, "minItems", std::less_equal<>{})) {
+          older, newer, "minItems", std::less_equal<>{}, 0)) {
         return false;
     }
 
@@ -1023,7 +1042,7 @@ bool is_object_required_superset(
 
 bool is_object_superset(json::Value const& older, json::Value const& newer) {
     if (!is_numeric_property_value_superset(
-          older, newer, "minProperties", std::less_equal<>{})) {
+          older, newer, "minProperties", std::less_equal<>{}, 0)) {
         // newer requires less properties to be set
         return false;
     }
