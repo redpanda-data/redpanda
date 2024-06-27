@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
@@ -553,6 +554,13 @@ remote_manifest_path topic_manifest::get_manifest_path() const {
     vassert(_topic_config, "Topic config is not set");
     return get_topic_manifest_path(
       _topic_config->tp_ns.ns, _topic_config->tp_ns.tp, manifest_format::serde);
+}
+
+remote_manifest_path topic_manifest::get_manifest_path(
+  const remote_path_provider& path_provider) const {
+    vassert(_topic_config, "Topic config is not set");
+    return remote_manifest_path{
+      path_provider.topic_manifest_path(_topic_config->tp_ns, _rev)};
 }
 
 } // namespace cloud_storage

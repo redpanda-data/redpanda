@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
@@ -56,6 +57,7 @@ public:
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
+    remote_manifest_path get_manifest_path(const remote_path_provider&) const;
 
     static remote_manifest_path
     get_topic_manifest_path(model::ns ns, model::topic topic, manifest_format);
