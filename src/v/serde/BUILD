@@ -2,20 +2,20 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
     name = "serde",
-    hdrs = glob([
-        "read_header.h",
-        "serde_exception.h",
-        "type_str.h",
-        "serde_size_t.h",
+    hdrs = [
         "checksum_t.h",
         "envelope.h",
-        "serde_is_enum.h",
-        "rw/tags.h",
+        "read_header.h",
         "rw/reservable.h",
         "rw/rw.h",
         "rw/scalar.h",
+        "rw/tags.h",
         "rw/vector.h",
-    ]),
+        "serde_exception.h",
+        "serde_is_enum.h",
+        "serde_size_t.h",
+        "type_str.h",
+    ],
     include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
