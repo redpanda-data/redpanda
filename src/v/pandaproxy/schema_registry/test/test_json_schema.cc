@@ -255,6 +255,12 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "object", "properties": {"a": {"type": "integer", "default": 10}}, "required": ["a"]})",
     .reader_is_compatible_with_writer = false,
   },
+  // array checks: size increase is not allowed
+  {
+    .reader_schema = R"({"type": "array", "minItems": 2, "maxItems": 10})",
+    .writer_schema = R"({"type": "array", "maxItems": 11})",
+    .reader_is_compatible_with_writer = false,
+  },
   // combinators: "not" is required on both schema
   {
     .reader_schema

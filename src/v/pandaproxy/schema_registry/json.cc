@@ -731,9 +731,28 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
     return true;
 }
 
-bool is_array_superset(
-  [[maybe_unused]] json::Value const& older,
-  [[maybe_unused]] json::Value const& newer) {
+bool is_array_superset(json::Value const& older, json::Value const& newer) {
+    // "type": "array" is used to model an array or a tuple.
+    // for array, "items" is a schema that validates all the elements.
+    // for tuple in Draft4, "items" is an array of schemas to validate the
+    // tuple, and "additionaItems" a schema to validate extra elements.
+    // TODO in later drafts, tuple validation has "prefixItems" as array of
+    // schemas, "items" is for validation of extra elements, "additionalItems"
+    // is not used.
+    // This superset function has a common section for tuples and array, and
+    // then is split based on array/tuple.
+
+    // size checks are common to both types
+    if (!is_numeric_property_value_superset(
+          older, newer, "minItems", std::less_equal<>{})) {
+        return false;
+    }
+
+    if (!is_numeric_property_value_superset(
+          older, newer, "maxItems", std::greater_equal<>{})) {
+        return false;
+    }
+
     throw as_exception(invalid_schema(fmt::format(
       "{} not implemented. input: older: '{}', newer: '{}'",
       __FUNCTION__,
@@ -1078,8 +1097,6 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "$schema",
            "additionalItems",
            "items",
-           "maxItems",
-           "minItems",
            "uniqueItems",
            "definitions",
            "dependencies",
