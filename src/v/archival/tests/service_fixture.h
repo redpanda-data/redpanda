@@ -171,6 +171,27 @@ public:
       archival::ntp_archiver::batch_result,
       std::optional<model::offset> lso = std::nullopt);
 
+    ss::future<> upload_until_term_change(archival::ntp_archiver& archiver) {
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        return archiver._parent.archival_meta_stm()
+          ->sync(sync_timeout)
+          .then([&](const auto& sync_result) {
+              if (!sync_result.has_value()) {
+                  return ss::make_ready_future<>();
+              }
+              return archiver.upload_until_term_change();
+          });
+    }
+
+    ss::future<> upload_until_abort(archival::ntp_archiver& archiver) {
+        return archiver.upload_until_abort();
+    }
+
+    void broadcast_flush_condition_variable(archival::ntp_archiver& archiver) {
+        archiver._flush_cond.broadcast();
+    }
+
     ss::sharded<cloud_storage_clients::client_pool> pool;
     ss::sharded<cloud_storage::remote> remote;
 

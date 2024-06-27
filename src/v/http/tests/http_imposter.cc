@@ -43,6 +43,18 @@ http_imposter_fixture::get_requests() const {
     return _requests;
 }
 
+std::vector<http_test_utils::request_info> http_imposter_fixture::get_requests(
+  http_imposter_fixture::req_pred_t predicate) const {
+    std::vector<http_test_utils::request_info> matching_requests;
+    matching_requests.reserve(_requests.size());
+    std::copy_if(
+      _requests.cbegin(),
+      _requests.cend(),
+      std::back_inserter(matching_requests),
+      std::move(predicate));
+    return matching_requests;
+}
+
 static ss::sstring remove_query_params(std::string_view url) {
     return ss::sstring{url.substr(0, url.find('?'))};
 }
