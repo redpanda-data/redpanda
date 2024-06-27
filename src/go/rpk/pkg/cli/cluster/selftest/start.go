@@ -48,8 +48,11 @@ Available tests to run:
 * Disk tests:
   ** Throughput test: 512 KB messages, sequential read/write
      *** Uses a larger request message sizes and deeper I/O queue depth to write/read more bytes in a shorter amount of time, at the cost of IOPS/latency.
-  ** Latency test: 4 KB messages, sequential read/write
-     *** Uses smaller request message sizes and lower levels of parallelism to achieve higher IOPS and lower latency.
+  ** Latency and io depth tests: 4 KB messages, sequential read/write, varying io depth
+     *** Uses small IO sizes and varying levels of parallelism to determine the relationship between io depth and IOPS
+     *** Includes one test without using dsync (fdatasync) on each write to establish the cost of dsync
+  ** 16 KB test
+     *** One high io depth test at 16 KB to reflect performance at Redpanda's default chunk size
 * Network tests:
   ** Throughput test: 8192-bit messages
      *** Unique pairs of Redpanda nodes each act as a client and a server.
@@ -123,7 +126,7 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk
 	diskcheck := []any{
 		// One test weighted for better throughput results
 		rpadmin.DiskcheckParameters{
-			Name:        "512KB sequential r/w throughput disk test",
+			Name:        "512KB sequential r/w",
 			DSync:       true,
 			SkipWrite:   false,
 			SkipRead:    false,
@@ -133,16 +136,73 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk
 			Parallelism: 4,
 			Type:        rpadmin.DiskcheckTagIdentifier,
 		},
-		// .. and another for better latency/iops results
+		// .. and then a series of 4KB write-only tests at increasing io depth
 		rpadmin.DiskcheckParameters{
-			Name:        "4KB sequential r/w latency/iops disk test",
+			Name:        "4KB sequential r/w, low io depth",
 			DSync:       true,
 			SkipWrite:   false,
 			SkipRead:    false,
 			DataSize:    1 * units.GiB,
 			RequestSize: 4 * units.KiB,
 			DurationMs:  durationDisk,
-			Parallelism: 2,
+			Parallelism: 1,
+			Type:        rpadmin.DiskcheckTagIdentifier,
+		},
+		rpadmin.DiskcheckParameters{
+			Name:        "4KB sequential write, medium io depth",
+			DSync:       true,
+			SkipWrite:   false,
+			SkipRead:    true,
+			DataSize:    1 * units.GiB,
+			RequestSize: 4 * units.KiB,
+			DurationMs:  durationDisk,
+			Parallelism: 8,
+			Type:        rpadmin.DiskcheckTagIdentifier,
+		},
+		rpadmin.DiskcheckParameters{
+			Name:        "4KB sequential write, high io depth",
+			DSync:       true,
+			SkipWrite:   false,
+			SkipRead:    true,
+			DataSize:    1 * units.GiB,
+			RequestSize: 4 * units.KiB,
+			DurationMs:  durationDisk,
+			Parallelism: 64,
+			Type:        rpadmin.DiskcheckTagIdentifier,
+		},
+		rpadmin.DiskcheckParameters{
+			Name:        "4KB sequential write, very high io depth",
+			DSync:       true,
+			SkipWrite:   false,
+			SkipRead:    true,
+			DataSize:    1 * units.GiB,
+			RequestSize: 4 * units.KiB,
+			DurationMs:  durationDisk,
+			Parallelism: 256,
+			Type:        rpadmin.DiskcheckTagIdentifier,
+		},
+		// ... and a 4KB test as above but with dsync off
+		rpadmin.DiskcheckParameters{
+			Name:        "4KB sequential write, no dsync",
+			DSync:       false,
+			SkipWrite:   false,
+			SkipRead:    true,
+			DataSize:    1 * units.GiB,
+			RequestSize: 4 * units.KiB,
+			DurationMs:  durationDisk,
+			Parallelism: 64,
+			Type:        rpadmin.DiskcheckTagIdentifier,
+		},
+		// ... and a 16KB test as above as another important size for redpanda
+		rpadmin.DiskcheckParameters{
+			Name:        "16KB sequential r/w, high io depth",
+			DSync:       false,
+			SkipWrite:   false,
+			SkipRead:    false,
+			DataSize:    1 * units.GiB,
+			RequestSize: 16 * units.KiB,
+			DurationMs:  durationDisk,
+			Parallelism: 64,
 			Type:        rpadmin.DiskcheckTagIdentifier,
 		},
 	}
