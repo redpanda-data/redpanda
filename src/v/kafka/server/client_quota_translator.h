@@ -141,6 +141,9 @@ public:
     /// `watch` can be used to register for quota changes
     void watch(on_change_fn&& fn);
 
+    /// Returns true if there are no quotas configured
+    bool is_empty() const;
+
 private:
     using quota_config
       = std::unordered_map<ss::sstring, config::client_group_quota>;
