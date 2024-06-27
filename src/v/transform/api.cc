@@ -928,6 +928,9 @@ ss::future<std::error_code> service::patch_transform_metadata(
     if (patch.env.has_value()) {
         std::exchange(transform->environment, std::move(patch.env).value());
     }
+    transform->compression_mode = patch.compression_mode.value_or(
+      transform->compression_mode);
+
     cluster::errc ec = co_await _plugin_frontend->local().upsert_transform(
       transform.value(), model::timeout_clock::now() + metadata_timeout);
 

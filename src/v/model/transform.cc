@@ -102,6 +102,11 @@ std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
     return os;
 }
 
+bool transform_metadata_patch::empty() const noexcept {
+    return !env.has_value() && !paused.has_value()
+           && !compression_mode.has_value();
+}
+
 std::ostream& operator<<(std::ostream& os, const transform_offsets_key& key) {
     fmt::print(
       os,
@@ -345,4 +350,5 @@ void tag_invoke(
         }
     }
 }
+
 } // namespace model

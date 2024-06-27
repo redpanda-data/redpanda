@@ -93,6 +93,9 @@ The --var flag can be repeated to specify multiple variables like so:
 				}
 				cfg.OutputTopics = []string{ot}
 			}
+			if cfg.Compression == "" {
+				cfg.Compression = "none"
+			}
 
 			if file == "" {
 				file = fmt.Sprintf("%s.wasm", cfg.Name)
@@ -106,11 +109,12 @@ The --var flag can be repeated to specify multiple variables like so:
 			out.MaybeDieErr(err)
 
 			t := adminapi.TransformMetadata{
-				InputTopic:   cfg.InputTopic,
-				OutputTopics: cfg.OutputTopics,
-				Name:         cfg.Name,
-				Status:       nil,
-				Environment:  mapToEnvVars(cfg.Env),
+				InputTopic:      cfg.InputTopic,
+				OutputTopics:    cfg.OutputTopics,
+				Name:            cfg.Name,
+				Status:          nil,
+				Environment:     mapToEnvVars(cfg.Env),
+				CompressionMode: cfg.Compression,
 			}
 			if p.FromCloud && !p.CloudCluster.IsServerless() {
 				url, err := p.CloudCluster.CheckClusterURL()
@@ -149,6 +153,7 @@ The --var flag can be repeated to specify multiple variables like so:
 	cmd.Flags().StringSliceVarP(&fc.outputTopics, "output-topic", "o", []string{}, "The output topic to write the transform results to (repeatable)")
 	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
 	cmd.Flags().Var(&fc.env, "var", "Specify an environment variable in the form of KEY=VALUE")
+	cmd.Flags().StringVar(&fc.compression, "compression", "", "Output batch compression type")
 	return cmd
 }
 
@@ -196,6 +201,7 @@ type deployFlagConfig struct {
 	outputTopics []string
 	functionName string
 	env          environment
+	compression  string
 }
 
 // ToProjectConfig creates a project.Config from the specified command line flags.
@@ -204,6 +210,7 @@ func (fc deployFlagConfig) ToProjectConfig() (out project.Config) {
 	out.InputTopic = fc.inputTopic
 	out.OutputTopics = fc.outputTopics
 	out.Env = fc.env.vars
+	out.Compression = fc.compression
 	return out
 }
 
@@ -233,12 +240,16 @@ func mergeProjectConfigs(lhs project.Config, rhs project.Config) (out project.Co
 	if len(rhs.OutputTopics) > 0 {
 		out.OutputTopics = rhs.OutputTopics
 	}
+	if rhs.Compression != "" {
+		out.Compression = rhs.Compression
+	}
+
 	return out
 }
 
 // isEmptyProjectConfig checks if a project config is completely empty.
 func isEmptyProjectConfig(cfg project.Config) bool {
-	return cfg.Name == "" && cfg.InputTopic == "" && len(cfg.OutputTopics) == 0 && len(cfg.Env) == 0
+	return cfg.Name == "" && cfg.InputTopic == "" && len(cfg.OutputTopics) == 0 && len(cfg.Env) == 0 && cfg.Compression == ""
 }
 
 // validateProjectConfig validates the merged command line and file configurations.

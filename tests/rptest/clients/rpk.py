@@ -21,6 +21,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.redpanda_types import SSL_SECURITY, KafkaClientSecurity, check_username_password
 from rptest.util import wait_until_result
 from rptest.services import tls
+from rptest.clients.types import TopicSpec
 from ducktape.errors import TimeoutError
 from dataclasses import dataclass
 
@@ -139,6 +140,7 @@ class RpkWasmListResponse(typing.NamedTuple):
     output_topics: list[str]
     status: list[RpkWasmListProcessorResponse]
     environment: dict[str, str]
+    compression: TopicSpec.CompressionTypes
 
 
 class RpkClusterInfoNode:
@@ -1705,11 +1707,15 @@ class RpkTool:
                     name,
                     input_topic,
                     output_topics,
-                    file="tinygo/identity.wasm"):
+                    file="tinygo/identity.wasm",
+                    compression_type: TopicSpec.CompressionTypes
+                    | None = None):
         cmd = [
             "deploy", "--name", name, "--input-topic", input_topic, "--file",
             f"/opt/transforms/{file}"
         ]
+        if compression_type is not None:
+            cmd += ["--compression", compression_type]
         assert len(output_topics) > 0, "missing output topics"
         for topic in output_topics:
             cmd += ["--output-topic", topic]
@@ -1742,6 +1748,7 @@ class RpkTool:
                 output_topics=loaded["output_topics"],
                 status=[status_from_json(s) for s in loaded["status"]],
                 environment=loaded["environment"],
+                compression=TopicSpec.CompressionTypes(loaded["compression"]),
             )
 
         return [transform_from_json(o) for o in loaded]

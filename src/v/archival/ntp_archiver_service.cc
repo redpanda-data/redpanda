@@ -343,6 +343,17 @@ ss::future<> ntp_archiver::upload_until_abort() {
         }
 
         _start_term = _parent.term();
+
+        // If a flush is in progress from a previous term, reset the flush
+        // uploads offset and signal to the condition variable.
+        if (flush_in_progress()) {
+            vlog(
+              _rtclog.debug,
+              "Flush from previous term was in progress, resetting.");
+            _flush_uploads_offset.reset();
+            _flush_cond.broadcast();
+        }
+
         if (!may_begin_uploads()) {
             continue;
         }
@@ -711,6 +722,31 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             break;
         }
 
+        // If a flush was in progress and the archiver has uploaded past the set
+        // _flush_uploads_offset, there should be a number of actions taken to
+        // fully complete the flush operation.
+        // 1. Upload topic manifest (if we are partition 0).
+        // 2. Upload the partition manifest.
+        // 3. Flush manifest to the clean offset.
+        // 4. Reset flush state.
+        // 5. Broadcast using flush cv to alert all waiters.
+        if (uploaded_data_past_flush_offset()) {
+            if (_parent.ntp().tp.partition == 0) {
+                co_await upload_topic_manifest();
+            }
+
+            // Attempt to upload the manifest. Flush is considered complete upon
+            // success. If unsuccessful, this will be retried on next iteration
+            // of background loop.
+            if (
+              co_await upload_manifest(upload_loop_flush_complete_ctx_label)
+              == cloud_storage::upload_result::success) {
+                co_await flush_manifest_clean_offset();
+                _flush_uploads_offset.reset();
+                _flush_cond.broadcast();
+            }
+        }
+
         // This is the fallback path for uploading manifest if it didn't happen
         // inline with segment uploads: this path will be taken on e.g. restarts
         // or unclean leadership changes.
@@ -893,6 +929,7 @@ ss::future<> ntp_archiver::stop() {
     _as.request_abort();
     _uploads_active.broken();
     _leader_cond.broken();
+    _flush_cond.broken();
     co_await _gate.close();
 }
 
@@ -1340,19 +1377,16 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // manifest.
 }
 
-std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
-    auto original_term = _parent.term();
-    auto lost_leadership = !_parent.is_leader()
-                           || _parent.term() != original_term;
-    if (unlikely(lost_leadership)) {
+std::optional<ss::sstring> ntp_archiver::upload_should_abort() const {
+    if (unlikely(lost_leadership())) {
         return fmt::format(
           "lost leadership or term changed during upload, "
           "current leadership status: {}, "
           "current term: {}, "
-          "original term: {}",
+          "start term: {}",
           _parent.is_leader(),
           _parent.term(),
-          original_term);
+          _start_term);
     } else {
         return std::nullopt;
     }
@@ -1562,6 +1596,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         candidate_result = co_await _policy.get_next_candidate(
           start_upload_offset,
           last_stable_offset,
+          _flush_uploads_offset,
           log,
           _conf->segment_upload_timeout());
         break;
@@ -1819,7 +1854,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
     }
 
     absl::flat_hash_map<cloud_storage::upload_result, size_t> upload_results;
-    for (auto result : segment_results) {
+    for (const auto& result : segment_results) {
         ++upload_results[result.result()];
     }
 
@@ -2170,6 +2205,37 @@ std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
     case segment_upload_kind::compacted:
         fmt::print(os, "compacted");
         break;
+    }
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, flush_response fr) {
+    switch (fr) {
+    case flush_response::accepted:
+        fmt::print(os, "accepted");
+        break;
+    case flush_response::rejected:
+        fmt::print(os, "rejected");
+        break;
+    }
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, flush_result fr) {
+    fmt::print(os, "response: {}, offset: {}", fr.response, fr.offset);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, wait_result fr) {
+    switch (fr) {
+    case wait_result::not_in_progress:
+        return os << "not in progress";
+    case wait_result::complete:
+        return os << "complete";
+    case wait_result::lost_leadership:
+        return os << "lost leadership";
+    case wait_result::failed:
+        return os << "failed";
     }
     return os;
 }
@@ -2609,6 +2675,84 @@ ss::future<> ntp_archiver::apply_spillover() {
               tail.get_manifest_path());
         }
     }
+}
+
+flush_result ntp_archiver::flush() {
+    // Return early if we are not the leader, or if we are a read replica.
+    if (!_parent.is_leader() || _parent.is_read_replica_mode_enabled()) {
+        vlog(
+          _rtclog.debug,
+          "Flush request not accepted, node is not the leader for the "
+          "partition, or the node is a read replica");
+        return flush_result{
+          .response = flush_response::rejected, .offset = std::nullopt};
+    }
+
+    _flush_uploads_offset = model::prev_offset(
+      max_uploadable_offset_exclusive());
+    vlog(
+      _rtclog.debug,
+      "Accepted flush, flush offset is {}",
+      _flush_uploads_offset.value());
+    return flush_result{
+      .response = flush_response::accepted,
+      .offset = _flush_uploads_offset.value()};
+}
+
+ss::future<wait_result> ntp_archiver::wait(model::offset o) {
+    if (_parent.is_read_replica_mode_enabled()) {
+        vlog(
+          _rtclog.debug,
+          "Cannot wait on a flush in ntp_archiver, node is read replica");
+        co_return wait_result::failed;
+    }
+
+    // Currently we tie wait() to flush() state. If there is no flush in
+    // progress, we return.
+    if (!flush_in_progress()) {
+        vlog(
+          _rtclog.debug,
+          "Cannot wait on a flush in ntp_archiver, as no flush in progress");
+        co_return wait_result::not_in_progress;
+    }
+
+    // If o is outside bounds of _flush_uploads_offset, we indicate so.
+    if (o > _flush_uploads_offset.value()) {
+        vlog(
+          _rtclog.debug,
+          "Passed offset {} is outside bounds of current flush offset {}",
+          o,
+          _flush_uploads_offset.value());
+        co_return wait_result::not_in_progress;
+    }
+
+    // Save the _start_term before entering wait loop, where we will suspend on
+    // condition variable.
+    auto wait_issued_term = _start_term;
+
+    while (!uploaded_and_clean_past_offset(o)) {
+        if (!_parent.is_leader() || wait_issued_term != _start_term) {
+            vlog(
+              _rtclog.debug,
+              "Leadership was lost during flush operation in ntp_archiver");
+            co_return wait_result::lost_leadership;
+        }
+
+        try {
+            vlog(_rtclog.trace, "Waiting on _flush_cond in ntp_archiver");
+            co_await _flush_cond.wait();
+        } catch (const ss::broken_condition_variable&) {
+            // We shutdown while waiting for a flush() to finish.
+            // Return a failure result.
+            vlog(
+              _rtclog.debug,
+              "Shutdown was issued during flush operation in ntp_archiver");
+            co_return wait_result::failed;
+        }
+    }
+
+    vlog(_rtclog.debug, "Flush was successfully completed in ntp_archiver.");
+    co_return wait_result::complete;
 }
 
 bool ntp_archiver::stm_retention_needed() const {
@@ -3122,12 +3266,39 @@ void ntp_archiver::complete_transfer_leadership() {
     _leader_cond.signal();
 }
 
+bool ntp_archiver::lost_leadership() const {
+    return !_parent.is_leader() || _parent.term() != _start_term;
+}
+
 bool ntp_archiver::local_storage_pressure() const {
     auto eviction_offset = _parent.eviction_requested_offset();
 
     return eviction_offset.has_value()
            && _parent.archival_meta_stm()->get_last_clean_at()
                 <= eviction_offset.value();
+}
+
+bool ntp_archiver::flush_in_progress() const {
+    return _flush_uploads_offset.has_value();
+}
+
+bool ntp_archiver::uploaded_and_clean_past_offset(model::offset o) const {
+    vlog(
+      _rtclog.trace,
+      "In uploaded_and_clean_past_offset(), manifest last "
+      "offset: {}, last clean offset: {}, query offset: {}.",
+      manifest().get_last_offset(),
+      _parent.archival_meta_stm()->get_last_clean_at(),
+      o);
+    return std::min(
+             manifest().get_last_offset(),
+             _parent.archival_meta_stm()->get_last_clean_at())
+           >= o;
+}
+
+bool ntp_archiver::uploaded_data_past_flush_offset() const {
+    return flush_in_progress()
+           && manifest().get_last_offset() >= _flush_uploads_offset.value();
 }
 
 } // namespace archival

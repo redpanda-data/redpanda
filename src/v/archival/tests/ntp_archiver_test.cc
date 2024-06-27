@@ -19,6 +19,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
@@ -114,6 +115,11 @@ void log_upload_candidate(const archival::upload_candidate& up) {
       up.exposed_name,
       first_source->offsets().get_base_offset(),
       first_source->offsets().get_dirty_offset());
+}
+
+bool is_partition_manifest_upload_req(
+  const http_test_utils::request_info& req) {
+    return req.method == "PUT" && req.url == manifest_url;
 }
 
 // NOLINTNEXTLINE
@@ -829,11 +835,14 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(partition);
 
     // Starting offset is lower than offset1
-    auto upload1 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         model::offset(0), lso, log, segment_read_lock_timeout)
-                       .get())
+    auto upload1 = require_upload_candidate(policy
+                                              .get_next_candidate(
+                                                model::offset(0),
+                                                lso,
+                                                std::nullopt,
+                                                log,
+                                                segment_read_lock_timeout)
+                                              .get())
                      .candidate;
     log_upload_candidate(upload1);
     BOOST_REQUIRE(!upload1.sources.empty());
@@ -843,12 +852,13 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload1.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload2 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload2
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload2);
     BOOST_REQUIRE(!upload2.sources.empty());
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
@@ -859,12 +869,13 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload3 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload3
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload3);
     BOOST_REQUIRE(!upload3.sources.empty());
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
@@ -877,13 +888,18 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                    + model::offset(1);
     require_candidate_creation_error(
       policy
-        .get_next_candidate(start_offset, lso, log, segment_read_lock_timeout)
+        .get_next_candidate(
+          start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
         .get(),
       candidate_creation_error::no_segment_for_begin_offset);
     require_candidate_creation_error(
       policy
         .get_next_candidate(
-          lso + model::offset(1), lso, log, segment_read_lock_timeout)
+          lso + model::offset(1),
+          lso,
+          std::nullopt,
+          log,
+          segment_read_lock_timeout)
         .get(),
       candidate_creation_error::no_segment_for_begin_offset);
 }
@@ -925,13 +941,16 @@ FIXTURE_TEST(
     auto partition = app.partition_manager.local().get(manifest_ntp);
     BOOST_REQUIRE(partition);
 
-    auto candidate
-      = require_upload_candidate(
-          archival::archival_policy{manifest_ntp}
-            .get_next_candidate(
-              model::offset(0), lso, log, segment_read_lock_timeout)
-            .get())
-          .candidate;
+    auto candidate = require_upload_candidate(
+                       archival::archival_policy{manifest_ntp}
+                         .get_next_candidate(
+                           model::offset(0),
+                           lso,
+                           std::nullopt,
+                           log,
+                           segment_read_lock_timeout)
+                         .get())
+                       .candidate;
 
     // The search is expected to find the next segment after the compacted
     // segment, skipping the compacted one.
@@ -966,6 +985,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
                                               .get_next_candidate(
                                                 start_offset,
                                                 last_stable_offset,
+                                                std::nullopt,
                                                 log,
                                                 segment_read_lock_timeout)
                                               .get())
@@ -1027,6 +1047,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
             .get_next_candidate(
               start_offset,
               log->offsets().dirty_offset + model::offset{1},
+              std::nullopt,
               log,
               segment_read_lock_timeout)
             .get(),
@@ -1062,6 +1083,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
             .get_next_candidate(
               start_offset,
               log->offsets().dirty_offset + model::offset{1},
+              std::nullopt,
               log,
               segment_read_lock_timeout)
             .get(),
@@ -1551,24 +1573,26 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     model::offset start_offset{0};
     model::offset lso{9999};
     // Starting offset is lower than offset1
-    auto upload1 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload1
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload1);
     BOOST_REQUIRE(!upload1.sources.empty());
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
     start_offset = upload1.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload2 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload2
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload2);
     BOOST_REQUIRE(!upload2.sources.empty());
     BOOST_REQUIRE(upload2.starting_offset == offset2);
@@ -1579,12 +1603,13 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
 
     start_offset = upload2.sources.front()->offsets().get_dirty_offset()
                    + model::offset(1);
-    auto upload3 = require_upload_candidate(
-                     policy
-                       .get_next_candidate(
-                         start_offset, lso, log, segment_read_lock_timeout)
-                       .get())
-                     .candidate;
+    auto upload3
+      = require_upload_candidate(
+          policy
+            .get_next_candidate(
+              start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
+            .get())
+          .candidate;
     log_upload_candidate(upload3);
     BOOST_REQUIRE(!upload3.sources.empty());
     BOOST_REQUIRE(upload3.starting_offset == offset3);
@@ -1597,7 +1622,8 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
                    + model::offset(1);
     require_candidate_creation_error(
       policy
-        .get_next_candidate(start_offset, lso, log, segment_read_lock_timeout)
+        .get_next_candidate(
+          start_offset, lso, std::nullopt, log, segment_read_lock_timeout)
         .get(),
       candidate_creation_error::no_segment_for_begin_offset);
 }
@@ -1922,4 +1948,453 @@ FIXTURE_TEST(test_upload_with_gap_blocked, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(stm_manifest.size(), 1);
     BOOST_REQUIRE_EQUAL(
       stm_manifest.last_segment()->base_offset, segments[0].base_offset);
+}
+
+FIXTURE_TEST(test_flush_not_leader, cloud_storage_manual_multinode_test_base) {
+    // start a second fixture and wait for stable setup
+    auto fx2 = start_second_fixture();
+    RPTEST_REQUIRE_EVENTUALLY(3s, [&] {
+        return app.controller->get_members_table().local().node_ids().size()
+               == 2;
+    });
+
+    // Create topic
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
+    props.segment_size = 64_KiB;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props, 2).get();
+
+    // Figure out which fixture is the follower
+    redpanda_thread_fixture* fx_follower = nullptr;
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        cluster::partition* prt_a
+          = app.partition_manager.local().get(ntp).get();
+        cluster::partition* prt_b
+          = fx2->app.partition_manager.local().get(ntp).get();
+        if (!prt_a || !prt_b) {
+            return false;
+        }
+        if (!prt_a->is_leader()) {
+            fx_follower = this;
+            return true;
+        }
+        if (!prt_b->is_leader()) {
+            fx_follower = fx2.get();
+            return true;
+        }
+        return false;
+    });
+
+    BOOST_REQUIRE(fx_follower != nullptr);
+
+    // Get the follower partition
+    cluster::partition* prt_follower
+      = fx_follower->app.partition_manager.local().get(ntp).get();
+
+    auto archiver_opt = prt_follower->archiver();
+    BOOST_REQUIRE(archiver_opt.has_value());
+
+    auto& archiver = archiver_opt.value().get();
+
+    // Expect that a flush() call to the follower partition's archiver is
+    // rejected
+    auto flush_res = archiver.flush();
+    BOOST_REQUIRE(!flush_res.offset.has_value());
+    BOOST_REQUIRE_EQUAL(flush_res.response, flush_response::rejected);
+}
+
+FIXTURE_TEST(test_flush_leader, cloud_storage_manual_multinode_test_base) {
+    // start a second fixture and wait for stable setup
+    auto fx2 = start_second_fixture();
+    RPTEST_REQUIRE_EVENTUALLY(3s, [&] {
+        return app.controller->get_members_table().local().node_ids().size()
+               == 2;
+    });
+
+    // Create topic
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
+    props.segment_size = 64_KiB;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props, 2).get();
+
+    // Figure out which fixture is the leader
+    redpanda_thread_fixture* fx_leader = nullptr;
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        cluster::partition* prt_a
+          = app.partition_manager.local().get(ntp).get();
+        cluster::partition* prt_b
+          = fx2->app.partition_manager.local().get(ntp).get();
+        if (!prt_a || !prt_b) {
+            return false;
+        }
+        if (prt_a->is_leader()) {
+            fx_leader = this;
+            return true;
+        }
+        if (prt_b->is_leader()) {
+            fx_leader = fx2.get();
+            return true;
+        }
+        return false;
+    });
+
+    BOOST_REQUIRE(fx_leader != nullptr);
+
+    // Get the leader partition
+    cluster::partition* prt_leader
+      = fx_leader->app.partition_manager.local().get(ntp).get();
+
+    auto archiver_opt = prt_leader->archiver();
+    BOOST_REQUIRE(archiver_opt.has_value());
+
+    auto& archiver = archiver_opt.value().get();
+
+    // Expect that a flush() call to the leader partition's archiver is accepted
+    auto flush_res = archiver.flush();
+    BOOST_REQUIRE_EQUAL(flush_res.response, flush_response::accepted);
+    BOOST_REQUIRE(flush_res.offset.has_value());
+}
+
+FIXTURE_TEST(test_flush_wait_out_of_bounds, archiver_fixture) {
+    const auto num_segments = 2;
+    const auto term_id = 1;
+    const auto num_records = 100;
+    std::vector<segment_desc> segments = {};
+    segments.reserve(num_segments);
+    for (int i = 0; i < num_segments; ++i) {
+        segments.emplace_back(
+          manifest_ntp,
+          model::offset(i * num_records),
+          model::term_id(term_id),
+          num_records);
+    }
+
+    const auto very_clearly_out_of_bounds_offset = model::offset{
+      num_segments * num_records * 100};
+
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    listen();
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    // Issue a flush request, syncing up with added segments doesn't matter for
+    // this test.
+    auto flush_res = archiver.flush();
+    BOOST_REQUIRE_EQUAL(flush_res.response, flush_response::accepted);
+
+    model::offset flush_offset = very_clearly_out_of_bounds_offset;
+    auto wait_res = archiver.wait(flush_offset).get();
+
+    // Out of bounds wait() request will return not_in_progress.
+    BOOST_REQUIRE_EQUAL(wait_res, wait_result::not_in_progress);
+}
+
+FIXTURE_TEST(test_flush_wait_with_no_flush, archiver_fixture) {
+    const auto num_segments = 2;
+    const auto term_id = 1;
+    const auto num_records = 100;
+    std::vector<segment_desc> segments = {};
+    segments.reserve(num_segments);
+    for (int i = 0; i < num_segments; ++i) {
+        segments.emplace_back(
+          manifest_ntp,
+          model::offset(i * num_records),
+          model::term_id(term_id),
+          num_records);
+    }
+
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    listen();
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    model::offset flush_offset = model::offset{1};
+    auto wait_res = archiver.wait(flush_offset).get();
+    BOOST_REQUIRE_EQUAL(wait_res, wait_result::not_in_progress);
+}
+
+FIXTURE_TEST(test_flush_wait_with_flush, archiver_fixture) {
+    scoped_config test_local_cfg;
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+
+    const auto num_segments = 10;
+    const auto term_id = 1;
+    const auto num_records = 100;
+    const auto last_offset = model::offset{num_segments * num_records};
+    std::vector<segment_desc> segments = {};
+    segments.reserve(num_segments);
+    for (int i = 0; i < num_segments; ++i) {
+        segments.emplace_back(
+          manifest_ntp,
+          model::offset(i * num_records),
+          model::term_id(term_id),
+          num_records);
+    }
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    listen();
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    // Flush once max_uploadable_offset_exclusive() reflects added segments,
+    // and assert the request is accepted.
+    model::offset flush_offset;
+    RPTEST_REQUIRE_EVENTUALLY(3s, [&] {
+        auto max_uploadable_offset = archiver.max_uploadable_offset_exclusive();
+        if (max_uploadable_offset > model::offset{0}) {
+            auto flush_res = archiver.flush();
+            flush_offset = flush_res.offset.value();
+            return flush_res.response == flush_response::accepted
+                   && flush_offset == last_offset;
+        }
+        return false;
+    });
+
+    // Create a waiter.
+    auto wait_res = archiver.wait(flush_offset);
+
+    // Start the upload loop.
+    auto upload_future = upload_until_term_change(archiver);
+
+    // Assert the flush eventually completes.
+    BOOST_REQUIRE(wait_res.get() == wait_result::complete);
+
+    // Check that last offset of the manifest is equal to or past the last
+    // segment offset.
+    const auto& manifest = archiver.manifest();
+    BOOST_REQUIRE(manifest.get_last_offset() >= last_offset);
+
+    // Now we can force a step down to stop upload loop.
+    part->raft()->step_down("forced stepdown").get();
+    upload_future.get();
+
+    auto http_requests = get_requests(is_partition_manifest_upload_req);
+    BOOST_REQUIRE(!http_requests.empty());
+}
+
+FIXTURE_TEST(test_flush_wait_with_flush_multiple_waiters, archiver_fixture) {
+    const auto num_segments = 10;
+    const auto term_id = 1;
+    const auto num_records = 100;
+    const auto last_offset = model::offset{num_segments * num_records};
+    std::vector<segment_desc> segments = {};
+    segments.reserve(num_segments);
+    for (int i = 0; i < num_segments; ++i) {
+        segments.emplace_back(
+          manifest_ntp,
+          model::offset(i * num_records),
+          model::term_id(term_id),
+          num_records);
+    }
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    listen();
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    // Flush once max_uploadable_offset_exclusive() reflects added segments,
+    // and assert the request is accepted.
+    RPTEST_REQUIRE_EVENTUALLY(3s, [&] {
+        auto max_uploadable_offset = archiver.max_uploadable_offset_exclusive();
+        if (max_uploadable_offset > model::offset{0}) {
+            auto flush_res = archiver.flush();
+            return flush_res.response == flush_response::accepted
+                   && flush_res.offset.value() == last_offset;
+        }
+        return false;
+    });
+
+    const auto num_waiters = 10;
+    std::vector<ss::future<wait_result>> waiters;
+    waiters.reserve(num_waiters);
+    for (int i = 0; i < num_waiters; ++i) {
+        auto wait_offset = model::offset{(i + 1) * last_offset / num_waiters};
+        waiters.push_back(archiver.wait(wait_offset));
+    }
+
+    auto upload_future = upload_until_term_change(archiver);
+
+    // Assert the flush eventually completes.
+    RPTEST_REQUIRE_EVENTUALLY(3s, [&] {
+        return std::all_of(
+          waiters.begin(), waiters.end(), [](auto& wait_future) {
+              return wait_future.get() == wait_result::complete;
+          });
+    });
+
+    // Check that last offset of the manifest is equal to or past the last
+    // segment offset.
+    const auto& manifest = archiver.manifest();
+    BOOST_REQUIRE(manifest.get_last_offset() >= last_offset);
+
+    // Now we can force a step down to stop upload loop.
+    part->raft()->step_down("forced stepdown").get();
+    upload_future.get();
+
+    auto http_requests = get_requests(is_partition_manifest_upload_req);
+    BOOST_REQUIRE(!http_requests.empty());
+}
+
+FIXTURE_TEST(test_flush_with_leadership_change, archiver_fixture) {
+    const auto num_segments = 10;
+    const auto term_id = 1;
+    const auto num_records = 100;
+    const auto last_offset = model::offset{num_segments * num_records};
+    std::vector<segment_desc> segments = {};
+    segments.reserve(num_segments);
+    for (int i = 0; i < num_segments; ++i) {
+        segments.emplace_back(
+          manifest_ntp,
+          model::offset(i * num_records),
+          model::term_id(term_id),
+          num_records);
+    }
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    listen();
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    // Flush once max_uploadable_offset_exclusive() reflects added segments,
+    // and assert the request is accepted.
+    model::offset flush_offset;
+    RPTEST_REQUIRE_EVENTUALLY(3s, [&] {
+        auto max_uploadable_offset = archiver.max_uploadable_offset_exclusive();
+        if (max_uploadable_offset > model::offset{0}) {
+            auto flush_res = archiver.flush();
+            flush_offset = flush_res.offset.value();
+            return flush_res.response == flush_response::accepted
+                   && flush_offset == last_offset;
+        }
+        return false;
+    });
+
+    // Create a waiter.
+    auto wait_res = archiver.wait(flush_offset);
+
+    // Start the upload loop.
+    auto upload_future = upload_until_term_change(archiver);
+
+    // Now we can force a step down
+    part->raft()->step_down("forced stepdown").get();
+
+    // Manually signal to the condition variable, so that waiters can wake up
+    // and notice the loss of leadership.
+    broadcast_flush_condition_variable(archiver);
+
+    // Assert that we lost leadership while waiting for a flush() to complete.
+    BOOST_REQUIRE(wait_res.get() == wait_result::lost_leadership);
+
+    upload_future.get();
 }

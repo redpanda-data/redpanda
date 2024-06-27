@@ -18,6 +18,7 @@
 #include "model/transform.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
+#include "storage/parser_utils.h"
 #include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
@@ -379,6 +380,10 @@ ss::future<> processor::run_producer_loop(
             // max batch size limits.
             auto batch = model::transformed_data::make_batch(
               model::timestamp::now(), std::move(records));
+            if (_meta.compression_mode != model::compression::none) {
+                batch = co_await storage::internal::compress_batch(
+                  _meta.compression_mode, std::move(batch));
+            }
             _probe->increment_write_bytes(index, batch.size_bytes());
             ss::chunked_fifo<model::record_batch> batches;
             batches.push_back(std::move(batch));

@@ -35,7 +35,7 @@
 
 using namespace std::chrono_literals;
 
-inline ss::logger fixt_log("fixture"); // NOLINT
+inline ss::logger fixt_log("s3_imposter_fixture"); // NOLINT
 
 /// For http_imposter to run this binary with a unique port
 uint16_t unit_test_httpd_port_number() { return 4442; }

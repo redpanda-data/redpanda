@@ -762,7 +762,7 @@ class SISettings:
         conf[
             'cloud_storage_enable_remote_write'] = self.cloud_storage_enable_remote_write
 
-        if self.endpoint_url is not None or self.use_fips_endpoint():
+        if self.endpoint_url is not None:
             conf[
                 "cloud_storage_api_endpoint"] = self.cloud_storage_api_endpoint
             conf[

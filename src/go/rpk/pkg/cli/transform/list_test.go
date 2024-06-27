@@ -33,6 +33,7 @@ func setupTestData() []adminapi.TransformMetadata {
 			Environment: []adminapi.EnvironmentVariable{
 				{Key: "FLUBBER", Value: "enabled"},
 			},
+			CompressionMode: "none",
 			Status: []adminapi.PartitionTransformStatus{
 				{
 					NodeID:    0,
@@ -61,6 +62,7 @@ func setupTestData() []adminapi.TransformMetadata {
 			Environment: []adminapi.EnvironmentVariable{
 				{Key: "FLUX_CAPACITOR", Value: "disabled"},
 			},
+			CompressionMode: "gzip",
 			Status: []adminapi.PartitionTransformStatus{
 				{
 					NodeID:    0,
