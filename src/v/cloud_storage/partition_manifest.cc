@@ -415,6 +415,17 @@ partition_manifest::generate_segment_path(const lw_segment_meta& meta) const {
     return generate_segment_path(lw_segment_meta::convert(meta));
 }
 
+remote_segment_path partition_manifest::generate_segment_path(
+  const segment_meta& meta, const remote_path_provider& path_provider) const {
+    return remote_segment_path{path_provider.segment_path(*this, meta)};
+}
+
+remote_segment_path partition_manifest::generate_segment_path(
+  const lw_segment_meta& meta,
+  const remote_path_provider& path_provider) const {
+    return generate_segment_path(lw_segment_meta::convert(meta), path_provider);
+}
+
 segment_name partition_manifest::generate_remote_segment_name(
   const partition_manifest::value& val) {
     switch (val.sname_format) {

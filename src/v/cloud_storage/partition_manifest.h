@@ -278,6 +278,11 @@ public:
     remote_segment_path generate_segment_path(const segment_meta&) const;
     remote_segment_path generate_segment_path(const lw_segment_meta&) const;
 
+    remote_segment_path generate_segment_path(
+      const segment_meta&, const remote_path_provider&) const;
+    remote_segment_path generate_segment_path(
+      const lw_segment_meta&, const remote_path_provider&) const;
+
     /// Return an iterator to the first addressable segment (i.e. base offset
     /// is greater than or equal to the start offset). If no such segment
     /// exists, return the end iterator.
