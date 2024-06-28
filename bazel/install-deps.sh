@@ -46,6 +46,7 @@ fedora_deps=(
   libtool
   automake
   xfsprogs-devel
+  xorg-x11-util-macros
   gettext-devel
   valgrind-devel
   git
