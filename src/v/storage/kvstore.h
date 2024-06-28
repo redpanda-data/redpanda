@@ -107,6 +107,7 @@ public:
 
     explicit kvstore(
       kvstore_config kv_conf,
+      ss::shard_id shard,
       storage_resources&,
       ss::sharded<features::feature_table>& feature_table);
     ~kvstore() noexcept;

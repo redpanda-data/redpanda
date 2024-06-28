@@ -39,12 +39,24 @@ public:
 
     ss::future<> start() {
         _kvstore = std::make_unique<kvstore>(
-          _kv_conf_cb(), _resources, _feature_table);
+          _kv_conf_cb(), ss::this_shard_id(), _resources, _feature_table);
         return _kvstore->start().then([this] {
             _log_mgr = std::make_unique<log_manager>(
               _log_conf_cb(), kvs(), _resources, _feature_table);
             return _log_mgr->start();
         });
+    }
+
+    ss::future<std::unique_ptr<storage::kvstore>>
+    make_extra_kvstore(ss::shard_id s) {
+        vassert(
+          s >= ss::smp::count,
+          "can't make extra kvstore for existing shard {}",
+          s);
+        auto kvs = std::make_unique<kvstore>(
+          _kv_conf_cb(), s, _resources, _feature_table);
+        co_await kvs->start();
+        co_return kvs;
     }
 
     void stop_cluster_uuid_waiters() { _has_cluster_uuid_cond.broken(); }

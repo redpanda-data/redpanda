@@ -208,6 +208,15 @@ public:
 
     const auto& compaction_ratio() const { return _compaction_ratio; }
 
+    static ss::future<> copy_kvstore_state(
+      model::ntp,
+      storage::kvstore& source_kvs,
+      ss::shard_id target_shard,
+      ss::sharded<storage::api>&);
+
+    static ss::future<>
+    remove_kvstore_state(const model::ntp&, storage::kvstore&);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests

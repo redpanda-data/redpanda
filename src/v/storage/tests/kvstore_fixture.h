@@ -34,7 +34,7 @@ public:
 
     std::unique_ptr<storage::kvstore> make_kvstore() {
         return std::make_unique<storage::kvstore>(
-          _kv_config, resources, _feature_table);
+          _kv_config, ss::this_shard_id(), resources, _feature_table);
     }
 
     ~kvstore_test_fixture() {

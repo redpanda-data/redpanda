@@ -20,6 +20,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
+#include "storage/api.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
@@ -184,14 +185,7 @@ ss::future<> disk_log_impl::remove() {
                 vlog(stlog.info, "Finished removing all segments:{}", config());
             })
             .then([this] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage,
-                  internal::start_offset_key(config().ntp()));
-            })
-            .then([this] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage,
-                  internal::clean_segment_key(config().ntp()));
+                return remove_kvstore_state(config().ntp(), _kvstore);
             });
       })
       .finally([this] { _probe->clear_metrics(); });
@@ -3685,6 +3679,42 @@ size_t disk_log_impl::reclaimable_size_bytes() const {
         return 0;
     }
     return _reclaimable_size_bytes;
+}
+
+ss::future<> disk_log_impl::copy_kvstore_state(
+  model::ntp ntp,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& storage) {
+    const auto ks = kvstore::key_space::storage;
+    std::optional<iobuf> start_offset = source_kvs.get(
+      ks, internal::start_offset_key(ntp));
+    std::optional<iobuf> clean_segment = source_kvs.get(
+      ks, internal::clean_segment_key(ntp));
+
+    co_await storage.invoke_on(target_shard, [&](storage::api& api) {
+        const auto ks = kvstore::key_space::storage;
+        std::vector<ss::future<>> write_futures;
+        write_futures.reserve(2);
+        if (start_offset) {
+            write_futures.push_back(api.kvs().put(
+              ks, internal::start_offset_key(ntp), start_offset->copy()));
+        }
+        if (clean_segment) {
+            write_futures.push_back(api.kvs().put(
+              ks, internal::clean_segment_key(ntp), clean_segment->copy()));
+        }
+        return ss::when_all_succeed(std::move(write_futures));
+    });
+}
+
+ss::future<> disk_log_impl::remove_kvstore_state(
+  const model::ntp& ntp, storage::kvstore& kvs) {
+    const auto ks = kvstore::key_space::storage;
+    return ss::when_all_succeed(
+             kvs.remove(ks, internal::start_offset_key(ntp)),
+             kvs.remove(ks, internal::clean_segment_key(ntp)))
+      .discard_result();
 }
 
 } // namespace storage

@@ -354,4 +354,17 @@ std::optional<ss::sstring> check_result_configuration(
   const members_table::cache_t& current_brokers,
   const model::broker& to_update);
 
+/// Copies all bits of partition kvstore state from source kvstore to kvstore on
+/// target shard.
+ss::future<> copy_persistent_state(
+  const model::ntp&,
+  raft::group_id,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>&);
+
+/// Removes all bits of partition kvstore state in source kvstore.
+ss::future<> remove_persistent_state(
+  const model::ntp&, raft::group_id, storage::kvstore& source_kvs);
+
 } // namespace cluster

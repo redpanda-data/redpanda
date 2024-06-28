@@ -94,7 +94,9 @@ public:
 
     enum class reconciliation_action {
         /// Partition must be removed from this node
-        remove,
+        remove_partition,
+        /// Partition kvstore state must be removed from this shard
+        remove_kvstore_state,
         /// Partition must be transferred to other shard
         transfer,
         /// Wait until target catches up with topic_table
@@ -129,6 +131,11 @@ public:
             return !current && !_is_initial_for && !assigned;
         }
 
+        struct versioned_shard {
+            ss::shard_id shard;
+            model::shard_revision_id revision;
+        };
+
         /// If this shard is the initial shard for some incarnation of this
         /// partition on this node, this field will contain the corresponding
         /// log revision. Invariant: if both _is_initial_for and current
@@ -137,12 +144,12 @@ public:
         /// If x-shard transfer is in progress, will hold the destination. Note
         /// that it is initialized from target but in contrast to target, it
         /// can't change mid-transfer.
-        std::optional<ss::shard_id> _next;
+        std::optional<versioned_shard> _next;
     };
 
     using ntp2state_t = absl::node_hash_map<model::ntp, placement_state>;
 
-    explicit shard_placement_table(storage::kvstore&);
+    explicit shard_placement_table(ss::shard_id, storage::kvstore&);
 
     /// Must be called on assignment_shard_id.
     bool is_persistence_enabled() const;
@@ -150,8 +157,10 @@ public:
 
     /// Must be called on assignment_shard_id.
     /// precondition: is_persistence_enabled() == true
-    ss::future<> initialize_from_kvstore(
-      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp);
+    ss::future<std::vector<std::unique_ptr<shard_placement_table>>>
+    initialize_from_kvstore(
+      const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,
+      const std::vector<std::unique_ptr<storage::kvstore>>& extra_kvstores);
 
     /// Must be called on assignment_shard_id.
     /// precondition: is_persistence_enabled() == false
@@ -187,19 +196,30 @@ public:
     ss::future<std::error_code>
     prepare_create(const model::ntp&, model::revision_id expected_log_rev);
 
-    // return value is a tri-state:
-    // * if it returns a shard_id value, a transfer to that shard must be
-    // performed
-    // * if it returns errc::success, transfer has already been performed
-    // * else, we must wait before we begin the transfer.
-    ss::future<result<ss::shard_id>>
-    prepare_transfer(const model::ntp&, model::revision_id expected_log_rev);
+    struct prepare_transfer_info {
+        // will hold non-success value if source shard is not yet ready for
+        // transfer.
+        errc source_error = errc::success;
+        // will hold destination shard if source_error == success.
+        std::optional<ss::shard_id> destination;
+        // will hold non-success value if destination shard is not yet ready for
+        // transfer.
+        errc dest_error = errc::success;
+        // true if the caller doesn't have to do anything else - the transfer is
+        // already finished
+        bool is_finished = false;
+    };
 
-    ss::future<> finish_transfer_on_destination(
-      const model::ntp&, model::revision_id expected_log_rev);
+    ss::future<prepare_transfer_info> prepare_transfer(
+      const model::ntp&,
+      model::revision_id expected_log_rev,
+      ss::sharded<shard_placement_table>&);
 
-    ss::future<> finish_transfer_on_source(
-      const model::ntp&, model::revision_id expected_log_rev);
+    ss::future<> finish_transfer(
+      const model::ntp&,
+      model::revision_id expected_log_rev,
+      ss::sharded<shard_placement_table>&,
+      shard_callback_t);
 
     ss::future<std::error_code>
     prepare_delete(const model::ntp&, model::revision_id cmd_revision);
@@ -208,6 +228,8 @@ public:
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
 private:
+    void assert_is_assignment_shard() const;
+
     ss::future<> do_delete(
       const model::ntp&,
       placement_state&,
@@ -237,6 +259,7 @@ private:
     // modifications.
     ssx::rwlock _persistence_lock;
     bool _persistence_enabled = false;
+    ss::shard_id _shard;
     storage::kvstore& _kvstore;
 
     // only on shard 0, _ntp2entry will hold targets for all ntps on this node.

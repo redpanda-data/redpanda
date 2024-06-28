@@ -182,14 +182,19 @@ auto for_each_ref_extract_configuration(
 
 bytes serialize_group_key(raft::group_id, metadata_key);
 /**
- * moves raft persistent state from KV store on source shard to the one on
+ * copies raft persistent state from KV store on source shard to the one on
  * target shard.
  */
-ss::future<> move_persistent_state(
+ss::future<> copy_persistent_state(
   raft::group_id,
-  ss::shard_id source_shard,
+  storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>&);
+
+/**
+ * removes raft persistent state from a kvstore.
+ */
+ss::future<> remove_persistent_state(raft::group_id, storage::kvstore&);
 
 /// Creates persitent state for pre-existing partition (stored in S3 bucket).
 ///
