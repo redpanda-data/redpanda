@@ -170,13 +170,13 @@ struct entity_value
 struct entity_value_diff
   : serde::
       envelope<entity_value_diff, serde::version<0>, serde::compat_version<0>> {
-    enum key : int8_t {
+    enum class key {
         producer_byte_rate = 0,
         consumer_byte_rate,
         controller_mutation_rate,
     };
 
-    enum operation : int8_t {
+    enum class operation {
         upsert = 0,
         remove,
     };

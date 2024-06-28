@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE(quota_store_snapshot_delta) {
             .key = key1,
             .diff = {
               .entries = {
-                entity_value_diff::entry(entity_value_diff::remove, entity_value_diff::key::producer_byte_rate, 0),
+                entity_value_diff::entry(entity_value_diff::operation::remove, entity_value_diff::key::producer_byte_rate, 0),
               },
             },
           },
