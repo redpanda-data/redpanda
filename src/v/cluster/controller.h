@@ -24,6 +24,7 @@
 #include "raft/fwd.h"
 #include "rpc/fwd.h"
 #include "security/fwd.h"
+#include "ssx/single_sharded.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 
@@ -315,7 +316,7 @@ private:
     ss::sharded<client_quota::store> _quota_store;       // instance per core
     ss::sharded<client_quota::backend> _quota_backend;   // single instance
     ss::sharded<data_migrations::worker> _data_migration_worker;
-    std::unique_ptr<data_migrations::backend> _data_migration_backend;
+    ssx::single_sharded<data_migrations::backend> _data_migration_backend;
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;

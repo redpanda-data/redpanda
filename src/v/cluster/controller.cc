@@ -753,11 +753,13 @@ ss::future<> controller::start(
         }
     }
 
-    _data_migration_backend = std::make_unique<data_migrations::backend>(
+    co_await _data_migration_backend.start_on(
+      data_migrations::data_migrations_shard,
       std::ref(*_data_migration_table),
       std::ref(_data_migration_frontend.local()),
       std::ref(_as.local()));
-    co_await _data_migration_backend->start();
+    co_await _data_migration_backend.invoke_on_instance(
+      &data_migrations::backend::start);
 }
 
 ss::future<> controller::set_ready() {
@@ -806,12 +808,7 @@ ss::future<> controller::stop() {
               }
               return ss::make_ready_future();
           })
-          .then([this] {
-              if (_data_migration_backend) {
-                  return _data_migration_backend->stop();
-              }
-              return ss::make_ready_future();
-          })
+          .then([this] { return _data_migration_backend.stop(); })
           .then([this] {
               if (_recovery_backend) {
                   return _recovery_backend->stop_and_wait();

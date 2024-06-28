@@ -24,10 +24,9 @@ backend::backend(
   , _frontend(frontend)
   , _as(as) {}
 
-ss::future<> backend::start() {
+void backend::start() {
     _id = _table.register_notification(
       [this](id id) { handle_migration_update(id); });
-    co_return;
 }
 
 ss::future<> backend::stop() {

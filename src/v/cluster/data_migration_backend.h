@@ -26,7 +26,7 @@ class backend {
 public:
     backend(migrations_table& table, frontend& frontend, ss::abort_source&);
 
-    ss::future<> start();
+    void start();
     ss::future<> stop();
 
 private:
