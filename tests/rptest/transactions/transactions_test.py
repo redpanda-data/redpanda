@@ -481,7 +481,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             assert False, "tx is expected to be expired"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
+            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
 
     @cluster(num_nodes=3)
     def graceful_leadership_transfer_test(self):
