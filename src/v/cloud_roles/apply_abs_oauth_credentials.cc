@@ -10,6 +10,8 @@
 
 #include "apply_abs_oauth_credentials.h"
 
+#include "base/vlog.h"
+
 namespace cloud_roles {
 apply_abs_oauth_credentials::apply_abs_oauth_credentials(
   abs_oauth_credentials const& credentials)
