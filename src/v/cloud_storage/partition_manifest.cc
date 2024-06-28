@@ -16,6 +16,7 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
@@ -219,6 +220,11 @@ partition_manifest::get_manifest_format_and_path() const {
       generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
 }
 
+remote_manifest_path partition_manifest::get_manifest_path(
+  const remote_path_provider& path_provider) const {
+    return remote_manifest_path{path_provider.partition_manifest_path(*this)};
+}
+
 std::pair<manifest_format, remote_manifest_path>
 partition_manifest::get_legacy_manifest_format_and_path() const {
     return {
@@ -407,6 +413,17 @@ partition_manifest::generate_segment_path(const segment_meta& meta) const {
 remote_segment_path
 partition_manifest::generate_segment_path(const lw_segment_meta& meta) const {
     return generate_segment_path(lw_segment_meta::convert(meta));
+}
+
+remote_segment_path partition_manifest::generate_segment_path(
+  const segment_meta& meta, const remote_path_provider& path_provider) const {
+    return remote_segment_path{path_provider.segment_path(*this, meta)};
+}
+
+remote_segment_path partition_manifest::generate_segment_path(
+  const lw_segment_meta& meta,
+  const remote_path_provider& path_provider) const {
+    return generate_segment_path(lw_segment_meta::convert(meta), path_provider);
 }
 
 segment_name partition_manifest::generate_remote_segment_name(
