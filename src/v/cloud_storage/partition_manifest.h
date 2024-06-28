@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
@@ -201,7 +202,7 @@ public:
 
     /// Manifest object name in S3
     std::pair<manifest_format, remote_manifest_path>
-    get_manifest_format_and_path() const override;
+    get_manifest_format_and_path() const;
 
     remote_manifest_path get_manifest_path(manifest_format fmt) const {
         switch (fmt) {
@@ -211,6 +212,9 @@ public:
             return get_manifest_format_and_path().second;
         }
     }
+
+    virtual remote_manifest_path
+    get_manifest_path(const remote_path_provider&) const;
 
     static ss::sstring filename() { return "manifest.bin"; }
     virtual ss::sstring get_manifest_filename() const { return filename(); }
@@ -273,6 +277,11 @@ public:
 
     remote_segment_path generate_segment_path(const segment_meta&) const;
     remote_segment_path generate_segment_path(const lw_segment_meta&) const;
+
+    remote_segment_path generate_segment_path(
+      const segment_meta&, const remote_path_provider&) const;
+    remote_segment_path generate_segment_path(
+      const lw_segment_meta&, const remote_path_provider&) const;
 
     /// Return an iterator to the first addressable segment (i.e. base offset
     /// is greater than or equal to the start offset). If no such segment

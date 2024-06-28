@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 
@@ -50,6 +51,12 @@ class spillover_manifest final : public partition_manifest {
 public:
     spillover_manifest(const model::ntp& ntp, model::initial_revision_id rev)
       : partition_manifest(ntp, rev) {}
+
+    remote_manifest_path get_manifest_path(
+      const remote_path_provider& path_provider) const override {
+        return remote_manifest_path{
+          path_provider.partition_manifest_path(*this)};
+    }
 
     static ss::sstring filename(const spillover_manifest_path_components& c) {
         return fmt::format(

@@ -60,7 +60,6 @@ enum class feature : std::uint64_t {
     force_partition_reconfiguration = 1ULL << 26U,
     raft_append_entries_serde = 1ULL << 28U,
     delete_records = 1ULL << 29U,
-    lightweight_heartbeats = 1ULL << 30U,
     raft_coordinated_recovery = 1ULL << 31U,
     cloud_storage_scrubbing = 1ULL << 32U,
     enhanced_force_reconfiguration = 1ULL << 33U,
@@ -77,6 +76,7 @@ enum class feature : std::uint64_t {
     cluster_topic_manifest_format_v2 = 1ULL << 45U,
     node_local_core_assignment = 1ULL << 46U,
     unified_tx_state = 1ULL << 47U,
+    data_migrations = 1ULL << 48U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -101,6 +101,7 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "transaction_ga",
   "idempotency_v2",
   "transaction_partitioning",
+  "lightweight_heartbeats",
 };
 
 /**
@@ -294,12 +295,6 @@ constexpr static std::array feature_schema{
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{11},
-    "lightweight_heartbeats",
-    feature::lightweight_heartbeats,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{11},
     "raft_coordinated_recovery",
     feature::raft_coordinated_recovery,
     feature_spec::available_policy::always,
@@ -392,6 +387,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{13},
     "unified_tx_state",
     feature::unified_tx_state,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{13},
+    "data_migrations",
+    feature::data_migrations,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

@@ -18,4 +18,7 @@
 namespace cluster {
 extern ss::logger clusterlog;
 extern ss::logger txlog;
+namespace data_migrations {
+extern ss::logger dm_log;
+}
 } // namespace cluster

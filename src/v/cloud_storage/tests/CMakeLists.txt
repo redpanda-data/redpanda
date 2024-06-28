@@ -79,9 +79,11 @@ rp_test(
   TIMEOUT 1000
   BINARY_NAME gtest_cloud_storage
   SOURCES
+    partition_manifest_downloader_test.cc
     remote_path_provider_test.cc
     remote_test.cc
     s3_imposter.cc
+    topic_manifest_downloader_test.cc
     util.cc
   LIBRARIES
     v::gtest_main

@@ -15,6 +15,7 @@
 #include "cluster/producer_state.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "data_migrated_resources.h"
 #include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -27,6 +28,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <fmt/core.h>
@@ -37,10 +39,15 @@ struct test_fixture : public seastar_test {
     test_fixture()
       : leaders(topics) {}
 
-    ss::future<> SetUpAsync() { co_await topics.start(); }
+    ss::future<> SetUpAsync() {
+        co_await migrated_resources.start();
+        co_await topics.start(ss::sharded_parameter(
+          [this] { return std::ref(migrated_resources.local()); }));
+    }
     ss::future<> TearDownAsync() {
         co_await leaders.stop();
         co_await topics.stop();
+        co_await migrated_resources.stop();
     }
 
     ss::future<size_t> count_leaderless_partitions() {
@@ -78,6 +85,7 @@ struct test_fixture : public seastar_test {
     raft::group_id _group_id{0};
     ss::sharded<topic_table> topics;
     partition_leaders_table leaders;
+    ss::sharded<data_migrations::migrated_resources> migrated_resources;
 };
 
 TEST_F_CORO(test_fixture, test_counting_leaderless_partitions) {

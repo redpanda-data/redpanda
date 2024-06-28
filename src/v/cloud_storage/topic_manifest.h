@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
@@ -42,8 +43,8 @@ public:
     topic_manifest();
 
     ss::future<> update(ss::input_stream<char> is) override {
-        // assume format is json
-        return update(manifest_format::json, std::move(is));
+        // assume format is serde
+        return update(manifest_format::serde, std::move(is));
     }
 
     /// Update manifest file from input_stream (remote set)
@@ -56,6 +57,7 @@ public:
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
+    remote_manifest_path get_manifest_path(const remote_path_provider&) const;
 
     static remote_manifest_path
     get_topic_manifest_path(model::ns ns, model::topic topic, manifest_format);
@@ -80,15 +82,6 @@ public:
         return _topic_config;
     }
 
-    /// return the version of the decoded manifest. useful to decide if to fill
-    /// a field that was not encoded in a previous version
-    version_t get_manifest_version() const noexcept {
-        return _manifest_version;
-    }
-
-    std::pair<manifest_format, remote_manifest_path>
-    get_manifest_format_and_path() const override;
-
     bool operator==(const topic_manifest& other) const {
         return std::tie(_topic_config, _rev)
                == std::tie(other._topic_config, other._rev);
@@ -101,6 +94,5 @@ private:
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
-    version_t _manifest_version{first_version};
 };
 } // namespace cloud_storage

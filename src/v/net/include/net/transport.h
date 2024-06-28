@@ -21,6 +21,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/log.hh>
 
 #include <memory>
 #include <optional>

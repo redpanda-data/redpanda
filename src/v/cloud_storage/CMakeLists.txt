@@ -18,6 +18,7 @@ v_cc_library(
     cache_probe.cc
     download_exception.cc
     partition_manifest.cc
+    partition_manifest_downloader.cc
     partition_path_utils.cc
     recursive_directory_walker.cc
     remote.cc
@@ -42,6 +43,7 @@ v_cc_library(
     segment_chunk_data_source.cc
     segment_path_utils.cc
     topic_manifest.cc
+    topic_manifest_downloader.cc
     topic_path_utils.cc
     async_manifest_view.cc
     materialized_manifest_cache.cc

@@ -57,6 +57,7 @@
 #include <chrono>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <system_error>
 
 template<>
@@ -3026,7 +3027,11 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
         vlog(
           _ctxlog.trace,
           "current node is not longer group member, stepping down");
-        do_step_down("not_longer_member");
+        co_await transfer_and_stepdown("no_longer_member");
+        if (_leader_id) {
+            _leader_id = std::nullopt;
+            trigger_leadership_notification();
+        }
     }
 }
 
@@ -3572,6 +3577,67 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
     return f.finally([this] { _transferring_leadership = false; });
 }
 
+ss::future<> consensus::transfer_and_stepdown(std::string_view ctx) {
+    // select a follower with longest log
+    auto voters = _fstats
+                  | std::views::filter(
+                    [](const follower_stats::container_t::value_type& p) {
+                        return !p.second.is_learner;
+                    });
+    auto it = std::max_element(
+      voters.begin(), voters.end(), [](const auto& a, const auto& b) {
+          return a.second.last_dirty_log_index < b.second.last_dirty_log_index;
+      });
+
+    if (unlikely(it == voters.end())) {
+        vlog(
+          _ctxlog.warn,
+          "Unable to find a follower that would be an eligible candidate to "
+          "take over the leadership");
+        do_step_down(ctx);
+        co_return;
+    }
+
+    const auto target = it->first;
+    vlog(
+      _ctxlog.info,
+      "[{}] stepping down as leader in term {}, dirty offset {}, with "
+      "leadership transfer to {}",
+      ctx,
+      _term,
+      _log->offsets().dirty_offset,
+      target);
+
+    timeout_now_request req{
+      .target_node_id = target,
+      .node_id = _self,
+      .group = _group,
+      .term = _term,
+    };
+    auto timeout = raft::clock_type::now()
+                   + config::shard_local_cfg().raft_timeout_now_timeout_ms();
+    auto r = co_await _client_protocol.timeout_now(
+      target.id(), std::move(req), rpc::client_opts(timeout));
+
+    if (r.has_error()) {
+        vlog(
+          _ctxlog.warn,
+          "[{}] stepping down - failed to request timeout_now from {} - "
+          "{}",
+          ctx,
+          target,
+          r.error().message());
+    } else {
+        vlog(
+          _ctxlog.trace,
+          "[{}]  stepping down - timeout now reply result: {} from node {}",
+          ctx,
+          r.value(),
+          target);
+    }
+    do_step_down(ctx);
+}
+
 ss::future<> consensus::remove_persistent_state() {
     // voted for
     co_await _storage.kvs().remove(
@@ -3631,7 +3697,7 @@ void consensus::maybe_update_majority_replicated_index() {
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
-consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
+consensus::inflight_appends_guard::inflight_appends_guard(
   consensus& parent, vnode target) noexcept
   : _parent(&parent)
   , _term(_parent->term())
@@ -3650,10 +3716,10 @@ consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
         _parent = nullptr;
         return;
     }
-    ++it->second.suppress_heartbeats_count;
+    ++it->second.inflight_append_request_count;
 }
 
-void consensus::suppress_heartbeats_guard::unsuppress() {
+void consensus::inflight_appends_guard::mark_finished() {
     if (!_parent) {
         return;
     }
@@ -3671,16 +3737,16 @@ void consensus::suppress_heartbeats_guard::unsuppress() {
     }
 
     vassert(
-      it->second.suppress_heartbeats_count > 0,
+      it->second.inflight_append_request_count > 0,
       "ntp {}: suppress/unsuppress_heartbeats mismatch for vnode {}",
       _parent->ntp(),
       _target);
-    --it->second.suppress_heartbeats_count;
+    --it->second.inflight_append_request_count;
     _parent = nullptr;
 }
 
-consensus::suppress_heartbeats_guard consensus::suppress_heartbeats(vnode id) {
-    return suppress_heartbeats_guard{*this, id};
+consensus::inflight_appends_guard consensus::track_append_inflight(vnode id) {
+    return inflight_appends_guard{*this, id};
 }
 
 void consensus::update_heartbeat_status(vnode id, bool success) {

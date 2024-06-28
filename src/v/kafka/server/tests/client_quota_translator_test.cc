@@ -87,7 +87,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_default_test) {
     fixture f;
 
     auto default_limits = client_quota_limits{
-      .produce_limit = scale_to_smp_count(2147483648),
+      .produce_limit = std::nullopt,
       .fetch_limit = std::nullopt,
       .partition_mutation_limit = std::nullopt,
     };
@@ -96,6 +96,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_default_test) {
     auto limits = f.tr.find_quota_value(key);
     BOOST_CHECK_EQUAL(test_client_id_key, key);
     BOOST_CHECK_EQUAL(default_limits, limits);
+    BOOST_CHECK(f.tr.is_empty());
 }
 
 SEASTAR_THREAD_TEST_CASE(quota_translator_modified_default_test) {
@@ -116,6 +117,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_modified_default_test) {
     auto limits = f.tr.find_quota_value(key);
     BOOST_CHECK_EQUAL(test_client_id_key, key);
     BOOST_CHECK_EQUAL(expected_limits, limits);
+    BOOST_CHECK(!f.tr.is_empty());
 }
 
 void run_quota_translator_client_group_test(fixture& f) {

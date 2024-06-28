@@ -13,6 +13,7 @@
 
 #include "base/units.h"
 #include "cluster/commands.h"
+#include "cluster/data_migrated_resources.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
@@ -31,6 +32,7 @@
 #include "test_utils/fixture.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <chrono>
@@ -61,7 +63,11 @@ struct controller_workers {
 public:
     controller_workers()
       : dispatcher(allocator, table, leaders, state) {
-        table.start().get();
+        migrated_resources.start().get();
+        table
+          .start(ss::sharded_parameter(
+            [this] { return std::ref(migrated_resources.local()); }))
+          .get();
         members.start_single().get();
         features.start().get();
         features
@@ -153,6 +159,7 @@ public:
         allocator.stop().get();
         features.stop().get();
         members.stop().get();
+        migrated_resources.stop().get();
     }
 
     ss::sharded<cluster::members_table> members;
@@ -163,6 +170,8 @@ public:
     ss::sharded<cluster::partition_balancer_state> state;
     ss::sharded<cluster::node_status_table> node_status_table;
     cluster::topic_updates_dispatcher dispatcher;
+    ss::sharded<cluster::data_migrations::migrated_resources>
+      migrated_resources;
 };
 
 struct partition_balancer_planner_fixture {

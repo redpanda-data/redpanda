@@ -319,6 +319,9 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
     /// KIP-599 throttles create_topics / delete_topics / create_partitions
     /// request. This delay should only be applied to these requests if the
     /// quota has been exceeded
+    if (_translator.is_empty()) {
+        co_return 0ms;
+    }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::partition_mutation_quota,
       .client_id = client_id,
@@ -390,6 +393,9 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
+    if (_translator.is_empty()) {
+        co_return 0ms;
+    }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::produce_quota,
       .client_id = client_id,
@@ -439,6 +445,9 @@ ss::future<> quota_manager::record_fetch_tp(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
+    if (_translator.is_empty()) {
+        co_return;
+    }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::fetch_quota,
       .client_id = client_id,
@@ -468,6 +477,9 @@ ss::future<> quota_manager::record_fetch_tp(
 
 ss::future<clock::duration> quota_manager::throttle_fetch_tp(
   std::optional<std::string_view> client_id, clock::time_point now) {
+    if (_translator.is_empty()) {
+        co_return 0ms;
+    }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::fetch_quota,
       .client_id = client_id,

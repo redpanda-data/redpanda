@@ -20,6 +20,7 @@
 #include "reflection/async_adl.h"
 #include "rpc/logger.h"
 #include "rpc/types.h"
+#include "serde/serde.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>

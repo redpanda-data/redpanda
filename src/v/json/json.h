@@ -20,6 +20,7 @@
 #include "utils/named_type.h"
 #include "utils/unresolved_address.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
 
 #include <chrono>
