@@ -112,10 +112,6 @@ static constexpr int8_t create_role_cmd_type = 10;
 static constexpr int8_t delete_role_cmd_type = 11;
 static constexpr int8_t update_role_cmd_type = 12;
 
-// data policy commands
-static constexpr int8_t create_data_policy_cmd_type = 0;
-static constexpr int8_t delete_data_policy_cmd_type = 1;
-
 // node management commands
 static constexpr int8_t decommission_node_cmd_type = 0;
 static constexpr int8_t recommission_node_cmd_type = 1;
@@ -307,20 +303,6 @@ using delete_acls_cmd = controller_command<
   int8_t, // unused
   delete_acls_cmd_type,
   model::record_batch_type::acl_management_cmd,
-  serde_opts::adl_and_serde>;
-
-using create_data_policy_cmd = controller_command<
-  model::topic_namespace,
-  create_data_policy_cmd_data,
-  create_data_policy_cmd_type,
-  model::record_batch_type::data_policy_management_cmd,
-  serde_opts::adl_and_serde>;
-
-using delete_data_policy_cmd = controller_command<
-  model::topic_namespace,
-  std::optional<ss::sstring>,
-  delete_data_policy_cmd_type,
-  model::record_batch_type::data_policy_management_cmd,
   serde_opts::adl_and_serde>;
 
 using decommission_node_cmd = controller_command<

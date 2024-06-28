@@ -2265,13 +2265,6 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
           random_generators::gen_alphanum_string(15),
           random_generators::gen_alphanum_string(15));
 
-        roundtrip_cmd<cluster::create_data_policy_cmd>(
-          model::random_topic_namespace(), std::move(create_dp));
-
-        roundtrip_cmd<cluster::delete_data_policy_cmd>(
-          model::random_topic_namespace(),
-          random_generators::gen_alphanum_string(20));
-
         roundtrip_cmd<cluster::decommission_node_cmd>(
           tests::random_named_int<model::node_id>(), 0);
 
