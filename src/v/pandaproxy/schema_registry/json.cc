@@ -494,7 +494,11 @@ extract_property_and_gate_check(
     return {std::nullopt, &older_it->value, &newer_it->value};
 }
 
-// helper for numeric property that fits into a double:
+// helper for numeric property that fits into a double.
+// if the property has a default value, it can be passed as last parameter.
+// This is necessary to make {"type": "string", "minLength": 0} equivalent to
+// {"type": "string"}.
+// if no default value is passed, the result is given by this table
 //  older  |  newer  | is_superset
 // ------- | ------- | -----------
 // nothing | nothing |    yes
@@ -507,42 +511,131 @@ bool is_numeric_property_value_superset(
   json::Value const& older,
   json::Value const& newer,
   std::string_view prop_name,
-  VPred&& value_predicate) {
-    auto [maybe_is_compatible, older_val_p, newer_val_p]
-      = extract_property_and_gate_check(older, newer, prop_name);
-    if (maybe_is_compatible.has_value()) {
-        return maybe_is_compatible.value();
+  VPred&& value_predicate,
+  std::optional<double> default_value = std::nullopt) {
+    // get value or default_value
+    auto get_value = [&](json::Value const& v) -> std::optional<double> {
+        auto it = v.FindMember(
+          json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
+
+        if (it == v.MemberEnd()) {
+            return default_value;
+        }
+
+        // Gate on values that can't be represented with doubles.
+        // rapidjson can serialize a uint64_t even thought it's not a widely
+        // supported type, so deserializing that would trigger this. note also
+        // that 0.1 is a valid json literal, but does not have an exact double
+        // representation. this cannot be caught with this, and it would require
+        // some sort of decimal type
+        if (!it->value.IsLosslessDouble()) {
+            throw as_exception(invalid_schema(fmt::format(
+              R"(is_numeric_property_value_superset-{} not implemented for type {}. input: older: '{}', newer: '{}')",
+              prop_name,
+              it->value.GetType(),
+              pj{older},
+              pj{newer})));
+        }
+
+        return it->value.GetDouble();
+    };
+
+    auto older_value = get_value(older);
+    auto newer_value = get_value(newer);
+    if (older_value == newer_value) {
+        // either both not set or with the same value
+        return true;
     }
 
-    // Gate on values that can't be represented with doubles.
-    // rapidjson can serialize a uint64_t even thought it's not a widely
-    // supported type, so deserializing that would trigger this. note also that
-    // 0.1 is a valid json literal, but does not have an exact double
-    // representation. this cannot be caught with this, and it would require
-    // some sort of decimal type
-    if (!older_val_p->IsLosslessDouble() || !newer_val_p->IsLosslessDouble()) {
-        // both have value but they can't be decoded as T
-        throw as_exception(invalid_schema(fmt::format(
-          R"({}-{} not implemented for types [{},{}]. input: older: '{}', newer: '{}')",
-          __FUNCTION__,
-          prop_name,
-          older_val_p->GetType(),
-          newer_val_p->GetType(),
-          pj{older},
-          pj{newer})));
+    if (older_value.has_value() && newer_value.has_value()) {
+        return std::invoke(
+          std::forward<VPred>(value_predicate), *older_value, *newer_value);
     }
 
-    auto older_value = older_val_p->GetDouble();
-    auto newer_value = newer_val_p->GetDouble();
-    return older_value == newer_value
-           || std::invoke(
-             std::forward<VPred>(value_predicate), older_value, newer_value);
+    // (relevant only if default_value is not used)
+    // only one is set. if older is not set then newer has a value that is more
+    // restrictive, so older is a superset of newer
+    return !older_value.has_value();
+}
+
+enum class additional_field_for { object, array };
+
+bool is_additional_superset(
+  json::Value const& older,
+  json::Value const& newer,
+  additional_field_for field_type) {
+    // "additional___" can be either true (if omitted it's true), false
+    // or a schema. The check is performed with this table.
+    // older ap | newer ap | compatible
+    // -------- | -------- | ----------
+    //   true   |   ____   |    yes
+    //   false  |   ____   | newer==false
+    //  schema  |  schema  |  recurse
+    //  schema  |   true   |  recurse with {}
+    //  schema  |   false  |  recurse with {"not":{}}
+
+    auto field_name = [&] {
+        switch (field_type) {
+        case additional_field_for::object:
+            return "additionalProperties";
+        case additional_field_for::array:
+            return "additionalItems";
+        }
+    }();
+    // helper to parse additional__
+    auto get_additional_props =
+      [&](json::Value const& v) -> std::variant<bool, json::Value const*> {
+        auto it = v.FindMember(field_name);
+        if (it == v.MemberEnd()) {
+            return true;
+        }
+        if (it->value.IsBool()) {
+            return it->value.GetBool();
+        }
+        return &it->value;
+    };
+
+    // poor man's case matching. this is an optimization in case both
+    // additionalProperties are boolean
+    return std::visit(
+      ss::make_visitor(
+        [](bool older, bool newer) {
+            if (older == newer) {
+                // same value is compatible
+                return true;
+            }
+            // older=true  -> newer=false - compatible
+            // older=false -> newer=true  - not compatible
+            return older;
+        },
+        [](bool older, json::Value const* newer) {
+            if (older) {
+                // true is compatible with any schema
+                return true;
+            }
+            // likely false, but need to check
+            return is_superset(get_false_schema(), *newer);
+        },
+        [](json::Value const* older, bool newer) {
+            if (!newer) {
+                // any schema is compatible with false
+                return true;
+            }
+            // convert newer to {} and check against that
+            return is_superset(*older, get_true_schema());
+        },
+        [](json::Value const* older, json::Value const* newer) {
+            // check subschemas for compatibility
+            return is_superset(*older, *newer);
+        }),
+      get_additional_props(older),
+      get_additional_props(newer));
 }
 
 bool is_string_superset(json::Value const& older, json::Value const& newer) {
     // note: "format" is not part of the checks
     if (!is_numeric_property_value_superset(
-          older, newer, "minLength", std::less_equal<>{})) {
+          older, newer, "minLength", std::less_equal<>{}, 0)) {
         // older is less strict
         return false;
     }
@@ -657,76 +750,133 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
     return true;
 }
 
-bool is_array_superset(
-  [[maybe_unused]] json::Value const& older,
-  [[maybe_unused]] json::Value const& newer) {
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
-}
+bool is_array_superset(json::Value const& older, json::Value const& newer) {
+    // "type": "array" is used to model an array or a tuple.
+    // for array, "items" is a schema that validates all the elements.
+    // for tuple in Draft4, "items" is an array of schemas to validate the
+    // tuple, and "additionaItems" a schema to validate extra elements.
+    // TODO in later drafts, tuple validation has "prefixItems" as array of
+    // schemas, "items" is for validation of extra elements, "additionalItems"
+    // is not used.
+    // This superset function has a common section for tuples and array, and
+    // then is split based on array/tuple.
 
-bool is_object_additional_properties_superset(
-  json::Value const& older, json::Value const& newer) {
-    // "additionalProperties" can be either true (if omitted it's true), false
-    // or a schema. The check is performed with this table.
-    // older ap | newer ap | compatible
-    // -------- | -------- | ----------
-    //   true   |   ____   |    yes
-    //   false  |   ____   | newer==false
-    //  schema  |  schema  |  recurse
-    //  schema  |   true   |  recurse with {}
-    //  schema  |   false  |  recurse with {"not":{}}
+    // size checks are common to both types
+    if (!is_numeric_property_value_superset(
+          older, newer, "minItems", std::less_equal<>{}, 0)) {
+        return false;
+    }
 
-    // helper to parse additionalProperties
-    auto get_additional_props =
-      [](json::Value const& v) -> std::variant<bool, json::Value const*> {
-        auto it = v.FindMember("additionalProperties");
+    if (!is_numeric_property_value_superset(
+          older, newer, "maxItems", std::greater_equal<>{})) {
+        return false;
+    }
+
+    // uniqueItems makes sense mostly for arrays, but it's also allowed for
+    // tuples, so the validation is done here
+    auto get_unique_items = [](json::Value const& v) {
+        auto it = v.FindMember("uniqueItems");
         if (it == v.MemberEnd()) {
-            return true;
+            // default value
+            return false;
         }
-        if (it->value.IsBool()) {
-            return it->value.GetBool();
-        }
-        return &it->value;
+        return it->value.GetBool();
     };
 
-    // poor man's case matching. this is an optimization in case both
-    // additionalProperties are boolean
-    return std::visit(
-      ss::make_visitor(
-        [](bool older, bool newer) {
-            if (older == newer) {
-                // same value is compatible
-                return true;
-            }
-            // older=true  -> newer=false - compatible
-            // older=false -> newer=true  - not compatible
-            return older;
-        },
-        [](bool older, json::Value const* newer) {
-            if (older) {
-                // true is compatible with any schema
-                return true;
-            }
-            // likely false, but need to check
-            return is_superset(get_false_schema(), *newer);
-        },
-        [](json::Value const* older, bool newer) {
-            if (!newer) {
-                // any schema is compatible with false
-                return true;
-            }
-            // convert newer to {} and check against that
-            return is_superset(*older, get_true_schema());
-        },
-        [](json::Value const* older, json::Value const* newer) {
-            // check subschemas for compatibility
-            return is_superset(*older, *newer);
-        }),
-      get_additional_props(older),
-      get_additional_props(newer));
+    auto older_value = get_unique_items(older);
+    auto newer_value = get_unique_items(newer);
+    // the only failure mode is if we removed the "uniqueItems" requirement
+    // older ui | newer ui | compatible
+    // -------- | -------- | ---------
+    //  false   |   ___    |   yes
+    //  true    |   true   |   yes
+    //  true    |   false  |   no
+
+    if (older_value == true && newer_value == false) {
+        // removed unique items requirement
+        return false;
+    }
+
+    // check if the input is an array schema or a tuple schema
+    auto is_array = [](json::Value const& v) -> bool {
+        // TODO "prefixItems" is not in Draft4, it's from later drafts. if it's
+        // present, it's a tuple schema
+        auto items_it = v.FindMember("items");
+        // default for items is `{}` so it's not a tuple schema
+        // v is a tuple schema if "items" is an array of schemas
+        auto is_tuple = items_it != v.MemberEnd() && items_it->value.IsArray();
+        return !is_tuple;
+    };
+
+    auto older_is_array = is_array(older);
+    auto newer_is_array = is_array(newer);
+
+    if (older_is_array != newer_is_array) {
+        // one is a tuple and the other is not. not compatible
+        return false;
+    }
+    // both are tuples or both are arrays
+
+    if (older_is_array) {
+        // both are array, only "items" is relevant and it's a schema
+        // TODO after draft 4 "items" can be also a boolean so this needs to
+        // account for that note that "additionalItems" can be defined, but it's
+        // not used by validation because every element is validated against
+        // "items"
+        return is_superset(
+          get_object_or_empty(older, "items"),
+          get_object_or_empty(newer, "items"));
+    }
+
+    // both are tuple schemas, validation is similar to object. one side
+    // effect is that the "items" key is present.
+
+    // first check is for "additionalItems" compatibility, it's cheaper than the
+    // rest
+    if (!is_additional_superset(older, newer, additional_field_for::array)) {
+        return false;
+    }
+
+    auto older_tuple_schema = older["items"].GetArray();
+    auto newer_tuple_schema = newer["items"].GetArray();
+    // find the first pair of schemas that do not match
+    auto [older_it, newer_it] = std::ranges::mismatch(
+      older_tuple_schema, newer_tuple_schema, is_superset);
+
+    if (
+      older_it != older_tuple_schema.end()
+      && newer_it != newer_tuple_schema.end()) {
+        // if both iterators are not end iterators, they are pointing to a
+        // pair of elements where is_superset(*older_it, *newer_it)==false,
+        // not compatible
+        return false;
+    }
+
+    // no mismatching elements. two possible cases
+    // 1. older_tuple_schema.Size() >= newer_tuple_schema.Size() ->
+    // compatible (implies newer_it==end())
+    // 2. older_tuple_schema.Size() <  newer_tuple_schema.Size() -> check
+    // excess elements with older["additionalItems"]
+
+    auto const& older_additional_schema = [&]() -> json::Value const& {
+        auto older_it = older.FindMember("additionalItems");
+        if (older_it == older.MemberEnd()) {
+            // default is `true`
+            return get_true_schema();
+        }
+        if (older_it->value.IsBool()) {
+            return older_it->value.GetBool() ? get_true_schema()
+                                             : get_false_schema();
+        }
+        return older_it->value;
+    }();
+
+    // check that all excess schemas are compatible with
+    // older["additionalItems"]
+    return std::all_of(
+      newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
+          return is_superset(older_additional_schema, n);
+      });
 }
 
 bool is_object_properties_superset(
@@ -892,7 +1042,7 @@ bool is_object_required_superset(
 
 bool is_object_superset(json::Value const& older, json::Value const& newer) {
     if (!is_numeric_property_value_superset(
-          older, newer, "minProperties", std::less_equal<>{})) {
+          older, newer, "minProperties", std::less_equal<>{}, 0)) {
         // newer requires less properties to be set
         return false;
     }
@@ -901,7 +1051,7 @@ bool is_object_superset(json::Value const& older, json::Value const& newer) {
         // newer requires more properties to be set
         return false;
     }
-    if (!is_object_additional_properties_superset(older, newer)) {
+    if (!is_additional_superset(older, newer, additional_field_for::object)) {
         // additional properties are not compatible
         return false;
     }
@@ -1064,11 +1214,7 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
 
     for (auto not_yet_handled_keyword : {
            "$schema",
-           "additionalItems",
-           "items",
-           "maxItems",
-           "minItems",
-           "uniqueItems",
+           "prefixItems",
            "definitions",
            "dependencies",
            "allOf",
