@@ -63,7 +63,7 @@ func newAvroDecoder(codec *goavro.Codec) (serdeFunc, error) {
 func generateAvroCodec(ctx context.Context, cl *sr.Client, schema *sr.Schema) (*goavro.Codec, error) {
 	schemaStr := schema.Schema
 	if len(schema.References) > 0 {
-		err := parseReferences(ctx, cl, schema)
+		err := parseAvroReferences(ctx, cl, schema)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse references: %v", err)
 		}
@@ -82,10 +82,10 @@ func generateAvroCodec(ctx context.Context, cl *sr.Client, schema *sr.Schema) (*
 	return codec, nil
 }
 
-// parseReferences uses hamba/avro Parse method to parse every reference. We
+// parseAvroReferences uses hamba/avro Parse method to parse every reference. We
 // don't need to store the references since the library already cache these
 // schemas and use it later for handling references in the parent schema.
-func parseReferences(ctx context.Context, cl *sr.Client, schema *sr.Schema) error {
+func parseAvroReferences(ctx context.Context, cl *sr.Client, schema *sr.Schema) error {
 	if len(schema.References) == 0 {
 		_, err := avro.Parse(schema.Schema)
 		if err != nil {
@@ -99,7 +99,7 @@ func parseReferences(ctx context.Context, cl *sr.Client, schema *sr.Schema) erro
 			return err
 		}
 		refSchema := r.Schema
-		err = parseReferences(ctx, cl, &refSchema)
+		err = parseAvroReferences(ctx, cl, &refSchema)
 		if err != nil {
 			return fmt.Errorf("unable to parse schema with subject %q and version %v: %v", ref.Subject, ref.Version, err)
 		}
