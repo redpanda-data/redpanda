@@ -43,7 +43,7 @@ class TxAdminTest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     def extract_pid(self, tx):
-        return (tx["producer_id"]["id"], tx["producer_id"]["epoch"])
+        return tx["producer_id"]
 
     @cluster(num_nodes=3)
     def test_simple_get_transaction(self):
@@ -76,7 +76,7 @@ class TxAdminTest(RedpandaTest):
                                                        "kafka")
                 assert ('expired_transactions' not in txs_info)
                 if expected_pids == None:
-                    expected_pids = set(
+                    expected_pids = list(
                         map(self.extract_pid, txs_info['active_transactions']))
                     assert (len(expected_pids) == 2)
 
@@ -126,8 +126,8 @@ class TxAdminTest(RedpandaTest):
             try:
                 self.admin.mark_transaction_expired(
                     topic.name, partition, {
-                        "id": producer_to_expire[0],
-                        "epoch": producer_to_expire[1],
+                        "id": producer_to_expire['id'],
+                        "epoch": producer_to_expire['epoch'],
                     }, "kafka")
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code != 404:
@@ -146,28 +146,26 @@ class TxAdminTest(RedpandaTest):
                    backoff_sec=1,
                    retry_on_exc=True)
 
-        def wait_for_expiry():
-            ntp_expiration_status = []
+        def transaction_expired():
             for topic in self.topics:
                 for partition in range(topic.partition_count):
-                    txs_info = self.admin.get_transactions(
-                        topic.name, partition, "kafka")
-                    active_pids = [
-                        self.extract_pid(tx)
-                        for tx in txs_info["active_transactions"]
-                    ]
-                    expiration_status = len(
-                        active_pids
-                    ) == 1 and producer_to_expire not in active_pids and untouched_producer in active_pids
-                    ntp_expiration_status.append(expiration_status)
-            return all(ntp_expiration_status)
+                    txs_info = self.admin.get_transactions(namespace="kafka",
+                                                           topic=topic.name,
+                                                           partition=partition)
+                    self.logger.info(
+                        f"{topic.name}/{partition} transactions: {txs_info}")
+                    if 'expired_transactions' in txs_info:
+                        return False
 
-        wait_until(
-            wait_for_expiry,
-            timeout_sec=30,
-            backoff_sec=3,
-            err_msg=
-            f"Transaction for producer {producer_to_expire} did not expire")
+                    if len(txs_info['active_transactions']) != 1:
+                        return False
+                    for tx in txs_info['active_transactions']:
+                        if self.extract_pid(tx) != untouched_producer:
+                            return False
+                        assert tx['status'] == 'ongoing'
+            return True
+
+        wait_until(transaction_expired, timeout_sec=30, backoff_sec=0.5)
 
     @cluster(num_nodes=3)
     def test_all_transactions(self):
