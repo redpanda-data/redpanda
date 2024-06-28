@@ -53,7 +53,6 @@ class TxCoordinatorMigrationTest(RedpandaTest):
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': self._tx_id(i),
-                'transaction.timeout.ms': 10000,
             })
             producer.init_transactions()
             producer.begin_transaction()

@@ -162,7 +162,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         producer.init_transactions()
@@ -181,7 +180,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         consumer1 = ck.Consumer({
@@ -253,7 +251,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         group_name = "test"
@@ -311,7 +308,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         group_name = "test"
@@ -964,7 +960,6 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
         producer_conf = {
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': 'streams',
-            'transaction.timeout.ms': 10000,
         }
         producer = ck.Producer(producer_conf)
         consumer_conf = {
@@ -1145,7 +1140,6 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         producer_cfg = {
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         }
 
         user = self.USER_1
@@ -1174,7 +1168,6 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         producer_cfg = {
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         }
         consumer_cfg = {
             'bootstrap.servers': self.redpanda.brokers(),
@@ -1360,7 +1353,6 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         producer.init_transactions()
@@ -1383,7 +1375,6 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         producer.init_transactions()
@@ -1465,7 +1456,6 @@ class TxUpgradeTest(RedpandaTest):
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': self._tx_id(i),
-                'transaction.timeout.ms': 10000,
             })
             producer.init_transactions()
             producer.begin_transaction()
