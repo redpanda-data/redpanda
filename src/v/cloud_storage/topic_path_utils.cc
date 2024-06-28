@@ -12,7 +12,17 @@
 #include "hashing/xx.h"
 #include "model/fundamental.h"
 
+#include <regex>
+
 namespace cloud_storage {
+
+namespace {
+const std::regex prefixed_manifest_path_expr{
+  R"REGEX(\w+/meta/([^/]+)/([^/]+)/topic_manifest\.(json|bin))REGEX"};
+
+const std::regex labeled_manifest_path_expr{
+  R"REGEX(meta/([^/]+)/([^/]+)/[^/]+/\d+/topic_manifest\.bin)REGEX"};
+} // namespace
 
 ss::sstring labeled_topic_manifest_root(const model::topic_namespace& topic) {
     return fmt::format("meta/{}/{}", topic.ns(), topic.tp());
@@ -52,6 +62,32 @@ ss::sstring
 prefixed_topic_manifest_json_path(const model::topic_namespace& topic) {
     return fmt::format(
       "{}/topic_manifest.json", prefixed_topic_manifest_prefix(topic));
+}
+
+std::optional<model::topic_namespace>
+tp_ns_from_labeled_path(const std::string& path) {
+    std::smatch matches;
+    const auto is_topic_manifest = std::regex_match(
+      path.cbegin(), path.cend(), matches, labeled_manifest_path_expr);
+    if (!is_topic_manifest) {
+        return std::nullopt;
+    }
+    const auto& ns = matches[1].str();
+    const auto& tp = matches[2].str();
+    return model::topic_namespace{model::ns{ns}, model::topic{tp}};
+}
+
+std::optional<model::topic_namespace>
+tp_ns_from_prefixed_path(const std::string& path) {
+    std::smatch matches;
+    const auto is_topic_manifest = std::regex_match(
+      path.cbegin(), path.cend(), matches, prefixed_manifest_path_expr);
+    if (!is_topic_manifest) {
+        return std::nullopt;
+    }
+    const auto& ns = matches[1].str();
+    const auto& tp = matches[2].str();
+    return model::topic_namespace{model::ns{ns}, model::topic{tp}};
 }
 
 } // namespace cloud_storage

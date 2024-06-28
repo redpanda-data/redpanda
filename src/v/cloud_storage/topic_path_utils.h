@@ -51,4 +51,14 @@ prefixed_topic_manifest_bin_path(const model::topic_namespace& topic);
 ss::sstring
 prefixed_topic_manifest_json_path(const model::topic_namespace& topic);
 
+// Returns the topic_namespace of the given labeled manifest path, or
+// std::nullopt if the input is not a labeled manifest path.
+std::optional<model::topic_namespace>
+tp_ns_from_labeled_path(const std::string& path);
+
+// Returns the topic_namespace of the given prefixed manifest path, or
+// std::nullopt if the input is not a prefixed manifest path.
+std::optional<model::topic_namespace>
+tp_ns_from_prefixed_path(const std::string& path);
+
 } // namespace cloud_storage
