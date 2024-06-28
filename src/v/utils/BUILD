@@ -53,6 +53,18 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "unresolved_address",
+    hdrs = [
+        "unresolved_address.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/serde",
+    ],
+)
+
 redpanda_cc_btest_no_seastar(
     name = "tristate_test",
     timeout = "short",
