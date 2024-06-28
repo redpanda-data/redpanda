@@ -102,7 +102,7 @@ ss::future<cluster_manifest_result> download_highest_manifest_for_cluster(
     }
 
     // Deserialize the manifest.
-    auto manifest_res = co_await remote.download_manifest(
+    auto manifest_res = co_await remote.download_manifest_json(
       bucket,
       cluster_manifest_key(cluster_uuid, highest_meta_id),
       manifest,
@@ -243,7 +243,7 @@ ss::future<cluster_manifest_result> download_highest_manifest_in_bucket(
         co_return error_outcome::no_matching_metadata;
     }
     cluster_metadata_manifest manifest;
-    auto manifest_res = co_await remote.download_manifest(
+    auto manifest_res = co_await remote.download_manifest_json(
       bucket,
       cluster_manifest_key(uuid_with_highest_meta_id, highest_meta_id),
       manifest,
