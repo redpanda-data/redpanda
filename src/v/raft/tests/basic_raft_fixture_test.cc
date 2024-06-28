@@ -20,7 +20,11 @@
 #include "test_utils/async.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/circular_buffer.hh>
+
 #include <algorithm>
+#include <chrono>
+#include <ranges>
 
 using namespace raft;
 
@@ -712,4 +716,115 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
     co_await tests::cooperative_spin_wait_with_timeout(10s, [&] {
         return nodes().begin()->second->raft()->term() > term_snapshot;
     });
+}
+
+TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
+    set_election_timeout(1500ms);
+    co_await create_simple_group(4);
+    auto replicate_some_data = [&] {
+        return retry_with_leader(
+                 10s + model::timeout_clock::now(),
+                 [this](raft_node_instance& leader_node) {
+                     return leader_node.raft()->replicate(
+                       make_batches(10, 10, 128),
+                       replicate_options(consistency_level::quorum_ack));
+                 })
+          .then([&](result<replicate_result> result) {
+              if (result) {
+                  vlog(
+                    tstlog.info,
+                    "replication result last offset: {}",
+                    result.value().last_offset);
+              } else {
+                  vlog(
+                    tstlog.info,
+                    "replication error: {}",
+                    result.error().message());
+              }
+          });
+    };
+    using clock_t = std::chrono::high_resolution_clock;
+    co_await replicate_some_data();
+    struct leadership_changed_event {
+        model::node_id node;
+        leadership_status status;
+        clock_t::time_point timestamp;
+    };
+    ss::circular_buffer<leadership_changed_event> events;
+
+    register_leader_callback([&](model::node_id id, leadership_status status) {
+        events.push_back(leadership_changed_event{
+          .node = id,
+          .status = status,
+          .timestamp = clock_t::now(),
+        });
+    });
+    auto leader_id = get_leader().value();
+    auto& leader_node = node(leader_id);
+    auto current_term = leader_node.raft()->term();
+    auto r = co_await leader_node.raft()->transfer_leadership(
+      transfer_leadership_request{.group = leader_node.raft()->group()});
+    ASSERT_TRUE_CORO(r.success);
+    // here we wait for all the replicas to notify about the leadership changes,
+    // each replica will notify two times, one when there is no leader, second
+    // time when the leader is elected. We have 4 replicas so in total we expect
+    // 8 notifications to be fired.
+    co_await tests::cooperative_spin_wait_with_timeout(
+      10s, [&] { return events.size() >= 8; });
+
+    // calculate the time needed to transfer leadership, in our case it is the
+    // time between first notification reporting no leader and first reporting
+    // new leader.
+    auto new_leader_reported_ev = std::find_if(
+      events.begin(), events.end(), [&](leadership_changed_event& ev) {
+          return ev.status.current_leader.has_value()
+                 && ev.status.term > current_term;
+      });
+
+    auto transfer_time = new_leader_reported_ev->timestamp
+                         - events.begin()->timestamp;
+    vlog(
+      tstlog.info,
+      "leadership_transfer - new leader reported after: {} ms",
+      (transfer_time) / 1ms);
+    events.clear();
+    // now remove the current leader from the raft group
+    leader_id = get_leader().value();
+    auto new_nodes = all_vnodes() | std::views::filter([&](vnode n) {
+                         return n.id() != leader_id;
+                     });
+    auto& new_leader_node = node(leader_id);
+    current_term = new_leader_node.raft()->term();
+    co_await new_leader_node.raft()->replace_configuration(
+      std::vector<vnode>{new_nodes.begin(), new_nodes.end()},
+      model::revision_id(2));
+    // analogically to the previous case we wait for 6 notifications as
+    // currently the group has only 3 replicas
+    co_await tests::cooperative_spin_wait_with_timeout(
+      10s, [&] { return events.size() >= 6; });
+
+    auto leader_reported_after_reconfiguration = std::find_if(
+      events.begin(), events.end(), [&](leadership_changed_event& ev) {
+          return ev.status.current_leader.has_value()
+                 && ev.status.term > current_term;
+      });
+
+    auto election_time = leader_reported_after_reconfiguration->timestamp
+                         - events.begin()->timestamp;
+    vlog(
+      tstlog.info,
+      "reconfiguration - new leader reported after: {} ms",
+      (election_time) / 1ms);
+
+    for (auto& vn : all_vnodes()) {
+        co_await stop_node(vn.id());
+    }
+
+    auto tolerance = 0.15;
+    /**
+     * Validate that election time  after reconfiguration is simillar to the
+     * time needed for leadership transfer
+     */
+    ASSERT_LE_CORO(election_time, transfer_time * (1.0 + tolerance));
+    ASSERT_GE_CORO(election_time, transfer_time * (1.0 - tolerance));
 }

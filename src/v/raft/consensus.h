@@ -549,6 +549,9 @@ private:
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void do_step_down(std::string_view);
+    // steps down and requests the other replica to start leader election
+    // immediately
+    ss::future<> transfer_and_stepdown(std::string_view);
     ss::future<vote_reply> do_vote(vote_request);
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&&);
