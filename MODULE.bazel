@@ -46,9 +46,9 @@ bazel_dep(name = "rules_python", version = "0.33.2", dev_dependency = True)
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
 python.toolchain(
+    ignore_root_user_error = True,
     is_default = True,
     python_version = "3.12",
-    ignore_root_user_error = True,
 )
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
