@@ -211,9 +211,19 @@ struct clean_segment_value
     ss::sstring segment_name;
 };
 
+inline bool
+is_compactible_control_batch(const model::record_batch_type batch_type) {
+    // Control batches in consumer offsets are special compared to
+    // the ones in data partitions can be safely compacted away.
+    return batch_type == model::record_batch_type::group_fence_tx
+           || batch_type == model::record_batch_type::group_prepare_tx
+           || batch_type == model::record_batch_type::group_abort_tx
+           || batch_type == model::record_batch_type::group_commit_tx;
+}
+
 inline bool is_compactible(const model::record_batch_header& h) {
     if (
-      h.attrs.is_control()
+      (h.attrs.is_control() && !is_compactible_control_batch(h.type))
       || h.type == model::record_batch_type::compaction_placeholder) {
         // Keep control batches to ensure we maintain transaction boundaries.
         // They should be rare.
