@@ -71,6 +71,16 @@ public:
         std::optional<atomic_token_bucket> pm_rate;
     };
 
+    // Note: the use of std::shared_ptr<> is generally discouraged in the
+    // redpanda codebase because of the overhead of the atomic reference count
+    // and because seastar's memory model expects data to be deallocated on the
+    // same shard as where it was allocated and sharing std::shared_ptr<>'s
+    // across cores makes it easy to have the deallocation be on a different
+    // shard. The reason why it is acceptable to use a std::shared_ptr<> here is
+    // because (1) we're always allocating and deallocating the objects inside
+    // std::shared_ptr<> on shard 0 and (2) we need a way to keep track of a
+    // reference count across multiple shards, which is exactly what
+    // std::shared_ptr<> is meant for.
     using local_map_t
       = chunked_hash_map<tracker_key, std::shared_ptr<client_quota>>;
 
