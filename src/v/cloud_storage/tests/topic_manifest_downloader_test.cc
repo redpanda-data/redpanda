@@ -56,8 +56,11 @@ ss::sstring topic_manifest_json(
       rev());
 }
 
-topic_manifest dummy_topic_manifest() {
-    const auto tm_json = topic_manifest_json(test_tp_ns, test_rev);
+topic_manifest dummy_topic_manifest(
+  std::optional<model::topic_namespace> tp = std::nullopt,
+  std::optional<model::initial_revision_id> rev = std::nullopt) {
+    const auto tm_json = topic_manifest_json(
+      tp.value_or(test_tp_ns), rev.value_or(test_rev));
     auto json_stream = make_iobuf_input_stream(iobuf::from(tm_json));
     topic_manifest tm;
     tm.update(manifest_format::json, std::move(json_stream)).get();
@@ -87,6 +90,30 @@ public:
         pool_.stop().get();
     }
 
+    void upload_labeled_bin_manifest(const topic_manifest& tm) {
+        retry_chain_node retry(never_abort, 1s, 10ms);
+        auto labeled_path = labeled_topic_manifest_path(
+          test_label, tm.get_topic_config()->tp_ns, test_rev);
+        auto upload_res
+          = remote_.local()
+              .upload_manifest(
+                bucket_name, tm, remote_manifest_path{labeled_path}, retry)
+              .get();
+        ASSERT_EQ(upload_result::success, upload_res);
+    }
+
+    void upload_prefixed_bin_manifest(const topic_manifest& tm) {
+        retry_chain_node retry(never_abort, 1s, 10ms);
+        auto hashed_path = prefixed_topic_manifest_bin_path(
+          tm.get_topic_config()->tp_ns);
+        auto upload_res
+          = remote_.local()
+              .upload_manifest(
+                bucket_name, tm, remote_manifest_path{hashed_path}, retry)
+              .get();
+        ASSERT_EQ(upload_result::success, upload_res);
+    }
+
     // Serializes the given topic manifest into JSON and uploads the result to
     // the appropriate path with the hash-prefixing scheme.
     void upload_json_manifest(const topic_manifest& tm) {
@@ -95,10 +122,12 @@ public:
         iobuf_ostreambuf obuf(buf);
         std::ostream os(&obuf);
         tm.serialize_v1_json(os);
+        auto hashed_path = prefixed_topic_manifest_json_path(
+          tm.get_topic_config()->tp_ns);
         upload_request json_req{
             .transfer_details = transfer_details{
                 .bucket = bucket_name,
-                  .key = cloud_storage_clients::object_key{prefixed_topic_manifest_json_path(test_tp_ns)},
+                  .key = cloud_storage_clients::object_key{hashed_path},
                   .parent_rtc = retry,
             },
             .type = cloud_storage::upload_type::manifest,
@@ -109,6 +138,23 @@ public:
         ASSERT_EQ(upload_result::success, upload_res);
     }
 
+    result<find_topic_manifest_outcome, error_outcome> find_manifests(
+      retry_chain_node& parent_retry,
+      ss::lowres_clock::time_point deadline,
+      model::timestamp_clock::duration backoff,
+      std::optional<topic_manifest_downloader::tp_ns_filter_t> tp_filter,
+      chunked_vector<topic_manifest>* manifests) {
+        return topic_manifest_downloader::find_manifests(
+                 remote_.local(),
+                 bucket_name,
+                 parent_retry,
+                 deadline,
+                 backoff,
+                 std::move(tp_filter),
+                 manifests)
+          .get();
+    }
+
 protected:
     ss::sharded<cloud_storage_clients::client_pool> pool_;
     ss::sharded<remote> remote_;
@@ -116,20 +162,12 @@ protected:
 
 TEST_F(TopicManifestDownloaderTest, TestDownloadLabeledManifest) {
     auto tm = dummy_topic_manifest();
-    auto labeled_path = labeled_topic_manifest_path(
-      test_label, test_tp_ns, test_rev);
-
-    retry_chain_node retry(never_abort, 1s, 10ms);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, tm, remote_manifest_path{labeled_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
 
     topic_manifest_downloader dl(
       bucket_name, /*hint=*/std::nullopt, test_tp_ns, remote_.local());
     topic_manifest dl_tm;
+    retry_chain_node retry(never_abort, 1s, 10ms);
     auto dl_res = dl.download_manifest(
                       retry, ss::lowres_clock::now() + 1s, 10ms, &dl_tm)
                     .get();
@@ -186,17 +224,9 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadMultipleLabeledManifests) {
 
 TEST_F(TopicManifestDownloaderTest, TestDownloadLabeledManifestWithHint) {
     auto tm = dummy_topic_manifest();
-    auto labeled_path = labeled_topic_manifest_path(
-      test_label, test_tp_ns, test_rev);
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
 
     retry_chain_node retry(never_abort, 1s, 10ms);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, tm, remote_manifest_path{labeled_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
-
     for (int i = 0; i < test_uuid_str.size(); i++) {
         auto uuid_substr = test_uuid_str.substr(0, i);
         topic_manifest_downloader dl(
@@ -252,16 +282,7 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadLabeledManifestWithHint) {
 
 TEST_F(TopicManifestDownloaderTest, TestDownloadPrefixedBinaryManifest) {
     auto tm = dummy_topic_manifest();
-    auto hashed_path = prefixed_topic_manifest_bin_path(test_tp_ns);
-
-    retry_chain_node retry(never_abort, 1s, 10ms);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, tm, remote_manifest_path{hashed_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
-
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(tm));
     chunked_vector<std::optional<ss::sstring>> hints{
       std::nullopt,
 
@@ -269,6 +290,7 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadPrefixedBinaryManifest) {
       test_uuid_str,
       "foo",
     };
+    retry_chain_node retry(never_abort, 1s, 10ms);
     for (const auto& hint : hints) {
         topic_manifest_downloader dl(
           bucket_name, hint, test_tp_ns, remote_.local());
@@ -307,25 +329,17 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadPrefixedJsonManifest) {
 
 TEST_F(TopicManifestDownloaderTest, TestDownloadWithRemoteError) {
     auto tm = dummy_topic_manifest();
-    auto labeled_path = labeled_topic_manifest_path(
-      test_label, test_tp_ns, test_rev);
-
-    retry_chain_node retry(never_abort, 1s, 10ms);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, tm, remote_manifest_path{labeled_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
 
     retry_chain_node bad_retry(
       never_abort, ss::lowres_clock::time_point::min(), 10ms);
     topic_manifest_downloader dl(
       bucket_name, /*hint=*/std::nullopt, test_tp_ns, remote_.local());
     topic_manifest dl_tm;
-    auto dl_res = dl.download_manifest(
-                      retry, ss::lowres_clock::time_point::min(), 10ms, &dl_tm)
-                    .get();
+    auto dl_res
+      = dl.download_manifest(
+            bad_retry, ss::lowres_clock::time_point::min(), 10ms, &dl_tm)
+          .get();
     ASSERT_TRUE(dl_res.has_error());
     ASSERT_EQ(dl_res.error(), error_outcome::manifest_download_error);
 }
@@ -354,13 +368,7 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadPrecedence) {
 
     // If there's both a JSON manifest and a binary manifest with the hash
     // prefixing scheme, the binary manifest is returned.
-    auto hashed_path = prefixed_topic_manifest_bin_path(test_tp_ns);
-    auto upload_res
-      = remote_.local()
-          .upload_manifest(
-            bucket_name, tm, remote_manifest_path{hashed_path}, retry)
-          .get();
-    ASSERT_EQ(upload_result::success, upload_res);
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(tm));
     {
         auto dl_res = dl.download_manifest(
                           retry, ss::lowres_clock::now() + 1s, 10ms, &dl_tm)
@@ -375,13 +383,7 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadPrecedence) {
     }
 
     // If there is a labeled manifest, it is prefered over the others.
-    auto labeled_path = labeled_topic_manifest_path(
-      test_label, test_tp_ns, test_rev);
-    upload_res = remote_.local()
-                   .upload_manifest(
-                     bucket_name, tm, remote_manifest_path{labeled_path}, retry)
-                   .get();
-    ASSERT_EQ(upload_result::success, upload_res);
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
     {
         auto dl_res = dl.download_manifest(
                           retry, ss::lowres_clock::now() + 1s, 10ms, &dl_tm)
@@ -396,4 +398,102 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadPrecedence) {
           "/meta/kafka/tp/deadbeef-0000-0000-0000-000000000000/21/"
           "topic_manifest.bin");
     }
+}
+
+TEST_F(TopicManifestDownloaderTest, TestFindManifests) {
+    for (int i = 0; i < 30; i++) {
+        auto new_tp_ns = test_tp_ns;
+        new_tp_ns.tp = model::topic{fmt::format("{}-{}", new_tp_ns.tp, i)};
+        auto tm = dummy_topic_manifest(new_tp_ns, test_rev);
+        switch (i % 3) {
+        case 0:
+            ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
+            break;
+        case 1:
+            ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(tm));
+            break;
+        case 2:
+            ASSERT_NO_FATAL_FAILURE(upload_json_manifest(tm));
+            break;
+        }
+    }
+    retry_chain_node retry(never_abort, 10s, 10ms);
+    chunked_vector<topic_manifest> tms;
+    auto find_res = find_manifests(
+      retry, ss::lowres_clock::now() + 10s, 10ms, std::nullopt, &tms);
+    ASSERT_FALSE(find_res.has_error());
+    ASSERT_EQ(find_res.value(), find_topic_manifest_outcome::success);
+    ASSERT_EQ(30, tms.size());
+    tms.clear();
+
+    // Now check with a filter.
+    const auto zero_filter = [](const model::topic_namespace& topic) {
+        return topic.tp().ends_with("0");
+    };
+    find_res = find_manifests(
+      retry, ss::lowres_clock::now() + 10s, 10ms, zero_filter, &tms);
+    ASSERT_FALSE(find_res.has_error());
+    ASSERT_EQ(find_res.value(), find_topic_manifest_outcome::success);
+    ASSERT_EQ(3, tms.size());
+    for (const auto& tm : tms) {
+        ASSERT_TRUE(zero_filter(tm.get_topic_config()->tp_ns))
+          << tm.get_topic_config();
+    }
+    tms.clear();
+
+    const auto bogus_filter = [](const model::topic_namespace& topic) {
+        return topic.tp().ends_with("foobar");
+    };
+    find_res = find_manifests(
+      retry, ss::lowres_clock::now() + 10s, 10ms, bogus_filter, &tms);
+    ASSERT_FALSE(find_res.has_error());
+    ASSERT_EQ(find_res.value(), find_topic_manifest_outcome::success);
+    ASSERT_EQ(0, tms.size());
+}
+
+TEST_F(TopicManifestDownloaderTest, TestFindManifestsEmpty) {
+    retry_chain_node retry(never_abort, 10s, 10ms);
+    chunked_vector<topic_manifest> tms;
+    auto find_res = find_manifests(
+      retry, ss::lowres_clock::now() + 10s, 10ms, std::nullopt, &tms);
+    ASSERT_FALSE(find_res.has_error());
+    ASSERT_EQ(find_res.value(), find_topic_manifest_outcome::success);
+    ASSERT_EQ(0, tms.size());
+}
+
+TEST_F(TopicManifestDownloaderTest, TestFindManifestsRemoteError) {
+    retry_chain_node bad_retry(
+      never_abort, ss::lowres_clock::time_point::min(), 10ms);
+    chunked_vector<topic_manifest> tms;
+    auto find_res = find_manifests(
+      bad_retry, ss::lowres_clock::time_point::min(), 10ms, std::nullopt, &tms);
+    ASSERT_TRUE(find_res.has_error());
+    ASSERT_EQ(find_res.error(), error_outcome::manifest_download_error);
+    ASSERT_EQ(0, tms.size());
+}
+
+TEST_F(TopicManifestDownloaderTest, TestFindManifestsPrecedence) {
+    auto tm = dummy_topic_manifest();
+    ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
+    ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(tm));
+    ASSERT_NO_FATAL_FAILURE(upload_json_manifest(tm));
+
+    retry_chain_node retry(never_abort, 10s, 10ms);
+    chunked_vector<topic_manifest> tms;
+    auto find_res = find_manifests(
+      retry, ss::lowres_clock::now() + 10s, 10ms, std::nullopt, &tms);
+    ASSERT_FALSE(find_res.has_error());
+    ASSERT_EQ(find_res.value(), find_topic_manifest_outcome::success);
+    ASSERT_EQ(1, tms.size());
+
+    // Even though there are multiple manifests, we the one we actually
+    // download is the labeled one.
+    ASSERT_TRUE(tm == tms[0]);
+    ASSERT_FALSE(get_requests().empty());
+    const auto& last_req = get_requests().back();
+    EXPECT_STREQ(last_req.method.c_str(), "GET");
+    EXPECT_STREQ(
+      last_req.url.c_str(),
+      "/meta/kafka/tp/deadbeef-0000-0000-0000-000000000000/21/"
+      "topic_manifest.bin");
 }
