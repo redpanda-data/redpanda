@@ -1461,22 +1461,6 @@ struct backend_operation
     }
 };
 
-struct create_data_policy_cmd_data
-  : serde::envelope<
-      create_data_policy_cmd_data,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    static constexpr int8_t current_version = 1; // In future dp will be vector
-
-    auto serde_fields() { return std::tie(dp); }
-
-    v8_engine::data_policy dp;
-
-    friend bool operator==(
-      const create_data_policy_cmd_data&, const create_data_policy_cmd_data&)
-      = default;
-};
-
 using config_version = named_type<int64_t, struct config_version_type>;
 constexpr config_version config_version_unset = config_version{-1};
 
@@ -3506,12 +3490,6 @@ template<>
 struct adl<cluster::create_partitions_configuration> {
     void to(iobuf&, cluster::create_partitions_configuration&&);
     cluster::create_partitions_configuration from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::create_data_policy_cmd_data> {
-    void to(iobuf&, cluster::create_data_policy_cmd_data&&);
-    cluster::create_data_policy_cmd_data from(iobuf_parser&);
 };
 
 template<>

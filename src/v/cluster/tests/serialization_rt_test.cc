@@ -903,14 +903,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::create_data_policy_cmd_data data;
-        data.dp = v8_engine::data_policy(
-          random_generators::gen_alphanum_string(20),
-          random_generators::gen_alphanum_string(20));
-
-        roundtrip_test(data);
-    }
-    {
         cluster::config_status status;
         status.node = tests::random_named_int<model::node_id>();
         status.restart = tests::random_bool();
@@ -2260,10 +2252,6 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
         }
 
         roundtrip_cmd<cluster::delete_acls_cmd>(std::move(delete_acl_data), 0);
-        cluster::create_data_policy_cmd_data create_dp;
-        create_dp.dp = v8_engine::data_policy(
-          random_generators::gen_alphanum_string(15),
-          random_generators::gen_alphanum_string(15));
 
         roundtrip_cmd<cluster::decommission_node_cmd>(
           tests::random_named_int<model::node_id>(), 0);
