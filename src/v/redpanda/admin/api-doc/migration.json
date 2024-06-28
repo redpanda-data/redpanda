@@ -1,0 +1,92 @@
+"/v1/migrations": {
+    "get": {
+        "summary": "Lists all available migrations",
+        "operationId": "list_migrations",
+        "consumes": [
+            "application/json"
+        ],
+        "produces": [
+            "application/json"
+        ]
+    },
+    "put": {
+        "operationId": "add_migration",
+        "summary": "Creates migration in initial state",
+        "requestBody": {
+            "description": "Migration configuration",
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "oneOf": [
+                            {
+                                "type": "outbound_migration"
+                            },
+                            {
+                                "type": "inbound_migration"
+                            }
+                        ],
+                        "discriminator": {
+                            "propertyName": "migration_type",
+                            "mapping": {
+                                "inbound": "inbound_migration",
+                                "outbound": "outbound_migration"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+},
+"/v1/migrations/{id}": {
+    "get": {
+        "summary": "Get migration state",
+        "operationId": "get_migration",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "int"
+            }
+        ]
+    },
+    "post": {
+        "summary": "Execute migration action",
+        "operationId": "execute_migration_action",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "int"
+            },
+            {
+                "name": "action",
+                "description": "Action to execute over migration",
+                "in": "query",
+                "required": true,
+                "type": "string",
+                "enum": [
+                    "prepare",
+                    "execute",
+                    "finish",
+                    "cancel"
+                ]
+            }
+        ]
+    },
+    "delete": {
+        "summary": "Delete migration",
+        "operationId": "delete_migration",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "int"
+            }
+        ]
+    }
+}

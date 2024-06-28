@@ -193,6 +193,7 @@ ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
     co_await serde::write_async(out, std::move(plugins));
     co_await serde::write_async(out, std::move(cluster_recovery));
     co_await serde::write_async(out, std::move(client_quotas));
+    co_await serde::write_async(out, std::move(data_migrations));
 }
 
 ss::future<>
@@ -225,6 +226,12 @@ controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
     if (h._version >= 3) {
         client_quotas
           = co_await serde::read_async_nested<decltype(client_quotas)>(
+            in, h._bytes_left_limit);
+    }
+
+    if (h._version >= 4) {
+        data_migrations
+          = co_await serde::read_async_nested<decltype(data_migrations)>(
             in, h._bytes_left_limit);
     }
 

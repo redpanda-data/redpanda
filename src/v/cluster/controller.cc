@@ -30,6 +30,10 @@
 #include "cluster/controller_log_limiter.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
+#include "cluster/data_migrated_resources.h"
+#include "cluster/data_migration_backend.h"
+#include "cluster/data_migration_frontend.h"
+#include "cluster/data_migration_table.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
@@ -82,7 +86,6 @@
 #include <seastar/util/later.hh>
 
 #include <chrono>
-
 namespace cluster {
 
 const bytes controller::invariants_key{"configuration_invariants"};
@@ -152,6 +155,12 @@ ss::future<> controller::wire_up() {
       .then([this] { return _credentials.start(); })
       .then([this] { return _ephemeral_credentials.start(); })
       .then([this] { return _roles.start(); })
+      .then([this] { return _data_migrated_resources.start(); })
+      .then([this] {
+          _data_migration_table
+            = std::make_unique<data_migrations::migrations_table>(
+              _data_migrated_resources, std::ref(_tp_state));
+      })
       .then([this] {
           return _authorizer.start(
             ss::sharded_parameter(
@@ -183,7 +192,10 @@ ss::future<> controller::wire_up() {
                   .oidc_keys_refresh_interval.bind();
             }));
       })
-      .then([this] { return _tp_state.start(); })
+      .then([this] {
+          return _tp_state.start(ss::sharded_parameter(
+            [this] { return std::ref(_data_migrated_resources.local()); }));
+      })
       .then([this] {
           return _partition_balancer_state.start_single(
             std::ref(_tp_state),
@@ -291,6 +303,16 @@ ss::future<> controller::start(
             std::ref(_as));
       })
       .then([this] {
+          return _data_migration_frontend.start(
+            _raft0->self().id(),
+            std::ref(*_data_migration_table),
+            std::ref(_feature_table),
+            std::ref(_stm),
+            std::ref(_partition_leaders),
+            std::ref(_connections),
+            std::ref(_as));
+      })
+      .then([this] {
           limiter_configuration limiter_conf{
             config::shard_local_cfg()
               .enable_controller_log_rate_limiting.bind(),
@@ -335,7 +357,8 @@ ss::future<> controller::start(
             std::ref(_bootstrap_backend),
             std::ref(_plugin_backend),
             std::ref(_recovery_manager),
-            std::ref(_quota_backend));
+            std::ref(_quota_backend),
+            std::ref(*_data_migration_table));
       })
       .then([this] {
           return _members_frontend.start(
@@ -380,6 +403,8 @@ ss::future<> controller::start(
             std::ref(_partition_manager),
             std::ref(_shard_table),
             std::ref(_shard_balancer),
+            ss::sharded_parameter(
+              [this] { return std::ref(_data_migrated_resources.local()); }),
             ss::sharded_parameter(
               [this] { return std::ref(_plugin_table.local()); }),
             ss::sharded_parameter(
@@ -761,6 +786,13 @@ ss::future<> controller::start(
                  .disable_cluster_recovery_loop_for_tests()) {
               _recovery_backend->start();
           }
+      })
+      .then([this] {
+          _data_migration_backend = std::make_unique<data_migrations::backend>(
+            std::ref(*_data_migration_table),
+            std::ref(_data_migration_frontend.local()),
+            std::ref(_as.local()));
+          return _data_migration_backend->start();
       });
 }
 
@@ -811,6 +843,12 @@ ss::future<> controller::stop() {
               return ss::make_ready_future();
           })
           .then([this] {
+              if (_data_migration_backend) {
+                  return _data_migration_backend->stop();
+              }
+              return ss::make_ready_future();
+          })
+          .then([this] {
               if (_recovery_backend) {
                   return _recovery_backend->stop_and_wait();
               }
@@ -825,6 +863,7 @@ ss::future<> controller::stop() {
           .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
+          .then([this] { return _data_migration_frontend.stop(); })
           .then([this] { return _config_manager.stop(); })
           .then([this] { return _api.stop(); })
           .then([this] { return _shard_balancer.stop(); })
@@ -841,6 +880,7 @@ ss::future<> controller::stop() {
           .then([this] { return _oidc_service.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _ephemeral_credentials.stop(); })
+          .then([this] { return _data_migrated_resources.stop(); })
           .then([this] { return _roles.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })

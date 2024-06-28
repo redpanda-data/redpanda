@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/units.h"
+#include "cluster/data_migrated_resources.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_state.h"
@@ -24,6 +25,8 @@
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
+
+#include <seastar/core/sharded.hh>
 
 inline void validate_delta(
   const std::vector<cluster::topic_table::delta>& d,
@@ -46,7 +49,11 @@ struct topic_table_fixture {
     static constexpr uint32_t partitions_reserve_shard0 = 2;
 
     topic_table_fixture() {
-        table.start().get0();
+        migrated_resources.start().get();
+        table
+          .start(ss::sharded_parameter(
+            [this] { return std::ref(migrated_resources.local()); }))
+          .get0();
         members.start_single().get0();
         features.start().get();
         allocator
@@ -84,6 +91,7 @@ struct topic_table_fixture {
         allocator.stop().get0();
         features.stop().get();
         members.stop().get0();
+        migrated_resources.stop().get();
         as.request_abort();
     }
 
@@ -175,6 +183,8 @@ struct topic_table_fixture {
     ss::sharded<cluster::members_table> members;
     ss::sharded<features::feature_table> features;
     ss::sharded<cluster::partition_allocator> allocator;
+    ss::sharded<cluster::data_migrations::migrated_resources>
+      migrated_resources;
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
     ss::sharded<cluster::partition_balancer_state> pb_state;

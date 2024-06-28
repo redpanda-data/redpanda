@@ -10,6 +10,7 @@
  */
 
 #include "cluster/commands.h"
+#include "cluster/data_migrated_resources.h"
 #include "cluster/fwd.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/topic_table.h"
@@ -74,7 +75,8 @@ public:
     model::transform_id _latest_id{0};
 
     plugin_table _plugin_table;
-    topic_table _topic_table;
+    data_migrations::migrated_resources _migrated_resources;
+    topic_table _topic_table{_migrated_resources};
     plugin_frontend::validator _validator{
       &_topic_table,
       &_plugin_table,

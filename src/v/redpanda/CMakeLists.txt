@@ -14,7 +14,8 @@ set(swags
   usage
   shadow_indexing
   transform 
-  recovery)
+  recovery 
+  migration)
 
 set(swag_files)
 foreach(swag ${swags})
@@ -52,6 +53,7 @@ v_cc_library(
     admin/usage.cc
     admin/kafka.cc
     admin/util.cc
+    admin/migrations.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc

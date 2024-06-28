@@ -11,6 +11,7 @@
 #include "cluster/controller_snapshot.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
+#include "data_migrated_resources.h"
 #include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -990,8 +991,8 @@ FIXTURE_TEST(
             planning_fiber.get();
         }
     });
-
-    cluster::topic_table other_tt;
+    cluster::data_migrations::migrated_resources migrated_resources;
+    cluster::topic_table other_tt(migrated_resources);
     model::offset controller_offset{0};
     std::set<ss::sstring> cur_topics;
     bool node_isolated = false;

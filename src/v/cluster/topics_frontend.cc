@@ -31,7 +31,9 @@
 #include "cluster/topic_recovery_validator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "data_migration_types.h"
 #include "features/feature_table.h"
+#include "fwd.h"
 #include "model/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -76,6 +78,7 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<shard_balancer>& sb,
+  data_migrations::migrated_resources& migrated_resources,
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -97,6 +100,7 @@ topics_frontend::topics_frontend(
   , _members_table(members_table)
   , _pm(pm)
   , _shard_table(shard_table)
+  , _migrated_resources(migrated_resources)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio)
   , _minimum_topic_replication(minimum_topic_replication)
   , _partition_autobalancing_topic_aware(
@@ -315,6 +319,17 @@ ss::future<std::error_code> topics_frontend::do_update_replication_factor(
 
 ss::future<topic_result> topics_frontend::do_update_topic_properties(
   topic_properties_update update, model::timeout_clock::time_point timeout) {
+    auto state = _migrated_resources.get_topic_state(update.tp_ns);
+    if (state != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(
+          clusterlog.warn,
+          "can not update topic {} properties as the topic is being migrated",
+          state);
+
+        co_return topic_result{
+          std::move(update.tp_ns), errc::resource_is_being_migrated};
+    }
+
     update_topic_properties_cmd cmd(update.tp_ns, update.properties);
     try {
         auto update_rf_res = co_await do_update_replication_factor(
@@ -412,6 +427,15 @@ ss::future<topic_result> topics_frontend::do_create_topic(
   custom_assignable_topic_configuration assignable_config,
   model::timeout_clock::time_point timeout) {
     if (_topics.local().contains(assignable_config.cfg.tp_ns)) {
+        co_return topic_result(
+          assignable_config.cfg.tp_ns, errc::topic_already_exists);
+    }
+
+    if (_migrated_resources.is_already_migrated(assignable_config.cfg.tp_ns)) {
+        vlog(
+          clusterlog.warn,
+          "unable to create topic {} as it is being migrated",
+          assignable_config.cfg.tp_ns);
         co_return topic_result(
           assignable_config.cfg.tp_ns, errc::topic_already_exists);
     }
@@ -665,6 +689,15 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
     auto topic_meta_opt = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!topic_meta_opt.has_value()) {
         topic_result result(std::move(tp_ns), errc::topic_not_exists);
+        return ss::make_ready_future<topic_result>(result);
+    }
+    auto state = _migrated_resources.get_topic_state(tp_ns);
+    if (state != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(
+          clusterlog.warn,
+          "can not delete topic as it is being {} by migration",
+          state);
+        topic_result result(std::move(tp_ns), errc::resource_is_being_migrated);
         return ss::make_ready_future<topic_result>(result);
     }
     // Before deleting a topic we need to make sure there are no transforms
@@ -1342,6 +1375,17 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     if (!tp_cfg || !replication_factor) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
     }
+    auto state = _migrated_resources.get_topic_state(p_cfg.tp_ns);
+    if (state != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(
+          clusterlog.warn,
+          "can not create {} topic partitions as the topic is being migrated",
+          state);
+
+        co_return topic_result{
+          std::move(p_cfg.tp_ns), errc::resource_is_being_migrated};
+    }
+
     // we only support increasing number of partitions
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
