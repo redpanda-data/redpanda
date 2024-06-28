@@ -19,6 +19,7 @@
 
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace ssx {
@@ -152,11 +153,14 @@ public:
         return base::invoke_on(
           _shard,
           options,
-          [func = std::forward<Func>(func)](
-            maybe_service<Service>& maybe_service, Args&&... args) {
-              func(*maybe_service, std::forward<Args>(args)...);
-          },
-          std::forward<Args>(args)...);
+          [func_tup = std::forward_as_tuple(std::forward<Func>(func)),
+           args_tup = std::tuple(std::move(args)...)](
+            maybe_service<Service>& maybe_service) mutable {
+              return std::apply(
+                std::forward<Func>(std::get<0>(func_tup)),
+                std::tuple_cat(
+                  std::forward_as_tuple(*maybe_service), std::move(args_tup)));
+          });
     }
 
     /// Invoke a callable on the instance of `Service`.
