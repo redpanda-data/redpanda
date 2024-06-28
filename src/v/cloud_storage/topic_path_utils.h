@@ -10,6 +10,7 @@
 
 #include "base/seastarx.h"
 #include "cloud_storage/remote_label.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 
@@ -27,6 +28,9 @@ namespace cloud_storage {
 // versions, in cases we need to read when newer manifests have not yet been
 // written. This header contains methods to build paths for all versions.
 
+// meta
+ss::sstring labeled_topic_manifests_root();
+
 // meta/kafka/panda-topic
 ss::sstring labeled_topic_manifest_root(const model::topic_namespace& topic);
 
@@ -39,6 +43,9 @@ ss::sstring labeled_topic_manifest_path(
   const remote_label& label,
   const model::topic_namespace& topic,
   model::initial_revision_id rev);
+
+//[0-9a-f]0000000
+chunked_vector<ss::sstring> prefixed_topic_manifests_roots();
 
 // a0000000/meta/kafka/panda-topic
 ss::sstring prefixed_topic_manifest_prefix(const model::topic_namespace& topic);

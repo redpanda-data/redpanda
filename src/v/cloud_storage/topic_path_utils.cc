@@ -24,8 +24,21 @@ const std::regex labeled_manifest_path_expr{
   R"REGEX(meta/([^/]+)/([^/]+)/[^/]+/\d+/topic_manifest\.bin)REGEX"};
 } // namespace
 
+ss::sstring labeled_topic_manifests_root() { return "meta"; }
+
+chunked_vector<ss::sstring> prefixed_topic_manifests_roots() {
+    constexpr static auto hex_chars = std::string_view{"0123456789abcdef"};
+    chunked_vector<ss::sstring> roots;
+    roots.reserve(hex_chars.size());
+    for (char c : hex_chars) {
+        roots.emplace_back(fmt::format("{}0000000", c));
+    }
+    return roots;
+}
+
 ss::sstring labeled_topic_manifest_root(const model::topic_namespace& topic) {
-    return fmt::format("meta/{}/{}", topic.ns(), topic.tp());
+    return fmt::format(
+      "{}/{}/{}", labeled_topic_manifests_root(), topic.ns(), topic.tp());
 }
 
 ss::sstring labeled_topic_manifest_prefix(
