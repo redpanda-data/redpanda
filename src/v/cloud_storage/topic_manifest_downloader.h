@@ -12,6 +12,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_label.h"
 #include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/types.h"
 #include "model/fundamental.h"
 
 namespace cloud_storage {
@@ -56,6 +57,19 @@ public:
       ss::lowres_clock::time_point deadline,
       model::timestamp_clock::duration backoff,
       topic_manifest*);
+
+    // Attempts to scan the topic manifest root paths for any topic manifests
+    // that match the given filter.
+    using tp_ns_filter_t = std::function<bool(const model::topic_namespace&)>;
+    static ss::future<result<find_topic_manifest_outcome, error_outcome>>
+    find_manifests(
+      remote& remote,
+      cloud_storage_clients::bucket_name bucket,
+      retry_chain_node& parent_retry,
+      ss::lowres_clock::time_point deadline,
+      model::timestamp_clock::duration backoff,
+      std::optional<tp_ns_filter_t> tp_filter,
+      chunked_vector<topic_manifest>*);
 
 private:
     const cloud_storage_clients::bucket_name bucket_;
