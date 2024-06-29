@@ -44,6 +44,12 @@ ss::sstring labeled_topic_manifest_path(
   const model::topic_namespace& topic,
   model::initial_revision_id rev);
 
+// meta/kafka/panda-topic/806a0f4a-e691-4a2b-9352-ec4b769a5e6e/0_lifecycle.bin
+ss::sstring labeled_topic_lifecycle_marker_path(
+  const remote_label& label,
+  const model::topic_namespace& topic,
+  model::initial_revision_id rev);
+
 //[0-9a-f]0000000
 chunked_vector<ss::sstring> prefixed_topic_manifests_roots();
 
@@ -57,6 +63,10 @@ prefixed_topic_manifest_bin_path(const model::topic_namespace& topic);
 // a0000000/meta/kafka/panda-topic/topic_manifest.json
 ss::sstring
 prefixed_topic_manifest_json_path(const model::topic_namespace& topic);
+
+// a0000000/meta/kafka/panda-topic/0_lifecycle.bin
+ss::sstring prefixed_topic_lifecycle_marker_path(
+  const model::topic_namespace& topic, model::initial_revision_id rev);
 
 // Returns the topic_namespace of the given labeled manifest path, or
 // std::nullopt if the input is not a labeled manifest path.

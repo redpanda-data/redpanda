@@ -70,6 +70,11 @@ public:
       model::initial_revision_id rev,
       const segment_meta& segment) const;
 
+    // Topic lifecycle marker path.
+    ss::sstring topic_lifecycle_marker_path(
+      const model::topic_namespace& topic,
+      model::initial_revision_id rev) const;
+
 private:
     std::optional<remote_label> label_;
 };

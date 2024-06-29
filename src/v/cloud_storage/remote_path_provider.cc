@@ -15,6 +15,7 @@
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 
 namespace cloud_storage {
 
@@ -104,6 +105,14 @@ ss::sstring remote_path_provider::segment_path(
   const partition_manifest& manifest, const segment_meta& segment) const {
     return segment_path(
       manifest.get_ntp(), manifest.get_revision_id(), segment);
+}
+
+ss::sstring remote_path_provider::topic_lifecycle_marker_path(
+  const model::topic_namespace& topic, model::initial_revision_id rev) const {
+    if (label_.has_value()) {
+        return labeled_topic_lifecycle_marker_path(*label_, topic, rev);
+    }
+    return prefixed_topic_lifecycle_marker_path(topic, rev);
 }
 
 } // namespace cloud_storage

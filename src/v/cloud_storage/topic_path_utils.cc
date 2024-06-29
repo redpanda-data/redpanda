@@ -57,6 +57,16 @@ ss::sstring labeled_topic_manifest_path(
       rev());
 }
 
+ss::sstring labeled_topic_lifecycle_marker_path(
+  const remote_label& label,
+  const model::topic_namespace& topic,
+  model::initial_revision_id rev) {
+    return fmt::format(
+      "{}/{}_lifecycle.bin",
+      labeled_topic_manifest_prefix(label, topic),
+      rev());
+}
+
 ss::sstring
 prefixed_topic_manifest_prefix(const model::topic_namespace& topic) {
     constexpr uint32_t bitmask = 0xF0000000;
@@ -75,6 +85,12 @@ ss::sstring
 prefixed_topic_manifest_json_path(const model::topic_namespace& topic) {
     return fmt::format(
       "{}/topic_manifest.json", prefixed_topic_manifest_prefix(topic));
+}
+
+ss::sstring prefixed_topic_lifecycle_marker_path(
+  const model::topic_namespace& topic, model::initial_revision_id rev) {
+    return fmt::format(
+      "{}/{}_lifecycle.bin", prefixed_topic_manifest_prefix(topic), rev());
 }
 
 std::optional<model::topic_namespace>
