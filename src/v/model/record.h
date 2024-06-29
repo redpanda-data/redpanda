@@ -19,8 +19,11 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "model/timestamp.h"
-#include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/async.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/rw.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>

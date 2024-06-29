@@ -12,6 +12,10 @@
 #include "base/seastarx.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "serde/envelope.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>

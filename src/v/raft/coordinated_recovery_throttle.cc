@@ -14,6 +14,7 @@
 #include "config/configuration.h"
 #include "metrics/prometheus_sanitize.h"
 #include "raft/logger.h"
+#include "ssx/future-util.h"
 
 #include <seastar/util/defer.hh>
 

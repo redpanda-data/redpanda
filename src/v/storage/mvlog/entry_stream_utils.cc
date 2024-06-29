@@ -9,7 +9,7 @@
 
 #include "storage/mvlog/entry_stream_utils.h"
 
-#include "hashing/crc32.h"
+#include "hashing/crc32c.h"
 
 namespace storage::experimental::mvlog {
 

@@ -16,6 +16,7 @@
 #include "random/simple_time_jitter.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
 
 #include <absl/container/btree_map.h>

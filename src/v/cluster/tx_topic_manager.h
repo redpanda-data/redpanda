@@ -16,8 +16,10 @@
 #include "features/fwd.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+
 /**
  * Service responsible for managing transactional coordinator topic.
  *
