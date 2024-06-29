@@ -13,9 +13,11 @@
 
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
 #include "cluster/errc.h"
 #include "cluster/state_machine_registry.h"
+#include "cluster/topic_table.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -133,7 +135,8 @@ public:
       raft::consensus*,
       cloud_storage::remote& remote,
       features::feature_table&,
-      ss::logger& logger);
+      ss::logger& logger,
+      std::optional<cloud_storage::remote_label>);
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
@@ -277,6 +280,10 @@ public:
         return _compacted_replaced_bytes;
     }
 
+    const cloud_storage::remote_path_provider& path_provider() const {
+        return _remote_path_provider;
+    }
+
 private:
     ss::future<bool>
     do_sync(model::timeout_clock::duration timeout, ss::abort_source* as);
@@ -374,6 +381,7 @@ private:
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
+    const cloud_storage::remote_path_provider _remote_path_provider;
     ss::abort_source _download_as;
 
     // for observability: keep track of the number of cloud bytes "removed" by
@@ -389,7 +397,8 @@ public:
     archival_metadata_stm_factory(
       bool cloud_storage_enabled,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::topic_table>&);
 
     bool is_applicable_for(const storage::ntp_config&) const final;
     void create(raft::state_machine_manager_builder&, raft::consensus*) final;
@@ -398,6 +407,7 @@ private:
     bool _cloud_storage_enabled;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<topic_table>& _topics;
 };
 
 } // namespace cluster
