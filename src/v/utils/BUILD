@@ -136,6 +136,23 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "uuid_test",
+    timeout = "short",
+    srcs = [
+        "tests/uuid_test.cc",
+    ],
+    deps = [
+        ":named_type",
+        ":uuid",
+        "//src/v/serde:map",
+        "//src/v/serde:optional",
+        "//src/v/serde:uuid",
+        "//src/v/serde:vector",
+        "//src/v/test_utils:seastar_boost",
+    ],
+)
+
 redpanda_cc_bench(
     name = "vint_bench",
     timeout = "short",
