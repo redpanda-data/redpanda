@@ -65,6 +65,22 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "uuid",
+    srcs = [
+        "uuid.cc",
+    ],
+    hdrs = [
+        "uuid.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+    ],
+)
+
 redpanda_cc_btest_no_seastar(
     name = "tristate_test",
     timeout = "short",
