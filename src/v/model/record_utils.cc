@@ -11,7 +11,6 @@
 
 #include "hashing/crc32c.h"
 #include "model/record.h"
-#include "reflection/adl.h"
 #include "utils/vint.h"
 
 #include <type_traits>
