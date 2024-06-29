@@ -1,5 +1,5 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_btest_no_seastar")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_btest_no_seastar", "redpanda_cc_gtest")
 
 redpanda_cc_library(
     name = "vint",
@@ -81,6 +81,23 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "xid",
+    srcs = [
+        "xid.cc",
+    ],
+    hdrs = [
+        "xid.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde:array",
+    ],
+)
+
 redpanda_cc_btest_no_seastar(
     name = "tristate_test",
     timeout = "short",
@@ -150,6 +167,19 @@ redpanda_cc_btest(
         "//src/v/serde:uuid",
         "//src/v/serde:vector",
         "//src/v/test_utils:seastar_boost",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "xid_test",
+    timeout = "short",
+    srcs = [
+        "tests/xid_test.cc",
+    ],
+    deps = [
+        ":xid",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
     ],
 )
 
