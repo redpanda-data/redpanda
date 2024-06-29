@@ -14,7 +14,6 @@
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
-#include "config/types.h"
 #include "serde/serde.h"
 #include "ssx/sformat.h"
 #include "utils/named_type.h"
@@ -483,19 +482,6 @@ enum class fips_mode_flag : uint8_t {
     // FIPS mode enabled with strict environment checks
     enabled = 2,
 };
-
-inline fips_mode_flag from_config(config::fips_mode_flag f) {
-    switch (f) {
-    case config::fips_mode_flag::disabled:
-        return fips_mode_flag::disabled;
-    case config::fips_mode_flag::permissive:
-        return fips_mode_flag::permissive;
-    case config::fips_mode_flag::enabled:
-        return fips_mode_flag::enabled;
-    }
-
-    __builtin_unreachable();
-}
 
 constexpr std::string_view to_string_view(fips_mode_flag f) {
     switch (f) {
