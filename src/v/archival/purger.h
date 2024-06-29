@@ -111,7 +111,8 @@ private:
 
     ss::future<cloud_storage::upload_result> write_remote_lifecycle_marker(
       const cluster::nt_revision&,
-      cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage::remote_path_provider& path_provider,
       cloud_storage::lifecycle_status status,
       retry_chain_node& parent_rtc);
 

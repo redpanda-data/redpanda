@@ -412,6 +412,7 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
             auto marker_r = co_await write_remote_lifecycle_marker(
               nt_revision,
               bucket,
+              path_provider,
               cloud_storage::lifecycle_status::purging,
               pre_purge_marker_rtc);
             if (marker_r != cloud_storage::upload_result::success) {
@@ -509,6 +510,7 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
             marker_r = co_await write_remote_lifecycle_marker(
               nt_revision,
               bucket,
+              path_provider,
               cloud_storage::lifecycle_status::purged,
               post_purge_marker_rtc);
             if (marker_r != cloud_storage::upload_result::success) {
@@ -544,7 +546,8 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
 
 ss::future<cloud_storage::upload_result> purger::write_remote_lifecycle_marker(
   const cluster::nt_revision& nt_revision,
-  cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage::remote_path_provider& path_provider,
   cloud_storage::lifecycle_status status,
   retry_chain_node& parent_rtc) {
     retry_chain_node marker_rtc(5s, 1s, &parent_rtc);
