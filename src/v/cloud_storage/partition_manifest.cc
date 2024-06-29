@@ -99,27 +99,6 @@ parse_segment_name(const segment_name& name) {
     };
 }
 
-remote_segment_path generate_remote_segment_path(
-  const model::ntp& ntp,
-  model::initial_revision_id rev_id,
-  const segment_name& name,
-  model::term_id archiver_term) {
-    vassert(
-      rev_id != model::initial_revision_id(),
-      "ntp {}: ntp revision must be known for segment {}",
-      ntp,
-      name);
-
-    auto path = ssx::sformat("{}_{}/{}", ntp.path(), rev_id(), name());
-    uint32_t hash = xxhash_32(path.data(), path.size());
-    if (archiver_term != model::term_id{}) {
-        return remote_segment_path(
-          fmt::format("{:08x}/{}.{}", hash, path, archiver_term()));
-    } else {
-        return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
-    }
-}
-
 segment_name generate_local_segment_name(model::offset o, model::term_id t) {
     vassert(t != model::term_id{}, "Invalid term id");
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
@@ -361,18 +340,6 @@ model::initial_revision_id partition_manifest::get_revision_id() const {
     return _rev;
 }
 
-remote_segment_path
-partition_manifest::generate_segment_path(const segment_meta& meta) const {
-    auto name = generate_remote_segment_name(meta);
-    return cloud_storage::generate_remote_segment_path(
-      _ntp, meta.ntp_revision, name, meta.archiver_term);
-}
-
-remote_segment_path
-partition_manifest::generate_segment_path(const lw_segment_meta& meta) const {
-    return generate_segment_path(lw_segment_meta::convert(meta));
-}
-
 remote_segment_path partition_manifest::generate_segment_path(
   const segment_meta& meta, const remote_path_provider& path_provider) const {
     return remote_segment_path{path_provider.segment_path(*this, meta)};
@@ -402,13 +369,6 @@ segment_name partition_manifest::generate_remote_segment_name(
           val.segment_term()));
     }
     __builtin_unreachable();
-}
-
-remote_segment_path partition_manifest::generate_remote_segment_path(
-  const model::ntp& ntp, const partition_manifest::value& val) {
-    auto name = generate_remote_segment_name(val);
-    return cloud_storage::generate_remote_segment_path(
-      ntp, val.ntp_revision, name, val.archiver_term);
 }
 
 partition_manifest::const_iterator

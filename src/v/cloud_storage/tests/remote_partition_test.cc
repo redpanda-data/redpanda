@@ -1089,7 +1089,7 @@ static void remove_segment_from_s3(
 
     auto meta = m.get(o);
     BOOST_REQUIRE(meta.has_value());
-    auto path = m.generate_segment_path(*meta);
+    auto path = m.generate_segment_path(*meta, path_provider);
     retry_chain_node fib(never_abort, 60s, 1s);
     auto res = api
                  .delete_object(

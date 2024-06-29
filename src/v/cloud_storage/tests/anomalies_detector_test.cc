@@ -357,7 +357,7 @@ public:
     void remove_segment(
       const cloud_storage::partition_manifest& manifest,
       const cloud_storage::segment_meta& meta) {
-        auto path = manifest.generate_segment_path(meta);
+        auto path = manifest.generate_segment_path(meta, path_provider);
         remove_object(ssx::sformat("/{}", path().string()));
     }
 
@@ -461,7 +461,8 @@ private:
     void set_expectations_for_segments(
       const cloud_storage::partition_manifest& manifest) {
         for (const auto& seg : manifest) {
-            auto path = manifest.generate_segment_path(seg)().string();
+            auto path
+              = manifest.generate_segment_path(seg, path_provider)().string();
             when()
               .request(fmt::format("/{}", path))
               .with_method(ss::httpd::operation_type::HEAD)

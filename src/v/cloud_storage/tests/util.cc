@@ -431,7 +431,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
   const std::vector<in_memory_segment>& segments) {
     std::vector<cloud_storage_fixture::expectation> results;
     for (const auto& s : segments) {
-        auto url = m.generate_segment_path(*m.get(s.base_offset));
+        auto url = m.generate_segment_path(
+          *m.get(s.base_offset), path_provider);
         results.push_back(cloud_storage_fixture::expectation{
           .url = url().string(), .body = s.bytes});
     }
@@ -492,7 +493,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         m.add(s.sname, meta);
         delta = delta
                 + model::offset(s.num_config_records - s.delta_offset_overlap);
-        auto url = m.generate_segment_path(*m.get(meta.base_offset));
+        auto url = m.generate_segment_path(
+          *m.get(meta.base_offset), path_provider);
         results.push_back(cloud_storage_fixture::expectation{
           .url = url().string(), .body = body});
     }
@@ -570,7 +572,7 @@ std::vector<in_memory_segment> replace_segments(
         auto bo = s.base_offset;
         auto it = manifest.find(bo);
         BOOST_REQUIRE(it != manifest.end());
-        auto path = manifest.generate_segment_path(*it);
+        auto path = manifest.generate_segment_path(*it, path_provider);
         segments_to_remove.push_back(path().native());
     }
     fixture.remove_expectations(segments_to_remove);
@@ -977,7 +979,8 @@ void reupload_compacted_segments(
             // and object store state getting out of sync.
             m.add(s.sname, meta);
 
-            auto url = m.generate_segment_path(*m.get(meta.base_offset));
+            auto url = m.generate_segment_path(
+              *m.get(meta.base_offset), path_provider);
             vlog(test_util_log.debug, "reuploading segment {}", url);
             retry_chain_node rtc(never_abort, 60s, 1s);
             bytes bb;

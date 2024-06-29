@@ -18,7 +18,9 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
+#include "cloud_storage/segment_path_utils.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
@@ -180,8 +182,8 @@ TEST_P(all_types_remote_fixture, test_upload_segment) { // NOLINT
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -208,8 +210,8 @@ TEST_P(
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -235,8 +237,8 @@ TEST_P(
 TEST_P(all_types_remote_fixture, test_upload_segment_timeout) { // NOLINT
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -259,8 +261,8 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -302,8 +304,8 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
 TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
 
     auto try_consume = [](uint64_t, ss::input_stream<char>) {
         return ss::make_ready_future<uint64_t>(0);
@@ -322,11 +324,11 @@ TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
 TEST_P(all_types_remote_fixture, test_download_segment_range) {
     auto subscription = remote.local().subscribe(allow_all);
 
-    auto path = generate_remote_segment_path(
+    auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp,
       manifest_revision,
       segment_name("1-2-v1.log"),
-      model::term_id{123});
+      model::term_id{123})};
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
@@ -388,8 +390,8 @@ TEST_P(all_types_remote_fixture, test_download_segment_range) {
 TEST_P(all_types_remote_fixture, test_segment_exists) { // NOLINT
     set_expectations_and_listen({});
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -419,8 +421,8 @@ TEST_P(all_types_remote_fixture, test_segment_exists) { // NOLINT
 
 TEST_P(all_types_remote_fixture, test_segment_exists_timeout) { // NOLINT
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto expect_timeout
@@ -431,8 +433,8 @@ TEST_P(all_types_remote_fixture, test_segment_exists_timeout) { // NOLINT
 TEST_P(all_types_remote_fixture, test_segment_delete) { // NOLINT
     set_expectations_and_listen({});
     auto name = segment_name("0-1-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{1});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{1})};
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
     uint64_t clen = manifest_payload.size();
@@ -492,11 +494,11 @@ TEST_P(all_types_remote_fixture, test_concat_segment_upload) {
         start_offset = segment.offsets().get_dirty_offset() + model::offset{1};
     }
 
-    auto path = generate_remote_segment_path(
+    auto path = remote_segment_path{prefixed_segment_path(
       test_ntp,
       manifest_revision,
       segment_name("1-2-v1.log"),
-      model::term_id{123});
+      model::term_id{123})};
 
     auto start_pos = 20;
     auto end_pos = b.get_log_segments().back()->file_size() - 20;
@@ -1167,8 +1169,8 @@ TEST_P(
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -1256,8 +1258,8 @@ TEST_P(
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {

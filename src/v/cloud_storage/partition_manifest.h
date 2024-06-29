@@ -57,13 +57,6 @@ struct segment_name_components {
 std::optional<segment_name_components>
 parse_segment_name(const segment_name& name);
 
-/// Segment file name in S3
-remote_segment_path generate_remote_segment_path(
-  const model::ntp&,
-  model::initial_revision_id,
-  const segment_name&,
-  model::term_id archiver_term);
-
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
@@ -114,9 +107,6 @@ public:
 
     /// Generate segment name to use in the cloud
     static segment_name generate_remote_segment_name(const value& val);
-    /// Generate segment path to use in the cloud
-    static remote_segment_path
-    generate_remote_segment_path(const model::ntp& ntp, const value& val);
 
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
@@ -250,9 +240,6 @@ public:
 
     /// Find the earliest segment that has max timestamp >= t
     std::optional<segment_meta> timequery(model::timestamp t) const;
-
-    remote_segment_path generate_segment_path(const segment_meta&) const;
-    remote_segment_path generate_segment_path(const lw_segment_meta&) const;
 
     remote_segment_path generate_segment_path(
       const segment_meta&, const remote_path_provider&) const;

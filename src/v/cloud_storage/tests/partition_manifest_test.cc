@@ -15,6 +15,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/segment_path_utils.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -476,7 +477,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_type) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
-    auto path = generate_remote_segment_path(
+    auto path = prefixed_segment_path(
       manifest_ntp,
       model::initial_revision_id(0),
       segment_name("22-11-v1.log"),
@@ -2119,11 +2120,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(10));
         auto expected = remote_segment_path(
           "9b367cb7/test-ns/test-topic/42_1/10-1-v1.log.1");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 
     {
@@ -2131,11 +2129,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(20));
         auto expected = remote_segment_path(
           "96c6b7a9/test-ns/test-topic/42_1/20-29-2048-1-v1.log.2");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 
     {
@@ -2143,11 +2138,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(30));
         auto expected = remote_segment_path(
           "df1262f5/test-ns/test-topic/42_1/30-1-v1.log");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 
     {
@@ -2155,11 +2147,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(40));
         auto expected = remote_segment_path(
           "e44e8104/test-ns/test-topic/42_1/40-42-4096-2-v1.log");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 }
 
