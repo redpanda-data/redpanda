@@ -507,9 +507,11 @@ template<>
 struct convert<model::fetch_read_strategy> {
     using type = model::fetch_read_strategy;
 
-    static constexpr auto acceptable_values = std::to_array(
-      {model::fetch_read_strategy_to_string(type::polling),
-       model::fetch_read_strategy_to_string(type::non_polling)});
+    static constexpr auto acceptable_values = std::to_array({
+      model::fetch_read_strategy_to_string(type::polling),
+      model::fetch_read_strategy_to_string(type::non_polling),
+      model::fetch_read_strategy_to_string(type::non_polling_with_debounce),
+    });
 
     static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
 
@@ -528,7 +530,11 @@ struct convert<model::fetch_read_strategy> {
                   type::polling)
                 .match(
                   model::fetch_read_strategy_to_string(type::non_polling),
-                  type::non_polling);
+                  type::non_polling)
+                .match(
+                  model::fetch_read_strategy_to_string(
+                    type::non_polling_with_debounce),
+                  type::non_polling_with_debounce);
 
         return true;
     }

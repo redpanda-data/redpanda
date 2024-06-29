@@ -526,6 +526,7 @@ operator<<(std::ostream& os, cloud_storage_chunk_eviction_strategy st) {
 enum class fetch_read_strategy : uint8_t {
     polling = 0,
     non_polling = 1,
+    non_polling_with_debounce = 2,
 };
 
 constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
@@ -534,6 +535,8 @@ constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
         return "polling";
     case fetch_read_strategy::non_polling:
         return "non_polling";
+    case fetch_read_strategy::non_polling_with_debounce:
+        return "non_polling_with_debounce";
     default:
         throw std::invalid_argument("unknown fetch_read_strategy");
     }

@@ -1010,15 +1010,21 @@ private:
  */
 class nonpolling_fetch_plan_executor final : public fetch_plan_executor::impl {
 public:
-    nonpolling_fetch_plan_executor()
-      : _last_result_size(ss::smp::count, 0) {}
+    explicit nonpolling_fetch_plan_executor(bool debounce = false)
+      : _last_result_size(ss::smp::count, 0)
+      , _debounce(debounce) {}
 
     /**
      * Executes the supplied `plan` until `octx.should_stop_fetch` returns true.
      */
     ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
-        start_worker_aborts(plan);
+        if (_debounce) {
+            co_await ss::sleep(std::min(
+              config::shard_local_cfg().fetch_reads_debounce_timeout(),
+              octx.request.data.max_wait_ms));
+        }
 
+        start_worker_aborts(plan);
         co_await handle_exceptions(do_execute_plan(octx, std::move(plan)));
 
         // Send abort signal to workers and wait for all workers to end before
@@ -1234,6 +1240,7 @@ private:
     // until all child tasks have been stopped and its safe to rethrow the
     // exception.
     std::exception_ptr _thrown_exception;
+    bool _debounce;
 };
 
 size_t op_context::fetch_partition_count() const {
@@ -1456,6 +1463,13 @@ ss::future<> do_fetch(op_context& octx) {
         auto fetch_plan = planner.create_plan(octx);
 
         nonpolling_fetch_plan_executor executor;
+        co_await executor.execute_plan(octx, std::move(fetch_plan));
+    } break;
+    case model::fetch_read_strategy::non_polling_with_debounce: {
+        auto planner = make_fetch_planner<simple_fetch_planner>();
+        auto fetch_plan = planner.create_plan(octx);
+
+        nonpolling_fetch_plan_executor executor{true};
         co_await executor.execute_plan(octx, std::move(fetch_plan));
     } break;
     default: {
