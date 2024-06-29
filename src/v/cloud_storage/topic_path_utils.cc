@@ -12,10 +12,33 @@
 #include "hashing/xx.h"
 #include "model/fundamental.h"
 
+#include <regex>
+
 namespace cloud_storage {
 
+namespace {
+const std::regex prefixed_manifest_path_expr{
+  R"REGEX(\w+/meta/([^/]+)/([^/]+)/topic_manifest\.(json|bin))REGEX"};
+
+const std::regex labeled_manifest_path_expr{
+  R"REGEX(meta/([^/]+)/([^/]+)/[^/]+/\d+/topic_manifest\.bin)REGEX"};
+} // namespace
+
+ss::sstring labeled_topic_manifests_root() { return "meta"; }
+
+chunked_vector<ss::sstring> prefixed_topic_manifests_roots() {
+    constexpr static auto hex_chars = std::string_view{"0123456789abcdef"};
+    chunked_vector<ss::sstring> roots;
+    roots.reserve(hex_chars.size());
+    for (char c : hex_chars) {
+        roots.emplace_back(fmt::format("{}0000000", c));
+    }
+    return roots;
+}
+
 ss::sstring labeled_topic_manifest_root(const model::topic_namespace& topic) {
-    return fmt::format("meta/{}/{}", topic.ns(), topic.tp());
+    return fmt::format(
+      "{}/{}/{}", labeled_topic_manifests_root(), topic.ns(), topic.tp());
 }
 
 ss::sstring labeled_topic_manifest_prefix(
@@ -52,6 +75,32 @@ ss::sstring
 prefixed_topic_manifest_json_path(const model::topic_namespace& topic) {
     return fmt::format(
       "{}/topic_manifest.json", prefixed_topic_manifest_prefix(topic));
+}
+
+std::optional<model::topic_namespace>
+tp_ns_from_labeled_path(const std::string& path) {
+    std::smatch matches;
+    const auto is_topic_manifest = std::regex_match(
+      path.cbegin(), path.cend(), matches, labeled_manifest_path_expr);
+    if (!is_topic_manifest) {
+        return std::nullopt;
+    }
+    const auto& ns = matches[1].str();
+    const auto& tp = matches[2].str();
+    return model::topic_namespace{model::ns{ns}, model::topic{tp}};
+}
+
+std::optional<model::topic_namespace>
+tp_ns_from_prefixed_path(const std::string& path) {
+    std::smatch matches;
+    const auto is_topic_manifest = std::regex_match(
+      path.cbegin(), path.cend(), matches, prefixed_manifest_path_expr);
+    if (!is_topic_manifest) {
+        return std::nullopt;
+    }
+    const auto& ns = matches[1].str();
+    const auto& tp = matches[2].str();
+    return model::topic_namespace{model::ns{ns}, model::topic{tp}};
 }
 
 } // namespace cloud_storage

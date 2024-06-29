@@ -18,7 +18,10 @@
 #include "hashing/xx.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+
+#include <absl/container/btree_set.h>
 
 namespace cloud_storage {
 
@@ -107,6 +110,109 @@ topic_manifest_downloader::download_manifest(
         co_return error_outcome::manifest_download_error;
     }
     co_return find_topic_manifest_outcome::no_matching_manifest;
+}
+
+namespace {
+using list_outcome_t
+  = std::vector<cloud_storage_clients::client::list_bucket_item>;
+ss::future<result<list_outcome_t, error_outcome>> find_prefixed_manifest_paths(
+  remote& remote,
+  cloud_storage_clients::bucket_name bucket,
+  retry_chain_node& parent_retry,
+  ss::lowres_clock::time_point deadline,
+  model::timestamp_clock::duration backoff,
+  const ss::sstring& hash_prefix) {
+    vassert(
+      hash_prefix.size() == 8,
+      "Expected prefix [0-9a-f]0000000, got {}",
+      hash_prefix);
+    retry_chain_node retry(deadline, backoff, &parent_retry);
+    auto prefixed_list_res = co_await remote.list_objects(
+      bucket,
+      retry,
+      cloud_storage_clients::object_key{fmt::format("{}/", hash_prefix)});
+    if (prefixed_list_res.has_error()) {
+        co_return error_outcome::manifest_download_error;
+    }
+    co_return prefixed_list_res.value().contents;
+}
+} // namespace
+
+ss::future<result<find_topic_manifest_outcome, error_outcome>>
+topic_manifest_downloader::find_manifests(
+  remote& remote,
+  cloud_storage_clients::bucket_name bucket,
+  retry_chain_node& parent_retry,
+  ss::lowres_clock::time_point deadline,
+  model::timestamp_clock::duration backoff,
+  std::optional<tp_ns_filter_t> tp_filter,
+  chunked_vector<topic_manifest>* manifests) {
+    retry_chain_node retry(deadline, backoff, &parent_retry);
+    absl::btree_set<model::topic_namespace> topics;
+    const auto maybe_add_topic =
+      [&topics,
+       &tp_filter](const std::optional<model::topic_namespace>& topic) {
+          if (!topic.has_value()) {
+              return;
+          }
+          if (!tp_filter.has_value() || tp_filter.value()(*topic)) {
+              topics.emplace(*topic);
+          }
+      };
+    {
+        // First, collect labeled topic manifests that match out filter.
+        const auto labeled_list_res = co_await remote.list_objects(
+          bucket,
+          retry,
+          cloud_storage_clients::object_key{
+            fmt::format("{}/", labeled_topic_manifests_root())});
+        if (labeled_list_res.has_error()) {
+            co_return error_outcome::manifest_download_error;
+        }
+        for (const auto& item : labeled_list_res.value().contents) {
+            auto tp_ns = tp_ns_from_labeled_path(item.key);
+            maybe_add_topic(tp_ns);
+        }
+        // End scope to free memory.
+    }
+    // Next, collect prefixed topic manifests that match out filter.
+    static const auto prefixed_roots = prefixed_topic_manifests_roots();
+    std::vector<ss::future<result<list_outcome_t, error_outcome>>> futs;
+    futs.reserve(prefixed_roots.size());
+    for (const auto& root : prefixed_roots) {
+        futs.push_back(find_prefixed_manifest_paths(
+          remote, bucket, parent_retry, deadline, backoff, root));
+    }
+    auto prefixed_res = co_await ss::when_all_succeed(futs.begin(), futs.end());
+    for (const auto& r : prefixed_res) {
+        if (r.has_error()) {
+            co_return error_outcome::manifest_download_error;
+        }
+        for (const auto& item : r.value()) {
+            auto tp_ns = tp_ns_from_prefixed_path(item.key);
+            maybe_add_topic(tp_ns);
+        }
+    }
+    // Use the manifest downloader to look for the filtered manifests.
+    chunked_vector<topic_manifest> m;
+    m.reserve(topics.size());
+    for (const auto& tp : topics) {
+        topic_manifest tm;
+        topic_manifest_downloader dl(bucket, /*hint=*/std::nullopt, tp, remote);
+        // Not the most optimal since the downloader will check multiple paths,
+        // even though we looked at paths above, but this is nice and tidy.
+        auto res = co_await dl.download_manifest(
+          parent_retry, deadline, backoff, &tm);
+        if (res.has_error()) {
+            co_return res.error();
+        }
+        if (res.value() != find_topic_manifest_outcome::success) {
+            co_return res.value();
+        }
+        m.push_back(std::move(tm));
+    }
+    *manifests = std::move(m);
+    co_return find_topic_manifest_outcome::success;
 }
 
 } // namespace cloud_storage

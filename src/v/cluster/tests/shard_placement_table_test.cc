@@ -259,7 +259,7 @@ private:
           expected_log_revision);
 
         switch (placement.get_reconciliation_action(expected_log_revision)) {
-        case shard_placement_table::reconciliation_action::remove: {
+        case shard_placement_table::reconciliation_action::remove_partition: {
             auto cmd_revision = expected_log_revision.value_or(_ntpt.revision);
             auto ec = co_await delete_partition(ntp, placement, cmd_revision);
             if (ec) {
@@ -267,6 +267,10 @@ private:
             }
             co_return ss::stop_iteration::no;
         }
+        case shard_placement_table::reconciliation_action::remove_kvstore_state:
+            co_await remove_partition_kvstore_state(
+              ntp, placement.current.value().log_revision);
+            co_return ss::stop_iteration::no;
         case shard_placement_table::reconciliation_action::
           wait_for_target_update:
             co_return errc::waiting_for_shard_placement_update;
@@ -379,26 +383,32 @@ private:
             co_return errc::success;
         }
 
-        bool launched_expected = _launched.erase(ntp);
-        if (launched_expected) {
+        bool was_launched = _launched.erase(ntp);
+        if (was_launched) {
             vlog(
               _logger.trace,
               "[{}] stopped partition log_revision: {}",
               ntp,
               placement.current->log_revision);
         }
+        if (
+          placement.current->status
+          != shard_placement_table::hosted_status::hosted) {
+            vassert(!was_launched, "[{}] unexpected launched", ntp);
+        }
+
         co_await ss::sleep(1ms * random_generators::get_int(30));
 
         co_await _ntp2shards.invoke_on(
           0,
           [ntp,
-           log_revision = placement.current.value().log_revision,
+           current = placement.current.value(),
            shard = ss::this_shard_id(),
-           launched_expected](ntp2shards_t& ntp2shards) {
+           was_launched](ntp2shards_t& ntp2shards) {
               auto& shards = ntp2shards[ntp];
 
               bool erased = shards.shards_with_some_state.erase(shard);
-              if (launched_expected) {
+              if (was_launched) {
                   vassert(
                     erased,
                     "[{}] unexpected set contents (deleting on: {})",
@@ -406,19 +416,25 @@ private:
                     shard);
               }
 
-              auto& p_shards = shards.rev2shards[log_revision];
+              auto& p_shards = shards.rev2shards[current.log_revision];
 
-              vassert(
-                (launched_expected && p_shards.launched_on == shard)
-                  || (!launched_expected && !p_shards.launched_on),
-                "[{}] unexpected launched: {} (shard: {}, expected: {})",
-                ntp,
-                p_shards.launched_on,
-                shard,
-                launched_expected);
-              p_shards.launched_on = std::nullopt;
+              if (
+                current.status
+                != shard_placement_table::hosted_status::obsolete) {
+                  vassert(
+                    (was_launched && p_shards.launched_on == shard)
+                      || (!was_launched && !p_shards.launched_on),
+                    "[{}] unexpected launched_on: {} (shard: {}, expected: {})",
+                    ntp,
+                    p_shards.launched_on,
+                    shard,
+                    was_launched);
+              }
+              if (was_launched) {
+                  p_shards.launched_on = std::nullopt;
+              }
 
-              if (launched_expected) {
+              if (was_launched) {
                   vassert(
                     p_shards.current_state_on == shard,
                     "[{}] unexpected current: {} (deleting on: {})",
@@ -430,7 +446,7 @@ private:
                   p_shards.current_state_on = std::nullopt;
               }
 
-              if (launched_expected) {
+              if (was_launched) {
                   vassert(
                     !p_shards.next_state_on,
                     "[{}] unexpected next: {} (deleting on: {})",
@@ -448,27 +464,58 @@ private:
         co_return ec;
     }
 
+    ss::future<> remove_partition_kvstore_state(
+      const model::ntp& ntp, model::revision_id log_revision) {
+        vlog(
+          _logger.trace,
+          "[{}] removing partition kvstore state, log_revision: {}",
+          ntp,
+          log_revision);
+
+        vassert(!_launched.contains(ntp), "[{}] unexpected launched", ntp);
+
+        co_await _ntp2shards.invoke_on(
+          0, [ntp, shard = ss::this_shard_id()](ntp2shards_t& ntp2shards) {
+              auto& shards = ntp2shards[ntp];
+
+              vassert(
+                shards.shards_with_some_state.erase(shard),
+                "[{}] unexpected set contents, shard: {}",
+                ntp,
+                shard);
+          });
+
+        co_await _shard_placement.finish_delete(ntp, log_revision);
+    }
+
     ss::future<std::error_code> transfer_partition(
       const model::ntp& ntp,
       model::revision_id log_revision,
       bool state_expected) {
-        auto maybe_dest = co_await _shard_placement.prepare_transfer(
-          ntp, log_revision);
-        if (maybe_dest.has_error()) {
+        auto transfer_info = co_await _shard_placement.prepare_transfer(
+          ntp, log_revision, _shard_placement.container());
+        if (transfer_info.source_error != errc::success) {
             vlog(
               _logger.trace,
-              "[{}] preparing transfer error: {}",
+              "[{}] preparing transfer source error: {}",
               ntp,
-              maybe_dest.error());
-            co_return maybe_dest.error();
+              transfer_info.source_error);
+            co_return transfer_info.source_error;
         }
 
+        ss::shard_id destination = transfer_info.destination.value();
         vlog(
           _logger.trace,
-          "[{}] preparing transfer dest: {}",
+          "[{}] preparing transfer dest: {} (error: {})",
           ntp,
-          maybe_dest.value());
-        ss::shard_id destination = maybe_dest.value();
+          destination,
+          transfer_info.dest_error);
+        if (transfer_info.dest_error != errc::success) {
+            co_return transfer_info.dest_error;
+        }
+        if (transfer_info.is_finished) {
+            co_return errc::success;
+        }
 
         bool launched_expected = _launched.erase(ntp);
         if (launched_expected) {
@@ -519,22 +566,36 @@ private:
                     source);
               }
 
-              vassert(
-                !p_shards.next_state_on,
-                "[{}] unexpected next: {} (transferring from: {})",
-                ntp,
-                p_shards.next_state_on,
-                source);
+              if (p_shards.next_state_on == destination) {
+                  // transfer was retried
+                  vassert(
+                    shards.shards_with_some_state.contains(destination),
+                    "[{}] unexpected set contents, destination: {}",
+                    ntp,
+                    destination);
+              } else {
+                  vassert(
+                    !p_shards.next_state_on,
+                    "[{}] unexpected next: {} (transferring from: {})",
+                    ntp,
+                    p_shards.next_state_on,
+                    source);
 
-              vassert(
-                shards.shards_with_some_state.insert(destination).second,
-                "[{}] unexpected set contents, destination: {}",
-                ntp,
-                destination);
-              p_shards.next_state_on = destination;
+                  vassert(
+                    shards.shards_with_some_state.insert(destination).second,
+                    "[{}] unexpected set contents, destination: {}",
+                    ntp,
+                    destination);
+                  p_shards.next_state_on = destination;
+              }
           });
 
         co_await ss::sleep(1ms * random_generators::get_int(30));
+        if (random_generators::get_int(5) == 0) {
+            // simulate partial failure of the transfer.
+            throw std::runtime_error{
+              fmt_with_ctx(fmt::format, "[{}] transfer failed!", ntp)};
+        }
 
         co_await _ntp2shards.invoke_on(
           0, [ntp, log_revision, destination](ntp2shards_t& ntp2shards) {
@@ -555,34 +616,16 @@ private:
               shards.next_state_on = std::nullopt;
           });
 
-        co_await container().invoke_on(
-          destination, [&ntp, log_revision](reconciliation_backend& dest) {
-              return dest._shard_placement
-                .finish_transfer_on_destination(ntp, log_revision)
-                .then([&] {
-                    auto it = dest._states.find(ntp);
-                    if (it != dest._states.end()) {
-                        it->second->wakeup_event.set();
-                    }
-                });
-          });
+        auto shard_callback = [this](const model::ntp& ntp) {
+            auto& dest = container().local();
+            auto it = dest._states.find(ntp);
+            if (it != dest._states.end()) {
+                it->second->wakeup_event.set();
+            }
+        };
 
-        co_await _ntp2shards.invoke_on(
-          0,
-          [ntp, shard = ss::this_shard_id(), state_expected](
-            ntp2shards_t& ntp2shards) {
-              auto& ntp_shards = ntp2shards[ntp];
-              bool erased = ntp_shards.shards_with_some_state.erase(shard);
-              if (!state_expected) {
-                  vassert(
-                    !erased,
-                    "[{}] unexpected set contents, source: {}",
-                    ntp,
-                    shard);
-              }
-          });
-
-        co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
+        co_await _shard_placement.finish_transfer(
+          ntp, log_revision, _shard_placement.container(), shard_callback);
         vlog(_logger.trace, "[{}] transferred", ntp);
         co_return errc::success;
     }
@@ -996,6 +1039,7 @@ public:
             config::mock_binding(10ms),
             test_dir,
             storage::make_sanitized_file_config()),
+          ss::sharded_parameter([] { return ss::this_shard_id(); }),
           ss::sharded_parameter([this] { return std::ref(sr.local()); }),
           std::ref(ft));
         co_await kvs->invoke_on_all(
@@ -1003,6 +1047,7 @@ public:
 
         spt = std::make_unique<decltype(spt)::element_type>();
         co_await spt->start(
+          ss::sharded_parameter([] { return ss::this_shard_id(); }),
           ss::sharded_parameter([this] { return std::ref(kvs->local()); }));
 
         if (!first_start) {
@@ -1010,7 +1055,7 @@ public:
             for (const auto& [ntp, meta] : ntpt.local().ntp2meta) {
                 local_group2ntp.emplace(meta.group, ntp);
             }
-            co_await spt->local().initialize_from_kvstore(local_group2ntp);
+            co_await spt->local().initialize_from_kvstore(local_group2ntp, {});
 
             for (auto& [ntp, shards] : _ntp2shards.local()) {
                 if (

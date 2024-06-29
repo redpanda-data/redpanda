@@ -367,106 +367,65 @@ ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
     });
 }
 
-void tx_reducer::consume_aborted_txs(model::offset upto) {
+void tx_reducer::refresh_ongoing_aborted_txs(const model::record_batch& b) {
+    // refresh the running list of aborted transactions
+    auto upto = b.last_offset();
     while (!_aborted_txs.empty() && _aborted_txs.top().first <= upto) {
         const auto& top = _aborted_txs.top();
         _ongoing_aborted_txs[top.pid] = top;
         _aborted_txs.pop();
     }
-}
-
-void tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
-    auto batch_type = _stm_mgr->parse_tx_control_batch(b);
-    auto pid = model::producer_identity(
-      b.header().producer_id, b.header().producer_epoch);
-    switch (batch_type) {
-    case model::control_record_type::unknown: // unlikely
-    case model::control_record_type::tx_commit: {
-        break;
-    }
-    case model::control_record_type::tx_abort: {
-        if (!_ongoing_aborted_txs.erase(pid)) {
-            // This highly likely points to a bug with incorrect aborted tx
-            // range considered for this segment compaction. We likely retained
-            // aborted data batches for this pid with offsets close to
-            // base_offset().
-            // A corner case where this is not a problem is when the abort
-            // marker is the first entry in the segment.
-            vlog(
-              stlog.warn,
-              "No ongoing aborted tx found for pid {}, batch {}",
-              pid,
-              b.header());
+    // discard any inflight aborted transactions if we encounter an
+    // abort batch.
+    auto is_tx = b.header().attrs.is_transactional();
+    auto is_control = b.header().attrs.is_control();
+    if (is_tx && is_control) {
+        auto batch_type = _stm_mgr->parse_tx_control_batch(b);
+        auto pid = model::producer_identity(
+          b.header().producer_id, b.header().producer_epoch);
+        if (batch_type == model::control_record_type::tx_abort) {
+            _ongoing_aborted_txs.erase(pid);
         }
-        break;
-    }
     }
 }
 
-bool tx_reducer::handle_tx_data_batch(const model::record_batch& b) {
+bool tx_reducer::can_discard_tx_data_batch(const model::record_batch& b) {
+    if (_transactional_stm_type != stm_type::user_topic_transactional) {
+        return false;
+    }
+    auto is_tx = b.header().attrs.is_transactional();
+    auto is_data = b.header().type == model::record_batch_type::raft_data;
+    auto is_control = b.header().attrs.is_control();
     auto pid = model::producer_identity(
       b.header().producer_id, b.header().producer_epoch);
-    auto discard = _ongoing_aborted_txs.contains(pid);
-    if (discard) {
-        _stats._tx_data_batches_discarded++;
-    }
-    return discard;
+    return is_tx && is_data && !is_control
+           && _ongoing_aborted_txs.contains(pid);
 }
 
-bool tx_reducer::handle_non_tx_control_batch(const model::record_batch& b) {
-    auto type = b.header().type;
-    vassert(
-      type == model::record_batch_type::tx_prepare
-        || type == model::record_batch_type::tx_fence,
-      "{} unknown type encountered",
-      type);
-    // Fence batches cannot be discarded because they contain epoch information
-    // from pids that are tracked in the state machine. We key the records with
-    // pid, so the combination of batch_type + pid should always retain the
-    // latest epoch in the indexer_reducer. OTOH prepare batches can be
-    // discarded.
-    bool discard = type == model::record_batch_type::tx_prepare;
-    if (discard) {
-        _stats._non_tx_control_batches_discarded++;
+bool tx_reducer::can_discard_consumer_offsets_batch(
+  const model::record_batch& b) {
+    if (_transactional_stm_type != stm_type::consumer_offsets_transactional) {
+        return false;
     }
-    return discard;
+    // Remove all transaction related batches (including data) because the
+    // committed data has already been rewritten as separate raft_data batches,
+    // so no need to retain originally written group_prepare_tx batches while
+    // the transaction is in progress.
+    return is_compactible_control_batch(b.header().type);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
-    if (unlikely(_non_transactional)) {
-        co_return co_await _delegate(std::move(b));
-    }
-
-    _stats._all_batches++;
-    consume_aborted_txs(b.last_offset());
-
-    auto is_tx = b.header().attrs.is_transactional();
-    auto is_control = b.header().attrs.is_control();
-    auto is_data = b.header().type == model::record_batch_type::raft_data;
-
-    bool discard_batch = false;
-    if (is_tx) {
-        if (is_control) {
-            // tx_commit / tx_abort / unknown
-
-            handle_tx_control_batch(b);
-        } else if (is_data) {
-            // User produced data batches in tx scope..
-            discard_batch = handle_tx_data_batch(b);
+    if (_transactional_stm_type) {
+        _stats.batches_processed++;
+        refresh_ongoing_aborted_txs(b);
+        if (
+          can_discard_tx_data_batch(b)
+          || can_discard_consumer_offsets_batch(b)) {
+            vlog(
+              stlog.trace, "discarded batch during compaction: {}", b.header());
+            _stats.batches_discarded++;
+            co_return ss::stop_iteration::no;
         }
-    } else {
-        if (is_control && !is_data) {
-            // tx_prepare / tx_fence
-            discard_batch = handle_non_tx_control_batch(b);
-        }
-        // else includes data batches from non tx producers which
-        // cannot be discarded.
-    }
-
-    if (discard_batch) {
-        vlog(stlog.trace, "discarded batch during compaction: {}", b.header());
-        _stats._all_batches_discarded++;
-        co_return ss::stop_iteration::no;
     }
     co_return co_await _delegate(std::move(b));
 }

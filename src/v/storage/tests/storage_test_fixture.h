@@ -205,6 +205,7 @@ public:
             config::mock_binding(10ms),
             test_dir,
             storage::make_sanitized_file_config()),
+          ss::this_shard_id(),
           resources,
           feature_table) {
         configure_unit_test_logging();

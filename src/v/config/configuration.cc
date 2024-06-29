@@ -663,6 +663,7 @@ configuration::configuration()
       {
         model::fetch_read_strategy::polling,
         model::fetch_read_strategy::non_polling,
+        model::fetch_read_strategy::non_polling_with_debounce,
       })
   , alter_topic_cfg_timeout_ms(
       *this,

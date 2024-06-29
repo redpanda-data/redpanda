@@ -17,6 +17,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"
@@ -400,18 +401,7 @@ std::optional<ss::sstring> check_result_configuration(
           new_configuration.id());
     }
     auto& current_configuration = it->second.broker;
-    /**
-     * do no allow to decrease node core count
-     */
-    if (
-      current_configuration.properties().cores
-      > new_configuration.properties().cores) {
-        return fmt::format(
-          "core count must not decrease on any broker, currently configured "
-          "core count: {}, requested core count: {}",
-          current_configuration.properties().cores,
-          new_configuration.properties().cores);
-    }
+
     /**
      * When cluster member configuration changes Redpanda by default doesn't
      * allow the change if a new cluster configuration would have two
@@ -477,4 +467,34 @@ std::optional<ss::sstring> check_result_configuration(
     }
     return {};
 }
+
+ss::future<> copy_persistent_state(
+  const model::ntp& ntp,
+  raft::group_id group,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& storage) {
+    return ss::when_all_succeed(
+             storage::disk_log_impl::copy_kvstore_state(
+               ntp, source_kvs, target_shard, storage),
+             raft::details::copy_persistent_state(
+               group, source_kvs, target_shard, storage),
+             storage::offset_translator::copy_persistent_state(
+               group, source_kvs, target_shard, storage),
+             raft::copy_persistent_stm_state(
+               ntp, source_kvs, target_shard, storage))
+      .discard_result();
+}
+
+ss::future<> remove_persistent_state(
+  const model::ntp& ntp, raft::group_id group, storage::kvstore& source_kvs) {
+    return ss::when_all_succeed(
+             storage::disk_log_impl::remove_kvstore_state(ntp, source_kvs),
+             raft::details::remove_persistent_state(group, source_kvs),
+             storage::offset_translator::remove_persistent_state(
+               group, source_kvs),
+             raft::remove_persistent_stm_state(ntp, source_kvs))
+      .discard_result();
+}
+
 } // namespace cluster

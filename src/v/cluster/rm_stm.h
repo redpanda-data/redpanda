@@ -181,7 +181,7 @@ public:
     }
 
     storage::stm_type type() override {
-        return storage::stm_type::transactional;
+        return storage::stm_type::user_topic_transactional;
     }
 
     ss::future<fragmented_vector<model::tx_range>>

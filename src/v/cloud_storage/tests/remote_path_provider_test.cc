@@ -10,6 +10,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
+#include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "gtest/gtest.h"
 #include "model/fundamental.h"
@@ -49,6 +50,39 @@ const segment_meta test_smeta{
   .sname_format = segment_name_format::v3,
 };
 } // namespace
+
+TEST(TopicFromPathTest, TestTopicFromLabeledTopicManifestPath) {
+    remote_path_provider path_provider(test_label);
+    auto bin_path = path_provider.topic_manifest_path(test_tp_ns, test_rev);
+
+    auto parsed_labeled_tp_ns = tp_ns_from_labeled_path(bin_path);
+    ASSERT_TRUE(parsed_labeled_tp_ns.has_value());
+    ASSERT_EQ(*parsed_labeled_tp_ns, test_tp_ns);
+
+    // Using the wrong method should result in nullopt.
+    auto parsed_prefixed_tp_ns = tp_ns_from_prefixed_path(bin_path);
+    ASSERT_FALSE(parsed_prefixed_tp_ns.has_value());
+}
+
+TEST(TopicFromPathTest, TestTopicFromPrefixedTopicManifestPath) {
+    remote_path_provider path_provider(std::nullopt);
+    auto bin_path = path_provider.topic_manifest_path(test_tp_ns, test_rev);
+    auto json_path = *path_provider.topic_manifest_path_json(test_tp_ns);
+
+    auto parsed_bin_tp_ns = tp_ns_from_prefixed_path(bin_path);
+    ASSERT_TRUE(parsed_bin_tp_ns.has_value());
+    ASSERT_EQ(*parsed_bin_tp_ns, test_tp_ns);
+
+    auto parsed_json_tp_ns = tp_ns_from_prefixed_path(json_path);
+    ASSERT_TRUE(parsed_json_tp_ns.has_value());
+    ASSERT_EQ(*parsed_json_tp_ns, test_tp_ns);
+
+    // Using the wrong method should result in nullopt.
+    auto parsed_labeled_tp_ns = tp_ns_from_labeled_path(bin_path);
+    ASSERT_FALSE(parsed_labeled_tp_ns.has_value());
+    parsed_labeled_tp_ns = tp_ns_from_labeled_path(json_path);
+    ASSERT_FALSE(parsed_labeled_tp_ns.has_value());
+}
 
 TEST(RemotePathProviderTest, TestPrefixedTopicManifestPaths) {
     remote_path_provider path_provider(std::nullopt);

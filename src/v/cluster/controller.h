@@ -256,7 +256,7 @@ private:
     std::optional<cloud_storage_clients::bucket_name> get_configured_bucket();
 
     // Checks configuration invariants stored in kvstore
-    ss::future<> validate_configuration_invariants();
+    ss::future<configuration_invariants> validate_configuration_invariants();
 
     config_manager::preload_result _config_preload;
 

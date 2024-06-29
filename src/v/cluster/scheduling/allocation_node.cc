@@ -142,15 +142,13 @@ void allocation_node::remove_final_count(partition_allocation_domain domain) {
 }
 
 void allocation_node::update_core_count(uint32_t core_count) {
-    vassert(
-      core_count >= cpus(),
-      "decreasing node core count is not supported, current core count {} > "
-      "requested core count {}",
-      cpus(),
-      core_count);
-    auto current_cpus = cpus();
-    for (auto i = current_cpus; i < core_count; ++i) {
-        _weights.push_back(0);
+    auto old_count = _weights.size();
+    if (core_count < old_count) {
+        _weights.resize(core_count);
+    } else {
+        for (auto i = old_count; i < core_count; ++i) {
+            _weights.push_back(0);
+        }
     }
     _max_capacity = allocation_capacity(
       (core_count * _partitions_per_shard()) - _partitions_reserve_shard0());
