@@ -5,7 +5,9 @@ redpanda_cc_library(
     hdrs = [
         "checksum_t.h",
         "envelope.h",
+        "envelope_for_each_field.h",
         "read_header.h",
+        "rw/envelope.h",
         "rw/reservable.h",
         "rw/rw.h",
         "rw/scalar.h",
@@ -20,6 +22,70 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf_parser",
+        "//src/v/hashing:crc32c",
+        "//src/v/reflection:arity",
+        "//src/v/reflection:to_tuple",
         "//src/v/ssx:sformat",
+    ],
+)
+
+redpanda_cc_library(
+    name = "array",
+    hdrs = [
+        "rw/array.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "uuid",
+    hdrs = [
+        "rw/uuid.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "vector",
+    hdrs = [
+        "rw/vector.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "optional",
+    hdrs = [
+        "rw/optional.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "map",
+    hdrs = [
+        "rw/map.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
     ],
 )
