@@ -19,6 +19,15 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "functional",
+    hdrs = [
+        "functional.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
     name = "tristate",
     hdrs = [
         "tristate.h",
