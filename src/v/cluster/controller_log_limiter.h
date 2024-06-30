@@ -94,8 +94,6 @@ public:
           std::is_same_v<Cmd, update_role_cmd>) {
             return _acls_and_users_operations_limiter.try_throttle();
         } else if constexpr (
-          std::is_same_v<Cmd, create_data_policy_cmd> ||   //
-          std::is_same_v<Cmd, delete_data_policy_cmd> ||   //
           std::is_same_v<Cmd, cluster_config_delta_cmd> || //
           std::is_same_v<Cmd, feature_update_license_update_cmd>) {
             return _configuration_operations_limiter.try_throttle();

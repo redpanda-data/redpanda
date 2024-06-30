@@ -20,6 +20,7 @@
 #include "security/scram_credential.h"
 #include "security/types.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster {

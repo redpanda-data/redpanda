@@ -100,7 +100,6 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::cleanup_policy_bitflags> ||
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
-        std::is_same_v<T, v8_engine::data_policy> ||
         std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode>;

@@ -21,6 +21,7 @@
 #include "model/metadata.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

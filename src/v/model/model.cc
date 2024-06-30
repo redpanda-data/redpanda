@@ -16,7 +16,7 @@
 #include "model/record_batch_types.h"
 #include "model/timestamp.h"
 #include "model/validation.h"
-#include "serde/serde.h"
+#include "serde/rw/rw.h"
 #include "strings/string_switch.h"
 #include "utils/to_string.h"
 

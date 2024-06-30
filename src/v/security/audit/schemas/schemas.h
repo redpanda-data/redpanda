@@ -11,6 +11,7 @@
 
 #include "config/node_config.h"
 #include "security/audit/schemas/types.h"
+#include "utils/functional.h"
 
 namespace security::audit {
 

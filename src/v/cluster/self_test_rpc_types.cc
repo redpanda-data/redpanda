@@ -12,6 +12,7 @@
 #include "cluster/self_test_rpc_types.h"
 
 #include "random/generators.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 

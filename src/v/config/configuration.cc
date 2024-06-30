@@ -19,6 +19,7 @@
 #include "security/config.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/oidc_url_parser.h"
+#include "serde/rw/chrono.h"
 #include "ssx/sformat.h"
 #include "storage/config.h"
 
