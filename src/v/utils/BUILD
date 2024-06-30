@@ -62,6 +62,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "to_string",
+    hdrs = [
+        "to_string.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+    ],
+)
+
+redpanda_cc_library(
     name = "object_pool",
     hdrs = [
         "object_pool.h",
