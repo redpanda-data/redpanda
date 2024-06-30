@@ -124,5 +124,11 @@ cc_library(
     ],
     deps = [
         "@boost//:algorithm",
+        "@boost//:any",
+        "@boost//:crc",
+        "@boost//:format",
+        "@boost//:iostreams",
+        "@boost//:lexical_cast",
+        "@snappy",
     ],
 )
