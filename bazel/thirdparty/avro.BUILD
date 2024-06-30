@@ -99,7 +99,6 @@ cc_library(
         "lang/c++/impl/ValidSchema.cc",
         "lang/c++/impl/Validator.cc",
         "lang/c++/impl/Zigzag.cc",
-        "lang/c++/impl/avrogencpp.cc",
         "lang/c++/impl/json/JsonDom.cc",
         "lang/c++/impl/json/JsonDom.hh",
         "lang/c++/impl/json/JsonIO.cc",
