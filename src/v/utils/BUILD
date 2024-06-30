@@ -112,6 +112,7 @@ redpanda_cc_library(
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
         "@abseil-cpp//absl/hash",
+        "@boost//:uuid",
         "@fmt",
         "@seastar",
     ],
