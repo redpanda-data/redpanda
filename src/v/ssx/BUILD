@@ -23,6 +23,32 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "future-util",
+    hdrs = [
+        "include/ssx/future-util.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:functional",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "future-util_test",
+    timeout = "short",
+    srcs = [
+        "tests/future_util.cc",
+    ],
+    deps = [
+        ":future-util",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:functional",
+    ],
+)
+
 redpanda_cc_btest(
     name = "thread_worker_test",
     timeout = "short",
