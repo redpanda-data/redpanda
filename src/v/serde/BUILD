@@ -3,9 +3,11 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 redpanda_cc_library(
     name = "serde",
     hdrs = [
+        "async.h",
         "checksum_t.h",
         "envelope.h",
         "envelope_for_each_field.h",
+        "logger.h",
         "read_header.h",
         "rw/envelope.h",
         "rw/reservable.h",
@@ -25,6 +27,7 @@ redpanda_cc_library(
         "//src/v/hashing:crc32c",
         "//src/v/reflection:arity",
         "//src/v/reflection:to_tuple",
+        "//src/v/ssx:future-util",
         "//src/v/ssx:sformat",
     ],
 )
@@ -82,6 +85,67 @@ redpanda_cc_library(
     name = "map",
     hdrs = [
         "rw/map.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "named_type",
+    hdrs = [
+        "rw/named_type.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+        "//src/v/utils:named_type",
+    ],
+)
+
+redpanda_cc_library(
+    name = "sstring",
+    hdrs = [
+        "rw/sstring.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "variant",
+    hdrs = [
+        "rw/variant.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "iobuf",
+    hdrs = [
+        "rw/iobuf.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "enum",
+    hdrs = [
+        "rw/enum.h",
     ],
     include_prefix = "serde",
     visibility = ["//visibility:public"],
