@@ -74,6 +74,16 @@ void append_vint_to_iobuf(iobuf& b, int64_t v) {
 
 } // namespace
 
+std::ostream& operator<<(std::ostream& os, const transform_from_start& o) {
+    fmt::print(os, "{{ start + {} }}", o.delta);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const transform_from_end& o) {
+    fmt::print(os, "{{ end - {} }}", o.delta);
+    return os;
+}
+
 std::ostream&
 operator<<(std::ostream& os, const transform_offset_options& opts) {
     ss::visit(

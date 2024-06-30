@@ -77,6 +77,62 @@ using transform_name_view
 using is_transform_paused = ss::bool_class<struct is_paused_tag>;
 
 /**
+ * A structure for describing a raw offset delta from the start of a topic
+ * partition.
+ *
+ * Intended for use as a variant alternative for transform_offset_options.
+ */
+struct transform_from_start
+  : serde::envelope<
+      transform_from_start,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_from_start() = default;
+    explicit transform_from_start(kafka::offset_delta d)
+      : delta(d) {
+        vassert(
+          delta >= kafka::offset_delta{0},
+          "Transform offset delta must be >= 0");
+    }
+
+    // A positive offset from the beginning of an input topic.
+    kafka::offset_delta delta;
+
+    auto serde_fields() { return std::tie(delta); }
+
+    friend std::ostream& operator<<(std::ostream&, const transform_from_start&);
+    bool operator==(const transform_from_start&) const = default;
+};
+
+/**
+ * A structure for describing a raw offset delta from the end of a topic
+ * partition.
+ *
+ * Intended for use as a variant alternative for transform_offset_options.
+ *
+ */
+struct transform_from_end
+  : serde::envelope<
+      transform_from_end,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_from_end() = default;
+    explicit transform_from_end(kafka::offset_delta d)
+      : delta(d) {
+        vassert(
+          delta >= kafka::offset_delta{0},
+          "Transform offset delta must be >= 0");
+    }
+    // A positive offset from the end of an input topic.
+    kafka::offset_delta delta;
+
+    auto serde_fields() { return std::tie(delta); }
+
+    friend std::ostream& operator<<(std::ostream&, const transform_from_end&);
+    bool operator==(const transform_from_end&) const = default;
+};
+
+/**
  * The options related to the offset at which transforms are at.
  *
  * Currently, this struct only supports specifying an initial position, but in
