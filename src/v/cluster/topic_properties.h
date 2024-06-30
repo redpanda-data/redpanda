@@ -16,6 +16,7 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
 #include "storage/ntp_config.h"
 #include "utils/tristate.h"
 

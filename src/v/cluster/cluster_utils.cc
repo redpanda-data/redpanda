@@ -17,6 +17,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/fips_config.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "rpc/backoff_policy.h"

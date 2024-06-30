@@ -15,6 +15,7 @@
 #include "config/tls_config.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
+#include "utils/functional.h"
 
 #include <seastar/net/tls.hh>
 

@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
-#include "hashing/crc32.h"
+#include "hashing/crc32c.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
 #include "net/client_probe.h"

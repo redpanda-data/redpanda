@@ -18,6 +18,7 @@
 #include "config/node_config.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "model/fips_config.h"
 
 #include <seastar/core/metrics.hh>
 

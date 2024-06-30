@@ -7,7 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/map.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 

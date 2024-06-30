@@ -21,6 +21,7 @@
 #include "strings/string_switch.h"
 #include "utils/file_io.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/seastar.hh>
 
 #include <functional>

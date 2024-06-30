@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "base/units.h"
-#include "config/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
