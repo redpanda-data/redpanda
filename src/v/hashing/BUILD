@@ -51,6 +51,7 @@ redpanda_cc_btest(
     ],
     deps = [
         ":secure",
+        "@boost//:test",
     ],
 )
 

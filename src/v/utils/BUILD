@@ -15,6 +15,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iostream",
+        "@seastar",
     ],
 )
 
@@ -109,6 +110,10 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "@abseil-cpp//absl/hash",
+        "@fmt",
+        "@seastar",
     ],
 )
 
@@ -125,7 +130,11 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
+        "//src/v/serde",
         "//src/v/serde:array",
+        "//src/v/ssx:sformat",
+        "@fmt",
+        "@seastar",
     ],
 )
 
@@ -168,6 +177,9 @@ redpanda_cc_btest(
         ":object_pool",
         "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
 
@@ -179,8 +191,12 @@ redpanda_cc_btest(
     ],
     deps = [
         ":vint",
+        "//src/v/bytes",
+        "//src/v/bytes:iostream",
         "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar//:testing",
     ],
 )
 
@@ -193,11 +209,17 @@ redpanda_cc_btest(
     deps = [
         ":named_type",
         ":uuid",
+        "//src/v/serde",
         "//src/v/serde:map",
         "//src/v/serde:optional",
         "//src/v/serde:uuid",
         "//src/v/serde:vector",
         "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/hash",
+        "@boost//:container_hash",
+        "@boost//:test",
+        "@seastar//:testing",
     ],
 )
 
@@ -210,7 +232,10 @@ redpanda_cc_gtest(
     deps = [
         ":xid",
         "//src/v/random:generators",
+        "//src/v/serde",
         "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:node_hash_map",
+        "@googletest//:gtest",
     ],
 )
 
@@ -222,7 +247,11 @@ redpanda_cc_bench(
     ],
     deps = [
         ":vint",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
         "//src/v/random:generators",
+        "@seastar",
         "@seastar//:benchmark",
     ],
 )

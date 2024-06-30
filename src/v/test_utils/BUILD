@@ -21,7 +21,9 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:node_hash_map",
         "@abseil-cpp//absl/container:node_hash_set",
+        "@fmt",
         "@googletest//:gtest",
+        "@seastar",
         "@seastar//:testing",
     ],
 )

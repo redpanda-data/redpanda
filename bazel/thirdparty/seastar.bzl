@@ -38,5 +38,6 @@ def seastar_cc_swagger_library(name, src, definitions = [], visibility = None):
         ],
         deps = [
             "@seastar",
+            "@boost//:range",
         ],
     )

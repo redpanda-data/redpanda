@@ -26,6 +26,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/crypto",
+        "@seastar",
     ],
 )
 
@@ -52,5 +53,7 @@ redpanda_cc_btest(
         ":generators",
         "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
     ],
 )

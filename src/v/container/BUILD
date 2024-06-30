@@ -78,6 +78,7 @@ redpanda_cc_gtest(
     deps = [
         ":chunked_hash_map",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
 
@@ -92,6 +93,7 @@ redpanda_cc_gtest(
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
 
@@ -106,6 +108,9 @@ redpanda_cc_gtest(
         ":zip",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:btree",
+        "@fmt",
+        "@googletest//:gtest",
     ],
 )
 
@@ -117,8 +122,11 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":interval_set",
+        "//src/v/base",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
 
@@ -132,6 +140,7 @@ redpanda_cc_btest(
         ":fragmented_vector",
         "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
     ],
 )
 
@@ -158,6 +167,9 @@ redpanda_cc_bench(
     deps = [
         ":bench_utils",
         ":fragmented_vector",
+        "//src/v/base",
+        "//src/v/random:generators",
+        "@seastar//:benchmark",
     ],
 )
 
@@ -170,5 +182,9 @@ redpanda_cc_bench(
     deps = [
         ":bench_utils",
         ":contiguous_range_map",
+        "//src/v/random:generators",
+        "@abseil-cpp//absl/container:btree",
+        "@boost//:range",
+        "@seastar//:benchmark",
     ],
 )

@@ -22,13 +22,16 @@ redpanda_cc_library(
         "include/crypto/ossl_context_service.h",
         "include/crypto/types.h",
     ],
+    exclude_layering_check = True,
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/bytes",
         "//src/v/ssx:thread_worker",
         "@abseil-cpp//absl/container:node_hash_map",
         "@openssl",
+        "@seastar",
     ],
 )
 
@@ -54,6 +57,8 @@ redpanda_cc_gtest(
         ":crypto",
         ":crypto_test_utils",
         "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@googletest//:gtest",
     ],
 )
 
@@ -67,6 +72,8 @@ redpanda_cc_gtest(
         ":crypto",
         ":crypto_test_utils",
         "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@googletest//:gtest",
     ],
 )
 
@@ -79,6 +86,7 @@ redpanda_cc_gtest(
     deps = [
         ":crypto",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
 
@@ -91,6 +99,8 @@ redpanda_cc_gtest(
     deps = [
         ":crypto",
         ":crypto_test_utils",
+        "//src/v/bytes",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )

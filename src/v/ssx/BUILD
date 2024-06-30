@@ -46,6 +46,8 @@ redpanda_cc_btest(
         ":future-util",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:functional",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
 
@@ -59,6 +61,10 @@ redpanda_cc_btest(
         ":thread_worker",
         "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/algorithm:container",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
 
@@ -72,5 +78,6 @@ redpanda_cc_btest(
         ":sformat",
         "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
     ],
 )
