@@ -82,6 +82,9 @@ def _redpanda_cc_test(
         deps = deps,
         copts = redpanda_copts(),
         args = args,
+        features = [
+            "layering_check",
+        ],
     )
 
 def _redpanda_cc_unit_test(**kwargs):

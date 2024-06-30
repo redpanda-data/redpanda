@@ -20,6 +20,8 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:intrusive",
+        "@fmt",
+        "@seastar",
     ],
 )
 
@@ -35,6 +37,9 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
+        "//src/v/base",
+        "@abseil-cpp//absl/hash",
+        "@seastar",
     ],
 )
 
@@ -63,7 +68,9 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bytes",
+        ":iobuf",
         "//src/v/random:generators",
+        "@seastar",
     ],
 )
 
@@ -79,6 +86,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
+        "@seastar",
     ],
 )
 
@@ -94,6 +102,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
+        "@seastar",
     ],
 )
 
@@ -138,7 +147,13 @@ redpanda_cc_btest(
         ":random",
         ":scattered_message",
         ":streambuf",
+        "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "@boost//:range",
+        "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
 
@@ -152,9 +167,11 @@ redpanda_cc_btest(
     deps = [
         ":bytes",
         ":hash",
+        ":iobuf",
         ":iostream",
         "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
     ],
 )
 
@@ -167,5 +184,7 @@ redpanda_cc_btest(
     deps = [
         ":bytes",
         "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar//:testing",
     ],
 )

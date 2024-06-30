@@ -24,16 +24,20 @@ redpanda_cc_library(
         "include/compression/snappy_standard_compressor.h",
         "include/compression/stream_zstd.h",
     ],
+    exclude_layering_check = True,
     local_defines = ["ZSTD_STATIC_LINKING_ONLY"],
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes",
+        "//src/v/bytes:iobuf",
         "//src/v/model",
         "//src/v/utils:object_pool",
         "//src/v/utils:static_deleter_fn",
+        "@fmt",
         "@lz4//:lz4_frame",
+        "@seastar",
         "@snappy",
         "@zstd",
     ],
@@ -47,7 +51,11 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":compression",
+        "//src/v/base",
+        "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@lz4",
     ],
 )
 
@@ -59,8 +67,10 @@ redpanda_cc_btest(
     ],
     deps = [
         ":compression",
+        "//src/v/base",
         "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
     ],
 )
 
@@ -72,7 +82,9 @@ redpanda_cc_bench(
     ],
     deps = [
         ":compression",
+        "//src/v/base",
         "//src/v/random:generators",
+        "@seastar",
         "@seastar//:benchmark",
     ],
 )

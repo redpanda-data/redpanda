@@ -7,6 +7,7 @@ making behavior changes across the entire build.
 
 load(":internal.bzl", "redpanda_copts")
 
+# buildifier: disable=function-docstring-args
 def redpanda_cc_library(
         name,
         srcs = [],
@@ -16,10 +17,20 @@ def redpanda_cc_library(
         strip_include_prefix = None,
         visibility = None,
         include_prefix = None,
+        exclude_layering_check = False,
         deps = []):
     """
     Define a Redpanda C++ library.
     """
+    features = []
+    if not exclude_layering_check:
+        # TODO Some dependencies brought in via rules_foreign_cc appear to not
+        # have all their headers declared as outputs, which causes issues with
+        # layering checks. So we allow layering check to be disabled in some
+        # cases until this issue is addressed.
+        # https://github.com/bazelbuild/rules_foreign_cc/issues/1221
+        features.append("layering_check")
+
     native.cc_library(
         name = name,
         srcs = srcs,
@@ -31,4 +42,5 @@ def redpanda_cc_library(
         strip_include_prefix = strip_include_prefix,
         deps = deps,
         copts = redpanda_copts(),
+        features = features,
     )

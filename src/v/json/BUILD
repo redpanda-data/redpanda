@@ -32,7 +32,9 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/utils:named_type",
         "//src/v/utils:unresolved_address",
+        "@fmt",
         "@rapidjson",
+        "@seastar",
     ],
 )
 
@@ -44,6 +46,9 @@ redpanda_cc_btest(
     ],
     deps = [
         ":json",
+        "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
