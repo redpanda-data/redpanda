@@ -36,6 +36,9 @@ deb_deps=(
   xfslibs-dev
   valgrind
   git
+  cargo
+  rustc
+  bison
 )
 
 fedora_deps=(
@@ -51,6 +54,9 @@ fedora_deps=(
   valgrind-devel
   git
   clang
+  cargo
+  rust
+  bison
 )
 
 case "$ID" in
