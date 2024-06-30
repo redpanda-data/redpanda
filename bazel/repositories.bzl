@@ -175,6 +175,14 @@ def data_dependency():
     )
 
     http_archive(
+        name = "xxhash",
+        build_file = "//bazel/thirdparty:xxhash.BUILD",
+        sha256 = "716fbe4fc85ecd36488afbbc635b59b5ab6aba5ed3b69d4a32a46eae5a453d38",
+        strip_prefix = "xxHash-bbb27a5efb85b92a0486cf361a8635715a53f6ba",
+        url = "https://github.com/Cyan4973/xxHash/archive/bbb27a5efb85b92a0486cf361a8635715a53f6ba.tar.gz",
+    )
+
+    http_archive(
         name = "xz",
         build_file = "//bazel/thirdparty:xz.BUILD",
         sha256 = "0d2b89629f13dd1a0602810529327195eff5f62a0142ccd65b903bc16a4ac78a",

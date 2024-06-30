@@ -101,8 +101,6 @@
     "https://bcr.bazel.build/modules/stardoc/0.5.3/MODULE.bazel": "c7f6948dae6999bf0db32c1858ae345f112cacf98f174c7a8bb707e41b974f1c",
     "https://bcr.bazel.build/modules/stardoc/0.5.3/source.json": "cd53fe968dc8cd98197c052db3db6d82562960c87b61e7a90ee96f8e4e0dda97",
     "https://bcr.bazel.build/modules/upb/0.0.0-20220923-a547704/MODULE.bazel": "7298990c00040a0e2f121f6c32544bab27d4452f80d9ce51349b1a28f3005c43",
-    "https://bcr.bazel.build/modules/xxhash/0.8.2/MODULE.bazel": "d9337c1b24d08861bcf2fca2acd3dc6568a96f6d66f5eeaab008fb50567d4eed",
-    "https://bcr.bazel.build/modules/xxhash/0.8.2/source.json": "4499f6c71bfc1fdb9ff2ddb2e799c08d5f4af3846a7acfbe4ce559c6b85c73a9",
     "https://bcr.bazel.build/modules/xz/5.4.5.bcr.2/MODULE.bazel": "463976fb85f578a2535421ba4c38fe90657ab348e4b5d5404b75c061602705d0",
     "https://bcr.bazel.build/modules/xz/5.4.5.bcr.2/source.json": "e735da8a3f396bf200ed06c585f670f7667e08c4e1ed2849bae7c2691bcb10cf",
     "https://bcr.bazel.build/modules/yaml-cpp/0.8.0/MODULE.bazel": "879443fbbf128457a187bea6f278d05789f3fc465bb22c2e0fe7fdb52e45eef0",
@@ -118,7 +116,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "SDtBbvy5m2i2R+LDNo1BMr0OOshkbo13AqKxmBwiN3E=",
+        "bzlTransitiveDigest": "+/wwwL1d2C7jKsyzYXQACKjRp7Y8aKLoFqSNJ9x+I/c=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -322,6 +320,16 @@
               "sha256": "d4043000885812223c7a8a444781f9ded46aca4dc6216d86bbde18fd94c1562a",
               "strip_prefix": "avro-836cb1004090435a985becda1daa619c407e1376",
               "url": "https://github.com/redpanda-data/avro/archive/836cb1004090435a985becda1daa619c407e1376.tar.gz"
+            }
+          },
+          "xxhash": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_archive",
+            "attributes": {
+              "build_file": "@@//bazel/thirdparty:xxhash.BUILD",
+              "sha256": "716fbe4fc85ecd36488afbbc635b59b5ab6aba5ed3b69d4a32a46eae5a453d38",
+              "strip_prefix": "xxHash-bbb27a5efb85b92a0486cf361a8635715a53f6ba",
+              "url": "https://github.com/Cyan4973/xxHash/archive/bbb27a5efb85b92a0486cf361a8635715a53f6ba.tar.gz"
             }
           }
         },
