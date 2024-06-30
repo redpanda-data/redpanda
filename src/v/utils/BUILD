@@ -31,6 +31,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "static_deleter_fn",
+    hdrs = [
+        "static_deleter_fn.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+    ],
+)
+
+redpanda_cc_library(
     name = "named_type",
     hdrs = [
         "named_type.h",
