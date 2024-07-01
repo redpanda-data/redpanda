@@ -517,7 +517,7 @@ inline void rjson_serialize(
           ss.rdstate()));
     }
     w.Key("address");
-    rjson_serialize<std::string_view>(w, ss.str());
+    rjson_serialize(w, std::string_view{ss.str()});
     w.EndObject();
 }
 
