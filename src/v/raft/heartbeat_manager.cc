@@ -50,7 +50,7 @@ heartbeat_manager::follower_request_meta::follower_request_meta(
   , seq(seq)
   , dirty_offset(dirty_offset)
   , follower_vnode(target)
-  , hb_guard(c->suppress_heartbeats(follower_vnode)) {}
+  , append_guard(c->track_append_inflight(follower_vnode)) {}
 
 heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
     absl::node_hash_map<
@@ -75,7 +75,7 @@ heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
         }
 
         for (auto& [id, follower_metadata] : r->_fstats) {
-            if (follower_metadata.are_heartbeats_suppressed()) {
+            if (follower_metadata.has_inflight_appends()) {
                 vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
                 continue;
             }
@@ -141,16 +141,27 @@ heartbeat_manager::requests_for_range_v2() {
         }
 
         for (auto& [id, follower_metadata] : r->_fstats) {
-            if (follower_metadata.are_heartbeats_suppressed()) {
-                vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
-                continue;
-            }
             if (
-              follower_metadata.last_sent_append_entries_req_timestamp
+              follower_metadata.last_received_reply_timestamp
               > last_heartbeat) {
                 vlog(r->_ctxlog.trace, "[{}] heartbeat skipped", id);
                 continue;
             }
+
+            if (unlikely(
+                  !_enable_lw_heartbeat()
+                  && follower_metadata.has_inflight_appends())) {
+                // Revert back to old behavior of heartbeat suppression during
+                // inflight appends as we cannot make use of lw heartbeats
+                // optitmization. This is unlikely in practice  because lw
+                // heartbeats are enabled by default in the binary.
+                vlog(
+                  r->_ctxlog.trace,
+                  "[{}] heartbeat suppressed, lw hearbeats are disabled",
+                  id);
+                continue;
+            }
+
             auto [it, _] = pending_beats.try_emplace(id.id());
             group_heartbeat group_beat{
               .group = r->group(),
@@ -220,6 +231,11 @@ bool heartbeat_manager::needs_full_heartbeat(
   const follower_index_metadata& f_meta,
   const protocol_metadata& p_meta,
   model::offset leader_flushed_offset) const {
+    if (f_meta.has_inflight_appends()) {
+        // in flight append will result in a full blown response
+        // until then a full heartbeat is not needed.
+        return false;
+    }
     /**
      * This condition makes sending lw_heartbeats not vulnerable for
      * requests/replies reordering.

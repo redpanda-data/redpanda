@@ -146,7 +146,7 @@ void follower_index_metadata::reset() {
     last_sent_seq = follower_req_seq{0};
     last_received_seq = follower_req_seq{0};
     last_successful_received_seq = follower_req_seq{0};
-    suppress_heartbeats_count = 0;
+    inflight_append_request_count = 0;
     last_sent_protocol_meta.reset();
 }
 
