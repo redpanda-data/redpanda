@@ -1,4 +1,4 @@
-use crate::fundamental::{NTP, NTR};
+use crate::fundamental::{LabeledNTPR, LabeledNTR, NTP, NTR};
 use crate::NTPR;
 use regex::Regex;
 use std::fmt::{Display, Formatter};
@@ -167,6 +167,15 @@ impl NTPFilter {
         self.match_parts(&ntr.namespace, &ntr.topic, None, Some(ntr.revision_id))
     }
 
+    pub fn match_lntr(&self, lntr: &LabeledNTR) -> bool {
+        self.match_parts(
+            &lntr.ntr.namespace,
+            &lntr.ntr.topic,
+            None,
+            Some(lntr.ntr.revision_id),
+        )
+    }
+
     pub fn match_ntp(&self, ntp: &NTP) -> bool {
         self.match_parts(&ntp.namespace, &ntp.topic, Some(ntp.partition_id), None)
     }
@@ -177,6 +186,14 @@ impl NTPFilter {
             &ntpr.ntp.topic,
             Some(ntpr.ntp.partition_id),
             Some(ntpr.revision_id),
+        )
+    }
+    pub fn match_lntpr(&self, lntpr: &LabeledNTPR) -> bool {
+        self.match_parts(
+            &lntpr.ntpr.ntp.namespace,
+            &lntpr.ntpr.ntp.topic,
+            Some(lntpr.ntpr.ntp.partition_id),
+            Some(lntpr.ntpr.revision_id),
         )
     }
 }
