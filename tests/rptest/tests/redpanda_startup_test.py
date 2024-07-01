@@ -32,12 +32,9 @@ class RedpandaStartupTest(RedpandaTest):
         pass
 
 
-class RedpandaFIPSStartupTest(RedpandaTest):
-    """
-    Tests that Redpanda can start up in FIPS permissive mode
-    """
+class RedpandaFIPSStartupTestBase(RedpandaTest):
     def __init__(self, test_context):
-        super(RedpandaFIPSStartupTest,
+        super(RedpandaFIPSStartupTestBase,
               self).__init__(test_context=test_context)
 
         for node in self.redpanda.nodes:
@@ -50,6 +47,15 @@ class RedpandaFIPSStartupTest(RedpandaTest):
                     "openssl_module_directory":
                     self.redpanda.get_openssl_modules_directory()
                 })
+
+
+class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
+    """
+    Tests that Redpanda can start up in FIPS permissive mode
+    """
+    def __init__(self, test_context):
+        super(RedpandaFIPSStartupTest,
+              self).__init__(test_context=test_context)
 
     @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
