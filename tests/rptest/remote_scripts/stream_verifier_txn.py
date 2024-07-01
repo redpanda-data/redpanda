@@ -25,7 +25,7 @@ from datetime import datetime
 from itertools import repeat
 from functools import partial
 from time import sleep
-from typing import Generator, IO, Tuple
+from typing import Generator, IO, Tuple, Callable, Any, List
 from wsgiref.simple_server import make_server
 
 global title
@@ -156,8 +156,6 @@ class AppCfg(Updateable):
     consume_timeout_s: int = 60
     # Timeout for poll operation
     consume_poll_timeout: int = 5
-    # How much messages to consume before moving to other thread
-    consume_count_per_thread: int = 1024
     # if no messages received after 2 min
     # Just exit consume operation
     consume_sleep_time_s: int = 60
@@ -360,19 +358,56 @@ class TopicStatus(Updateable):
     terminate: bool
     # if errors happen during produce/send track them here
     errors: list[str]
-    # list of tuples, first, last, processed count
-    msgs_timings: list
+
+    # Function should have followind format:
+    # func(start_index, message_count) -> Generator
+    message_generator: None | Callable[[int, int], Generator]
+
+    # Function should have followind format:
+    # func(src_value) -> bool
+    message_validator: None | Callable[[Any], bool]
+
+    # Function should have followind format:
+    # func(src_key, src_value) -> Tuple(src_key, src_value)
+    message_transform: None | Callable[[str, str], List[str]]
 
     @property
     def transaction_id(self):
         return f"{self.id}-{self.source_topic_name}-{self.last_message_ts}"
 
 
+# This can hold future checksum checks or similar
+class MessageValidators:
+    """Class to hold message validation strategies
+    """
+
+    previous_number = -1
+
+    # Function is general case can have different messages value type
+    # so we should not stick to single one
+    def is_numbered_sequence(self, value) -> bool:
+        """Functions validates if message has number grater by exactly 1
+
+        Args:
+            value (Unknown): message value
+
+        Returns:
+            bool: Whether given value bigger by exactly 1
+        """
+        if not isinstance(value, int):
+            # Just fail check if the type is not correct
+            return False
+
+        outcome = (value - self.previous_number) == 1
+        self.previous_number = value
+        return outcome
+
+
 class MessageTransforms:
     """Class to hold message transforming functions
     """
     @staticmethod
-    def dezero_transform(src_key, src_value):
+    def dezero_transform(src_key: str, src_value: str) -> List:
         """Removes zeroes from all numbers in value
         Example:
             src value "aaa00023bbb_453z0002"
@@ -404,10 +439,10 @@ class MessageTransforms:
         if len(active_number) > 0:
             new_int = int(active_number)
             new_value += str(new_int)
-        return src_key, new_value
+        return [src_key, new_value]
 
 
-class MessageGenerator:
+class MessageGenerators:
     """Various Generator functions to use in Producer
     """
     @staticmethod
@@ -432,27 +467,18 @@ class MessageGenerator:
 class StreamVerifier():
     """Main class to process messages
     """
-    def __init__(self,
-                 brokers,
-                 workload_config: dict,
-                 worker_threads: int,
-                 rate=0,
-                 total_messages=100):
+    def __init__(self, brokers, workload_config: dict, worker_threads: int):
         # Create core logger
         self.logger = setup_logger(LOGGER_CORE)
         # Remove quotes from broker config value if an
         self.brokers = brokers.strip('\"').strip("'")
         # Create main topics config
         self.workload_config = WorkloadConfig(**workload_config)
-        self.message_rate_limit = rate
-        # It is reasonable to assume that single message will not be sent
-        # faster than 1 ms in case of no rate limitations
-        self.msgs_rate_ms = 1000 / self.message_rate_limit if rate > 0 else 0
         # total messages to process in all topics
-        self.total_messages = total_messages
+        self.total_messages = app_config.msg_total
         self.workers = worker_threads
+        self.message_rate = app_config.msg_rate_limit
         # Announcement of dynamic vars
-        self.topics_status = {}
         self.topics = {}
         self._topic_id_template = datetime.strftime(datetime.now(),
                                                     "%y%m%d%H%M%S")
@@ -462,6 +488,12 @@ class StreamVerifier():
         self.atomic_thread = None
         self.delivery_reports = {}
         self.consumer_count = 0
+
+    @property
+    def msgs_rate_ms(self):
+        # It is reasonable to assume that single message will not be sent
+        # faster than 1 ms in case of no rate limitations
+        return 1000 / self.message_rate if self.message_rate > 0 else 0
 
     @property
     def topic_id(self):
@@ -497,20 +529,12 @@ class StreamVerifier():
             # Get processed message count from worker threads
             for topic_status in pool.map(func, repeat(logger), topic_queue):
                 msgs_processed += topic_status.processed_count
-                # Save timings for future calculations
-                # Strictly do not calculate anything here as this
-                # will slow down everything tremendously
-                topic_status.msgs_timings.append((
-                    topic_status.first_message_ts,
-                    topic_status.last_message_ts,
-                    topic_status.processed_count,
-                ))
                 topic_status.processed_count = 0
             # Check for errors and remove topic from queue if any
             idx = 0
             while idx < len(topic_queue):
                 if len(topic_queue[idx].errors
-                       ) > app_config.topic_error_threshold:
+                       ) >= app_config.topic_error_threshold:
                     logger.warning(f"Topic {topic_queue[idx].id} removed "
                                    "from processing queue")
                     error_topics.append(topic_queue[idx])
@@ -582,6 +606,8 @@ class StreamVerifier():
             self.logger.info(f"Messages per topic is {msgs_per_topic} "
                              f"with the total of {self.total_messages}")
         for name in self.workload_config.topic_names_produce:
+            # In future, this topic config can be provided externally
+            # to gain even more flexibility
             topic_config = {
                 "id": self.topic_id,
                 # For produce only mode just set them to the same value
@@ -601,7 +627,11 @@ class StreamVerifier():
                 "reached_eof": False,
                 "terminate": False,
                 "errors": [],
-                "msgs_timings": []
+                # each topic has its own message generator
+                # so it is instance of a class in-place
+                "message_generator": MessageGenerators().gen_indexed_messages,
+                "message_validator": None,
+                "message_transform": None,
             }
             t = TopicStatus(**topic_config)
             if app_config.use_txn_on_produce:
@@ -654,9 +684,13 @@ class StreamVerifier():
                     sleep(wait_time)
 
         topic.first_message_ts = datetime.now().timestamp()
-        msg_gen = MessageGenerator()
-        for key, value in msg_gen.gen_indexed_messages(
-                topic.index, topic.msgs_per_transaction):
+        if topic.message_generator is None:
+            topic.errors.append("Message generator is not defined, "
+                                "unable to produce")
+            return topic
+
+        for key, value in topic.message_generator(topic.index,
+                                                  topic.msgs_per_transaction):
             # Handle message rate
             ensure_message_rate(topic.msgs_rate_ms, topic.last_message_ts,
                                 logger)
@@ -679,6 +713,8 @@ class StreamVerifier():
             if topic.terminate:
                 logger.warning("Got terminate signal. Exiting")
                 break
+        # Make sure all messages being delivered
+        topic.producer.flush()
         # Return topic meta
         return topic
 
@@ -722,9 +758,13 @@ class StreamVerifier():
             return
 
         topic.first_message_ts = datetime.now().timestamp()
-        msg_gen = MessageGenerator()
-        for key, value in msg_gen.gen_indexed_messages(
-                topic.index, topic.msgs_per_transaction):
+        if topic.message_generator is None:
+            topic.errors.append("Message generator is not defined, "
+                                "unable to produce")
+            return topic
+
+        for key, value in topic.message_generator(topic.index,
+                                                  topic.msgs_per_transaction):
             # Handle message rate
             self.ensure_message_rate(topic.msgs_rate_ms, topic.last_message_ts,
                                      logger)
@@ -758,6 +798,9 @@ class StreamVerifier():
             if topic.terminate:
                 logger.warning("Got terminate signal. Exiting")
                 break
+        # Make sure all messages being delivered
+        topic.producer.flush()
+
         # Return topic meta
         return topic
 
@@ -771,6 +814,10 @@ class StreamVerifier():
         self.logger.info("Initializing consumers")
         self.total_messages = -1
         for name in self.workload_config.topic_names_consume:
+            # Instanciate validator
+            validators = MessageValidators()
+            # reset validator
+            validators.is_numbered_sequence(-1)
             topic_config = {
                 "id": self.topic_id,
                 "source_topic_name": name,
@@ -800,7 +847,11 @@ class StreamVerifier():
                 # termination flag
                 "terminate": False,
                 "errors": [],
-                "msgs_timings": [],
+                # This is consume topic action,
+                # No generation or transform needed
+                "message_generator": None,
+                "message_validator": validators.is_numbered_sequence,
+                "message_transform": None,
 
                 # not used, but needs to be filled
                 "msgs_per_transaction": 1,
@@ -890,11 +941,34 @@ class StreamVerifier():
                         break
                 else:
                     topic.last_message_ts = datetime.now().timestamp()
+                    # Check if there is validation needed
+                    if topic.message_validator is not None:
+                        try:
+                            value = msg.value().decode()
+                            int_value = int(value)
+                            iscorrect = topic.message_validator(int_value)
+                            if not iscorrect:
+                                error_message = \
+                                    f"Message value of '{value}' failed " \
+                                    "validation check of " \
+                                    f"'{topic.message_validator.__qualname__}'"
+                            else:
+                                error_message = ""
+                        except Exception:
+                            error_message = \
+                                f"Invalid message value of '{value}' " \
+                                "for selected validator " \
+                                f"{topic.message_validator.__qualname__}"
+                        finally:
+                            # Validation errors does not break message flow
+                            # so no loop exit.
+                            # But they will affect topic queue later
+                            if len(error_message) > 0:
+                                logger.error(error_message)
+                                topic.errors.append(error_message)
+
                     # Increment index
                     topic.index += 1
-                    if topic.index % app_config.consume_count_per_thread == 0:
-                        # Force move to different thread and topic
-                        break
                     # Increment processed count for this iteration
                     topic.processed_count += 1
                     # log only milestones to eliminate IO stress
@@ -953,11 +1027,17 @@ class StreamVerifier():
                 # termination flag
                 "terminate": False,
                 "errors": [],
-                "msgs_timings": [],
                 # how much messages to process per transaction
                 "msgs_per_transaction": app_config.msg_per_txn,
                 "producer": None,
-                "msgs_rate_ms": self.msgs_rate_ms
+                "msgs_rate_ms": self.msgs_rate_ms,
+
+                # This is atomic topic action,
+                # No generation or validation is needed
+                # Also, transformations is optional
+                "message_generator": None,
+                "message_validator": None,
+                "message_transform": None,
             }
             t = TopicStatus(**topic_config)
             t.producer = ck.Producer({
@@ -1047,8 +1127,13 @@ class StreamVerifier():
                         active_tx = True
                     topic.index += 1
                     processed_count += 1
-                    t_key, t_value = MessageTransforms.dezero_transform(
-                        msg.key(), msg.value())
+                    # If message transform is defined, use it
+                    if topic.message_transform is not None:
+                        t_key, t_value = topic.message_transform(
+                            msg.key(), msg.value())
+                    else:
+                        t_key = msg.key().decode()
+                        t_value = msg.value().decode()
 
                     topic.producer.produce(topic.target_topic_name,
                                            value=t_value,
@@ -1069,10 +1154,6 @@ class StreamVerifier():
                             consumer.consumer_group_metadata())
                         topic.producer.commit_transaction()
                         active_tx = False
-
-                if topic.index % app_config.consume_count_per_thread == 0:
-                    # Force move to different thread and topic
-                    break
 
                 # exit if terminate flag is set
                 if topic.terminate:
@@ -1141,15 +1222,8 @@ class StreamVerifier():
         return topic_hwms
 
     def _calculate_stats(self) -> dict:
-        FIRST = 0
-        LAST = 1
-        COUNT = 2
-
         msg_total = 0
         indices = []
-        intervals = []
-        per_thread_rates = []
-        # Collected message rate timings are for individual threads
         for t in self.topics.values():
             if self.produce_thread is not None:
                 msg_total += t.index
@@ -1158,63 +1232,7 @@ class StreamVerifier():
             elif self.atomic_thread is not None:
                 msg_total += t.index
             indices += [t.index]
-            # Prepare rates
-            for intvl in t.msgs_timings:
-                # Calculate rate for this time interval for this thread
-                rate = intvl[COUNT] / (intvl[LAST] - intvl[FIRST])
-                if rate > 0:
-                    per_thread_rates.append(rate)
-                else:
-                    # just ignore empty intervals
-                    continue
-                # Calculate midpoint
-                mid_ts = (intvl[FIRST] + intvl[LAST]) / 2
-                # Search if calculated midpoint falls into intevals
-                # that is already saved
-                found = False
-                for all_i in intervals:
-                    if mid_ts > all_i[FIRST] and mid_ts < all_i[LAST]:
-                        # add processed count
-                        all_i[COUNT] += intvl[COUNT]
-                        found = True
-                if not found:
-                    # No such interval exists, add it
-                    # Since timestamps are in ascending order
-                    # creating intervals in reverse will result in
-                    # O(N log N) complexity comparing to O(N^2) if
-                    # append would be used
-                    intervals.insert(0, [
-                        np.floor(intvl[FIRST]),
-                        np.ceil(intvl[LAST]), intvl[COUNT]
-                    ])
-        # Extract rates for all threads per interval
-        all_threads_rates = []
-        for i in intervals:
-            rate = i[COUNT] / (i[LAST] - i[FIRST])
-            if rate > 0:
-                all_threads_rates.append(rate)
-        # Add 0 if no values present
-        if not all_threads_rates:
-            all_threads_rates.append(0)
-        if not per_thread_rates:
-            per_thread_rates.append(0)
-        # Ultimately, we get per-thread rates and all-thread rate
-        return {
-            "processed_messages": msg_total,
-            "indices": indices,
-            "per_thread_per_sec_min": np.min(per_thread_rates),
-            "per_thread_per_sec_avg": np.average(per_thread_rates),
-            "per_thread_per_sec_max": np.max(per_thread_rates),
-            "per_thread_per_sec_med": np.median(per_thread_rates),
-            "per_thread_per_sec_p90": np.percentile(per_thread_rates, 90),
-            "per_thread_per_sec_p95": np.percentile(per_thread_rates, 95),
-            "all_per_sec_min": np.min(all_threads_rates),
-            "all_per_sec_avg": np.average(all_threads_rates),
-            "all_per_sec_max": np.max(all_threads_rates),
-            "all_per_sec_med": np.median(all_threads_rates),
-            "all_per_sec_p90": np.percentile(all_threads_rates, 90),
-            "all_per_sec_p95": np.percentile(all_threads_rates, 95),
-        }
+        return {"processed_messages": msg_total, "indices": indices}
 
     def status(self, name: str = ""):
         """Provides current processing status
@@ -1231,7 +1249,7 @@ class StreamVerifier():
         if len(name) > 0:
             # include topic as asked
             response['topics'][name] = {
-                "config": vars(self.topics_status[name]),
+                "config": vars(self.topics[name]),
                 "offsets": self.get_high_watermarks([name])
             }
 
@@ -1240,10 +1258,16 @@ class StreamVerifier():
         response['offsets'].update(
             self.get_high_watermarks(self.workload_config.topic_names_consume))
 
+        # Collect errors
+        response['errors'] = []  # type: ignore
+        for k, v in self.topics.items():
+            for error in v.errors:
+                response['errors'].append(f"[{k}] {error}")
+
         # topics configuration to use in POST command
         topics_cfg = vars(self.workload_config)
         topics_cfg.update({
-            "msg_rate_limit": self.message_rate_limit,
+            "msg_rate_limit": app_config.msg_rate_limit,
             "msg_total": self.total_messages
         })
         response['workload_config'] = topics_cfg
@@ -1305,11 +1329,7 @@ class StreamVerifierWeb(StreamVerifier):
     def __init__(self, cfg):
         self.cfg = cfg
         self.wlogger = setup_logger(LOGGER_WEB_PRODUCE)
-        super().__init__(cfg.brokers,
-                         cfg.workload_config,
-                         cfg.worker_threads,
-                         rate=cfg.msg_rate_limit,
-                         total_messages=cfg.msg_total)
+        super().__init__(cfg.brokers, cfg.workload_config, cfg.worker_threads)
 
     def on_get(self, req: falcon.Request, resp: falcon.Response):
         """Handles GET requests"""
@@ -1617,11 +1637,8 @@ commands = [COMMAND_PRODUCE, COMMAND_ATOMIC, COMMAND_CONSUME]
 def process_command(command, cfg, ioclass):
     try:
         logger = setup_logger(LOGGER_CLI_COMMAND)
-        verifier = StreamVerifier(cfg.brokers,
-                                  cfg.workload_config,
-                                  cfg.worker_threads,
-                                  rate=cfg.msg_rate_limit,
-                                  total_messages=cfg.msg_total)
+        verifier = StreamVerifier(cfg.brokers, cfg.workload_config,
+                                  cfg.worker_threads)
         if command == COMMAND_PRODUCE:
             logger.info("Init Produce command")
             verifier.init_producers()
