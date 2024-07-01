@@ -20,6 +20,8 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
+#include "config/types.h"
 #include "config/validators.h"
 #include "features/feature_state.h"
 #include "features/feature_table.h"
@@ -194,6 +196,7 @@ ss::future<> feature_manager::stop() {
 
 bool feature_manager::license_required_feature_enabled() const {
     const auto& cfg = config::shard_local_cfg();
+    const auto& node_cfg = config::node();
     auto has_gssapi = [&cfg]() {
         return absl::c_any_of(
           cfg.sasl_mechanisms(), [](const auto& m) { return m == "GSSAPI"; });
@@ -206,6 +209,11 @@ bool feature_manager::license_required_feature_enabled() const {
         return cfg.enable_schema_id_validation()
                != pandaproxy::schema_registry::schema_id_validation_mode::none;
     };
+    auto fips_enabled = [&node_cfg]() {
+        auto fips_mode = node_cfg.fips_mode();
+        return fips_mode == config::fips_mode_flag::permissive
+               || fips_mode == config::fips_mode_flag::enabled;
+    };
     auto n_roles = _role_store.local().size();
     auto has_non_default_roles
       = n_roles >= 2
@@ -215,7 +223,8 @@ bool feature_manager::license_required_feature_enabled() const {
            || cfg.partition_autobalancing_mode
                 == model::partition_autobalancing_mode::continuous
            || cfg.core_balancing_continuous() || has_gssapi() || has_oidc()
-           || has_schma_id_validation() || has_non_default_roles;
+           || has_schma_id_validation() || has_non_default_roles
+           || fips_enabled();
 }
 
 ss::future<> feature_manager::maybe_log_license_check_info() {

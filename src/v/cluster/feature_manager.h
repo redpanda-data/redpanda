@@ -156,6 +156,8 @@ private:
     // | Cluster     | `http_authentication`           | `OIDC`        |
     // | Cluster     | `enable_schema_id_validation`   | `redpanda`    |
     // | Cluster     | `enable_schema_id_validation`   | `compat`      |
+    // | Node        | `fips_mode`                     | `enabled`     |
+    // | Node        | `fips_mode`                     | `permissive`  |
     // +-------------+---------------------------------+---------------+
     //
     // Also if there are any non default roles in the role store.
