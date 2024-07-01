@@ -414,7 +414,12 @@ ss::future<> controller::start(
       ss::sharded_parameter([this] { return &_connections.local(); }),
       ss::sharded_parameter([this] { return &_as.local(); }));
 
-    co_await _quota_frontend.start(std::ref(_stm), std::ref(_as));
+    co_await _quota_frontend.start(
+      _raft0->self().id(),
+      std::ref(_stm),
+      std::ref(_connections),
+      std::ref(_partition_leaders),
+      std::ref(_as));
 
     co_await _members_backend.start_single(
       std::ref(_tp_frontend),
