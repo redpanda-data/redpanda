@@ -9,12 +9,11 @@
 #pragma once
 
 #include "cluster/client_quota_serde.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "model/timeout_clock.h"
 
 #include <seastar/core/sharded.hh>
-
-#include <system_error>
 
 namespace cluster::client_quota {
 
@@ -32,7 +31,7 @@ public:
     /// There are no client quota store-specific errors, because the upsert and
     /// remove operations always succeed regardless of the previous state of the
     /// given quota (eg. there is no error for removing non-existent quotas).
-    ss::future<std::error_code>
+    ss::future<cluster::errc>
       alter_quotas(alter_delta_cmd_data, model::timeout_clock::time_point);
 
 private:

@@ -482,21 +482,15 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
     auto err = co_await ctx.quota_frontend().alter_quotas(
       cmd, model::timeout_clock::now() + 5s);
 
-    if (err) {
+    if (err != cluster::errc::success) {
         // Translate error message
-        auto ec = [](std::error_code err) {
-            if (err.category() == cluster::error_category()) {
-                return map_topic_error_code(
-                  static_cast<cluster::errc>(err.value()));
-            } else {
-                return kafka::error_code::unknown_server_error;
-            }
-        }(err);
+        auto ec = map_topic_error_code(err);
+        auto em = error_code_to_str(ec);
         // Error any response that is not already errored
         for (auto& entry : response.data.entries) {
             if (entry.error_code == error_code::none) {
                 entry.error_code = ec;
-                entry.error_message = err.message();
+                entry.error_message = std::make_optional<ss::sstring>(em);
             }
         }
     }
