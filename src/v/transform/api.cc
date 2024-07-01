@@ -671,7 +671,13 @@ ss::future<std::error_code> service::deploy_transform(
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
         co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    } else if (
+      !_feature_table->local().is_active(
+        features::feature::transforms_specify_offset)
+      && !meta.offset_options.is_legacy_compat()) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
+
     auto _ = _gate.hold();
     try {
         co_await _runtime->validate(model::share_wasm_binary(binary));
