@@ -64,7 +64,7 @@ static std::vector<size_t> get_test_sizes() {
 
 static inline iobuf gen(const size_t data_size) {
     iobuf ret;
-    for (auto i = 0; i < data_size; i += 512) {
+    for (size_t i = 0; i < data_size; i += 512) {
         const auto data = random_generators::gen_alphanum_string(512);
         ret.append(data.data(), data.size());
     }
