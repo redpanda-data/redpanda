@@ -695,7 +695,7 @@ public:
     result<void> check_mode_mutability(force f) const {
         if (!_mutable && !f) {
             return error_info{
-              error_code::subject_version_operaton_not_permitted,
+              error_code::subject_version_operation_not_permitted,
               "Mode changes are not allowed"};
         }
         return outcome::success();
