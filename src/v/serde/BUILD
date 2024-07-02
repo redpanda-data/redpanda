@@ -153,3 +153,15 @@ redpanda_cc_library(
         ":serde",
     ],
 )
+
+redpanda_cc_library(
+    name = "chrono",
+    hdrs = [
+        "rw/chrono.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
