@@ -65,7 +65,8 @@ public:
     explicit rjson_serialize_impl(serialization_format fmt)
       : _fmt(fmt) {}
 
-    bool operator()(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
+    template<typename Buffer>
+    bool operator()(::json::Writer<Buffer>& w, iobuf buf) {
         switch (_fmt) {
         case serialization_format::none:
             [[fallthrough]];
@@ -80,7 +81,8 @@ public:
         }
     }
 
-    bool encode_base64(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
+    template<typename Buffer>
+    bool encode_base64(::json::Writer<Buffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }
@@ -88,7 +90,8 @@ public:
         return w.String(iobuf_to_base64(buf));
     };
 
-    bool encode_json(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
+    template<typename Buffer>
+    bool encode_json(::json::Writer<Buffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }
