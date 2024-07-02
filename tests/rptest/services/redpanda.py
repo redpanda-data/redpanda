@@ -1236,6 +1236,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
+    TLS_SERVER_P12_FILE = "/etc/redpanda/server.p12"
     TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
     TLS_CA_CRL_FILE = "/etc/redpanda/ca.crl"
     SYSTEM_TLS_CA_CRT_FILE = "/usr/local/share/ca-certificates/ca.crt"
@@ -2800,6 +2801,15 @@ class RedpandaService(RedpandaServiceBase):
             node.account.mkdirs(
                 os.path.dirname(RedpandaService.TLS_SERVER_CRT_FILE))
             node.account.copy_to(cert.crt, RedpandaService.TLS_SERVER_CRT_FILE)
+
+            self.logger.info(
+                f"Writing Redpanda node P12 file: {RedpandaService.TLS_SERVER_P12_FILE}"
+            )
+            self.logger.debug("P12 file is binary encoded")
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.TLS_SERVER_P12_FILE))
+            node.account.copy_to(cert.p12_file,
+                                 RedpandaService.TLS_SERVER_P12_FILE)
 
             self.logger.info(
                 f"Writing Redpanda node tls ca cert file: {RedpandaService.TLS_CA_CRT_FILE}"
