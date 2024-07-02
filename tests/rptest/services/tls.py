@@ -316,7 +316,7 @@ class TLSCertManager:
         self._ca_end_date = ca_end_date
         self._cert_expiry_days = cert_expiry_days
         self._ca = self._create_ca()
-        self.certs = {}
+        self.certs: dict[str, Certificate] = {}
 
     def _with_dir(self, *args):
         return os.path.join(self._dir.name, *args)
@@ -346,7 +346,7 @@ class TLSCertManager:
 
             retries += 1
 
-    def _create_ca(self):
+    def _create_ca(self) -> CertificateAuthority:
         cfg = self._with_dir("ca.conf")
         key = self._with_dir("ca.key")
         crt = self._with_dir("ca.crt")
@@ -385,7 +385,7 @@ class TLSCertManager:
         return crl
 
     @property
-    def ca(self):
+    def ca(self) -> CertificateAuthority:
         return self._ca
 
     def create_cert(self,
@@ -478,7 +478,7 @@ class TLSChainCACertManager(TLSCertManager):
                     ext='signing_ca_ext',
                 ))
         self._cert_chain = self._create_ca_cert_chain()
-        self.certs = {}
+        self.certs: dict[str, Certificate] = {}
 
     @property
     def ca(self) -> CertificateAuthority:
@@ -549,7 +549,7 @@ class TLSChainCACertManager(TLSCertManager):
         # Now do the same for the CRLs
         crl_files = [ca.crl for ca in self._cas]
         crl_out = self._with_dir('ca', 'signing-crl-chain.crl')
-        pathlib.Path(out).touch()
+        pathlib.Path(crl_out).touch()
         with open(crl_out, 'w') as outfile:
             for fname in reversed(crl_files):
                 with open(fname, 'r') as infile:
