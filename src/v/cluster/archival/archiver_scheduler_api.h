@@ -33,6 +33,10 @@ struct upload_resource_usage {
     std::optional<std::error_code> errc;
     // Used for logging and cancellation
     std::reference_wrapper<retry_chain_node> archiver_rtc;
+    // Time of the next housekeeping
+    std::optional<ss::lowres_clock::time_point> next_housekeeping;
+    // Time of the next manifest upload
+    std::optional<ss::lowres_clock::time_point> next_manifest_upload;
 
     bool operator==(const upload_resource_usage& o) const noexcept;
 };

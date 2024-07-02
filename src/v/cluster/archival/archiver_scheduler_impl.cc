@@ -40,22 +40,50 @@ archiver_scheduler<Clock>::maybe_suspend_upload(
     }
     auto& v = it->second;
     auto ntp_holder = v->gate.hold();
-    if (arg.errc) {
+    if (arg.errc.has_value()) {
         // The error has occurred. We need to apply exponential backoff
         // to avoid consuming requests.
         v->backoff = v->backoff.value_or(0ms)
                      + v->backoff.value_or(_initial_backoff());
         v->backoff = std::clamp(v->backoff.value(), 0ms, _max_backoff());
+
+        auto sleep_time = v->backoff.value();
+        auto now = ss::lowres_clock::now();
+        if (
+          arg.next_housekeeping.has_value()
+          && arg.next_housekeeping.value() > now) {
+            // In case if the ntp_archiver reported its next
+            // housekeeping timestamp or next manifest reupload timestamp
+            // we can override the sleep_time to wake up early.
+            // This will not affect the backoff time (which will affect
+            // next sleep). It will only replace current sleep time.
+            auto dt = arg.next_housekeeping.value() - now;
+            if (dt < sleep_time) {
+                sleep_time
+                  = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
+            }
+        }
+        if (
+          arg.next_manifest_upload.has_value()
+          && arg.next_manifest_upload.value() > now) {
+            auto dt = arg.next_manifest_upload.value() - now;
+            if (dt < sleep_time) {
+                sleep_time
+                  = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
+            }
+        }
+
         // Backoff is applied in case of any error including no-data error.
         co_await ss::sleep_abortable<Clock>(
-          v->backoff.value(), arg.archiver_rtc.get().root_abort_source());
+          sleep_time, arg.archiver_rtc.get().root_abort_source());
     } else {
         // No error so we can proceed to next upload immediately
         // if rate limits are not reached.
         v->backoff.reset();
     }
+    auto puts = arg.put_requests_used > 0 ? arg.put_requests_used : 1;
     co_await _put_requests.throttle(
-      arg.put_requests_used, arg.archiver_rtc.get().root_abort_source());
+      puts, arg.archiver_rtc.get().root_abort_source());
     co_await _shard_tput_limit.throttle(
       arg.uploaded_bytes, arg.archiver_rtc.get().root_abort_source());
 
