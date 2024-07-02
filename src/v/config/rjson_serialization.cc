@@ -9,6 +9,7 @@
 
 #include "config/rjson_serialization.h"
 
+#include "config/tls_config.h"
 #include "config/types.h"
 
 namespace json {
@@ -51,11 +52,20 @@ void rjson_serialize_impl(
     w.Bool(v.get_require_client_auth());
 
     if (v.get_key_cert_files()) {
-        w.Key("key_file");
-        w.String(v.get_key_cert_files()->key_file.c_str());
-
-        w.Key("cert_file");
-        w.String(v.get_key_cert_files()->cert_file.c_str());
+        ss::visit(
+          v.get_key_cert_files().value(),
+          [&w](const config::key_cert& k) {
+              w.Key("key_file");
+              w.String(k.key_file.c_str());
+              w.Key("cert_file");
+              w.String(k.cert_file.c_str());
+          },
+          [&w](const config::p12_container& p) {
+              w.Key("p12_file");
+              w.String(p.p12_path.c_str());
+              w.Key("p12_password");
+              w.String("REDACTED");
+          });
     }
 
     if (v.get_truststore_file()) {
