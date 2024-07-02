@@ -7,11 +7,14 @@
 #include "archival/types.h"
 #include "config/configuration.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
+#include <exception>
 
 using namespace std::chrono_literals;
 
@@ -73,19 +76,28 @@ archiver_scheduler<Clock>::maybe_suspend_upload(
             }
         }
 
-        // Backoff is applied in case of any error including no-data error.
-        co_await ss::sleep_abortable<Clock>(
-          sleep_time, arg.archiver_rtc.get().root_abort_source());
+        try {
+            // Backoff is applied in case of any error including no-data error.
+            co_await ss::sleep_abortable<Clock>(
+              sleep_time, arg.archiver_rtc.get().root_abort_source());
+        } catch (const ss::sleep_aborted&) {
+            co_return error_outcome::shutting_down;
+        }
     } else {
         // No error so we can proceed to next upload immediately
         // if rate limits are not reached.
         v->backoff.reset();
     }
-    auto puts = arg.put_requests_used > 0 ? arg.put_requests_used : 1;
-    co_await _put_requests.throttle(
-      puts, arg.archiver_rtc.get().root_abort_source());
-    co_await _shard_tput_limit.throttle(
-      arg.uploaded_bytes, arg.archiver_rtc.get().root_abort_source());
+
+    try {
+        auto puts = arg.put_requests_used > 0 ? arg.put_requests_used : 1;
+        co_await _put_requests.throttle(
+          puts, arg.archiver_rtc.get().root_abort_source());
+        co_await _shard_tput_limit.throttle(
+          arg.uploaded_bytes, arg.archiver_rtc.get().root_abort_source());
+    } catch (const ss::abort_requested_exception&) {
+        co_return error_outcome::shutting_down;
+    }
 
     upload_resource_quota res{
       .requests_quota = _put_requests.available(),
@@ -107,8 +119,9 @@ template<class Clock>
 ss::future<> archiver_scheduler<Clock>::dispose_ntp_state(model::ntp ntp) {
     auto it = _partitions.find(ntp);
     vassert(it != _partitions.end(), "Partition {} is not scheduled", ntp);
-    co_await it->second->gate.close();
+    auto state = std::move(it->second);
     _partitions.erase(it);
+    co_await state->gate.close();
     co_return;
 }
 

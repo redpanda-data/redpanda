@@ -31,6 +31,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "partition.h"
+#include "resource_mgmt/smp_groups.h"
 #include "storage/batch_consumer_utils.h"
 #include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
@@ -38,13 +39,18 @@
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/all.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <chrono>
 #include <exception>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 
 namespace archival {
 namespace detail {
@@ -114,7 +120,7 @@ public:
             if (partition == nullptr) {
                 // maybe race condition (partition was stopped or moved)
                 vlog(
-                  _rtclog.debug,
+                  _rtclog.info,
                   "find_upload_candidates - can't find partition {}",
                   arg.ntp);
                 co_return error_outcome::unexpected_failure;
@@ -164,10 +170,12 @@ public:
                     break;
                 }
                 if (upload.has_error()) {
-                    vlog(
-                      _rtclog.error,
-                      "make_non_compacted_upload failed {}",
-                      upload.error());
+                    if (upload.error() != error_outcome::not_enough_data) {
+                        vlog(
+                          _rtclog.error,
+                          "make_non_compacted_upload failed {}",
+                          upload.error());
+                    }
                     co_return upload.error();
                 }
                 vlog(
@@ -215,6 +223,7 @@ public:
       retry_chain_node& workflow_rtc,
       reconciled_upload_candidates_list bundle,
       bool inline_manifest_upl) noexcept override {
+        vlog(_rtclog.debug, "schedule_uploads {}", bundle);
         try {
             auto gate = _gate.hold();
             upload_results_list result;
@@ -222,7 +231,7 @@ public:
             if (partition == nullptr) {
                 // maybe race condition (partition was stopped or moved)
                 vlog(
-                  _rtclog.debug,
+                  _rtclog.info,
                   "schedule_uploads - can't find partition {}",
                   bundle.ntp);
                 co_return error_outcome::unexpected_failure;
@@ -373,6 +382,7 @@ public:
         // apply it in offset order.
         // Stop on first error.
         // Validate consistency.
+        vlog(_rtclog.debug, "admit_uploads {}", upl_res);
         try {
             auto gate = _gate.hold();
             size_t num_segments = upl_res.results.size();
@@ -393,6 +403,13 @@ public:
               = !config::shard_local_cfg()
                    .cloud_storage_disable_upload_consistency_checks();
             auto part = _pm->get_partition(upl_res.ntp);
+            if (part == nullptr) {
+                vlog(
+                  _rtclog.info,
+                  "admit_uploads - can't find partition {}",
+                  upl_res.ntp);
+                co_return error_outcome::unexpected_failure;
+            }
             std::vector<cloud_storage::segment_meta> metadata;
             for (size_t ix = 0; ix < num_segments; ix++) {
                 auto sg = upl_res.results.at(ix);
@@ -463,11 +480,22 @@ public:
               is_validated);
 
             if (replication_result.has_error()) {
-                vlog(
-                  _rtclog.error,
+                auto level = ss::log_level::error;
+                if (replication_result.error() == cluster::errc::not_leader) {
+                    // Expected error, no need to alarm
+                    level = ss::log_level::debug;
+                }
+                vlogl(
+                  _rtclog,
+                  level,
                   "Failed to replicate archival metadata: {}",
                   replication_result.error());
+                co_return replication_result.error();
             }
+            vlog(
+              _rtclog.debug,
+              "Replicated archival_metadata_stm batch, applied offset is {}",
+              replication_result.value());
             co_return admit_uploads_result{
               .ntp = upl_res.ntp,
               .num_succeeded = num_succeeded,
@@ -483,6 +511,7 @@ public:
     /// Reupload manifest and replicate configuration batch
     ss::future<result<manifest_upload_result>> upload_manifest(
       retry_chain_node& workflow_rtc, model::ntp ntp) noexcept override {
+        vlog(_rtclog.debug, "upload_manifest {}", ntp);
         try {
             auto gate = _gate.hold();
             auto partition = _pm->get_partition(ntp);
@@ -632,7 +661,6 @@ private:
     //// of the mismatch. The last step is to upload the segment index.
     ss::future<aggregated_upload_result> upload_segment_index(
       std::reference_wrapper<retry_chain_node> workflow_rtc,
-      std::reference_wrapper<cloud_storage::segment_record_stats> stats,
       reconciled_upload_candidate_ptr upload,
       std::string_view index_path,
       ss::input_stream<char> stream) noexcept {
@@ -642,6 +670,8 @@ private:
             auto base_kafka_offset = upload->metadata.base_kafka_offset();
             constexpr auto index_sampling_step
               = 64_KiB; // TODO: use proper constant
+
+            cloud_storage::segment_record_stats stats{};
 
             cloud_storage::offset_index ix{
               upload->metadata.base_offset,
@@ -703,6 +733,7 @@ private:
 
             co_return aggregated_upload_result{
               .code = cloud_storage::upload_result::success,
+              .stats = stats,
               .put_requests = 1,
               .bytes_sent = ix_size,
             };
@@ -782,15 +813,13 @@ private:
         auto [segment_name, index_name, tx_name] = segment_index_object_names(
           partition, upl);
 
-        cloud_storage::segment_record_stats stats{};
-
         auto [index_stream, upload_stream] = clone_stream(
           std::move(upl->payload));
 
         auto make_su_fut = this->upload_segment(
           workflow_rtc, segment_name, upl, std::move(upload_stream));
         auto make_ix_fut = upload_segment_index(
-          workflow_rtc, stats, upl, index_name, std::move(index_stream));
+          workflow_rtc, upl, index_name, std::move(index_stream));
 
         chunked_vector<ss::future<aggregated_upload_result>> uploads;
         uploads.emplace_back(std::move(make_su_fut));
@@ -908,7 +937,11 @@ ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
 struct one_time_stream_provider : public storage::stream_provider {
     explicit one_time_stream_provider(ss::input_stream<char> s)
       : _st(std::move(s)) {}
-    ss::input_stream<char> take_stream() override { return std::move(*_st); }
+    ss::input_stream<char> take_stream() override {
+        std::optional<ss::input_stream<char>> tmp = std::move(_st);
+        _st = std::nullopt;
+        return std::move(*tmp);
+    }
     ss::future<> close() override {
         if (_st.has_value()) {
             return _st->close();
@@ -1030,8 +1063,25 @@ public:
         return _part->archival_meta_stm()->manifest();
     }
 
-    model::offset get_uploaded_offset() const override {
-        return _part->archival_meta_stm()->manifest().get_last_offset();
+    model::offset get_next_uploaded_offset() const override {
+        // We have to increment last offset to guarantee progress.
+        // The manifest's last offset contains dirty_offset of the
+        // latest uploaded segment but '_policy' requires offset that
+        // belongs to the next offset or the gap. No need to do this
+        // if we haven't uploaded anything.
+        //
+        // When there are no segments but there is a non-zero 'last_offset', all
+        // cloud segments have been removed for retention. In that case, we
+        // still need to take into accout 'last_offset'.
+        const auto& manifest = _part->archival_meta_stm()->manifest();
+        auto last_offset = manifest.get_last_offset();
+
+        auto base_offset = manifest.size() == 0
+                               && last_offset == model::offset(0)
+                             ? model::offset(0)
+                             : last_offset + model::offset(1);
+
+        return base_offset;
     }
 
     model::offset get_applied_offset() const override {
@@ -1090,11 +1140,17 @@ public:
         batch_builder.update_highest_producer_id(highest_pid);
         auto error_code = co_await batch_builder.replicate();
         if (error_code) {
-            vlog(
-              archival_log.error,
-              "Failed to replicate archival metadata: {}",
-              error_code);
-            co_return error_code;
+            if (_part->is_leader()) {
+                vlog(
+                  archival_log.error,
+                  "Failed to replicate archival metadata: {}",
+                  error_code);
+                co_return error_code;
+            } else {
+                // We know that partition leadership was lost
+                vlog(archival_log.debug, "Partition leadership was lost");
+                co_return error_code;
+            }
         }
         co_return _part->archival_meta_stm()->manifest().get_applied_offset();
     }
@@ -1136,6 +1192,9 @@ public:
     ss::shared_ptr<detail::cluster_partition_api>
     get_partition(const model::ntp& ntp) override {
         auto part = _pm.get(ntp);
+        if (part == nullptr) {
+            return nullptr;
+        }
         return ss::make_shared<cluster_partition>(part);
     }
 
@@ -1156,48 +1215,151 @@ class upload_builder : public detail::segment_upload_builder_api {
         auto pp = part.get();
         auto wrapper = dynamic_cast<cluster_partition*>(pp);
         auto cp = wrapper->underlying();
-        //
-        auto upl = co_await segment_upload::make_segment_upload(
-          cp, range, read_buffer_size, sg, deadline);
-        if (upl.has_error()) {
-            vlog(
-              archival_log.error,
-              "Can't find upload candidate: {}",
-              upl.error());
-            co_return upl.error();
+        auto lso = cp->last_stable_offset();
+        vlog(
+          archival_log.debug,
+          "Upload candidate lookup: base={}, min-size={}, max-size={}, "
+          "read-buffer-size={}, lso={}",
+          range.base,
+          range.min_size,
+          range.max_size,
+          read_buffer_size,
+          lso);
+
+        if (range.base >= model::prev_offset(lso)) {
+            co_return error_outcome::not_enough_data;
         }
 
-        auto meta = upl.value()->get_meta();
-        auto payload_stream = co_await std::move(*upl.value()).detach_stream();
+        // Try to upload base-lso offset range. If it's too large
+        // then fallback to size-based upload.
+        auto create_upl_res = co_await segment_upload::make_segment_upload(
+          cp,
+          inclusive_offset_range(range.base, model::prev_offset(lso)),
+          read_buffer_size,
+          sg,
+          deadline);
 
-        // Meta is not required for correctness but it's logged later
-        cloud_storage::segment_meta segm_meta{
-          .is_compacted = meta.is_compacted,
-          .size_bytes = meta.size_bytes,
-          .base_offset = meta.offsets.base,
-          .committed_offset = meta.offsets.last,
-          // Timestamps will be populated during the upload
-          .base_timestamp = {},
-          .max_timestamp = {},
-          .delta_offset = part->offset_delta(meta.offsets.base),
-          .ntp_revision = part->get_initial_revision(),
-          .archiver_term = cp->term(),
-          .segment_term
-          = part->get_offset_term(meta.offsets.base).value_or(model::term_id{}),
-          .delta_offset_end = part->offset_delta(meta.offsets.last),
-          .sname_format = cloud_storage::segment_name_format::v3,
-          /// Size of the tx-range (in v3 format)
-          .metadata_size_hint = 0,
-        };
+        if (create_upl_res.has_error()) {
+            vlog(
+              archival_log.warn,
+              "Can't find upload candidate: {}, start: {}, LSO: {}",
+              create_upl_res.error(),
+              range.base,
+              lso);
+            // We should be able to make upload since there is no limit on
+            // the size of the upload yet and we checked that there is at
+            // least some new data available.
+            co_return create_upl_res.error();
+        }
 
-        co_return std::make_unique<detail::prepared_segment_upload>(
-          detail::prepared_segment_upload{
-            .offsets = meta.offsets,
-            .size_bytes = meta.size_bytes,
-            .is_compacted = meta.is_compacted,
-            .meta = segm_meta,
-            .payload = std::move(payload_stream),
-          });
+        std::unique_ptr<segment_upload> upload;
+        std::optional<cloud_storage::segment_meta> validated_meta;
+
+        try {
+            // Check upload size
+            auto size_bytes = create_upl_res.value()->get_size_bytes();
+            if (size_bytes >= range.min_size && size_bytes < range.max_size) {
+                vlog(
+                  archival_log.debug,
+                  "Upload size {} is withing [{}, {}] range",
+                  size_bytes,
+                  range.min_size,
+                  range.max_size);
+                upload = std::move(create_upl_res.value());
+            } else if (size_bytes >= range.min_size) {
+                // Too much data in the offset range that ends with LSO.
+                // Fallback to size-based search.
+                co_await create_upl_res.value()->close();
+                auto create_upl_res
+                  = co_await segment_upload::make_segment_upload(
+                    cp, range, read_buffer_size, sg, deadline);
+                if (create_upl_res.has_error()) {
+                    auto log_level = create_upl_res.error()
+                                         == error_outcome::not_enough_data
+                                       ? ss::log_level::debug
+                                       : ss::log_level::warn;
+                    vlogl(
+                      archival_log,
+                      log_level,
+                      "Can't find upload candidate: {}, start: {}, min-size: "
+                      "{}",
+                      create_upl_res.error(),
+                      range.base,
+                      range.min_size,
+                      range.max_size);
+                    co_return create_upl_res.error();
+                }
+                upload = std::move(create_upl_res.value());
+            }
+            if (!upload) {
+                vlog(archival_log.error, "Upload is not created");
+                co_return error_outcome::unexpected_failure;
+            }
+            auto meta = upload->get_meta();
+            auto delta_offset = part->offset_delta(meta.offsets.base);
+            auto delta_offset_end = part->offset_delta(meta.offsets.last);
+            auto ntp_revision = part->get_initial_revision();
+            auto archiver_term = cp->term();
+            auto segment_term = part->get_offset_term(meta.offsets.base)
+                                  .value_or(model::term_id{});
+            auto rp_delta = meta.offsets.last - meta.offsets.base;
+            auto delta_delta = delta_offset_end - delta_offset;
+            if (rp_delta() == delta_delta()) {
+                vlog(
+                  archival_log.debug,
+                  "Upload candidate doesn't have user data, offsets: {}, delta "
+                  "begin: {}, delta end: {}",
+                  meta.offsets,
+                  delta_offset,
+                  delta_offset_end);
+                co_await upload->close();
+                co_return error_outcome::not_enough_data;
+            }
+            validated_meta = cloud_storage::segment_meta{
+              .is_compacted = meta.is_compacted,
+              .size_bytes = meta.size_bytes,
+              .base_offset = meta.offsets.base,
+              .committed_offset = meta.offsets.last,
+              // Timestamps will be populated during the upload
+              .base_timestamp = {},
+              .max_timestamp = {},
+              .delta_offset = delta_offset,
+              .ntp_revision = ntp_revision,
+              .archiver_term = archiver_term,
+              .segment_term = segment_term,
+              .delta_offset_end = delta_offset_end,
+              .sname_format = cloud_storage::segment_name_format::v3,
+              /// Size of the tx-range (in v3 format)
+              .metadata_size_hint = 0,
+            };
+
+            auto payload_stream = co_await std::move(*upload).detach_stream();
+
+            vlog(
+              archival_log.debug,
+              "Upload candidate found: {}",
+              validated_meta.value());
+
+            co_return std::make_unique<detail::prepared_segment_upload>(
+              detail::prepared_segment_upload{
+                .offsets = meta.offsets,
+                .size_bytes = meta.size_bytes,
+                .is_compacted = meta.is_compacted,
+                .meta = validated_meta.value(),
+                .payload = std::move(payload_stream),
+              });
+
+        } catch (...) {
+            vlog(
+              archival_log.error,
+              "Failed to create upload: {}",
+              std::current_exception());
+        }
+
+        if (upload) {
+            co_await upload->close();
+        }
+        co_return error_outcome::not_enough_data;
     }
 };
 
