@@ -77,9 +77,9 @@ public:
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::mode_req_rep& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::mode_req_rep& res) {
     w.StartObject();
     w.Key(mode_req_rep::field_name.data());
     ::json::rjson_serialize(w, to_string_view(res.mode));
