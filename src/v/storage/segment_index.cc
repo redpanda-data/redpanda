@@ -159,8 +159,8 @@ segment_index::find_nearest(model::timestamp t) {
     return translate_index_entry(_state, *entry);
 }
 
-std::optional<segment_index::entry>
-segment_index::find_above_size_bytes(size_t distance) {
+std::optional<segment_index::entry> segment_index::find_above_size_bytes(
+  size_t distance, model::offset max_offset) {
     if (_state.empty()) {
         return std::nullopt;
     }
@@ -173,7 +173,13 @@ segment_index::find_above_size_bytes(size_t distance) {
         return std::nullopt;
     }
     int i = std::distance(_state.position_index.begin(), it);
-    return translate_index_entry(_state, _state.get_entry(i));
+    std::optional<entry> entry = translate_index_entry(
+      _state, _state.get_entry(i));
+    if (max_offset != model::offset{} && entry->offset > max_offset) {
+        // Fallback to offset based lookup
+        entry = find_nearest(max_offset);
+    }
+    return entry;
 }
 
 std::optional<segment_index::entry>
