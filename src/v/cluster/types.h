@@ -20,6 +20,7 @@
 #include "cluster/tx_errc.h"
 #include "cluster/tx_hash_ranges.h"
 #include "cluster/version.h"
+#include "container/contiguous_range_map.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -2469,7 +2470,7 @@ struct partition_assignment_cmp {
 };
 
 using assignments_set
-  = absl::btree_set<partition_assignment, partition_assignment_cmp>;
+  = contiguous_range_map<model::partition_id::type, partition_assignment>;
 
 struct topic_metadata_fields
   : serde::envelope<
@@ -2528,6 +2529,8 @@ public:
     assignments_set& get_assignments();
 
     replication_factor get_replication_factor() const;
+
+    topic_metadata copy() const;
 
 private:
     topic_metadata_fields _fields;

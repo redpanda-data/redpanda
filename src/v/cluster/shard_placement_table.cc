@@ -15,6 +15,7 @@
 #include "cluster/logger.h"
 #include "cluster/topic_table.h"
 #include "ssx/async_algorithm.h"
+#include "types.h"
 
 #include <seastar/util/defer.hh>
 
@@ -605,11 +606,11 @@ ss::future<> shard_placement_table::do_initialize_from_topic_table(
           counter,
           md_item.get_assignments().begin(),
           md_item.get_assignments().end(),
-          [&](const partition_assignment& p_as) {
+          [&](const assignments_set::value_type& p) {
               vassert(
                 tt_version == topics.topics_map_revision(),
                 "topic_table unexpectedly changed");
-
+              auto& [_, p_as] = p;
               model::ntp ntp{ns_tp.ns, ns_tp.tp, p_as.id};
               auto replicas_view = topics.get_replicas_view(ntp, md_item, p_as);
               auto target = placement_target_on_node(replicas_view, self);
