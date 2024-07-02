@@ -482,6 +482,10 @@ replication_factor topic_metadata::get_replication_factor() const {
       static_cast<replication_factor::type>(it->replicas.size()));
 }
 
+topic_metadata topic_metadata::copy() const {
+    return {_fields, _assignments.copy()};
+}
+
 std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
     switch (s) {
     case reconciliation_status::done:

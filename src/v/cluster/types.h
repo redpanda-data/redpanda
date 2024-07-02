@@ -2529,6 +2529,8 @@ public:
 
     replication_factor get_replication_factor() const;
 
+    topic_metadata copy() const;
+
 private:
     topic_metadata_fields _fields;
     assignments_set _assignments;
