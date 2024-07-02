@@ -20,8 +20,9 @@ struct post_compatibility_res {
     bool is_compat{false};
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w,
   const schema_registry::post_compatibility_res& res) {
     w.StartObject();
     w.Key("is_compatible");
