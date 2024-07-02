@@ -864,6 +864,18 @@ class TLSProvider:
         """
         raise NotImplementedError("create_service_client_cert")
 
+    def use_pkcs12_file(self) -> bool:
+        """
+        Use the generated PKCS#12 file instead of the key/cert
+        """
+        return False
+
+    def p12_password(self, node: ClusterNode) -> str:
+        """
+        Get the PKCS#12 file password for the node
+        """
+        raise NotImplementedError("p12_password")
+
 
 class SecurityConfig:
     # the system currently has a single principal mapping rule. this is
@@ -4010,17 +4022,25 @@ class RedpandaService(RedpandaServiceBase):
             conf = yaml.dump(doc)
 
         if self._security.tls_provider:
+            p12_password = self._security.tls_provider.p12_password(
+                node) if self._security.tls_provider.use_pkcs12_file(
+                ) else None
             tls_config = [
                 dict(
                     enabled=True,
                     require_client_auth=self.require_client_auth(),
                     name=n,
-                    key_file=RedpandaService.TLS_SERVER_KEY_FILE,
-                    cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                     truststore_file=RedpandaService.TLS_CA_CRT_FILE,
                     crl_file=RedpandaService.TLS_CA_CRL_FILE,
                 ) for n in ["dnslistener", "iplistener"]
             ]
+            for n in tls_config:
+                if p12_password is None:
+                    n["cert_file"] = RedpandaService.TLS_SERVER_CRT_FILE
+                    n["key_file"] = RedpandaService.TLS_SERVER_KEY_FILE
+                else:
+                    n["p12_file"] = RedpandaService.TLS_SERVER_P12_FILE
+                    n["p12_password"] = p12_password
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)
