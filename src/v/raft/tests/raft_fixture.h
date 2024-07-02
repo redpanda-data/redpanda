@@ -287,6 +287,8 @@ public:
     ss::future<model::node_id> wait_for_leader(std::chrono::milliseconds);
     ss::future<model::node_id>
       wait_for_leader(model::timeout_clock::time_point);
+    ss::future<model::node_id> wait_for_leader_change(
+      model::timeout_clock::time_point deadline, model::term_id term);
     seastar::future<> TearDownAsync() override;
     seastar::future<> SetUpAsync() override;
 

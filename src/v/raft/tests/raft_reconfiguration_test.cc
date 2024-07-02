@@ -29,6 +29,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -497,11 +498,67 @@ TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
 
     std::vector<vnode> base_replica_set = all_vnodes();
     size_t reconfiguration_count = 0;
+    model::revision_id next_rev{1};
 
     auto current_replicas = base_replica_set;
 
     vlog(logger().info, "initial replicas: {}", current_replicas);
-
+    auto reconfigure_until_success = [&](
+                                       model::revision_id rev,
+                                       raft::vnode to_skip) {
+        auto deadline = model::timeout_clock::now() + 90s;
+        return ss::repeat([this, rev, deadline, to_skip, &current_replicas] {
+            vassert(
+              model::timeout_clock::now() < deadline,
+              "Timeout waiting for reconfiguration");
+            auto term = node(get_leader().value()).raft()->term();
+            return ss::parallel_for_each(
+                     nodes().begin(),
+                     nodes().end(),
+                     [&current_replicas, to_skip, rev](
+                       const raft_nodes_t::value_type& pair) {
+                         auto raft = pair.second->raft();
+                         if (pair.second->get_vnode() == to_skip) {
+                             return ss::now();
+                         }
+                         return raft
+                           ->force_replace_configuration_locally(
+                             current_replicas, {}, rev)
+                           .discard_result();
+                     })
+              .then([&current_replicas, this, rev, term] {
+                  return wait_for_leader_change(
+                           model::timeout_clock::now() + 10s, term)
+                    .then([this, rev, &current_replicas](
+                            model::node_id new_leader_id) {
+                        vlog(
+                          logger().info,
+                          "new leader {} elected in term: {}",
+                          new_leader_id,
+                          nodes()[new_leader_id]->raft()->term());
+                        auto replica_rev
+                          = node(new_leader_id).raft()->config().revision_id();
+                        if (replica_rev < rev) {
+                            vlog(
+                              logger().warn,
+                              "retrying reconfiguration to {}, requested "
+                              "revision: {}, node {} config revision: {}",
+                              current_replicas,
+                              rev,
+                              new_leader_id,
+                              replica_rev);
+                            return ss::stop_iteration::no;
+                        }
+                        vlog(
+                          logger().info,
+                          "successfully reconfigured to {} with revision: {}",
+                          current_replicas,
+                          rev);
+                        return ss::stop_iteration::yes;
+                    });
+              });
+        });
+    };
     auto reconfigure_all = [&, this]() {
         /**
          * Switch between all 5 replicas and randomly selected 3 of them
@@ -519,22 +576,8 @@ TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
 
         vlog(logger().info, "reconfiguring group to: {}", current_replicas);
         auto to_skip = random_generators::random_choice(base_replica_set);
-
-        return ss::parallel_for_each(
-          nodes().begin(),
-          nodes().end(),
-          [&, to_skip](const raft_nodes_t::value_type& pair) {
-              auto raft = pair.second->raft();
-              model::revision_id rev = ++raft->config().revision_id();
-              if (
-                pair.second->get_vnode() == to_skip
-                && !pair.second->raft()->is_leader()) {
-                  return ss::now();
-              }
-              return raft
-                ->force_replace_configuration_locally(current_replicas, {}, rev)
-                .discard_result();
-          });
+        auto revision = next_rev++;
+        return reconfigure_until_success(revision, to_skip);
     };
 
     auto reconfigure_fiber = ss::do_until(
@@ -551,15 +594,6 @@ TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
             })
             .handle_exception([](const std::exception_ptr&) {
                 // ignore exception
-            })
-            .then([this] {
-                return wait_for_leader(10s).then([this](model::node_id id) {
-                    vlog(
-                      logger().info,
-                      "new leader {}, term: {}",
-                      id,
-                      nodes()[id]->raft()->term());
-                });
             });
       });
 
