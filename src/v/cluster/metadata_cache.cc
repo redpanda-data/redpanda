@@ -74,7 +74,7 @@ std::optional<model::topic_metadata> metadata_cache::get_model_topic_metadata(
 
     model::topic_metadata metadata(md->get_configuration().tp_ns);
     metadata.partitions.reserve(md->get_assignments().size());
-    for (const auto& p_as : md->get_assignments()) {
+    for (const auto& [_, p_as] : md->get_assignments()) {
         metadata.partitions.push_back(p_as.create_partition_metadata());
     }
 

@@ -90,7 +90,7 @@ ss::future<std::error_code> topic_updates_dispatcher::do_topic_delete(
                 in_progress,
                 get_allocation_domain(tp_ns));
 
-              for (const auto& p_as : *topic_assignments) {
+              for (const auto& [_, p_as] : *topic_assignments) {
                   _partition_balancer_state.local()
                     .handle_ntp_move_begin_or_cancel(
                       tp_ns.ns, tp_ns.tp, p_as.id, p_as.replicas, {});
@@ -349,20 +349,22 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     }
     if (ec == errc::success) {
         for (const auto& [partition_id, replicas] : cmd.value) {
-            auto assigment_it = assignments.value().find(partition_id);
+            auto assignment_it = assignments.value().find(partition_id);
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, partition_id);
-            if (assigment_it == assignments.value().end()) {
+            if (assignment_it == assignments.value().end()) {
                 co_return std::error_code(errc::partition_not_exists);
             }
 
             update_allocations_for_reconfiguration(
-              assigment_it->replicas, replicas, get_allocation_domain(ntp));
+              assignment_it->second.replicas,
+              replicas,
+              get_allocation_domain(ntp));
 
             _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
               ntp.ns,
               ntp.tp.topic,
               ntp.tp.partition,
-              assigment_it->replicas,
+              assignment_it->second.replicas,
               replicas);
         }
     }
@@ -479,7 +481,7 @@ topic_updates_dispatcher::collect_in_progress(
     in_progress_map in_progress;
     in_progress.reserve(current_assignments.size());
     // collect in progress assignments
-    for (auto& p : current_assignments) {
+    for (auto& [_, p] : current_assignments) {
         model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);
         const auto& in_progress_updates
           = _topic_table.local().updates_in_progress();
@@ -531,7 +533,7 @@ void topic_updates_dispatcher::deallocate_topic(
   const assignments_set& topic_assignments,
   const in_progress_map& in_progress,
   const partition_allocation_domain domain) {
-    for (auto& p_as : topic_assignments) {
+    for (auto& [_, p_as] : topic_assignments) {
         model::ntp ntp(tp_ns.ns, tp_ns.tp, p_as.id);
         // we must remove the allocation that would normally
         // be removed with update_finished request

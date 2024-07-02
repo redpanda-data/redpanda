@@ -3279,12 +3279,12 @@ fragmented_vector<cluster_partition_info> topic2cluster_partitions(
             ret.push_back(cluster_partition_info{
               .ns_tp = shared_ns_tp,
               .id = id,
-              .replicas = as_it->replicas,
+              .replicas = as_it->second.replicas,
               .disabled = true,
             });
         }
     } else {
-        for (const auto& p_as : assignments) {
+        for (const auto& [_, p_as] : assignments) {
             bool disabled = disabled_set && disabled_set->is_disabled(p_as.id);
 
             if (disabled_filter && *disabled_filter != disabled) {

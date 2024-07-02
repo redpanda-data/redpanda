@@ -54,7 +54,7 @@ ss::future<> wait_for_leaders(
           [&r, &md_cache, deadline](const auto& p_as) {
               return md_cache
                 .get_leader(
-                  model::ntp(r.tp_ns.ns, r.tp_ns.tp, p_as.id), deadline)
+                  model::ntp(r.tp_ns.ns, r.tp_ns.tp, p_as.second.id), deadline)
                 .discard_result();
           });
     }

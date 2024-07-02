@@ -412,7 +412,8 @@ cluster::assignments_set to_assignments_map(
   ss::chunked_fifo<cluster::partition_assignment> assignment_vector) {
     cluster::assignments_set ret;
     for (auto& p_as : assignment_vector) {
-        ret.emplace(std::move(p_as));
+        const auto id = p_as.id;
+        ret.emplace(id, std::move(p_as));
     }
     return ret;
 }
@@ -479,7 +480,7 @@ replication_factor topic_metadata::get_replication_factor() const {
     // topic
     auto it = _assignments.find(model::partition_id(0));
     return replication_factor(
-      static_cast<replication_factor::type>(it->replicas.size()));
+      static_cast<replication_factor::type>(it->second.replicas.size()));
 }
 
 topic_metadata topic_metadata::copy() const {
@@ -772,7 +773,7 @@ void topic_disabled_partitions_set::remove(
     if (!partitions) {
         partitions = absl::node_hash_set<model::partition_id>{};
         partitions->reserve(all_partitions.size());
-        for (const auto& p : all_partitions) {
+        for (const auto& [_, p] : all_partitions) {
             partitions->insert(p.id);
         }
     }

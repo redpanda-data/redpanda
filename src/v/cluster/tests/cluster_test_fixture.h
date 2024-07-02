@@ -19,6 +19,7 @@
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "test_utils/async.h"
+#include "types.h"
 
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/sharded.hh>
@@ -274,8 +275,8 @@ public:
                    && std::all_of(
                      md->get_assignments().begin(),
                      md->get_assignments().end(),
-                     [&](const cluster::partition_assignment& p) {
-                         return leaders.get_leader(tp_ns, p.id);
+                     [&](const cluster::assignments_set::value_type& p) {
+                         return leaders.get_leader(tp_ns, p.second.id);
                      });
         }).get0();
     }

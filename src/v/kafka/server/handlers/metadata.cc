@@ -126,7 +126,7 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     const bool is_user_topic = model::is_user_topic(tp_ns);
     const auto* disabled_set = md_cache.get_topic_disabled_set(tp_ns);
 
-    for (const auto& p_as : tp_md.get_assignments()) {
+    for (const auto& [_, p_as] : tp_md.get_assignments()) {
         std::vector<model::node_id> replicas{};
         replicas.reserve(p_as.replicas.size());
         // current replica set

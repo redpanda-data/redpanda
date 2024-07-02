@@ -954,7 +954,7 @@ admin_server::get_topic_partitions_handler(
       = _controller->get_topics_state().local().get_topic_disabled_set(tp_ns);
 
     // Normal topic
-    for (const auto& p_as : assignments) {
+    for (const auto& [_, p_as] : assignments) {
         partition_t p;
         p.ns = tp_ns.ns;
         p.topic = tp_ns.tp;

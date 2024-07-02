@@ -289,7 +289,7 @@ public:
 
     void print_replica_map() const {
         for (const auto& t : topics().topics_map()) {
-            for (const auto& a : t.second.get_assignments()) {
+            for (const auto& [_, a] : t.second.get_assignments()) {
                 auto ntp = model::ntp(t.first.ns, t.first.tp, a.id);
                 std::vector<model::node_id> replicas;
                 for (const auto& bs : a.replicas) {
@@ -348,7 +348,7 @@ public:
 
         for (auto& [tp_ns, topic_md] :
              _workers.table.local().all_topics_metadata()) {
-            for (auto& p_as : topic_md.get_assignments()) {
+            for (auto& [_, p_as] : topic_md.get_assignments()) {
                 total_topic_replicas[tp_ns] += p_as.replicas.size();
                 for (auto& r : p_as.replicas) {
                     topic_replica_distribution[tp_ns][r.node_id]++;
@@ -434,7 +434,7 @@ private:
                 continue;
             }
 
-            for (const auto& p_as : topic_md.get_assignments()) {
+            for (const auto& [_, p_as] : topic_md.get_assignments()) {
                 for (const auto& r1 : p_as.replicas) {
                     for (const auto& r2 : p_as.replicas) {
                         if (r1.node_id != r2.node_id) {

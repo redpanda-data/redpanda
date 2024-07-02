@@ -1014,7 +1014,7 @@ topics_frontend::partitions_with_lost_majority(
             const auto& tn = it->first;
             const auto& assignments = (it->second).get_assignments();
             const auto topic_revision = it->second.get_revision();
-            for (const auto& assignment : assignments) {
+            for (const auto& [_, assignment] : assignments) {
                 const auto& current = assignment.replicas;
                 auto remaining = subtract_replica_sets_by_node_id(
                   current, dead_nodes);
@@ -1403,7 +1403,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         }
 
         node2count_t node2count;
-        for (const auto& p_as : md_ref->get().get_assignments()) {
+        for (const auto& [_, p_as] : md_ref->get().get_assignments()) {
             for (const auto& r : p_as.replicas) {
                 node2count[r.node_id] += 1;
             }
@@ -1647,10 +1647,11 @@ ss::future<result<allocation_units::pointer>> do_increase_replication_factor(
     co_await ssx::async_for_each(
       assignments.begin(),
       assignments.end(),
-      [&](const partition_assignment& assignment) {
+      [&](const assignments_set::value_type& assignment) {
           allocation_constraints allocation_constraints;
 
-          auto partition_size_it = capacity_info.ntp_sizes.find(assignment.id);
+          auto partition_size_it = capacity_info.ntp_sizes.find(
+            assignment.second.id);
           if (partition_size_it != capacity_info.ntp_sizes.end()) {
               // Add constraint on partition max_disk_usage_ratio overfill
               allocation_constraints.add(disk_not_overflowed_by_partition(
@@ -1666,7 +1667,7 @@ ss::future<result<allocation_units::pointer>> do_increase_replication_factor(
           }
 
           req.partitions.emplace_back(
-            assignment, new_rf, std::move(allocation_constraints));
+            assignment.second, new_rf, std::move(allocation_constraints));
       });
     req.existing_replica_counts = existing_replica_counts;
 
@@ -1718,7 +1719,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
     std::optional<node2count_t> existing_replica_counts;
     if (_partition_autobalancing_topic_aware()) {
         node2count_t node2count;
-        for (const auto& p_as : tp_metadata->get_assignments()) {
+        for (const auto& [_, p_as] : tp_metadata->get_assignments()) {
             for (const auto& bs : p_as.replicas) {
                 node2count[bs.node_id] += 1;
             }
@@ -1765,7 +1766,7 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
   model::timeout_clock::time_point timeout) {
     std::vector<move_topic_replicas_data> new_assignments;
 
-    auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
+    auto tp_metadata = _topics.local().get_topic_metadata(topic);
     if (!tp_metadata.has_value()) {
         co_return errc::topic_not_exists;
     }
@@ -1776,26 +1777,24 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
 
     std::optional<std::error_code> error;
 
-    auto metadata_ref = tp_metadata.value().get();
-
     co_await ss::max_concurrent_for_each(
-      metadata_ref.get_assignments(),
+      tp_metadata->get_assignments(),
       32,
       [&new_assignments, &error, topic, new_replication_factor](
-        partition_assignment& assignment) {
+        assignments_set::value_type& assignment) {
           if (error) {
               return ss::now();
           }
-          if (assignment.replicas.size() < new_replication_factor()) {
+          if (assignment.second.replicas.size() < new_replication_factor()) {
               error = errc::topic_invalid_replication_factor;
               return ss::now();
           }
 
           new_assignments.emplace_back(move_topic_replicas_data());
-          new_assignments.back().partition = assignment.id;
+          new_assignments.back().partition = assignment.second.id;
           new_assignments.back().replicas.resize(new_replication_factor);
           std::copy_n(
-            assignment.replicas.begin(),
+            assignment.second.replicas.begin(),
             new_replication_factor,
             new_assignments.back().replicas.begin());
           return ss::now();
