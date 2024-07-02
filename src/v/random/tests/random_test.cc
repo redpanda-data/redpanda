@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(alphanum_max_distinct_generator) {
     for (auto i = 0; i < 100; i++) {
         auto s = random_generators::gen_alphanum_max_distinct(cardinality);
         // ensure no \0 in size
-        for (auto j = 0; j < random_generators::alphanum_max_distinct_strlen;
+        for (size_t j = 0; j < random_generators::alphanum_max_distinct_strlen;
              j++) {
             BOOST_REQUIRE('\0' != s[j]);
         }

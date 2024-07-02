@@ -46,8 +46,8 @@ SEASTAR_THREAD_TEST_CASE(fragmented_vector_clear_async_test) {
     BOOST_REQUIRE(v.size() == 0);
 
     // many fragments
-    for (int i = 0; i < 5; ++i) {
-        for (int j = 0; j < v.elements_per_fragment(); ++j) {
+    for (size_t i = 0; i < 5; ++i) {
+        for (size_t j = 0; j < v.elements_per_fragment(); ++j) {
             v.push_back(j);
         }
     }
