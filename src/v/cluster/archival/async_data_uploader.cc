@@ -45,12 +45,12 @@ class reader_ds : public ss::data_source_impl {
         /// read buffer.
         ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
             vlog(
-              _parent->_ctxlog.debug,
+              _parent->_ctxlog.trace,
               "consume started, buffered {} bytes",
               _parent->_buffer.size_bytes());
             if (!_range.contains(batch.header())) {
                 vlog(
-                  _parent->_ctxlog.debug,
+                  _parent->_ctxlog.trace,
                   "skip batch {}-{}",
                   batch.base_offset(),
                   batch.last_offset());
@@ -58,7 +58,7 @@ class reader_ds : public ss::data_source_impl {
                 co_return ss::stop_iteration::no;
             }
             vlog(
-              _parent->_ctxlog.debug,
+              _parent->_ctxlog.trace,
               "consuming batch {}-{}",
               batch.base_offset(),
               batch.last_offset());
@@ -71,7 +71,7 @@ class reader_ds : public ss::data_source_impl {
             bool max_bytes_reached = _parent->_buffer.size_bytes()
                                      > _parent->_max_bytes;
             vlog(
-              _parent->_ctxlog.debug,
+              _parent->_ctxlog.trace,
               "max_bytes_reached: {}",
               max_bytes_reached);
             co_return max_bytes_reached ? ss::stop_iteration::yes
@@ -137,6 +137,7 @@ public:
         co_return empty;
     }
     ss::future<> close() override {
+        vlog(_ctxlog.trace, "Close reader");
         co_await std::move(_reader).release()->finally();
     }
 
