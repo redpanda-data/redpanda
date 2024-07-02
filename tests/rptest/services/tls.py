@@ -4,6 +4,8 @@ import collections
 import pathlib
 import subprocess
 import os
+import string
+import random
 
 _ca_config_tmpl = """
 # OpenSSL CA configuration file
@@ -296,8 +298,8 @@ subjectKeyIdentifier    = hash
 
 CertificateAuthority = collections.namedtuple("CertificateAuthority",
                                               ["cfg", "key", "crt", "crl"])
-Certificate = collections.namedtuple("Certificate",
-                                     ["cfg", "key", "crt", "ca"])
+Certificate = collections.namedtuple(
+    "Certificate", ["cfg", "key", "crt", "ca", "p12_file", "p12_password"])
 
 
 class TLSCertManager:
@@ -317,6 +319,12 @@ class TLSCertManager:
         self._cert_expiry_days = cert_expiry_days
         self._ca = self._create_ca()
         self.certs: dict[str, Certificate] = {}
+
+    @staticmethod
+    def generate_password(
+            length: int,
+            choices: str = string.ascii_letters + string.digits) -> str:
+        return ''.join(random.choices(choices, k=length))
 
     def _with_dir(self, *args):
         return os.path.join(self._dir.name, *args)
@@ -400,6 +408,7 @@ class TLSCertManager:
         key = self._with_dir(f"{name}.key")
         csr = self._with_dir(f"{name}.csr")
         crt = self._with_dir(f"{name}.crt")
+        p12_file = self._with_dir(f"{name}.p12")
 
         with open(cfg, "w") as f:
             if common_name is None:
@@ -420,9 +429,27 @@ class TLSCertManager:
             f"-extensions signing_node_req -in {csr} -out {crt} "
             f"-days {self._cert_expiry_days} -outdir {self._dir.name} -batch")
 
-        cert = Certificate(cfg, key, crt, self.ca)
+        p12_password = self.generate_pkcs12_file(p12_file, key, crt,
+                                                 self.ca.crt)
+
+        cert = Certificate(cfg, key, crt, self.ca, p12_file, p12_password)
         self.certs[name] = cert
         return cert
+
+    def generate_pkcs12_file(self,
+                             p12_file: str,
+                             key: str,
+                             crt: str,
+                             ca: str,
+                             pw_length: int = 16) -> str:
+        """
+        Runs command to generate a new PKCS#12 file and returns the generated password
+        """
+        p12_password = self.generate_password(length=pw_length)
+        self._exec(
+            f'openssl pkcs12 -export -inkey {key} -in {crt} -certfile {ca} -passout pass:{p12_password} -out {p12_file}'
+        )
+        return p12_password
 
     # TODO(oren): reasons enum
     def revoke_cert(self, crt: Certificate, reason: str = "unspecified"):
@@ -572,6 +599,7 @@ class TLSChainCACertManager(TLSCertManager):
         key = self._with_dir('certs', f"{name}.key")
         csr = self._with_dir('certs', f"{name}.csr")
         crt = self._with_dir('certs', f"{name}.crt")
+        p12_file = self._with_dir('certs', f"{name}.p12")
 
         with open(cfg, "w") as f:
             if common_name is None:
@@ -588,6 +616,9 @@ class TLSChainCACertManager(TLSCertManager):
             f"-in {csr} -out {crt} -extensions server_ext -days {self.cert_expiry_days} -batch"
         )
 
-        cert = Certificate(cfg, key, crt, self.ca)
+        p12_password = self.generate_pkcs12_file(p12_file, key, crt,
+                                                 self.ca.crt)
+
+        cert = Certificate(cfg, key, crt, self.ca, p12_file, p12_password)
         self.certs[name] = cert
         return cert
