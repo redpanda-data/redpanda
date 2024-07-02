@@ -1,22 +1,71 @@
-load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
-
-filegroup(
-    name = "srcs",
-    srcs = glob(["**"]),
-)
-
-configure_make(
+cc_library(
     name = "libpciaccess",
-    autoreconf = True,
-    autoreconf_options = ["-ivf"],
-    configure_in_place = True,
-    configure_options = [
-        "--disable-shared",
-        "--enable-static",
+    srcs = [
+        "src/common_bridge.c",
+        "src/common_capability.c",
+        "src/common_device_name.c",
+        "src/common_init.c",
+        "src/common_interface.c",
+        "src/common_io.c",
+        "src/common_iterator.c",
+        "src/common_map.c",
+        "src/linux_devmem.h",
+        "src/pciaccess_private.h",
+    ] + select({
+        "@platforms//os:linux": [
+            "src/common_vgaarb.c",
+            "src/linux_devmem.c",
+            "src/linux_sysfs.c",
+        ],
+        "//conditions:default": [],
+    }),
+    hdrs = [
+        "include/pciaccess.h",
     ],
-    lib_source = ":srcs",
-    out_static_libs = ["libpciaccess.a"],
+    copts = [
+        "-Wpointer-arith",
+        "-Wmissing-declarations",
+        "-Wformat=2",
+        "-Wstrict-prototypes",
+        "-Wmissing-prototypes",
+        "-Wnested-externs",
+        "-Wbad-function-cast",
+        "-Wold-style-definition",
+        "-Wdeclaration-after-statement",
+        "-Wunused",
+        "-Wuninitialized",
+        "-Wshadow",
+        "-Wmissing-noreturn",
+        "-Wmissing-format-attribute",
+        "-Wredundant-decls",
+        "-Werror=implicit",
+        "-Werror=nonnull",
+        "-Werror=init-self",
+        "-Werror=main",
+        "-Werror=missing-braces",
+        "-Werror=sequence-point",
+        "-Werror=return-type",
+        "-Werror=trigraphs",
+        "-Werror=array-bounds",
+        "-Werror=write-strings",
+        "-Werror=address",
+        "-Werror=int-to-pointer-cast",
+    ],
+    local_defines = [
+        'PCIIDS_PATH=\\"/usr/share/hwdata\\"',
+        "HAVE_ZLIB=1",
+        "HAVE_MTRR=1",
+        "HAVE_ERR_H=1",
+        "HAVE_INTTYPES_H=1",
+        "HAVE_STDINT_H=1",
+        "HAVE_STRINGS_H=1",
+        "HAVE_STRING_H=1",
+    ],
+    strip_include_prefix = "include",
     visibility = [
         "//visibility:public",
+    ],
+    deps = [
+        "@zlib",
     ],
 )

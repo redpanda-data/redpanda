@@ -67,9 +67,9 @@ def data_dependency():
     http_archive(
         name = "libpciaccess",
         build_file = "//bazel/thirdparty:libpciaccess.BUILD",
-        sha256 = "9938b18509553452c6e13f79e16cbaffec9ea67119aa2de5d75e83c4f67ff400",
-        strip_prefix = "libpciaccess-libpciaccess-0.16",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/libpciaccess-0.16.tar.bz2",
+        sha256 = "d0d0d53c2085d21ab37ae5989e55a3de13d4d80dc2c0a8d5c77154ea70f4783c",
+        strip_prefix = "libpciaccess-2ec2576cabefef1eaa5dd9307c97de2e887fc347",
+        url = "https://gitlab.freedesktop.org/xorg/lib/libpciaccess/-/archive/2ec2576cabefef1eaa5dd9307c97de2e887fc347/libpciaccess-2ec2576cabefef1eaa5dd9307c97de2e887fc347.tar.gz",
     )
 
     http_archive(

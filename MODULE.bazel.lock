@@ -116,7 +116,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "+/wwwL1d2C7jKsyzYXQACKjRp7Y8aKLoFqSNJ9x+I/c=",
+        "bzlTransitiveDigest": "a72e4ALcji2RGOJvJ4dDpXN/55qa2jQuSgxMhRaSPZI=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -147,9 +147,9 @@
             "ruleClassName": "http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:libpciaccess.BUILD",
-              "sha256": "9938b18509553452c6e13f79e16cbaffec9ea67119aa2de5d75e83c4f67ff400",
-              "strip_prefix": "libpciaccess-libpciaccess-0.16",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/libpciaccess-0.16.tar.bz2"
+              "sha256": "d0d0d53c2085d21ab37ae5989e55a3de13d4d80dc2c0a8d5c77154ea70f4783c",
+              "strip_prefix": "libpciaccess-2ec2576cabefef1eaa5dd9307c97de2e887fc347",
+              "url": "https://gitlab.freedesktop.org/xorg/lib/libpciaccess/-/archive/2ec2576cabefef1eaa5dd9307c97de2e887fc347/libpciaccess-2ec2576cabefef1eaa5dd9307c97de2e887fc347.tar.gz"
             }
           },
           "numactl": {
