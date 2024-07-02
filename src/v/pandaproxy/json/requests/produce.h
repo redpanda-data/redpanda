@@ -265,9 +265,9 @@ private:
     std::optional<json_writer> _json_writer;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const kafka::produce_response::partition& v) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const kafka::produce_response::partition& v) {
     w.StartObject();
     w.Key("partition");
     w.Int(v.partition_index);
@@ -280,9 +280,9 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const kafka::produce_response::topic& v) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const kafka::produce_response::topic& v) {
     w.StartObject();
     w.Key("offsets");
     w.StartArray();

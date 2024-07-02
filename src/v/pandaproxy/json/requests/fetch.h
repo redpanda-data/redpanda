@@ -43,8 +43,8 @@ public:
       , _tpv(tpv)
       , _base_offset(base_offset) {}
 
-    bool
-    operator()(::json::Writer<::json::StringBuffer>& w, model::record record) {
+    template<typename Buffer>
+    bool operator()(::json::Writer<Buffer>& w, model::record record) {
         auto offset = _base_offset() + record.offset_delta();
 
         w.StartObject();
@@ -97,8 +97,8 @@ public:
     explicit rjson_serialize_impl(serialization_format fmt)
       : _fmt(fmt) {}
 
-    bool operator()(
-      ::json::Writer<::json::StringBuffer>& w, kafka::fetch_response&& res) {
+    template<typename Buffer>
+    bool operator()(::json::Writer<Buffer>& w, kafka::fetch_response&& res) {
         // Eager check for errors
         for (auto& v : res) {
             if (v.partition_response->error_code != kafka::error_code::none) {

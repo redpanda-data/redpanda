@@ -48,8 +48,8 @@ struct rjson_serialize_fmt_impl {
         return rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
           std::forward<T>(t));
     }
-    template<typename T>
-    bool operator()(::json::Writer<::json::StringBuffer>& w, T&& t) {
+    template<typename Buffer, typename T>
+    bool operator()(::json::Writer<Buffer>& w, T&& t) {
         return rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
           w, std::forward<T>(t));
     }

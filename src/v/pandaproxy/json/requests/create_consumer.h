@@ -107,9 +107,9 @@ struct create_consumer_response {
     ss::sstring base_uri;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const create_consumer_response& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const create_consumer_response& res) {
     w.StartObject();
     w.Key("instance_id");
     w.String(res.instance_id());
