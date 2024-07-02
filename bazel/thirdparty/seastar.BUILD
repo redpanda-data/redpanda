@@ -50,6 +50,21 @@ bool_flag(
     build_setting_default = True,
 )
 
+bool_flag(
+    name = "system_allocator",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "debug",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "shuffle_task_queue",
+    build_setting_default = False,
+)
+
 int_flag(
     name = "api_level",
     build_setting_default = 6,
@@ -122,6 +137,27 @@ config_setting(
     name = "use_heap_profiling",
     flag_values = {
         ":heap_profiling": "true",
+    },
+)
+
+config_setting(
+    name = "use_system_allocator",
+    flag_values = {
+        ":system_allocator": "true",
+    },
+)
+
+config_setting(
+    name = "with_debug",
+    flag_values = {
+        ":debug": "true",
+    },
+)
+
+config_setting(
+    name = "with_shuffle_task_queue",
+    flag_values = {
+        ":shuffle_task_queue": "true",
     },
 )
 
@@ -546,6 +582,15 @@ cc_library(
         # split out into a separate cc_library, but we'd need to inherit all the
         # build settings. defining for all compilation units seems harmless.
         ":use_heap_profiling": ["SEASTAR_HEAPPROF"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_system_allocator": ["SEASTAR_DEFAULT_ALLOCATOR"],
+        "//conditions:default": [],
+    }) + select({
+        ":with_debug": ["SEASTAR_DEBUG"],
+        "//conditions:default": [],
+    }) + select({
+        ":with_shuffle_task_queue": ["SEASTAR_SHUFFLE_TASK_QUEUE"],
         "//conditions:default": [],
     }),
     toolchains = [
