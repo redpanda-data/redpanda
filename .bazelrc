@@ -61,5 +61,6 @@ build:release --copt -mllvm --copt -inline-threshold=2500
 build:release --linkopt=-flto
 
 build --@seastar//:openssl=True
+build --keep_going
 
 try-import %workspace%/user.bazelrc
