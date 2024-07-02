@@ -70,6 +70,23 @@ func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID in
 			return nil, fmt.Errorf("unable to build protobuf decoder: %v", err)
 		}
 		return &Serde{encFn, decFn}, nil
+	case sr.TypeJSON:
+		compiledSchema, err := compileJsonschema(ctx, cl, schema)
+		if err != nil {
+			return nil, fmt.Errorf("unable to compile jsonschema: %v", err)
+		}
+
+		encFn, err := newJsonschemaEncoder(schemaID, compiledSchema)
+		if err != nil {
+			return nil, fmt.Errorf("unable to build jsonschema encoder: %v", err)
+		}
+
+		decFn, err := newJsonschemaDecoder(compiledSchema)
+		if err != nil {
+			return nil, fmt.Errorf("unable to build jsonschema decoder: %v", err)
+		}
+
+		return &Serde{encFn, decFn}, nil
 	default:
 		return nil, fmt.Errorf("schema with ID %v contains an unsupported schema type %v", schemaID, schema.Type)
 	}

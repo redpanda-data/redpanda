@@ -39,6 +39,7 @@ require (
 	github.com/prometheus/common v0.53.0
 	github.com/rs/xid v1.5.0
 	github.com/safchain/ethtool v0.3.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1
 	github.com/schollz/progressbar/v3 v3.14.2
 	github.com/sethgrid/pester v1.2.0
 	github.com/spf13/afero v1.11.0
