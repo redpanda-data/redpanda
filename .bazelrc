@@ -22,6 +22,8 @@ build:sanitizer --linkopt -fsanitize=address,undefined,vptr,function
 build:sanitizer --linkopt --rtlib=compiler-rt
 build:sanitizer --linkopt -fsanitize-link-c++-runtime
 build:sanitizer --copt -O1
+# seastar has to be run with system allocator when using sanitizers 
+build:sanitizer --@seastar//:system_allocator=True
 
 # =================================
 # Security
