@@ -3128,7 +3128,7 @@ void tx_gateway_frontend::expire_old_txs() {
 
         std::vector<model::partition_id> partitions;
         partitions.reserve(ntp_meta->get_assignments().size());
-        for (auto& pa : ntp_meta->get_assignments()) {
+        for (auto& [_, pa] : ntp_meta->get_assignments()) {
             partitions.push_back(pa.id);
         }
 
@@ -3351,7 +3351,7 @@ tx_gateway_frontend::get_all_transactions() {
     }
 
     tx_gateway_frontend::return_all_txs_res res{{}};
-    for (const auto& pa : ntp_meta->get_assignments()) {
+    for (const auto& [_, pa] : ntp_meta->get_assignments()) {
         auto tx_manager_ntp = model::ntp(
           model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
         auto ntp_res = co_await get_all_transactions_for_one_tx_partition(

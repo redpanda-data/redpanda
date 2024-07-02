@@ -16,6 +16,7 @@
 #include "config/node_config.h"
 #include "random/generators.h"
 #include "ssx/async_algorithm.h"
+#include "types.h"
 
 namespace cluster {
 
@@ -104,11 +105,11 @@ ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
           counter,
           md_item.get_assignments().begin(),
           md_item.get_assignments().end(),
-          [&](const partition_assignment& p_as) {
+          [&](const assignments_set::value_type& p) {
               vassert(
                 tt_version == topics.topics_map_revision(),
                 "topic_table unexpectedly changed");
-
+              const auto& [_, p_as] = p;
               model::ntp ntp{ns_tp.ns, ns_tp.tp, p_as.id};
               auto replicas_view = topics.get_replicas_view(ntp, md_item, p_as);
               auto log_rev = log_revision_on_node(replicas_view, _self);

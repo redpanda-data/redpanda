@@ -269,9 +269,9 @@ TEST_P(RandomizedIntervalSetTest, RandomInsertsSequentialErase) {
     const auto params = GetParam();
     const auto interval_max_size = params.interval_max_size;
     const double target_fill_percent = params.target_fill_percent;
-    const auto buf_size = 5000;
+    const size_t buf_size = 5000;
 
-    const int target_fill_size = target_fill_percent * buf_size;
+    const size_t target_fill_size = target_fill_percent * buf_size;
 
     ss::sstring buf(buf_size, 'O');
     auto current_filled = [&buf] {
@@ -291,7 +291,7 @@ TEST_P(RandomizedIntervalSetTest, RandomInsertsSequentialErase) {
         const int start_max = buf_size - rand_size;
         const uint64_t rand_start = random_generators::get_int(0, start_max);
         EXPECT_TRUE(filled_intervals.insert({rand_start, rand_size}).second);
-        for (int i = 0; i < rand_size; i++) {
+        for (size_t i = 0; i < rand_size; i++) {
             buf[rand_start + i] = 'X';
         }
     }

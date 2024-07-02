@@ -418,7 +418,7 @@ create_topic_table_snapshot(
         if (!ntp_meta) {
             continue;
         }
-        for (const auto& p : ntp_meta->get_assignments()) {
+        for (const auto& [_, p] : ntp_meta->get_assignments()) {
             auto ntp = model::ntp(nt.ns, nt.tp, p.id);
             auto revision_id = ntp_meta->get_revision();
             if (cluster::contains_node(p.replicas, current_node)) {

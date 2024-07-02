@@ -1,6 +1,7 @@
 use crate::error::BucketReaderError;
 use crate::fundamental::{
-    raw_to_kafka, DeltaOffset, KafkaOffset, RaftTerm, RawOffset, Timestamp, NTP, NTPR, NTR,
+    raw_to_kafka, DeltaOffset, KafkaOffset, LabeledNTPR, RaftTerm, RawOffset, Timestamp, NTP, NTPR,
+    NTR,
 };
 use deltafor::envelope::{SerdeEnvelope, SerdeEnvelopeContext};
 use deltafor::{DeltaAlg, DeltaDelta, DeltaFORDecoder, DeltaXor};
@@ -12,6 +13,19 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use xxhash_rust::xxh32::xxh32;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemoteLabel {
+    pub cluster_uuid: String,
+}
+
+impl RemoteLabel {
+    pub fn from_string(s_opt: &Option<String>) -> Option<RemoteLabel> {
+        s_opt.as_ref().map(|s| RemoteLabel {
+            cluster_uuid: s.clone(),
+        })
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClusterMetadataManifest {
@@ -857,21 +871,28 @@ impl PartitionManifest {
         }
     }
 
-    pub fn manifest_key(ntpr: &NTPR, extension: &str) -> String {
+    pub fn manifest_key(ntpr: &LabeledNTPR, extension: &str) -> String {
         let path = format!(
             "{}/{}/{}_{}",
-            ntpr.ntp.namespace, ntpr.ntp.topic, ntpr.ntp.partition_id, ntpr.revision_id
+            ntpr.ntpr.ntp.namespace,
+            ntpr.ntpr.ntp.topic,
+            ntpr.ntpr.ntp.partition_id,
+            ntpr.ntpr.revision_id
         );
         let bitmask = 0xf0000000;
         let hash = xxh32(path.as_bytes(), 0);
-        format!(
-            "{:08x}/meta/{}/manifest.{}",
-            hash & bitmask,
-            path,
-            extension
-        )
+        let prefix = if let Some(label) = &ntpr.label {
+            label.clone()
+        } else {
+            format!("{:08x}/meta", hash & bitmask)
+        };
+        format!("{}/meta/{}/manifest.{}", prefix, path, extension)
     }
-    pub fn segment_key(&self, segment: &PartitionManifestSegment) -> Option<String> {
+    pub fn segment_key(
+        &self,
+        segment: &PartitionManifestSegment,
+        label: &Option<RemoteLabel>,
+    ) -> Option<String> {
         let sname_format = match segment.sname_format {
             None => SegmentNameFormat::V1,
             Some(1) => SegmentNameFormat::V1,
@@ -916,6 +937,12 @@ impl PartitionManifest {
             "{}/{}/{}_{}/{}",
             self.namespace, self.topic, self.partition, self.revision, name
         );
+        if let Some(remote_label) = label {
+            return Some(format!(
+                "{}/{}.{}",
+                remote_label.cluster_uuid, path, segment.archiver_term
+            ));
+        }
 
         let hash = xxh32(path.as_bytes(), 0);
 
@@ -937,16 +964,24 @@ pub struct ArchivePartitionManifest {
 }
 
 impl ArchivePartitionManifest {
-    pub fn key(&self, ntpr: &NTPR) -> String {
+    pub fn key(&self, ntpr: &LabeledNTPR) -> String {
         let path = format!(
             "{}/{}/{}_{}",
-            ntpr.ntp.namespace, ntpr.ntp.topic, ntpr.ntp.partition_id, ntpr.revision_id
+            ntpr.ntpr.ntp.namespace,
+            ntpr.ntpr.ntp.topic,
+            ntpr.ntpr.ntp.partition_id,
+            ntpr.ntpr.revision_id
         );
         let bitmask = 0xf0000000;
         let hash = xxh32(path.as_bytes(), 0);
+        let prefix = if let Some(label) = &ntpr.label {
+            label.clone()
+        } else {
+            format!("{:08x}/meta", hash & bitmask)
+        };
         format!(
-            "{:08x}/meta/{}/manifest.json_{}_{}_{}_{}_{}_{}",
-            hash & bitmask,
+            "{}/{}/manifest.json_{}_{}_{}_{}_{}_{}",
+            prefix,
             path,
             self.base_offset,
             self.committed_offset,

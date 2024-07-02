@@ -662,7 +662,7 @@ leader_balancer::build_group_id_to_topic_rev() const {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
-        for (const auto& partition : topic.second.get_assignments()) {
+        for (const auto& [_, partition] : topic.second.get_assignments()) {
             if (partition.replicas.empty()) {
                 vlog(
                   clusterlog.warn,
@@ -707,7 +707,7 @@ leader_balancer::collect_group_replicas_from_health_report(
               [&](const partition_status& partition) {
                   auto as_it = meta.get_assignments().find(partition.id);
                   if (as_it != meta.get_assignments().end()) {
-                      group_replicas[as_it->group].push_back(
+                      group_replicas[as_it->second.group].push_back(
                         model::broker_shard{
                           .node_id = node->id,
                           .shard = partition.shard,
@@ -735,7 +735,7 @@ leader_balancer::index_type leader_balancer::build_index(
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
         const auto* disabled_set = _topics.get_topic_disabled_set(topic.first);
-        for (const auto& partition : topic.second.get_assignments()) {
+        for (const auto& [_, partition] : topic.second.get_assignments()) {
             /*
              * skip balancing for the controller partition, otherwise we might
              * just constantly move ourselves around.

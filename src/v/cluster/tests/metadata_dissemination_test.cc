@@ -48,7 +48,7 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
         if (tp_md->get_assignments().size() != 3) {
             return false;
         }
-        for (auto& p_md : tp_md->get_assignments()) {
+        for (auto& [_, p_md] : tp_md->get_assignments()) {
             auto leader_id = cache.get_leader_id(tn, p_md.id);
             test_logger.info(
               "waiting for leaders on node {}, partition {}, leader_id: {}",

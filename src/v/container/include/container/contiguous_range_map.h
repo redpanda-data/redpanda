@@ -145,7 +145,8 @@ public:
      */
     bool contains(KeyT key) const {
         check_key(key);
-        return _values.size() > key && _values[key].has_value();
+        return _values.size() > static_cast<size_t>(key)
+               && _values[key].has_value();
     }
 
     /**
@@ -282,6 +283,13 @@ public:
             mutable_it._it->reset();
             --_size;
         }
+    }
+
+    contiguous_range_map copy() const {
+        contiguous_range_map<KeyT, ValueT> ret;
+        ret._values = _values.copy();
+        ret._size = _size;
+        return ret;
     }
 
 private:

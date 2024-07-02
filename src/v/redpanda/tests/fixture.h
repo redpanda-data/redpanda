@@ -564,10 +564,11 @@ public:
                            && std::all_of(
                              md->get_assignments().begin(),
                              md->get_assignments().end(),
-                             [this,
-                              &r](const cluster::partition_assignment& p) {
+                             [this, &r](
+                               const cluster::assignments_set::value_type& p) {
                                  return app.shard_table.local().shard_for(
-                                   model::ntp(r.tp_ns.ns, r.tp_ns.tp, p.id));
+                                   model::ntp(
+                                     r.tp_ns.ns, r.tp_ns.tp, p.second.id));
                              });
                 });
           });

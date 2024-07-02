@@ -20,7 +20,7 @@ calculate_replicas_per_node(const cluster::metadata_cache& cache) {
         if (tp_ns.ns == model::redpanda_ns) {
             continue;
         }
-        for (auto& p_md : tp_md.get_assignments()) {
+        for (auto& [_, p_md] : tp_md.get_assignments()) {
             for (auto replica : p_md.replicas) {
                 ret[replica.node_id]++;
             }

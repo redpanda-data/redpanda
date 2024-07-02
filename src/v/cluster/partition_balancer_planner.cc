@@ -487,7 +487,7 @@ partition_balancer_planner::init_topic_node_counts(request_context& ctx) {
          ++it) {
         auto& counts = ctx._topic2node_counts[it->first];
         const auto& assignments = it->second.get_assignments();
-        for (const auto& p_as : assignments) {
+        for (const auto& [_, p_as] : assignments) {
             for (const auto& bs : p_as.replicas) {
                 counts[bs.node_id] += 1;
             }
@@ -1029,7 +1029,7 @@ ss::future<> partition_balancer_planner::request_context::for_each_partition(
          it != topics.topics_iterator_end();
          ++it) {
         const auto& assignments = it->second.get_assignments();
-        for (const auto& assignment : assignments) {
+        for (const auto& [_, assignment] : assignments) {
             auto ntp = model::ntp(it->first.ns, it->first.tp, assignment.id);
             auto stop = do_with_partition(ntp, assignment, visitor);
             if (stop == ss::stop_iteration::yes) {
@@ -1055,7 +1055,7 @@ partition_balancer_planner::request_context::for_each_replica_random_order(
 
     fragmented_vector<item> replicas;
     for (const auto& t : _parent._state.topics().topics_map()) {
-        for (const auto& a : t.second.get_assignments()) {
+        for (const auto& [_, a] : t.second.get_assignments()) {
             auto reassignment_it = _reassignments.find(
               model::ntp(t.first.ns, t.first.tp, a.id));
             const auto& ntp_replicas
@@ -1108,7 +1108,7 @@ ss::future<> partition_balancer_planner::request_context::with_partition(
         co_return;
     }
 
-    do_with_partition(ntp, *it, visitor);
+    do_with_partition(ntp, it->second, visitor);
 }
 
 allocation_constraints

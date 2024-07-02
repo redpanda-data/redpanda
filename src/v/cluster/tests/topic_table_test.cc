@@ -181,7 +181,7 @@ void validate_brokers_revisions(
     BOOST_REQUIRE(p_meta_it != tp_it->second.partitions.end());
     const auto& revisions = p_meta_it->second.replicas_revisions;
 
-    for (auto& bs : p_it->replicas) {
+    for (auto& bs : p_it->second.replicas) {
         fmt::print("replica: {}\n", bs);
     }
     for (auto& bs : expected_revisions) {

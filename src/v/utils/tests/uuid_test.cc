@@ -115,7 +115,7 @@ SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
     BOOST_CHECK(us.opt2 == r.opt2);
     BOOST_CHECK_EQUAL(us.vec, r.vec);
     BOOST_CHECK_EQUAL(us.opt_vec.size(), r.opt_vec.size());
-    for (int i = 0; i < us.opt_vec.size(); ++i) {
+    for (size_t i = 0; i < us.opt_vec.size(); ++i) {
         BOOST_CHECK(us.opt_vec[i] == r.opt_vec[i]);
     }
 
