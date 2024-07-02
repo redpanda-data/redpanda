@@ -161,9 +161,9 @@ struct schema_key {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::schema_key& key) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::schema_key& key) {
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
@@ -324,9 +324,8 @@ struct schema_value {
 using unparsed_schema_value = schema_value<unparsed_schema_defnition_tag>;
 using canonical_schema_value = schema_value<canonical_schema_definition_tag>;
 
-template<typename Tag>
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w, const schema_value<Tag>& val) {
+template<typename Buffer, typename Tag>
+void rjson_serialize(::json::Writer<Buffer>& w, const schema_value<Tag>& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.schema.sub());
@@ -645,9 +644,9 @@ struct config_key {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::config_key& key) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::config_key& key) {
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
@@ -783,9 +782,9 @@ struct config_value {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::config_value& val) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::config_value& val) {
     w.StartObject();
     if (val.sub.has_value()) {
         w.Key("subject");
@@ -881,9 +880,9 @@ struct mode_key {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::mode_key& key) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::mode_key& key) {
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
@@ -1019,9 +1018,9 @@ struct mode_value {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::mode_value& val) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::mode_value& val) {
     w.StartObject();
     if (val.sub.has_value()) {
         w.Key("subject");
@@ -1118,8 +1117,8 @@ struct delete_subject_key {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w, const delete_subject_key& key) {
+template<typename Buffer>
+void rjson_serialize(::json::Writer<Buffer>& w, const delete_subject_key& key) {
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
@@ -1259,8 +1258,9 @@ struct delete_subject_value {
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w, const delete_subject_value& val) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const delete_subject_value& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.sub);

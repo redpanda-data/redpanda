@@ -26,8 +26,8 @@ struct request {
     pps::canonical_schema schema;
 };
 
-void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w, const request& r) {
+template<typename Buffer>
+void rjson_serialize(::json::Writer<Buffer>& w, const request& r) {
     w.StartObject();
     w.Key("schema");
     ::json::rjson_serialize(w, r.schema.def().raw());

@@ -22,8 +22,9 @@ struct post_subject_versions_version_response {
     schema_version version;
 };
 
+template<typename Buffer>
 inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
+  ::json::Writer<Buffer>& w,
   const post_subject_versions_version_response& res) {
     w.StartObject();
     w.Key("subject");
