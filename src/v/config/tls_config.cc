@@ -17,8 +17,6 @@
 #include <seastar/core/do_with.hh>
 #include <seastar/core/shared_ptr.hh>
 
-#include <boost/filesystem.hpp>
-
 namespace config {
 ss::future<std::optional<ss::tls::credentials_builder>>
 tls_config::get_credentials_builder() const& {
