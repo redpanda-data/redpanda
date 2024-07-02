@@ -386,8 +386,12 @@ class RaftAvailabilityTest(RedpandaTest):
                                      partition=0,
                                      target_id=None,
                                      leader_id=initial_leader_id)
-        new_leader_id, _ = self._wait_for_leader(
-            lambda l: l is not None and l != initial_leader_id)
+        hosts = [n.account.hostname for n in self.redpanda.nodes]
+        new_leader_id = admin.await_stable_leader(
+            topic=self.topic,
+            partition=0,
+            hosts=hosts,
+            check=lambda l: l is not None and l != initial_leader_id)
         new_leader_node = self.redpanda.get_node_by_id(new_leader_id)
         assert new_leader_node is not None
         self.logger.info(
