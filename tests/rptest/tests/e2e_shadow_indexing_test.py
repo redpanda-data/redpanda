@@ -30,7 +30,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsum
     KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, \
-    MetricsEndpoint
+    MetricsEndpoint, get_archiver_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
@@ -77,7 +77,8 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             cloud_storage_cluster_metadata_upload_interval_ms=1000,
             # Tests may configure spillover manually.
             cloud_storage_spillover_manifest_size=None,
-            controller_snapshot_max_age_sec=1)
+            controller_snapshot_max_age_sec=1,
+            cloud_storage_disable_archiver_manager=False)
         if extra_rp_conf:
             for k, v in conf.items():
                 extra_rp_conf[k] = v
@@ -516,8 +517,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         consumer.wait(timeout_sec=120)
 
     @cluster(num_nodes=5)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_write(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            archiver_type=get_archiver_type())
+    def test_write(self, cloud_storage_type, archiver_type):
         """Write at least 10 segments, set retention policy to leave only 5
         segments, wait for segments removal, consume data and run validation,
         that everything that is acked is consumed."""
