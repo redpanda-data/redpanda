@@ -40,9 +40,9 @@ partitions_request_to_offset_request(std::vector<model::topic_partition> tps) {
     return res;
 }
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const kafka::offset_fetch_response_topic& v) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const kafka::offset_fetch_response_topic& v) {
     for (const auto& p : v.partitions) {
         w.StartObject();
         w.Key("topic");
@@ -57,9 +57,9 @@ inline void rjson_serialize(
     }
 }
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const kafka::offset_fetch_response& v) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const kafka::offset_fetch_response& v) {
     w.StartObject();
     w.Key("offsets");
     w.StartArray();

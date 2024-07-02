@@ -26,8 +26,8 @@ struct error_body {
     ss::sstring message;
 };
 
-inline void
-rjson_serialize(::json::Writer<::json::StringBuffer>& w, const error_body& v) {
+template<typename Buffer>
+void rjson_serialize(::json::Writer<Buffer>& w, const error_body& v) {
     w.StartObject();
     w.Key("error_code");
     ::json::rjson_serialize(w, v.ec.value());
