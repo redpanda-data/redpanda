@@ -382,6 +382,7 @@ private:
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
+    config::binding<model::cleanup_policy_bitflags> _log_cleanup_policy;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
