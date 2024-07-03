@@ -248,10 +248,7 @@ std::ostream& operator<<(std::ostream& o, const retention& r) {
 static retention
 get_retention_policy(const storage::ntp_config::default_overrides& prop) {
     auto flags = prop.cleanup_policy_bitflags;
-    if (
-      flags
-      && (flags.value() & model::cleanup_policy_bitflags::deletion)
-           == model::cleanup_policy_bitflags::deletion) {
+    if (flags && model::is_deletion_enabled(*flags)) {
         // If a space constraint is set on the topic, use that: otherwise
         // use time based constraint if present.  If total retention setting
         // is less than local retention setting, take the smallest.

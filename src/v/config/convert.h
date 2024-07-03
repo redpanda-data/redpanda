@@ -169,10 +169,8 @@ struct convert<model::cleanup_policy_bitflags> {
     static Node encode(const type& rhs) {
         Node node;
 
-        auto compaction = (rhs & model::cleanup_policy_bitflags::compaction)
-                          == model::cleanup_policy_bitflags::compaction;
-        auto deletion = (rhs & model::cleanup_policy_bitflags::deletion)
-                        == model::cleanup_policy_bitflags::deletion;
+        auto compaction = model::is_compaction_enabled(rhs);
+        auto deletion = model::is_deletion_enabled(rhs);
 
         if (compaction && deletion) {
             node = "compact,delete";
