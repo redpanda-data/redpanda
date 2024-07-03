@@ -470,7 +470,7 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto member_id{parse::request_param<kafka::member_id>(*rq.req, "instance")};
 
     // If the request is empty, commit all offsets
-    auto req_data = rq.req->content.length() == 0
+    auto req_data = rq.req->content_length == 0
                       ? std::vector<kafka::offset_commit_request_topic>()
                       : ppj::partition_offsets_request_to_offset_commit_request(
                         co_await ppj::rjson_parse(
