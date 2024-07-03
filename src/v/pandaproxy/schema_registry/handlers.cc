@@ -92,9 +92,8 @@ ss::future<server::reply_t>
 put_config(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
-    auto config = ppj::rjson_parse(
-      rq.req->content.data(), put_config_handler<>{});
-    rq.req.reset();
+    auto config = co_await ppj::rjson_parse(
+      std::move(rq.req), put_config_handler<>{});
 
     co_await rq.service().writer().write_config(std::nullopt, config.compat);
 
@@ -158,9 +157,8 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
-    auto config = ppj::rjson_parse(
-      rq.req->content.data(), put_config_handler<>{});
-    rq.req.reset();
+    auto config = co_await ppj::rjson_parse(
+      std::move(rq.req), put_config_handler<>{});
 
     // Ensure we see latest writes
     co_await rq.service().writer().read_sync();
@@ -218,8 +216,7 @@ ss::future<server::reply_t> put_mode(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto frc = parse::query_param<std::optional<force>>(*rq.req, "force")
                  .value_or(force::no);
-    auto res = ppj::rjson_parse(rq.req->content.data(), mode_handler<>{});
-    rq.req.reset();
+    auto res = co_await ppj::rjson_parse(std::move(rq.req), mode_handler<>{});
 
     co_await rq.service().writer().write_mode(std::nullopt, res.mode, frc);
 
@@ -252,8 +249,7 @@ put_mode_subject(server::request_t rq, server::reply_t rp) {
     auto frc = parse::query_param<std::optional<force>>(*rq.req, "force")
                  .value_or(force::no);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
-    auto res = ppj::rjson_parse(rq.req->content.data(), mode_handler<>{});
-    rq.req.reset();
+    auto res = co_await ppj::rjson_parse(std::move(rq.req), mode_handler<>{});
 
     // Ensure we see latest writes
     co_await rq.service().writer().read_sync();
@@ -420,8 +416,8 @@ post_subject(server::request_t rq, server::reply_t rp) {
 
     canonical_schema schema;
     try {
-        auto unparsed = ppj::rjson_parse(
-          rq.req->content.data(), post_subject_versions_request_handler<>{sub});
+        auto unparsed = co_await ppj::rjson_parse(
+          std::move(rq.req), post_subject_versions_request_handler<>{sub});
         schema = co_await rq.service().schema_store().make_canonical_schema(
           std::move(unparsed.def));
     } catch (const exception& e) {
@@ -432,8 +428,6 @@ post_subject(server::request_t rq, server::reply_t rp) {
     } catch (const ppj::parse_error&) {
         throw as_exception(invalid_subject_schema(sub));
     }
-
-    rq.req.reset();
 
     auto sub_schema = co_await rq.service().schema_store().has_schema(
       schema, inc_del);
@@ -456,9 +450,8 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
 
     co_await rq.service().writer().read_sync();
 
-    auto unparsed = ppj::rjson_parse(
-      rq.req->content.data(), post_subject_versions_request_handler<>{sub});
-    rq.req.reset();
+    auto unparsed = co_await ppj::rjson_parse(
+      std::move(rq.req), post_subject_versions_request_handler<>{sub});
 
     subject_schema schema{
       co_await rq.service().schema_store().make_canonical_schema(
@@ -629,9 +622,8 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto sub = parse::request_param<subject>(*rq.req, "subject");
-    auto unparsed = ppj::rjson_parse(
-      rq.req->content.data(), post_subject_versions_request_handler<>{sub});
-    rq.req.reset();
+    auto unparsed = co_await ppj::rjson_parse(
+      std::move(rq.req), post_subject_versions_request_handler<>{sub});
 
     // Must read, in case we have the subject in cache with an outdated config
     co_await rq.service().writer().read_sync();
