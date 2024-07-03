@@ -92,6 +92,7 @@ redpanda_cc_gtest(
         ":fragmented_vector",
         "//src/v/random:generators",
         "//src/v/serde",
+        "//src/v/serde:vector",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

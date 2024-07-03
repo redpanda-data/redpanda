@@ -51,6 +51,7 @@ redpanda_cc_library(
         "//src/v/serde:sstring",
         "//src/v/serde:uuid",
         "//src/v/serde:variant",
+        "//src/v/serde:vector",
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",
         "//src/v/utils:named_type",

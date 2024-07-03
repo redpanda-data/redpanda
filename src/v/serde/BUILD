@@ -14,7 +14,6 @@ redpanda_cc_library(
         "rw/rw.h",
         "rw/scalar.h",
         "rw/tags.h",
-        "rw/vector.h",
         "serde_exception.h",
         "serde_is_enum.h",
         "serde_size_t.h",
