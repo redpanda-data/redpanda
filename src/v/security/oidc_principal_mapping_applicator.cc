@@ -8,22 +8,22 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "security/oidc_principal_mapping.h"
+#include "security/oidc_principal_mapping_applicator.h"
 
-#include "security/jwt.h"
 #include "security/logger.h"
 
 #include <rapidjson/pointer.h>
 
 namespace security::oidc {
 
-result<acl_principal> principal_mapping_rule::apply(jwt const& jwt) const {
-    auto claim = jwt.claim(_claim);
+result<acl_principal> principal_mapping_rule_apply(
+  const principal_mapping_rule& mapping, jwt const& jwt) {
+    auto claim = jwt.claim(mapping.claim());
     if (claim.value_or("").empty()) {
         return errc::jwt_invalid_principal;
     }
 
-    auto principal = _mapping.apply(claim.value());
+    auto principal = mapping.mapping().apply(claim.value());
     if (principal.value_or("").empty()) {
         return errc::jwt_invalid_principal;
     }

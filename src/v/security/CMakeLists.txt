@@ -27,7 +27,7 @@ v_cc_library(
     license.cc
     mtls.cc
     oidc_authenticator.cc
-    oidc_principal_mapping.cc
+    oidc_principal_mapping_applicator.cc
     oidc_service.cc
     request_auth.cc
     role.cc

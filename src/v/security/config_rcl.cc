@@ -14,6 +14,7 @@
 #include "security/oidc_error.h"
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
+#include "ssx/sformat.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <re2/re2.h>
