@@ -118,7 +118,7 @@ operator<<(std::ostream& os, const transform_offset_options& opts) {
  */
 struct legacy_transform_offset_options
   : serde::envelope<
-      transform_offset_options,
+      legacy_transform_offset_options,
       serde::version<0>,
       serde::compat_version<0>> {
     serde::variant<transform_offset_options::latest_offset, model::timestamp>
