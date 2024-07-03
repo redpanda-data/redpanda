@@ -121,7 +121,6 @@ struct LruCache<K: HashT + Eq, V: Clone> {
     underlying: RefCell<LruCacheImpl<K, V>>,
 }
 
-#[allow(dead_code)]
 impl<Key: HashT + Eq, Value: Clone> LruCache<Key, Value> {
     fn new(max_entries: Option<usize>) -> LruCache<Key, Value> {
         let nz_max = match max_entries {
@@ -145,6 +144,97 @@ impl<Key: HashT + Eq, Value: Clone> LruCache<Key, Value> {
         self.underlying.borrow_mut().put(k, v)
     }
 }
+
+#[derive(Debug)]
+struct CachingSchemaRegistryClient {
+    underlying: AbiSchemaRegistryClient,
+    schema_by_id_cache: LruCache<SchemaId, Schema>,
+    schema_by_sv_cache: LruCache<SubjectVersion, SubjectSchema>,
+}
+
+/// SubjectVersion is an aggregate type for the registered subject and version of a schema
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct SubjectVersion {
+    subject: String,
+    version: SchemaVersion,
+}
+
+impl SubjectVersion {
+    fn new(subject: impl Into<String>, version: SchemaVersion) -> Self {
+        Self {
+            subject: subject.into(),
+            version,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl CachingSchemaRegistryClient {
+    pub fn new(max_entries: Option<usize>) -> CachingSchemaRegistryClient {
+        // No need for an abi::check() here; that's done in AbiSchemaRegistryClient::new()
+        Self {
+            underlying: AbiSchemaRegistryClient::new(),
+            schema_by_id_cache: LruCache::<SchemaId, Schema>::new(max_entries),
+            schema_by_sv_cache: LruCache::<SubjectVersion, SubjectSchema>::new(max_entries),
+        }
+    }
+}
+
+impl SchemaRegistryClientImpl for CachingSchemaRegistryClient {
+    fn lookup_schema_by_id(&self, id: SchemaId) -> Result<Schema> {
+        if let Some(schema) = self.schema_by_id_cache.get(&id) {
+            Ok(schema)
+        } else {
+            match self.underlying.lookup_schema_by_id(id) {
+                Ok(schema) => {
+                    self.schema_by_id_cache.put(id, schema.clone());
+                    Ok(schema)
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+
+    fn lookup_schema_by_version(
+        &self,
+        subject: &str,
+        version: SchemaVersion,
+    ) -> Result<SubjectSchema> {
+        if let Some(subj_schema) = self
+            .schema_by_sv_cache
+            .get(&SubjectVersion::new(subject, version))
+        {
+            Ok(subj_schema)
+        } else {
+            match self.underlying.lookup_schema_by_version(subject, version) {
+                Ok(subj_schema) => {
+                    self.schema_by_sv_cache
+                        .put(SubjectVersion::new(subject, version), subj_schema.clone());
+                    Ok(subj_schema)
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+
+    fn lookup_latest_schema(&self, subject: &str) -> Result<SubjectSchema> {
+        self.lookup_schema_by_version(subject, SchemaVersion(-1))
+    }
+
+    fn create_schema(&mut self, subject: &str, schema: Schema) -> Result<SubjectSchema> {
+        match self.underlying.create_schema(subject, schema) {
+            Ok(subj_schema) => {
+                self.schema_by_sv_cache.put(
+                    SubjectVersion::new(subject, subj_schema.version()),
+                    subj_schema.clone(),
+                );
+                Ok(subj_schema)
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
