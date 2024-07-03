@@ -36,6 +36,7 @@
 namespace kafka {
 
 using offset = named_type<int64_t, struct kafka_offset_type>;
+using offset_delta = named_type<int64_t, struct kafka_offset_delta_type>;
 
 inline offset next_offset(offset p) {
     if (p < offset{0}) {
@@ -52,6 +53,24 @@ inline constexpr offset prev_offset(offset o) {
     }
     return o - offset{1};
 }
+
+inline constexpr offset operator+(offset o, offset_delta d) {
+    if (o >= offset{0}) {
+        if (d() <= offset::max() - o) {
+            return offset{o() + d()};
+        } else {
+            return offset::max();
+        }
+    } else {
+        if (d() >= offset::min() - o) {
+            return offset{o() + d()};
+        } else {
+            return offset::min();
+        }
+    }
+}
+
+inline constexpr offset operator-(offset o, offset_delta d) { return o + (-d); }
 
 } // namespace kafka
 

@@ -1708,13 +1708,16 @@ class RpkTool:
                     output_topics,
                     file="tinygo/identity.wasm",
                     compression_type: TopicSpec.CompressionTypes
-                    | None = None):
+                    | None = None,
+                    from_offset: str | None = None):
         cmd = [
             "deploy", "--name", name, "--input-topic", input_topic, "--file",
             f"/opt/transforms/{file}"
         ]
         if compression_type is not None:
             cmd += ["--compression", compression_type]
+        if from_offset is not None:
+            cmd += ["--from-offset", from_offset]
         assert len(output_topics) > 0, "missing output topics"
         for topic in output_topics:
             cmd += ["--output-topic", topic]

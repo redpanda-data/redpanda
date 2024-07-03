@@ -62,6 +62,11 @@ public:
     offset_at_timestamp(model::timestamp, ss::abort_source*) = 0;
 
     /**
+     * The minimum offset in the source log
+     */
+    virtual kafka::offset start_offset() const = 0;
+
+    /**
      * Read from the log starting at a given offset, aborting when requested.
      *
      * NOTE: It's important in terms of lifetimes that the source **always**

@@ -16,12 +16,15 @@
 #include "json/document.h"
 #include "json/istreamwrapper.h"
 #include "json/validator.h"
+#include "model/timestamp.h"
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
 #include "transform/api.h"
 
 #include <seastar/http/exception.hh>
+
+#include <boost/lexical_cast.hpp>
 
 #include <system_error>
 
@@ -177,6 +180,20 @@ void validate_transform_deploy_document(const json::Document& doc) {
                 "lz4",
                 "zstd"
             ]
+        },
+        "offset" : {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["from_start","from_end","timestamp"]
+                },
+                "value": {
+                    "type": "integer"
+                }
+            },
+            "required": ["format", "value"],
+            "additionalProperties": false
         }
     },
     "required": ["name", "input_topic", "output_topics"],
@@ -250,6 +267,38 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
         }
     }
 
+    model::transform_offset_options offset_opts{};
+    if (doc.HasMember("offset")) {
+        auto offset = doc["offset"].GetObject();
+        auto format = ss::sstring{
+          offset["format"].GetString(), offset["format"].GetStringLength()};
+        auto value = offset["value"].GetInt64();
+
+        if (value < 0) {
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Bad offset: expected value >= 0, got {}", value));
+        }
+
+        if (format == "timestamp") {
+            using tp = model::timestamp_clock::time_point;
+            using dur = model::timestamp_clock::duration;
+            if (value >= dur::max() / 1ms) {
+                throw ss::httpd::bad_request_exception(fmt::format(
+                  "Bad offset: Timestamp value out of range ({})", value));
+            }
+            offset_opts.position = model::to_timestamp(tp{value * 1ms});
+        } else if (format == "from_start") {
+            offset_opts.position = model::transform_from_start{
+              kafka::offset_delta{value}};
+        } else if (format == "from_end") {
+            offset_opts.position = model::transform_from_end{
+              kafka::offset_delta{value}};
+        } else {
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Bad offset: Unsupported format ({})", format));
+        }
+    }
+
     // Now do the deploy!
     std::error_code ec = co_await _transform_service->local().deploy_transform(
       {
@@ -257,6 +306,7 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
         .input_topic = input_nt,
         .output_topics = output_topics,
         .environment = std::move(env),
+        .offset_options = offset_opts,
         .compression_mode = compression,
       },
       model::wasm_binary_iobuf(std::make_unique<iobuf>(std::move(body))));

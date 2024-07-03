@@ -163,6 +163,11 @@ public:
         co_return model::offset_cast(result->offset);
     }
 
+    kafka::offset start_offset() const final {
+        auto result = _partition.start_offset();
+        return model::offset_cast(result);
+    }
+
     ss::future<model::record_batch_reader>
     read_batch(kafka::offset offset, ss::abort_source* as) final {
         auto _ = _gate.hold();
@@ -666,7 +671,13 @@ ss::future<std::error_code> service::deploy_transform(
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
         co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    } else if (
+      !_feature_table->local().is_active(
+        features::feature::transforms_specify_offset)
+      && !meta.offset_options.is_legacy_compat()) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
     }
+
     auto _ = _gate.hold();
     try {
         co_await _runtime->validate(model::share_wasm_binary(binary));
@@ -693,14 +704,22 @@ ss::future<std::error_code> service::deploy_transform(
     auto [key, offset] = result.value();
     meta.uuid = key;
     meta.source_ptr = offset;
-    meta.offset_options = model::transform_offset_options{
-      // Set the transform to start processing new records starting now,
-      // this is the default expectations for developers, as once deploy
-      // completes, they should be able to produce without waiting for the
-      // vm to start. If we start from the end of the log, then records produced
-      // between now and the vm start would be skipped.
-      .position = model::new_timestamp(),
-    };
+
+    // Use latest_offset as a sentinel value during user-driven deploy. We won't
+    // expose this option through the API anyway, and already-serialized
+    // transform metadata (i.e. legacy deployments) won't traverse this code.
+    // Otherwise, respect whatever offset was specifified in the request.
+    if (std::holds_alternative<model::transform_offset_options::latest_offset>(
+          meta.offset_options.position)) {
+        meta.offset_options = model::transform_offset_options{
+          // Set the transform to start processing new records starting now,
+          // this is the default expectations for developers, as once deploy
+          // completes, they should be able to produce without waiting for the
+          // vm to start. If we start from the end of the log, then records
+          // produced between now and the vm start would be skipped.
+          .position = model::new_timestamp(),
+        };
+    }
     vlog(
       tlog.debug,
       "stored wasm binary for transform {} at offset {}",

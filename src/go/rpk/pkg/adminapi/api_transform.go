@@ -54,6 +54,12 @@ type EnvironmentVariable struct {
 	Value string `json:"value"`
 }
 
+// Offset describes an offset relative to some timestamp or the start/end of a topic partition
+type Offset struct {
+	Format string `json:"format"`
+	Value  int64  `json:"value"`
+}
+
 // TransformMetadata is the metadata for a live running transform on a cluster.
 type TransformMetadata struct {
 	Name            string                     `json:"name"`
@@ -62,6 +68,7 @@ type TransformMetadata struct {
 	Status          []PartitionTransformStatus `json:"status,omitempty"`
 	Environment     []EnvironmentVariable      `json:"environment,omitempty"`
 	CompressionMode string                     `json:"compression,omitempty"`
+	FromOffset      *Offset                    `json:"offset,omitempty"`
 }
 
 // ListWasmTransforms lists the transforms that are running on a cluster.
