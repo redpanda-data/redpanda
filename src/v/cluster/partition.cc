@@ -739,11 +739,24 @@ ss::future<> partition::update_configuration(topic_properties properties) {
       = new_ntp_config.cleanup_policy_bitflags.has_value()
         && model::is_compaction_enabled(
           new_ntp_config.cleanup_policy_bitflags.value());
+
+    auto old_retention_ms = old_ntp_config.has_overrides()
+                              ? old_ntp_config.get_overrides().retention_time
+                              : tristate<std::chrono::milliseconds>(
+                                std::nullopt);
+    auto new_retention_ms = new_ntp_config.retention_time;
+
+    auto old_retention_bytes
+      = old_ntp_config.has_overrides()
+          ? old_ntp_config.get_overrides().retention_bytes
+          : tristate<size_t>(std::nullopt);
+    auto new_retention_bytes = new_ntp_config.retention_bytes;
+
     if (
       old_ntp_config.is_archival_enabled() != new_archival
-      || old_ntp_config.is_read_replica_mode_enabled()
-           != new_ntp_config.read_replica
-      || old_compaction_status != new_compaction_status) {
+      || old_compaction_status != new_compaction_status
+      || old_retention_ms != new_retention_ms
+      || old_retention_bytes != new_retention_bytes) {
         cloud_storage_changed = true;
     }
 
