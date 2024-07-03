@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "json/json.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
 
 #include <seastar/core/sstring.hh>

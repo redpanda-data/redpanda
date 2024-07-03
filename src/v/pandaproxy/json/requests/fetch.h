@@ -12,18 +12,13 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "bytes/iobuf.h"
-#include "bytes/iobuf_parser.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 #include "storage/parser_utils.h"

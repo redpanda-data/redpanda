@@ -12,9 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_fetch.h"
 
 #include <seastar/core/sstring.hh>
@@ -39,6 +37,9 @@ partitions_request_to_offset_request(std::vector<model::topic_partition> tps) {
     }
     return res;
 }
+} // namespace pandaproxy::json
+
+namespace kafka {
 
 template<typename Buffer>
 void rjson_serialize(
@@ -70,4 +71,4 @@ void rjson_serialize(
     w.EndObject();
 }
 
-} // namespace pandaproxy::json
+} // namespace kafka

@@ -12,7 +12,6 @@
 #pragma once
 
 #include "json/json.h"
-#include "json/prettywriter.h"
 #include "json/reader.h"
 #include "json/stream.h"
 #include "json/stringbuffer.h"
@@ -22,9 +21,13 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <stdexcept>
-
 namespace pandaproxy::json {
+
+template<typename T>
+class rjson_parse_impl;
+
+template<typename T>
+class rjson_serialize_impl;
 
 template<typename T>
 ss::sstring rjson_serialize(const T& v) {
