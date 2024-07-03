@@ -136,9 +136,7 @@ public:
 
     bool is_compacted() const {
         if (_overrides && _overrides->cleanup_policy_bitflags) {
-            return (_overrides->cleanup_policy_bitflags.value()
-                    & model::cleanup_policy_bitflags::compaction)
-                   == model::cleanup_policy_bitflags::compaction;
+            return model::is_compaction_enabled(_overrides->cleanup_policy_bitflags.value());
         }
         return false;
     }
@@ -149,9 +147,7 @@ public:
             return true;
         }
         // check if deletion bitflag is set
-        return (_overrides->cleanup_policy_bitflags.value()
-                & model::cleanup_policy_bitflags::deletion)
-               == model::cleanup_policy_bitflags::deletion;
+        return model::is_deletion_enabled(_overrides->cleanup_policy_bitflags.value());
     }
 
     ss::sstring work_directory() const {
