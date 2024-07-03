@@ -12,7 +12,6 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/types.h"
 #include "json/writer.h"
@@ -20,7 +19,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/json/types.h"
+#include "pandaproxy/json/rjson_util.h"
 #include "seastarx.h"
 #include "tristate.h"
 
@@ -265,6 +264,9 @@ private:
     std::optional<json_writer> _json_writer;
 };
 
+} // namespace pandaproxy::json
+
+namespace kafka {
 template<typename Buffer>
 void rjson_serialize(
   ::json::Writer<Buffer>& w, const kafka::produce_response::partition& v) {
@@ -273,7 +275,7 @@ void rjson_serialize(
     w.Int(v.partition_index);
     if (v.error_code != kafka::error_code::none) {
         w.Key("error_code");
-        ::json::rjson_serialize(w, v.error_code);
+        rjson_serialize(w, v.error_code);
     }
     w.Key("offset");
     w.Int64(v.base_offset);
@@ -293,4 +295,4 @@ void rjson_serialize(
     w.EndObject();
 }
 
-} // namespace pandaproxy::json
+} // namespace kafka

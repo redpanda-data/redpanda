@@ -8,15 +8,12 @@
 // by the Apache License, Version 2.0
 
 #include "pandaproxy/error.h"
-#include "pandaproxy/json/error.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/test/avro_payloads.h"
 #include "pandaproxy/schema_registry/test/client_utils.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
-
-#include <array>
 
 namespace pp = pandaproxy;
 namespace ppj = pp::json;

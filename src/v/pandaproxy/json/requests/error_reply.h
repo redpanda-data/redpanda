@@ -12,7 +12,6 @@
 #pragma once
 
 #include "json/json.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "seastarx.h"
 

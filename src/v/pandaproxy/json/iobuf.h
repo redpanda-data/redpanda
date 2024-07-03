@@ -15,9 +15,8 @@
 #include "bytes/iobuf_parser.h"
 #include "json/reader.h"
 #include "json/stream.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "pandaproxy/json/types.h"
+#include "pandaproxy/json/rjson_util.h"
 #include "utils/base64.h"
 
 #include <seastar/core/loop.hh>

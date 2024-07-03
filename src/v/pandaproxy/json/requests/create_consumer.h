@@ -11,14 +11,9 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
-#include "json/stringbuffer.h"
 #include "json/types.h"
 #include "json/writer.h"
-#include "kafka/protocol/errors.h"
-#include "kafka/protocol/produce.h"
-#include "kafka/types.h"
-#include "pandaproxy/json/iobuf.h"
+#include "kafka/protocol/join_group.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "seastarx.h"
 #include "utils/string_switch.h"

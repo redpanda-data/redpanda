@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "json/stringbuffer.h"
+#include "json/json.h"
 #include "json/writer.h"
-#include "model/metadata.h"
+#include "model/fundamental.h"
 
 namespace pandaproxy::json {
 
