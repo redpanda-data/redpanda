@@ -13,14 +13,14 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "json/stringbuffer.h"
+#include "json/chunked_buffer.h"
 #include "json/types.h"
 #include "json/writer.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/json/types.h"
 #include "tristate.h"
 
 #include <seastar/core/sstring.hh>
@@ -42,7 +42,7 @@ private:
     serialization_format _fmt = serialization_format::none;
     state state = state::empty;
 
-    using json_writer = ::json::Writer<::json::StringBuffer>;
+    using json_writer = ::json::Writer<::json::chunked_buffer>;
 
     // If we're parsing json_v2, and the field is key or value (implied by
     // _json_writer being set), then forward calls to json_writer.
@@ -55,8 +55,7 @@ private:
         auto res = std::invoke(
           mem_func, *_json_writer, std::forward<Args>(args)...);
         if (_json_writer->IsComplete()) {
-            iobuf buf;
-            buf.append(_buf.GetString(), _buf.GetSize());
+            iobuf buf = std::move(_buf).as_iobuf();
             switch (state) {
             case state::key:
                 result.back().key.emplace(std::move(buf));
@@ -260,7 +259,7 @@ public:
     }
 
 private:
-    ::json::StringBuffer _buf;
+    ::json::chunked_buffer _buf;
     std::optional<json_writer> _json_writer;
 };
 

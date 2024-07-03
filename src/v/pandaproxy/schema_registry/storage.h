@@ -14,7 +14,6 @@
 #include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
-#include "json/stringbuffer.h"
 #include "json/types.h"
 #include "json/writer.h"
 #include "model/metadata.h"
@@ -1354,11 +1353,8 @@ auto from_json_iobuf(iobuf&& iobuf, Args&&... args) {
 }
 
 template<typename T>
-auto to_json_iobuf(T t) {
-    auto val_js = json::rjson_serialize(t);
-    iobuf buf;
-    buf.append(val_js.data(), val_js.size());
-    return buf;
+auto to_json_iobuf(T&& t) {
+    return json::rjson_serialize_iobuf(std::forward<T>(t));
 }
 
 template<typename Key, typename Value>

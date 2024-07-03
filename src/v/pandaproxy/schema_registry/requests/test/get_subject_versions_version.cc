@@ -48,7 +48,7 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_version_response) {
   "schema": ")"
       + escaped_schema_def + R"("})"};
 
-    auto result{ppj::rjson_serialize(response)};
+    auto result = ppj::rjson_serialize_str(response);
 
     BOOST_REQUIRE_EQUAL(::json::minify(expected), result);
 }
