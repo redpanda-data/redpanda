@@ -9,6 +9,7 @@
 
 #include "json/json.h"
 
+#include "json/chunked_buffer.h"
 #include "json/stringbuffer.h"
 
 namespace json {
@@ -174,5 +175,44 @@ template void rjson_serialize<json::StringBuffer>(
 
 template void rjson_serialize<json::StringBuffer>(
   json::Writer<json::StringBuffer>& w, const std::filesystem::path& path);
+
+template void
+rjson_serialize<chunked_buffer>(json::Writer<chunked_buffer>& w, short v);
+
+template void
+rjson_serialize<chunked_buffer>(json::Writer<chunked_buffer>& w, bool v);
+
+template void
+rjson_serialize<chunked_buffer>(json::Writer<chunked_buffer>& w, long long v);
+
+template void
+rjson_serialize<chunked_buffer>(json::Writer<chunked_buffer>& w, int v);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, unsigned int v);
+
+template void
+rjson_serialize<chunked_buffer>(json::Writer<chunked_buffer>& w, long v);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, unsigned long v);
+
+template void
+rjson_serialize<chunked_buffer>(json::Writer<chunked_buffer>& w, double v);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, std::string_view s);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, const net::unresolved_address& v);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, const std::chrono::milliseconds& v);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, const std::chrono::seconds& v);
+
+template void rjson_serialize<chunked_buffer>(
+  json::Writer<chunked_buffer>& w, const std::filesystem::path& path);
 
 } // namespace json
