@@ -1348,9 +1348,8 @@ public:
 
 template<typename Handler, typename... Args>
 auto from_json_iobuf(iobuf&& iobuf, Args&&... args) {
-    auto p = iobuf_parser(std::move(iobuf));
-    auto str = p.read_string(p.bytes_left());
-    return json::rjson_parse(str.data(), Handler{std::forward<Args>(args)...});
+    return json::rjson_parse(
+      std::move(iobuf), Handler{std::forward<Args>(args)...});
 }
 
 template<typename T>
