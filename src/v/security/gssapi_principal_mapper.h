@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
+#include "security/config.h"
 #include "security/gssapi_rule.h"
 
 #include <seastar/core/sstring.hh>
@@ -66,8 +67,6 @@ private:
     std::vector<gssapi_rule> _rules;
 };
 
-std::optional<ss::sstring>
-validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept;
 } // namespace security
 
 template<>

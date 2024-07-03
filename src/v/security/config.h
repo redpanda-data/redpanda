@@ -17,6 +17,13 @@
 #include <optional>
 #include <vector>
 
+namespace security {
+
+std::optional<ss::sstring>
+validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept;
+
+}
+
 namespace security::tls {
 
 std::optional<ss::sstring>
