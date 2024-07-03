@@ -35,6 +35,7 @@ class ExactlyOnceVerifier():
     def __init__(self,
                  redpanda,
                  src_topic: str,
+                 partition_count: int,
                  dst_topic: str,
                  transform_func,
                  logger,
@@ -44,6 +45,7 @@ class ExactlyOnceVerifier():
                  commit_every: int = 50,
                  timeout_sec: int = 60):
         self._src_topic = src_topic
+        self._partition_count = partition_count
         self._dst_topic = dst_topic
         self._transform_func = transform_func
         self._logger = logger
@@ -185,7 +187,7 @@ class ExactlyOnceVerifier():
                 with self._lock:
                     self._finished_partitions |= end_for
                     consumers = self._consumer_cnt
-                    if len(self._finished_partitions) == len(high_watermarks):
+                    if len(self._finished_partitions) == self._partition_count:
                         return True
 
                 return len(end_for) == len(assignments) and consumers > 1
@@ -359,6 +361,7 @@ class TxAtomicProduceConsumeTest(RedpandaTest):
 
         transformer = ExactlyOnceVerifier(self.redpanda,
                                           topic.name,
+                                          topic.partition_count,
                                           dst_topic.name,
                                           simple_transform,
                                           self.logger,
