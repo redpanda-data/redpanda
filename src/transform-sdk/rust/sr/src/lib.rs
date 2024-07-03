@@ -20,6 +20,13 @@
 use redpanda_transform_sdk_sr_sys::AbiSchemaRegistryClient;
 pub use redpanda_transform_sdk_sr_types::*;
 
+extern crate lru;
+
+use lru::LruCache as LruCacheImpl;
+use std::cell::RefCell;
+use std::hash::Hash as HashT;
+use std::num::NonZeroUsize;
+
 /// A client for interacting with the Schema Registry within Redpanda.
 pub struct SchemaRegistryClient {
     delegate: Box<dyn SchemaRegistryClientImpl>,
@@ -109,6 +116,35 @@ pub fn encode_schema_id(id: SchemaId, buf: &[u8]) -> Vec<u8> {
     [&MAGIC_BYTES, &id_bytes[..], buf].concat().to_vec()
 }
 
+#[derive(Debug)]
+struct LruCache<K: HashT + Eq, V: Clone> {
+    underlying: RefCell<LruCacheImpl<K, V>>,
+}
+
+#[allow(dead_code)]
+impl<Key: HashT + Eq, Value: Clone> LruCache<Key, Value> {
+    fn new(max_entries: Option<usize>) -> LruCache<Key, Value> {
+        let nz_max = match max_entries {
+            Some(v) if v > 0 => NonZeroUsize::new(v),
+            _ => NonZeroUsize::new(10),
+        };
+        Self {
+            underlying: RefCell::new(LruCacheImpl::<Key, Value>::new(nz_max.unwrap())),
+        }
+    }
+
+    fn get(&self, k: &Key) -> Option<Value> {
+        if let Some(v) = self.underlying.borrow_mut().get(k) {
+            Some((*v).clone())
+        } else {
+            None
+        }
+    }
+
+    fn put(&self, k: Key, v: Value) -> Option<Value> {
+        self.underlying.borrow_mut().put(k, v)
+    }
+}
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
