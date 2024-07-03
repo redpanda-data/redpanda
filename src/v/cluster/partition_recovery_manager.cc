@@ -245,10 +245,8 @@ std::ostream& operator<<(std::ostream& o, const retention& r) {
     return o;
 }
 
-static retention
-get_retention_policy(const storage::ntp_config::default_overrides& prop) {
-    auto flags = prop.cleanup_policy_bitflags;
-    if (flags && model::is_deletion_enabled(*flags)) {
+static retention get_retention_policy(const storage::ntp_config& prop) {
+    if (prop.is_collectable()) {
         // If a space constraint is set on the topic, use that: otherwise
         // use time based constraint if present.  If total retention setting
         // is less than local retention setting, take the smallest.
@@ -258,17 +256,18 @@ get_retention_policy(const storage::ntp_config::default_overrides& prop) {
         //
         // This will also drop the compact settings and replace it with
         // delete.
-        if (prop.retention_local_target_bytes.has_optional_value()) {
-            auto v = prop.retention_local_target_bytes.value();
+        auto overrides = prop.get_overrides();
+        if (overrides.retention_local_target_bytes.has_optional_value()) {
+            auto v = overrides.retention_local_target_bytes.value();
 
-            if (prop.retention_bytes.has_optional_value()) {
-                v = std::min(prop.retention_bytes.value(), v);
+            if (overrides.retention_bytes.has_optional_value()) {
+                v = std::min(overrides.retention_bytes.value(), v);
             }
             return size_bound_deletion_parameters{v};
-        } else if (prop.retention_local_target_ms.has_optional_value()) {
-            auto v = prop.retention_local_target_ms.value();
-            if (prop.retention_time.has_optional_value()) {
-                v = std::min(prop.retention_time.value(), v);
+        } else if (overrides.retention_local_target_ms.has_optional_value()) {
+            auto v = overrides.retention_local_target_ms.value();
+            if (overrides.retention_time.has_optional_value()) {
+                v = std::min(overrides.retention_time.value(), v);
             }
             return time_bound_deletion_parameters{v};
         }
@@ -296,7 +295,7 @@ static model::offset get_prev_offset(model::offset o) {
 // entry point for the whole thing
 ss::future<log_recovery_result> partition_downloader::download_log() {
     auto prefix = std::filesystem::path(_ntpc.work_directory());
-    auto retention = get_retention_policy(_ntpc.get_overrides());
+    auto retention = get_retention_policy(_ntpc);
     vlog(
       _ctxlog.info,
       "The target path: {}, ntp-config revision: {}, retention: {}",
