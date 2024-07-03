@@ -55,7 +55,8 @@ partition::partition(
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
-  , _upload_housekeeping(upload_hks) {
+  , _upload_housekeeping(upload_hks)
+  , _log_cleanup_policy(config::shard_local_cfg().log_cleanup_policy.bind()) {
     // Construct cloud_storage read path (remote_partition)
     if (
       config::shard_local_cfg().cloud_storage_enabled()
@@ -84,6 +85,23 @@ partition::partition(
             }
         }
     }
+
+    _log_cleanup_policy.watch([this]() {
+        if (_as.abort_requested()) {
+            return ss::now();
+        }
+        auto changed = _raft->log()->notify_compaction_update();
+        if (changed) {
+            vlog(
+              clusterlog.debug,
+              "[{}] updating archiver for cluster config change in "
+              "log_cleanup_policy",
+              _raft->ntp());
+
+            return restart_archiver(false);
+        }
+        return ss::now();
+    });
 }
 
 ss::future<std::error_code> partition::prefix_truncate(
