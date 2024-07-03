@@ -146,7 +146,8 @@ public:
 
     size_t size_bytes() const override { return _probe->partition_size(); }
     uint64_t size_bytes_after_offset(model::offset o) const override;
-    ss::future<> update_configuration(ntp_config::default_overrides) final;
+    void set_overrides(ntp_config::default_overrides) final;
+    bool notify_compaction_update() final;
 
     int64_t compaction_backlog() const final;
 
@@ -380,6 +381,7 @@ private:
     std::optional<model::offset> _cloud_gc_offset;
     std::optional<model::offset> _last_compaction_window_start_offset;
     size_t _reclaimable_size_bytes{0};
+    bool _compaction_enabled;
 };
 
 } // namespace storage

@@ -1434,7 +1434,7 @@ FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
     // override segment size with ntp_config
     overrides_t ov;
     ov.segment_size = 40_KiB;
-    disk_log->update_configuration(ov).get();
+    disk_log->set_overrides(ov);
     disk_log->force_roll(ss::default_priority_class()).get();
 
     // 60 * 1_KiB batches should yield 2 segments.
@@ -2367,7 +2367,8 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
     overrides.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::deletion;
     // update cleanup policy to deletion
-    log->update_configuration(overrides).get();
+    log->set_overrides(overrides);
+    log->notify_compaction_update();
 
     // read all batches again
     auto second_read = read_and_validate_all_batches(log);
