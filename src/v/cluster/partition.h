@@ -347,6 +347,11 @@ private:
     ss::future<std::optional<storage::timequery_result>>
     local_timequery(storage::timequery_config, bool allow_cloud_fallback);
 
+    // Restarts the archiver
+    // If should_notify_topic_config is set, it marks the topic_manifest as
+    // dirty so that it gets reuploaded
+    ss::future<> restart_archiver(bool should_notify_topic_config);
+
     consensus_ptr _raft;
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
