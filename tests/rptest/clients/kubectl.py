@@ -16,23 +16,32 @@ from typing import Any, Union, Generator
 SUPPORTED_PROVIDERS = ['aws', 'gcp', 'azure']
 
 
-def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str,
-                    provider: str) -> bool:
-    """Returns true if the pod API object name matches the Redpanda pattern."""
-    # this is a hacky workaround based on guesses!
-    # FIXME NOT suitable for merge until K8S-282 is resolved
-    sts_label = 'statefulset.kubernetes.io/pod-name'
-    if sts_label not in pod_obj['metadata']['labels']:
-        return False
-    sts_name = pod_obj['metadata']['labels'][sts_label]
-    pod_name = pod_obj['metadata']['name']
-    if sts_name != pod_name:
-        return False
+def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
+    """Returns true if the pod looks like a Redpanda broker pod"""
 
-    pod_prefix = f'rp-{cluster_id}'
-    if provider.lower() == 'azure':
-        pod_prefix = 'redpanda-broker'
-    return pod_name.startswith(pod_prefix)
+    # Azure behaves this way.  This is also the 'new' way going forward (circa 2024/7)
+    # We look for pods whose metadata indicates that it is part of a statefulset, and that
+    # the pod names are generated with the template "redpanda-broker-...".
+    # False positives are quite unlikely with this criterion:
+    # Scenario would be:
+    # - Another Statefulset
+    # - That reuses the SAME generateName (bad!)
+    try:
+        if pod_obj['metadata']['generateName'] == 'redpanda-broker-':
+            if pod_obj['metadata']["labels"][
+                    "app.kubernetes.io/component"] == "redpanda-statefulset":
+                return True
+    except KeyError:
+        pass
+
+    # Other providers like AWS / GCP behave this way ("the old way")
+    try:
+        if pod_obj['metadata']['name'].startswith(f'rp-{cluster_id}'):
+            return True
+    except (KeyError, TypeError):
+        pass
+
+    return False
 
 
 class KubectlTool:
