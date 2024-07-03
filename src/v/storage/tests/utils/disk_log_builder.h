@@ -363,7 +363,7 @@ public:
 
     ss::future<> update_configuration(ntp_config::default_overrides o) {
         if (_log) {
-            return _log->update_configuration(o);
+            _log->set_overrides(o);
         }
 
         return ss::make_ready_future<>();

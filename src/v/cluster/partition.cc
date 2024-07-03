@@ -29,6 +29,7 @@
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
+#include "storage/ntp_config.h"
 
 #include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -738,12 +739,6 @@ ss::future<> partition::update_configuration(topic_properties properties) {
                         && model::is_archival_enabled(
                           new_ntp_config.shadow_indexing_mode.value());
 
-    bool old_compaction_status = old_ntp_config.has_compacted_override();
-    bool new_compaction_status
-      = new_ntp_config.cleanup_policy_bitflags.has_value()
-        && model::is_compaction_enabled(
-          new_ntp_config.cleanup_policy_bitflags.value());
-
     auto old_retention_ms = old_ntp_config.has_overrides()
                               ? old_ntp_config.get_overrides().retention_time
                               : tristate<std::chrono::milliseconds>(
@@ -780,16 +775,17 @@ ss::future<> partition::update_configuration(topic_properties properties) {
           _raft->ntp());
         cloud_storage_changed = true;
     }
-    if (old_compaction_status != new_compaction_status) {
+
+    // Pass the configuration update into the storage layer
+    _raft->log()->set_overrides(new_ntp_config);
+    bool compaction_changed = _raft->log()->notify_compaction_update();
+    if (compaction_changed) {
         vlog(
           clusterlog.debug,
           "[{}] updating archiver for topic config change in compaction",
           _raft->ntp());
         cloud_storage_changed = true;
     }
-
-    // Pass the configuration update into the storage layer
-    co_await _raft->log()->update_configuration(new_ntp_config);
 
     // Update cached instance of topic properties
     if (_topic_cfg) {
