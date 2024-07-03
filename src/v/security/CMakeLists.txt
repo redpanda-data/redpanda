@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     config_bsl.cc
     config_rcl.cc
+    mtls_rule.cc
   DEPS
     v::json
     Seastar::seastar

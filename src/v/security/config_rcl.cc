@@ -10,7 +10,7 @@
 
 #include "security/config.h"
 #include "security/gssapi_principal_mapper.h"
-#include "security/mtls.h"
+#include "security/mtls_rule.h"
 #include "security/oidc_error.h"
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
