@@ -10,6 +10,8 @@
 #include "cluster/service.h"
 
 #include "base/vlog.h"
+#include "cluster/client_quota_frontend.h"
+#include "cluster/client_quota_serde.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
@@ -58,7 +60,8 @@ service::service(
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<rpc::connection_cache>& conn_cache,
   ss::sharded<partition_manager>& partition_manager,
-  ss::sharded<node_status_backend>& node_status_backend)
+  ss::sharded<node_status_backend>& node_status_backend,
+  ss::sharded<client_quota::frontend>& quotas_frontend)
   : controller_service(sg, ssg)
   , _controller(controller)
   , _topics_frontend(tf)
@@ -75,7 +78,8 @@ service::service(
   , _conn_cache(conn_cache)
   , _partition_manager(partition_manager)
   , _plugin_frontend(pf)
-  , _node_status_backend(node_status_backend) {}
+  , _node_status_backend(node_status_backend)
+  , _quotas_frontend(quotas_frontend) {}
 
 ss::future<join_node_reply>
 service::join_node(join_node_request req, rpc::streaming_context&) {
@@ -822,6 +826,15 @@ ss::future<set_partition_shard_reply> service::set_partition_shard(
     auto ec = co_await _topics_frontend.local().set_local_partition_shard(
       req.ntp, req.shard);
     co_return set_partition_shard_reply{.ec = ec};
+}
+
+ss::future<client_quota::alter_quotas_response> service::alter_client_quotas(
+  client_quota::alter_quotas_request req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto deadline = model::timeout_clock::now() + req.timeout;
+    auto ec = co_await _quotas_frontend.local().alter_quotas(
+      std::move(req.cmd_data), deadline);
+    co_return client_quota::alter_quotas_response{.ec = ec};
 }
 
 } // namespace cluster
