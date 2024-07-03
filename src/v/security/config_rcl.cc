@@ -9,11 +9,12 @@
  */
 
 #include "security/config.h"
-#include "security/gssapi_principal_mapper.h"
-#include "security/mtls.h"
+#include "security/gssapi_rule.h"
+#include "security/mtls_rule.h"
 #include "security/oidc_error.h"
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
+#include "ssx/sformat.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <re2/re2.h>
@@ -116,27 +117,6 @@ parse_rules(const std::vector<ss::sstring>& unparsed_rules) {
     return rv;
 }
 } // namespace gssapi::detail
-
-gssapi_rule::gssapi_rule(
-  int number_of_components,
-  std::string_view format,
-  std::string_view match,
-  std::string_view from_pattern,
-  std::string_view to_pattern,
-  repeat repeat_,
-  case_change_operation case_change)
-  : _is_default(false)
-  , _number_of_components(number_of_components)
-  , _format(format)
-  , _match(match)
-  , _from_pattern(std::regex{
-      from_pattern.begin(),
-      from_pattern.length(),
-      std::regex_constants::ECMAScript | std::regex_constants::optimize})
-  , _from_pattern_str(from_pattern)
-  , _to_pattern(to_pattern)
-  , _repeat(repeat_)
-  , _case_change(case_change) {}
 
 std::optional<ss::sstring>
 validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept {

@@ -10,7 +10,7 @@
  */
 
 #include "security/config.h"
-#include "security/mtls.h"
+#include "security/mtls_rule.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -106,18 +106,6 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
 }
 
 } // namespace detail
-
-rule::rule(
-  std::string_view pattern,
-  std::optional<std::string_view> replacement,
-  make_lower to_lower,
-  make_upper to_upper)
-  : _regex{detail::make_regex(pattern)}
-  , _pattern{pattern}
-  , _replacement{replacement}
-  , _is_default{false}
-  , _to_lower{to_lower}
-  , _to_upper{to_upper} {}
 
 std::optional<ss::sstring> rule::apply(std::string_view dn) const {
     if (_is_default) {
