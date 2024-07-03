@@ -45,6 +45,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "bool_class",
+    hdrs = [
+        "rw/bool_class.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "uuid",
     hdrs = [
         "rw/uuid.h",
