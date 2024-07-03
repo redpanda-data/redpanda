@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "bytes/iostream.h"
+#include "json/chunked_buffer.h"
 #include "json/json.h"
 #include "json/reader.h"
 #include "json/stream.h"
@@ -29,16 +31,46 @@ class rjson_parse_impl;
 template<typename T>
 class rjson_serialize_impl;
 
-template<typename T>
-ss::sstring rjson_serialize(const T& v) {
-    ::json::StringBuffer str_buf;
-    ::json::Writer<::json::StringBuffer> wrt(str_buf);
+template<typename Buffer, typename T>
+Buffer rjson_serialize_buf(T&& v) {
+    Buffer buf;
+    ::json::Writer<Buffer> wrt{buf};
 
     using ::json::rjson_serialize;
     using ::pandaproxy::json::rjson_serialize;
-    rjson_serialize(wrt, v);
+    rjson_serialize(wrt, std::forward<T>(v));
 
-    return ss::sstring(str_buf.GetString(), str_buf.GetSize());
+    return buf;
+}
+
+template<typename T>
+ss::sstring rjson_serialize_str(T&& v) {
+    auto str_buf = rjson_serialize_buf<::json::StringBuffer>(
+      std::forward<T>(v));
+    return {str_buf.GetString(), str_buf.GetSize()};
+}
+
+template<typename T>
+iobuf rjson_serialize_iobuf(T&& v) {
+    return rjson_serialize_buf<::json::chunked_buffer>(std::forward<T>(v))
+      .as_iobuf();
+}
+
+inline ss::noncopyable_function<ss::future<>(ss::output_stream<char>&& os)>
+as_body_writer(iobuf&& buf) {
+    return [buf{std::move(buf)}](ss::output_stream<char>&& os) mutable {
+        return ss::do_with(
+          std::move(buf), std::move(os), [](auto& buf, auto& os) {
+              return write_iobuf_to_output_stream(std::move(buf), os)
+                .finally([&os] { return os.close(); });
+          });
+    };
+}
+
+template<typename T>
+ss::noncopyable_function<ss::future<>(ss::output_stream<char>&& os)>
+rjson_serialize(T&& v) {
+    return as_body_writer(rjson_serialize_iobuf(std::forward<T>(v)));
 }
 
 struct rjson_serialize_fmt_impl {
