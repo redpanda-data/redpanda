@@ -278,7 +278,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_response) {
       .log_append_time_ms = model::timestamp{},
       .log_start_offset = model::offset{}});
 
-    auto output = ppj::rjson_serialize(topic);
+    auto output = ppj::rjson_serialize_str(topic);
 
     BOOST_TEST(output == expected);
 }

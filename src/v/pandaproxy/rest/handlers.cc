@@ -158,16 +158,16 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
           return client
             .fetch_partition(std::move(tp), offset, max_bytes, timeout)
             .then([res_fmt](kafka::fetch_response res) {
-                ::json::StringBuffer str_buf;
-                ::json::Writer<::json::StringBuffer> w(str_buf);
+                ::json::chunked_buffer buf;
+                ::json::Writer<::json::chunked_buffer> w(buf);
 
                 ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
-                // TODO Ben: Prevent this linearization
-                return ss::make_ready_future<ss::sstring>(str_buf.GetString());
+                return buf;
             });
       })
-      .then([res_fmt, rp = std::move(rp)](ss::sstring json_rslt) mutable {
-          rp.rep->write_body("json", json_rslt);
+      .then([res_fmt, rp = std::move(rp)](auto buf) mutable {
+          rp.rep->write_body(
+            "json", json::as_body_writer(std::move(buf).as_iobuf()));
           rp.mime_type = res_fmt;
           return std::move(rp);
       });
@@ -407,14 +407,13 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
 
           return client.consumer_fetch(group_id, name, timeout, max_bytes)
             .then([res_fmt, rp{std::move(rp)}](auto res) mutable {
-                ::json::StringBuffer str_buf;
-                ::json::Writer<::json::StringBuffer> w(str_buf);
+                ::json::chunked_buffer buf;
+                ::json::Writer<::json::chunked_buffer> w(buf);
 
                 ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
-                // TODO Ben: Prevent this linearization
-                ss::sstring json_rslt = str_buf.GetString();
-                rp.rep->write_body("json", json_rslt);
+                rp.rep->write_body(
+                  "json", json::as_body_writer(std::move(buf).as_iobuf()));
                 rp.mime_type = res_fmt;
                 return std::move(rp);
             });

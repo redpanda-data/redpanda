@@ -566,7 +566,7 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     info("Post company schema (expect schema_id=1)");
     auto res = post_schema(
-      client, company_req.schema.sub(), ppj::rjson_serialize(company_req));
+      client, company_req.schema.sub(), ppj::rjson_serialize_str(company_req));
     BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
     BOOST_REQUIRE_EQUAL(
       res.headers.at(boost::beast::http::field::content_type),
@@ -574,7 +574,9 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     info("Post employee schema (expect schema_id=2)");
     res = post_schema(
-      client, employee_req.schema.sub(), ppj::rjson_serialize(employee_req));
+      client,
+      employee_req.schema.sub(),
+      ppj::rjson_serialize_str(employee_req));
     BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
     BOOST_REQUIRE_EQUAL(
       res.headers.at(boost::beast::http::field::content_type),
