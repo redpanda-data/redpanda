@@ -107,6 +107,8 @@ std::string_view to_string_view(feature f) {
         return "data_migrations";
     case feature::group_tx_fence_dedicated_batch_type:
         return "group_tx_fence_dedicated_batch_type";
+    case feature::transforms_specify_offset:
+        return "transforms_specify_offset";
 
     /*
      * testing features

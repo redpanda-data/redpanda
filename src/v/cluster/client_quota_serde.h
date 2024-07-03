@@ -10,6 +10,8 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cluster/errc.h"
+#include "model/timeout_clock.h"
 #include "seastar/core/sstring.hh"
 #include "serde/envelope.h"
 #include "serde/rw/variant.h"
@@ -272,5 +274,35 @@ from_string_view<entity_value_diff::key>(std::string_view v) {
         entity_value_diff::key::controller_mutation_rate)
       .default_match(std::nullopt);
 }
+
+// Internal RPC request/response structs
+struct alter_quotas_request
+  : serde::envelope<
+      alter_quotas_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    alter_delta_cmd_data cmd_data;
+    model::timeout_clock::duration timeout{};
+
+    friend bool
+    operator==(const alter_quotas_request&, const alter_quotas_request&)
+      = default;
+};
+
+struct alter_quotas_response
+  : serde::envelope<
+      alter_quotas_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    cluster::errc ec;
+
+    friend bool
+    operator==(const alter_quotas_response&, const alter_quotas_response&)
+      = default;
+};
 
 } // namespace cluster::client_quota

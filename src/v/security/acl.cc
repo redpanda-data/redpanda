@@ -23,8 +23,6 @@
 
 namespace security {
 
-seastar::logger seclog("security");
-
 void acl_entry_set::insert(acl_entry entry) {
     auto [it, ins] = _entries.insert(std::move(entry));
     if (const auto& principal = it->principal();

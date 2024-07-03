@@ -2807,7 +2807,8 @@ void application::start_runtime_services(
             std::ref(controller->get_health_monitor()),
             std::ref(_connection_cache),
             std::ref(controller->get_partition_manager()),
-            std::ref(node_status_backend)));
+            std::ref(node_status_backend),
+            std::ref(controller->get_quota_frontend())));
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(
               sched_groups.cluster_sg(),

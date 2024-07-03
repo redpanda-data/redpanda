@@ -88,6 +88,13 @@ fake_source::offset_at_timestamp(model::timestamp ts, ss::abort_source*) {
     co_return std::nullopt;
 }
 
+kafka::offset fake_source::start_offset() const {
+    if (_batches.empty()) {
+        return {};
+    }
+    return _batches.begin()->first;
+}
+
 ss::future<model::record_batch_reader>
 fake_source::read_batch(kafka::offset offset, ss::abort_source* as) {
     auto sub = as->subscribe([this]() noexcept { _cond_var.broadcast(); });

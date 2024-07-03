@@ -1256,11 +1256,10 @@ class RpkTool:
             ]
         return flags
 
-    def _kafka_conn_settings(self):
-        flags = [
-            "-X",
-            "brokers=" + self._redpanda.brokers(),
-        ]
+    def _kafka_conn_settings(self, node: Optional[ClusterNode] = None):
+        brokers = self._redpanda.broker_address(node) if node else \
+                  self._redpanda.brokers()
+        flags = ["-X", "brokers=" + brokers]
         if self._username:
             # u, p and mechanism must always be all set or all unset
             assert self._password and self._sasl_mechanism
@@ -1709,13 +1708,16 @@ class RpkTool:
                     output_topics,
                     file="tinygo/identity.wasm",
                     compression_type: TopicSpec.CompressionTypes
-                    | None = None):
+                    | None = None,
+                    from_offset: str | None = None):
         cmd = [
             "deploy", "--name", name, "--input-topic", input_topic, "--file",
             f"/opt/transforms/{file}"
         ]
         if compression_type is not None:
             cmd += ["--compression", compression_type]
+        if from_offset is not None:
+            cmd += ["--from-offset", from_offset]
         assert len(output_topics) > 0, "missing output topics"
         for topic in output_topics:
             cmd += ["--output-topic", topic]
@@ -1889,7 +1891,8 @@ class RpkTool:
                              default=[],
                              name=[],
                              dry=False,
-                             output_format="json"):
+                             output_format="json",
+                             node: Optional[ClusterNode] = None):
         cmd = ["alter"]
 
         if dry:
@@ -1903,16 +1906,21 @@ class RpkTool:
         if len(name) > 0:
             cmd += ["--name", ",".join(name)]
 
-        return self._run_cluster_quotas(cmd, output_format=output_format)
+        return self._run_cluster_quotas(cmd,
+                                        output_format=output_format,
+                                        node=node)
 
-    def _run_cluster_quotas(self, cmd, output_format="json"):
+    def _run_cluster_quotas(self,
+                            cmd,
+                            output_format="json",
+                            node: Optional[ClusterNode] = None):
         cmd = [
             self._rpk_binary(),
             "cluster",
             "quotas",
             "--format",
             output_format,
-        ] + self._kafka_conn_settings() + cmd
+        ] + self._kafka_conn_settings(node) + cmd
 
         out = self._execute(cmd)
 

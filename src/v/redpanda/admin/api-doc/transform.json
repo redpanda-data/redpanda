@@ -158,6 +158,11 @@
           ],
           "required": false,
           "description": "Output batch compression mode"
+        },
+        "offset": {
+          "type": "consume_offset",
+          "required": false,
+          "description": "Start reading from this offset"
         }
       }
     },
@@ -239,6 +244,25 @@
         },
         "value": {
           "type": "string"
+        }
+      }
+    },
+    "consume_offset": {
+      "id": "consume_offset",
+      "description": "The offset at which the transform will begin consuming records",
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "from_start",
+            "from_end",
+            "timestamp"
+          ],
+          "required": true
+        },
+        "value": {
+          "type": "int",
+          "required": true
         }
       }
     },

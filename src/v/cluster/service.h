@@ -42,7 +42,8 @@ public:
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_manager>&,
-      ss::sharded<node_status_backend>&);
+      ss::sharded<node_status_backend>&,
+      ss::sharded<client_quota::frontend>&);
 
     virtual ss::future<join_node_reply>
     join_node(join_node_request, rpc::streaming_context&) override;
@@ -139,6 +140,9 @@ public:
     ss::future<set_partition_shard_reply> set_partition_shard(
       set_partition_shard_request, rpc::streaming_context&) final;
 
+    ss::future<client_quota::alter_quotas_response> alter_client_quotas(
+      client_quota::alter_quotas_request, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::pair<std::vector<model::topic_metadata>, topic_configuration_vector>
@@ -194,5 +198,6 @@ private:
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<plugin_frontend>& _plugin_frontend;
     ss::sharded<node_status_backend>& _node_status_backend;
+    ss::sharded<client_quota::frontend>& _quotas_frontend;
 };
 } // namespace cluster

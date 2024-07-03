@@ -22,8 +22,6 @@
 
 #include <seastar/util/noncopyable_function.hh>
 
-#include <boost/intrusive/list.hpp>
-
 #include <chrono>
 #include <functional>
 #include <optional>

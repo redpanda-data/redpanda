@@ -12,12 +12,14 @@ from functools import total_ordering
 import json
 from typing import NamedTuple
 from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaCliToolsError
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 from ducktape.mark import parametrize, ignore
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.kcl import RawKCL
+from ducktape.utils.util import wait_until
 
 
 def expect_kafka_cli_error_msg(error_msg: str):
@@ -135,6 +137,7 @@ class QuotaManagementTest(RedpandaTest):
         self.rpk = RpkTool(self.redpanda)
         self.kafka_cli = KafkaCliTools(self.redpanda)
         self.kcl = RawKCL(self.redpanda)
+        self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=1)
     def test_kafka_configs(self):
@@ -508,3 +511,40 @@ Quota configs for client-id 'custom-producer' are producer_byte_rate=20480.0"""
                   values=[QuotaValue.producer_byte_rate("10")])
         ])
         self._assert_equal(got, expected)
+
+    @cluster(num_nodes=3)
+    def test_multi_node(self):
+        self.redpanda.logger.debug(
+            "Wait for controller leader to be ready and select a non-leader node"
+        )
+        leader_node = self.redpanda.get_node(
+            self.admin.await_stable_leader(topic="controller",
+                                           partition=0,
+                                           namespace="redpanda",
+                                           timeout_s=30))
+        non_leader_node = next(
+            filter(lambda node: node != leader_node, self.redpanda.nodes))
+
+        self.redpanda.logger.debug(f"Found leader node: {leader_node.name}")
+        self.redpanda.logger.debug(
+            f"Issuing an alter request to a non-leader ({non_leader_node.name}) and "
+            "expecting that it is redirected to the leader internally")
+        self.alter(default=["client-id"],
+                   add=["producer_byte_rate=1111"],
+                   node=non_leader_node)
+
+        def describe_shows_default():
+            got = self.describe(default=["client-id"])
+            expected = QuotaOutput([
+                Quota(entity=QuotaEntity.client_id_default(),
+                      values=[QuotaValue.producer_byte_rate("1111")])
+            ])
+            self._assert_equal(got, expected)
+            return True
+
+        self.redpanda.logger.debug(
+            "Waiting until describe shows the newly added quota")
+        wait_until(describe_shows_default,
+                   timeout_sec=30,
+                   retry_on_exc=True,
+                   err_msg=f"Describe did not succeed in time")
