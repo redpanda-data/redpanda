@@ -4,6 +4,8 @@ v_cc_library(
     config_bsl.cc
     config_rcl.cc
     mtls_rule.cc
+    gssapi_rule.cc
+    logger.cc
   DEPS
     v::json
     Seastar::seastar
