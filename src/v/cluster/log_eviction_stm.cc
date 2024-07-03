@@ -217,8 +217,37 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
       raft::write_snapshot_cfg(truncation_point, std::move(snapshot_data)));
 }
 
-ss::future<result<model::offset, std::error_code>>
-log_eviction_stm::sync_start_offset_override(
+kafka::offset log_eviction_stm::kafka_start_offset_override() {
+    if (_cached_kafka_start_offset_override != kafka::offset{}) {
+        return _cached_kafka_start_offset_override;
+    }
+
+    // Since the STM doesn't snapshot `_cached_kafka_start_override` its
+    // possible for it to be lost during restarts. Therefore the raft offset
+    // which is snapshotted will be translated if possible.
+    if (_delete_records_eviction_offset == model::offset{}) {
+        return kafka::offset{};
+    }
+
+    auto raft_start_offset_override = model::next_offset(
+      _delete_records_eviction_offset);
+
+    // This handles an edge case where the stm will not record any raft
+    // offsets that do not land in local storage. Hence returning
+    // `kafka::offset{}` indicates to the caller that the archival stm
+    // should be queried for the offset instead.
+    if (raft_start_offset_override <= _raft->start_offset()) {
+        return kafka::offset{};
+    }
+
+    _cached_kafka_start_offset_override = model::offset_cast(
+      _raft->log()->from_log_offset(raft_start_offset_override));
+
+    return _cached_kafka_start_offset_override;
+}
+
+ss::future<result<kafka::offset, std::error_code>>
+log_eviction_stm::sync_kafka_start_offset_override(
   model::timeout_clock::duration timeout) {
     /// Call this method to ensure followers have processed up until the
     /// most recent known version of the special batch. This is particularly
@@ -232,7 +261,7 @@ log_eviction_stm::sync_start_offset_override(
             co_return errc::timeout;
         }
     }
-    co_return start_offset_override();
+    co_return kafka_start_offset_override();
 }
 
 model::offset log_eviction_stm::effective_start_offset() const {
@@ -369,6 +398,7 @@ ss::future<> log_eviction_stm::apply(const model::record_batch& batch) {
     }
     const auto record = serde::from_iobuf<prefix_truncate_record>(
       batch.copy_records().begin()->release_value());
+    _cached_kafka_start_offset_override = record.kafka_start_offset;
     if (record.rp_start_offset == model::offset{}) {
         // This may happen if the requested offset was not in the local log at
         // time of replicating. We still need to have replicated it though so

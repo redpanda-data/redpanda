@@ -1214,22 +1214,14 @@ ss::future<result<model::offset, std::error_code>>
 partition::sync_kafka_start_offset_override(
   model::timeout_clock::duration timeout) {
     if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
-        auto offset_res
-          = co_await _log_eviction_stm->sync_start_offset_override(timeout);
+        auto offset_res = co_await _log_eviction_stm
+                            ->sync_kafka_start_offset_override(timeout);
         if (offset_res.has_failure()) {
             co_return offset_res.as_failure();
         }
-        // The eviction STM only keeps track of DeleteRecords truncations
-        // as Raft offsets. Translate if possible.
-        if (
-          offset_res.value() != model::offset{}
-          && _raft->start_offset() < offset_res.value()) {
-            auto start_kafka_offset = log()->from_log_offset(
-              offset_res.value());
-            co_return start_kafka_offset;
+        if (offset_res.value() != kafka::offset{}) {
+            co_return kafka::offset_cast(offset_res.value());
         }
-        // If a start override is no longer in the offset translator state,
-        // it may have been uploaded and persisted in the manifest.
     }
     if (_archival_meta_stm) {
         auto term = _raft->term();
@@ -1304,13 +1296,10 @@ partition::archival_meta_stm() const {
 
 std::optional<model::offset> partition::kafka_start_offset_override() const {
     if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
-        auto o = _log_eviction_stm->start_offset_override();
-        if (o != model::offset{} && _raft->start_offset() < o) {
-            auto start_kafka_offset = log()->from_log_offset(o);
-            return start_kafka_offset;
+        auto o = _log_eviction_stm->kafka_start_offset_override();
+        if (o != kafka::offset{}) {
+            return kafka::offset_cast(o);
         }
-        // If a start override is no longer in the offset translator state,
-        // it may have been uploaded and persisted in the manifest.
     }
     if (_archival_meta_stm) {
         auto o
