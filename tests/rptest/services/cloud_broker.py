@@ -44,6 +44,9 @@ class CloudBroker():
         #    self._meta['labels']['operator.redpanda.com/node-id'])
 
         # Other dirty way to get node-id
+        self.logger.debug(
+            f"broker pod name: {self.name}, generateName: {self._meta['generateName']}"
+        )
         self.slot_id = int(self.name.replace(self._meta['generateName'], ""))
         self.uuid = self._meta['uid']
 

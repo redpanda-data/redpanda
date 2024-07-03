@@ -470,6 +470,10 @@ class SISettings:
 
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
+    GLOBAL_AZURE_CLIENT_ID = "azure_client_id"
+    GLOBAL_AZURE_CLIENT_SECRET = "azure_client_secret"
+    GLOBAL_AZURE_TENANT_ID = "azure_tenant_id"
+
     GLOBAL_CLOUD_PROVIDER = "cloud_provider"
 
     # The account and key to use with local Azurite testing.
@@ -1663,14 +1667,29 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # later to dataclass
         self._cc_config = context.globals[self.GLOBAL_CLOUD_CLUSTER_CONFIG]
 
-        self._provider_config = {
-            "access_key":
-            context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
-            "secret_key":
-            context.globals.get(SISettings.GLOBAL_S3_SECRET_KEY, None),
-            "region":
-            context.globals.get(SISettings.GLOBAL_S3_REGION_KEY, None)
-        }
+        self._provider_config = {}
+        match get_cloud_provider():
+            case "aws":
+                self._provider_config.update({
+                    'access_key':
+                        context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
+                    'secret_key':
+                        context.globals.get(SISettings.GLOBAL_S3_SECRET_KEY, None),
+                    'region':
+                        context.globals.get(SISettings.GLOBAL_S3_REGION_KEY, None)
+                }) # yapf: disable
+            case "azure":
+                self._provider_config.update({
+                    'azure_client_id':
+                        context.globals.get(SISettings.GLOBAL_AZURE_CLIENT_ID, None),
+                    'azure_client_secret':
+                        context.globals.get(SISettings.GLOBAL_AZURE_CLIENT_SECRET, None),
+                    'azure_tenant_id':
+                        context.globals.get(SISettings.GLOBAL_AZURE_TENANT_ID, None)
+                }) # yapf: disable
+            case _:
+                pass
+
         # log cloud cluster id
         self.logger.debug(f"initial cluster_id: {self._cc_config['id']}")
 
@@ -1791,9 +1810,11 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     def get_redpanda_pods(self):
         """Get the current list of redpanda pods as k8s API objects."""
         pods = json.loads(self.kubectl.cmd('get pods -n redpanda -o json'))
+        provider = self._cloud_cluster.config.provider
 
         return [
-            p for p in pods['items'] if is_redpanda_pod(p, self.cluster_id)
+            p for p in pods['items']
+            if is_redpanda_pod(p, self.cluster_id, provider)
         ]
 
     @property

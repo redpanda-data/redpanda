@@ -91,12 +91,18 @@ class RpCloudApiClient(object):
         else:
             return _r.json()
 
-    def _http_post(self, base_url=None, endpoint='', **kwargs):
+    def _http_post(self,
+                   base_url=None,
+                   endpoint='',
+                   override_headers=None,
+                   **kwargs):
         token = self._get_token()
         headers = {
             'Authorization': f'Bearer {token}',
             'Accept': 'application/json'
         }
+        if override_headers:
+            headers.update(override_headers)
         if base_url is None:
             base_url = self._config.api_url
         resp = requests.post(f'{base_url}{endpoint}',

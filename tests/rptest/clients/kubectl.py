@@ -16,9 +16,23 @@ from typing import Any, Union, Generator
 SUPPORTED_PROVIDERS = ['aws', 'gcp', 'azure']
 
 
-def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
+def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str,
+                    provider: str) -> bool:
     """Returns true if the pod API object name matches the Redpanda pattern."""
-    return pod_obj['metadata']['name'].startswith(f'rp-{cluster_id}')
+    # this is a hacky workaround based on guesses!
+    # FIXME NOT suitable for merge until K8S-282 is resolved
+    sts_label = 'statefulset.kubernetes.io/pod-name'
+    if sts_label not in pod_obj['metadata']['labels']:
+        return False
+    sts_name = pod_obj['metadata']['labels'][sts_label]
+    pod_name = pod_obj['metadata']['name']
+    if sts_name != pod_name:
+        return False
+
+    pod_prefix = f'rp-{cluster_id}'
+    if provider.lower() == 'azure':
+        pod_prefix = 'redpanda-broker'
+    return pod_name.startswith(pod_prefix)
 
 
 class KubectlTool:
@@ -119,7 +133,13 @@ class KubectlTool:
     def _install(self):
         '''Installs kubectl on a remote target host'''
         if not self._kubectl_installed and self._remote_uri is not None:
-            self._ssh_cmd(['./breakglass-tools.sh'])
+            breakglass_cmd = ['./breakglass-tools.sh']
+            if self._provider == 'azure':
+                # for azure, we manually override the path here to ensure
+                # that azure-cli installed as a snap gets found (workaround)
+                p = ['env', 'PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin']
+                breakglass_cmd = p + breakglass_cmd
+            self._ssh_cmd(breakglass_cmd)
 
             # Determine the appropriate command for the cloud provider
             self._redpanda.logger.info(
@@ -134,17 +154,7 @@ class KubectlTool:
                     'gcloud', 'container', 'clusters', 'get-credentials',
                     f'redpanda-{self._cluster_id}', '--region', self._region
                 ],
-                'azure': [
-                    'bash', '-c',
-                    ("'if ! command -v az &> /dev/null; then "
-                     "echo \"Azure CLI not found. Installing Azure CLI.\" >&2; "
-                     "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash; "
-                     "echo \"Azure CLI installed.\" >&2; "
-                     "fi && "
-                     'az login --identity --allow-no-subscriptions && '
-                     f"az aks get-credentials --resource-group rg-rpcloud-{self._cluster_id} --name aks-rpcloud-{self._cluster_id}'"
-                     )
-                ]
+                'azure': ['kubectl', 'get', 'nodes']
             }[self._provider]
 
             # Log the full command to be executed
@@ -284,19 +294,27 @@ class KubectlTool:
 
         self._install()
         if pod_name is None:
-            pod_name = f'rp-{self._cluster_id}-0'
+            if self._provider == 'azure':
+                pod_name = 'redpanda-broker-0'
+            else:
+                pod_name = f'rp-{self._cluster_id}-0'
         cmd = [
             'kubectl', 'exec', pod_name, f'-n={self._namespace}',
             '-c=redpanda', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
         return self._ssh_cmd(cmd)  # type: ignore
 
-    def exists(self, remote_path):
+    def exists(self, remote_path, pod_name=None):
         self._install()
+        if pod_name is None:
+            if self._provider == 'azure':
+                pod_name = 'redpanda-broker-0'
+            else:
+                pod_name = f'rp-{self._cluster_id}-0'
         try:
             self._ssh_cmd([
                 'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
-                f'rp-{self._cluster_id}-0', '--', 'stat', remote_path
+                pod_name, '--', 'stat', remote_path
             ])
             return True
         except subprocess.CalledProcessError:
