@@ -78,8 +78,7 @@ get_brokers(server::request_t rq, server::reply_t rp) {
                 return b.node_id;
             });
 
-          auto json_rslt = ppj::rjson_serialize(brokers);
-          rp.rep->write_body("json", json_rslt);
+          rp.rep->write_body("json", ppj::rjson_serialize(brokers));
 
           rp.mime_type = res_fmt;
           return std::move(rp);
@@ -109,8 +108,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
               }
           }
 
-          auto json_rslt = ppj::rjson_serialize(names);
-          rp.rep->write_body("json", json_rslt);
+          rp.rep->write_body("json", ppj::rjson_serialize(names));
           rp.mime_type = res_fmt;
           return std::move(rp);
       });
@@ -186,8 +184,8 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
           return client.produce_records(topic, std::move(records))
             .then([rp{std::move(rp)},
                    res_fmt](kafka::produce_response res) mutable {
-                auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
-                rp.rep->write_body("json", json_rslt);
+                rp.rep->write_body(
+                  "json", ppj::rjson_serialize(res.data.responses[0]));
                 rp.mime_type = res_fmt;
                 return std::move(rp);
             });
@@ -278,8 +276,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
                             kafka::member_id name) mutable {
                         json::create_consumer_response res{
                           .instance_id = name, .base_uri = base_uri + name};
-                        auto json_rslt = ppj::rjson_serialize(res);
-                        rp.rep->write_body("json", json_rslt);
+                        rp.rep->write_body("json", ppj::rjson_serialize(res));
                         rp.mime_type = res_fmt;
                         return std::move(rp);
                     });
@@ -444,11 +441,7 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
           return client
             .consumer_offset_fetch(group_id, member_id, std::move(req_data))
             .then([rp{std::move(rp)}, res_fmt](auto res) mutable {
-                ::json::StringBuffer str_buf;
-                ::json::Writer<::json::StringBuffer> w(str_buf);
-                ppj::rjson_serialize(w, res);
-                ss::sstring json_rslt = str_buf.GetString();
-                rp.rep->write_body("json", json_rslt);
+                rp.rep->write_body("json", ppj::rjson_serialize(res));
                 rp.mime_type = res_fmt;
                 return std::move(rp);
             });
