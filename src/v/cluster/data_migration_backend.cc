@@ -690,6 +690,31 @@ backend::get_replica_work_state(const model::ntp& ntp) {
     return std::nullopt;
 }
 
+inbound_partition_work_info backend::get_partition_work_info(
+  const model::ntp& ntp, const inbound_migration& im, id migration_id) {
+    auto idx = _migration_states.find(migration_id)
+                 ->second.outstanding_topics[{ntp.ns, ntp.tp.topic}]
+                 .idx_in_migration;
+    auto& inbound_topic = im.topics[idx];
+    return {
+      .alias = inbound_topic.alias,
+      .cloud_storage_location = inbound_topic.cloud_storage_location};
+}
+
+outbound_partition_work_info backend::get_partition_work_info(
+  const model::ntp&, const outbound_migration& om, id) {
+    return {om.copy_to};
+}
+
+partition_work_info backend::get_partition_work_info(
+  const model::ntp& ntp, const migration_metadata& metadata) {
+    return std::visit(
+      [this, &ntp, &metadata](auto& migration) -> partition_work_info {
+          return get_partition_work_info(ntp, migration, metadata.id);
+      },
+      metadata.migration);
+}
+
 void backend::start_partition_work(
   const model::ntp& ntp, const backend::replica_work_state& rwstate) {
     vlog(

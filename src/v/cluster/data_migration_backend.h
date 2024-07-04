@@ -126,6 +126,12 @@ private:
     get_replica_work_state(const model::ntp& ntp);
     bool has_local_replica(const model::ntp& ntp);
 
+    inbound_partition_work_info get_partition_work_info(
+      const model::ntp& ntp, const inbound_migration& im, id migration_id);
+    outbound_partition_work_info get_partition_work_info(
+      const model::ntp& ntp, const outbound_migration& om, id migration_id);
+    partition_work_info get_partition_work_info(
+      const model::ntp& ntp, const migration_metadata& metadata);
     /*
      * Reconciliation-related data.
      *
