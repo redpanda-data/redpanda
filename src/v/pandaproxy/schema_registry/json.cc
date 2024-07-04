@@ -374,6 +374,19 @@ result<void> try_validate_json_schema(json::Document const& schema) {
 }
 
 result<json::Document> parse_json(std::string_view v) {
+    // parse string in json document, check it's a valid json
+    auto schema_stream = rapidjson::MemoryStream{v.data(), v.size()};
+    auto schema = json::Document{};
+    if (schema.ParseStream(schema_stream).HasParseError()) {
+        // not a valid json document, return error
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Malformed json schema: {} at offset {}",
+            rapidjson::GetParseError_En(schema.GetParseError()),
+            schema.GetErrorOffset())};
+    }
+
     // validation pre-step: compile metaschema for json draft
     static const auto metaschema_doc = [] {
         auto metaschema_json = json::Document{};
@@ -386,60 +399,37 @@ result<json::Document> parse_json(std::string_view v) {
     }();
 
     // validation of schema: validate it against metaschema
-    // first construct a reader that validates the schema against the metaschema
-    // while parsing it
-    auto schema_stream = rapidjson::MemoryStream{v.data(), v.size()};
-    auto validating_reader
-      = json::SchemaValidatingReader<rapidjson::MemoryStream>{
-        schema_stream, metaschema_doc};
+    auto validator = json::SchemaValidator{metaschema_doc};
 
-    // then parse schema to json
-    auto schema_json = json::Document{};
-    schema_json.Populate(validating_reader);
+    if (!schema.Accept(validator)) {
+        // not a valid schema draft4 according to metaschema. retrieve some
+        // info and return error
 
-    if (auto parse_res = validating_reader.GetParseResult();
-        parse_res.IsError()) {
-        // schema_json is either not a json document
-        // or it's not a valid json according to metaschema
+        auto error_loc_metaschema = json::StringBuffer{};
+        auto error_loc_schema = json::StringBuffer{};
+        validator.GetInvalidSchemaPointer().StringifyUriFragment(
+          error_loc_metaschema);
+        validator.GetInvalidDocumentPointer().StringifyUriFragment(
+          error_loc_schema);
+        auto invalid_keyword = validator.GetInvalidSchemaKeyword();
 
-        // Check the validation result
-        if (!validating_reader.IsValid()) {
-            // not a valid schema draft4 according to metaschema. retrieve some
-            // info and return error
-            auto error_loc_metaschema = json::StringBuffer{};
-            auto error_loc_schema = json::StringBuffer{};
-            validating_reader.GetInvalidSchemaPointer().StringifyUriFragment(
-              error_loc_metaschema);
-            validating_reader.GetInvalidDocumentPointer().StringifyUriFragment(
-              error_loc_schema);
-            auto invalid_keyword = validating_reader.GetInvalidSchemaKeyword();
-
-            return error_info{
-              error_code::schema_invalid,
-              fmt::format(
-                "Invalid json schema: '{}', invalid metaschema: '{}', invalid "
-                "keyword: '{}'",
-                std::string_view{
-                  error_loc_schema.GetString(), error_loc_schema.GetLength()},
-                std::string_view{
-                  error_loc_metaschema.GetString(),
-                  error_loc_metaschema.GetLength()},
-                invalid_keyword)};
-        } else {
-            // not a valid json document, return error
-            return error_info{
-              error_code::schema_invalid,
-              fmt::format(
-                "Malformed json schema: {} at offset {}",
-                rapidjson::GetParseError_En(parse_res.Code()),
-                parse_res.Offset())};
-        }
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Invalid json schema: '{}', invalid metaschema: '{}', invalid "
+            "keyword: '{}'",
+            std::string_view{
+              error_loc_schema.GetString(), error_loc_schema.GetLength()},
+            std::string_view{
+              error_loc_metaschema.GetString(),
+              error_loc_metaschema.GetLength()},
+            invalid_keyword)};
     }
 
-    // schema_json is a valid json and a syntactically valid json schema draft4.
+    // schema is a syntactically valid json schema draft4.
     // TODO AB cross validate "$ref" fields, this is not done automatically
     // TODO validate that "pattern" and "patternProperties" are valid regex
-    return {std::move(schema_json)};
+    return {std::move(schema)};
 }
 
 /// is_superset section
