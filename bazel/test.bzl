@@ -53,6 +53,7 @@ def _redpanda_cc_test(
       default_cores: default seastar cores
       extra_args: arguments from test wrappers
       custom_args: arguments from cc_test users
+      tags: tags to attach to the cc_test target
     """
     common_args = [
         "--blocked-reactor-notify-ms 2000000",
