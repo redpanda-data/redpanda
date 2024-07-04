@@ -127,7 +127,7 @@ const pps::delete_subject_value delete_subject_value{
 
 BOOST_AUTO_TEST_CASE(test_storage_serde) {
     {
-        auto key = ppj::rjson_parse(
+        auto key = ppj::impl::rjson_parse(
           avro_schema_key_sv.data(), pps::schema_key_handler<>{});
         BOOST_CHECK_EQUAL(avro_schema_key, key);
 
@@ -136,7 +136,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           avro_schema_value_sv.data(), pps::canonical_schema_value_handler<>{});
         BOOST_CHECK_EQUAL(avro_schema_value, val);
 
@@ -145,7 +145,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_key_sv.data(), pps::config_key_handler<>{});
         BOOST_CHECK_EQUAL(config_key, val);
 
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_key_sub_sv.data(), pps::config_key_handler<>{});
         BOOST_CHECK_EQUAL(config_key_sub, val);
 
@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_value_sv.data(), pps::config_value_handler<>{});
         BOOST_CHECK_EQUAL(config_value, val);
 
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_value_sub_sv.data(), pps::config_value_handler<>{});
         BOOST_CHECK_EQUAL(config_value_sub, val);
 
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           delete_subject_key_sv.data(), pps::delete_subject_key_handler<>{});
         BOOST_CHECK_EQUAL(delete_subject_key, val);
 
@@ -190,7 +190,7 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           delete_subject_value_sv.data(),
           pps::delete_subject_value_handler<>{});
         BOOST_CHECK_EQUAL(delete_subject_value, val);
