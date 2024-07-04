@@ -185,6 +185,7 @@ public:
 private:
     ss::future<bool>
     upsert_schema(schema_id id, canonical_schema_definition def);
+    ss::future<> delete_schema(schema_id id);
 
     struct insert_subject_result {
         schema_version version;

@@ -2841,6 +2841,48 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.not_found
         assert result_raw.json()["error_code"] == 40408
 
+    @cluster(num_nodes=3)
+    def test_hard_delete_subject_deletes_schema(self):
+        subject = "example_topic-key"
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_1_data,
+                                                          auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+        assert result_raw.json() == {'id': 1}, f"Json: {result_raw.json()}"
+
+        self.logger.debug("Soft delete subject")
+        result_raw = self._delete_subject(subject=subject,
+                                          permanent=False,
+                                          auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+
+        self.logger.debug("Then hard delete subject")
+        result_raw = self._delete_subject(subject=subject,
+                                          permanent=True,
+                                          auth=self.super_auth)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok, f'Code: {result_raw.status_code}'
+
+        def schema_no_longer_present():
+            self.logger.debug("Sending get schema 1")
+            result_raw = self._get_schemas_ids_id(id=1, auth=self.super_auth)
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.not_found, f'Code: {result_raw.status_code}'
+            assert result_raw.json()["error_code"] == 40403, \
+                f"Json: {result_raw.json()}"
+            return True
+
+        self.logger.debug("Wait until get schema 1 now eventually fails")
+        wait_until(schema_no_longer_present,
+                   timeout_sec=30,
+                   retry_on_exc=True,
+                   err_msg="Failed to delete schema 1 in time")
+
 
 class SchemaRegistryTest(SchemaRegistryTestMethods):
     """

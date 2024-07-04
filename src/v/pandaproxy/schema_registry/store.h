@@ -632,6 +632,8 @@ public:
           .second;
     }
 
+    void delete_schema(schema_id id) { _schemas.erase(id); }
+
     struct insert_subject_result {
         schema_version version;
         bool inserted;
