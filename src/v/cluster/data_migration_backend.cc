@@ -100,6 +100,7 @@ ss::future<> backend::stop() {
     _leaders_table.unregister_leadership_change_notification(
       model::controller_ntp, _plt_raft0_leadership_notification_id);
     _table.unregister_notification(_table_notification_id);
+    co_await _worker.invoke_on_all(&worker::stop);
     co_await _gate.close();
 }
 
@@ -720,49 +721,59 @@ void backend::start_partition_work(
     vlog(
       dm_log.trace,
       "while working on migration {}, asking worker on shard "
-      "{} to advance ntp {} to state {}; tmp: node_id={}, ntp_hash%3={}",
+      "{} to advance ntp {} to state {}",
       rwstate.migration_id,
       rwstate.shard,
       ntp,
-      rwstate.sought_state,
-      _self,
-      std::hash<model::ntp>()(ntp) % 3);
-    ssx::spawn_with_gate(_gate, [this, &ntp, &rwstate]() mutable {
-        return _worker
-          .invoke_on(
-            *rwstate.shard,
-            &worker::perform_partition_work,
-            model::ntp{ntp},
-            rwstate.migration_id,
-            rwstate.sought_state,
-            _self % 3 == std::hash<model::ntp>()(ntp) % 3)
-          .then([this, ntp = ntp, rwstate](errc ec) mutable {
-              if (ec == errc::success) {
-                  vlog(
-                    dm_log.trace,
-                    "as part of migration {} worker on shard {} has "
-                    "advanced "
-                    "ntp {} to state {}",
-                    rwstate.migration_id,
-                    rwstate.shard,
-                    ntp,
-                    rwstate.sought_state);
-                  on_partition_work_completed(
-                    std::move(ntp), rwstate.migration_id, rwstate.sought_state);
-              } else {
-                  // worker should always retry unless we instructed
-                  // it to abort or it is shutting down
-                  vlog(
-                    dm_log.warn,
-                    "while working on migration {} worker on shard "
-                    "{} stopped trying to advance ntp {} to state {}",
-                    rwstate.migration_id,
-                    rwstate.shard,
-                    std::move(ntp),
-                    rwstate.sought_state);
-              }
-          });
-    });
+      rwstate.sought_state);
+    const auto maybe_migration = _table.get_migration(rwstate.migration_id);
+    if (!maybe_migration) {
+        vlog(dm_log.trace, "migration {} gone, ignoring", rwstate.migration_id);
+        return;
+    }
+
+    partition_work work{
+      .migration_id = rwstate.migration_id,
+      .sought_state = rwstate.sought_state,
+      .info = get_partition_work_info(ntp, maybe_migration->get())};
+
+    ssx::spawn_with_gate(
+      _gate, [this, &ntp, &rwstate, work = std::move(work)]() mutable {
+          return _worker
+            .invoke_on(
+              *rwstate.shard,
+              &worker::perform_partition_work,
+              model::ntp{ntp},
+              std::move(work))
+            .then([this, ntp = ntp, rwstate](errc ec) mutable {
+                if (ec == errc::success) {
+                    vlog(
+                      dm_log.trace,
+                      "as part of migration {} worker on shard {} has "
+                      "advanced "
+                      "ntp {} to state {}",
+                      rwstate.migration_id,
+                      rwstate.shard,
+                      ntp,
+                      rwstate.sought_state);
+                    on_partition_work_completed(
+                      std::move(ntp),
+                      rwstate.migration_id,
+                      rwstate.sought_state);
+                } else {
+                    // worker should always retry unless we instructed
+                    // it to abort or it is shutting down
+                    vlog(
+                      dm_log.warn,
+                      "while working on migration {} worker on shard "
+                      "{} stopped trying to advance ntp {} to state {}",
+                      rwstate.migration_id,
+                      rwstate.shard,
+                      std::move(ntp),
+                      rwstate.sought_state);
+                }
+            });
+      });
 }
 
 void backend::stop_partition_work(
@@ -777,7 +788,11 @@ void backend::stop_partition_work(
       rwstate.sought_state);
     ssx::spawn_with_gate(_gate, [this, &rwstate, &ntp]() {
         return _worker.invoke_on(
-          *rwstate.shard, &worker::abort_partition_work, model::ntp{ntp});
+          *rwstate.shard,
+          &worker::abort_partition_work,
+          model::ntp{ntp},
+          rwstate.migration_id,
+          rwstate.sought_state);
     });
 }
 
