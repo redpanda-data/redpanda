@@ -65,4 +65,10 @@ build:release --linkopt=-flto
 build --@seastar//:openssl=True
 build --keep_going
 
+# =================================
+# Testing
+# =================================
+test:unit --test_tag_filters=-bench
+test:bench --test_tag_filters=bench
+
 try-import %workspace%/user.bazelrc
