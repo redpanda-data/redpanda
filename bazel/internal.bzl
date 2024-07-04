@@ -14,10 +14,11 @@ def redpanda_copts():
     # TODO Bazel prefers -iquote "path" style includes in many cases. However,
     # our source tree uses bracket <path> style for dependencies. We need a way
     # to bridge this gap until we decide to fully switch over to Bazel at which
-    # point this hack can be removed. Many deps lists in the tree will probably
-    # need to be updated to include abseil explicitly when this is removed.
+    # point this hack can be removed. To deal with this we add a `-I` parameter
+    # for the include path of dependencies that are causing issues.
     copts = []
     copts.append("-Iexternal/abseil-cpp~")
+    copts.append("-Iexternal/re2~")
 
     copts.append("-Werror")
     copts.append("-Wall")
