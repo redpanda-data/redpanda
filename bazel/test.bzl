@@ -38,7 +38,8 @@ def _redpanda_cc_test(
         default_memory_gb = None,
         default_cores = None,
         extra_args = [],
-        custom_args = []):
+        custom_args = [],
+        tags = []):
     """
     Helper to define a Redpanda C++ test.
 
@@ -85,6 +86,7 @@ def _redpanda_cc_test(
         features = [
             "layering_check",
         ],
+        tags = tags,
     )
 
 def _redpanda_cc_unit_test(**kwargs):
@@ -145,6 +147,9 @@ def redpanda_cc_bench(
         srcs = srcs,
         deps = deps,
         custom_args = args,
+        tags = [
+            "bench",
+        ],
     )
 
 def redpanda_cc_btest_no_seastar(
