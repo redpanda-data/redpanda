@@ -28,6 +28,7 @@ redpanda_cc_library(
         "@ada",
         "@boost//:algorithm",
         "@fmt",
+        "@re2",
         "@seastar",
     ],
 )
