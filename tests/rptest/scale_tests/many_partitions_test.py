@@ -135,10 +135,11 @@ class ManyPartitionsTest(PreallocNodesTest):
             # to warn instead of info.
             log_config=LoggingConfig('info',
                                      logger_levels={
-                                         'storage': 'warn',
+                                         'storage': 'trace',
                                          'storage-gc': 'warn',
-                                         'raft': 'warn',
-                                         'offset_translator': 'warn'
+                                         'raft': 'trace',
+                                         'offset_translator': 'warn',
+                                         'archival': 'trace',
                                      }),
             **kwargs)
         self.rpk = RpkTool(self.redpanda)
