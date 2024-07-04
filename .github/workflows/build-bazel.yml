@@ -27,7 +27,7 @@ on:
 jobs:
   build:
     name: build redpanda with bazel
-    runs-on: ubuntu-latest-4
+    runs-on: ubuntu-latest-4-cores
     timeout-minutes: 30
     strategy:
       matrix:
