@@ -387,48 +387,31 @@ result<json::Document> parse_json(std::string_view v) {
             schema.GetErrorOffset())};
     }
 
-    // validation pre-step: compile metaschema for json draft
-    static const auto metaschema_doc = [] {
-        auto metaschema_json = json::Document{};
-        metaschema_json.Parse(
-          json_draft_4_metaschema.data(), json_draft_4_metaschema.size());
-        vassert(
-          !metaschema_json.HasParseError(), "Malformed metaschema document");
+    // get the dialect, try to directly validate it against the appropriate
+    // metaschema
+    auto dialect = std::optional<json_schema_dialect>{};
 
-        return json::SchemaDocument{metaschema_json};
-    }();
+    if (auto it = schema.FindMember("$schema"); it != schema.MemberEnd()) {
+        if (it->value.IsString()) {
+            dialect = from_uri(it->value.GetString());
+        }
 
-    // validation of schema: validate it against metaschema
-    auto validator = json::SchemaValidator{metaschema_doc};
-
-    if (!schema.Accept(validator)) {
-        // not a valid schema draft4 according to metaschema. retrieve some
-        // info and return error
-
-        auto error_loc_metaschema = json::StringBuffer{};
-        auto error_loc_schema = json::StringBuffer{};
-        validator.GetInvalidSchemaPointer().StringifyUriFragment(
-          error_loc_metaschema);
-        validator.GetInvalidDocumentPointer().StringifyUriFragment(
-          error_loc_schema);
-        auto invalid_keyword = validator.GetInvalidSchemaKeyword();
-
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Invalid json schema: '{}', invalid metaschema: '{}', invalid "
-            "keyword: '{}'",
-            std::string_view{
-              error_loc_schema.GetString(), error_loc_schema.GetLength()},
-            std::string_view{
-              error_loc_metaschema.GetString(),
-              error_loc_metaschema.GetLength()},
-            invalid_keyword)};
+        if (it->value.IsString() == false || dialect == std::nullopt) {
+            // if present, "$schema" have to be a string, and it has to be one
+            // the implemented dialects. If not, return an error
+            return error_info{
+              error_code::schema_invalid,
+              fmt::format(
+                "Unsupported json schema dialect: '{}'", pj{it->value})};
+        }
     }
 
-    // schema is a syntactically valid json schema draft4.
-    // TODO AB cross validate "$ref" fields, this is not done automatically
-    // TODO validate that "pattern" and "patternProperties" are valid regex
+    auto validation_res = dialect.has_value()
+                            ? validate_json_schema(dialect.value(), schema)
+                            : try_validate_json_schema(schema);
+    if (validation_res.has_error()) {
+        return validation_res.as_failure();
+    }
     return {std::move(schema)};
 }
 
