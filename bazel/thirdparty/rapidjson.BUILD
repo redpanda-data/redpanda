@@ -2,6 +2,7 @@
 # This build is a translation of the header-only library cmake-based build in
 # the rapidjson source tree.
 #
+
 cc_library(
     name = "rapidjson",
     hdrs = glob([

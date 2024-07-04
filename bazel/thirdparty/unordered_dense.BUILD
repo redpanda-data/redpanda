@@ -1,14 +1,14 @@
-load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+#
+# This build is a translation of the header-only library cmake-based build in
+# the unordered_dense source tree.
+#
 
-filegroup(
-    name = "srcs",
-    srcs = glob(["**"]),
-)
-
-cmake(
+cc_library(
     name = "unordered_dense",
-    lib_source = ":srcs",
-    out_headers_only = True,
+    hdrs = [
+        "include/ankerl/unordered_dense.h",
+    ],
+    strip_include_prefix = "include",
     visibility = [
         "//visibility:public",
     ],
