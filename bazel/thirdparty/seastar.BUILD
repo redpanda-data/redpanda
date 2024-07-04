@@ -7,6 +7,11 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@rules_python//python:defs.bzl", "py_binary")
 
 bool_flag(
+    name = "stack_guards",
+    build_setting_default = False,
+)
+
+bool_flag(
     name = "task_backtrace",
     build_setting_default = False,
 )
@@ -79,6 +84,13 @@ int_flag(
     name = "scheduling_groups",
     build_setting_default = 16,
     make_variable = "SCHEDULING_GROUPS",
+)
+
+config_setting(
+    name = "use_stack_guards",
+    flag_values = {
+        ":stack_guards": "true",
+    },
 )
 
 config_setting(
@@ -545,6 +557,10 @@ cc_library(
         "include/seastar/util/variant_utils.hh",
         "include/seastar/websocket/server.hh",
     ],
+    copts = select({
+        ":use_stack_guards": ["-fstack-clash-protection"],
+        "//conditions:default": [],
+    }),
     defines = [
         "BOOST_TEST_DYN_LINK",
         "BOOST_TEST_NO_LIB",
@@ -595,6 +611,9 @@ cc_library(
         "//conditions:default": [],
     }) + select({
         ":with_shuffle_task_queue": ["SEASTAR_SHUFFLE_TASK_QUEUE"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_stack_guards": ["SEASTAR_THREAD_STACK_GUARDS"],
         "//conditions:default": [],
     }),
     toolchains = [
