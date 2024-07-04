@@ -253,6 +253,17 @@ ss::future<> check_references(sharded_store& store, canonical_schema schema) {
     }
 }
 
+// helper struct to format json::Value
+struct pj {
+    json::Value const& v;
+    friend std::ostream& operator<<(std::ostream& os, pj const& p) {
+        auto osw = json::OStreamWrapper{os};
+        auto writer = json::Writer<json::OStreamWrapper>{osw};
+        p.v.Accept(writer);
+        return os;
+    }
+};
+
 result<json::Document> parse_json(std::string_view v) {
     // validation pre-step: compile metaschema for json draft
     static const auto metaschema_doc = [] {
@@ -331,17 +342,6 @@ bool is_superset(json::Value const& older, json::Value const& newer);
 
 // close the implementation in a namespace to keep it contained
 namespace is_superset_impl {
-
-// helper struct to format json::Value
-struct pj {
-    json::Value const& v;
-    friend std::ostream& operator<<(std::ostream& os, pj const& p) {
-        auto osw = json::OStreamWrapper{os};
-        auto writer = json::Writer<json::OStreamWrapper>{osw};
-        p.v.Accept(writer);
-        return os;
-    }
-};
 
 enum class json_type : uint8_t {
     string = 0,
