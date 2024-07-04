@@ -49,6 +49,9 @@ redpanda_cc_gtest(
     srcs = [
         "tests/lz4_buf_tests.cc",
     ],
+    # the death test doesn't seem to properly record or parse the expected
+    # output when there are multiple reactor threads.
+    args = ["-c1"],
     deps = [
         ":compression",
         "//src/v/base",
@@ -65,6 +68,9 @@ redpanda_cc_btest(
     srcs = [
         "tests/zstd_tests.cc",
     ],
+    # with the default core/memory settings each core doesn't have enough memory
+    # for this test. by using one core it will have enough memory.
+    args = ["-c1"],
     deps = [
         ":compression",
         "//src/v/base",
