@@ -68,6 +68,10 @@ build --keep_going
 # =================================
 # Testing
 # =================================
+
+# prints out combined stdout/stderr for failed tests
+test --test_output=errors
+
 test:unit --test_tag_filters=-bench
 test:bench --test_tag_filters=bench
 
