@@ -79,8 +79,30 @@ ss::future<> migrations_table::apply_snapshot(
   model::offset, const controller_snapshot& snapshot) {
     _next_id = snapshot.data_migrations.next_id;
     _migrations.reserve(snapshot.data_migrations.migrations.size());
-    for (auto& [id, migration] : snapshot.data_migrations.migrations) {
-        auto [it, _] = _migrations.emplace(id, migration.copy());
+
+    auto it = _migrations.cbegin();
+    while (it != _migrations.cend()) {
+        auto prev = it++;
+        if (!snapshot.data_migrations.migrations.contains(prev->first)) {
+            _migrations.erase(prev);
+            _callbacks.notify(prev->first);
+            co_await _resources.invoke_on_all(
+              [&meta = prev->second](migrated_resources& resources) {
+                  resources.remove_migration(meta);
+              });
+        }
+    }
+
+    for (const auto& [id, migration] : snapshot.data_migrations.migrations) {
+        auto it = _migrations.find(id);
+        if (it == _migrations.end()) {
+            it = _migrations.emplace(id, migration.copy()).first;
+        } else {
+            if (it->second.state == migration.state) {
+                continue;
+            }
+            it->second.state = migration.state;
+        }
         _callbacks.notify(id);
         co_await _resources.invoke_on_all(
           [&meta = it->second](migrated_resources& resources) {
@@ -222,6 +244,12 @@ migrations_table::apply(update_data_migration_state_cmd cmd) {
       requested_state);
     auto it = _migrations.find(id);
     if (it == _migrations.end()) {
+        vlog(
+          dm_log.warn,
+          "can not update migration {} state to {}, migration not "
+          "found",
+          id,
+          requested_state);
         co_return errc::data_migration_not_exists;
     }
 

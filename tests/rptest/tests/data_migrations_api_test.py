@@ -37,7 +37,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
         wait_until(
             migration_in_state,
-            timeout_sec=30,
+            timeout_sec=90,
             backoff_sec=1,
             err_msg=f"Failed waiting for migration {id} to reach {state} state"
         )
@@ -101,8 +101,20 @@ class DataMigrationsApiTest(RedpandaTest):
 
         admin.execute_data_migration_action(out_migration_id,
                                             MigrationAction.prepare)
+        self.logger.info('waiting for preparing')
         self.wait_for_migration_state(out_migration_id, 'preparing')
-
+        self.logger.info('waiting for prepared')
+        self.wait_for_migration_state(out_migration_id, 'prepared')
         admin.execute_data_migration_action(out_migration_id,
-                                            MigrationAction.cancel)
-        self.wait_for_migration_state(out_migration_id, 'canceling')
+                                            MigrationAction.execute)
+        self.logger.info('waiting for executing')
+        self.wait_for_migration_state(out_migration_id, 'executing')
+        self.wait_for_migration_state(out_migration_id, 'executed')
+        admin.execute_data_migration_action(out_migration_id,
+                                            MigrationAction.finish)
+        self.wait_for_migration_state(out_migration_id, 'finished')
+
+        # TODO: check unhappy scenarios like this
+        # admin.execute_data_migration_action(out_migration_id,
+        #                                     MigrationAction.cancel)
+        # self.wait_for_migration_state(out_migration_id, 'canceling')

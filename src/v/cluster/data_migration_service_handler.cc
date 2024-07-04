@@ -19,9 +19,11 @@ namespace cluster::data_migrations {
 service_handler::service_handler(
   ss::scheduling_group sc,
   ss::smp_service_group ssg,
-  ss::sharded<frontend>& frontend)
+  ss::sharded<frontend>& frontend,
+  ss::sharded<irpc_frontend>& irpc_frontend)
   : data_migrations_service(sc, ssg)
-  , _frontend(frontend) {}
+  , _frontend(frontend)
+  , _irpc_frontend(irpc_frontend) {}
 
 ss::future<create_migration_reply> service_handler::create_migration(
   create_migration_request request, ::rpc::streaming_context&) {
@@ -58,6 +60,11 @@ ss::future<remove_migration_reply> service_handler::remove_migration(
       .then([](std::error_code ec) {
           return remove_migration_reply{.ec = map_error_code(ec)};
       });
+}
+
+ss::future<check_ntp_states_reply> service_handler::check_ntp_states(
+  check_ntp_states_request request, ::rpc::streaming_context&) {
+    return _irpc_frontend.local().check_ntp_states(std::move(request));
 }
 
 cluster::errc service_handler::map_error_code(std::error_code ec) {

@@ -33,7 +33,10 @@
 #include "cluster/data_migrated_resources.h"
 #include "cluster/data_migration_backend.h"
 #include "cluster/data_migration_frontend.h"
+#include "cluster/data_migration_irpc_frontend.h"
 #include "cluster/data_migration_table.h"
+#include "cluster/data_migration_types.h"
+#include "cluster/data_migration_worker.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
@@ -80,6 +83,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
@@ -303,6 +307,8 @@ ss::future<> controller::start(
       std::ref(_connections),
       std::ref(_as));
 
+    co_await _data_migration_worker.start(
+      _raft0->self().id(), std::ref(_partition_leaders), std::ref(_as));
     {
         limiter_configuration limiter_conf{
           config::shard_local_cfg().enable_controller_log_rate_limiting.bind(),
@@ -749,11 +755,19 @@ ss::future<> controller::start(
         }
     }
 
-    _data_migration_backend = std::make_unique<data_migrations::backend>(
+    co_await _data_migration_backend.start_on(
+      data_migrations::data_migrations_shard,
       std::ref(*_data_migration_table),
       std::ref(_data_migration_frontend.local()),
+      std::ref(_data_migration_worker),
+      std::ref(_partition_leaders.local()),
+      std::ref(_tp_state.local()),
+      std::ref(_shard_table.local()),
       std::ref(_as.local()));
-    co_await _data_migration_backend->start();
+    co_await _data_migration_backend.invoke_on_instance(
+      &data_migrations::backend::start);
+    co_await _data_migration_irpc_frontend.start(
+      std::ref(_feature_table), std::ref(_data_migration_backend));
 }
 
 ss::future<> controller::set_ready() {
@@ -802,12 +816,8 @@ ss::future<> controller::stop() {
               }
               return ss::make_ready_future();
           })
-          .then([this] {
-              if (_data_migration_backend) {
-                  return _data_migration_backend->stop();
-              }
-              return ss::make_ready_future();
-          })
+          .then([this] { return _data_migration_irpc_frontend.stop(); })
+          .then([this] { return _data_migration_backend.stop(); })
           .then([this] {
               if (_recovery_backend) {
                   return _recovery_backend->stop_and_wait();
@@ -823,6 +833,7 @@ ss::future<> controller::stop() {
           .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
+          .then([this] { return _data_migration_worker.stop(); })
           .then([this] { return _data_migration_frontend.stop(); })
           .then([this] { return _config_manager.stop(); })
           .then([this] { return _api.stop(); })

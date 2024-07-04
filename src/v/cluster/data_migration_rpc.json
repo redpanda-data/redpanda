@@ -19,6 +19,11 @@
             "name": "remove_migration",
             "input_type": "remove_migration_request",
             "output_type": "remove_migration_reply"
+        },
+        {
+            "name": "check_ntp_states",
+            "input_type": "check_ntp_states_request",
+            "output_type": "check_ntp_states_reply"
         }
     ]
 }

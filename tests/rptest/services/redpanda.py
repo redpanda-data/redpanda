@@ -4733,7 +4733,7 @@ class RedpandaService(RedpandaServiceBase):
         if not any_anomalies:
             self.logger.info(f"No anomalies in object storage scrub")
         elif not fatal_anomalies:
-            self.logger.warn(
+            self.logger.info(
                 f"Non-fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
             )
         else:
