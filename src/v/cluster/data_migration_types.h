@@ -19,6 +19,8 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <ranges>
+
 namespace cluster::data_migrations {
 /**
  * Identifier of data migration, the identifier is guaranteed to be unique
@@ -64,6 +66,18 @@ enum class state {
     cancelled,
 };
 std::ostream& operator<<(std::ostream& o, state);
+
+/**
+ * For each migration state transition that requires work on partitions
+ * a partition replica has the following lifecycle:
+ * - waiting_for_rpc: work requested by raft0, shard not assigned;
+ * - can_run: seconded by RPC request, shard may be assigned to work on;
+ * - done: shard completed work and unassigned, done.
+ * Unless (or until) the shard is the partition leader, it gets stuck
+ * in can_run status.
+ */
+enum class migrated_replica_status { waiting_for_rpc, can_run, done };
+std::ostream& operator<<(std::ostream& o, migrated_replica_status);
 
 /**
  * State of migrated resource i.e. either topic or consumer group, when resource
@@ -151,11 +165,19 @@ struct inbound_migration
 
     inbound_migration copy() const;
 
+    static std::optional<state> next_replica_state(state state);
+
     auto serde_fields() { return std::tie(topics, groups); }
 
     friend bool operator==(const inbound_migration&, const inbound_migration&)
       = default;
     friend std::ostream& operator<<(std::ostream&, const inbound_migration&);
+
+    auto topic_nts() const {
+        return std::as_const(topics)
+               | std::views::transform(
+                 [](const inbound_topic& it) { return it.source_topic_name; });
+    }
 };
 
 /**
@@ -192,11 +214,15 @@ struct outbound_migration
 
     outbound_migration copy() const;
 
+    static std::optional<state> next_replica_state(state state);
+
     auto serde_fields() { return std::tie(topics, groups, copy_to); }
 
     friend bool operator==(const outbound_migration&, const outbound_migration&)
       = default;
     friend std::ostream& operator<<(std::ostream&, const outbound_migration&);
+
+    auto topic_nts() const { return std::as_const(topics) | std::views::all; }
 };
 /**
  * Variant representing a migration. It can be either inbound or outbound data
@@ -227,12 +253,32 @@ struct migration_metadata
           .id = id, .migration = copy_migration(migration), .state = state};
     }
 
+    std::optional<data_migrations::state> next_replica_state() const;
+
     auto serde_fields() { return std::tie(id, migration, state); }
 
     friend bool operator==(const migration_metadata&, const migration_metadata&)
       = default;
 
     friend std::ostream& operator<<(std::ostream&, const migration_metadata&);
+};
+
+struct data_migration_ntp_state
+  : serde::envelope<
+      data_migration_ntp_state,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    using self = data_migration_ntp_state;
+
+    model::ntp ntp;
+    id migration;
+    state state;
+
+    auto serde_fields() { return std::tie(ntp, migration, state); }
+
+    friend bool operator==(const self&, const self&) = default;
+    friend std::ostream& operator<<(std::ostream&, const self&);
 };
 
 struct create_migration_cmd_data
@@ -382,6 +428,40 @@ struct remove_migration_reply
 
     friend std::ostream&
     operator<<(std::ostream&, const remove_migration_reply&);
+};
+
+struct check_ntp_states_request
+  : serde::envelope<
+      check_ntp_states_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    using self = check_ntp_states_request;
+
+    chunked_vector<data_migration_ntp_state> sought_states;
+
+    auto serde_fields() { return std::tie(sought_states); }
+
+    friend bool operator==(const self&, const self&) = default;
+
+    friend std::ostream& operator<<(std::ostream&, const self&);
+};
+
+struct check_ntp_states_reply
+  : serde::envelope<
+      check_ntp_states_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    using self = check_ntp_states_reply;
+
+    chunked_vector<data_migration_ntp_state> actual_states;
+
+    auto serde_fields() { return std::tie(actual_states); }
+
+    friend bool operator==(const self&, const self&) = default;
+
+    friend std::ostream& operator<<(std::ostream&, const self&);
 };
 
 } // namespace cluster::data_migrations

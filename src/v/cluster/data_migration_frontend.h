@@ -43,6 +43,8 @@ public:
     ss::future<std::error_code> remove_migration(
       id, can_dispatch_to_leader dispatch = can_dispatch_to_leader::yes);
 
+    ss::future<check_ntp_states_reply> check_ntp_states_on_foreign_node(
+      model::node_id node, check_ntp_states_request&& req);
     ss::future<chunked_vector<migration_metadata>> list_migrations();
 
 private:
@@ -54,6 +56,7 @@ private:
     ss::future<std::error_code> do_remove_migration(id);
 
     ss::future<std::error_code> insert_barrier();
+
     template<
       typename Request,
       typename Reply,

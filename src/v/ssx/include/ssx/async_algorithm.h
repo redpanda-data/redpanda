@@ -196,6 +196,37 @@ ss::future<> async_for_each(Iterator begin, Iterator end, Fn f) {
 }
 
 /**
+ * @brief Call f on every element, yielding occasionally.
+ *
+ * This is equivalent to std::for_each, except that the computational
+ * loop yields every Traits::interval (default 100) iterations in order
+ * to avoid reactor stalls. The returned future resolves when all elements
+ * have been processed.
+ *
+ * The function is taken by value.
+ *
+ * The container must remain live, and its begin and end iterators, as they were
+ * when called, must remain valid until the returned future resolves.
+ *
+ * @param container reference to a container
+ * @param f the function to call on each element
+ * @return ss::future<> a future which resolves when all elements have been
+ * processed
+ */
+template<typename Traits = async_algo_traits, typename Fn, typename Container>
+requires requires(Container c, Fn fn) {
+    { ss::futurize_invoke(fn, *std::begin(c)) } -> std::same_as<ss::future<>>;
+    std::end(c);
+}
+ss::future<> async_for_each(Container& container, Fn f) {
+    return async_for_each_fast<Traits>(
+      detail::internal_counter{},
+      container.begin(),
+      container.end(),
+      std::move(f));
+}
+
+/**
  * @brief Call f on every element, yielding occasionally and accepting
  * an externally provided counter for yield control.
  *

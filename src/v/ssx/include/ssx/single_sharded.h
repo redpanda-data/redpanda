@@ -19,6 +19,7 @@
 
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace ssx {
@@ -152,11 +153,21 @@ public:
         return base::invoke_on(
           _shard,
           options,
-          [func = std::forward<Func>(func)](
-            maybe_service<Service>& maybe_service, Args&&... args) {
-              func(*maybe_service, std::forward<Args>(args)...);
-          },
-          std::forward<Args>(args)...);
+          // After smp::sumbit_to stores this lambda in the queue and we return
+          // to the caller, any references provided may become dangling. So the
+          // lambda must keep parameters and function values, not references.
+          [func = std::forward<Func>(func),
+           // This is wild, as it moves even from lvalues. However, that's how
+           // sharded<>::invoke_on behaves, and we mimic it.
+           args_tup = std::tuple(std::move(args)...)](
+            maybe_service<Service>& maybe_service) mutable {
+              return std::apply(
+                // move the captured func (and args below), as we use them once
+                std::move(func),
+                // caller responsible to make sure the service is still there
+                std::tuple_cat(
+                  std::forward_as_tuple(*maybe_service), std::move(args_tup)));
+          });
     }
 
     /// Invoke a callable on the instance of `Service`.
