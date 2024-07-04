@@ -1,3 +1,7 @@
+#
+# This build is a translation of Seastar's official cmake-based build.
+#
+
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@rules_python//python:defs.bzl", "py_binary")

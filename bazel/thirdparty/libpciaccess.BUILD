@@ -1,3 +1,7 @@
+#
+# This build is a translation of the libpciaccess meson build:
+# https://gitlab.freedesktop.org/xorg/lib/libpciaccess/-/blob/2ec2576cabefef1eaa5dd9307c97de2e887fc347/meson.build
+#
 cc_library(
     name = "libpciaccess",
     srcs = [

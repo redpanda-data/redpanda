@@ -1,5 +1,9 @@
+#
+# This build is a translation of the CRoaring cmake-based build.
+#
 # TODO
 # - Take a closer look at compile options that control cpu features.
+#
 
 cc_library(
     name = "roaring",

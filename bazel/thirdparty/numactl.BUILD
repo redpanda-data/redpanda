@@ -1,3 +1,7 @@
+#
+# This build is a translation from the official autotools-based build contained
+# in the numactl source tree.
+#
 # TODO
 # - inspect implementation to see what should go into config.h
 # - understand more if we are using versions.ldscript correctly
@@ -6,6 +10,7 @@
 #     external/_main~_repo_rules~numactl/libnuma.c:68:2: warning: "not threadsafe" [-W#warnings]
 #     #warning "not threadsafe"
 # - probably needs a header prefix
+#
 genrule(
     name = "config_h",
     outs = ["config.h"],

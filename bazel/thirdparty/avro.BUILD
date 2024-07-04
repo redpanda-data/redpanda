@@ -1,3 +1,15 @@
+#
+# This build is a translation from the cmake build. The second link below is a
+# cleaned up version of the first.
+#
+# https://github.com/redpanda-data/avro/blob/release-1.11.1-redpanda/lang/c%2B%2B/CMakeLists.txt
+# https://github.com/redpanda-data/avro/blob/release-1.11.1-redpanda/redpanda_build/CMakeLists.txt
+#
+# All of the header gymnastics below is to work around the problem of the C++
+# implementation files including the headers without the "avro/" prefix. It
+# would be feasible to add both the prefixed and non-prefixed header paths, but
+# it's nice to not leak out the non-prefixed version to dependencies.
+#
 _NON_PREFIXED_HEADERS = [
     "AvroParse.hh",
     "AvroSerialize.hh",
