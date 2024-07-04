@@ -407,6 +407,26 @@ json::Value const& get_true_schema() {
     return true_schema;
 }
 
+bool is_true_schema(json::Value const& v) {
+    // check that v is either true or {}. used to break recursion with
+    // is_superset NOTE that {"this_prop_is_not_real": 42} should be considered
+    // a true schema, but this function does not recognize it.
+    // TODO possible micro optimization: if &v == &get_true_schema(): return
+    // true
+
+    // support keyword true
+    if (v.IsBool()) {
+        return v.GetBool();
+    }
+
+    // support {}
+    if (v.IsObject()) {
+        return v.MemberCount() == 0;
+    }
+
+    return false;
+}
+
 json::Value const& get_false_schema() {
     // A `false` schema is one that doesn't validate any input, it's literal
     // json value is `{"not": {}}`
@@ -420,6 +440,28 @@ json::Value const& get_false_schema() {
         return tmp;
     }();
     return false_schema;
+}
+
+bool is_false_schema(json::Value const& v) {
+    // check that v is either false or {"not": {}}. used to break recursion with
+    // is_superset This will accept also {˝this_prop_is_not_real": 42, "not":
+    // {}} as a false schema.
+    // TODO possible micro optimization: if &v == &get_false_schema(): return
+    // true
+
+    // support keyword false
+    if (v.IsBool()) {
+        return !v.GetBool();
+    }
+    // support {"not": {}}
+    if (v.IsObject()) {
+        auto it = v.FindMember("not");
+        if (it != v.MemberEnd()) {
+            return is_true_schema(it->value);
+        }
+    }
+
+    return false;
 }
 
 // parse None | schema_type | array[schema_type] into a set of types.
@@ -1167,6 +1209,13 @@ using namespace is_superset_impl;
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 bool is_superset(json::Value const& older, json::Value const& newer) {
+    // break recursion if parameters are atoms:
+    if (is_true_schema(older) || is_false_schema(newer)) {
+        // either older is the superset of every possible schema, or newer is
+        // the subset of every possible schema
+        return true;
+    }
+
     // extract { "type" : ... }
     auto older_types = normalized_type(older);
     auto newer_types = normalized_type(newer);

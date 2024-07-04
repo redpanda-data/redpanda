@@ -546,6 +546,18 @@ static constexpr auto compatibility_test_cases = std::to_array<
 })",
     .reader_is_compatible_with_writer = true,
   },
+  // array checks: same
+  {
+    .reader_schema = R"({"type": "array"})",
+    .writer_schema = R"({"type": "array"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // array checks: uniqueItems explicit value to false
+  {
+    .reader_schema = R"({"type": "array", "uniqueItems": false})",
+    .writer_schema = R"({"type": "array"})",
+    .reader_is_compatible_with_writer = true,
+  },
   // array checks:
   // - size decrease
   // - items change and new items added
