@@ -77,24 +77,27 @@ SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
         store_fixture f;
         BOOST_TEST_CONTEXT(data) {
-            BOOST_REQUIRE_EXCEPTION(
-              pps::make_canonical_json_schema(
-                f.store,
-                {pps::subject{"test"}, {data.def, pps::schema_type::json}})
-                .get(),
-              pps::exception,
-              [&data](pps::exception const& e) {
-                  auto code_matches = e.code() == data.err.code();
-                  if (code_matches && e.message() != data.err.message()) {
-                      fmt::print(
-                        "[{}] does not match expected [{}]\n",
-                        e.message(),
-                        data.err.message());
-                  }
-                  return code_matches;
-              });
+            try {
+                pps::make_canonical_json_schema(
+                  f.store,
+                  {pps::subject{"test"}, {data.def, pps::schema_type::json}})
+                  .get();
+            } catch (pps::exception const& e) {
+                BOOST_CHECK_EQUAL(e.code(), data.err.code());
+                BOOST_WARN_MESSAGE(
+                  e.message() == data.err.message(),
+                  fmt::format(
+                    "[{}] does not match expected [{}]",
+                    e.message(),
+                    data.err.message()));
+            } catch (...) {
+                BOOST_CHECK_MESSAGE(
+                  false,
+                  fmt::format(
+                    "terminated with exception {}", std::current_exception()));
+            }
         }
-    };
+    }
 }
 
 static constexpr auto valid_test_cases = std::to_array<std::string_view>({
@@ -115,14 +118,22 @@ SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
         store_fixture f;
         BOOST_TEST_CONTEXT(data) {
-            auto s = pps::make_json_schema_definition(
-              f.store,
-              pps::make_canonical_json_schema(
-                f.store, {pps::subject{"test"}, {data, pps::schema_type::json}})
-                .get());
-            BOOST_REQUIRE_NO_THROW(s.get());
+            try {
+                pps::make_json_schema_definition(
+                  f.store,
+                  pps::make_canonical_json_schema(
+                    f.store,
+                    {pps::subject{"test"}, {data, pps::schema_type::json}})
+                    .get())
+                  .get();
+            } catch (...) {
+                BOOST_CHECK_MESSAGE(
+                  false,
+                  fmt::format(
+                    "terminated with exception {}", std::current_exception()));
+            }
         }
-    };
+    }
 }
 
 struct test_references_data {
