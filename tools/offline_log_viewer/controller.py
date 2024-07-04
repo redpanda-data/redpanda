@@ -23,8 +23,13 @@ def read_remote_label_serde(rdr: Reader):
     return rdr.read_envelope(lambda rdr, _: {"cluster_uuid": rdr.read_uuid()})
 
 
-def read_topic_properties_serde(rdr: Reader, version):
+def read_topic_namespace(rdr: Reader):
+    namespace = rdr.read_string()
+    topic = rdr.read_string()
+    return f"{namespace}/{topic}"
 
+
+def read_topic_properties_serde(rdr: Reader, version):
     topic_properties = {
         'compression': rdr.read_optional(Reader.read_serde_enum),
         'cleanup_policy_bitflags': rdr.read_optional(Reader.read_serde_enum),
@@ -119,7 +124,8 @@ def read_topic_properties_serde(rdr: Reader, version):
         }
     if version >= 9:
         topic_properties |= {
-            'remote_label': rdr.read_optional(read_remote_label_serde)
+            'remote_label': rdr.read_optional(read_remote_label_serde),
+            'topic_namespace_override': rdr.read_optional(read_topic_namespace)
         }
 
     return topic_properties
