@@ -253,6 +253,26 @@ ss::future<> check_references(sharded_store& store, canonical_schema schema) {
     }
 }
 
+// this is the list of supported dialects
+enum class json_schema_dialect {
+    draft4,
+};
+
+constexpr std::string_view to_uri(json_schema_dialect draft) {
+    using enum json_schema_dialect;
+    switch (draft) {
+    case draft4:
+        return "http://json-schema.org/draft-04/schema#";
+    }
+}
+
+constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
+    using enum json_schema_dialect;
+    return string_switch<std::optional<json_schema_dialect>>{uri}
+      .match(to_uri(draft4), draft4)
+      .default_match(std::nullopt);
+}
+
 // helper struct to format json::Value
 struct pj {
     json::Value const& v;
