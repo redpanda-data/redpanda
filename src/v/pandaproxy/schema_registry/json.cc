@@ -284,6 +284,95 @@ struct pj {
     }
 };
 
+template<json_schema_dialect Dialect>
+json::SchemaDocument const& get_metaschema() {
+    static auto const meteschema_doc = [] {
+        auto metaschema_str = [] {
+            switch (Dialect) {
+            case json_schema_dialect::draft4:
+                return json_draft_4_metaschema;
+            }
+        }();
+
+        auto metaschema_json = json::Document{};
+        metaschema_json.Parse(metaschema_str.data(), metaschema_str.size());
+        vassert(
+          !metaschema_json.HasParseError(), "Malformed metaschema document");
+
+        return json::SchemaDocument{metaschema_json};
+    }();
+
+    return meteschema_doc;
+}
+
+result<void> validate_json_schema(
+  json_schema_dialect dialect, json::Document const& schema) {
+    // validation pre-step: get metaschema for json draft
+    auto const& metaschema_doc = [=]() -> json::SchemaDocument const& {
+        using enum json_schema_dialect;
+        switch (dialect) {
+        case draft4:
+            return get_metaschema<draft4>();
+        }
+    }();
+
+    // validation of schema: validate it against metaschema
+    auto validator = json::SchemaValidator{metaschema_doc};
+
+    if (!schema.Accept(validator)) {
+        // schema it's not a valid json schema for Dialect, according to
+        // metaschema
+
+        auto error_loc_metaschema = json::StringBuffer{};
+        auto error_loc_schema = json::StringBuffer{};
+        validator.GetInvalidSchemaPointer().StringifyUriFragment(
+          error_loc_metaschema);
+        validator.GetInvalidDocumentPointer().StringifyUriFragment(
+          error_loc_schema);
+        auto invalid_keyword = validator.GetInvalidSchemaKeyword();
+
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Invalid json schema: '{}', invalid metaschema: '{}', invalid "
+            "keyword: '{}'",
+            std::string_view{
+              error_loc_schema.GetString(), error_loc_schema.GetLength()},
+            std::string_view{
+              error_loc_metaschema.GetString(),
+              error_loc_metaschema.GetLength()},
+            invalid_keyword)};
+    }
+
+    // schema is a syntactically valid json schema, where $schema == Dialect.
+    // TODO AB cross validate "$ref" fields, this is not done automatically
+    // TODO validate that "pattern" and "patternProperties" are valid regex
+    return outcome::success();
+}
+
+result<void> try_validate_json_schema(json::Document const& schema) {
+    using enum json_schema_dialect;
+
+    // no explicit $schema: try to validate from newest to oldest draft
+    auto first_error = std::optional<error_info>{};
+    for (auto d : {draft4}) {
+        auto res = validate_json_schema(d, schema);
+        if (res.has_value()) {
+            return outcome::success();
+        }
+        // failed to validated with dialect d. save error for reporting
+        if (!first_error.has_value()) {
+            first_error = res.error();
+        }
+    }
+
+    // A json without a "$schema" member is likely meant to use the latest
+    // dialect, so the first failure message is likely more insightful. Also,
+    // except for draft4, the other schemas are mostly compatible, only adding
+    // rules.
+    return first_error.value();
+}
+
 result<json::Document> parse_json(std::string_view v) {
     // validation pre-step: compile metaschema for json draft
     static const auto metaschema_doc = [] {
