@@ -120,8 +120,6 @@ rjson_parse_buf(Arg&& arg, Handler&& handler) {
     return std::forward<Handler>(handler).result;
 }
 
-} // namespace impl
-
 /// \brief Parse a payload using the handler.
 ///
 /// \warning rjson_parse is preferred, since it can be chunked.
@@ -131,6 +129,8 @@ rjson_parse(const char* const s, Handler&& handler) {
     return impl::rjson_parse_buf<::json::StringStream>(
       s, std::forward<Handler>(handler));
 }
+
+} // namespace impl
 
 ///\brief Parse a payload using the handler.
 template<impl::RjsonParseHandler Handler>
@@ -144,7 +144,7 @@ template<impl::RjsonParseHandler Handler>
 typename ss::future<typename Handler::rjson_parse_result>
 rjson_parse(std::unique_ptr<ss::http::request> req, Handler handler) {
     if (!req->content.empty()) {
-        co_return rjson_parse(req->content.data(), std::move(handler));
+        co_return impl::rjson_parse(req->content.data(), std::move(handler));
     }
 
     iobuf buf;
