@@ -265,6 +265,11 @@ ss::future<bool> sharded_store::has_schema(schema_id id) {
       });
 }
 
+ss::future<> sharded_store::delete_schema(schema_id id) {
+    return _store.invoke_on(
+      shard_for(id), _smp_opts, [id](store& s) { s.delete_schema(id); });
+}
+
 ss::future<subject_schema>
 sharded_store::has_schema(canonical_schema schema, include_deleted inc_del) {
     auto versions = co_await get_versions(schema.sub(), inc_del);
@@ -503,11 +508,30 @@ sharded_store::get_subject_version_written_at(subject sub, schema_version ver) {
 
 ss::future<bool> sharded_store::delete_subject_version(
   subject sub, schema_version ver, force force) {
-    auto sub_shard{shard_for(sub)};
-    co_return co_await _store.invoke_on(
+    auto sub_shard = shard_for(sub);
+    auto [schema_id, result] = co_await _store.invoke_on(
       sub_shard, _smp_opts, [sub{std::move(sub)}, ver, force](store& s) {
-          return s.delete_subject_version(sub, ver, force).value();
+          auto schema_id = s.get_subject_version_id(
+                              sub, ver, include_deleted::yes)
+                             .value()
+                             .id;
+          auto result = s.delete_subject_version(sub, ver, force).value();
+          return std::make_pair(schema_id, result);
       });
+
+    auto remaining_subjects_exist = co_await _store.map_reduce0(
+      [schema_id](store& s) {
+          return s.subject_versions_has_any_of(
+            {schema_id}, include_deleted::yes);
+      },
+      false,
+      std::logical_or{});
+
+    if (!remaining_subjects_exist) {
+        co_await delete_schema(schema_id);
+    }
+
+    co_return result;
 }
 
 ss::future<mode> sharded_store::get_mode() {
