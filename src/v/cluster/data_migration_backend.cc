@@ -298,6 +298,7 @@ ss::future<> backend::handle_raft0_leadership_update() {
 }
 
 ss::future<> backend::handle_migration_update(id id) {
+    auto units = co_await _mutex.get_units(_as);
     vlog(dm_log.debug, "received data migration {} notification", id);
 
     bool need_wakeup = false;

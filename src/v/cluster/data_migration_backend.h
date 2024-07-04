@@ -132,6 +132,9 @@ private:
      * topics only, but no partititons, _nstates and _nodes_to_retry are
      * empty
      *
+     * The following invariants can only be violated between tasks by a fiber
+     * that has the lock.
+     *
      * When we are the coordinator:
      * - _mrstates and _nstates store the same set of migration-ntp
      * combinations.
@@ -139,10 +142,10 @@ private:
      * - Nodes in _nstates = nodes in _nodes_to_retry ⊔ nodes of in-flight
      * RPCs.
      *
-     * - _advance_requests is only modified by the synchronous part of
-     * work_cycle
-     * - _mrstates, _nstates and _nodes_to_retry are only modified by the
-     * synchronous part of work_cycle and by handle_migration_update
+     * - _advance_requests is only modified by the work cycle
+     * - _mrstates, _nstates and _nodes_to_retry are only modified under lock
+     *
+     * - _work_states only contains topics present in _mrstates
      */
     migration_reconciliation_states_t _migration_states;
     // reverse map for topics in mrstates
