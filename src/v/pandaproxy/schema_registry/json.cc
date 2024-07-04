@@ -241,6 +241,194 @@ constexpr std::string_view json_draft_4_metaschema = R"json(
 }
 )json";
 
+/*
+ From https://json-schema.org/draft-06/schema, this is the draft6 metaschema
+ used to validate draft6 json schemas.
+ TODO It's implemented in the draft4 dialect, because the current version
+ of rapidjson only support draft4, change this when it's upgraded
+ For reference, this is the diff applied to the original metaschema:
+--- draft6.json	2024-07-03 10:46:11.956695951 +0200
++++ draft6.asdraft4.json	2024-07-05 15:55:10.472362720 +0200
+@@ -1,4 +1,4 @@
+ {
+-    "$schema": "http://json-schema.org/draft-06/schema#",
+-    "$id": "http://json-schema.org/draft-06/schema#",
++    "$schema": "http://json-schema.org/draft-04/schema#",
++    "id": "http://json-schema.org/draft-06/schema#",
+     "title": "Core schema meta-schema",
+@@ -46,3 +46,4 @@
+             "type": "string",
+-            "format": "uri"
++            "format": "uri",
++            "enum": ["http://json-schema.org/draft-06/schema#"]
+         },
+@@ -65,3 +66,4 @@
+             "type": "number",
+-            "exclusiveMinimum": 0
++            "minimum": 0,
++            "exclusiveMinimum": true
+         },
+*/
+constexpr std::string_view json_draft_6_metaschema = R"json(
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "id": "http://json-schema.org/draft-06/schema#",
+    "title": "Core schema meta-schema",
+    "definitions": {
+        "schemaArray": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#" }
+        },
+        "nonNegativeInteger": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "nonNegativeIntegerDefault0": {
+            "allOf": [
+                { "$ref": "#/definitions/nonNegativeInteger" },
+                { "default": 0 }
+            ]
+        },
+        "simpleTypes": {
+            "enum": [
+                "array",
+                "boolean",
+                "integer",
+                "null",
+                "number",
+                "object",
+                "string"
+            ]
+        },
+        "stringArray": {
+            "type": "array",
+            "items": { "type": "string" },
+            "uniqueItems": true,
+            "default": []
+        }
+    },
+    "type": ["object", "boolean"],
+    "properties": {
+        "$id": {
+            "type": "string",
+            "format": "uri-reference"
+        },
+        "$schema": {
+            "type": "string",
+            "format": "uri",
+            "enum": ["http://json-schema.org/draft-06/schema#"]
+        },
+        "$ref": {
+            "type": "string",
+            "format": "uri-reference"
+        },
+        "title": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "default": {},
+        "examples": {
+            "type": "array",
+            "items": {}
+        },
+        "multipleOf": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true
+        },
+        "maximum": {
+            "type": "number"
+        },
+        "exclusiveMaximum": {
+            "type": "number"
+        },
+        "minimum": {
+            "type": "number"
+        },
+        "exclusiveMinimum": {
+            "type": "number"
+        },
+        "maxLength": { "$ref": "#/definitions/nonNegativeInteger" },
+        "minLength": { "$ref": "#/definitions/nonNegativeIntegerDefault0" },
+        "pattern": {
+            "type": "string",
+            "format": "regex"
+        },
+        "additionalItems": { "$ref": "#" },
+        "items": {
+            "anyOf": [
+                { "$ref": "#" },
+                { "$ref": "#/definitions/schemaArray" }
+            ],
+            "default": {}
+        },
+        "maxItems": { "$ref": "#/definitions/nonNegativeInteger" },
+        "minItems": { "$ref": "#/definitions/nonNegativeIntegerDefault0" },
+        "uniqueItems": {
+            "type": "boolean",
+            "default": false
+        },
+        "contains": { "$ref": "#" },
+        "maxProperties": { "$ref": "#/definitions/nonNegativeInteger" },
+        "minProperties": { "$ref": "#/definitions/nonNegativeIntegerDefault0" },
+        "required": { "$ref": "#/definitions/stringArray" },
+        "additionalProperties": { "$ref": "#" },
+        "definitions": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#" },
+            "default": {}
+        },
+        "properties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#" },
+            "default": {}
+        },
+        "patternProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "format": "regex" },
+            "default": {}
+        },
+        "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+                "anyOf": [
+                    { "$ref": "#" },
+                    { "$ref": "#/definitions/stringArray" }
+                ]
+            }
+        },
+        "propertyNames": { "$ref": "#" },
+        "const": {},
+        "enum": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "type": {
+            "anyOf": [
+                { "$ref": "#/definitions/simpleTypes" },
+                {
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/simpleTypes" },
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            ]
+        },
+        "format": { "type": "string" },
+        "allOf": { "$ref": "#/definitions/schemaArray" },
+        "anyOf": { "$ref": "#/definitions/schemaArray" },
+        "oneOf": { "$ref": "#/definitions/schemaArray" },
+        "not": { "$ref": "#" }
+    },
+    "default": {}
+}
+)json";
+
 result<json::Document> parse_json(std::string_view v);
 
 ss::future<> check_references(sharded_store& store, canonical_schema schema) {
@@ -260,6 +448,7 @@ ss::future<> check_references(sharded_store& store, canonical_schema schema) {
 enum class json_schema_dialect {
     draft4,
     draft5,
+    draft6,
 };
 
 constexpr std::string_view to_uri(json_schema_dialect draft) {
@@ -269,6 +458,8 @@ constexpr std::string_view to_uri(json_schema_dialect draft) {
         return "http://json-schema.org/draft-04/schema#";
     case draft5:
         return "http://json-schema.org/draft-05/schema#";
+    case draft6:
+        return "http://json-schema.org/draft-06/schema#";
     }
 }
 
@@ -277,6 +468,7 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
     return string_switch<std::optional<json_schema_dialect>>{uri}
       .match(to_uri(draft4), draft4)
       .match(to_uri(draft5), draft5)
+      .match(to_uri(draft6), draft6)
       .default_match(std::nullopt);
 }
 
@@ -304,6 +496,8 @@ json::SchemaDocument const& get_metaschema() {
                 // get_metaschema<draft5>() should not be instantiated because
                 // the codegen would be redundant
                 return json_draft_4_metaschema;
+            case json_schema_dialect::draft6:
+                return json_draft_6_metaschema;
             }
         }();
 
@@ -330,6 +524,8 @@ result<void> validate_json_schema(
             // NOTE: draft5 reuses the metaschema for draft4, so there is no
             // need to instantiate get_metaschema<draft5>
             return get_metaschema<draft4>();
+        case draft6:
+            return get_metaschema<draft6>();
         }
     }();
 
@@ -372,7 +568,7 @@ result<void> try_validate_json_schema(json::Document const& schema) {
 
     // no explicit $schema: try to validate from newest to oldest draft
     auto first_error = std::optional<error_info>{};
-    for (auto d : {draft4}) {
+    for (auto d : {draft6, draft4}) {
         auto res = validate_json_schema(d, schema);
         if (res.has_value()) {
             return outcome::success();
@@ -1382,12 +1578,20 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
 
     for (auto not_yet_handled_keyword : {
            "$schema",
-           "prefixItems",
            "definitions",
            "dependencies",
            "allOf",
            "anyOf",
            "oneOf",
+           // draft 6 unhandled keywords:
+           "$comment",
+           "$ref",
+           "const",
+           "contains",
+           "examples",
+           "propertyNames",
+           // later drafts:
+           "prefixItems",
          }) {
         if (
           newer.HasMember(not_yet_handled_keyword)
