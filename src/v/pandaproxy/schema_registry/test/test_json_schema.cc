@@ -144,6 +144,22 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
   "propertyNames": { "enum": ["a", "b"] }
 }
   )json",
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "b": true
+  },
+  "propertyNames": { "enum": ["a", "b"] },
+  "if": true,
+  "then": true
+}
+  )json",
 });
 SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
