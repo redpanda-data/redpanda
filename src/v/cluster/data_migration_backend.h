@@ -42,6 +42,7 @@ public:
 
 private:
     struct topic_reconciliation_state {
+        size_t idx_in_migration;
         chunked_hash_map<model::partition_id, std::vector<model::node_id>>
           outstanding_partitions;
     };

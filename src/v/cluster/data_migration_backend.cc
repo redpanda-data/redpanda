@@ -657,11 +657,17 @@ ss::future<> backend::reconcile_migration(
           return ss::do_with(
             migration.topic_nts(),
             [this, &metadata, &mrstate](const auto& nts) {
+                // poor man's `nts | std::views::enumerate`
+                auto enumerated_nts = std::views::transform(
+                  nts, [index = -1](const auto& nt) mutable {
+                      return std::forward_as_tuple(++index, nt);
+                  });
                 return ssx::async_for_each(
-                  nts,
-                  [this, &metadata, &mrstate](
-                    const model::topic_namespace& nt) {
+                  enumerated_nts,
+                  [this, &metadata, &mrstate](const auto& idx_nt) {
+                      auto& [idx, nt] = idx_nt;
                       auto& tstate = mrstate.outstanding_topics[nt];
+                      tstate.idx_in_migration = idx;
                       _topic_migration_map.emplace(nt, metadata.id);
                       return reconcile_topic(
                         nt, tstate, metadata.id, mrstate.sought_state, true);
