@@ -26,9 +26,7 @@ namespace cluster::data_migrations {
 
 // TODO: add configuration property
 worker::worker(
-  model::node_id self,
-  ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<ss::abort_source>& as)
+  model::node_id self, partition_leaders_table& leaders, ss::abort_source& as)
   : _self(self)
   , _leaders_table(leaders)
   , _as(as)
