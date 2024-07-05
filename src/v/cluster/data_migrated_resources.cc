@@ -20,11 +20,11 @@
 namespace cluster::data_migrations {
 
 namespace {
-template<typename T>
+template<typename T, typename H, typename E>
 void remove_from_resources(
   id id,
   const T& to_remove,
-  chunked_hash_map<T, migrated_resources::resource_metadata>& resources) {
+  chunked_hash_map<T, migrated_resources::resource_metadata, H, E>& resources) {
     auto it = resources.find(to_remove);
     vassert(
       it != resources.end(),
@@ -55,7 +55,7 @@ migrated_resource_state get_outbound_migration_resource_state(state state) {
 } // namespace
 
 migrated_resource_state
-migrated_resources::get_topic_state(const model::topic_namespace& tp_ns) const {
+migrated_resources::get_topic_state(model::topic_namespace_view tp_ns) const {
     auto it = _topics.find(tp_ns);
     if (it != _topics.end()) {
         return it->second.state;
