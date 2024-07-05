@@ -163,9 +163,7 @@ and then come back to this command to complete the process.
 					i++
 				case arg == "validate":
 					isKnown, isValidate = true, true
-				case arg == "aws":
-					isKnown = true
-				case arg == "gcp":
+				case arg == "aws" || arg == "gcp" || arg == "azure":
 					isKnown = true
 				}
 			}
