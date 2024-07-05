@@ -10,6 +10,7 @@
  */
 #include "cluster/data_migration_worker.h"
 
+#include "archival/ntp_archiver_service.h"
 #include "base/vassert.h"
 #include "cluster/data_migration_types.h"
 #include "errc.h"
@@ -209,20 +210,36 @@ ss::future<errc> worker::do_work(
 ss::future<errc> worker::do_work(
   const model::ntp& ntp,
   state sought_state,
-  const outbound_partition_work_info& pwi) {
+  const outbound_partition_work_info&) {
     switch (sought_state) {
     case state::prepared:
-        // todo: perform action here; remember to capture any values needed,
-        // worker doesn't keep them for you across scheduling points
-        std::ignore = ntp;
-        std::ignore = pwi;
-        return ssx::now(errc::success);
-    case state::executed:
-        // todo: perform action here; remember to capture any values needed,
-        // worker doesn't keep them for you across scheduling points
-        std::ignore = ntp;
-        std::ignore = pwi;
-        return ssx::now(errc::success);
+    case state::executed: {
+        // todo: check ntp_config cloud storage writes enabled?
+        auto partition_ptr = _partition_manager.get(ntp);
+        if (!partition_ptr) {
+            co_return errc::partition_not_exists;
+        }
+        auto maybe_archiver = partition_ptr->archiver();
+        if (!maybe_archiver) {
+            co_return errc::invalid_partition_operation;
+        }
+        auto& archiver = maybe_archiver->get();
+        auto flush_res = archiver.flush();
+        if (flush_res.response != archival::flush_response::accepted) {
+            co_return errc::partition_operation_failed;
+        }
+        switch (co_await archiver.wait(*flush_res.offset)) {
+        case archival::wait_result::not_in_progress:
+            // is partition concurrently flushed/waited by smth else?
+            vassert(false, "Freshly accepted flush cannot be waited for");
+        case archival::wait_result::lost_leadership:
+            co_return errc::leadership_changed;
+        case archival::wait_result::failed:
+            co_return errc::partition_operation_failed;
+        case archival::wait_result::complete:
+            co_return errc::success;
+        }
+    }
     default:
         vassert(
           false,
