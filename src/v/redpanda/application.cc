@@ -1785,6 +1785,7 @@ void application::wire_up_redpanda_services(
     construct_service(
       metadata_cache,
       std::ref(controller->get_topics_state()),
+      std::ref(controller->get_data_migrated_resources()),
       std::ref(controller->get_members_table()),
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_health_monitor()))
