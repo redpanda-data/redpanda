@@ -43,6 +43,7 @@
 #include <exception>
 #include <ranges>
 #include <string_view>
+
 namespace pandaproxy::schema_registry {
 
 struct json_schema_definition::impl {
@@ -85,9 +86,7 @@ namespace {
 
 // from https://json-schema.org/draft-04/schema, this is used to meta-validate a
 // jsonschema.
-// note: draft5 uses the same metaschema as draft4, so this metaschema is
-// adapted to allow http://json-schema.org/draft-05/schema# as one of the
-// allowed values for $schema
+// note: draft5 uses the same metaschema as draft4
 constexpr std::string_view json_draft_4_metaschema = R"json(
 {
     "id": "http://json-schema.org/draft-04/schema#",
@@ -122,8 +121,7 @@ constexpr std::string_view json_draft_4_metaschema = R"json(
             "type": "string"
         },
         "$schema": {
-            "type": "string",
-            "enum": ["http://json-schema.org/draft-04/schema#","http://json-schema.org/draft-05/schema#"]
+            "type": "string"
         },
         "title": {
             "type": "string"
@@ -256,12 +254,6 @@ constexpr std::string_view json_draft_4_metaschema = R"json(
 +    "$schema": "http://json-schema.org/draft-04/schema#",
 +    "id": "http://json-schema.org/draft-06/schema#",
      "title": "Core schema meta-schema",
-@@ -46,3 +46,4 @@
-             "type": "string",
--            "format": "uri"
-+            "format": "uri",
-+            "enum": ["http://json-schema.org/draft-06/schema#"]
-         },
 @@ -65,3 +66,4 @@
              "type": "number",
 -            "exclusiveMinimum": 0
@@ -316,8 +308,7 @@ constexpr std::string_view json_draft_6_metaschema = R"json(
         },
         "$schema": {
             "type": "string",
-            "format": "uri",
-            "enum": ["http://json-schema.org/draft-06/schema#"]
+            "format": "uri"
         },
         "$ref": {
             "type": "string",
@@ -444,12 +435,6 @@ constexpr std::string_view json_draft_6_metaschema = R"json(
 +    "$schema": "http://json-schema.org/draft-04/schema#",
 +    "id": "http://json-schema.org/draft-07/schema#",
      "title": "Core schema meta-schema",
-@@ -46,3 +46,4 @@
-             "type": "string",
--            "format": "uri"
-+            "format": "uri",
-+            "enum": ["http://json-schema.org/draft-07/schema#"]
-         },
 @@ -61,3 +62,3 @@
          },
 -        "default": true,
@@ -524,8 +509,7 @@ constexpr std::string_view json_draft_7_metaschema = R"json(
         },
         "$schema": {
             "type": "string",
-            "format": "uri",
-            "enum": ["http://json-schema.org/draft-07/schema#"]
+            "format": "uri"
         },
         "$ref": {
             "type": "string",
@@ -677,27 +661,37 @@ enum class json_schema_dialect {
     draft7,
 };
 
-constexpr std::string_view to_uri(json_schema_dialect draft) {
+constexpr std::string_view
+to_uri(json_schema_dialect draft, bool strip = false) {
     using enum json_schema_dialect;
-    switch (draft) {
-    case draft4:
-        return "http://json-schema.org/draft-04/schema#";
-    case draft5:
-        return "http://json-schema.org/draft-05/schema#";
-    case draft6:
-        return "http://json-schema.org/draft-06/schema#";
-    case draft7:
-        return "http://json-schema.org/draft-07/schema#";
+    auto dialect_str = [&]() -> std::string_view {
+        switch (draft) {
+        case draft4:
+            return "http://json-schema.org/draft-04/schema#";
+        case draft5:
+            return "http://json-schema.org/draft-05/schema#";
+        case draft6:
+            return "http://json-schema.org/draft-06/schema#";
+        case draft7:
+            return "http://json-schema.org/draft-07/schema#";
+        }
+    }();
+
+    if (strip) {
+        // strip final # from uri
+        dialect_str.remove_suffix(1);
     }
+
+    return dialect_str;
 }
 
 constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
     using enum json_schema_dialect;
     return string_switch<std::optional<json_schema_dialect>>{uri}
-      .match(to_uri(draft4), draft4)
-      .match(to_uri(draft5), draft5)
-      .match(to_uri(draft6), draft6)
-      .match(to_uri(draft7), draft7)
+      .match_all(to_uri(draft4), to_uri(draft4, true), draft4)
+      .match_all(to_uri(draft5), to_uri(draft5, true), draft5)
+      .match_all(to_uri(draft6), to_uri(draft6, true), draft6)
+      .match_all(to_uri(draft7), to_uri(draft7, true), draft7)
       .default_match(std::nullopt);
 }
 
