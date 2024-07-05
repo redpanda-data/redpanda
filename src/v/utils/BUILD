@@ -332,7 +332,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_bench(
     name = "vint_bench",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "tests/vint_bench.cc",
     ],
