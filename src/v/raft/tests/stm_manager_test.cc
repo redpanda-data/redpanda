@@ -75,6 +75,47 @@ struct local_snapshot_stm : public simple_kv {
     };
 };
 
+// State machine that induces lag from the tip of
+// of the log
+class slow_kv : public simple_kv {
+public:
+    static constexpr std::string_view name = "slow_kv";
+
+    explicit slow_kv(raft_node_instance& rn)
+      : simple_kv(rn) {}
+
+    ss::future<> apply(const model::record_batch& batch) override {
+        co_await ss::sleep(5ms);
+        co_return co_await simple_kv::apply(batch);
+    }
+
+    ss::future<> apply_raft_snapshot(const iobuf&) override {
+        return ss::now();
+    }
+};
+
+// Fails the first apply, starts a background fiber and not lets the
+// background apply fiber finish relative to slow_kv
+class bg_only_kv : public slow_kv {
+public:
+    static constexpr std::string_view name = "bg_only_stm";
+
+    explicit bg_only_kv(raft_node_instance& rn)
+      : slow_kv(rn) {}
+
+    ss::future<> apply(const model::record_batch& batch) override {
+        if (_first_apply) {
+            _first_apply = false;
+            throw std::runtime_error("induced failure");
+        }
+        co_await ss::sleep(5ms);
+        co_return co_await slow_kv::apply(batch);
+    }
+
+private:
+    bool _first_apply = true;
+};
+
 TEST_F_CORO(state_machine_fixture, test_basic_apply) {
     /**
      * Create 3 replicas group with simple_kv STM
@@ -98,6 +139,40 @@ TEST_F_CORO(state_machine_fixture, test_basic_apply) {
     for (auto& stm : stms) {
         ASSERT_EQ_CORO(stm->state, expected);
     }
+}
+
+TEST_F_CORO(state_machine_fixture, test_snapshot_with_bg_fibers) {
+    create_nodes();
+    std::vector<ss::shared_ptr<simple_kv>> stms;
+    for (auto& [id, node] : nodes()) {
+        raft::state_machine_manager_builder builder;
+        auto slow_kv_stm = builder.create_stm<slow_kv>(*node);
+        auto bg_kv_stm = builder.create_stm<bg_only_kv>(*node);
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(slow_kv_stm));
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(bg_kv_stm));
+    }
+    auto& leader_node = node(co_await wait_for_leader(10s));
+    bool stop = false;
+    auto write_sleep_f = ss::do_until(
+      [&stop] { return stop; },
+      [&] {
+          return build_random_state(1000).discard_result().then(
+            [] { return ss::sleep(3ms); });
+      });
+
+    auto truncate_sleep_f = ss::do_until(
+      [&stop] { return stop; },
+      [&] {
+          return leader_node.raft()
+            ->write_snapshot({leader_node.raft()->committed_offset(), iobuf{}})
+            .then([] { return ss::sleep(3ms); });
+      });
+
+    co_await ss::sleep(10s);
+    stop = true;
+    co_await std::move(write_sleep_f);
+    co_await std::move(truncate_sleep_f);
 }
 
 TEST_F_CORO(state_machine_fixture, test_apply_throwing_exception) {
