@@ -29,7 +29,11 @@ namespace cluster::data_migrations {
  */
 class worker : public ss::peering_sharded_service<worker> {
 public:
-    worker(model::node_id self, partition_leaders_table&, ss::abort_source&);
+    worker(
+      model::node_id,
+      partition_leaders_table&,
+      partition_manager&,
+      ss::abort_source&);
     ss::future<> stop();
 
     ss::future<errc>
@@ -79,6 +83,7 @@ private:
 
     model::node_id _self;
     partition_leaders_table& _leaders_table;
+    partition_manager& _partition_manager;
     ss::abort_source& _as;
     std::chrono::milliseconds _operation_timeout;
 

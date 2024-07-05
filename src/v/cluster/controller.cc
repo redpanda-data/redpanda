@@ -311,6 +311,8 @@ ss::future<> controller::start(
       _raft0->self().id(),
       ss::sharded_parameter(
         [this] { return std::ref(_partition_leaders.local()); }),
+      ss::sharded_parameter(
+        [this] { return std::ref(_partition_manager.local()); }),
       ss::sharded_parameter([this] { return std::ref(_as.local()); }));
     {
         limiter_configuration limiter_conf{

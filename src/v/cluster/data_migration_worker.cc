@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "partition_leaders_table.h"
+#include "partition_manager.h"
 #include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
 
@@ -32,9 +33,13 @@ namespace cluster::data_migrations {
 
 // TODO: add configuration property
 worker::worker(
-  model::node_id self, partition_leaders_table& leaders, ss::abort_source& as)
+  model::node_id self,
+  partition_leaders_table& leaders_table,
+  partition_manager& partition_manager,
+  ss::abort_source& as)
   : _self(self)
-  , _leaders_table(leaders)
+  , _leaders_table(leaders_table)
+  , _partition_manager(partition_manager)
   , _as(as)
   , _operation_timeout(5s) {}
 
