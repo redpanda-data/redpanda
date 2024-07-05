@@ -43,32 +43,40 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <ranges>
 #include <string_view>
 
 namespace kafka {
 
 static constexpr auto despam_interval = std::chrono::minutes(5);
 
-produce_response produce_request::make_error_response(error_code error) const {
-    produce_response response;
-
-    response.data.responses.reserve(data.topics.size());
-    for (const auto& topic : data.topics) {
-        produce_response::topic t;
+static void fill_response_with_errors(
+  produce_request::topic_cit topics_begin,
+  produce_request::topic_cit topics_end,
+  error_code error,
+  produce_response& response) {
+    size_t cnt = std::distance(topics_begin, topics_end);
+    response.data.responses.reserve(response.data.responses.size() + cnt);
+    for (const auto& topic : std::views::counted(topics_begin, cnt)) {
+        produce_response::topic& t = response.data.responses.emplace_back();
         t.name = topic.name;
 
         t.partitions.reserve(topic.partitions.size());
         for (const auto& partition : topic.partitions) {
-            t.partitions.emplace_back(produce_response::partition{
+            t.partitions.push_back(produce_response::partition{
               .partition_index = partition.partition_index,
               .error_code = error});
         }
-
-        response.data.responses.push_back(std::move(t));
     }
+}
 
+produce_response produce_request::make_error_response(error_code error) const {
+    produce_response response;
+    fill_response_with_errors(
+      data.topics.cbegin(), data.topics.cend(), error, response);
     return response;
 }
+
 produce_response produce_request::make_full_disk_response() const {
     auto resp = make_error_response(error_code::broker_not_available);
     // TODO set a field in response to signal to quota manager to throttle the
@@ -734,32 +742,15 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       [&ctx](const topic_produce_data& t) {
           return ctx.authorized(security::acl_operation::write, t.name);
       });
-
     if (!ctx.audit()) {
         return process_result_stages::single_stage(ctx.respond(
           request.make_error_response(error_code::broker_not_available)));
     }
-
-    resp.data.responses.reserve(
-      std::distance(unauthorized_it, request.data.topics.end()));
-    std::transform(
+    fill_response_with_errors(
       unauthorized_it,
-      request.data.topics.end(),
-      std::back_inserter(resp.data.responses),
-      [](const topic_produce_data& t) {
-          topic_produce_response r;
-          r.name = t.name;
-          r.partitions.reserve(t.partitions.size());
-          for (const auto& p : t.partitions) {
-              r.partitions.emplace_back(partition_produce_response{
-                .partition_index = p.partition_index,
-                .error_code = error_code::topic_authorization_failed,
-              });
-          }
-
-          return r;
-      });
-
+      request.data.topics.cend(),
+      error_code::topic_authorization_failed,
+      resp);
     request.data.topics.erase_to_end(unauthorized_it);
 
     ss::promise<> dispatched_promise;
