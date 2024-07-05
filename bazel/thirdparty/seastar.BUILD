@@ -557,7 +557,7 @@ cc_library(
         "include/seastar/util/variant_utils.hh",
         "include/seastar/websocket/server.hh",
     ],
-    copts = select({
+    copts = ["-U_FORTIFY_SOURCE"] + select({
         ":use_stack_guards": ["-fstack-clash-protection"],
         "//conditions:default": [],
     }),
@@ -674,6 +674,7 @@ cc_library(
         # needed in the testing library
         "include/seastar/testing/on_internal_error.hh",
     ],
+    copts = ["-U_FORTIFY_SOURCE"],
     includes = [
         "include",
     ],
