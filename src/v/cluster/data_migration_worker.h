@@ -79,7 +79,7 @@ private:
     ss::future<errc> do_work(
       const model::ntp& ntp,
       state sought_state,
-      const outbound_partition_work_info& pwi);
+      const outbound_partition_work_info&);
 
     model::node_id _self;
     partition_leaders_table& _leaders_table;
