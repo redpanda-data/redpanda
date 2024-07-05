@@ -187,7 +187,7 @@ private:
       group_id group,
       reply_result status);
 
-    heartbeat_requests requests_for_range();
+    ss::future<heartbeat_requests> requests_for_range();
     // private members
 
     mutex _lock{"heartbeat_manager"};
