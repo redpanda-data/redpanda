@@ -84,7 +84,10 @@ ss::sstring json_schema_definition::name() const { return {_impl->name}; };
 namespace {
 
 // from https://json-schema.org/draft-04/schema, this is used to meta-validate a
-// jsonschema
+// jsonschema.
+// note: draft5 uses the same metaschema as draft4, so this metaschema is
+// adapted to allow http://json-schema.org/draft-05/schema# as one of the
+// allowed values for $schema
 constexpr std::string_view json_draft_4_metaschema = R"json(
 {
     "id": "http://json-schema.org/draft-04/schema#",
@@ -120,7 +123,7 @@ constexpr std::string_view json_draft_4_metaschema = R"json(
         },
         "$schema": {
             "type": "string",
-            "enum": ["http://json-schema.org/draft-04/schema#"]
+            "enum": ["http://json-schema.org/draft-04/schema#","http://json-schema.org/draft-05/schema#"]
         },
         "title": {
             "type": "string"
@@ -256,6 +259,7 @@ ss::future<> check_references(sharded_store& store, canonical_schema schema) {
 // this is the list of supported dialects
 enum class json_schema_dialect {
     draft4,
+    draft5,
 };
 
 constexpr std::string_view to_uri(json_schema_dialect draft) {
@@ -263,6 +267,8 @@ constexpr std::string_view to_uri(json_schema_dialect draft) {
     switch (draft) {
     case draft4:
         return "http://json-schema.org/draft-04/schema#";
+    case draft5:
+        return "http://json-schema.org/draft-05/schema#";
     }
 }
 
@@ -270,6 +276,7 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
     using enum json_schema_dialect;
     return string_switch<std::optional<json_schema_dialect>>{uri}
       .match(to_uri(draft4), draft4)
+      .match(to_uri(draft5), draft5)
       .default_match(std::nullopt);
 }
 
@@ -290,6 +297,12 @@ json::SchemaDocument const& get_metaschema() {
         auto metaschema_str = [] {
             switch (Dialect) {
             case json_schema_dialect::draft4:
+                return json_draft_4_metaschema;
+            case json_schema_dialect::draft5:
+                // note1: draft5 uses the same metaschema as draft4.
+                // note2: this case is handled for completeness but
+                // get_metaschema<draft5>() should not be instantiated because
+                // the codegen would be redundant
                 return json_draft_4_metaschema;
             }
         }();
@@ -312,6 +325,10 @@ result<void> validate_json_schema(
         using enum json_schema_dialect;
         switch (dialect) {
         case draft4:
+            return get_metaschema<draft4>();
+        case draft5:
+            // NOTE: draft5 reuses the metaschema for draft4, so there is no
+            // need to instantiate get_metaschema<draft5>
             return get_metaschema<draft4>();
         }
     }();

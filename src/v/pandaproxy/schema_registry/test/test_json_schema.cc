@@ -123,6 +123,13 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
   "minimum": 0,
   "exclusiveMinimum": false
 })",
+  R"(
+{
+  "$schema": "http://json-schema.org/draft-05/schema#",
+  "type": "number",
+  "minimum": 0,
+  "exclusiveMinimum": false
+})",
 });
 SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
