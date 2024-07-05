@@ -753,6 +753,21 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       resp);
     request.data.topics.erase_to_end(unauthorized_it);
 
+    // Make sure to not write into migrated-from topics in their critical stages
+    auto migrated_it = std::partition(
+      request.data.topics.begin(),
+      request.data.topics.end(),
+      [&ctx](const topic_produce_data& t) {
+          return !ctx.metadata_cache().should_reject_writes(
+            model::topic_namespace_view(model::kafka_namespace, t.name));
+      });
+    fill_response_with_errors(
+      migrated_it,
+      request.data.topics.cend(),
+      error_code::invalid_topic_exception,
+      resp);
+    request.data.topics.erase_to_end(migrated_it);
+
     ss::promise<> dispatched_promise;
     auto dispatched_f = dispatched_promise.get_future();
     auto produced_f = ss::do_with(
