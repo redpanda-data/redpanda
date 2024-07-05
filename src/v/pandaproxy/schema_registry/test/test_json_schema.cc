@@ -125,6 +125,105 @@ SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     };
 }
 
+struct test_references_data {
+    struct data {
+        pps::unparsed_schema schema;
+        pps::error_info result;
+    };
+    std::vector<data> _schemas;
+};
+
+const auto referenced = pps::unparsed_schema{
+  pps::subject{"referenced"},
+  pps::unparsed_schema_definition{
+    R"({
+  "description": "A base schema that defines a number",
+  "type": "object",
+  "properties": {
+    "numberProperty": {
+      "type": "number"
+    }
+  }
+})",
+    pps::schema_type::json,
+    {}}};
+
+const auto referencer = pps::unparsed_schema{
+  pps::subject{"referencer"},
+  pps::unparsed_schema_definition{
+    R"({
+  "description": "A schema that references the base schema",
+  "type": "object",
+  "properties": {
+    "reference": {
+      "$ref": "example.com/referenced.json"
+    }
+  }
+})",
+    pps::schema_type::json,
+    {pps::schema_reference{
+      .name = "example.com/referenced.json",
+      .sub{referenced.sub()},
+      .version = pps::schema_version{1}}}}};
+
+const auto referencer_wrong_sub = pps::unparsed_schema{
+  referencer.sub(),
+  pps::unparsed_schema_definition{
+    referencer.def().raw(),
+    referencer.def().type(),
+    {pps::schema_reference{
+      .name = "example.com/referenced.json",
+      .sub{"wrong_sub"},
+      .version = pps::schema_version{1}}}}};
+
+const std::array test_reference_cases = {
+  // Referece correct subject
+  test_references_data{{{referenced, {}}, {referencer, {}}}},
+  // Reference wrong subject
+  test_references_data{
+    {{referenced, {}},
+     {referencer_wrong_sub,
+      {pps::error_code::schema_empty,
+       R"(Invalid schema {subject=referencer,version=0,id=-1,schemaType=JSON,references=[{name='example.com/referenced.json', subject='wrong_sub', version=1}],metadata=null,ruleSet=null,schema={
+  "description": "A schema that references the base schema",
+  "type": "object",
+  "properties": {
+    "reference": {
+      "$ref": "example.com/referenced.json"
+    }
+  }
+}} with refs [{name='example.com/referenced.json', subject='wrong_sub', version=1}] of type JSON, details: No schema reference found for subject "wrong_sub" and version 1)"}}}}};
+
+SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
+    for (const auto& test : test_reference_cases) {
+        store_fixture f;
+        pps::schema_id id{0};
+
+        for (const auto& [schema, result] : test._schemas) {
+            pps::schema_version ver{0};
+            pps::canonical_schema canonical{};
+            auto make_canonical = [&]() {
+                canonical = f.store.make_canonical_schema(schema).get();
+            };
+
+            if (result.code() == pps::error_code{}) {
+                BOOST_CHECK_NO_THROW(make_canonical());
+            } else {
+                BOOST_CHECK_EXCEPTION(
+                  make_canonical(),
+                  pps::exception,
+                  [ec{result.code()}](const pps::exception& ex) {
+                      return ex.code() == ec;
+                  });
+            }
+            f.store
+              .upsert(
+                pps::seq_marker{}, canonical, ++id, ++ver, pps::is_deleted::no)
+              .get();
+        }
+    }
+}
+
 struct compatibility_test_case {
     std::string_view reader_schema;
     std::string_view writer_schema;

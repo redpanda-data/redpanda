@@ -18,14 +18,18 @@
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "utils/absl_sstring_hash.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
 #include <boost/math/special_functions/relative_difference.hpp>
 #include <boost/outcome/std_result.hpp>
@@ -36,6 +40,7 @@
 #include <rapidjson/error/en.h>
 #include <re2/re2.h>
 
+#include <exception>
 #include <ranges>
 #include <string_view>
 namespace pandaproxy::schema_registry {
@@ -232,6 +237,21 @@ constexpr std::string_view json_draft_4_metaschema = R"json(
     "default": {}
 }
 )json";
+
+result<json::Document> parse_json(std::string_view v);
+
+ss::future<> check_references(sharded_store& store, canonical_schema schema) {
+    for (const auto& ref : schema.def().refs()) {
+        co_await store.is_subject_version_deleted(ref.sub, ref.version)
+          .handle_exception([](auto) { return is_deleted::yes; })
+          .then([&](is_deleted d) {
+              if (d) {
+                  throw as_exception(
+                    no_reference_found_for(schema, ref.sub, ref.version));
+              }
+          });
+    }
+}
 
 result<json::Document> parse_json(std::string_view v) {
     // validation pre-step: compile metaschema for json draft
@@ -1253,11 +1273,23 @@ make_json_schema_definition(sharded_store&, canonical_schema schema) {
 }
 
 ss::future<canonical_schema>
-make_canonical_json_schema(sharded_store&, unparsed_schema def) {
+make_canonical_json_schema(sharded_store& store, unparsed_schema def) {
     // TODO BP: More validation and normalisation
     parse_json(def.def().raw()()).value(); // throws on error
-    co_return canonical_schema{
-      def.sub(), canonical_schema_definition{def.def().raw(), def.type()}};
+    auto raw_def = std::move(def).def();
+    auto schema = canonical_schema{
+      // NOLINTNEXTLINE(bugprone-use-after-move)
+      def.sub(),
+      canonical_schema_definition{// NOLINTNEXTLINE(bugprone-use-after-move)
+                                  std::move(raw_def).raw(),
+                                  def.type(),
+                                  // NOLINTNEXTLINE(bugprone-use-after-move)
+                                  std::move(raw_def).refs()}};
+
+    // Ensure all references exist
+    co_await check_references(store, schema);
+
+    co_return schema;
 }
 
 bool check_compatible(
