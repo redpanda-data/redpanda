@@ -393,7 +393,7 @@ ss::future<bool> sharded_store::is_referenced(subject sub, schema_version ver) {
     // Find whether any subject version reference any of the schema
     co_return co_await _store.map_reduce0(
       [refs{std::move(references)}](store& s) {
-          return s.subject_versions_has_any_of(refs);
+          return s.subject_versions_has_any_of(refs, include_deleted::no);
       },
       false,
       std::logical_or<>{});
