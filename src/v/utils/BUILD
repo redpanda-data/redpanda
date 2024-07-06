@@ -50,6 +50,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "memory_data_source",
+    hdrs = [
+        "memory_data_source.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "static_deleter_fn",
     hdrs = [
         "static_deleter_fn.h",
