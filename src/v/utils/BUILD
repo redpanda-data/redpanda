@@ -63,6 +63,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "mutex",
+    hdrs = [
+        "mutex.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+    ],
+)
+
+redpanda_cc_library(
     name = "static_deleter_fn",
     hdrs = [
         "static_deleter_fn.h",
