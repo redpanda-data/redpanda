@@ -1444,12 +1444,24 @@ class TxUpgradeTest(RedpandaTest):
             if err:
                 assert False, "failed to deliver message: %s" % err
 
+        def init_producer_with_retries(producer: ck.Producer):
+            def init_once():
+                try:
+                    producer.init_transactions()
+                except ck.cimpl.KafkaException as e:
+                    if e.value.args[0].retriable():
+                        return False
+                    raise e
+                return True
+
+            wait_until(init_once, timeout_sec=120, backoff_sec=5)
+
         for i in range(self.producers_count):
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': self._tx_id(i),
             })
-            producer.init_transactions()
+            init_producer_with_retries(producer=producer)
             producer.begin_transaction()
             for m in range(random.randint(1, 50)):
                 producer.produce(topic,
