@@ -287,7 +287,7 @@ TEST(IntervalMap, RandomIntervals) {
 
         // helper to find the value index for a target offset
         auto value_index = [&](uint64_t target) -> std::optional<int> {
-            for (int i = 0; i < spec.size(); ++i) {
+            for (size_t i = 0; i < spec.size(); ++i) {
                 auto [offset, size] = spec[i];
                 if (offset <= target && target < (offset + size)) {
                     return i;
@@ -302,7 +302,7 @@ TEST(IntervalMap, RandomIntervals) {
         // for each offset from 0..range+3 check that the map finds the same
         // value for the interval as the helper above which operates on the test
         // spec.
-        for (auto offset = 0; offset <= (range_end + 3); ++offset) {
+        for (size_t offset = 0; offset <= (range_end + 3); ++offset) {
             auto it = map.find(offset);
             auto v_idx = value_index(offset);
             if (v_idx.has_value()) {
