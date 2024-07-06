@@ -171,6 +171,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "log_hist",
+    srcs = [
+        "log_hist.cc",
+    ],
+    hdrs = [
+        "log_hist.h",
+    ],
+    exclude_layering_check = True,
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/reflection:adl",
+    ],
+)
+
+redpanda_cc_library(
     name = "uuid",
     srcs = [
         "uuid.cc",
