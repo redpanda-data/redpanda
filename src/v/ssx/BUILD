@@ -36,6 +36,18 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "semaphore",
+    hdrs = [
+        "include/ssx/semaphore.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "future-util_test",
     timeout = "short",
