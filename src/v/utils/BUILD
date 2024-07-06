@@ -121,6 +121,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "human",
+    srcs = [
+        "human.cc",
+    ],
+    hdrs = [
+        "human.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "unresolved_address",
     hdrs = [
         "unresolved_address.h",
@@ -289,5 +305,21 @@ redpanda_cc_bench(
         "//src/v/random:generators",
         "@seastar",
         "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "human_test",
+    timeout = "short",
+    srcs = [
+        "tests/human_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=human",
+    ],
+    deps = [
+        ":human",
+        "@boost//:test",
+        "@fmt",
     ],
 )
