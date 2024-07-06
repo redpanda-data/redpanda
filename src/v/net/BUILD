@@ -1,0 +1,119 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest")
+
+redpanda_cc_library(
+    name = "net",
+    srcs = [
+        "batched_output_stream.cc",
+        "conn_quota.cc",
+        "connection.cc",
+        "dns.cc",
+        "probes.cc",
+        "server.cc",
+        "tls.cc",
+        "transport.cc",
+    ],
+    hdrs = [
+        "include/net/batched_output_stream.h",
+        "include/net/client_probe.h",
+        "include/net/conn_quota.h",
+        "include/net/connection.h",
+        "include/net/connection_rate.h",
+        "include/net/connection_rate_counter.h",
+        "include/net/dns.h",
+        "include/net/exceptions.h",
+        "include/net/fwd.h",
+        "include/net/server.h",
+        "include/net/server_probe.h",
+        "include/net/tls.h",
+        "include/net/tls_certificate_probe.h",
+        "include/net/transport.h",
+        "include/net/types.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/config",
+        "//src/v/hashing:crc32c",
+        "//src/v/hashing:xx",
+        "//src/v/metrics",
+        "//src/v/ssx:abort_source",
+        "//src/v/ssx:future-util",
+        "//src/v/ssx:semaphore",
+        "//src/v/ssx:sformat",
+        "//src/v/utils:inet_address",
+        "//src/v/utils:log_hist",
+        "//src/v/utils:mutex",
+        "//src/v/utils:unresolved_address",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/hash",
+        "@boost//:intrusive",
+        "@boost//:lexical_cast",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "connection_rate_test",
+    timeout = "short",
+    srcs = [
+        "tests/connection_rate_test.cc",
+    ],
+    deps = [
+        ":net",
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "conn_quota_test",
+    timeout = "short",
+    srcs = [
+        "tests/conn_quota_test.cc",
+    ],
+    deps = [
+        ":net",
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:range",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "dns_test",
+    timeout = "short",
+    srcs = [
+        "tests/dns.cc",
+    ],
+    deps = [
+        ":net",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:unresolved_address",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "connection_test",
+    timeout = "short",
+    srcs = [
+        "tests/connection.cc",
+    ],
+    deps = [
+        ":net",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
