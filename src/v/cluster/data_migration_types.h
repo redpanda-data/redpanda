@@ -13,8 +13,13 @@
 #include "cluster/errc.h"
 #include "container/fragmented_vector.h"
 #include "model/metadata.h"
-#include "serde/envelope.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/sstring.h"
 #include "serde/rw/variant.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
 
 #include <absl/container/flat_hash_set.h>

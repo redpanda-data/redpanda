@@ -12,7 +12,7 @@
 #pragma once
 
 #include "model/metadata.h"
-#include "serde/envelope.h"
+#include "serde/rw/envelope.h"
 
 #include <fmt/ostream.h>
 

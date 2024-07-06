@@ -26,4 +26,5 @@
 #include "serde/rw/sstring.h"
 #include "serde/rw/tristate_rw.h"
 #include "serde/rw/uuid.h"
+#include "serde/rw/variant.h"
 #include "serde/rw/vector.h"

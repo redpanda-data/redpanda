@@ -14,7 +14,15 @@
 #include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
-#include "serde/envelope.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/io_priority_class.hh>
