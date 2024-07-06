@@ -48,6 +48,19 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "abort_source",
+    hdrs = [
+        "include/ssx/abort_source.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "future-util_test",
     timeout = "short",
@@ -90,6 +103,22 @@ redpanda_cc_btest(
         ":sformat",
         "//src/v/base",
         "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "abort_source_test",
+    timeout = "short",
+    srcs = [
+        "tests/abort_source_test.cc",
+    ],
+    deps = [
+        ":abort_source",
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
         "@seastar//:testing",
     ],
 )
