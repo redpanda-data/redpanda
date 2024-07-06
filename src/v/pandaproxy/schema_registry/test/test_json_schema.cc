@@ -70,31 +70,38 @@ static const auto error_test_cases = std::to_array({
     R"({"$schema": "unsupported_dialect"})",
     pps::error_info{
       pps::error_code::schema_invalid,
-      "Invalid json schema: '#/%24schema', invalid metaschema: "
-      "'#/properties/%24schema', invalid keyword: 'enum'"}},
+      R"(Unsupported json schema dialect: '"unsupported_dialect"')"}},
+  error_test_case{
+    R"({"$schema": 42})",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "Unsupported json schema dialect: '42'"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
         store_fixture f;
         BOOST_TEST_CONTEXT(data) {
-            BOOST_REQUIRE_EXCEPTION(
-              pps::make_canonical_json_schema(
-                f.store,
-                {pps::subject{"test"}, {data.def, pps::schema_type::json}})
-                .get(),
-              pps::exception,
-              [&data](pps::exception const& e) {
-                  auto code_matches = e.code() == data.err.code();
-                  if (code_matches && e.message() != data.err.message()) {
-                      fmt::print(
-                        "[{}] does not match expected [{}]\n",
-                        e.message(),
-                        data.err.message());
-                  }
-                  return code_matches;
-              });
+            try {
+                pps::make_canonical_json_schema(
+                  f.store,
+                  {pps::subject{"test"}, {data.def, pps::schema_type::json}})
+                  .get();
+            } catch (pps::exception const& e) {
+                BOOST_CHECK_EQUAL(e.code(), data.err.code());
+                BOOST_WARN_MESSAGE(
+                  e.message() == data.err.message(),
+                  fmt::format(
+                    "[{}] does not match expected [{}]",
+                    e.message(),
+                    data.err.message()));
+            } catch (...) {
+                BOOST_CHECK_MESSAGE(
+                  false,
+                  fmt::format(
+                    "terminated with exception {}", std::current_exception()));
+            }
         }
-    };
+    }
 }
 
 static constexpr auto valid_test_cases = std::to_array<std::string_view>({
@@ -109,20 +116,174 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
   R"({})",
   R"({"the json schema is an open model": "it means this object is is equivalent to a empty one"})",
   // schemas
-  R"({"$schema": "http://json-schema.org/draft-04/schema#"})",
+  R"(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "number",
+  "minimum": 0,
+  "exclusiveMinimum": false
+})",
+  R"(
+{
+  "$schema": "http://json-schema.org/draft-05/schema#",
+  "type": "number",
+  "minimum": 0,
+  "exclusiveMinimum": false
+})",
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "b": true
+  },
+  "propertyNames": { "enum": ["a", "b"] }
+}
+  )json",
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "b": true
+  },
+  "propertyNames": { "enum": ["a", "b"] },
+  "if": true,
+  "then": true
+}
+  )json",
+  R"json({"$schema": "http://json-schema.org/draft-07/schema"})json",
+  R"json({"$schema": "http://json-schema.org/draft-06/schema"})json",
+  R"json({"$schema": "http://json-schema.org/draft-05/schema"})json",
+  R"json({"$schema": "http://json-schema.org/draft-04/schema"})json",
 });
 SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
         store_fixture f;
         BOOST_TEST_CONTEXT(data) {
-            auto s = pps::make_json_schema_definition(
-              f.store,
-              pps::make_canonical_json_schema(
-                f.store, {pps::subject{"test"}, {data, pps::schema_type::json}})
-                .get());
-            BOOST_REQUIRE_NO_THROW(s.get());
+            try {
+                pps::make_json_schema_definition(
+                  f.store,
+                  pps::make_canonical_json_schema(
+                    f.store,
+                    {pps::subject{"test"}, {data, pps::schema_type::json}})
+                    .get())
+                  .get();
+            } catch (...) {
+                BOOST_CHECK_MESSAGE(
+                  false,
+                  fmt::format(
+                    "terminated with exception {}", std::current_exception()));
+            }
         }
+    }
+}
+
+struct test_references_data {
+    struct data {
+        pps::unparsed_schema schema;
+        pps::error_info result;
     };
+    std::vector<data> _schemas;
+};
+
+const auto referenced = pps::unparsed_schema{
+  pps::subject{"referenced"},
+  pps::unparsed_schema_definition{
+    R"({
+  "description": "A base schema that defines a number",
+  "type": "object",
+  "properties": {
+    "numberProperty": {
+      "type": "number"
+    }
+  }
+})",
+    pps::schema_type::json,
+    {}}};
+
+const auto referencer = pps::unparsed_schema{
+  pps::subject{"referencer"},
+  pps::unparsed_schema_definition{
+    R"({
+  "description": "A schema that references the base schema",
+  "type": "object",
+  "properties": {
+    "reference": {
+      "$ref": "example.com/referenced.json"
+    }
+  }
+})",
+    pps::schema_type::json,
+    {pps::schema_reference{
+      .name = "example.com/referenced.json",
+      .sub{referenced.sub()},
+      .version = pps::schema_version{1}}}}};
+
+const auto referencer_wrong_sub = pps::unparsed_schema{
+  referencer.sub(),
+  pps::unparsed_schema_definition{
+    referencer.def().raw(),
+    referencer.def().type(),
+    {pps::schema_reference{
+      .name = "example.com/referenced.json",
+      .sub{"wrong_sub"},
+      .version = pps::schema_version{1}}}}};
+
+const std::array test_reference_cases = {
+  // Referece correct subject
+  test_references_data{{{referenced, {}}, {referencer, {}}}},
+  // Reference wrong subject
+  test_references_data{
+    {{referenced, {}},
+     {referencer_wrong_sub,
+      {pps::error_code::schema_empty,
+       R"(Invalid schema {subject=referencer,version=0,id=-1,schemaType=JSON,references=[{name='example.com/referenced.json', subject='wrong_sub', version=1}],metadata=null,ruleSet=null,schema={
+  "description": "A schema that references the base schema",
+  "type": "object",
+  "properties": {
+    "reference": {
+      "$ref": "example.com/referenced.json"
+    }
+  }
+}} with refs [{name='example.com/referenced.json', subject='wrong_sub', version=1}] of type JSON, details: No schema reference found for subject "wrong_sub" and version 1)"}}}}};
+
+SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
+    for (const auto& test : test_reference_cases) {
+        store_fixture f;
+        pps::schema_id id{0};
+
+        for (const auto& [schema, result] : test._schemas) {
+            pps::schema_version ver{0};
+            pps::canonical_schema canonical{};
+            auto make_canonical = [&]() {
+                canonical = f.store.make_canonical_schema(schema).get();
+            };
+
+            if (result.code() == pps::error_code{}) {
+                BOOST_CHECK_NO_THROW(make_canonical());
+            } else {
+                BOOST_CHECK_EXCEPTION(
+                  make_canonical(),
+                  pps::exception,
+                  [ec{result.code()}](const pps::exception& ex) {
+                      return ex.code() == ec;
+                  });
+            }
+            f.store
+              .upsert(
+                pps::seq_marker{}, canonical, ++id, ++ver, pps::is_deleted::no)
+              .get();
+        }
+    }
 }
 
 struct compatibility_test_case {
@@ -445,6 +606,18 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "additionalProperties": false,
   "required": ["aaaa", "cccc"]
 })",
+    .reader_is_compatible_with_writer = true,
+  },
+  // array checks: same
+  {
+    .reader_schema = R"({"type": "array"})",
+    .writer_schema = R"({"type": "array"})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // array checks: uniqueItems explicit value to false
+  {
+    .reader_schema = R"({"type": "array", "uniqueItems": false})",
+    .writer_schema = R"({"type": "array"})",
     .reader_is_compatible_with_writer = true,
   },
   // array checks:

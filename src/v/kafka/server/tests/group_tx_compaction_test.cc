@@ -48,6 +48,7 @@ struct group_manager_fixture
             return ec == kafka::error_code::none
                    && gm.local().attached_partitions_count() == 1;
         });
+        co_await wait_for_version_fence();
     }
 
     auto begin_tx(cluster::begin_group_tx_request request) {
@@ -80,6 +81,39 @@ struct group_manager_fixture
         auto log = consumer_offsets_log();
         return dynamic_pointer_cast<kafka::group_tx_tracker_stm>(
           log->stm_manager()->transactional_stm());
+    }
+
+    ss::future<> wait_for_version_fence() {
+        // wait for the version fence batch to be written
+        // This batch is asynchronously applied by the group manager
+        // and may happen in the middle of test runs conflicting with
+        // offset expectations, so wait and until that is finished.
+        auto log = consumer_offsets_log();
+        struct version_fence_finder {
+            ss::future<ss::stop_iteration> operator()(model::record_batch& b) {
+                if (
+                  b.header().type == model::record_batch_type::version_fence) {
+                    _found = true;
+                    co_return ss::stop_iteration::yes;
+                }
+                co_return ss::stop_iteration::no;
+            }
+
+            bool end_of_stream() { return _found; }
+            bool _found = false;
+        };
+
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [log] {
+            auto lstats = log->offsets();
+            storage::log_reader_config cfg(
+              lstats.start_offset,
+              lstats.committed_offset,
+              ss::default_priority_class());
+            return log->make_reader(std::move(cfg)).then([](auto reader) {
+                return std::move(reader).for_each_ref(
+                  version_fence_finder{}, model::no_timeout);
+            });
+        });
     }
 
     scoped_config test_cfg;

@@ -489,3 +489,44 @@ from_string_view<compatibility_level>(std::string_view sv) {
 }
 
 } // namespace pandaproxy::schema_registry
+
+template<>
+struct fmt::formatter<pandaproxy::schema_registry::schema_reference> {
+    constexpr auto parse(fmt::format_parse_context& ctx)
+      -> decltype(ctx.begin()) {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+        if (it != end && (*it == 'l' || *it == 'e')) {
+            presentation = *it++;
+        }
+        if (it != end && *it != '}') {
+            throw fmt::format_error("invalid format");
+        }
+        return it;
+    }
+
+    template<typename FormatContext>
+    auto format(
+      const pandaproxy::schema_registry::schema_reference& s,
+      FormatContext& ctx) const -> decltype(ctx.out()) {
+        if (presentation == 'l') {
+            return fmt::format_to(
+              ctx.out(),
+              "name: {}, subject: {}, version: {}",
+              s.name,
+              s.sub,
+              s.version);
+        } else {
+            return fmt::format_to(
+              ctx.out(),
+              "name='{}', subject='{}', version={}",
+              s.name,
+              s.sub,
+              s.version);
+        }
+    }
+
+    // l : format for logging
+    // e : format for error_reporting
+    char presentation{'l'};
+};

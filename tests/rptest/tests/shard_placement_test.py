@@ -134,7 +134,7 @@ class ShardPlacementTest(PreallocNodesTest):
                                   nodes,
                                   admin=None,
                                   timeout_sec=10,
-                                  backoff_sec=1):
+                                  backoff_sec=2):
         shard_map = None
 
         def is_stationary():
@@ -178,7 +178,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.start_client_load("foo")
 
         self.logger.info("created cluster and topics.")
-        initial_map = self.get_replica_shard_map(seed_nodes, admin)
+        initial_map = self.wait_shard_map_stationary(seed_nodes, admin)
         self.print_shard_stats(initial_map)
 
         # Upgrade the cluster and enable the feature.
@@ -199,7 +199,7 @@ class ShardPlacementTest(PreallocNodesTest):
 
         self.logger.info(
             "feature enabled, checking that shard map is stable...")
-        map_after_upgrade = self.get_replica_shard_map(seed_nodes, admin)
+        map_after_upgrade = self.wait_shard_map_stationary(seed_nodes, admin)
         self.print_shard_stats(map_after_upgrade)
         assert map_after_upgrade == initial_map
 
@@ -234,7 +234,7 @@ class ShardPlacementTest(PreallocNodesTest):
 
         # check that shard counts are balanced
         self.logger.info(f"added 2 nodes and a topic, checking shard map...")
-        map_after_join = self.get_replica_shard_map(joiner_nodes, admin)
+        map_after_join = self.wait_shard_map_stationary(joiner_nodes, admin)
         self.print_shard_stats(map_after_join)
         for joiner in joiner_nodes:
             joiner_id = self.redpanda.node_id(joiner)
@@ -273,7 +273,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.redpanda.set_cluster_config(
             {"core_balancing_on_core_count_change": False})
 
-        map_before_restart = self.get_replica_shard_map(
+        map_before_restart = self.wait_shard_map_stationary(
             self.redpanda.nodes, admin)
         self.print_shard_stats(map_before_restart)
 
@@ -281,8 +281,8 @@ class ShardPlacementTest(PreallocNodesTest):
         self.redpanda.wait_for_membership(first_start=False)
 
         self.logger.info("restarted cluster, checking shard map...")
-        map_after_restart = self.get_replica_shard_map(self.redpanda.nodes,
-                                                       admin)
+        map_after_restart = self.wait_shard_map_stationary(
+            self.redpanda.nodes, admin)
         self.print_shard_stats(map_after_restart)
         assert map_after_restart == map_before_restart
 
@@ -402,7 +402,7 @@ class ShardPlacementTest(PreallocNodesTest):
                 assert sum(shard_counts) == n_partitions
                 assert max(shard_counts) - min(shard_counts) <= 1
 
-        shard_map = self.get_replica_shard_map([node], admin)
+        shard_map = self.wait_shard_map_stationary([node], admin)
         check_balanced_shard_map(shard_map, initial_core_count)
 
         # do some manual moves and check that their effects remain
@@ -427,14 +427,14 @@ class ShardPlacementTest(PreallocNodesTest):
         self.redpanda.restart_nodes([node])
         self.redpanda.wait_for_membership(first_start=False)
 
-        map_after_restart = self.get_replica_shard_map([node], admin)
+        map_after_restart = self.wait_shard_map_stationary([node], admin)
         self.print_shard_stats(map_after_restart)
         assert map_after_restart == shard_map
 
         self.logger.info("decreasing core count...")
 
         restart_node(num_cpus=initial_core_count - 1)
-        shard_map = self.get_replica_shard_map([node], admin)
+        shard_map = self.wait_shard_map_stationary([node], admin)
         check_balanced_shard_map(shard_map, initial_core_count - 1)
 
         self.logger.info("creating another topic...")
@@ -447,7 +447,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.logger.info("increasing core count back...")
 
         restart_node(num_cpus=initial_core_count)
-        shard_map = self.get_replica_shard_map([node], admin)
+        shard_map = self.wait_shard_map_stationary([node], admin)
         check_balanced_shard_map(shard_map, initial_core_count)
 
         self.stop_client_load()

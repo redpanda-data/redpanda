@@ -152,7 +152,9 @@ private:
 
     ss::future<> apply_raft_snapshot();
     ss::future<> do_apply_raft_snapshot(
-      raft::snapshot_metadata metadata, storage::snapshot_reader& reader);
+      raft::snapshot_metadata metadata,
+      storage::snapshot_reader& reader,
+      std::vector<ssx::semaphore_units> background_apply_units);
     ss::future<> apply();
     ss::future<> try_apply_in_foreground();
 
