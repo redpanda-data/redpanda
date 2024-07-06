@@ -149,6 +149,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "hdr_hist",
+    srcs = [
+        "hdr_hist.cc",
+    ],
+    hdrs = [
+        "hdr_hist.h",
+    ],
+    exclude_layering_check = True,
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":human",
+        ":static_deleter_fn",
+        "//src/v/base",
+        "@boost//:intrusive",
+        "@fmt",
+        "@hdrhistogram",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "uuid",
     srcs = [
         "uuid.cc",
