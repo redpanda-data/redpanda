@@ -26,6 +26,7 @@ redpanda_cc_library(
         "data_directory_path.h",
         "endpoint_tls_config.h",
         "from_string_view.h",
+        "mock_property.h",
         "node_config.h",
         "property.h",
         "rest_authn_endpoint.h",
