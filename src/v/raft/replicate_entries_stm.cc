@@ -11,12 +11,12 @@
 
 #include "base/likely.h"
 #include "base/outcome.h"
+#include "base/outcome_future_utils.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"

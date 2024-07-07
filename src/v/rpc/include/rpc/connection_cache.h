@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "base/outcome_future_utils.h"
 #include "model/metadata.h"
-#include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_set.h"
 #include "rpc/errc.h"
