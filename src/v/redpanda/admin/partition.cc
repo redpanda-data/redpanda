@@ -147,7 +147,11 @@ admin_server::mark_transaction_expired_handler(
           fmt_with_ctx(fmt::format, "Invalid producer epoch: {}", param));
     }
 
-    vlog(adminlog.info, "Mark transaction expired for pid:{}", pid);
+    vlog(
+      adminlog.info,
+      "Mark transaction expired for partition: {}, pid:{}",
+      ntp,
+      pid);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, ntp);

@@ -1228,6 +1228,7 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
     const auto& tx_state = producer->transaction_state();
 
     if (!tx_state || !producer->has_transaction_expired()) {
+        vlog(_ctx_log.debug, "[{}] no transaction to expire", *producer);
         co_return tx::errc::stale;
     }
 
