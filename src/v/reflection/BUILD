@@ -37,8 +37,10 @@ redpanda_cc_library(
         ":to_tuple",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
+        "//src/v/container:fragmented_vector",
         "//src/v/ssx:future-util",
         "//src/v/utils:named_type",
         "//src/v/utils:tristate",
+        "@abseil-cpp//absl/container:btree",
     ],
 )
