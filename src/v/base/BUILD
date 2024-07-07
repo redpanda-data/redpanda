@@ -7,6 +7,7 @@ redpanda_cc_library(
         "include/base/likely.h",
         "include/base/oncore.h",
         "include/base/outcome.h",
+        "include/base/outcome_future_utils.h",
         "include/base/seastarx.h",
         "include/base/source_location.h",
         "include/base/type_traits.h",
