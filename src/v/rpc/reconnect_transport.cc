@@ -10,7 +10,6 @@
 #include "rpc/reconnect_transport.h"
 
 #include "model/timeout_clock.h"
-#include "raft/logger.h"
 #include "rpc/errc.h"
 #include "rpc/logger.h"
 #include "rpc/transport.h"
