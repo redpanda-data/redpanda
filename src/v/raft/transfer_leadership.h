@@ -14,7 +14,11 @@
 #include "model/fundamental.h"
 #include "raft/errc.h"
 #include "raft/fundamental.h"
-#include "serde/envelope.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/scalar.h"
 
 namespace raft {
 
