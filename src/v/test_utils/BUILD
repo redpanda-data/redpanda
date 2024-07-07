@@ -34,6 +34,9 @@ redpanda_cc_library(
         "seastar_testing_main.cc",
     ],
     hdrs = [
+        "async.h",
+        "fixture.h",
+        "test_macros.h",
     ],
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
