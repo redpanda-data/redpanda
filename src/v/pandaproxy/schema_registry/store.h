@@ -433,11 +433,13 @@ public:
         return has_ids;
     }
 
-    bool subject_versions_has_any_of(const schema_id_set& ids) {
-        return absl::c_any_of(_subjects, [&ids](const auto& s) {
-            return absl::c_any_of(s.second.versions, [&ids, &s](const auto& v) {
-                return !s.second.deleted && ids.contains(v.id);
-            });
+    bool subject_versions_has_any_of(
+      const schema_id_set& ids, include_deleted inc_del) {
+        return absl::c_any_of(_subjects, [&ids, inc_del](const auto& s) {
+            return absl::c_any_of(
+              s.second.versions, [&ids, &s, inc_del](const auto& v) {
+                  return (inc_del || !s.second.deleted) && ids.contains(v.id);
+              });
         });
     }
 
@@ -629,6 +631,8 @@ public:
         return _schemas.insert_or_assign(id, schema_entry(std::move(def)))
           .second;
     }
+
+    void delete_schema(schema_id id) { _schemas.erase(id); }
 
     struct insert_subject_result {
         schema_version version;
