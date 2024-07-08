@@ -102,6 +102,7 @@ ss::future<> backend::stop() {
     _table.unregister_notification(_table_notification_id);
     co_await _worker.invoke_on_all(&worker::stop);
     co_await _gate.close();
+    vlog(dm_log.debug, "backend stopped");
 }
 
 ss::future<> backend::loop_once() {
