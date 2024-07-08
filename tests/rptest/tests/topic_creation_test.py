@@ -622,10 +622,12 @@ class CreateSITopicsTest(RedpandaTest):
             "false", "DYNAMIC_TOPIC_CONFIG")
 
     @cluster(num_nodes=1)
-    def topic_alter_config_test(self):
+    @matrix(incremental=[True, False])
+    def topic_alter_config_test(self, incremental):
         """
-        Intentionally use the legacy (deprecated in Kafka 2.3.0) AlterConfig
-        admin RPC, to check it works with our custom topic properties
+        Intentionally use either the legacy (deprecated in Kafka 2.3.0) AlterConfig
+        admin RPC or the new IncrementalAlterConfig API, to check that both work
+        with our custom topic properties
         """
         rpk = RpkTool(self.redpanda)
         topic = topic_name()
@@ -644,13 +646,13 @@ class CreateSITopicsTest(RedpandaTest):
             'initial.retention.local.target.ms': '123456'
         }
 
-        kcl.alter_topic_config(examples, incremental=False, topic=topic)
+        kcl.alter_topic_config(examples, incremental=incremental, topic=topic)
         topic_config = rpk.describe_topic_configs(topic)
         value, src = topic_config["retention.local.target.bytes"]
         assert value == "123456" and src == "DYNAMIC_TOPIC_CONFIG"
 
         kcl.alter_topic_config({"retention.local.target.bytes": "999999"},
-                               incremental=False,
+                               incremental=incremental,
                                topic=topic)
         topic_config = rpk.describe_topic_configs(topic)
         value, src = topic_config["retention.local.target.bytes"]
@@ -659,9 +661,28 @@ class CreateSITopicsTest(RedpandaTest):
         # All non-specified configs should revert to their default with incremental=False
         for k, _ in examples.items():
             if k != "retention.local.target.bytes":
+                # With the old alter configs API (incremental=False), all the other configs should revert to their default
+                # With the new incremental alter configs API, all the other configs should be unchanged
+                expected_src = "DYNAMIC_TOPIC_CONFIG" if incremental else "DEFAULT_CONFIG"
+
+                # The shadow_indexing properties ('redpanda.remote.(read|write|delete)')
+                # are special "sticky" topic properties that are always set as a
+                # topic-level override. To co-operate with kafka terraform providers, these
+                # configs show up as "DEFAULT_CONFIG" when they are set to the same value
+                # as their cluster-level default.
+                #
+                # See: https://github.com/redpanda-data/redpanda/issues/7451
+                hiding_configs = [
+                    'redpanda.remote.delete',
+                    'redpanda.remote.write',
+                    'redpanda.remote.read',
+                ]
+                if k in hiding_configs:
+                    expected_src = "DEFAULT_CONFIG"
+
                 value, src = topic_config[k]
-                assert src == "DEFAULT_CONFIG", \
-                    f"Unexpected describe result for {k}: value={value}, src={src}"
+                assert src == expected_src, \
+                    f"[incremental={incremental}] Unexpected describe result for {k}: value={value}, src={src}"
 
         # As a control, confirm that if we did pass an invalid property, we would have got an error
         with expect_exception(RuntimeError, lambda e: "invalid" in str(e)):
