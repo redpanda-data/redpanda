@@ -58,7 +58,7 @@ struct error_category final : std::error_category {
                    "configured";
         case error_code::mode_not_found:
             return "Subject does not have subject-level mode configured";
-        case error_code::subject_version_operaton_not_permitted:
+        case error_code::subject_version_operation_not_permitted:
             return "Overwrite new schema is not permitted.";
         case error_code::subject_version_has_references:
             return "One or more references exist to the schema";
@@ -112,9 +112,9 @@ struct error_category final : std::error_category {
             return reply_error_code::schema_empty; // 42201
         case error_code::schema_version_invalid:
             return reply_error_code::schema_version_invalid; // 42202
-        case error_code::subject_version_operaton_not_permitted:
+        case error_code::subject_version_operation_not_permitted:
             return reply_error_code::
-              subject_version_operaton_not_permitted; // 42205
+              subject_version_operation_not_permitted; // 42205
         case error_code::subject_version_has_references:
             return reply_error_code::subject_version_has_references; // 42206
         case error_code::subject_version_schema_id_already_exists:
