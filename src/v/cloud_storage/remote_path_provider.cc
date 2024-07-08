@@ -22,6 +22,11 @@ namespace cloud_storage {
 remote_path_provider::remote_path_provider(std::optional<remote_label> label)
   : label_(label) {}
 
+remote_path_provider remote_path_provider::copy() const {
+    remote_path_provider ret(label_);
+    return ret;
+}
+
 ss::sstring remote_path_provider::topic_manifest_prefix(
   const model::topic_namespace& topic) const {
     if (label_.has_value()) {
