@@ -81,7 +81,7 @@ class StreamVerifier(Service):
         if action == COMMAND_PRODUCE:
             return self.get_produce_status()
         elif action == COMMAND_CONSUME:
-            return self.get_consume_status()
+            return self.get_verify_status()
         elif action == COMMAND_ATOMIC:
             return self.get_atomic_status()
         else:
@@ -91,7 +91,7 @@ class StreamVerifier(Service):
     def get_processed_count(self, action):
         s = self.get_action_status(action)
         # A bit ugly, but works
-        count = s.get('stats', {}).get('processed_messages', 0)
+        count = s.get('processed_messages', 0)
         self.logger.debug(f"[{action}] ...{count} messages")
         return count
 
@@ -122,7 +122,7 @@ class StreamVerifier(Service):
                    retry_on_exc=False)
 
     # Service overrides
-    def start_node(self, node, timeout_sec=10):
+    def start_node(self, node, timeout_sec=30):
 
         # Build cmd line
         cmd = f'bash /opt/remote/control/start.sh {title} ' \
@@ -155,8 +155,10 @@ class StreamVerifier(Service):
 
     def clean_node(self, node):
         # make sure that there is no such process
-        node.ssh(f"kill -9 $(sudo ps -aux | grep {filename} | "
-                 f"grep -v grep | tr -s ' ' |cut -d' ' -f2)")
+        _pid = node.account.ssh_output(f"sudo ps -aux | grep {filename} | "
+                                       f"grep -v grep | tr -s ' ' | "
+                                       f"cut -d' ' -f2")
+        node.account.ssh_output(f"kill -9 {_pid.decode().strip()}")
 
     def wait_node(self, node, timeout_sec=sys.maxsize):
         wait_until(lambda: not (self.is_alive(node)),
@@ -227,46 +229,39 @@ class StreamVerifier(Service):
     def get_produce_status(self):
         return self._get(self._get_url("produce"), raise_on_fails=False)
 
-    def get_consume_status(self):
-        return self._get(self._get_url("consume"), raise_on_fails=False)
+    def get_verify_status(self):
+        return self._get(self._get_url("verify"), raise_on_fails=False)
 
     def get_atomic_status(self):
         return self._get(self._get_url("atomic"), raise_on_fails=False)
 
     def remote_start_produce(self,
-                             topic_prefix,
-                             topic_count,
+                             target_topic_name,
                              message_count,
                              messages_per_sec=0):
         payload = {
             "topic_group_id": "stream_verifier_group",
-            "topic_prefix_produce": topic_prefix,
-            "topic_count": topic_count,
+            "target_topic_name": target_topic_name,
             # Consider increasing when debugging
             # "consume_timeout_s": 30,
             "msg_rate_limit": messages_per_sec,
-            "msg_total": message_count
+            "total_messages": message_count
         }
 
         return self._post(self._get_url("produce"), payload)
 
-    def remote_start_consume(self, topic_prefix, topic_count):
-        payload = {
-            "topic_prefix_consume": topic_prefix,
-            "topic_count": topic_count,
-        }
-        return self._post(self._get_url("consume"), payload)
+    def remote_start_verify(self, source_topic_name):
+        payload = {"source_topic_name": source_topic_name}
+        return self._post(self._get_url("verify"), payload)
 
     def remote_start_atomic(self,
-                            source_topic_prefix,
-                            target_topic_prefix,
-                            topic_count,
+                            source_topic_name,
+                            target_topic_name,
                             messages_per_sec=0):
         payload = {
             "topic_group_id": "stream_verifier_group",
-            "topic_prefix_produce": target_topic_prefix,
-            "topic_prefix_consume": source_topic_prefix,
-            "topic_count": topic_count,
+            "target_topic_name": target_topic_name,
+            "source_topic_name": source_topic_name,
             # Consider increasing when debugging
             # "consume_timeout_s": 30,
             "msg_rate_limit": messages_per_sec
@@ -276,8 +271,8 @@ class StreamVerifier(Service):
     def remote_stop_produce(self):
         return self._delete(self._get_url("produce"))
 
-    def remote_stop_consume(self):
-        return self._delete(self._get_url("consume"))
+    def remote_stop_verify(self):
+        return self._delete(self._get_url("verify"))
 
     def remote_stop_atomic(self):
         return self._delete(self._get_url("atomic"))
@@ -286,8 +281,8 @@ class StreamVerifier(Service):
         def is_action_active(action):
             r = self.get_action_status(action)
             status = r['status']
-            stats = r['stats']
-            self.logger.debug(f'[{action}] {status[action]}; {stats}')
+            self.logger.debug(
+                f"[{action}] {status[action]}; {r['processed_messages']}")
             return True if status[action] == 'ACTIVE' else False
 
         self.logger.info(f"Waiting for '{action}' action to finish")
