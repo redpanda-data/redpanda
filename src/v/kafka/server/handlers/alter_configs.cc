@@ -76,8 +76,15 @@ create_topic_properties_update(
     update.properties.segment_size.op = op_t::remove;
     update.properties.timestamp_type.op = op_t::remove;
     update.properties.retention_bytes.op = op_t::remove;
+    update.properties.remote_delete.op = op_t::remove;
+    update.properties.segment_ms.op = op_t::remove;
     update.properties.shadow_indexing.op = op_t::remove;
     update.properties.retention_duration.op = op_t::remove;
+    update.properties.batch_max_bytes.op = op_t::remove;
+    update.properties.retention_local_target_ms.op = op_t::remove;
+    update.properties.retention_local_target_bytes.op = op_t::remove;
+    update.properties.initial_retention_local_target_ms.op = op_t::remove;
+    update.properties.initial_retention_local_target_bytes.op = op_t::remove;
     update.properties.record_key_schema_id_validation.op = op_t::remove;
     update.properties.record_key_schema_id_validation_compat.op = op_t::remove;
     update.properties.record_key_subject_name_strategy.op = op_t::remove;
@@ -88,6 +95,9 @@ create_topic_properties_update(
     update.properties.record_value_subject_name_strategy.op = op_t::remove;
     update.properties.record_value_subject_name_strategy_compat.op
       = op_t::remove;
+    update.properties.write_caching.op = op_t::remove;
+    update.properties.flush_ms.op = op_t::remove;
+    update.properties.flush_bytes.op = op_t::remove;
 
     /**
      * Since 'cleanup.policy' is always defaulted to 'delete' at topic creation,
