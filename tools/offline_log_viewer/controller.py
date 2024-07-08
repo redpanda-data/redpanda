@@ -119,7 +119,7 @@ def read_topic_properties_serde(rdr: Reader, version):
         }
     if version >= 9:
         topic_properties |= {
-            'remote_labels': rdr.read_optional(read_remote_label_serde)
+            'remote_label': rdr.read_optional(read_remote_label_serde)
         }
 
     return topic_properties
