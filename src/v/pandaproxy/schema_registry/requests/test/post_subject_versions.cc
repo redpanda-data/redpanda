@@ -52,7 +52,7 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
     const parse_result expected{
       {sub, expected_schema_def}, std::nullopt, std::nullopt};
 
-    auto result{ppj::rjson_parse(
+    auto result{ppj::impl::rjson_parse(
       payload.data(), pps::post_subject_versions_request_handler{sub})};
 
     // canonicalisation now requires a sharded_store, for now, minify.

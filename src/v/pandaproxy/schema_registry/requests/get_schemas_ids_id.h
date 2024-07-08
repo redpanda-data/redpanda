@@ -20,9 +20,9 @@ struct get_schemas_ids_id_response {
     canonical_schema_definition definition;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const get_schemas_ids_id_response& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const get_schemas_ids_id_response& res) {
     w.StartObject();
     if (res.definition.type() != schema_type::avro) {
         w.Key("schemaType");
