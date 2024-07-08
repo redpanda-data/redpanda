@@ -45,7 +45,6 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
 
-#include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 #include <absl/hash/hash.h>
@@ -2446,27 +2445,6 @@ struct leader_term {
     std::optional<model::node_id> leader;
     model::term_id term;
     friend std::ostream& operator<<(std::ostream&, const leader_term&);
-};
-
-struct partition_assignment_cmp {
-    using is_transparent = void;
-    constexpr bool operator()(
-      const partition_assignment& lhs, const partition_assignment& rhs) const {
-        return lhs.id < rhs.id;
-    }
-
-    constexpr bool operator()(
-      const model::partition_id& id, const partition_assignment& rhs) const {
-        return id < rhs.id;
-    }
-    constexpr bool operator()(
-      const partition_assignment& lhs, const model::partition_id& id) const {
-        return lhs.id < id;
-    }
-    constexpr bool operator()(
-      const model::partition_id& lhs, const model::partition_id& rhs) const {
-        return lhs < rhs;
-    }
 };
 
 using assignments_set

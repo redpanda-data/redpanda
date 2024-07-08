@@ -9,10 +9,10 @@
 
 #include "raft/recovery_stm.h"
 
+#include "base/outcome_future_utils.h"
 #include "bytes/iostream.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"

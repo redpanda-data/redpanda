@@ -83,8 +83,7 @@ struct conn_quota_fixture {
 
     void drop_shard_units() {
         for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
-            scq
-              .invoke_on(i, [i, this](conn_quota& cq) { shard_units.erase(i); })
+            scq.invoke_on(i, [i, this](conn_quota&) { shard_units.erase(i); })
               .get();
         }
     }
@@ -123,7 +122,7 @@ struct conn_quota_fixture {
         scq
           .invoke_on(
             shard,
-            [shard, this, take_units](conn_quota& cq) {
+            [shard, this, take_units](conn_quota&) {
                 for (size_t i = 0; i < take_units; ++i) {
                     shard_units[shard].pop_back();
                 }
@@ -242,16 +241,14 @@ void conn_quota_fixture::test_borrows(
     // All shards should now see no units available
     vlog(logger.debug, "Check allowances used up");
     for (ss::shard_id i = 0; i < core_count; ++i) {
-        scq
-          .invoke_on(
-            i, [this](conn_quota& cq) { return expect_no_units(addr1); })
+        scq.invoke_on(i, [this](conn_quota&) { return expect_no_units(addr1); })
           .get();
     }
 
     // Release a unit, then try taking it on a different shard.  This triggers
     // a reclaim.
     vlog(logger.debug, "Trigger a reclaim");
-    scq.invoke_on(1, [this](conn_quota& cq) { shard_units.erase(1); }).get();
+    scq.invoke_on(1, [this](conn_quota&) { shard_units.erase(1); }).get();
     scq
       .invoke_on(
         2,

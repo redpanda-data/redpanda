@@ -101,6 +101,7 @@ class CloudClusterConfig:
     oauth_audience: str = ""
     api_url: str = ""
     admin_api_url: str = ""
+    public_api_url: str = ""
     teleport_auth_server: str = ""
     teleport_bot_token: str = ""
     id: str = ""  # empty string makes it easier to pass thru default value from duck.py
