@@ -65,6 +65,14 @@ build:release --linkopt=-flto
 build --@seastar//:openssl=True
 build --keep_going
 
+# prevent actions and tests from using the network. anything that needs to
+# opt-out (e.g. a network test) can use `tags=["requires-network"]`.
+build --sandbox_default_allow_network=false
+
+# prevent certain environment variables (e.g. PATH and LD_LIBRARY_PATH) from
+# leaking into the build.
+build --incompatible_strict_action_env
+
 # =================================
 # Testing
 # =================================
