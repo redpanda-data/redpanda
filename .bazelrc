@@ -80,6 +80,9 @@ build --incompatible_strict_action_env
 # prints out combined stdout/stderr for failed tests
 test --test_output=errors
 
+# warn if a timeout is much longer than actual runtime
+test --test_verbose_timeout_warnings
+
 test:unit --test_tag_filters=-bench
 test:bench --test_tag_filters=bench
 
