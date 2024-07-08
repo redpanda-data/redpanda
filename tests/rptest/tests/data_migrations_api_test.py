@@ -12,6 +12,7 @@ from rptest.services.admin import Admin, MigrationAction
 from rptest.services.admin import OutboundDataMigration, InboundDataMigration, NamespacedTopic, InboundTopic
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import SISettings
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.tests.test import TestContext
@@ -19,8 +20,17 @@ from rptest.clients.types import TopicSpec
 
 
 class DataMigrationsApiTest(RedpandaTest):
-    def __init__(self, test_context: TestContext):
-        super().__init__(test_context=test_context)
+    log_segment_size = 10 * 1024
+
+    def __init__(self, test_context: TestContext, *args, **kwargs):
+        kwargs['si_settings'] = SISettings(
+            test_context=test_context,
+            log_segment_size=self.log_segment_size,
+            cloud_storage_max_connections=5,
+            cloud_storage_enable_remote_read=True,
+            cloud_storage_enable_remote_write=True,
+        )
+        super().__init__(test_context=test_context, *args, **kwargs)
         self.admin = Admin(self.redpanda)
 
     def get_migrations_map(self, node=None):
@@ -114,6 +124,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                             MigrationAction.finish)
         self.wait_for_migration_state(out_migration_id, 'cut_over')
         self.wait_for_migration_state(out_migration_id, 'finished')
+        self.logger.info('done')
 
         # TODO: check unhappy scenarios like this
         # admin.execute_data_migration_action(out_migration_id,
