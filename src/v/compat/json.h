@@ -98,7 +98,7 @@ void read_value(
 
 inline void
 read_value(json::Value const& v, std::chrono::milliseconds& target) {
-    target = std::chrono::milliseconds(v.GetUint64());
+    target = std::chrono::milliseconds(v.GetInt64());
 }
 
 template<typename T>
