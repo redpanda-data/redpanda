@@ -644,8 +644,24 @@ class CreateSITopicsTest(RedpandaTest):
             'initial.retention.local.target.ms': '123456'
         }
 
-        for k, v in examples.items():
-            kcl.alter_topic_config({k: v}, incremental=False, topic=topic)
+        kcl.alter_topic_config(examples, incremental=False, topic=topic)
+        topic_config = rpk.describe_topic_configs(topic)
+        value, src = topic_config["retention.local.target.bytes"]
+        assert value == "123456" and src == "DYNAMIC_TOPIC_CONFIG"
+
+        kcl.alter_topic_config({"retention.local.target.bytes": "999999"},
+                               incremental=False,
+                               topic=topic)
+        topic_config = rpk.describe_topic_configs(topic)
+        value, src = topic_config["retention.local.target.bytes"]
+        assert value == "999999" and src == "DYNAMIC_TOPIC_CONFIG"
+
+        # All non-specified configs should revert to their default with incremental=False
+        for k, _ in examples.items():
+            if k != "retention.local.target.bytes":
+                value, src = topic_config[k]
+                assert src == "DEFAULT_CONFIG", \
+                    f"Unexpected describe result for {k}: value={value}, src={src}"
 
         # As a control, confirm that if we did pass an invalid property, we would have got an error
         with expect_exception(RuntimeError, lambda e: "invalid" in str(e)):
