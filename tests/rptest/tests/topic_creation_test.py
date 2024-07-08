@@ -622,10 +622,12 @@ class CreateSITopicsTest(RedpandaTest):
             "false", "DYNAMIC_TOPIC_CONFIG")
 
     @cluster(num_nodes=1)
-    def topic_alter_config_test(self):
+    @matrix(incremental=[True, False])
+    def topic_alter_config_test(self, incremental):
         """
-        Intentionally use the legacy (deprecated in Kafka 2.3.0) AlterConfig
-        admin RPC, to check it works with our custom topic properties
+        Intentionally use either the legacy (deprecated in Kafka 2.3.0) AlterConfig
+        admin RPC or the new IncrementalAlterConfig API, to check that both work
+        with our custom topic properties
         """
         rpk = RpkTool(self.redpanda)
         topic = topic_name()
@@ -643,7 +645,7 @@ class CreateSITopicsTest(RedpandaTest):
             'initial.retention.local.target.bytes': '123456',
             'initial.retention.local.target.ms': '123456'
         }
-        kcl.alter_topic_config(examples, incremental=False, topic=topic)
+        kcl.alter_topic_config(examples, incremental=incremental, topic=topic)
 
         # 'cleanup.policy' is defaulted to 'delete' upon topic creation.
         # AlterConfigs handling should preserve this default, unless explicitly
@@ -653,18 +655,31 @@ class CreateSITopicsTest(RedpandaTest):
         assert value == "delete" and src == "DEFAULT_CONFIG"
 
         kcl.alter_topic_config({"cleanup.policy": "compact"},
-                               incremental=False,
+                               incremental=incremental,
                                topic=topic)
         topic_config = rpk.describe_topic_configs(topic)
         value, src = topic_config["cleanup.policy"]
         assert value == "compact" and src == "DYNAMIC_TOPIC_CONFIG"
 
-        # All non-specified configs should revert to their default with incremental=False
-        for k, v in examples.items():
+        for k, _ in examples.items():
             if k != "cleanup.policy":
+                # With the old alter configs API (incremental=False), all the other configs should revert to their default
+                # With the new incremental alter configs API, all the other configs should be unchanged
+                expected_src = "DYNAMIC_TOPIC_CONFIG" if incremental else "DEFAULT_CONFIG"
+
+                # Additionally, some configs default as "DEFAULT_CONFIG" incorrectly when they are set to the same value as their cluster-level default.
+                # TODO(gellert.nagy): fix the above
+                hiding_configs = [
+                    'redpanda.remote.delete',
+                    'redpanda.remote.write',
+                    'redpanda.remote.read',
+                ]
+                if k in hiding_configs:
+                    expected_src = "DEFAULT_CONFIG"
+
                 value, src = topic_config[k]
-                assert src == "DEFAULT_CONFIG", \
-                    f"Unexpected describe result for {k}: value={value}, src={src}"
+                assert src == expected_src, \
+                    f"[incremental={incremental}] Unexpected describe result for {k}: value={value}, src={src}"
 
         # As a control, confirm that if we did pass an invalid property, we would have got an error
         with expect_exception(RuntimeError, lambda e: "invalid" in str(e)):
