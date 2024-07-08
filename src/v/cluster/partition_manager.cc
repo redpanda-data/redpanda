@@ -122,6 +122,11 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::keep_snapshotted_log keep_snapshotted_log,
   std::optional<cloud_storage::remote_label> remote_label) {
     auto guard = _gate.hold();
+    // NOTE: while the source cluster UUIDs of the path providers will
+    // ultimately be the same, this is a different path provider than what will
+    // be used at runtime by the partition. The latter is owned by the archival
+    // metadata STM and its lifecycle is therefore tied to the partition, which
+    // hasn't been constructed yet.
     cloud_storage::remote_path_provider path_provider(remote_label);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp, path_provider);
     auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
