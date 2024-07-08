@@ -48,6 +48,7 @@ redpanda_cc_library(
         "//src/v/utils:mutex",
         "//src/v/utils:unresolved_address",
         "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:node_hash_map",
         "@abseil-cpp//absl/hash",
         "@boost//:intrusive",
         "@boost//:lexical_cast",

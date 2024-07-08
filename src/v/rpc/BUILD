@@ -69,6 +69,7 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:crc",
         "@fmt",
         "@seastar",
     ],
