@@ -31,6 +31,22 @@ bool bin_manifest_filter(
     return i.key.ends_with("topic_manifest.bin");
 };
 } // namespace
+
+std::ostream& operator<<(std::ostream& os, find_topic_manifest_outcome o) {
+    switch (o) {
+    case find_topic_manifest_outcome::success:
+        os << "find_topic_manifest_outcome::success";
+        break;
+    case find_topic_manifest_outcome::no_matching_manifest:
+        os << "find_topic_manifest_outcome::no_matching_manifest";
+        break;
+    case find_topic_manifest_outcome::multiple_matching_manifests:
+        os << "find_topic_manifest_outcome::multiple_matching_manifests";
+        break;
+    }
+    return os;
+}
+
 topic_manifest_downloader::topic_manifest_downloader(
   const cloud_storage_clients::bucket_name bucket,
   std::optional<ss::sstring> hint,
