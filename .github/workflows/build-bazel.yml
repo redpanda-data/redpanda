@@ -60,3 +60,11 @@ jobs:
             @unordered_dense @wasmtime @xz
         - name: build
           run: bazel build //...
+        - name: build thirdparty
+          run: |
+            bazel build --config=release @ada @avro @base64 @c-ares @hdrhistogram \
+            @hwloc @krb5 @libpciaccess @libxml2 @lksctp @numactl @openssl \
+            @openssl-fips @rapidjson @roaring @seastar @snappy \
+            @unordered_dense @wasmtime @xz
+        - name: build
+          run: bazel build --config=release //...
