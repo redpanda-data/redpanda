@@ -75,7 +75,7 @@ struct cluster_metadata_manifest
     ss::future<> update(ss::input_stream<char> is) override;
     ss::future<cloud_storage::serialized_data_stream>
     serialize() const override;
-    cloud_storage::remote_manifest_path get_manifest_path() const override;
+    cloud_storage::remote_manifest_path get_manifest_path() const;
     cloud_storage::manifest_type get_manifest_type() const override {
         return cloud_storage::manifest_type::cluster_metadata;
     }

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
@@ -93,20 +94,11 @@ struct remote_nt_lifecycle_marker
 
     lifecycle_status status;
 
-    cloud_storage_clients::object_key get_key() {
-        return generate_key(
-          topic.nt.ns, topic.nt.tp, topic.initial_revision_id);
-    }
-
-    static cloud_storage_clients::object_key generate_key(
-      const model::ns& ns,
-      const model::topic& tp,
-      model::initial_revision_id rev) {
-        constexpr uint32_t bitmask = 0xF0000000;
-        auto path = fmt::format("{}/{}", ns(), tp());
-        uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-        return cloud_storage_clients::object_key(
-          fmt::format("{:08x}/meta/{}/{}_lifecycle.bin", hash, path, rev()));
+    cloud_storage_clients::object_key
+    get_key(const remote_path_provider& path_provider) {
+        return cloud_storage_clients::object_key{
+          path_provider.topic_lifecycle_marker_path(
+            topic.nt, topic.initial_revision_id)};
     }
 };
 

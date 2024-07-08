@@ -16,6 +16,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/members_table.h"
@@ -46,6 +47,10 @@
 #include <optional>
 
 namespace archival {
+
+namespace {
+cloud_storage::remote_path_provider path_provider(std::nullopt);
+} // namespace
 
 using namespace std::chrono_literals;
 
@@ -509,7 +514,7 @@ archival::remote_segment_path get_segment_path(
     BOOST_REQUIRE(meta);
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
-    return manifest.generate_segment_path(*meta);
+    return manifest.generate_segment_path(*meta, path_provider);
 }
 
 archival::remote_segment_path get_segment_index_path(

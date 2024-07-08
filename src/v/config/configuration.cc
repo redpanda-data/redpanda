@@ -2161,6 +2161,15 @@ configuration::configuration()
       "timeout error.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       600s)
+  , cloud_storage_disable_remote_labels_for_tests(
+      *this,
+      "cloud_storage_disable_remote_labels_for_tests",
+      "If 'true', Redpanda disables remote labels and falls back on the "
+      "hash-based object naming scheme for new topics. This property exists to "
+      "simplify testing "
+      "and shouldn't be set in production.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",

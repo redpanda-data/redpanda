@@ -12,6 +12,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "test_utils/async.h"
@@ -21,6 +22,7 @@
 
 inline ss::logger test_log("test"); // NOLINT
 namespace cloud_storage {
+remote_path_provider path_provider(std::nullopt);
 class remote_segment_test_helper {
 public:
     explicit remote_segment_test_helper(remote_segment& r)
@@ -108,7 +110,7 @@ partition_manifest chunk_read_baseline(
       .ntp_revision = segment_ntp_revision,
       .sname_format = segment_name_format::v3};
 
-    auto path = m.generate_segment_path(meta);
+    auto path = m.generate_segment_path(meta, path_provider);
     f.set_expectations_and_listen({}, {{"Range"}});
 
     if (index_upload) {
@@ -149,7 +151,7 @@ void test_wrapper(
       f.api.local(),
       f.cache.local(),
       f.bucket_name,
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,
@@ -415,7 +417,7 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
       api.local(),
       cache.local(),
       bucket_name,
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,

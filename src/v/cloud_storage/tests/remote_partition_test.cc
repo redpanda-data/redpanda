@@ -16,6 +16,7 @@
 #include "cloud_storage/download_exception.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
@@ -72,6 +73,8 @@ static void print_segments(const std::vector<in_memory_segment>& segments) {
         vlog(test_log.debug, "segment: {}", s);
     }
 }
+
+static const remote_path_provider path_provider(std::nullopt);
 
 /// Return vector<bool> which have a value for every recrod_batch_header in
 /// 'segments' If i'th value is true then the value are present in both
@@ -145,7 +148,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto manifest = hydrate_manifest(fixture.api.local(), fixture.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      fixture.api, fixture.cache, manifest, fixture.bucket_name);
+      fixture.api, fixture.cache, manifest, fixture.bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       fixture.api.local(),
@@ -213,7 +216,7 @@ FIXTURE_TEST(
     auto manifest = hydrate_manifest(api.local(), bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket_name);
+      api, cache, manifest, bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -267,7 +270,7 @@ test_remote_partition_cache_size_estimate_materialized_segments_args(
     auto manifest = hydrate_manifest(api.local(), context.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, context.bucket_name);
+      api, cache, manifest, context.bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), context.bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -416,7 +419,8 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
       body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
     // overwrite uploaded manifest with a json version
     expectations.back() = {
-      .url = manifest.get_legacy_manifest_format_and_path().second().string(),
+      .url = prefixed_partition_manifest_json_path(
+        manifest.get_ntp(), manifest.get_revision_id()),
       .body = body};
     set_expectations_and_listen(expectations);
     BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
@@ -1032,7 +1036,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     {
         partition_probe probe(manifest.get_ntp());
         auto manifest_view = ss::make_shared<async_manifest_view>(
-          api, cache, manifest, bucket_name);
+          api, cache, manifest, bucket_name, path_provider);
         auto partition = ss::make_shared<remote_partition>(
           manifest_view, api.local(), cache.local(), bucket_name, probe);
         auto partition_stop = ss::defer(
@@ -1056,7 +1060,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     {
         partition_probe probe(manifest.get_ntp());
         auto manifest_view = ss::make_shared<async_manifest_view>(
-          api, cache, manifest, bucket_name);
+          api, cache, manifest, bucket_name, path_provider);
         auto partition = ss::make_shared<remote_partition>(
           manifest_view, api.local(), cache.local(), bucket_name, probe);
         auto partition_stop = ss::defer(
@@ -1085,7 +1089,7 @@ static void remove_segment_from_s3(
 
     auto meta = m.get(o);
     BOOST_REQUIRE(meta.has_value());
-    auto path = m.generate_segment_path(*meta);
+    auto path = m.generate_segment_path(*meta, path_provider);
     retry_chain_node fib(never_abort, 60s, 1s);
     auto res = api
                  .delete_object(
@@ -1124,7 +1128,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket_name);
+      api, cache, manifest, bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -1227,7 +1231,7 @@ FIXTURE_TEST(
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket_name);
+      api, cache, manifest, bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -1316,7 +1320,7 @@ FIXTURE_TEST(
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket_name);
+      api, cache, manifest, bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -1523,7 +1527,7 @@ FIXTURE_TEST(test_remote_partition_abort_eos_race, cloud_storage_fixture) {
     auto manifest = hydrate_manifest(api.local(), bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      api, cache, manifest, bucket_name);
+      api, cache, manifest, bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -2015,7 +2019,11 @@ std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
     partition_probe probe(manifest.get_ntp());
 
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
 
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
@@ -2278,10 +2286,10 @@ FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2351,13 +2359,13 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
         vlog(
           test_util_log.info,
           "Uploading spillover manifest at {}:\n{}",
-          spm.get_manifest_path(),
+          spm.get_manifest_path(path_provider),
           ostr.str());
 
         auto s_data = spm.serialize().get();
         auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
         add_expectations({cloud_storage_fixture::expectation{
-          .url = spm.get_manifest_path()().string(),
+          .url = spm.get_manifest_path(path_provider)().string(),
           .body = ss::sstring(buf.begin(), buf.end()),
         }});
     }
@@ -2382,10 +2390,10 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
     remove_expectations({manifest_url});
     add_expectations({
       cloud_storage_fixture::expectation{
@@ -2470,7 +2478,7 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     vlog(
       test_util_log.info,
       "Rewriting manifest at {}:\n{}",
-      manifest.get_manifest_path(),
+      manifest.get_manifest_path(path_provider),
       ostr.str());
 
     remove_expectations({manifest_url});

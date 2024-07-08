@@ -709,6 +709,12 @@ class SISettings:
 
         return bucket
 
+    def reset_cloud_storage_bucket(self, new_bucket_name: str) -> None:
+        if self.cloud_storage_type == CloudStorageType.S3:
+            self._cloud_storage_bucket = new_bucket_name
+        elif self.cloud_storage_type == CloudStorageType.ABS:
+            self._cloud_storage_azure_container = new_bucket_name
+
     def gcp_iam_token(self, logger):
         logger.info('Getting gcp iam token')
         s = requests.Session()
@@ -3514,7 +3520,7 @@ class RedpandaService(RedpandaServiceBase):
 
                 # Decode binary manifests for convenience, but don't give up
                 # if we fail
-                if ".bin" in m:
+                if "/manifest.bin" in m:
                     try:
                         decoded = RpStorageTool(
                             self.logger).decode_partition_manifest(body)

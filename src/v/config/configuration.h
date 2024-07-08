@@ -394,6 +394,7 @@ struct configuration final : public config_store {
     property<bool> cloud_storage_disable_upload_consistency_checks;
     property<bool> cloud_storage_disable_metadata_consistency_checks;
     property<std::chrono::milliseconds> cloud_storage_hydration_timeout_ms;
+    property<bool> cloud_storage_disable_remote_labels_for_tests;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;

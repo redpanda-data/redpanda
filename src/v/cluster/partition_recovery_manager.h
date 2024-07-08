@@ -12,6 +12,8 @@
 
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_label.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/ntp_config.h"
@@ -77,7 +79,8 @@ public:
     ss::future<log_recovery_result> download_log(
       const storage::ntp_config& ntp_cfg,
       model::initial_revision_id remote_revsion,
-      int32_t remote_partition_count);
+      int32_t remote_partition_count,
+      cloud_storage::remote_path_provider& path_provider);
 
     void set_topic_recovery_components(
       ss::sharded<cluster::topic_recovery_status_frontend>&
@@ -110,6 +113,7 @@ class partition_downloader {
 public:
     partition_downloader(
       const storage::ntp_config& ntpc,
+      const cloud_storage::remote_path_provider& path_provider,
       remote* remote,
       model::initial_revision_id remote_revision_id,
       int32_t remote_partition_count,
@@ -216,6 +220,7 @@ private:
     read_first_record_header(const std::filesystem::path& path);
 
     const storage::ntp_config& _ntpc;
+    const cloud_storage::remote_path_provider& _remote_path_provider;
     cloud_storage_clients::bucket_name _bucket;
     remote* _remote;
     model::initial_revision_id _remote_revision_id;

@@ -36,7 +36,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "mpx_virtual_cluster_id: {}, "
       "write_caching: {}, "
       "flush_ms: {}, "
-      "flush_bytes: {}}}",
+      "flush_bytes: {}, "
+      "remote_label: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -67,7 +68,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.mpx_virtual_cluster_id,
       properties.write_caching,
       properties.flush_ms,
-      properties.flush_bytes);
+      properties.flush_bytes,
+      properties.remote_label);
 
     return o;
 }
@@ -101,7 +103,7 @@ bool topic_properties::has_overrides() const {
            || initial_retention_local_target_bytes.is_engaged()
            || initial_retention_local_target_ms.is_engaged()
            || write_caching.has_value() || flush_ms.has_value()
-           || flush_bytes.has_value();
+           || flush_bytes.has_value() || remote_label.has_value();
 }
 
 bool topic_properties::requires_remote_erase() const {

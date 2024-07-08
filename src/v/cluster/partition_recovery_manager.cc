@@ -12,7 +12,10 @@
 
 #include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/recovery_utils.h"
+#include "cloud_storage/remote_label.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/topic_recovery_status_frontend.h"
@@ -85,7 +88,8 @@ ss::future<> partition_recovery_manager::stop() {
 ss::future<log_recovery_result> partition_recovery_manager::download_log(
   const storage::ntp_config& ntp_cfg,
   model::initial_revision_id remote_revision,
-  int32_t remote_partition_count) {
+  int32_t remote_partition_count,
+  cloud_storage::remote_path_provider& path_provider) {
     if (!ntp_cfg.has_overrides()) {
         vlog(
           cst_log.debug, "No overrides for {} found, skipping", ntp_cfg.ntp());
@@ -101,6 +105,7 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
     }
     partition_downloader downloader(
       ntp_cfg,
+      path_provider,
       &_remote.local(),
       remote_revision,
       remote_partition_count,
@@ -115,7 +120,7 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
           cst_log.debug,
           "topic recovery service is active, uploading result: {} for {}",
           result.logs_recovered,
-          result.manifest.get_manifest_path());
+          result.manifest.get_manifest_path(path_provider));
         co_await cloud_storage::place_download_result(
           _remote.local(), _bucket, ntp_cfg, result.logs_recovered, fib);
     }
@@ -149,6 +154,7 @@ void partition_recovery_manager::set_topic_recovery_components(
 
 partition_downloader::partition_downloader(
   const storage::ntp_config& ntpc,
+  const cloud_storage::remote_path_provider& path_provider,
   remote* remote,
   model::initial_revision_id remote_rev_id,
   int32_t remote_partition_count,
@@ -157,6 +163,7 @@ partition_downloader::partition_downloader(
   retry_chain_node& parent,
   storage::opt_abort_source_t as)
   : _ntpc(ntpc)
+  , _remote_path_provider(path_provider)
   , _bucket(std::move(bucket))
   , _remote(remote)
   , _remote_revision_id(remote_rev_id)
@@ -604,20 +611,27 @@ partition_downloader::find_recovery_material() {
     vlog(
       _ctxlog.info,
       "Downloading partition manifest {}",
-      tmp.get_manifest_path());
-    auto [res, res_fmt] = co_await _remote->try_download_partition_manifest(
-      _bucket, tmp, _rtcnode);
-    if (res == download_result::success) {
-        recovery_mat.partition_manifest = std::move(tmp);
-        co_return recovery_mat;
+      tmp.get_manifest_path(_remote_path_provider));
+    cloud_storage::partition_manifest_downloader dl(
+      _bucket,
+      _remote_path_provider,
+      _ntpc.ntp(),
+      _remote_revision_id,
+      *_remote);
+    auto download_res = co_await dl.download_manifest(_rtcnode, &tmp);
+    if (download_res.has_error()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Can't download manifest: {}", download_res.error()));
     }
-    if (res == download_result::notfound) {
-        // Manifest is not available in the cloud
-        throw missing_partition_exception(tmp.get_manifest_path(res_fmt));
+    if (
+      download_res.value()
+      == find_partition_manifest_outcome::no_matching_manifest) {
+        throw missing_partition_exception(
+          remote_manifest_path{_remote_path_provider.partition_manifest_path(
+            _ntpc.ntp(), _remote_revision_id)});
     }
-    // Some other, possibly transient error
-    throw std::runtime_error(
-      fmt_with_ctx(fmt::format, "Can't download manifest: {}", res));
+    recovery_mat.partition_manifest = std::move(tmp);
+    co_return recovery_mat;
 }
 
 static ss::future<ss::output_stream<char>>
@@ -669,9 +683,6 @@ partition_downloader::download_segment_file(
   const segment_meta& segm, const download_part& part) {
     auto name = generate_local_segment_name(
       segm.base_offset, segm.segment_term);
-    auto remote_path = partition_manifest::generate_remote_segment_path(
-      _ntpc.ntp(), segm);
-
     auto localpath = part.part_prefix / std::filesystem::path(name());
 
     vlog(
@@ -696,6 +707,9 @@ partition_downloader::download_segment_file(
     }
 
     auto stream_stats = cloud_storage::stream_stats{};
+    auto remote_path = cloud_storage::remote_segment_path(
+      _remote_path_provider.segment_path(
+        _ntpc.ntp(), _ntpc.get_initial_revision(), segm));
 
     auto stream = [this,
                    &stream_stats,

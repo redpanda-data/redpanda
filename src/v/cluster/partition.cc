@@ -13,6 +13,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/async_manifest_view.h"
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/id_allocator_stm.h"
@@ -422,7 +423,8 @@ ss::future<> partition::start(state_machine_registry& stm_registry) {
             _cloud_storage_api,
             _cloud_storage_cache,
             _archival_meta_stm->manifest(),
-            cloud_storage_clients::bucket_name{*bucket});
+            cloud_storage_clients::bucket_name{*bucket},
+            _archival_meta_stm->path_provider());
 
         _cloud_storage_partition
           = ss::make_shared<cloud_storage::remote_partition>(
@@ -1171,13 +1173,22 @@ partition::do_unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
     auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
 
     retry_chain_node rtc(_as, timeout, backoff);
-    auto [res, res_fmt]
-      = co_await _cloud_storage_api.local().try_download_partition_manifest(
-        bucket, new_manifest, rtc);
-
-    if (res != cloud_storage::download_result::success) {
+    cloud_storage::partition_manifest_downloader dl(
+      bucket,
+      _archival_meta_stm->path_provider(),
+      ntp(),
+      initial_rev,
+      _cloud_storage_api.local());
+    auto res = co_await dl.download_manifest(rtc, &new_manifest);
+    if (res.has_error()) {
         throw std::runtime_error(ssx::sformat(
-          "Failed to download partition manifest with error: {}", res));
+          "Failed to download partition manifest with error: {}", res.error()));
+    }
+    if (
+      res.value()
+      == cloud_storage::find_partition_manifest_outcome::no_matching_manifest) {
+        throw std::runtime_error(ssx::sformat(
+          "No matching manifest for {} rev {}", ntp(), initial_rev));
     }
 
     const auto max_collectible
