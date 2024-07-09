@@ -37,4 +37,9 @@ private:
     ops_t _inv_ops;
 };
 
+ss::future<inv_ops> make_inv_ops(
+  cloud_storage_clients::bucket_name bucket,
+  inventory_config_id inv_cfg_id,
+  ss::sstring inv_reports_prefix);
+
 } // namespace cloud_storage::inventory

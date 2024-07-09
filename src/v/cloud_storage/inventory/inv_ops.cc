@@ -10,6 +10,8 @@
 
 #include "cloud_storage/inventory/inv_ops.h"
 
+#include "cloud_storage/configuration.h"
+#include "cloud_storage/inventory/types.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "utils/retry_chain_node.h"
@@ -99,6 +101,13 @@ ss::future<op_result<report_metadata>> inv_ops::fetch_latest_report_metadata(
     return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
         return ops.fetch_latest_report_metadata(remote, parent);
     });
+}
+
+ss::future<inv_ops> make_inv_ops(
+  cloud_storage_clients::bucket_name bucket,
+  inventory_config_id inv_cfg_id,
+  ss::sstring inv_reports_prefix) {
+    co_return inv_ops{aws_ops{bucket, inv_cfg_id, inv_reports_prefix}};
 }
 
 } // namespace cloud_storage::inventory
