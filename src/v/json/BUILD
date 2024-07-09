@@ -9,6 +9,7 @@ redpanda_cc_library(
     hdrs = [
         "_include_first.h",
         "allocator.h",
+        "chunked_buffer.h",
         "document.h",
         "encodings.h",
         "istreamwrapper.h",
@@ -29,6 +30,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/bytes:iobuf",
         "//src/v/serde",
         "//src/v/utils:named_type",
         "//src/v/utils:unresolved_address",
