@@ -43,6 +43,7 @@ using eof = async_manifest_view_cursor::eof;
 
 static ss::logger test_log("async_manifest_view_log");
 static const model::initial_revision_id manifest_rev(111);
+static const remote_path_provider path_provider(std::nullopt);
 
 class set_config_mixin {
 public:
@@ -71,7 +72,7 @@ public:
       , rtc(as)
       , ctxlog(test_log, rtc)
       , probe(manifest_ntp)
-      , view(api, cache, stm_manifest, bucket) {
+      , view(api, cache, stm_manifest, bucket, path_provider) {
         stm_manifest.set_archive_start_offset(
           model::offset{0}, model::offset_delta{0});
         stm_manifest.set_archive_clean_offset(model::offset{0}, 0);
@@ -85,7 +86,7 @@ public:
     expectation spill_manifest(const spillover_manifest& spm, bool hydrate) {
         stm_manifest.spillover(spm.make_manifest_metadata());
         // update cache
-        auto path = spm.get_manifest_path();
+        auto path = spm.get_manifest_path(path_provider);
         if (hydrate) {
             auto stream = spm.serialize().get();
             auto reservation = cache.local().reserve_space(123, 1).get();
@@ -130,7 +131,7 @@ public:
     }
 
     void put_spill_to_cache(const spillover_manifest& spm) {
-        auto path = spm.get_manifest_path();
+        auto path = spm.get_manifest_path(path_provider);
         auto stream = spm.serialize().get();
         auto reservation = cache.local().reserve_space(123, 1).get();
         cache.local()
@@ -162,7 +163,7 @@ public:
         in_stream.close().get();
         out_stream.close().get();
         ss::sstring body = linearize_iobuf(std::move(tmp_buf));
-        auto path = pm.get_manifest_path();
+        auto path = pm.get_manifest_path(path_provider);
         _expectations.push_back({
           .url = path().string(),
           .body = body,
@@ -208,7 +209,7 @@ public:
         stm_manifest.spillover(spm.make_manifest_metadata());
 
         // update cache
-        auto path = spm.get_manifest_path();
+        auto path = spm.get_manifest_path(path_provider);
         if (hydrate) {
             auto stream = spm.serialize().get();
             auto reservation = cache.local().reserve_space(123, 1).get();

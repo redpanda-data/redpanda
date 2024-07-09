@@ -15,6 +15,7 @@
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
@@ -45,6 +46,10 @@ using namespace cloud_storage;
 inline ss::logger test_log("test"); // NOLINT
 
 static ss::abort_source never_abort;
+
+namespace {
+remote_path_provider path_provider(std::nullopt);
+} // namespace
 
 static cloud_storage::lazy_abort_source always_continue([]() {
     return std::nullopt;
@@ -82,7 +87,7 @@ FIXTURE_TEST(
       .delta_offset = model::offset_delta(0),
       .ntp_revision = segment_ntp_revision,
       .sname_format = segment_name_format::v2};
-    auto path = m.generate_segment_path(meta);
+    auto path = m.generate_segment_path(meta, path_provider);
     set_expectations_and_listen({});
     auto upl_res
       = api.local()
@@ -99,7 +104,7 @@ FIXTURE_TEST(
       api.local(),
       cache.local(),
       bucket_name,
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,
@@ -144,7 +149,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
       api.local(),
       cache.local(),
       bucket_name,
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,
@@ -208,7 +213,7 @@ FIXTURE_TEST(
       .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision,
       .sname_format = segment_name_format::v3};
-    auto path = m.generate_segment_path(meta);
+    auto path = m.generate_segment_path(meta, path_provider);
     uint64_t clen = segment_bytes.size_bytes();
     auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(never_abort, 10000ms, 200ms);
@@ -232,7 +237,7 @@ FIXTURE_TEST(
       api.local(),
       cache.local(),
       bucket_name,
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,
@@ -308,7 +313,7 @@ void test_remote_segment_batch_reader(
       .ntp_revision = manifest_revision,
       .sname_format = segment_name_format::v3};
 
-    auto path = m.generate_segment_path(meta);
+    auto path = m.generate_segment_path(meta, path_provider);
     retry_chain_node fib(never_abort, 10000ms, 200ms);
 
     upload_index(fixture, meta, segment_bytes, path, fib);
@@ -340,7 +345,7 @@ void test_remote_segment_batch_reader(
       fixture.api.local(),
       fixture.cache.local(),
       cloud_storage_clients::bucket_name{fixture.bucket_name},
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,
@@ -435,7 +440,7 @@ FIXTURE_TEST(
       .max_timestamp = {},
       .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
-    auto path = m.generate_segment_path(meta);
+    auto path = m.generate_segment_path(meta, path_provider);
     auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(never_abort, 1000ms, 200ms);
     auto upl_res
@@ -452,7 +457,7 @@ FIXTURE_TEST(
       api.local(),
       cache.local(),
       bucket_name,
-      m.generate_segment_path(meta),
+      m.generate_segment_path(meta, path_provider),
       m.get_ntp(),
       meta,
       fib,

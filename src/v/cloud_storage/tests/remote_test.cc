@@ -16,8 +16,11 @@
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
+#include "cloud_storage/segment_path_utils.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
@@ -88,15 +91,6 @@ static cloud_storage::lazy_abort_source always_continue{
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
 
-static partition_manifest load_manifest_from_str(std::string_view v) {
-    partition_manifest m;
-    iobuf i;
-    i.append(v.data(), v.size());
-    auto s = make_iobuf_input_stream(std::move(i));
-    m.update(manifest_format::json, std::move(s)).get();
-    return m;
-}
-
 static remote::event_filter allow_all;
 
 static iobuf make_iobuf_from_string(std::string_view s) {
@@ -154,24 +148,6 @@ using remote_fixture = remote_fixture_base<noop_mixin_t>;
 using gcs_remote_fixture = remote_fixture_base<
   backend_override_mixin_t<model::cloud_storage_backend::google_s3_compat>>;
 
-static auto run_manifest_download_and_check(
-  auto& remote,
-  const cloud_storage_clients::bucket_name& bucket_name,
-  partition_manifest expected_manifest,
-  manifest_format expected_download_format,
-  std::string_view test_context) {
-    partition_manifest actual(manifest_ntp, manifest_revision);
-    retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto [res, fmt] = remote.local()
-                        .try_download_partition_manifest(
-                          bucket_name, actual, fib)
-                        .get();
-
-    EXPECT_TRUE(res == download_result::success);
-    EXPECT_TRUE(fmt == expected_download_format);
-    EXPECT_TRUE(expected_manifest == actual);
-}
-
 class all_types_remote_fixture
   : public remote_fixture
   , public testing::TestWithParam<remote_test_parameters> {
@@ -187,44 +163,6 @@ public:
     all_types_gcs_remote_fixture()
       : gcs_remote_fixture(GetParam().url_style) {}
 };
-
-TEST_P(all_types_remote_fixture, test_download_manifest_json) {
-    set_expectations_and_listen({expectation{
-      .url = manifest_url, .body = ss::sstring(manifest_payload)}});
-    auto subscription = remote.local().subscribe(allow_all);
-    run_manifest_download_and_check(
-      remote,
-      bucket_name,
-      load_manifest_from_str(manifest_payload),
-      manifest_format::json,
-      "manifest load from json");
-    EXPECT_TRUE(subscription.available());
-    EXPECT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
-}
-
-TEST_P(all_types_remote_fixture, test_download_manifest_serde) {
-    auto translator = load_manifest_from_str(manifest_payload);
-    auto serialized = translator.serialize().get();
-    auto manifest_binary
-      = serialized.stream.read_exactly(serialized.size_bytes).get();
-
-    set_expectations_and_listen({expectation{
-      .url = manifest_serde_url,
-      .body = ss::sstring{manifest_binary.begin(), manifest_binary.end()}}});
-
-    auto subscription = remote.local().subscribe(allow_all);
-    run_manifest_download_and_check(
-      remote,
-      bucket_name,
-      std::move(translator),
-      manifest_format::serde,
-      "manifest load from serde");
-
-    EXPECT_TRUE(subscription.available());
-    EXPECT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
-}
 
 TEST_P(all_types_remote_fixture, test_download_manifest_timeout) { // NOLINT
     partition_manifest actual(manifest_ntp, manifest_revision);
@@ -244,8 +182,8 @@ TEST_P(all_types_remote_fixture, test_upload_segment) { // NOLINT
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -272,8 +210,8 @@ TEST_P(
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -299,8 +237,8 @@ TEST_P(
 TEST_P(all_types_remote_fixture, test_upload_segment_timeout) { // NOLINT
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -323,8 +261,8 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -366,8 +304,8 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
 TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
 
     auto try_consume = [](uint64_t, ss::input_stream<char>) {
         return ss::make_ready_future<uint64_t>(0);
@@ -386,11 +324,11 @@ TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
 TEST_P(all_types_remote_fixture, test_download_segment_range) {
     auto subscription = remote.local().subscribe(allow_all);
 
-    auto path = generate_remote_segment_path(
+    auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp,
       manifest_revision,
       segment_name("1-2-v1.log"),
-      model::term_id{123});
+      model::term_id{123})};
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
@@ -452,8 +390,8 @@ TEST_P(all_types_remote_fixture, test_download_segment_range) {
 TEST_P(all_types_remote_fixture, test_segment_exists) { // NOLINT
     set_expectations_and_listen({});
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -483,8 +421,8 @@ TEST_P(all_types_remote_fixture, test_segment_exists) { // NOLINT
 
 TEST_P(all_types_remote_fixture, test_segment_exists_timeout) { // NOLINT
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto expect_timeout
@@ -495,8 +433,8 @@ TEST_P(all_types_remote_fixture, test_segment_exists_timeout) { // NOLINT
 TEST_P(all_types_remote_fixture, test_segment_delete) { // NOLINT
     set_expectations_and_listen({});
     auto name = segment_name("0-1-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{1});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{1})};
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
     uint64_t clen = manifest_payload.size();
@@ -556,11 +494,11 @@ TEST_P(all_types_remote_fixture, test_concat_segment_upload) {
         start_offset = segment.offsets().get_dirty_offset() + model::offset{1};
     }
 
-    auto path = generate_remote_segment_path(
+    auto path = remote_segment_path{prefixed_segment_path(
       test_ntp,
       manifest_revision,
       segment_name("1-2-v1.log"),
-      model::term_id{123});
+      model::term_id{123})};
 
     auto start_pos = 20;
     auto end_pos = b.get_log_segments().back()->file_size() - 20;
@@ -1159,7 +1097,10 @@ TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
       subscription2.get().type == api_activity_type::manifest_download);
 
     auto upl_res
-      = remote.local().upload_manifest(bucket_name, actual, root_rtc).get();
+      = remote.local()
+          .upload_manifest(
+            bucket_name, actual, json_manifest_format_path.second, root_rtc)
+          .get();
     ASSERT_TRUE(upl_res == upload_result::success);
     ASSERT_TRUE(subscription1.available());
     ASSERT_TRUE(subscription1.get().type == api_activity_type::manifest_upload);
@@ -1228,8 +1169,8 @@ TEST_P(
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -1317,8 +1258,8 @@ TEST_P(
     set_expectations_and_listen({});
     auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
-    auto path = generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name, model::term_id{123});
+    auto path = remote_segment_path{prefixed_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
     auto reset_stream =
       []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
@@ -1378,8 +1319,15 @@ TEST_P(all_types_remote_fixture, test_notification_retry_meta) {
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto filter = remote::event_filter{};
 
-    auto fut = remote.local().try_download_partition_manifest(
-      bucket_name, actual, fib);
+    remote_path_provider path_provider(std::nullopt);
+    partition_manifest_downloader dl(
+      bucket_name,
+      path_provider,
+      manifest_ntp,
+      manifest_revision,
+      remote.local());
+
+    auto fut = dl.download_manifest(fib, &actual);
 
     RPTEST_REQUIRE_EVENTUALLY(2s, [&] {
         auto sub = remote.local().subscribe(filter);
@@ -1388,8 +1336,9 @@ TEST_P(all_types_remote_fixture, test_notification_retry_meta) {
         });
     });
 
-    auto [res, fmt] = fut.get();
-    EXPECT_TRUE(res == download_result::timedout);
+    auto res = fut.get();
+    EXPECT_TRUE(res.has_error());
+    EXPECT_TRUE(res.error() == error_outcome::manifest_download_error);
 }
 
 TEST_P(all_types_remote_fixture, test_get_object) {

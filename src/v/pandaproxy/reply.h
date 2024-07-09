@@ -76,8 +76,7 @@ errored_body(std::error_condition ec, ss::sstring msg) {
     pandaproxy::json::error_body body{.ec = ec, .message = std::move(msg)};
     auto rep = std::make_unique<ss::http::reply>();
     rep->set_status(error_code_to_status(ec));
-    auto b = json::rjson_serialize(body);
-    rep->write_body("json", b);
+    rep->write_body("json", json::rjson_serialize(body));
     return rep;
 }
 

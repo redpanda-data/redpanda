@@ -456,6 +456,7 @@ class MissingPartition(BaseCase):
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
+        self.original_cluster_uuid = self._redpanda._admin.get_cluster_uuid()
         for topic in self.topics:
             producer = self._rpk_producer_maker(topic=topic.name,
                                                 msg_count=10000,
@@ -486,7 +487,8 @@ class MissingPartition(BaseCase):
           max([seg_meta['delta_offset_end'] for _, seg_meta in manifest_1['segments'].items()])
 
         manifest_0_path = view.gen_manifest_path(
-            ntp_0.to_ntpr(manifest_0['revision']))
+            ntp_0.to_ntpr(manifest_0['revision']),
+            remote_label=self.original_cluster_uuid)
         self._delete(manifest_0_path)
         self.logger.info(
             f"manifest {manifest_0_path} is removed, partition-1 last offset is {self._part1_offset}"

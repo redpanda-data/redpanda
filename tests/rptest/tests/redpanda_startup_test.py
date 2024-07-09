@@ -32,24 +32,44 @@ class RedpandaStartupTest(RedpandaTest):
         pass
 
 
-class RedpandaFIPSStartupTest(RedpandaTest):
-    """
-    Tests that Redpanda can start up in FIPS permissive mode
-    """
-    def __init__(self, test_context):
-        super(RedpandaFIPSStartupTest,
+class RedpandaFIPSStartupTestBase(RedpandaTest):
+    @staticmethod
+    def fips_mode_to_str(fips_mode: RedpandaServiceBase.FIPSMode) -> str:
+        if fips_mode == RedpandaServiceBase.FIPSMode.disabled:
+            return "disabled"
+        elif fips_mode == RedpandaServiceBase.FIPSMode.enabled:
+            return "enabled"
+        elif fips_mode == RedpandaServiceBase.FIPSMode.permissive:
+            return "permissive"
+        else:
+            assert False, f"Unknown FIPS Mode; {fips_mode}"
+
+    def __init__(self,
+                 test_context,
+                 fips_mode: RedpandaServiceBase.FIPSMode = RedpandaServiceBase.
+                 FIPSMode.permissive):
+        super(RedpandaFIPSStartupTestBase,
               self).__init__(test_context=test_context)
 
         for node in self.redpanda.nodes:
             self.redpanda.set_extra_node_conf(
                 node, {
                     "fips_mode":
-                    "permissive",
+                    self.fips_mode_to_str(fips_mode),
                     "openssl_config_file":
                     self.redpanda.get_openssl_config_file_path(),
                     "openssl_module_directory":
                     self.redpanda.get_openssl_modules_directory()
                 })
+
+
+class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
+    """
+    Tests that Redpanda can start up in FIPS permissive mode
+    """
+    def __init__(self, test_context):
+        super(RedpandaFIPSStartupTest,
+              self).__init__(test_context=test_context)
 
     @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
@@ -211,3 +231,53 @@ class RedpandaFIPSStartupTest(RedpandaTest):
             err_msg=
             f"Metrics endpoint never returned 0 after restarting {target_node} in FIPS mode"
         )
+
+
+class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
+    LICENSE_CHECK_INTERVAL_SEC = 1
+
+    def __init__(self, test_context):
+        super(RedpandaFIPSStartupLicenseTest,
+              self).__init__(test_context=test_context,
+                             fips_mode=RedpandaServiceBase.FIPSMode.disabled)
+
+        self.redpanda.set_environment({
+            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+        })
+
+    def _has_license_nag(self) -> bool:
+        return self.redpanda.search_log_any("Enterprise feature(s).*")
+
+    def _license_nag_is_set(self) -> bool:
+        return self.redpanda.search_log_all(
+            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
+        )
+
+    @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
+    @cluster(num_nodes=3)
+    def test_fips_license_nag(self):
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag interval")
+
+        self.logger.debug("Ensuring no license nag")
+        sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        assert not self._has_license_nag(
+        ), "Should not have license nag yet, FIPS mode not enabled"
+
+        fips_mode = RedpandaServiceBase.FIPSMode.enabled if in_fips_environment(
+        ) else RedpandaServiceBase.FIPSMode.permissive
+
+        fips_config = dict(
+            fips_mode=self.fips_mode_to_str(fips_mode),
+            openssl_config_file=self.redpanda.get_openssl_config_file_path(),
+            openssl_module_directory=self.redpanda.
+            get_openssl_modules_directory())
+
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    override_cfg_params=fips_config)
+
+        wait_until(self._has_license_nag,
+                   timeout_sec=30,
+                   err_msg="License nag failed to appear")

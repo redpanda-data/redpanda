@@ -154,7 +154,9 @@ FIXTURE_TEST(
     m.metadata_id = cluster_metadata_id(10);
 
     // Upload a manifest and check that we download it.
-    auto up_res = remote.upload_manifest(bucket, m, retry_node).get();
+    auto up_res
+      = remote.upload_manifest(bucket, m, m.get_manifest_path(), retry_node)
+          .get();
     BOOST_REQUIRE_EQUAL(up_res, cloud_storage::upload_result::success);
     down_res = uploader.download_highest_manifest_or_create(retry_node).get();
     BOOST_REQUIRE(down_res.has_value());
@@ -163,7 +165,9 @@ FIXTURE_TEST(
     // If we upload a manifest with a lower metadata ID, the higher one should
     // be downloaded.
     m.metadata_id = cluster_metadata_id(9);
-    up_res = remote.upload_manifest(bucket, m, retry_node).get();
+    up_res = remote
+               .upload_manifest(bucket, m, m.get_manifest_path(), retry_node)
+               .get();
     m.metadata_id = cluster_metadata_id(10);
     BOOST_REQUIRE_EQUAL(up_res, cloud_storage::upload_result::success);
     down_res = uploader.download_highest_manifest_or_create(retry_node).get();

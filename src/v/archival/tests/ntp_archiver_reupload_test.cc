@@ -12,6 +12,7 @@
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/read_path_probes.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
 #include "storage/ntp_config.h"
@@ -23,6 +24,10 @@ using namespace std::chrono_literals;
 using namespace archival;
 
 inline ss::logger test_log("test");
+
+namespace {
+cloud_storage::remote_path_provider path_provider(std::nullopt);
+} // anonymous namespace
 
 static const auto manifest_namespace = model::ns("kafka");
 static const auto manifest_topic = model::topic("test-topic");
@@ -208,7 +213,8 @@ struct reupload_fixture : public archiver_fixture {
           remote,
           app.shadow_index_cache,
           part->archival_meta_stm()->manifest(),
-          arch_conf->bucket_name);
+          arch_conf->bucket_name,
+          path_provider);
 
         archiver.emplace(
           get_ntp_conf(),

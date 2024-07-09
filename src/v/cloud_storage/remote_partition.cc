@@ -16,6 +16,8 @@
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_manifest_downloader.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
@@ -189,7 +191,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
     if (iter != _segments.end()) {
         if (
           iter->second->segment->get_segment_path()
-          != manifest.generate_segment_path(*mit)) {
+          != manifest.generate_segment_path(
+            *mit, _manifest_view->path_provider())) {
             // The segment was replaced and doesn't match metadata anymore. We
             // want to avoid picking it up because otherwise we won't be able to
             // make any progress.
@@ -198,7 +201,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
         }
     }
     if (iter == _segments.end()) {
-        auto path = manifest.generate_segment_path(*mit);
+        auto path = manifest.generate_segment_path(
+          *mit, _manifest_view->path_provider());
         iter = get_or_materialize_segment(path, *mit, std::move(segment_unit));
     }
     auto mit_committed_offset = mit->committed_offset;
@@ -1067,7 +1071,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
             // up front at the start of the function.
             auto segment_unit = co_await materialized().get_segment_units(
               std::nullopt);
-            auto path = stm_manifest.generate_segment_path(*it);
+            auto path = stm_manifest.generate_segment_path(
+              *it, _manifest_view->path_provider());
             auto m = get_or_materialize_segment(
               path, *it, std::move(segment_unit));
             remote_segs.emplace_back(m->second->segment);
@@ -1099,7 +1104,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
         auto cursor = std::move(cur_res.value());
         co_await for_each_manifest(
           std::move(cursor),
-          [&offsets, &meta_to_materialize](
+          [&offsets, &meta_to_materialize, this](
             ssx::task_local_ptr<const partition_manifest> manifest) {
               for (auto it = manifest->segment_containing(offsets.begin);
                    it != manifest->end();
@@ -1107,7 +1112,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
                   if (it->base_offset > offsets.end_rp) {
                       return ss::stop_iteration::yes;
                   }
-                  auto path = manifest->generate_segment_path(*it);
+                  auto path = manifest->generate_segment_path(
+                    *it, _manifest_view->path_provider());
                   meta_to_materialize.emplace_back(*it, path);
               }
               return ss::stop_iteration::no;
@@ -1306,6 +1312,7 @@ static constexpr ss::lowres_clock::duration finalize_backoff = 1s;
 struct finalize_data {
     model::ntp ntp;
     model::initial_revision_id revision;
+    remote_path_provider path_provider;
     cloud_storage_clients::bucket_name bucket;
     cloud_storage_clients::object_key key;
     iobuf serialized_manifest;
@@ -1322,16 +1329,25 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
 
     partition_manifest remote_manifest(data.ntp, data.revision);
 
-    auto [manifest_get_result, result_fmt]
-      = co_await api.try_download_partition_manifest(
-        data.bucket, remote_manifest, local_rtc);
-
-    if (manifest_get_result != download_result::success) {
+    partition_manifest_downloader dl(
+      data.bucket, data.path_provider, data.ntp, data.revision, api);
+    auto manifest_get_result = co_await dl.download_manifest(
+      local_rtc, &remote_manifest);
+    if (manifest_get_result.has_error()) {
         vlog(
           cst_log.error,
           "[{}] Failed to fetch manifest during finalize(). Error: {}",
           data.ntp,
-          manifest_get_result);
+          manifest_get_result.error());
+        co_return;
+    }
+    if (
+      manifest_get_result.value()
+      == find_partition_manifest_outcome::no_matching_manifest) {
+        vlog(
+          cst_log.error,
+          "[{}] Failed to fetch manifest during finalize(). Not found",
+          data.ntp);
         co_return;
     }
 
@@ -1399,12 +1415,14 @@ void remote_partition::finalize() {
     const auto& stm_manifest = _manifest_view->stm_manifest();
     auto serialized_manifest = stm_manifest.to_iobuf();
 
+    const auto& path_provider = _manifest_view->path_provider();
     finalize_data data{
       .ntp = get_ntp(),
       .revision = stm_manifest.get_revision_id(),
+      .path_provider = path_provider,
       .bucket = _bucket,
-      .key
-      = cloud_storage_clients::object_key{stm_manifest.get_manifest_path()()},
+      .key = cloud_storage_clients::object_key{stm_manifest.get_manifest_path(
+        path_provider)()},
       .serialized_manifest = std::move(serialized_manifest),
       .insync_offset = stm_manifest.get_insync_offset()};
 
@@ -1430,6 +1448,7 @@ void remote_partition::finalize() {
 ss::future<remote_partition::erase_result> remote_partition::erase(
   cloud_storage::remote& api,
   cloud_storage_clients::bucket_name bucket,
+  const remote_path_provider& path_provider,
   partition_manifest manifest,
   remote_manifest_path manifest_path,
   retry_chain_node& parent_rtc) {
@@ -1441,7 +1460,8 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
 
     auto replaced_segments = manifest.lw_replaced_segments();
     for (const auto& lw_meta : replaced_segments) {
-        const auto path = manifest.generate_segment_path(lw_meta);
+        const auto path = manifest.generate_segment_path(
+          lw_meta, path_provider);
         ++segments_to_remove_count;
 
         objects_to_remove.emplace_back(path);
@@ -1452,7 +1472,7 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
     }
 
     for (const auto& meta : manifest) {
-        const auto path = manifest.generate_segment_path(meta);
+        const auto path = manifest.generate_segment_path(meta, path_provider);
         ++segments_to_remove_count;
 
         objects_to_remove.emplace_back(path);

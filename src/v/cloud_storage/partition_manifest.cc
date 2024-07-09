@@ -16,6 +16,7 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
@@ -98,27 +99,6 @@ parse_segment_name(const segment_name& name) {
     };
 }
 
-remote_segment_path generate_remote_segment_path(
-  const model::ntp& ntp,
-  model::initial_revision_id rev_id,
-  const segment_name& name,
-  model::term_id archiver_term) {
-    vassert(
-      rev_id != model::initial_revision_id(),
-      "ntp {}: ntp revision must be known for segment {}",
-      ntp,
-      name);
-
-    auto path = ssx::sformat("{}_{}/{}", ntp.path(), rev_id(), name());
-    uint32_t hash = xxhash_32(path.data(), path.size());
-    if (archiver_term != model::term_id{}) {
-        return remote_segment_path(
-          fmt::format("{:08x}/{}.{}", hash, path, archiver_term()));
-    } else {
-        return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
-    }
-}
-
 segment_name generate_local_segment_name(model::offset o, model::term_id t) {
     vassert(t != model::term_id{}, "Invalid term id");
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
@@ -179,58 +159,15 @@ partition_manifest::partition_manifest(
   , _segments()
   , _last_offset(0) {}
 
-// NOTE: the methods that generate remote paths use the xxhash function
-// to randomize the prefix. S3 groups the objects into chunks based on
-// these prefixes. It also applies rate limit to chunks so if all segments
-// and manifests will have the same prefix we will be able to do around
-// 3000-5000 req/sec. AWS doc mentions that having only two prefix
-// characters should be enough for most workloads
-// (https://aws.amazon.com/blogs/aws/amazon-s3-performance-tips-tricks-seattle-hiring-event/)
-// We're using eight because it's free and because AWS S3 is not the only
-// backend and other S3 API implementations might benefit from that.
-
-remote_manifest_path generate_partition_manifest_path(
-  const model::ntp& ntp,
-  model::initial_revision_id rev,
-  manifest_format format) {
-    // NOTE: the idea here is to split all possible hash values into
-    // 16 bins. Every bin should have lowest 28-bits set to 0.
-    // As result, for segment names all prefixes are possible, but
-    // for manifests, only 0x00000000, 0x10000000, ... 0xf0000000
-    // are used. This will allow us to quickly find all manifests
-    // that S3 bucket contains.
-    constexpr uint32_t bitmask = 0xF0000000;
-    auto path = ssx::sformat("{}_{}", ntp.path(), rev());
-    uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    return remote_manifest_path(fmt::format(
-      "{:08x}/meta/{}_{}/manifest.{}", hash, ntp.path(), rev(), [&] {
-          switch (format) {
-          case manifest_format::json:
-              return "json";
-          case manifest_format::serde:
-              return "bin";
-          }
-      }()));
-}
-
-std::pair<manifest_format, remote_manifest_path>
-partition_manifest::get_manifest_format_and_path() const {
-    return {
-      manifest_format::serde,
-      generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
-}
-
 remote_manifest_path partition_manifest::get_manifest_path(
   const remote_path_provider& path_provider) const {
     return remote_manifest_path{path_provider.partition_manifest_path(*this)};
 }
 
-std::pair<manifest_format, remote_manifest_path>
-partition_manifest::get_legacy_manifest_format_and_path() const {
-    return {
-      manifest_format::json,
-      generate_partition_manifest_path(_ntp, _rev, manifest_format::json)};
+ss::sstring partition_manifest::display_name() const {
+    return fmt::format("{}_{}", get_ntp().path(), _rev());
 }
+
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
 model::offset partition_manifest::get_last_offset() const {
@@ -403,18 +340,6 @@ model::initial_revision_id partition_manifest::get_revision_id() const {
     return _rev;
 }
 
-remote_segment_path
-partition_manifest::generate_segment_path(const segment_meta& meta) const {
-    auto name = generate_remote_segment_name(meta);
-    return cloud_storage::generate_remote_segment_path(
-      _ntp, meta.ntp_revision, name, meta.archiver_term);
-}
-
-remote_segment_path
-partition_manifest::generate_segment_path(const lw_segment_meta& meta) const {
-    return generate_segment_path(lw_segment_meta::convert(meta));
-}
-
 remote_segment_path partition_manifest::generate_segment_path(
   const segment_meta& meta, const remote_path_provider& path_provider) const {
     return remote_segment_path{path_provider.segment_path(*this, meta)};
@@ -444,13 +369,6 @@ segment_name partition_manifest::generate_remote_segment_name(
           val.segment_term()));
     }
     __builtin_unreachable();
-}
-
-remote_segment_path partition_manifest::generate_remote_segment_path(
-  const model::ntp& ntp, const partition_manifest::value& val) {
-    auto name = generate_remote_segment_name(val);
-    return cloud_storage::generate_remote_segment_path(
-      ntp, val.ntp_revision, name, val.archiver_term);
 }
 
 partition_manifest::const_iterator
@@ -614,7 +532,7 @@ void partition_manifest::set_archive_clean_offset(
           "{} Requested to advance archive_clean_offset to {} which is greater "
           "than the current archive_start_offset {}. The offset won't be "
           "changed. Archive size won't be changed by {} bytes.",
-          get_manifest_path(),
+          display_name(),
           start_rp_offset,
           _archive_start_offset,
           size_bytes);
@@ -638,7 +556,7 @@ void partition_manifest::set_archive_clean_offset(
               "{} archive clean offset moved to {} but the archive size can't "
               "be updated because current size {} is smaller than the update "
               "{}. This needs to be reported and investigated.",
-              get_manifest_path(),
+              display_name(),
               _archive_clean_offset,
               _archive_size_bytes,
               size_bytes);
@@ -762,7 +680,7 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
               cst_log.error,
               "Previous start offset is not within segment in "
               "manifest for {}: previous_start_offset={}",
-              get_manifest_path(),
+              display_name(),
               previous_start_offset);
             previous_head_segment = _segments.begin();
         }
@@ -931,7 +849,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                   "[{}] New segment does not line up with last offset of empty "
                   "log: "
                   "last_offset: {}, new_segment: {}",
-                  get_manifest_path(),
+                  display_name(),
                   subst.last_offset,
                   m);
                 break;
@@ -976,7 +894,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                       cst_log.error,
                       "[{}] New segment does not line up with previous "
                       "segment: {}",
-                      get_manifest_path(),
+                      display_name(),
                       format_seg_meta_anomalies(anomalies));
                     break;
                 }
@@ -1002,7 +920,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                           "[{}] New replacement segment does not line up with "
                           "previous "
                           "segment: {}",
-                          get_manifest_path(),
+                          display_name(),
                           format_seg_meta_anomalies(anomalies));
                         break;
                     }
@@ -1017,7 +935,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                           "[{}] New replacement segment has the same size as "
                           "replaced "
                           "segment: new_segment: {}, replaced_segment: {}",
-                          get_manifest_path(),
+                          display_name(),
                           m,
                           *it);
                         break;
@@ -1047,7 +965,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
                       "committed "
                       "offset of "
                       "any previous segment: new_segment: {}",
-                      get_manifest_path(),
+                      display_name(),
                       m);
                     break;
                 }
@@ -1169,7 +1087,7 @@ void partition_manifest::spillover(const segment_meta& spillover_meta) {
           cst_log.error,
           "[{}] Expected spillover metadata {} doesn't match actual spillover "
           "metadata {}",
-          get_manifest_path(),
+          display_name(),
           expected_meta,
           spillover_meta);
     } else {
@@ -1957,7 +1875,7 @@ void partition_manifest::update_with_json(iobuf buf) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Failed to parse partition manifest {}: {} at offset {}",
-          get_legacy_manifest_format_and_path().second,
+          prefixed_partition_manifest_json_path(get_ntp(), get_revision_id()),
           rapidjson::GetParseError_En(e),
           o));
     }

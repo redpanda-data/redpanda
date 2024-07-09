@@ -10,6 +10,7 @@
  */
 #include "cloud_storage/tests/util.h"
 
+#include "cloud_storage/partition_manifest_downloader.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 
@@ -24,6 +25,8 @@
 #include <vector>
 
 namespace cloud_storage {
+
+static const remote_path_provider path_provider(std::nullopt);
 
 segment_layout
 generate_segment_layout(int num_segments, int seed, bool exclude_tx_fence) {
@@ -428,7 +431,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
   const std::vector<in_memory_segment>& segments) {
     std::vector<cloud_storage_fixture::expectation> results;
     for (const auto& s : segments) {
-        auto url = m.generate_segment_path(*m.get(s.base_offset));
+        auto url = m.generate_segment_path(
+          *m.get(s.base_offset), path_provider);
         results.push_back(cloud_storage_fixture::expectation{
           .url = url().string(), .body = s.bytes});
     }
@@ -438,13 +442,14 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         return ss::sstring(buf.begin(), buf.end());
     };
     results.push_back(cloud_storage_fixture::expectation{
-      .url = m.get_manifest_path()().string(), .body = serialized()});
+      .url = m.get_manifest_path(path_provider)().string(),
+      .body = serialized()});
     std::stringstream ostr;
     m.serialize_json(ostr);
     vlog(
       test_util_log.info,
       "Uploaded manifest at {}:\n{}",
-      m.get_manifest_path(),
+      m.get_manifest_path(path_provider),
       ostr.str());
     return results;
 }
@@ -488,7 +493,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         m.add(s.sname, meta);
         delta = delta
                 + model::offset(s.num_config_records - s.delta_offset_overlap);
-        auto url = m.generate_segment_path(*m.get(meta.base_offset));
+        auto url = m.generate_segment_path(
+          *m.get(meta.base_offset), path_provider);
         results.push_back(cloud_storage_fixture::expectation{
           .url = url().string(), .body = body});
     }
@@ -499,14 +505,15 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         return ss::sstring(buf.begin(), buf.end());
     };
     results.push_back(cloud_storage_fixture::expectation{
-      .url = m.get_manifest_path()().string(), .body = serialized()});
+      .url = m.get_manifest_path(path_provider)().string(),
+      .body = serialized()});
     std::ostringstream ostr;
     m.serialize_json(ostr);
 
     vlog(
       test_util_log.info,
       "Uploaded manifest at {}:\n{}",
-      m.get_manifest_path(),
+      m.get_manifest_path(path_provider),
       ostr.str());
     return results;
 }
@@ -565,13 +572,13 @@ std::vector<in_memory_segment> replace_segments(
         auto bo = s.base_offset;
         auto it = manifest.find(bo);
         BOOST_REQUIRE(it != manifest.end());
-        auto path = manifest.generate_segment_path(*it);
+        auto path = manifest.generate_segment_path(*it, path_provider);
         segments_to_remove.push_back(path().native());
     }
     fixture.remove_expectations(segments_to_remove);
 
     // remove manifest from the list
-    auto manifest_url = manifest.get_manifest_path()().string();
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
 
     auto expectations = make_imposter_expectations(
       manifest, segments, false, base_delta);
@@ -619,11 +626,15 @@ partition_manifest hydrate_manifest(
   remote& api, const cloud_storage_clients::bucket_name& bucket) {
     static ss::abort_source never_abort;
 
+    remote_path_provider path_provider(std::nullopt);
+    partition_manifest_downloader dl(
+      bucket, path_provider, manifest_ntp, manifest_revision, api);
     partition_manifest m(manifest_ntp, manifest_revision);
-    ss::lowres_clock::update();
     retry_chain_node rtc(never_abort, 300s, 200ms);
-    auto [res, _] = api.try_download_partition_manifest(bucket, m, rtc).get();
-    BOOST_REQUIRE(res == cloud_storage::download_result::success);
+    ss::lowres_clock::update();
+    auto res = dl.download_manifest(rtc, &m).get();
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE(res.value() == find_partition_manifest_outcome::success);
     return m;
 }
 
@@ -657,7 +668,11 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
       imposter.api.local(), imposter.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
       imposter.api.local(),
@@ -741,7 +756,11 @@ std::vector<model::record_batch_header> scan_remote_partition(
       imposter.api.local(), imposter.bucket_name);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
     auto manifest_view_stop = ss::defer(
       [&manifest_view] { manifest_view->stop().get(); });
     manifest_view->start().get();
@@ -798,7 +817,11 @@ scan_result scan_remote_partition(
 
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
     auto manifest_view_stop = ss::defer(
       [&manifest_view] { manifest_view->stop().get(); });
 
@@ -857,7 +880,11 @@ scan_remote_partition_incrementally_with_closest_lso(
     partition_probe probe(manifest.get_ntp());
 
     auto manifest_view = ss::make_shared<async_manifest_view>(
-      imposter.api, imposter.cache, manifest, imposter.bucket_name);
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
 
     auto partition = ss::make_shared<remote_partition>(
       manifest_view,
@@ -952,7 +979,8 @@ void reupload_compacted_segments(
             // and object store state getting out of sync.
             m.add(s.sname, meta);
 
-            auto url = m.generate_segment_path(*m.get(meta.base_offset));
+            auto url = m.generate_segment_path(
+              *m.get(meta.base_offset), path_provider);
             vlog(test_util_log.debug, "reuploading segment {}", url);
             retry_chain_node rtc(never_abort, 60s, 1s);
             bytes bb;

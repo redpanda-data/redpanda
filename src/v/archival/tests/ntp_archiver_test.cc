@@ -19,6 +19,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -49,6 +50,10 @@ using namespace std::chrono_literals;
 using namespace archival;
 
 inline ss::logger test_log("test"); // NOLINT
+
+namespace {
+cloud_storage::remote_path_provider path_provider(std::nullopt);
+} // anonymous namespace
 
 static ss::abort_source never_abort;
 
@@ -92,18 +97,18 @@ static void log_segment_set(storage::log_manager& lm) {
 }
 
 static remote_manifest_path generate_spill_manifest_path(
-  model::ntp ntp,
-  model::initial_revision_id rev_id,
-  const cloud_storage::segment_meta& meta) {
+  const cloud_storage::partition_manifest& stm_manifest,
+  const cloud_storage::segment_meta& spillover_manifest) {
     cloud_storage::spillover_manifest_path_components comp{
-      .base = meta.base_offset,
-      .last = meta.committed_offset,
-      .base_kafka = meta.base_kafka_offset(),
-      .next_kafka = meta.next_kafka_offset(),
-      .base_ts = meta.base_timestamp,
-      .last_ts = meta.max_timestamp,
+      .base = spillover_manifest.base_offset,
+      .last = spillover_manifest.committed_offset,
+      .base_kafka = spillover_manifest.base_kafka_offset(),
+      .next_kafka = spillover_manifest.next_kafka_offset(),
+      .base_ts = spillover_manifest.base_timestamp,
+      .last_ts = spillover_manifest.max_timestamp,
     };
-    return cloud_storage::generate_spillover_manifest_path(ntp, rev_id, comp);
+    return remote_manifest_path{
+      path_provider.spillover_manifest_path(stm_manifest, comp)};
 }
 
 void log_upload_candidate(const archival::upload_candidate& up) {
@@ -156,7 +161,8 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -287,7 +293,8 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -381,7 +388,8 @@ FIXTURE_TEST(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -465,7 +473,8 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -586,7 +595,8 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -629,7 +639,7 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(spills.begin()->base_offset, model::offset{0});
     BOOST_REQUIRE_EQUAL(spills.begin()->committed_offset, model::offset{1999});
     auto spill_path = generate_spill_manifest_path(
-      manifest_ntp, manifest_revision, *(spills.begin()));
+      part->archival_meta_stm()->manifest(), *(spills.begin()));
 
     config::shard_local_cfg().log_retention_ms.set_value(
       std::chrono::milliseconds{5min});
@@ -765,7 +775,8 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -1170,7 +1181,8 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -1397,7 +1409,8 @@ static void test_partial_upload_impl(
       test.remote,
       test.app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      aconf->bucket_name);
+      aconf->bucket_name,
+      path_provider);
 
     archival::ntp_archiver archiver(
       get_ntp_conf(),
@@ -1667,9 +1680,10 @@ SEASTAR_THREAD_TEST_CASE(small_segment_run_test) {
        .segment_term = model::term_id{4},
        .sname_format = cloud_storage::segment_name_format::v2},
     };
+    cloud_storage::partition_manifest pm(manifest_ntp, manifest_revision);
     archival::adjacent_segment_run run(manifest_ntp);
     for (const auto& s : segments) {
-        if (run.maybe_add_segment(s, high_watermark)) {
+        if (run.maybe_add_segment(pm, s, high_watermark, path_provider)) {
             break;
         }
     }
@@ -1768,7 +1782,8 @@ static void test_manifest_spillover_impl(
       test.remote,
       test.app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      aconf->bucket_name);
+      aconf->bucket_name,
+      path_provider);
 
     archival::ntp_archiver archiver(
       get_ntp_conf(),
@@ -1881,7 +1896,8 @@ FIXTURE_TEST(test_upload_with_gap_blocked, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
 
     archival::ntp_archiver archiver(
       get_ntp_conf(),
@@ -2092,7 +2108,8 @@ FIXTURE_TEST(test_flush_wait_out_of_bounds, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -2144,7 +2161,8 @@ FIXTURE_TEST(test_flush_wait_with_no_flush, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -2193,7 +2211,8 @@ FIXTURE_TEST(test_flush_wait_with_flush, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -2269,7 +2288,8 @@ FIXTURE_TEST(test_flush_wait_with_flush_multiple_waiters, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -2352,7 +2372,8 @@ FIXTURE_TEST(test_flush_with_leadership_change, archiver_fixture) {
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name);
+      arch_conf->bucket_name,
+      path_provider);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,

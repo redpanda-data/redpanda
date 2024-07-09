@@ -154,6 +154,7 @@ server::server(
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
+    _server.set_content_streaming(true);
 }
 
 /*

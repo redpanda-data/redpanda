@@ -13,6 +13,7 @@
 
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
@@ -94,7 +95,8 @@ public:
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
       raft::with_learner_recovery_throttle
       = raft::with_learner_recovery_throttle::yes,
-      raft::keep_snapshotted_log = raft::keep_snapshotted_log::no);
+      raft::keep_snapshotted_log = raft::keep_snapshotted_log::no,
+      std::optional<cloud_storage::remote_label> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
 
@@ -247,7 +249,9 @@ private:
     /// \param ntp_cfg is an ntp_config instance to recover
     /// \return true if the recovery was invoked, false otherwise
     ss::future<cloud_storage::log_recovery_result> maybe_download_log(
-      storage::ntp_config& ntp_cfg, std::optional<remote_topic_properties> rtp);
+      storage::ntp_config& ntp_cfg,
+      std::optional<remote_topic_properties> rtp,
+      cloud_storage::remote_path_provider& path_provider);
 
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 

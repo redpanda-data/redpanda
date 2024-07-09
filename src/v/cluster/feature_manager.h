@@ -141,6 +141,28 @@ private:
     std::vector<std::reference_wrapper<const features::feature_spec>>
       auto_activate_features(cluster_version, cluster_version);
 
+    // This method returns true if there are any feature(s) enabled that require
+    // the enterprise license.  Currently the following features require a
+    // license:
+    // +-------------+---------------------------------+---------------+
+    // | Config Type | Config Name                     | Value(s)      |
+    // +-------------+---------------------------------+---------------+
+    // | Cluster     | `audit_enabled`                 | `true`        |
+    // | Cluster     | `cloud_storage_enabled`         | `true`        |
+    // | Cluster     | `partition_auto_balancing_mode` | `continuous`  |
+    // | Cluster     | `core_balancing_continous`      | `true`        |
+    // | Cluster     | `sasl_mechanisms`               | `GSSAPI`      |
+    // | Cluster     | `sasl_mechanisms`               | `OAUTHBEARER` |
+    // | Cluster     | `http_authentication`           | `OIDC`        |
+    // | Cluster     | `enable_schema_id_validation`   | `redpanda`    |
+    // | Cluster     | `enable_schema_id_validation`   | `compat`      |
+    // | Node        | `fips_mode`                     | `enabled`     |
+    // | Node        | `fips_mode`                     | `permissive`  |
+    // +-------------+---------------------------------+---------------+
+    //
+    // Also if there are any non default roles in the role store.
+    bool license_required_feature_enabled() const;
+
     ss::sharded<controller_stm>& _stm;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _gate;

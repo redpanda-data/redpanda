@@ -2685,7 +2685,8 @@ void application::start_runtime_services(
           pm.register_factory<cluster::archival_metadata_stm_factory>(
             config::shard_local_cfg().cloud_storage_enabled(),
             cloud_storage_api,
-            feature_table);
+            feature_table,
+            controller->get_topics_state());
           pm.register_factory<kafka::group_tx_tracker_stm_factory>();
       })
       .get();

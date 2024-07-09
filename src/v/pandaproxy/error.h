@@ -85,7 +85,7 @@ enum class reply_error_code : uint16_t {
     schema_version_invalid = 42202,
     compatibility_level_invalid = 42203,
     mode_invalid = 42204,
-    subject_version_operaton_not_permitted = 42205,
+    subject_version_operation_not_permitted = 42205,
     subject_version_has_references = 42206,
     subject_version_schema_id_already_exists = 42207,
     write_collision = 50301,

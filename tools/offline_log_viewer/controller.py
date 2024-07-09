@@ -19,6 +19,10 @@ def read_remote_topic_properties_serde(rdr: Reader):
         })
 
 
+def read_remote_label_serde(rdr: Reader):
+    return rdr.read_envelope(lambda rdr, _: {"cluster_uuid": rdr.read_uuid()})
+
+
 def read_topic_properties_serde(rdr: Reader, version):
 
     topic_properties = {
@@ -113,6 +117,10 @@ def read_topic_properties_serde(rdr: Reader, version):
             'flush_ms': rdr.read_optional(Reader.read_int64),
             'flush_bytes': rdr.read_optional(Reader.read_int64)
         }
+    if version >= 9:
+        topic_properties |= {
+            'remote_labels': rdr.read_optional(read_remote_label_serde)
+        }
 
     return topic_properties
 
@@ -128,7 +136,7 @@ def read_topic_config(rdr: Reader, version):
         'replication_factor':
         rdr.read_int16(),
         'properties':
-        rdr.read_envelope(read_topic_properties_serde, max_version=8),
+        rdr.read_envelope(read_topic_properties_serde, max_version=9),
     }
     if version < 1:
         # see https://github.com/redpanda-data/redpanda/pull/6613

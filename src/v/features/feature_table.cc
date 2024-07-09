@@ -109,6 +109,8 @@ std::string_view to_string_view(feature f) {
         return "group_tx_fence_dedicated_batch_type";
     case feature::transforms_specify_offset:
         return "transforms_specify_offset";
+    case feature::remote_labels:
+        return "remote_labels";
 
     /*
      * testing features

@@ -11,7 +11,9 @@
 #include "archival/logger.h"
 #include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 
 #include <vector>
@@ -19,7 +21,10 @@
 namespace archival {
 
 bool adjacent_segment_run::maybe_add_segment(
-  const cloud_storage::segment_meta& s, size_t max_size) {
+  const cloud_storage::partition_manifest& manifest,
+  const cloud_storage::segment_meta& s,
+  size_t max_size,
+  const cloud_storage::remote_path_provider& path_provider) {
     vlog(
       archival_log.debug,
       "{} Segments collected, looking at segment meta: {}, current run meta: "
@@ -27,6 +32,7 @@ bool adjacent_segment_run::maybe_add_segment(
       num_segments,
       s,
       meta);
+    auto remote_path = manifest.generate_segment_path(s, path_provider);
     if (num_segments == 1 && meta.size_bytes + s.size_bytes > max_size) {
         // Corner case, we hit a segment which is smaller than the max_size
         // but it's larger than max_size when combined with its neighbor. In
@@ -41,9 +47,7 @@ bool adjacent_segment_run::maybe_add_segment(
         if (s.size_bytes < max_size) {
             meta = s;
             num_segments = 1;
-            segments.push_back(
-              cloud_storage::partition_manifest::generate_remote_segment_path(
-                ntp, s));
+            segments.push_back(remote_path);
         }
     } else {
         if (
@@ -71,9 +75,7 @@ bool adjacent_segment_run::maybe_add_segment(
             meta.max_timestamp = s.max_timestamp;
             num_segments++;
             meta.size_bytes += s.size_bytes;
-            segments.push_back(
-              cloud_storage::partition_manifest::generate_remote_segment_path(
-                ntp, s));
+            segments.push_back(remote_path);
         } else {
             return num_segments > 1;
         }

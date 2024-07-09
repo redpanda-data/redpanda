@@ -12,7 +12,7 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
+#include <string_view>
 
 namespace pandaproxy::json {
 
@@ -51,11 +51,5 @@ inline std::string_view name(serialization_format fmt) {
     }
     return "(unknown format)";
 }
-
-template<typename T>
-class rjson_parse_impl;
-
-template<typename T>
-class rjson_serialize_impl;
 
 } // namespace pandaproxy::json

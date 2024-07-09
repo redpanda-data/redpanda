@@ -14,6 +14,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/read_path_probes.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_probe.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
@@ -100,7 +101,8 @@ public:
       ss::sharded<remote>& remote,
       ss::sharded<cache>& cache,
       const partition_manifest& stm_manifest,
-      cloud_storage_clients::bucket_name bucket);
+      cloud_storage_clients::bucket_name bucket,
+      const remote_path_provider& path_provider);
 
     ss::future<> start();
     ss::future<> stop();
@@ -157,6 +159,10 @@ public:
     compute_retention(
       std::optional<size_t> size_limit,
       std::optional<std::chrono::milliseconds> time_limit) noexcept;
+
+    const remote_path_provider& path_provider() const {
+        return _remote_path_provider;
+    }
 
 private:
     ss::future<result<archive_start_offset_advance, error_outcome>>
@@ -222,6 +228,7 @@ private:
     mutable ss::gate _gate;
     ss::abort_source _as;
     cloud_storage_clients::bucket_name _bucket;
+    const remote_path_provider& _remote_path_provider;
     ss::sharded<remote>& _remote;
     ss::sharded<cache>& _cache;
     ts_read_path_probe& _ts_probe;
