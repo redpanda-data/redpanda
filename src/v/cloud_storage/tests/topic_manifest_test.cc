@@ -459,6 +459,7 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
       true,
       "rrr",
       std::nullopt,
+      std::nullopt,
       313,
       tristate<size_t>{disable_tristate},
       tristate<std::chrono::milliseconds>{std::chrono::milliseconds{20}},
