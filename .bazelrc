@@ -66,7 +66,10 @@ build --sandbox_default_allow_network=false
 # leaking into the build.
 build --incompatible_strict_action_env
 
-build --workspace_status_command=bazel/workspace_status.sh
+# disabling until we are able to address the issue with GHA checkout into
+# container resulting in a Git repository that doesn't seems to cause errors
+# https://github.com/actions/checkout/issues/363
+#build --workspace_status_command=bazel/workspace_status.sh
 
 # =================================
 # Testing
