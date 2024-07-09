@@ -2589,6 +2589,53 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 1.0, .max = 100.0})
+  , cloud_storage_inventory_based_scrub_enabled(
+      *this,
+      "cloud_storage_inventory_based_scrub_enabled",
+      "Scrubber uses the latest cloud storage inventory report, if available, "
+      "to check if the required objects exist in the bucket or container.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
+  , cloud_storage_inventory_id(
+      *this,
+      "cloud_storage_inventory_id",
+      "The name of the scheduled inventory job created by Redpanda to generate "
+      "bucket or container inventory reports.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      "redpanda_scrubber_inventory")
+  , cloud_storage_inventory_reports_prefix(
+      *this,
+      "cloud_storage_inventory_reports_prefix",
+      "The prefix to the path in the cloud storage bucket or container where "
+      "inventory reports will be placed.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      "redpanda_scrubber_inventory")
+  , cloud_storage_inventory_self_managed_report_config(
+      *this,
+      "cloud_storage_inventory_self_managed_report_config",
+      "If enabled, Redpanda will not attempt to create the scheduled report "
+      "configuration using cloud storage APIs. The scrubbing process will "
+      "look for reports in the expected paths in the bucket or container, and "
+      "use the latest report found. Primarily intended for use in testing and "
+      "on backends where scheduled inventory reports are not supported.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
+  , cloud_storage_inventory_report_check_interval_ms(
+      *this,
+      "cloud_storage_inventory_report_check_interval_ms",
+      "Time interval between checks for a new inventory report in the cloud "
+      "storage bucket or container.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      6h)
+  , cloud_storage_inventory_max_hash_size_during_parse(
+      *this,
+      "cloud_storage_inventory_max_hash_size_during_parse",
+      "Maximum bytes of hashes which will be held in memory before writing "
+      "data to disk during inventory report parsing. Affects the number of "
+      "files written by inventory service to disk during report parsing, as "
+      "when this limit is reached new files are written to disk.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      64_MiB)
   , superusers(
       *this,
       "superusers",
