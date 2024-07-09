@@ -201,3 +201,16 @@ func ParsePartitionString(ntp string) (ns, topic string, partitions []int, rerr 
 	}
 	return ns, match[2], partitions, nil
 }
+
+// ParseFileOrStringFlag parses a flag string, if it starts with '@' it
+// will treat it as a filepath and will attempt to read the file.
+func ParseFileOrStringFlag(fs afero.Fs, flag string) ([]byte, error) {
+	if strings.HasPrefix(flag, "@") {
+		file, err := afero.ReadFile(fs, strings.TrimPrefix(flag, "@"))
+		if err != nil {
+			return nil, fmt.Errorf("unable to read file: %v", err)
+		}
+		return file, nil
+	}
+	return []byte(flag), nil
+}
