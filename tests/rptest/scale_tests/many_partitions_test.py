@@ -135,7 +135,8 @@ class ManyPartitionsTest(PreallocNodesTest):
             # to warn instead of info.
             log_config=LoggingConfig('info',
                                      logger_levels={
-                                         'archival': 'trace',
+                                         'cluster': 'debug',
+                                         'archival': 'debug',
                                          'storage': 'warn',
                                          'storage-gc': 'warn',
                                          'raft': 'warn',
