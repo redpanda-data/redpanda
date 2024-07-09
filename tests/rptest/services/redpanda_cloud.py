@@ -133,6 +133,7 @@ class CloudClusterConfig:
     install_pack_auth: str = ""
     grafana_token: str = ""
     grafana_alerts_url: str = ""
+    require_broker_metrics_in_health_check: bool = True
 
 
 @dataclass
@@ -880,7 +881,13 @@ class CloudCluster():
             if _metric.name == "redpanda_cluster_brokers":
                 _brokers_metric = _metric
         if _brokers_metric is None:
-            return warn_and_return("Failed to get brokers metric")
+            if self.config.require_broker_metrics_in_health_check:
+                return warn_and_return("Failed to get brokers metric")
+            else:
+                self._logger.info(
+                    "Public metric 'redpanda_cluster_brokers' is unavailable, but it is not required."
+                )
+                return None
         else:
             self._logger.info("Public metric 'redpanda_cluster_brokers' "
                               "is available")
