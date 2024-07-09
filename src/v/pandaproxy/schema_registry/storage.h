@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "json/iobuf_writer.h"
 #include "json/json.h"
 #include "json/types.h"
 #include "json/writer.h"
@@ -325,7 +326,8 @@ using unparsed_schema_value = schema_value<unparsed_schema_defnition_tag>;
 using canonical_schema_value = schema_value<canonical_schema_definition_tag>;
 
 template<typename Buffer, typename Tag>
-void rjson_serialize(::json::Writer<Buffer>& w, const schema_value<Tag>& val) {
+void rjson_serialize(
+  ::json::iobuf_writer<Buffer>& w, const schema_value<Tag>& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.schema.sub());
