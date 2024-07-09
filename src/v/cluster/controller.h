@@ -204,7 +204,6 @@ public:
 
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
-    ss::future<> stop();
 
     /**
      * Called when the node is ready to become a leader
