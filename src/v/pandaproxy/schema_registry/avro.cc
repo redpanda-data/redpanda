@@ -454,18 +454,14 @@ ss::future<collected_schema> collect_schema(
   collected_schema collected,
   ss::sstring name,
   canonical_schema schema) {
-    for (auto& ref : schema.def().refs()) {
+    for (auto const& ref : schema.def().refs()) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
-              std::move(ref.sub), ref.version, include_deleted::no);
+              ref.sub, ref.version, include_deleted::no);
             collected = co_await collect_schema(
-              store,
-              std::move(collected),
-              std::move(ref.name),
-              std::move(ss.schema));
+              store, std::move(collected), ref.name, std::move(ss.schema));
         }
     }
-    // NOLINTNEXTLINE(bugprone-use-after-move)
     collected.insert(std::move(name), std::move(schema).def());
     co_return std::move(collected);
 }
