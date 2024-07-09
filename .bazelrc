@@ -66,7 +66,7 @@ build --sandbox_default_allow_network=false
 # leaking into the build.
 build --incompatible_strict_action_env
 
-build --workspace_status_command=%workspace%/bazel/workspace_status.sh
+build --workspace_status_command=bazel/workspace_status.sh
 
 # =================================
 # Testing
