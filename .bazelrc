@@ -28,9 +28,6 @@ build:sanitizer --@seastar//:system_allocator=True
 # =================================
 # Security
 # =================================
-build:cfi --copt -fsanitize=cfi
-build:cfi --copt -fvisibility=hidden
-build:cfi --copt -flto
 
 # fortify source requires a high optimization level. when using this feature add
 # `--copt -O2` or combine with a compilation mode like `-c opt`. the default
@@ -39,7 +36,6 @@ build:cfi --copt -flto
 build:fortify-source --copt -U_FORTIFY_SOURCE
 build:fortify-source --copt -D_FORTIFY_SOURCE=2
 
-build:safe-stack --copt -fsanitize=safe-stack
 build:stack-clash --copt -fstack-clash-protection
 build:stack-protector --copt -fstack-protector-strong
 build:relro --copt -fno-plt
@@ -50,9 +46,6 @@ build:secure --config=fortify-source
 build:secure --config=stack-clash
 build:secure --config=stack-protector
 build:secure --config=relro
-# Cannot enable until all external deps support
-#build:secure --config=cfi
-#build:secure --config=safe-stack
 
 # =================================
 # Release
@@ -72,6 +65,8 @@ build --sandbox_default_allow_network=false
 # prevent certain environment variables (e.g. PATH and LD_LIBRARY_PATH) from
 # leaking into the build.
 build --incompatible_strict_action_env
+
+build --workspace_status_command=%workspace%/bazel/workspace_status.sh
 
 # =================================
 # Testing
