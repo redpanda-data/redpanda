@@ -22,13 +22,13 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-type quotaValues struct {
+type quotaValue struct {
 	Key   string `json:"key" yaml:"key"`
-	Value string `json:"values" yaml:"values"`
+	Value string `json:"value" yaml:"value"`
 }
 type describedQuota struct {
-	Entity []entityData  `json:"entity" yaml:"entity"`
-	Values []quotaValues `json:"values" yaml:"values"`
+	Entity []entityData `json:"entity" yaml:"entity"`
+	Values []quotaValue `json:"values" yaml:"values"`
 
 	entityStr string
 }
@@ -137,9 +137,9 @@ func printDescribedQuotas(f config.OutFormatter, quotas []kadm.DescribedClientQu
 	var described []describedQuota
 	for _, q := range quotas {
 		entity, entityStr := parseEntityData(q.Entity)
-		var qv []quotaValues
+		var qv []quotaValue
 		for _, v := range q.Values {
-			qv = append(qv, quotaValues{
+			qv = append(qv, quotaValue{
 				Key:   v.Key,
 				Value: strconv.FormatFloat(v.Value, 'f', -1, 64),
 			})
