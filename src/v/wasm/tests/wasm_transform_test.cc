@@ -87,7 +87,7 @@ std::string generate_example_avro_record(
 TEST_F(WasmTestFixture, SchemaRegistry) {
     // Test an example schema registry encoded avro value -> JSON transform
     load_wasm("schema-registry.wasm");
-    auto schemas = registered_schemas();
+    const auto& schemas = registered_schemas();
     ASSERT_EQ(schemas.size(), 1);
     ASSERT_EQ(schemas[0].id, 1);
     iobuf record_value;

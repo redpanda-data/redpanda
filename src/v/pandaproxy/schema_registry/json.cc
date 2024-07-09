@@ -1859,22 +1859,22 @@ make_json_schema_definition(sharded_store&, canonical_schema schema) {
       std::move(refs)};
 }
 
-ss::future<canonical_schema>
-make_canonical_json_schema(sharded_store& store, unparsed_schema def) {
+ss::future<canonical_schema> make_canonical_json_schema(
+  sharded_store& store, unparsed_schema unparsed_schema) {
     // TODO BP: More validation and normalisation
-    parse_json(def.def().raw()()).value(); // throws on error
-    auto raw_def = std::move(def).def();
-    auto schema = canonical_schema{
-      // NOLINTNEXTLINE(bugprone-use-after-move)
-      def.sub(),
-      canonical_schema_definition{// NOLINTNEXTLINE(bugprone-use-after-move)
-                                  std::move(raw_def).raw(),
-                                  def.type(),
-                                  // NOLINTNEXTLINE(bugprone-use-after-move)
-                                  std::move(raw_def).refs()}};
+    parse_json(unparsed_schema.def().shared_raw()()).value(); // throws on error
+    auto [sub, unparsed] = std::move(unparsed_schema).destructure();
+    auto [def, type, refs] = std::move(unparsed).destructure();
+
+    canonical_schema schema{
+      std::move(sub),
+      canonical_schema_definition{
+        canonical_schema_definition::raw_string{std::move(def)()},
+        type,
+        std::move(refs)}};
 
     // Ensure all references exist
-    co_await check_references(store, schema);
+    co_await check_references(store, schema.share());
 
     co_return schema;
 }

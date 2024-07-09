@@ -54,4 +54,9 @@ make_schema_definition(std::string_view sv) {
       ss::sstring{str_buf.GetString(), str_buf.GetSize()}};
 }
 
+template<typename Tag>
+ss::sstring to_string(typename typed_schema_definition<Tag>::raw_string def) {
+    return def;
+}
+
 } // namespace pandaproxy::schema_registry

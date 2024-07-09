@@ -297,7 +297,7 @@ ss::future<const pb::FileDescriptor*> build_file_with_refs(
 ss::future<const pb::FileDescriptor*> import_schema(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     try {
-        co_return co_await build_file_with_refs(dp, store, schema);
+        co_return co_await build_file_with_refs(dp, store, schema.share());
     } catch (const exception& e) {
         vlog(plog.warn, "Failed to decode schema: {}", e.what());
         throw as_exception(invalid_schema(schema));
@@ -409,16 +409,17 @@ validate_protobuf_schema(sharded_store& store, canonical_schema schema) {
 
 ss::future<canonical_schema>
 make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
-    // NOLINTBEGIN(bugprone-use-after-move)
+    auto [sub, unparsed] = std::move(schema).destructure();
+    auto [def, type, refs] = std::move(unparsed).destructure();
     canonical_schema temp{
-      std::move(schema).sub(),
-      {canonical_schema_definition::raw_string{schema.def().raw()()},
-       schema.def().type(),
-       schema.def().refs()}};
+      sub,
+      {canonical_schema_definition::raw_string{std::move(def)()},
+       type,
+       std::move(refs)}};
 
-    auto validated = co_await validate_protobuf_schema(store, temp);
-    co_return canonical_schema{std::move(temp).sub(), std::move(validated)};
-    // NOLINTEND(bugprone-use-after-move)
+    co_return canonical_schema{
+      std::move(sub),
+      co_await validate_protobuf_schema(store, std::move(temp))};
 }
 
 namespace {

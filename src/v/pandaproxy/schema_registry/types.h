@@ -120,6 +120,15 @@ public:
     using raw_string = named_type<ss::sstring, tag>;
     using references = std::vector<schema_reference>;
 
+    typed_schema_definition() = default;
+    typed_schema_definition(typed_schema_definition&&) noexcept = default;
+    typed_schema_definition(const typed_schema_definition&) = delete;
+    typed_schema_definition& operator=(typed_schema_definition&&) noexcept
+      = default;
+    typed_schema_definition& operator=(const typed_schema_definition& other)
+      = delete;
+    ~typed_schema_definition() noexcept = default;
+
     template<typename T>
     typed_schema_definition(T&& def, schema_type type)
       : _def{ss::sstring{std::forward<T>(def)}}
@@ -143,9 +152,23 @@ public:
 
     const raw_string& raw() const& { return _def; }
     raw_string raw() && { return std::move(_def); }
+    raw_string shared_raw() const& {
+        // temporarily implemented with copy before the type is changed
+        return _def;
+    }
 
     const references& refs() const& { return _refs; }
     references refs() && { return std::move(_refs); }
+
+    typed_schema_definition share() const {
+        return {shared_raw(), type(), refs()};
+    }
+
+    typed_schema_definition copy() const { return {_def, type(), refs()}; }
+
+    auto destructure() && {
+        return make_tuple(std::move(_def), _type, std::move(_refs));
+    }
 
 private:
     raw_string _def;
@@ -417,6 +440,13 @@ public:
     const schema_definition& def() const& { return _def; }
     schema_definition def() && { return std::move(_def); }
 
+    typed_schema share() const { return {sub(), def().share()}; }
+    typed_schema copy() const { return {sub(), def().copy()}; }
+
+    auto destructure() && {
+        return make_tuple(std::move(_sub), std::move(_def));
+    }
+
 private:
     subject _sub{invalid_subject};
     schema_definition _def{"", schema_type::avro};
@@ -431,6 +461,9 @@ struct subject_schema {
     schema_version version{invalid_schema_version};
     schema_id id{invalid_schema_id};
     is_deleted deleted{false};
+    subject_schema share() const {
+        return {schema.share(), version, id, deleted};
+    }
 };
 
 enum class compatibility_level {
