@@ -10,6 +10,9 @@
 
 #include "cloud_storage/inventory/types.h"
 
+#include "cloud_storage/configuration.h"
+#include "config/node_config.h"
+
 namespace cloud_storage::inventory {
 std::ostream& operator<<(std::ostream& os, report_generation_frequency rgf) {
     switch (rgf) {
@@ -27,12 +30,24 @@ std::ostream& operator<<(std::ostream& os, report_format rf) {
 
 std::ostream& operator<<(std::ostream& os, inventory_creation_result icr) {
     switch (icr) {
-        using enum cloud_storage::inventory::inventory_creation_result;
+        using enum inventory_creation_result;
     case success:
         return os << "success";
     case already_exists:
         return os << "already-exists";
     }
+}
+
+ss::future<std::pair<bool, model::cloud_storage_backend>>
+validate_backend_supported_for_inventory_scrub(
+  cloud_storage::configuration configuration) {
+    auto backend = cloud_storage_clients::infer_backend_from_configuration(
+      configuration.client_config, configuration.cloud_credentials_source);
+    auto supported_backends = {model::cloud_storage_backend::aws};
+    co_return std::make_pair(
+      std::ranges::find(supported_backends, backend)
+        != supported_backends.end(),
+      backend);
 }
 
 } // namespace cloud_storage::inventory
