@@ -14,6 +14,7 @@
 #include "bytes/iostream.h"
 #include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
+#include "json/iobuf_writer.h"
 #include "json/json.h"
 #include "json/reader.h"
 #include "json/stream.h"
@@ -41,7 +42,7 @@ class rjson_serialize_impl;
 template<typename Buffer, typename T>
 Buffer rjson_serialize_buf(T&& v) {
     Buffer buf;
-    ::json::Writer<Buffer> wrt{buf};
+    ::json::iobuf_writer<Buffer> wrt{buf};
 
     using ::json::rjson_serialize;
     using ::pandaproxy::json::rjson_serialize;
