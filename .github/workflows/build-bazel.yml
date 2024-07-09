@@ -64,6 +64,8 @@ jobs:
             dnf install -y wget
             wget -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
             chmod +x /usr/local/bin/bazel
+        - name: fixup git permissions
+          run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
         - name: buildifier check
           run: bazel run //tools:buildifier.check
         - name: build thirdparty
