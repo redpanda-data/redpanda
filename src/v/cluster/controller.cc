@@ -797,85 +797,76 @@ ss::future<> controller::shutdown_input() {
 }
 
 ss::future<> controller::stop() {
-    auto f = ss::now();
+    _probe.stop();
 
     if (!_as.local().abort_requested()) {
-        f = shutdown_input();
+        co_await shutdown_input();
     }
 
-    _probe.stop();
-    return f.then([this] {
-        auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
-                                                     : ss::now();
-        return stop_leader_balancer
-          .then([this] {
-              return ss::smp::submit_to(controller_stm_shard, [&stm = _stm] {
-                  if (stm.local_is_initialized()) {
-                      return stm.local().shutdown();
-                  }
-                  return ss::now();
-              });
-          })
-          .then([this] {
-              if (_metadata_uploader) {
-                  return _metadata_uploader->stop_and_wait();
-              }
-              return ss::make_ready_future();
-          })
-          .then([this] { return _data_migration_irpc_frontend.stop(); })
-          .then([this] { return _data_migration_backend.stop(); })
-          .then([this] {
-              if (_recovery_backend) {
-                  return _recovery_backend->stop_and_wait();
-              }
-              return ss::make_ready_future();
-          })
-          .then([this] { return _recovery_manager.stop(); })
-          .then([this] { return _recovery_table.stop(); })
-          .then([this] { return _partition_balancer.stop(); })
-          .then([this] { return _metrics_reporter.stop(); })
-          .then([this] { return _feature_manager.stop(); })
-          .then([this] { return _hm_frontend.stop(); })
-          .then([this] { return _hm_backend.stop(); })
-          .then([this] { return _health_manager.stop(); })
-          .then([this] { return _members_backend.stop(); })
-          .then([this] { return _data_migration_worker.stop(); })
-          .then([this] { return _data_migration_frontend.stop(); })
-          .then([this] { return _config_manager.stop(); })
-          .then([this] { return _api.stop(); })
-          .then([this] { return _shard_balancer.stop(); })
-          .then([this] { return _backend.stop(); })
-          .then([this] { return _tp_frontend.stop(); })
-          .then([this] { return _plugin_frontend.stop(); })
-          .then([this] { return _quota_frontend.stop(); })
-          .then([this] { return _ephemeral_credential_frontend.stop(); })
-          .then([this] { return _security_frontend.stop(); })
-          .then([this] { return _members_frontend.stop(); })
-          .then([this] { return _config_frontend.stop(); })
-          .then([this] { return _feature_backend.stop(); })
-          .then([this] { return _bootstrap_backend.stop(); })
-          .then([this] { return _oidc_service.stop(); })
-          .then([this] { return _authorizer.stop(); })
-          .then([this] { return _ephemeral_credentials.stop(); })
-          .then([this] { return _data_migrated_resources.stop(); })
-          .then([this] { return _roles.stop(); })
-          .then([this] { return _credentials.stop(); })
-          .then([this] { return _tp_state.stop(); })
-          .then([this] { return _members_manager.stop(); })
-          .then([this] { return _stm.stop(); })
-          .then([this] { return _quota_backend.stop(); })
-          .then([this] { return _quota_store.stop(); })
-          .then([this] { return _plugin_backend.stop(); })
-          .then([this] { return _plugin_table.stop(); })
-          .then([this] { return _drain_manager.stop(); })
-          .then([this] { return _shard_placement.stop(); })
-          .then([this] { return _partition_balancer_state.stop(); })
-          .then([this] { return _partition_allocator.stop(); })
-          .then([this] { return _partition_leaders.stop(); })
-          .then([this] { return _members_table.stop(); })
-          .then([this] { return _gate.close(); })
-          .then([this] { return _as.stop(); });
+    if (_leader_balancer) {
+        co_await _leader_balancer->stop();
+    }
+
+    co_await ss::smp::submit_to(controller_stm_shard, [&stm = _stm] {
+        if (stm.local_is_initialized()) {
+            return stm.local().shutdown();
+        }
+        return ss::now();
     });
+
+    if (_metadata_uploader) {
+        co_await _metadata_uploader->stop_and_wait();
+    }
+    co_await _data_migration_irpc_frontend.stop();
+    co_await _data_migration_backend.stop();
+    if (_recovery_backend) {
+        co_await _recovery_backend->stop_and_wait();
+    }
+    co_await _recovery_manager.stop();
+    co_await _recovery_table.stop();
+    co_await _partition_balancer.stop();
+    co_await _metrics_reporter.stop();
+    co_await _feature_manager.stop();
+    co_await _hm_frontend.stop();
+    co_await _hm_backend.stop();
+    co_await _health_manager.stop();
+    co_await _members_backend.stop();
+    co_await _data_migration_worker.stop();
+    co_await _data_migration_frontend.stop();
+    co_await _config_manager.stop();
+    co_await _api.stop();
+    co_await _shard_balancer.stop();
+    co_await _backend.stop();
+    co_await _tp_frontend.stop();
+    co_await _plugin_frontend.stop();
+    co_await _quota_frontend.stop();
+    co_await _ephemeral_credential_frontend.stop();
+    co_await _security_frontend.stop();
+    co_await _members_frontend.stop();
+    co_await _config_frontend.stop();
+    co_await _feature_backend.stop();
+    co_await _bootstrap_backend.stop();
+    co_await _oidc_service.stop();
+    co_await _authorizer.stop();
+    co_await _ephemeral_credentials.stop();
+    co_await _data_migrated_resources.stop();
+    co_await _roles.stop();
+    co_await _credentials.stop();
+    co_await _tp_state.stop();
+    co_await _members_manager.stop();
+    co_await _stm.stop();
+    co_await _quota_backend.stop();
+    co_await _quota_store.stop();
+    co_await _plugin_backend.stop();
+    co_await _plugin_table.stop();
+    co_await _drain_manager.stop();
+    co_await _shard_placement.stop();
+    co_await _partition_balancer_state.stop();
+    co_await _partition_allocator.stop();
+    co_await _partition_leaders.stop();
+    co_await _members_table.stop();
+    co_await _gate.close();
+    co_await _as.stop();
 }
 
 ss::future<> controller::create_cluster(bootstrap_cluster_cmd_data cmd_data) {
