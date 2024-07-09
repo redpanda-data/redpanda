@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/iobuf_parser.h"
 #include "bytes/random.h"
 #include "random/generators.h"
 #include "utils/base64.h"
@@ -48,4 +49,18 @@ BOOST_AUTO_TEST_CASE(iobuf_type) {
     auto encoded = iobuf_to_base64(buf);
     auto decoded = base64_to_bytes(encoded);
     BOOST_REQUIRE_EQUAL(decoded, iobuf_to_bytes(buf));
+}
+
+BOOST_AUTO_TEST_CASE(test_base64_to_iobuf) {
+    const std::string_view a_string = "dGhpcyBpcyBhIHN0cmluZw==";
+    iobuf buf;
+    const size_t half = a_string.size() / 2;
+    buf.append_fragments(iobuf::from(a_string.substr(0, half)));
+    buf.append_fragments(iobuf::from(a_string.substr(half)));
+    BOOST_REQUIRE_EQUAL(std::distance(buf.begin(), buf.end()), 2);
+
+    auto decoded = base64_to_iobuf(buf);
+    iobuf_parser p{std::move(decoded)};
+    auto decoded_str = p.read_string(p.bytes_left());
+    BOOST_REQUIRE_EQUAL(decoded_str, "this is a string");
 }
