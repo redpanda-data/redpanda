@@ -2579,6 +2579,36 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 1.0, .max = 100.0})
+  , cloud_storage_inventory_based_scrub_enabled(
+      *this,
+      "cloud_storage_inventory_based_scrub_enabled",
+      "Scrubber uses cloud storage inventory report to check if the required "
+      "objects exist in bucket.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
+  , cloud_storage_inventory_id(
+      *this,
+      "cloud_storage_inventory_id",
+      "The name of the scheduled inventory job created by redpanda to generate "
+      "bucket inventory reports.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      "redpanda_scrubber_inventory")
+  , cloud_storage_inventory_reports_prefix(
+      *this,
+      "cloud_storage_inventory_reports_prefix",
+      "The prefix where generated inventory reports will be placed in the "
+      "cloud storage bucket.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      "redpanda_scrubber_inventory")
+  , cloud_storage_inventory_manual_report_generation(
+      *this,
+      "cloud_storage_inventory_manual_report_generation",
+      "If set, redpanda will expect reports to be placed in the bucket "
+      "externally but will not attempt to create the scheduled report "
+      "configuration. The property exists to simplify testing and shouldn't be "
+      "set in production.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , superusers(
       *this,
       "superusers",

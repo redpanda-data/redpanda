@@ -463,6 +463,11 @@ struct configuration final : public config_store {
     bounded_property<std::optional<double>, numeric_bounds>
       cloud_storage_cache_trim_threshold_percent_objects;
 
+    property<bool> cloud_storage_inventory_based_scrub_enabled;
+    property<ss::sstring> cloud_storage_inventory_id;
+    property<ss::sstring> cloud_storage_inventory_reports_prefix;
+    property<bool> cloud_storage_inventory_manual_report_generation;
+
     one_or_many_property<ss::sstring> superusers;
 
     // kakfa queue depth control: latency ewma
