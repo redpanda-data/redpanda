@@ -64,6 +64,7 @@ private:
 /// configuration exists, and if not creates it.
 class inventory_service : public ss::sharded<inventory_service> {
 public:
+    static constexpr unsigned shard_id{0};
     inventory_service(
       std::filesystem::path hash_store_path,
       std::shared_ptr<leaders_provider> leaders,

@@ -109,6 +109,13 @@ ss::future<inv_ops> make_inv_ops(
   cloud_storage_clients::bucket_name bucket,
   inventory_config_id inv_cfg_id,
   ss::sstring inv_reports_prefix) {
+    if (inv_cfg_id().empty() || inv_reports_prefix.empty()) {
+        throw std::runtime_error{fmt::format(
+          "empty inventory id or report destination prefix: id: {}, prefix: "
+          "{}",
+          inv_cfg_id(),
+          inv_reports_prefix)};
+    }
     co_return inv_ops{aws_ops{bucket, inv_cfg_id, inv_reports_prefix}};
 }
 

@@ -152,15 +152,20 @@ inventory_service::inventory_service(
   , _should_create_report_config{should_create_report_config} {}
 
 ss::future<> inventory_service::start() {
-    if (ss::this_shard_id() != 0) {
+    if (ss::this_shard_id() != shard_id) {
         co_return;
     }
 
-    auto rtc = make_rtc(_as);
-
-    vlog(cst_log.info, "Attempting to create inventory configuration");
+    vlog(
+      cst_log.info,
+      "starting inventory download service, should create config: {}, check "
+      "interval: {}",
+      _should_create_report_config,
+      _inventory_report_check_interval);
 
     if (_should_create_report_config) {
+        vlog(cst_log.info, "Attempting to create inventory configuration");
+        auto rtc = make_rtc(_as);
         if (const auto res = co_await _ops.maybe_create_inventory_configuration(
               _remote->ref(), rtc);
             res.has_error()) {
@@ -198,12 +203,19 @@ ss::future<> inventory_service::start() {
 ss::future<> inventory_service::check_for_current_inventory() {
     auto h = _gate.hold();
     if (_should_create_report_config && _try_creating_inv_config) {
-        auto rtc = retry_chain_node{_as, 60s, 1s};
+        auto rtc = make_rtc(_as);
         auto res = co_await _ops.maybe_create_inventory_configuration(
           _remote->ref(), rtc);
 
         if (res.has_value()) {
             _try_creating_inv_config = false;
+        }
+
+        if (res.has_error()) {
+            vlog(
+              cst_log.warn,
+              "Inventory configuration creation failed, will retry later",
+              res.error());
         }
 
         // We either created the inventory just now, or failed again. In either
@@ -214,7 +226,14 @@ ss::future<> inventory_service::check_for_current_inventory() {
     auto rtc = make_rtc(_as);
     auto res = co_await _ops.fetch_latest_report_metadata(_remote->ref(), rtc);
     if (res.has_error()) {
-        vlog(cst_log.info, "failed to fetch report metadata: ", res.error());
+        const auto& error = res.error();
+        if (
+          error == cloud_storage::inventory::error_outcome::no_reports_found) {
+            vlog(cst_log.info, "finished inventory check: {}", res.error());
+        } else {
+            vlog(
+              cst_log.info, "failed to fetch report metadata: {}", res.error());
+        }
         co_return;
     }
 
