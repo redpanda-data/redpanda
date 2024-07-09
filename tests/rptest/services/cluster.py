@@ -161,6 +161,9 @@ def cluster(log_allow_list=None,
                     except:
                         self.redpanda.cloud_storage_diagnostics()
                         raise
+                else:
+                    # stop here explicitly to fail if stop times out, otherwise ducktape won't catch it
+                    self.redpanda.stop()
 
                 # Finally, if the test passed and all post-test checks
                 # also passed, we may trim the logs to INFO level to
