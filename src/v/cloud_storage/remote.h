@@ -128,6 +128,23 @@ public:
       cloud_storage_clients::client::list_bucket_result,
       cloud_storage_clients::error_outcome>;
 
+    /// Functor that attempts to consume the input stream. If the connection
+    /// is broken during the download the functor is responsible for he cleanup.
+    /// The functor should be reenterable since it can be called many times.
+    /// On success it should return content_length. On failure it should
+    /// allow the exception from the input_stream to propagate.
+    using try_consume_stream = ss::noncopyable_function<ss::future<uint64_t>(
+      uint64_t, ss::input_stream<char>)>;
+
+    using latency_measurement_t
+      = std::unique_ptr<remote_probe::hist_t::measurement>;
+    struct download_metrics {
+        std::function<latency_measurement_t()> download_latency_measurement =
+          [] { return nullptr; };
+        std::function<void()> failed_download_metric = [] {};
+        std::function<void()> download_backoff_metric = [] {};
+    };
+
     virtual ss::future<upload_result> upload_object(upload_request) = 0;
     virtual ss::future<download_result> download_object(download_request) = 0;
     virtual ss::future<list_result> list_objects(
@@ -144,6 +161,16 @@ public:
       const cloud_storage_clients::object_key&,
       retry_chain_node&,
       existence_check_type)
+      = 0;
+    virtual ss::future<download_result> download_stream(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& path,
+      const try_consume_stream& cons_str,
+      retry_chain_node& parent,
+      const std::string_view stream_label,
+      const download_metrics& metrics,
+      std::optional<cloud_storage_clients::http_byte_range> byte_range
+      = std::nullopt)
       = 0;
     virtual ~cloud_storage_api() = default;
 };
@@ -164,28 +191,11 @@ public:
     using reset_input_stream = ss::noncopyable_function<
       ss::future<std::unique_ptr<storage::stream_provider>>()>;
 
-    /// Functor that attempts to consume the input stream. If the connection
-    /// is broken during the download the functor is responsible for he cleanup.
-    /// The functor should be reenterable since it can be called many times.
-    /// On success it should return content_length. On failure it should
-    /// allow the exception from the input_stream to propagate.
-    using try_consume_stream = ss::noncopyable_function<ss::future<uint64_t>(
-      uint64_t, ss::input_stream<char>)>;
-
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation
     /// time, size in bytes, and etag.
     using list_objects_consumer = std::function<ss::stop_iteration(
       ss::sstring, std::chrono::system_clock::time_point, size_t, ss::sstring)>;
-
-    using latency_measurement_t
-      = std::unique_ptr<remote_probe::hist_t::measurement>;
-    struct download_metrics {
-        std::function<latency_measurement_t()> download_latency_measurement =
-          [] { return nullptr; };
-        std::function<void()> failed_download_metric = [] {};
-        std::function<void()> download_backoff_metric = [] {};
-    };
 
     /// \brief Initialize 'remote'
     ///
@@ -348,7 +358,7 @@ public:
       const std::string_view stream_label,
       const download_metrics& metrics,
       std::optional<cloud_storage_clients::http_byte_range> byte_range
-      = std::nullopt);
+      = std::nullopt) override;
 
     /// \brief Download segment index from S3
     /// \param ix is the index which will be populated from data from the object

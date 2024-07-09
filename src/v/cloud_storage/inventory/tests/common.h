@@ -49,6 +49,16 @@ public:
        retry_chain_node&,
        existence_check_type),
       (override));
+    MOCK_METHOD(
+      ss::future<download_result>,
+      download_stream,
+      (const cloud_storage_clients::bucket_name& bucket,
+       const remote_segment_path& path,
+       const try_consume_stream& cons_str,
+       retry_chain_node& parent,
+       const std::string_view stream_label,
+       const download_metrics& metrics,
+       std::optional<cloud_storage_clients::http_byte_range> byte_range));
 };
 
 ss::input_stream<char> make_report_stream(
