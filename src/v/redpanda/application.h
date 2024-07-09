@@ -17,6 +17,7 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "cluster/inventory_service.h"
 #include "cluster/migrations/tx_manager_migrator.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/node_status_backend.h"
@@ -118,6 +119,7 @@ public:
     ss::sharded<cluster::topic_recovery_status_frontend>
       topic_recovery_status_frontend;
     ss::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;
+    ss::sharded<cluster::inventory_service> inventory_service;
 
     ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;

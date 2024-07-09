@@ -18,6 +18,9 @@
 #include "base/vlog.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"
+#include "cloud_storage/configuration.h"
+#include "cloud_storage/inventory/inv_ops.h"
+#include "cloud_storage/inventory/types.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/bootstrap_service.h"
@@ -82,6 +85,7 @@
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
+#include "inventory_service.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -1815,6 +1819,47 @@ void application::wire_up_redpanda_services(
                   topic_recovery_status_frontend, topic_recovery_service);
             })
           .get();
+
+        if (config::shard_local_cfg()
+              .cloud_storage_inventory_based_scrub_enabled()) {
+            const auto manual_setup
+              = config::shard_local_cfg()
+                  .cloud_storage_inventory_manual_report_generation();
+            const auto config
+              = cloud_storage::configuration::get_config().get();
+            const auto& [supported, backend]
+              = cloud_storage::inventory::
+                  validate_backend_supported_for_inventory_scrub(config)
+                    .get();
+            if (!manual_setup && !supported) {
+                throw std::runtime_error(fmt::format(
+                  "cloud storage backend inferred as {} which is "
+                  "not supported for inventory based scrubbing",
+                  backend));
+            }
+
+            std::shared_ptr<cluster::leaders_provider> leaders_provider
+              = std::make_shared<cluster::default_leaders_provider>(
+                controller->get_partition_leaders());
+            std::shared_ptr<cluster::remote_provider> remote_provider
+              = std::make_shared<cluster::default_remote_provider>(
+                cloud_storage_api);
+            auto inv_ops
+              = cloud_storage::inventory::make_inv_ops(
+                  config.bucket_name,
+                  cloud_storage::inventory::inventory_config_id{
+                    config::shard_local_cfg().cloud_storage_inventory_id()},
+                  config::shard_local_cfg()
+                    .cloud_storage_inventory_reports_prefix())
+                  .get();
+            construct_single_service_sharded(
+              inventory_service,
+              config::node().cloud_storage_inventory_hash_path(),
+              leaders_provider,
+              remote_provider,
+              std::move(inv_ops))
+              .get();
+        }
     }
 
     construct_single_service(
