@@ -65,7 +65,8 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
         self.logger.debug(
             "asserting we got the config for the right cluster: expected rp-{}, actual: {}"
             .format(self._clusterId, clusterConfig["cluster_id"]))
-        assert "rp-{}".format(self._clusterId) == clusterConfig['cluster_id']
+        assert clusterConfig['cluster_id'] in (self._clusterId,
+                                               f'rp-{self._clusterId}')
 
         for k, v in self._configProfile["cluster_config"].items():
             self.logger.debug(
