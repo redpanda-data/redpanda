@@ -14,6 +14,13 @@
 
 namespace json {
 
+template<
+  typename OutputStream,
+  typename SourceEncoding,
+  typename TargetEncoding,
+  unsigned writeFlags>
+class generic_iobuf_writer;
+
 namespace impl {
 
 /**
@@ -43,9 +50,26 @@ struct generic_chunked_buffer {
 
     /**@}*/
 
+    /**
+     * Append a fragment to this chunked_buffer. This takes ownership of the
+     * fragment and is a zero-copy operation.
+     */
+    void append(std::unique_ptr<iobuf::fragment> frag) {
+        _impl.append(std::move(frag));
+    }
+
+    /**
+     * Return the underlying iobuf, this is destructive and zero-copy.
+     */
     iobuf as_iobuf() && { return std::move(_impl); }
 
 private:
+    template<
+      typename OutputStream,
+      typename SourceEncoding,
+      typename TargetEncoding,
+      unsigned writeFlags>
+    friend class json::generic_iobuf_writer;
     iobuf _impl;
 };
 
