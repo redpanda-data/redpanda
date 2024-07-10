@@ -58,6 +58,8 @@ static void parse_and_set_shadow_indexing_mode(
 checked<cluster::topic_properties_update, alter_configs_resource_response>
 create_topic_properties_update(
   const request_context& ctx, alter_configs_resource& resource) {
+    using op_t = cluster::incremental_update_operation;
+
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
@@ -69,50 +71,33 @@ create_topic_properties_update(
      * configuration in topic table, the only difference is the replication
      * factor, if not set in the request explicitly it will not be overriden.
      */
-    update.properties.compaction_strategy.op
-      = cluster::incremental_update_operation::set;
-    update.properties.compression.op
-      = cluster::incremental_update_operation::set;
-    update.properties.segment_size.op
-      = cluster::incremental_update_operation::set;
-    update.properties.timestamp_type.op
-      = cluster::incremental_update_operation::set;
-    update.properties.retention_bytes.op
-      = cluster::incremental_update_operation::set;
-    update.properties.retention_duration.op
-      = cluster::incremental_update_operation::set;
-    update.properties.shadow_indexing.op
-      = cluster::incremental_update_operation::set;
-    update.custom_properties.replication_factor.op
-      = cluster::incremental_update_operation::none;
-    update.custom_properties.data_policy.op
-      = cluster::incremental_update_operation::none;
+    update.properties.compaction_strategy.op = op_t::set;
+    update.properties.compression.op = op_t::set;
+    update.properties.segment_size.op = op_t::set;
+    update.properties.timestamp_type.op = op_t::set;
+    update.properties.retention_bytes.op = op_t::set;
+    update.properties.retention_duration.op = op_t::set;
+    update.properties.shadow_indexing.op = op_t::set;
+
+    update.custom_properties.replication_factor.op = op_t::none;
+    update.custom_properties.data_policy.op = op_t::none;
 
     /**
      * Since 'cleanup.policy' is always defaulted to 'delete' at topic creation,
      * we must special case the handling to preserve this default.
      */
-    update.properties.cleanup_policy_bitflags.op
-      = cluster::incremental_update_operation::set;
+    update.properties.cleanup_policy_bitflags.op = op_t::set;
     update.properties.cleanup_policy_bitflags.value
       = ctx.metadata_cache().get_default_cleanup_policy_bitflags();
 
-    update.properties.record_key_schema_id_validation.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_key_schema_id_validation_compat.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_key_subject_name_strategy.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_key_subject_name_strategy_compat.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_schema_id_validation.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_schema_id_validation_compat.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_subject_name_strategy.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_subject_name_strategy_compat.op
-      = cluster::incremental_update_operation::set;
+    update.properties.record_key_schema_id_validation.op = op_t::set;
+    update.properties.record_key_schema_id_validation_compat.op = op_t::set;
+    update.properties.record_key_subject_name_strategy.op = op_t::set;
+    update.properties.record_key_subject_name_strategy_compat.op = op_t::set;
+    update.properties.record_value_schema_id_validation.op = op_t::set;
+    update.properties.record_value_schema_id_validation_compat.op = op_t::set;
+    update.properties.record_value_subject_name_strategy.op = op_t::set;
+    update.properties.record_value_subject_name_strategy_compat.op = op_t::set;
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       update.properties};
