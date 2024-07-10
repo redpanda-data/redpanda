@@ -100,7 +100,7 @@ def data_dependency():
     # ** IMPORTANT - OpenSSL and FIPS **
     #
     # Below there are two OpenSSL archives that are retrieved. The first, named
-    # simply "openssl", may reference any version of OpenSSL that is desired.
+    # simply "openssl", may reference any desired version of OpenSSL 3.0.0 and above.
     #
     # The second archive retrieved is named "openssl-fips", and *MUST* reference
     # the specific version of OpenSSL, 3.0.9, which is the latest FIPS approved
