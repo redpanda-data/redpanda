@@ -1662,6 +1662,12 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
             next_offset = model::offset(0);
         }
     }
+    vlog(
+      stlog.trace,
+      "creating log appender for: {}, next offset: {}, log offsets: {}",
+      config().ntp(),
+      next_offset,
+      ofs);
     return log_appender(
       std::make_unique<disk_log_appender>(*this, cfg, now, next_offset));
 }
