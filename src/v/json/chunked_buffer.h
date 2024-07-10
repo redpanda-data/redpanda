@@ -37,7 +37,7 @@ struct generic_chunked_buffer {
     //! Get the length of string in Ch in the string buffer.
     size_t GetLength() const { return _impl.size_bytes() / sizeof(Ch); }
 
-    void Reserve(size_t s) { _impl.reserve(s); }
+    void Reserve(size_t s) { _impl.reserve_memory(s); }
 
     void Clear() { _impl.clear(); }
 
