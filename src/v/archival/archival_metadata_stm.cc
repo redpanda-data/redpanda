@@ -773,20 +773,26 @@ ss::future<bool> archival_metadata_stm::do_sync(
     // The log eviction STM can also replicate its own batch without holding the
     // lock but it's not critical.
 
-    auto insync = _manifest->get_insync_offset();
+    //
+    auto barrier_result = co_await _raft->linearizable_barrier();
+    if (!barrier_result.has_value()) {
+        vlog(
+          _logger.warn,
+          "Failed to get linearizable barrier: {}",
+          barrier_result.error());
+        co_return false;
+    }
 
     // all archival commands are replicated with acks=-1
     // this is why we can use committed_offset
-    auto commit = _raft->committed_offset();
-    if (insync < commit) {
-        if (as == nullptr) {
-            co_return co_await wait_no_throw(
-              commit, ss::lowres_clock::now() + timeout);
-        } else {
-            co_return co_await wait_no_throw(
-              commit, ss::lowres_clock::now() + timeout, *as);
-        }
+    if (as == nullptr) {
+        co_return co_await wait_no_throw(
+          barrier_result.value(), ss::lowres_clock::now() + timeout);
+    } else {
+        co_return co_await wait_no_throw(
+          barrier_result.value(), ss::lowres_clock::now() + timeout, *as);
     }
+
     // This should be impossible under lock
     vassert(
       _active_operation_res.has_value() == false, "Concurrency violation");
