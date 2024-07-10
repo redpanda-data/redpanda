@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        os: ["fedora:38"]
+        os: ["fedora:38", "ubuntu:noble"]
     container:
       image: ${{ matrix.os }}
     steps:
@@ -61,7 +61,7 @@ jobs:
           run: bazel/install-deps.sh
         - name: install baselisk
           run: |
-            dnf install -y wget
+            dnf install -y wget || apt install -y wget
             wget -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
             chmod +x /usr/local/bin/bazel
         - name: buildifier check
