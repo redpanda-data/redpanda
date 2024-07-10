@@ -27,6 +27,7 @@ enum class find_topic_manifest_outcome {
     // and a hint must be provided to determine winner.
     multiple_matching_manifests,
 };
+std::ostream& operator<<(std::ostream&, find_topic_manifest_outcome);
 
 // Encapsulates downloading manifests for a given topic.
 //

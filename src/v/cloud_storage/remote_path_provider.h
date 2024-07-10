@@ -22,7 +22,25 @@ namespace cloud_storage {
 
 class remote_path_provider {
 public:
+    // Discourage accidental copies to encourage referencing of a single path
+    // provider (e.g. the one owned by the archival STM).
+    remote_path_provider(const remote_path_provider&) = delete;
+    remote_path_provider& operator=(const remote_path_provider&) = delete;
+    remote_path_provider& operator=(remote_path_provider&&) = delete;
+    ~remote_path_provider() = default;
+
     explicit remote_path_provider(std::optional<remote_label> label);
+
+    // An explicit copy method. Callers should think twice about using this and
+    // instead consider if there is an existing path provider that makes sense
+    // to reference instead (e.g. the one owned by the archival STM).
+    //
+    // One may not exist e.g. when doing background finalization after the
+    // partition and STM is destructed.
+    remote_path_provider copy() const;
+
+    // For use in copy() and in coroutines.
+    remote_path_provider(remote_path_provider&&) = default;
 
     // Prefix of the topic manifest path. This can be used to filter objects to
     // find topic manifests.

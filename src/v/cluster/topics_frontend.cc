@@ -560,6 +560,12 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     bool configured_label_from_manifest
       = assignable_config.is_read_replica()
         || assignable_config.is_recovery_enabled();
+    // We set a remote label if:
+    // - we haven't got a remote label from the cloud (i.e. this isn't a read
+    //   replica or recovery topic),
+    // - there is a cluster UUID (always expected),
+    // - the remote labels feature is active,
+    // - the config to disable remote labels is False
     if (
       !configured_label_from_manifest
       && !assignable_config.cfg.properties.remote_label.has_value()

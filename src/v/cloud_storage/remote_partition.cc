@@ -21,6 +21,7 @@
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "net/connection.h"
@@ -1312,14 +1313,13 @@ static constexpr ss::lowres_clock::duration finalize_backoff = 1s;
 struct finalize_data {
     model::ntp ntp;
     model::initial_revision_id revision;
-    remote_path_provider path_provider;
     cloud_storage_clients::bucket_name bucket;
-    cloud_storage_clients::object_key key;
     iobuf serialized_manifest;
     model::offset insync_offset;
 };
 
-ss::future<> finalize_background(remote& api, finalize_data data) {
+ss::future<> finalize_background(
+  remote& api, finalize_data data, remote_path_provider path_provider) {
     // This function runs as a detached background fiber, so has no shutdown
     // logic of its own: our remote operations will be shut down when the
     // `remote` object is shut down.
@@ -1330,7 +1330,7 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
     partition_manifest remote_manifest(data.ntp, data.revision);
 
     partition_manifest_downloader dl(
-      data.bucket, data.path_provider, data.ntp, data.revision, api);
+      data.bucket, path_provider, data.ntp, data.revision, api);
     auto manifest_get_result = co_await dl.download_manifest(
       local_rtc, &remote_manifest);
     if (manifest_get_result.has_error()) {
@@ -1373,9 +1373,11 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
           remote_manifest.get_insync_offset(),
           data.insync_offset);
 
+        const auto key = cloud_storage_clients::object_key{
+          path_provider.partition_manifest_path(data.ntp, data.revision)};
         auto manifest_put_result = co_await api.upload_object(
           {.transfer_details
-           = {.bucket = data.bucket, .key = data.key, .parent_rtc = local_rtc},
+           = {.bucket = data.bucket, .key = key, .parent_rtc = local_rtc},
            .type = upload_type::manifest,
            .payload = std::move(data.serialized_manifest)});
 
@@ -1415,21 +1417,19 @@ void remote_partition::finalize() {
     const auto& stm_manifest = _manifest_view->stm_manifest();
     auto serialized_manifest = stm_manifest.to_iobuf();
 
-    const auto& path_provider = _manifest_view->path_provider();
     finalize_data data{
       .ntp = get_ntp(),
       .revision = stm_manifest.get_revision_id(),
-      .path_provider = path_provider,
       .bucket = _bucket,
-      .key = cloud_storage_clients::object_key{stm_manifest.get_manifest_path(
-        path_provider)()},
       .serialized_manifest = std::move(serialized_manifest),
       .insync_offset = stm_manifest.get_insync_offset()};
 
     ssx::spawn_with_gate(
       _api.gate(),
-      [&api = _api, data = std::move(data)]() mutable -> ss::future<> {
-          return finalize_background(api, std::move(data));
+      [&api = _api,
+       data = std::move(data),
+       pp = _manifest_view->path_provider().copy()]() mutable -> ss::future<> {
+          return finalize_background(api, std::move(data), pp.copy());
       });
 }
 
