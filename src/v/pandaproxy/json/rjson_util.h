@@ -19,7 +19,6 @@
 #include "json/reader.h"
 #include "json/stream.h"
 #include "json/stringbuffer.h"
-#include "json/writer.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 
