@@ -71,33 +71,11 @@ create_topic_properties_update(
      * configuration in topic table, the only difference is the replication
      * factor, if not set in the request explicitly it will not be overriden.
      */
-    update.properties.compaction_strategy.op = op_t::remove;
-    update.properties.compression.op = op_t::remove;
-    update.properties.segment_size.op = op_t::remove;
-    update.properties.timestamp_type.op = op_t::remove;
-    update.properties.retention_bytes.op = op_t::remove;
-    update.properties.remote_delete.op = op_t::remove;
-    update.properties.segment_ms.op = op_t::remove;
-    update.properties.shadow_indexing.op = op_t::remove;
-    update.properties.retention_duration.op = op_t::remove;
-    update.properties.batch_max_bytes.op = op_t::remove;
-    update.properties.retention_local_target_ms.op = op_t::remove;
-    update.properties.retention_local_target_bytes.op = op_t::remove;
-    update.properties.initial_retention_local_target_ms.op = op_t::remove;
-    update.properties.initial_retention_local_target_bytes.op = op_t::remove;
-    update.properties.record_key_schema_id_validation.op = op_t::remove;
-    update.properties.record_key_schema_id_validation_compat.op = op_t::remove;
-    update.properties.record_key_subject_name_strategy.op = op_t::remove;
-    update.properties.record_key_subject_name_strategy_compat.op = op_t::remove;
-    update.properties.record_value_schema_id_validation.op = op_t::remove;
-    update.properties.record_value_schema_id_validation_compat.op
-      = op_t::remove;
-    update.properties.record_value_subject_name_strategy.op = op_t::remove;
-    update.properties.record_value_subject_name_strategy_compat.op
-      = op_t::remove;
-    update.properties.write_caching.op = op_t::remove;
-    update.properties.flush_ms.op = op_t::remove;
-    update.properties.flush_bytes.op = op_t::remove;
+    constexpr auto apply_op = [](op_t op) {
+        return [op](auto&&... prop) { ((prop.op = op), ...); };
+    };
+    std::apply(apply_op(op_t::remove), update.properties.serde_fields());
+    std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     /**
      * Since 'cleanup.policy' is always defaulted to 'delete' at topic creation,
@@ -106,9 +84,6 @@ create_topic_properties_update(
     update.properties.cleanup_policy_bitflags.op = op_t::set;
     update.properties.cleanup_policy_bitflags.value
       = ctx.metadata_cache().get_default_cleanup_policy_bitflags();
-
-    update.custom_properties.replication_factor.op = op_t::none;
-    update.custom_properties.data_policy.op = op_t::none;
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       update.properties};
