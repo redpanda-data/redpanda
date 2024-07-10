@@ -31,7 +31,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:intrusive",
-        "//src/v/ssx:future-util",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",

@@ -39,7 +39,7 @@ redpanda_cc_library(
         "//src/v/hashing:xx",
         "//src/v/metrics",
         "//src/v/ssx:abort_source",
-        "//src/v/ssx:future-util",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/utils:inet_address",

@@ -7,7 +7,7 @@ redpanda_cc_btest(
         "future_util.cc",
     ],
     deps = [
-        "//src/v/ssx:future-util",
+        "//src/v/ssx:future_util",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:functional",
         "@seastar",

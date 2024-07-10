@@ -28,7 +28,7 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "future-util",
+    name = "future_util",
     hdrs = [
         "include/ssx/future-util.h",
     ],

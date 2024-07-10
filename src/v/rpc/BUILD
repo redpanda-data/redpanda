@@ -56,7 +56,7 @@ redpanda_cc_library(
         "//src/v/net",
         "//src/v/reflection:adl",
         "//src/v/serde",
-        "//src/v/ssx:future-util",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/utils:log_hist",
