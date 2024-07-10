@@ -67,7 +67,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_empty) {
     auto fmt = ppj::serialization_format::binary_v2;
 
     ::json::StringBuffer str_buf;
-    ::json::Writer<::json::StringBuffer> w(str_buf);
+    ::json::iobuf_writer<::json::StringBuffer> w(str_buf);
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected = R"([])";
@@ -85,7 +85,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_one) {
     auto fmt = ppj::serialization_format::binary_v2;
 
     ::json::StringBuffer str_buf;
-    ::json::Writer<::json::StringBuffer> w(str_buf);
+    ::json::iobuf_writer<::json::StringBuffer> w(str_buf);
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected
