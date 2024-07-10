@@ -367,9 +367,11 @@ class KubectlSelfTest(Test):
                 pass
 
 
-class KubectlLocalOnlyTest(Test):
+from ducktape.mark.resource import cluster as dt_cluster
 
-    # @cluster(num_nodes=0)
+
+class KubectlLocalOnlyTest(Test):
+    @dt_cluster(num_nodes=0)
     def test_is_redpanda_pod(self):
         test_cases = {
             "regular_hit": {
