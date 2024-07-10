@@ -39,7 +39,7 @@ public:
       , _base_offset(base_offset) {}
 
     template<typename Buffer>
-    bool operator()(::json::Writer<Buffer>& w, model::record record) {
+    bool operator()(::json::iobuf_writer<Buffer>& w, model::record record) {
         auto offset = _base_offset() + record.offset_delta();
 
         w.StartObject();
@@ -93,7 +93,8 @@ public:
       : _fmt(fmt) {}
 
     template<typename Buffer>
-    bool operator()(::json::Writer<Buffer>& w, kafka::fetch_response&& res) {
+    bool
+    operator()(::json::iobuf_writer<Buffer>& w, kafka::fetch_response&& res) {
         // Eager check for errors
         for (auto& v : res) {
             if (v.partition_response->error_code != kafka::error_code::none) {
