@@ -141,8 +141,10 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::schema: {
+            iobuf buf;
+            buf.append(sv.data(), sv.size());
             _schema.def = unparsed_schema_definition::raw_string{
-              ss::sstring{sv}};
+              std::move(buf)};
             _state = state::record;
             return true;
         }
