@@ -58,10 +58,12 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <type_traits>
 
@@ -641,6 +643,28 @@ raft_fixture::wait_for_leader(model::timeout_clock::time_point deadline) {
                && node(*leader_id).raft()->is_leader();
     };
     while (!has_stable_leader()) {
+        if (model::timeout_clock::now() > deadline) {
+            throw std::runtime_error("Timeout waiting for leader");
+        }
+        co_await ss::sleep(std::chrono::milliseconds(5));
+    }
+
+    co_return get_leader().value();
+}
+
+ss::future<model::node_id> raft_fixture::wait_for_leader_change(
+  model::timeout_clock::time_point deadline, model::term_id term) {
+    auto has_new_leader = [this, term] {
+        auto leader_id = get_leader();
+        if (leader_id && _nodes.contains(*leader_id)) {
+            auto& leader_node = node(*leader_id);
+            return leader_node.raft()->is_leader()
+                   && leader_node.raft()->term() > term;
+        }
+        return false;
+    };
+
+    while (!has_new_leader()) {
         if (model::timeout_clock::now() > deadline) {
             throw std::runtime_error("Timeout waiting for leader");
         }
