@@ -42,6 +42,7 @@ static void parse_and_set_shadow_indexing_mode(
     property_update,
   const std::optional<ss::sstring>& value,
   model::shadow_indexing_mode enabled_value) {
+    property_update.op = cluster::incremental_update_operation::set;
     if (!value) {
         property_update.value = model::shadow_indexing_mode::disabled;
     }
@@ -69,24 +70,20 @@ create_topic_properties_update(alter_configs_resource& resource) {
      * configuration in topic table, the only difference is the replication
      * factor, if not set in the request explicitly it will not be overriden.
      */
-    update.properties.compaction_strategy.op = op_t::set;
-    update.properties.compression.op = op_t::set;
-    update.properties.segment_size.op = op_t::set;
-    update.properties.timestamp_type.op = op_t::set;
-    update.properties.retention_bytes.op = op_t::set;
-    update.properties.shadow_indexing.op = op_t::set;
-    update.properties.retention_duration.op = op_t::set;
-    update.properties.record_key_schema_id_validation.op = op_t::set;
-    update.properties.record_key_schema_id_validation_compat.op = op_t::set;
-    update.properties.record_key_subject_name_strategy.op = op_t::set;
-    update.properties.record_key_subject_name_strategy_compat.op = op_t::set;
-    update.properties.record_value_schema_id_validation.op = op_t::set;
-    update.properties.record_value_schema_id_validation_compat.op = op_t::set;
-    update.properties.record_value_subject_name_strategy.op = op_t::set;
-    update.properties.record_value_subject_name_strategy_compat.op = op_t::set;
+    constexpr auto apply_op = [](op_t op) {
+        return [op](auto&&... prop) { ((prop.op = op), ...); };
+    };
+    std::apply(apply_op(op_t::remove), update.properties.serde_fields());
+    std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
-    update.custom_properties.replication_factor.op = op_t::none;
-    update.custom_properties.data_policy.op = op_t::none;
+    static_assert(
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 26,
+      "If you added a property, please decide on it's default alter config "
+      "policy, and handle the update in the loop below");
+    static_assert(
+      std::tuple_size_v<decltype(update.custom_properties.serde_fields())> == 2,
+      "If you added a property, please decide on it's default alter config "
+      "policy, and handle the update in the loop below");
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       update.properties};
