@@ -8,9 +8,11 @@
 # by the Apache License, Version 2.0
 
 import concurrent.futures
+import datetime
 import re
 import threading
 from logging import Logger
+import time
 from typing import Callable
 
 from rptest.services.admin import Admin
@@ -21,8 +23,8 @@ from rptest.services.metrics_check import MetricCheck
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.util import (wait_until, wait_for_local_storage_truncate,
-                         wait_until_result)
+from rptest.util import (segments_count, wait_until,
+                         wait_for_local_storage_truncate, wait_until_result)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.utils.si_utils import BucketView, NTP
@@ -622,6 +624,58 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                     assert offset == start_offset, f"Expected {start_offset}, got {offset}"
                 else:
                     assert offset == o, f"Expected {o}, got {offset}"
+
+    @cluster(num_nodes=4)
+    def test_timequery_empty_local_log(self):
+        self.set_up_cluster(cloud_storage=True,
+                            batch_cache=False,
+                            spillover=False)
+
+        total_segments = 3
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+        local_retention = 1  # Any value works for this test.
+        topic, timestamps = self._create_and_produce(self.redpanda, True,
+                                                     local_retention, base_ts,
+                                                     record_size, msg_count)
+
+        # Confirm messages written
+        rpk = RpkTool(self.redpanda)
+        p = next(rpk.describe_topic(topic.name))
+        assert p.high_watermark == msg_count
+
+        # Restart the cluster to force segment roll. The newly created segment
+        # will have no user data which is what we want to test.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        wait_until(lambda: len(list(rpk.describe_topic(topic.name))) > 0,
+                   30,
+                   backoff_sec=2)
+
+        wait_until(
+            lambda: next(segments_count(self.redpanda, topic.name, 0)) == 1,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Expected only one segment to be present")
+
+        kcat = KafkaCat(self.redpanda)
+
+        # Query below valid timestamps the offset of the first message.
+        offset = kcat.query_offset(topic.name, 0, timestamps[0] - 1000)
+        assert offset == 0, f"Expected 0, got {offset}"
+
+        # Query with a timestamp in-between cloud log and the configuration
+        # batch present in the local log.
+        offset = kcat.query_offset(topic.name, 0,
+                                   timestamps[msg_count - 1] + 1000)
+        assert offset == -1, f"Expected -1, got {offset}"
+
+        # Query with a timestamp in the future.
+        offset = kcat.query_offset(
+            topic.name, 0,
+            int(time.time() + datetime.timedelta(days=1).total_seconds()) *
+            1000)
+        assert offset == -1, f"Expected -1, got {offset}"
 
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):

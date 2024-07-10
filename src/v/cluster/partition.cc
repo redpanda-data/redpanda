@@ -522,6 +522,13 @@ partition::timequery(storage::timequery_config cfg) {
         local_query_cfg.min_offset = std::max(
           log()->from_log_offset(_raft->start_offset()),
           local_query_cfg.min_offset);
+
+        // If the min_offset is ahead of max_offset, the local log is empty
+        // or was truncated since the timequery_config was created.
+        if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
+            co_return std::nullopt;
+        }
+
         auto result = co_await local_timequery(
           local_query_cfg, may_answer_from_cloud);
         if (result.has_value()) {
@@ -545,6 +552,13 @@ partition::timequery(storage::timequery_config cfg) {
             local_query_cfg.min_offset = std::max(
               log()->from_log_offset(_raft->start_offset()),
               local_query_cfg.min_offset);
+
+            // If the min_offset is ahead of max_offset, the local log is empty
+            // or was truncated since the timequery_config was created.
+            if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
+                co_return std::nullopt;
+            }
+
             co_return co_await local_timequery(local_query_cfg, false);
         }
     }
