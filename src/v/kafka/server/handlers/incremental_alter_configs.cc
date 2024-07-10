@@ -267,15 +267,6 @@ create_topic_properties_update(
                     continue;
                 }
             }
-            if (
-              std::find(
-                std::begin(allowlist_topic_noop_confs),
-                std::end(allowlist_topic_noop_confs),
-                cfg.name)
-              != std::end(allowlist_topic_noop_confs)) {
-                // Skip unsupported Kafka config
-                continue;
-            }
             if (cfg.name == topic_property_write_caching) {
                 parse_and_set_optional(
                   update.properties.write_caching,
@@ -305,6 +296,16 @@ create_topic_properties_update(
               supported_topic_properties.size() == 29,
               "Reminder to update the incremental alter configs handler when a "
               "new topic property is introduced");
+
+            // Skip unsupported Kafka configs that are on the allowlist
+            if (
+              std::find(
+                std::begin(allowlist_topic_noop_confs),
+                std::end(allowlist_topic_noop_confs),
+                cfg.name)
+              != std::end(allowlist_topic_noop_confs)) {
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(
