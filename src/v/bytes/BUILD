@@ -1,5 +1,4 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_btest")
 
 redpanda_cc_library(
     name = "iobuf",
@@ -129,62 +128,5 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "iobuf_test",
-    timeout = "short",
-    srcs = [
-        "tests/iobuf_tests.cc",
-        "tests/utils.h",
-    ],
-    deps = [
-        ":bytes",
-        ":iobuf",
-        ":iobuf_parser",
-        ":iostream",
-        ":random",
-        ":scattered_message",
-        ":streambuf",
-        "//src/v/random:generators",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:range",
-        "@boost//:test",
-        "@fmt",
-        "@seastar",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "iobuf_utils_test",
-    timeout = "short",
-    srcs = [
-        "tests/iobuf_utils_tests.cc",
-        "tests/utils.h",
-    ],
-    deps = [
-        ":bytes",
-        ":hash",
-        ":iobuf",
-        ":iostream",
-        "//src/v/random:generators",
-        "//src/v/test_utils:seastar_boost",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "bytes_test",
-    timeout = "short",
-    srcs = [
-        "tests/bytes_tests.cc",
-    ],
-    deps = [
-        ":bytes",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
-        "@seastar//:testing",
     ],
 )

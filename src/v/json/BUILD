@@ -1,5 +1,4 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_btest")
 
 redpanda_cc_library(
     name = "json",
@@ -37,20 +36,5 @@ redpanda_cc_library(
         "@fmt",
         "@rapidjson",
         "@seastar",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "json_serialization_test",
-    timeout = "short",
-    srcs = [
-        "tests/json_serialization_test.cc",
-    ],
-    deps = [
-        ":json",
-        "//src/v/base",
-        "//src/v/test_utils:seastar_boost",
-        "@seastar",
-        "@seastar//:testing",
     ],
 )

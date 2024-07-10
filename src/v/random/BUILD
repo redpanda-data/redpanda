@@ -1,5 +1,4 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_btest")
 
 redpanda_cc_library(
     name = "fast_prng",
@@ -39,21 +38,5 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fast_prng",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "random_test",
-    timeout = "short",
-    srcs = [
-        "tests/random_test.cc",
-    ],
-    deps = [
-        ":fast_prng",
-        ":generators",
-        "//src/v/base",
-        "//src/v/test_utils:seastar_boost",
-        "@abseil-cpp//absl/container:flat_hash_set",
-        "@boost//:test",
     ],
 )
