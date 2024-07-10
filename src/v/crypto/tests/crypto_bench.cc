@@ -14,6 +14,8 @@
 #include "random/generators.h"
 #include "ssx/thread_worker.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/perf_tests.hh>
 
@@ -50,11 +52,12 @@ public:
         _svc.invoke_on_all(&crypto::ossl_context_service::start).get();
     }
 
-    ~openssl_perf() {
-        _svc.stop().get();
-        _thread_worker->stop().get();
-        _thread_worker.reset();
+    ss::future<> stop() {
+        co_await _svc.stop();
+        co_await _thread_worker->stop();
     }
+
+    ~openssl_perf() = default;
 
 private:
     std::unique_ptr<ssx::singleton_thread_worker> _thread_worker{nullptr};
@@ -70,32 +73,48 @@ private:
     }
 };
 
-PERF_TEST_F(openssl_perf, md5_1k) {
+static std::unique_ptr<openssl_perf> global_perf{nullptr};
+
+struct openssl_perf_test {
+    openssl_perf_test() {
+        if (!global_perf) {
+            global_perf = std::make_unique<openssl_perf>();
+            ss::engine().at_exit([]() -> ss::future<> {
+                co_await global_perf->stop();
+                global_perf.reset();
+            });
+        }
+    }
+
+    ~openssl_perf_test() = default;
+};
+
+PERF_TEST_F(openssl_perf_test, md5_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {
         return crypto::digest(crypto::digest_type::MD5, buffer);
     });
 }
 
-PERF_TEST_F(openssl_perf, sha256_1k) {
+PERF_TEST_F(openssl_perf_test, sha256_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {
         return crypto::digest(crypto::digest_type::SHA256, buffer);
     });
 }
 
-PERF_TEST_F(openssl_perf, sha512_1k) {
+PERF_TEST_F(openssl_perf_test, sha512_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {
         return crypto::digest(crypto::digest_type::SHA512, buffer);
     });
 }
 
-PERF_TEST_F(openssl_perf, hmac_sha256_1k) {
+PERF_TEST_F(openssl_perf_test, hmac_sha256_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {
         auto key = random_generators::gen_alphanum_string(32);
         return crypto::hmac(crypto::digest_type::SHA256, key, buffer);
     });
 }
 
-PERF_TEST_F(openssl_perf, hmac_sha512_1k) {
+PERF_TEST_F(openssl_perf_test, hmac_sha512_1k) {
     return test_body(1024, [](const ss::sstring& buffer) {
         auto key = random_generators::gen_alphanum_string(32);
         return crypto::hmac(crypto::digest_type::SHA512, key, buffer);
