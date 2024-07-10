@@ -1,6 +1,6 @@
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
 
-# TODO
+# TODO(bazel)
 # - Verify architecture specific settings
 # - Verify that platform select works as expected
 

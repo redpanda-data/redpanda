@@ -28,7 +28,7 @@ bool_flag(
     build_setting_default = False,
 )
 
-# TODO the default should be true, but need to fix a numactl undefined reference
+# TODO(bazel) the default should be true, but need to fix a numactl undefined reference
 bool_flag(
     name = "numactl",
     build_setting_default = False,

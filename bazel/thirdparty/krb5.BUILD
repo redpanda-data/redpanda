@@ -15,7 +15,7 @@ configure_make(
         "--srcdir=./src",
         "--disable-thread-support",
         "--without-netlib",
-        # TODO when building the static library the linker is exiting with a
+        # TODO(bazel) when building the static library the linker is exiting with a
         # duplicate symbol error
         "--enable-shared",
         "--disable-static",

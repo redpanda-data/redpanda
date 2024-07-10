@@ -11,7 +11,7 @@ def redpanda_copts():
       Options to be added to target.
     """
 
-    # TODO Bazel prefers -iquote "path" style includes in many cases. However,
+    # TODO(bazel) Bazel prefers -iquote "path" style includes in many cases. However,
     # our source tree uses bracket <path> style for dependencies. We need a way
     # to bridge this gap until we decide to fully switch over to Bazel at which
     # point this hack can be removed. To deal with this we add a `-I` parameter

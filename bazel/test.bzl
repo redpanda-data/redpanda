@@ -25,7 +25,7 @@ def has_flags(args, *flags):
                 return True
     return False
 
-# TODO
+# TODO(bazel)
 # - Make log level configurable (e.g. CI)
 # - Set --overprovisioned in CI context
 # - Other ASAN settings used in cmake_test.py

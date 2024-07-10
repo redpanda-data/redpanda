@@ -1,7 +1,7 @@
 #
 # This build is a translation of the CRoaring cmake-based build.
 #
-# TODO
+# TODO(bazel)
 # - Take a closer look at compile options that control cpu features.
 #
 

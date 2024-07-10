@@ -24,7 +24,7 @@ def redpanda_cc_library(
     """
     features = []
     if not exclude_layering_check:
-        # TODO Some dependencies brought in via rules_foreign_cc appear to not
+        # TODO(bazel) Some dependencies brought in via rules_foreign_cc appear to not
         # have all their headers declared as outputs, which causes issues with
         # layering checks. So we allow layering check to be disabled in some
         # cases until this issue is addressed.

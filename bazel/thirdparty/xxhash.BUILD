@@ -3,7 +3,7 @@
 # updated with `includes` to include `.` so that bracket-style includes will
 # work in Redpanda. The cmake build in the xxhash source tree looks similar.
 #
-# TODO once cmake is removed from Redpanda we can switch everything over to the
+# TODO(bazel) once cmake is removed from Redpanda we can switch everything over to the
 # default quoted include paths and remove the `includes` parameter here.
 #
 

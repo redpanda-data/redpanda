@@ -2,7 +2,7 @@
 # This build is a translation from the official autotools-based build contained
 # in the numactl source tree.
 #
-# TODO
+# TODO(bazel)
 # - inspect implementation to see what should go into config.h
 # - understand more if we are using versions.ldscript correctly
 # - check if libtool -version-info flag is needed
