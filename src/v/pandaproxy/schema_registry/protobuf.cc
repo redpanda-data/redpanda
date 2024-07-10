@@ -11,6 +11,7 @@
 
 #include "pandaproxy/schema_registry/protobuf.h"
 
+#include "bytes/streambuf.h"
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -201,8 +202,8 @@ private:
 class schema_def_input_stream : public pb::io::ZeroCopyInputStream {
 public:
     explicit schema_def_input_stream(const canonical_schema_definition& def)
-      : _str(def.raw())
-      , _impl{_str().data(), static_cast<int>(_str().size())} {}
+      : _is{def.shared_raw()}
+      , _impl{&_is.istream()} {}
 
     bool Next(const void** data, int* size) override {
         return _impl.Next(data, size);
@@ -212,8 +213,8 @@ public:
     int64_t ByteCount() const override { return _impl.ByteCount(); }
 
 private:
-    canonical_schema_definition::raw_string _str;
-    pb::io::ArrayInputStream _impl;
+    iobuf_istream _is;
+    pb::io::IstreamInputStream _impl;
 };
 
 class parser {
@@ -231,13 +232,9 @@ public:
         // Attempt parse a .proto file
         if (!_parser.Parse(&t, &_fdp)) {
             // base64 decode the schema
-            std::string_view b64_def{
-              schema.def().raw()().data(), schema.def().raw()().size()};
-            auto bytes_def = base64_to_bytes(b64_def);
-
+            iobuf_istream is{base64_to_iobuf(schema.def().raw()())};
             // Attempt parse as an encoded FileDescriptorProto.pb
-            if (!_fdp.ParseFromArray(
-                  bytes_def.data(), static_cast<int>(bytes_def.size()))) {
+            if (!_fdp.ParseFromIstream(&is.istream())) {
                 throw as_exception(error_collector.error());
             }
         }
@@ -326,6 +323,7 @@ struct protobuf_schema_definition::impl {
      * messages
      */
     ss::sstring debug_string() const {
+        // TODO BP: Prevent this linearization
         auto s = fd->DebugString();
 
         // reordering not required if no package or no dependencies
@@ -353,6 +351,7 @@ struct protobuf_schema_definition::impl {
         auto imports = trim(sv.substr(imports_pos, imports_len));
         auto footer = trim(sv.substr(package_pos + package.length()));
 
+        // TODO BP: Prevent this linearization
         return ssx::sformat(
           "{}\n{}\n\n{}\n\n{}\n", header, package, imports, footer);
     }

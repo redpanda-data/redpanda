@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "bytes/iobuf_parser.h"
 #include "json/iobuf_writer.h"
 #include "json/json.h"
 #include "json/types.h"
