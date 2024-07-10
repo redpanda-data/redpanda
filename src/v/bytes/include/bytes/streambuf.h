@@ -91,3 +91,43 @@ public:
 private:
     iobuf* _buf;
 };
+
+///\brief Wrap a std::istream around an iobuf
+///
+/// iobuf buf;
+/// iobuf_istream is(std::move(buf));
+/// std::string out;
+/// is.istream() >> out;
+class iobuf_istream {
+public:
+    explicit iobuf_istream(iobuf buf)
+      : _buf(std::move(buf))
+      , _isb(_buf)
+      , _sis{&_isb} {}
+    std::istream& istream() { return _sis; }
+
+private:
+    iobuf _buf;
+    iobuf_istreambuf _isb;
+    std::istream _sis;
+};
+
+///\brief Wrap a std::ostream around an iobuf
+///
+/// iobuf_ostream os;
+/// os.ostream() << "Hello World";
+/// iobuf buf = std::move(os).buf();
+class iobuf_ostream {
+public:
+    iobuf_ostream()
+      : _buf()
+      , _osb(_buf)
+      , _sos{&_osb} {}
+    std::ostream& ostream() { return _sos; }
+    iobuf buf() && { return std::move(_buf); }
+
+private:
+    iobuf _buf;
+    iobuf_ostreambuf _osb;
+    std::ostream _sos;
+};
