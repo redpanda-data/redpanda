@@ -1960,14 +1960,30 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
               ? _parent.highest_producer_id()
               : model::producer_id{};
 
-        auto error = co_await _parent.archival_meta_stm()->add_segments(
+        vlog(_rtclog.debug, "VVV: replicating segments: {}", mdiff);
+        std::error_code error;
+        try {
+            error = co_await _parent.archival_meta_stm()->add_segments(
+              mdiff,
+              manifest_clean_offset,
+              highest_producer_id,
+              deadline,
+              _as,
+              checks_disabled ? cluster::segment_validated::no
+                              : cluster::segment_validated::yes);
+        } catch (...) {
+            vlog(
+              _rtclog.error,
+              "VVV: Failed to replicate segments: {}",
+              std::current_exception());
+            throw;
+        }
+        vlog(
+          _rtclog.debug,
+          "VVV: returned from replicating segments: {}, error: {}",
           mdiff,
-          manifest_clean_offset,
-          highest_producer_id,
-          deadline,
-          _as,
-          checks_disabled ? cluster::segment_validated::no
-                          : cluster::segment_validated::yes);
+          error.message());
+
         if (
           error != cluster::errc::success
           && error != cluster::errc::not_leader) {
