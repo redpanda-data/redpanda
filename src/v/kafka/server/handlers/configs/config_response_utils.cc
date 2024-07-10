@@ -898,6 +898,11 @@ config_response_container_t make_topic_configs(
         config::shard_local_cfg()
           .initial_retention_local_target_ms_default.desc()));
 
+    static_assert(
+      supported_topic_properties.size() == 29,
+      "Reminder to update this method constructing the DescribeConfigs "
+      "response when a new topic property is introduced");
+
     return result;
 }
 

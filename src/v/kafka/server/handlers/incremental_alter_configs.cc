@@ -301,6 +301,11 @@ create_topic_properties_update(
                 continue;
             }
 
+            static_assert(
+              supported_topic_properties.size() == 29,
+              "Reminder to update the incremental alter configs handler when a "
+              "new topic property is introduced");
+
         } catch (const validation_error& e) {
             vlog(
               klog.debug,

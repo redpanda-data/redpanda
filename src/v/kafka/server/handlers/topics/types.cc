@@ -259,6 +259,11 @@ to_cluster_type(const creatable_topic& t) {
           p, kafka::config_resource_operation::set);
     }
 
+    static_assert(
+      supported_topic_properties.size() == 29,
+      "Reminder to update this method parsing the CreateTopic request when a "
+      "new topic property is introduced");
+
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
