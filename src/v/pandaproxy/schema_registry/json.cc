@@ -11,6 +11,8 @@
 
 #include "pandaproxy/schema_registry/json.h"
 
+#include "json/chunked_buffer.h"
+#include "json/chunked_input_stream.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
 #include "json/schema.h"
@@ -47,11 +49,11 @@
 namespace pandaproxy::schema_registry {
 
 struct json_schema_definition::impl {
-    ss::sstring to_json() const {
-        json::StringBuffer buf;
-        json::Writer<json::StringBuffer> wrt(buf);
+    iobuf to_json() const {
+        json::chunked_buffer buf;
+        json::Writer<json::chunked_buffer> wrt(buf);
         doc.Accept(wrt);
-        return {buf.GetString(), buf.GetLength()};
+        return std::move(buf).as_iobuf();
     }
 
     explicit impl(json::Document doc, std::string_view name)
@@ -638,8 +640,6 @@ constexpr std::string_view json_draft_7_metaschema = R"json(
 }
 )json";
 
-result<json::Document> parse_json(std::string_view v);
-
 ss::future<> check_references(sharded_store& store, canonical_schema schema) {
     for (const auto& ref : schema.def().refs()) {
         co_await store.is_subject_version_deleted(ref.sub, ref.version)
@@ -813,9 +813,9 @@ result<void> try_validate_json_schema(json::Document const& schema) {
     return first_error.value();
 }
 
-result<json::Document> parse_json(std::string_view v) {
+result<json::Document> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
-    auto schema_stream = rapidjson::MemoryStream{v.data(), v.size()};
+    auto schema_stream = json::chunked_input_stream{std::move(buf)};
     auto schema = json::Document{};
     if (schema.ParseStream(schema_stream).HasParseError()) {
         // not a valid json document, return error
@@ -1851,7 +1851,8 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
 
 ss::future<json_schema_definition>
 make_json_schema_definition(sharded_store&, canonical_schema schema) {
-    auto doc = parse_json(schema.def().raw()()).value(); // throws on error
+    auto doc
+      = parse_json(schema.def().shared_raw()()).value(); // throws on error
     std::string_view name = schema.sub()();
     auto refs = std::move(schema).def().refs();
     co_return json_schema_definition{
@@ -1862,7 +1863,7 @@ make_json_schema_definition(sharded_store&, canonical_schema schema) {
 ss::future<canonical_schema> make_canonical_json_schema(
   sharded_store& store, unparsed_schema unparsed_schema) {
     // TODO BP: More validation and normalisation
-    parse_json(unparsed_schema.def().shared_raw()()).value(); // throws on error
+    parse_json(unparsed_schema.def().shared_raw()).value(); // throws on error
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
     auto [def, type, refs] = std::move(unparsed).destructure();
 

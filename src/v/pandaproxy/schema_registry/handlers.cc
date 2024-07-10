@@ -524,7 +524,8 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
     auto get_res = co_await rq.service().schema_store().get_subject_schema(
       sub, version, inc_del);
 
-    rp.rep->write_body("json", get_res.schema.def().raw()());
+    rp.rep->write_body(
+      "json", ppj::as_body_writer(std::move(get_res.schema).def().raw()()));
     co_return rp;
 }
 
@@ -543,7 +544,7 @@ get_subject_versions_version_referenced_by(
     auto references = co_await rq.service().schema_store().referenced_by(
       sub, version);
 
-    rp.rep->write_body("json", ppj::rjson_serialize(references));
+    rp.rep->write_body("json", ppj::rjson_serialize(std::move(references)));
     co_return rp;
 }
 
