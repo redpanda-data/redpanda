@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cluster/health_monitor_types.h"
+#include "cluster/topic_properties.h"
 #include "cluster/types.h"
 #include "compat/json.h"
 #include "compat/model_json.h"
@@ -624,6 +625,14 @@ inline void rjson_serialize(
     write_exceptional_member_type(w, "write_caching", tps.write_caching);
     write_member(w, "flush_bytes", tps.flush_bytes);
     write_member(w, "flush_ms", tps.flush_ms);
+
+    static_assert(
+      std::tuple_size_v<
+        decltype(std::declval<cluster::topic_properties>().serde_fields())>
+        == 31,
+      "Reminder to update this method when a new topic property is "
+      "introduced");
+
     w.EndObject();
 }
 
@@ -690,6 +699,11 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "write_caching", obj.write_caching);
     read_member(rd, "flush_bytes", obj.flush_bytes);
     read_member(rd, "flush_ms", obj.flush_ms);
+
+    static_assert(
+      std::tuple_size_v<decltype(obj.serde_fields())> == 31,
+      "Reminder to update this method when a new topic property is "
+      "introduced");
 }
 
 inline void rjson_serialize(

@@ -323,6 +323,14 @@ topic_properties metadata_cache::get_default_properties() const {
     tp.retention_local_target_ms = tristate<std::chrono::milliseconds>{
       get_default_retention_local_target_ms()};
 
+    // TODO(gellert.nagy): explicitly state all of the defaults here and add the
+    // missing defaults
+
+    static_assert(
+      std::tuple_size_v<decltype(tp.serde_fields())> == 31,
+      "Reminder to update this method (returning the default value of each "
+      "topic property) when a new topic property is introduced");
+
     return tp;
 }
 

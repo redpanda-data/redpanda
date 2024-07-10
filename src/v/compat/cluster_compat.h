@@ -357,6 +357,11 @@ struct compat_check<cluster::topic_properties> {
           wr, "write_caching", obj.write_caching);
         json_write(flush_ms);
         json_write(flush_bytes);
+
+        static_assert(
+          std::tuple_size_v<decltype(obj.serde_fields())> == 31,
+          "Reminder to update this method when a new topic property is "
+          "introduced");
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -392,6 +397,12 @@ struct compat_check<cluster::topic_properties> {
         json_read(write_caching);
         json_read(flush_ms);
         json_read(flush_bytes);
+
+        static_assert(
+          std::tuple_size_v<decltype(obj.serde_fields())> == 31,
+          "Reminder to update this method when a new topic property is "
+          "introduced");
+
         return obj;
     }
 

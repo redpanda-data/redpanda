@@ -22,6 +22,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/ntp_config.h"
+#include "topic_properties.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -29,6 +30,7 @@
 #include <algorithm>
 #include <optional>
 #include <span>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -933,6 +935,25 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(properties.write_caching, overrides.write_caching);
     incremental_update(properties.flush_ms, overrides.flush_ms);
     incremental_update(properties.flush_bytes, overrides.flush_bytes);
+
+    constexpr auto all_properties
+      = std::tuple_size_v<decltype(properties.serde_fields())>;
+    constexpr auto updated_properties
+      = std::tuple_size_v<decltype(overrides.serde_fields())>;
+    constexpr auto not_updated_properties
+      = std::tuple_size_v<decltype(std::make_tuple(
+        std::declval<topic_properties>().recovery,
+        std::declval<topic_properties>().read_replica,
+        std::declval<topic_properties>().read_replica_bucket,
+        std::declval<topic_properties>().remote_topic_properties,
+        std::declval<topic_properties>().mpx_virtual_cluster_id))>;
+    static_assert(
+      all_properties == updated_properties + not_updated_properties);
+    static_assert(
+      all_properties == 31,
+      "Reminder to update this method (applying topic property updates) when a "
+      "new topic property is introduced");
+
     // no configuration change, no need to generate delta
     if (properties == properties_snapshot) {
         co_return errc::success;
