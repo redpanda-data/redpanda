@@ -8,6 +8,9 @@ redpanda_cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
+        "@boost//:lockfree",
+        "@seastar",
     ],
 )
 
@@ -19,6 +22,8 @@ redpanda_cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
+        "@fmt",
+        "@seastar",
     ],
 )
 
