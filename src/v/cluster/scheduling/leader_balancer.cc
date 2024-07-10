@@ -134,6 +134,10 @@ void leader_balancer::on_leadership_change(
     // Update in flight state
     if (auto it = _in_flight_changes.find(group);
         it != _in_flight_changes.end()) {
+        vlog(
+          clusterlog.trace,
+          "transfer of group {} finished, removing from in-flight set",
+          group);
         _in_flight_changes.erase(it);
         check_unregister_leadership_change_notification();
 
@@ -511,6 +515,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::yes;
     }
 
+    size_t num_dispatched = 0;
     for (size_t i = 0; i < allowed_change_cnt; i++) {
         if (should_stop_balance()) {
             co_return ss::stop_iteration::yes;
@@ -519,17 +524,30 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         auto transfer = strategy->find_movement(muted_groups());
         if (!transfer) {
             vlog(
-              clusterlog.debug,
-              "No leadership balance improvements found with total delta {}, "
-              "number of muted groups {}",
+              clusterlog.info,
+              "Leadership balancer tick: no further improvements found, "
+              "total error: {:.4}, number of muted groups: {}, "
+              "number in flight: {}, dispatched in this tick: {}",
               strategy->error(),
-              _muted.size());
+              _muted.size(),
+              _in_flight_changes.size(),
+              num_dispatched);
             if (!_timer.armed()) {
                 _timer.arm(_idle_timeout());
             }
             _probe.leader_transfer_no_improvement();
             co_return ss::stop_iteration::yes;
         }
+
+        vlog(
+          clusterlog.trace,
+          "dispatching transfer of group {}: {} -> {}, "
+          "current num_dispatched: {}, in_flight: {}",
+          transfer->group,
+          transfer->from,
+          transfer->to,
+          num_dispatched,
+          _in_flight_changes.size());
 
         _in_flight_changes[transfer->group] = {
           *transfer, clock_type::now() + _mute_timeout()};
@@ -539,10 +557,12 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         if (!success) {
             vlog(
               clusterlog.info,
-              "Error transferring leadership group {} from {} to {}",
+              "Error transferring leadership group {} from {} to {} "
+              "(already dispatched in this tick: {})",
               transfer->group,
               transfer->from,
-              transfer->to);
+              transfer->to,
+              num_dispatched);
 
             _in_flight_changes.erase(transfer->group);
             check_unregister_leadership_change_notification();
@@ -562,6 +582,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
         } else {
             _probe.leader_transfer_succeeded();
+            num_dispatched += 1;
             strategy->apply_movement(*transfer);
         }
 
@@ -900,13 +921,6 @@ leader_balancer::index_type leader_balancer::build_index(
 }
 
 ss::future<bool> leader_balancer::do_transfer(reassignment transfer) {
-    vlog(
-      clusterlog.debug,
-      "Transferring leadership for group {} from {} to {}",
-      transfer.group,
-      transfer.from,
-      transfer.to);
-
     if (transfer.from.node_id == _raft0->self().id()) {
         co_return co_await do_transfer_local(transfer);
     } else {
@@ -1033,10 +1047,6 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
           res.error().message());
         co_return false;
     } else if (res.value().data.success) {
-        vlog(
-          clusterlog.trace,
-          "Leadership transfer of group {} succeeded",
-          transfer.group);
         co_return true;
     } else {
         vlog(
