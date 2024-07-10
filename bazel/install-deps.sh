@@ -39,6 +39,7 @@ deb_deps=(
   cargo
   rustc
   bison
+  pkgconf
 )
 
 fedora_deps=(
@@ -63,6 +64,7 @@ case "$ID" in
   ubuntu | debian | pop)
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y "${deb_deps[@]}"
+    which clang-16 || apt install -y clang-16
     if [[ $CLEAN_PKG_CACHE == true ]]; then
       rm -rf /var/lib/apt/lists/*
     fi
