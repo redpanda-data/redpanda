@@ -265,3 +265,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "expiring_promise",
+    hdrs = [
+        "expiring_promise.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)

@@ -164,3 +164,18 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "expiring_promise_test",
+    timeout = "short",
+    srcs = [
+        "expiring_promise_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:expiring_promise",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
