@@ -33,6 +33,8 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/max_cardinality_matching.hpp>
 #include <boost/math/special_functions/ulp.hpp>
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
@@ -1249,11 +1251,48 @@ bool is_positive_combinator_superset(
         break;
     }
 
-    throw as_exception(invalid_schema(fmt::format(
-      "{} not implemented. input: older: '{}', newer: '{}'",
-      __FUNCTION__,
-      pj{older},
-      pj{newer})));
+    // sizes are compatible, now we need to check that every schema from
+    // the smaller schema array has a unique compatible schema.
+    // To do so, we construct a bipartite graphs of the schemas with a vertex
+    // for each schema, and an edge for each pair (o ∈ older_schemas, n ∈
+    // newer_schemas), if is_superset(o, n). Then we compute the
+    // maximum_cardinality_matching and the result is compatible if all the
+    // schemas from the smaller schema_array are connected in this match. NOTE:
+    // older_schemas will have index [0, older_schemas.size()), newer_schemas
+    // will have index [older_schemas.size(),
+    // older_schemas.size()+newer_schemas.size()).
+    // TODO during this phase, all the subschemas from the smaller schema array
+    // need to have at least an edge, so we can early exit if is_superset if
+    // false for all the possible edges
+    using graph_t
+      = boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS>;
+    auto superset_graph = graph_t{older_schemas.Size() + newer_schemas.Size()};
+    for (auto o = 0u; o < older_schemas.Size(); ++o) {
+        for (auto n = 0u; n < newer_schemas.Size(); ++n) {
+            if (is_superset(older_schemas[o], newer_schemas[n])) {
+                // translate n for the graph
+                auto n_index = n + older_schemas.Size();
+                add_edge(o, n_index, superset_graph);
+            }
+        }
+    }
+
+    // find if for each sub_schema there is a distinct compatible sub_schema
+    auto mate_res = std::vector<graph_t::vertex_descriptor>(
+      superset_graph.vertex_set().size());
+    boost::edmonds_maximum_cardinality_matching(
+      superset_graph, mate_res.data());
+
+    if (
+      matching_size(superset_graph, mate_res.data())
+      != std::min(older_schemas.Size(), newer_schemas.Size())) {
+        // one of  sub schema was left out, meaning that it either had no valid
+        // is_superset() relation with the other schema array, or that the
+        // algorithm couldn't find a unique compatible pattern.
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace is_superset_impl
@@ -1348,9 +1387,6 @@ bool is_superset(
            "$schema",
            "definitions",
            "dependencies",
-           "allOf",
-           "anyOf",
-           "oneOf",
            // draft 6 unhandled keywords:
            "$comment",
            "$ref",
