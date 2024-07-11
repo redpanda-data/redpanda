@@ -1221,6 +1221,34 @@ bool is_positive_combinator_superset(
           pj{newer})));
     }
 
+    // same combinator for older and newer
+    auto combinator = older_comb.value();
+
+    auto older_schemas
+      = older.FindMember(to_keyword(combinator))->value.GetArray();
+    auto newer_schemas
+      = newer.FindMember(to_keyword(combinator))->value.GetArray();
+
+    // size differences between older_schemas and newer_schemas have different
+    // meaning based on combinator.
+    // TODO a denormalized schema could fail this check while being compatible
+    switch (combinator) {
+    case p_combinator::allOf:
+        if (older_schemas.Size() > newer_schemas.Size()) {
+            // older has more restrictions than newer, not compatible
+            return false;
+        }
+        break;
+    case p_combinator::anyOf:
+        [[fallthrough]];
+    case p_combinator::oneOf:
+        if (older_schemas.Size() < newer_schemas.Size()) {
+            // newer has more degrees of freedom than older, not compatible
+            return false;
+        }
+        break;
+    }
+
     throw as_exception(invalid_schema(fmt::format(
       "{} not implemented. input: older: '{}', newer: '{}'",
       __FUNCTION__,
