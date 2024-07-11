@@ -225,20 +225,29 @@ TEST_F_CORO(
 
     ASSERT_TRUE_CORO(!res);
 
-    ss::shared_promise<> may_resume_append;
-    available_promise<bool> reached_dispatch_append;
+    // Allocated on the heap as the lambda will outlive the scope of the test.
+    auto may_resume_append = ss::make_shared<ss::shared_promise<>>();
+    auto reached_dispatch_append = ss::make_shared<available_promise<bool>>();
+
+    // Ensure that we always resume the append operation to allow the test to
+    // exit in case of failure.
+    auto deferred_fix_nodes = ss::defer([may_resume_append] {
+        if (!may_resume_append->available()) {
+            may_resume_append->set_value();
+        }
+    });
 
     auto plagued_node = co_await with_leader(
       10s,
       [&reached_dispatch_append,
        &may_resume_append](raft::raft_node_instance& node) {
-          node.on_dispatch([&reached_dispatch_append, &may_resume_append](
+          node.on_dispatch([reached_dispatch_append, may_resume_append](
                              model::node_id, raft::msg_type t) {
               if (t == raft::msg_type::append_entries) {
-                  if (!reached_dispatch_append.available()) {
-                      reached_dispatch_append.set_value(true);
+                  if (!reached_dispatch_append->available()) {
+                      reached_dispatch_append->set_value(true);
                   }
-                  return may_resume_append.get_shared_future();
+                  return may_resume_append->get_shared_future();
               }
 
               return ss::now();
@@ -270,7 +279,7 @@ TEST_F_CORO(
             cluster::segment_validated::yes);
       });
 
-    co_await reached_dispatch_append.get_future();
+    co_await reached_dispatch_append->get_future();
 
     // Expecting this to fail as we have the replication blocked.
     auto sync_result_before_replication = co_await with_leader(
@@ -293,7 +302,7 @@ TEST_F_CORO(
     ASSERT_FALSE_CORO(second_sync_result_before_replication);
 
     // Allow replication to progress.
-    may_resume_append.set_value();
+    may_resume_append->set_value();
 
     // This sync will succeed and will wait for replication to progress.
     auto synced = co_await with_leader(
