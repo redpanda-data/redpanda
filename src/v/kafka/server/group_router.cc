@@ -294,10 +294,12 @@ group_router::abort_tx(cluster::abort_group_tx_request request) {
 }
 
 ss::future<std::pair<error_code, std::vector<listed_group>>>
-group_router::list_groups() {
+group_router::list_groups(group_manager::list_groups_filter_data filter_data) {
     using type = std::pair<error_code, std::vector<listed_group>>;
     return get_group_manager().map_reduce0(
-      [](group_manager& mgr) { return mgr.list_groups(); },
+      [filter_data = std::move(filter_data)](group_manager& mgr) {
+          return mgr.list_groups(filter_data);
+      },
       type{},
       [](type a, type b) {
           // reduce errors into `a` and retain the first

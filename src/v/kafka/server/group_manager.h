@@ -43,6 +43,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
 
 #include <span>
@@ -134,6 +135,12 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    struct list_groups_filter_data {
+        using states_filter_t = absl::flat_hash_set<group_state>;
+
+        states_filter_t states_filter;
+    };
+
 public:
     /// \brief Handle a JoinGroup request
     group::join_group_stages join_group(join_group_request&& request);
@@ -171,7 +178,8 @@ public:
 
     // returns the set of registered groups, and an error if one occurred while
     // retrieving the group list (e.g. coordinator_load_in_progress).
-    std::pair<error_code, std::vector<listed_group>> list_groups() const;
+    std::pair<error_code, std::vector<listed_group>>
+    list_groups(const list_groups_filter_data& filter_data = {}) const;
 
     described_group describe_group(const model::ntp&, const kafka::group_id&);
 

@@ -26,6 +26,7 @@
 #include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/wire.h"
+#include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
 #include "kafka/server/logger.h"
@@ -1558,7 +1559,7 @@ group_manager::offset_delete(offset_delete_request&& r) {
 }
 
 std::pair<error_code, std::vector<listed_group>>
-group_manager::list_groups() const {
+group_manager::list_groups(const list_groups_filter_data& filter_data) const {
     auto loading = std::any_of(
       _partitions.cbegin(),
       _partitions.cend(),
@@ -1570,14 +1571,22 @@ group_manager::list_groups() const {
     std::vector<listed_group> groups;
     for (const auto& it : _groups) {
         const auto& g = it.second;
-        groups.push_back(
-          {g->id(), g->protocol_type().value_or(protocol_type())});
+
+        auto no_filter_specified = filter_data.states_filter.empty();
+        auto matches_filter = filter_data.states_filter.contains(g->state());
+
+        if (no_filter_specified || matches_filter) {
+            groups.push_back(
+              {g->id(),
+               g->protocol_type().value_or(protocol_type()),
+               group_state_to_kafka_name(g->state())});
+        }
     }
 
     auto error = loading ? error_code::coordinator_load_in_progress
                          : error_code::none;
 
-    return std::make_pair(error, groups);
+    return std::make_pair(error, std::move(groups));
 }
 
 described_group
