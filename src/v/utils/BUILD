@@ -229,3 +229,23 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "base64",
+    srcs = [
+        "base64.cc",
+    ],
+    hdrs = [
+        "base64.h",
+    ],
+    exclude_layering_check = True,
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "@abseil-cpp//absl/strings",
+        "@base64",
+        "@seastar",
+    ],
+)

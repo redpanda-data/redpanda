@@ -133,3 +133,18 @@ redpanda_cc_btest_no_seastar(
         "@fmt",
     ],
 )
+
+redpanda_cc_btest(
+    name = "base64_test",
+    timeout = "short",
+    srcs = [
+        "base64_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:random",
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:base64",
+        "@boost//:test",
+    ],
+)
