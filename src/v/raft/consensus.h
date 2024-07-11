@@ -113,11 +113,12 @@ public:
       keep_snapshotted_log = keep_snapshotted_log::no);
 
     /// Initial call. Allow for internal state recovery
-    ss::future<>
-      start(std::optional<state_machine_manager_builder> = std::nullopt);
+    ss::future<> start(
+      std::optional<state_machine_manager_builder> = std::nullopt,
+      std::optional<xshard_transfer_state> = std::nullopt);
 
     /// Stop all communications.
-    ss::future<> stop();
+    ss::future<xshard_transfer_state> stop();
 
     /// Stop consensus instance from accepting requests
     void shutdown_input();
@@ -557,7 +558,7 @@ private:
     do_append_entries(append_entries_request&&);
     ss::future<install_snapshot_reply>
     do_install_snapshot(install_snapshot_request r);
-    ss::future<> do_start();
+    ss::future<> do_start(std::optional<xshard_transfer_state>);
 
     ss::future<result<replicate_result>> dispatch_replicate(
       append_entries_request,

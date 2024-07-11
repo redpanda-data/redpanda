@@ -759,6 +759,10 @@ using with_learner_recovery_throttle
 
 using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
 
+// Raft part of the struct that makes starting the partition
+// instance on the destination shard of the x-shard transfer easier.
+struct xshard_transfer_state {};
+
 } // namespace raft
 
 namespace reflection {

@@ -30,6 +30,14 @@
 namespace cluster {
 class partition_manager;
 
+// A struct holding in-memory state that can make starting the partition
+// instance on the destination shard of the x-shard transfer easier. Note that
+// it is strictly an optimization, as the partition must always be able to
+// perform a "cold start" from persistent state only.
+struct xshard_transfer_state {
+    raft::xshard_transfer_state raft;
+};
+
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently
 class partition : public ss::enable_lw_shared_from_this<partition> {
@@ -47,7 +55,8 @@ public:
     ~partition() = default;
 
     raft::group_id group() const;
-    ss::future<> start(state_machine_registry&);
+    ss::future<>
+    start(state_machine_registry&, const std::optional<xshard_transfer_state>&);
     ss::future<> stop();
 
     /// This method exposes reset mutex for the external subsystem

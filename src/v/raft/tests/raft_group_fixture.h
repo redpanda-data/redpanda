@@ -260,7 +260,7 @@ struct raft_node {
           })
           .then([this] {
               tstlog.info("Stopping raft at {}", broker.id());
-              return consensus->stop();
+              return consensus->stop().discard_result();
           })
           .then([this] {
               if (kill_eviction_stm_cb) {

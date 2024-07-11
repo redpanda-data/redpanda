@@ -272,7 +272,7 @@ void consensus::shutdown_input() {
     }
 }
 
-ss::future<> consensus::stop() {
+ss::future<xshard_transfer_state> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     shutdown_input();
     for (auto& idx : _fstats) {
@@ -300,6 +300,8 @@ ss::future<> consensus::stop() {
      */
     _metrics.clear();
     _probe->clear();
+
+    co_return xshard_transfer_state{};
 }
 
 consensus::success_reply consensus::update_follower_index(
@@ -1370,14 +1372,18 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
 }
 
 ss::future<> consensus::start(
-  std::optional<state_machine_manager_builder> stm_manager_builder) {
+  std::optional<state_machine_manager_builder> stm_manager_builder,
+  std::optional<xshard_transfer_state> xst_state) {
     if (stm_manager_builder) {
         _stm_manager = std::move(stm_manager_builder.value()).build(this);
     }
-    return ss::try_with_gate(_bg, [this] { return do_start(); });
+    return ss::try_with_gate(
+      _bg, [this, xst_state = std::move(xst_state)]() mutable {
+          return do_start(std::move(xst_state));
+      });
 }
 
-ss::future<> consensus::do_start() {
+ss::future<> consensus::do_start(std::optional<xshard_transfer_state>) {
     try {
         auto u = co_await _op_lock.get_units();
 

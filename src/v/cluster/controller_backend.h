@@ -14,6 +14,7 @@
 #include "base/outcome.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/partition_manager.h"
 #include "cluster/shard_placement_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -301,7 +302,8 @@ private:
     ss::future<> remove_from_shard_table(
       model::ntp, raft::group_id, model::revision_id log_revision);
 
-    ss::future<> shutdown_partition(ss::lw_shared_ptr<partition>);
+    ss::future<xshard_transfer_state>
+      shutdown_partition(ss::lw_shared_ptr<partition>);
 
     ss::future<std::error_code> transfer_partition(
       model::ntp, raft::group_id, model::revision_id log_revision);
@@ -405,6 +407,9 @@ private:
 
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
+    // Will hold xshard_transfer_state for partitions that are being transferred
+    // to this shard.
+    chunked_hash_map<model::ntp, xshard_transfer_state> _xst_states;
 
     cluster::notification_id_type _topic_table_notify_handle
       = notification_id_type_invalid;
