@@ -179,3 +179,18 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "retry_chain_node_test",
+    timeout = "short",
+    srcs = [
+        "retry_chain_node_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:retry_chain_node",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

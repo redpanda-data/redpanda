@@ -278,3 +278,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "retry_chain_node",
+    srcs = [
+        "retry_chain_node.cc",
+    ],
+    hdrs = [
+        "retry_chain_node.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/random:fast_prng",
+        "//src/v/ssx:sformat",
+        "@fmt",
+        "@seastar",
+    ],
+)
