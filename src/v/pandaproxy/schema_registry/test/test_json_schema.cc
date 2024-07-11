@@ -530,6 +530,15 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"oneOf": [true, false]})",
     .reader_is_compatible_with_writer = false,
   },
+  // positive combinators: subschema mismatch
+  {
+    // note: this fails because for writer, there isn't s distinct matching
+    // schema in reader
+    .reader_schema = R"({"oneOf": [{"type":"number"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type":"number", "multipleOf": 10}, {"type": "number", "multipleOf": 1.1}]})",
+    .reader_is_compatible_with_writer = false,
+  },
   //***** compatible section *****
   // atoms
   {
@@ -730,6 +739,14 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "integer", "not": {"type": "integer", "minimum": 10}})",
     .writer_schema
     = R"({"type": "integer", "not": {"type": "integer", "minimum": 5}})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators
+  {
+    .reader_schema
+    = R"({"oneOf": [{"type":"number", "multipleOf": 3}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type":"boolean"}, {"type": "number", "multipleOf": 9}]})",
     .reader_is_compatible_with_writer = true,
   },
 });
