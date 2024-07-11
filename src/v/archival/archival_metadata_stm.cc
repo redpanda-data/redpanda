@@ -35,12 +35,14 @@
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/record_batch_utils.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -454,19 +456,34 @@ command_batch_builder& command_batch_builder::update_highest_producer_id(
 
 ss::future<std::error_code> command_batch_builder::replicate() {
     _as.check();
-    return _stm.get()._lock.with([this]() {
-        vlog(
-          _stm.get()._logger.debug, "command_batch_builder::replicate called");
-        auto now = ss::lowres_clock::now();
-        auto timeout = now < _deadline ? _deadline - now : 0ms;
-        return _stm.get().do_sync(timeout, &_as).then([this](bool success) {
-            if (!success) {
-                return ss::make_ready_future<std::error_code>(errc::not_leader);
-            }
-            auto batch = std::move(_builder).build();
-            return _stm.get().do_replicate_commands(std::move(batch), _as);
-        });
-    });
+
+    auto units = co_await _stm.get()._lock.get_units(_as);
+
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate called");
+    auto now = ss::lowres_clock::now();
+    auto timeout = now < _deadline ? _deadline - now : 0ms;
+
+    // Block on syncing the STM.
+    auto did_sync = co_await _stm.get().do_sync(timeout, &_as);
+    if (!did_sync) {
+        co_return errc::not_leader;
+    }
+
+    auto batch = std::move(_builder).build();
+    auto f = _stm.get()
+               .do_replicate_commands(std::move(batch), _as)
+               .finally([u = std::move(units), h = _stm.get()._gate.hold()] {});
+
+    // The above do_replicate_commands call is not cancellable at every point
+    // due to the guarantees we need from the operation for linearizability. To
+    // respect callers' cancellation requests, we wrap the future in a
+    // cancellable future but leave the operation running.
+    //
+    // The operation can continue safely in background because it holds the
+    // lock and the gate. The lock also ensures that no concurrent replicate
+    // calls can be made and we won't leak continuations.
+    co_return co_await ssx::with_timeout_abortable(
+      std::move(f), model::no_timeout, _as);
 }
 
 command_batch_builder archival_metadata_stm::batch_start(
@@ -795,6 +812,16 @@ ss::future<bool> archival_metadata_stm::do_sync(
 
 ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
   model::record_batch batch, ss::abort_source& as) {
+    // It is critical that this method does not return except in the following
+    // cases:
+    // 1. The batch was successfully replicated with required consistency
+    //    level.
+    // 2. The batch failed to replicate but the leader stepped down.
+    //
+    // Otherwise, it will lead to _lock and _active_operation_res being reset
+    // early allowing for concurrent sync and replicate calls which will lead
+    // to race conditions/corruption/undefined behavior.
+
     vassert(
       !_lock.try_get_units().has_value(),
       "Attempt to replicate STM command while not under lock");
@@ -834,17 +861,11 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
 
     auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
     opts.set_force_flush();
-    auto fut = _raft->replicate(
+
+    auto result = co_await _raft->replicate(
       current_term,
       model::make_memory_record_batch_reader(std::move(batch)),
       opts);
-
-    // Raft's replicate() doesn't take an external abort source, and
-    // archiver is shut down before consensus, so we must wrap this
-    // with our abort source
-    fut = ssx::with_timeout_abortable(std::move(fut), model::no_timeout, as);
-
-    auto result = co_await std::move(fut);
     if (!result) {
         vlog(
           _logger.warn,
@@ -862,7 +883,7 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     }
 
     auto applied = co_await wait_no_throw(
-      result.value().last_offset, model::no_timeout, as);
+      result.value().last_offset, model::no_timeout);
     if (!applied) {
         if (as.abort_requested()) {
             co_return errc::shutting_down;
@@ -875,9 +896,6 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         co_return errc::replication_error;
     }
 
-    // We are under lock so it's guaranteed that the command that will
-    // trigger this is replicated by this call.
-    op_state_reset.cancel();
     co_return co_await std::move(apply_result);
 }
 
