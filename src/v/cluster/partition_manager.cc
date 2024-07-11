@@ -120,16 +120,31 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
   raft::keep_snapshotted_log keep_snapshotted_log,
-  std::optional<cloud_storage::remote_label> remote_label) {
+  std::optional<cloud_storage::remote_label> remote_label,
+  std::optional<model::topic_namespace> topic_namespace_override) {
     auto guard = _gate.hold();
+    // topic_namespace_override is used in case of a cluster migration.
+    // The original ("source") topic name must be used in the tiered
+    // storage/archival subsystems, while the alias ("destination") will be used
+    // for local storage on the new cluster.
+    if (topic_namespace_override.has_value()) {
+        vlog(
+          clusterlog.info,
+          "Topic namespace override present for ntp {}: topic namespace {} "
+          "used for remote path providing",
+          ntp_cfg.ntp(),
+          topic_namespace_override.value());
+    }
+
     // NOTE: while the source cluster UUIDs of the path providers will
     // ultimately be the same, this is a different path provider than what will
     // be used at runtime by the partition. The latter is owned by the archival
     // metadata STM and its lifecycle is therefore tied to the partition, which
     // hasn't been constructed yet.
     cloud_storage::remote_path_provider path_provider(
-      remote_label, std::nullopt);
+      remote_label, topic_namespace_override);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp, path_provider);
+
     auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
       = dl_result;
     if (logs_recovered) {
