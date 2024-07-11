@@ -314,3 +314,12 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "move_canary",
+    hdrs = [
+        "move_canary.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+)

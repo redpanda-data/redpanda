@@ -205,3 +205,18 @@ redpanda_cc_btest_no_seastar(
         "//src/v/utils:bottomless_token_bucket",
     ],
 )
+
+redpanda_cc_btest_no_seastar(
+    name = "move_canary_test",
+    timeout = "short",
+    srcs = [
+        "move_canary_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=move_canary",
+    ],
+    deps = [
+        "//src/v/utils:move_canary",
+        "@boost//:test",
+    ],
+)
