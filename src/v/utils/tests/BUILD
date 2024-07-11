@@ -148,3 +148,19 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "directory_walker_test",
+    timeout = "short",
+    srcs = [
+        "directory_walker_test.cc",
+    ],
+    deps = [
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:directory_walker",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

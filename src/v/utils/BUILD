@@ -249,3 +249,19 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "directory_walker",
+    srcs = [
+        "directory_walker.cc",
+    ],
+    hdrs = [
+        "directory_walker.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
