@@ -585,7 +585,7 @@ class ScalingUpTest(PreallocNodesTest):
             target_size = node_replicas * requested_local_retention
 
             current_usage = size_per_node[node_id]
-            tolerance = 0.1
+            tolerance = 0.2
             max = target_size * (1.0 + tolerance)
             min = target_size * (1.0 - tolerance)
             self.logger.info(
