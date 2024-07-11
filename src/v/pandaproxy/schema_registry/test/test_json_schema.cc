@@ -692,6 +692,23 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
           data.writer_schema,
           data.reader_is_compatible_with_writer)) {
             try {
+                // sanity check that each schema is compatible with itself
+                BOOST_CHECK_MESSAGE(
+                  pps::check_compatible(
+                    make_json_schema(data.reader_schema),
+                    make_json_schema(data.reader_schema)),
+                  fmt::format(
+                    "reader '{}' should be compatible with itself",
+                    data.reader_schema));
+                BOOST_CHECK_MESSAGE(
+                  pps::check_compatible(
+                    make_json_schema(data.writer_schema),
+                    make_json_schema(data.writer_schema)),
+                  fmt::format(
+                    "writer '{}' should be compatible with itself",
+                    data.writer_schema));
+
+                // check compatibility (or not) reader->writer
                 BOOST_CHECK_EQUAL(
                   data.reader_is_compatible_with_writer,
                   pps::check_compatible(
