@@ -1039,9 +1039,7 @@ void consensus::dispatch_vote(bool leadership_transfer) {
                           }
                           // background
                           ssx::spawn_with_gate(
-                            _bg,
-                            [vstm = std::move(vstm),
-                             f = std::move(f)]() mutable {
+                            _bg, [f = std::move(f)]() mutable {
                                 return std::move(f);
                             });
 
