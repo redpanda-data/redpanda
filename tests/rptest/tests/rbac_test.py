@@ -17,7 +17,7 @@ from ducktape.utils.util import wait_until
 
 import ducktape.errors
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, ok_to_fail_fips
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import (Admin, RedpandaNode, RoleMemberList,
                                    RoleUpdate, RoleErrorCode, RoleError,
@@ -640,6 +640,7 @@ class RBACLicenseTest(RBACTestBase):
         )
 
     @cluster(num_nodes=1)
+    @ok_to_fail_fips  # See NOTE below
     def test_license_nag(self):
         wait_until(self._license_nag_is_set,
                    timeout_sec=30,
@@ -647,6 +648,8 @@ class RBACLicenseTest(RBACTestBase):
 
         self.logger.debug("Ensuring no license nag")
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        # NOTE: This assertion will FAIL if running in FIPS mode because
+        # being in FIPS mode will trigger the license nag
         assert not self._has_license_nag()
 
         self.logger.debug("Adding a role")
