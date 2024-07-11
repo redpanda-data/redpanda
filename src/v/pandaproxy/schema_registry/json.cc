@@ -1169,6 +1169,54 @@ bool is_not_combinator_superset(
     // both do not have a "not" key, compatible
     return true;
 }
+
+enum class p_combinator { oneOf, allOf, anyOf };
+json::Value to_keyword(p_combinator c) {
+    switch (c) {
+    case p_combinator::oneOf:
+        return json::Value{"oneOf"};
+    case p_combinator::allOf:
+        return json::Value{"allOf"};
+    case p_combinator::anyOf:
+        return json::Value{"anyOf"};
+    }
+}
+
+bool is_positive_combinator_superset(
+  json::Value const& older, json::Value const& newer) {
+    auto get_combinator = [](json::Value const& v) {
+        auto res = std::optional<p_combinator>{};
+        for (auto c :
+             {p_combinator::oneOf, p_combinator::allOf, p_combinator::anyOf}) {
+            if (v.HasMember(to_keyword(c))) {
+                if (res.has_value()) {
+                    // ensure that only one combinator is present in the schema.
+                    // json schema allows more than one of {"oneOf", "anyOf",
+                    // "allOf"} to appear, but it's not currently supported for
+                    // is_superset
+                    throw as_exception(invalid_schema(
+                      fmt::format("{} has more than one combinator", pj{v})));
+                }
+                res = c;
+            }
+        }
+        return res;
+    };
+
+    auto older_comb = get_combinator(older);
+    auto newer_comb = get_combinator(newer);
+    if (!older_comb.has_value() && !newer_comb.has_value()) {
+        // both without a combinator, compatible
+        return true;
+    }
+
+    throw as_exception(invalid_schema(fmt::format(
+      "{} not implemented. input: older: '{}', newer: '{}'",
+      __FUNCTION__,
+      pj{older},
+      pj{newer})));
+}
+
 } // namespace is_superset_impl
 
 using namespace is_superset_impl;
@@ -1250,6 +1298,10 @@ bool is_superset(
     }
 
     if (!is_not_combinator_superset(older, newer)) {
+        return false;
+    }
+
+    if (!is_positive_combinator_superset(older, newer)) {
         return false;
     }
 
