@@ -501,6 +501,19 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
     .expected_exception = true,
   },
+  // positive combinators: mismatch of type
+  {
+    .reader_schema = R"({"type": "integer"})",
+    .writer_schema = R"({"type": "integer", "anyOf": [true]})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
+  {
+    .reader_schema = R"({"allOf": [true]})",
+    .writer_schema = R"({"anyOf": [true]})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
   //***** compatible section *****
   // atoms
   {
