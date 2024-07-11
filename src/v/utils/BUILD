@@ -297,3 +297,20 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "bottomless_token_bucket",
+    srcs = [
+        "bottomless_token_bucket.cc",
+    ],
+    hdrs = [
+        "bottomless_token_bucket.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@fmt",
+        "@seastar",
+    ],
+)
