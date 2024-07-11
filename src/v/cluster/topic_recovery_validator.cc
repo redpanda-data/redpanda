@@ -301,7 +301,8 @@ maybe_validate_recovery_topic(
     // start validation for each partition, collect the results and return
     // them
     const cloud_storage::remote_path_provider path_provider(
-      assignable_config.cfg.properties.remote_label, std::nullopt);
+      assignable_config.cfg.properties.remote_label,
+      assignable_config.cfg.properties.topic_namespace_override);
 
     co_await ss::max_concurrent_for_each(
       enumerate_partitions, concurrency, [&](model::partition_id p) {
