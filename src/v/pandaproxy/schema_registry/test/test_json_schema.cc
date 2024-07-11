@@ -494,6 +494,13 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": ["integer", "number"], "not": {"type": "integer"}})",
     .reader_is_compatible_with_writer = false,
   },
+  // positive combinators: multiple combs
+  {
+    .reader_schema = R"({"type": "integer", "oneOf": [true], "anyOf": [true]})",
+    .writer_schema = R"({"type": "integer"})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
   //***** compatible section *****
   // atoms
   {
