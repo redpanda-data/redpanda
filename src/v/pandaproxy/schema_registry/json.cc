@@ -1210,6 +1210,17 @@ bool is_positive_combinator_superset(
         return true;
     }
 
+    if (older_comb != newer_comb) {
+        // different combinators. there might be cases where this is compatible,
+        // but this is not fully implemented here
+        throw as_exception(invalid_schema(fmt::format(
+          "{} not implemented for different combinators. input: older: '{}', "
+          "newer: '{}'",
+          __FUNCTION__,
+          pj{older},
+          pj{newer})));
+    }
+
     throw as_exception(invalid_schema(fmt::format(
       "{} not implemented. input: older: '{}', newer: '{}'",
       __FUNCTION__,
