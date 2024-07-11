@@ -514,6 +514,22 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
     .expected_exception = true,
   },
+  // positive combinators: mismatch of size
+  {
+    .reader_schema = R"({"allOf": [true, false]})",
+    .writer_schema = R"({"allOf": [true]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"anyOf": [true]})",
+    .writer_schema = R"({"anyOf": [true, false]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"oneOf": [true]})",
+    .writer_schema = R"({"oneOf": [true, false]})",
+    .reader_is_compatible_with_writer = false,
+  },
   //***** compatible section *****
   // atoms
   {
