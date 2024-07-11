@@ -52,10 +52,13 @@ class RpkGroupCommandsTest(RedpandaTest):
         assert partition.log_end_offset == exp_log_end_offset
         assert partition.lag == exp_lag
 
+    def _assert_eq(self, lhs, rhs):
+        assert lhs == rhs, f"Unexpected: {lhs} != {rhs}"
+
     @cluster(num_nodes=3)
     def test_group_list_and_delete(self):
         """
-        Simple listing and deleting one of the groups.
+        Simple listing and deleting one of the groups. Also tests group state-based filtering.
         """
         topic = "test_group"
         self._rpk_produce_to_topic(topic, 20)
@@ -67,13 +70,24 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.rpk.consume(topic, group=group_2, n=10)
 
         # groups will show up until they're deleted or until all offsets expire
-        groups = self.rpk.group_list_names()
-        assert group_1 in groups
-        assert group_2 in groups
+        group_names = self.rpk.group_list_names()
+        assert group_1 in group_names
+        assert group_2 in group_names
 
         self.rpk.group_delete(group_1)
-        groups = self.rpk.group_list_names()
-        assert group_1 not in groups
+        group_names = self.rpk.group_list_names()
+        assert group_1 not in group_names
+
+        all_groups = self.rpk.group_list()
+        self._assert_eq(all_groups[0].group, group_2)
+        self._assert_eq(all_groups[0].state, "Empty")
+
+        e_s_groups = self.rpk.group_list(states=["Empty", "Stable"])
+        self._assert_eq(e_s_groups[0].group, group_2)
+        self._assert_eq(e_s_groups[0].state, "Empty")
+
+        pr_groups = self.rpk.group_list(states=["PreparingRebalance"])
+        self._assert_eq(len(pr_groups), 0)
 
     @cluster(num_nodes=5)
     def test_group_describe(self):
