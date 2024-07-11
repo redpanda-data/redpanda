@@ -146,7 +146,7 @@ public:
         return model::offset_cast(model::prev_offset(result.value()));
     }
 
-    ss::future<kafka::offset>
+    ss::future<std::optional<kafka::offset>>
     offset_at_timestamp(model::timestamp ts, ss::abort_source* as) final {
         auto result = co_await _partition.timequery(storage::timequery_config(
           _partition.start_offset(),
@@ -157,7 +157,7 @@ public:
           /*as=*/*as,
           /*client_addr=*/std::nullopt));
         if (!result.has_value()) {
-            co_return kafka::offset::min();
+            co_return std::nullopt;
         }
         co_return model::offset_cast(result->offset);
     }
