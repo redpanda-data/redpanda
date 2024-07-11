@@ -220,3 +220,18 @@ redpanda_cc_btest_no_seastar(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest_no_seastar(
+    name = "stable_iterator_test",
+    timeout = "short",
+    srcs = [
+        "stable_iterator_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=stable_iterator_test",
+    ],
+    deps = [
+        "//src/v/utils:stable_iterator",
+        "@boost//:test",
+    ],
+)

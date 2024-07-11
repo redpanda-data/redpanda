@@ -323,3 +323,31 @@ redpanda_cc_library(
     include_prefix = "utils",
     visibility = ["//visibility:public"],
 )
+
+redpanda_cc_library(
+    name = "exceptions",
+    hdrs = [
+        "exceptions.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "stable_iterator",
+    hdrs = [
+        "stable_iterator_adaptor.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":exceptions",
+        "//src/v/base",
+        "@boost//:iterator",
+        "@fmt",
+    ],
+)
