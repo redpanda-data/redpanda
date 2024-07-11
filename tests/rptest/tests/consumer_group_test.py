@@ -556,14 +556,14 @@ class ConsumerGroupTest(RedpandaTest):
         ev_loop.close()
 
         rpk = RpkTool(self.redpanda)
-        list = rpk.group_list()
+        list = rpk.group_list_names()
 
         assert len(list) == groups_in_round * rounds
 
         # restart redpanda and check recovery
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
-        list = rpk.group_list()
+        list = rpk.group_list_names()
 
         assert len(list) == groups_in_round * rounds
 

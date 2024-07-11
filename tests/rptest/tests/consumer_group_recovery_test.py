@@ -73,7 +73,7 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
         self.logger.debug(f"Issue ListGroups, expect {num_groups} groups")
 
         def do_list_groups():
-            res = rpk.group_list()
+            res = rpk.group_list_names()
 
             if res is None:
                 return False

@@ -67,12 +67,12 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.rpk.consume(topic, group=group_2, n=10)
 
         # groups will show up until they're deleted or until all offsets expire
-        groups = self.rpk.group_list()
+        groups = self.rpk.group_list_names()
         assert group_1 in groups
         assert group_2 in groups
 
         self.rpk.group_delete(group_1)
-        groups = self.rpk.group_list()
+        groups = self.rpk.group_list_names()
         assert group_1 not in groups
 
     @cluster(num_nodes=5)
