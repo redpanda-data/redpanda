@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
@@ -92,10 +93,12 @@ class TxAdminTest(RedpandaTest):
         producer1 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
+            'transaction.timeout.ms': 3600000,  # avoid auto timeout
         })
         producer2 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '1',
+            'transaction.timeout.ms': 3600000,  # avoid auto timeout
         })
         producer1.init_transactions()
         producer2.init_transactions()
@@ -110,45 +113,61 @@ class TxAdminTest(RedpandaTest):
         producer1.flush()
         producer2.flush()
 
-        expected_pids = None
-
         txs_info = self.admin.get_transactions(topic.name, partition, "kafka")
-
-        expected_pids = set(
+        expected_pids = list(
             map(self.extract_pid, txs_info['active_transactions']))
-        assert (len(expected_pids) == 2)
+        assert len(expected_pids) == 2, expected_pids
 
-        abort_tx = list(expected_pids)[0]
-        expected_pids.discard(abort_tx)
+        # pick a pid to mark for expiration
+        producer_to_expire = expected_pids[0]
+        untouched_producer = expected_pids[1]
 
         def mark_expired(topic, partition):
             try:
-                self.admin.mark_transaction_expired(topic.name, partition, {
-                    "id": abort_tx[0],
-                    "epoch": abort_tx[1]
-                }, "kafka")
+                self.admin.mark_transaction_expired(
+                    topic.name, partition, {
+                        "id": producer_to_expire[0],
+                        "epoch": producer_to_expire[1],
+                    }, "kafka")
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code != 404:
                     raise
             return True
 
-        for topic in self.topics:
-            for partition in range(topic.partition_count):
-                wait_until(lambda: mark_expired(topic, partition),
-                           timeout_sec=10,
-                           backoff_sec=1,
-                           retry_on_exc=True)
+        # Pick a random partition and expire the producer
+        # Note that each producer is producing to all ntps
+        # so the expiration can be triggered from any of the ntps
+        # and should be propagated to all the ntps part of the
+        # the transaction.
+        random_topic = random.choice(self.topics)
+        random_partition = random.randint(0, random_topic.partition_count - 1)
+        wait_until(lambda: mark_expired(random_topic, random_partition),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True)
 
-                txs_info = self.admin.get_transactions(topic.name, partition,
-                                                       "kafka")
-                assert ('expired_transactions' not in txs_info)
+        def wait_for_expiry():
+            ntp_expiration_status = []
+            for topic in self.topics:
+                for partition in range(topic.partition_count):
+                    txs_info = self.admin.get_transactions(
+                        topic.name, partition, "kafka")
+                    active_pids = [
+                        self.extract_pid(tx)
+                        for tx in txs_info["active_transactions"]
+                    ]
+                    expiration_status = len(
+                        active_pids
+                    ) == 1 and producer_to_expire not in active_pids and untouched_producer in active_pids
+                    ntp_expiration_status.append(expiration_status)
+            return all(ntp_expiration_status)
 
-                assert (len(expected_pids) == len(
-                    txs_info['active_transactions']))
-                for tx in txs_info['active_transactions']:
-                    assert (self.extract_pid(tx) in expected_pids)
-                    assert (tx['status'] == 'ongoing')
-                    assert (tx['timeout_ms'] == 60000)
+        wait_until(
+            wait_for_expiry,
+            timeout_sec=30,
+            backoff_sec=3,
+            err_msg=
+            f"Transaction for producer {producer_to_expire} did not expire")
 
     @cluster(num_nodes=3)
     def test_all_transactions(self):

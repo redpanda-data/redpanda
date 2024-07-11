@@ -1152,6 +1152,13 @@ ss::future<> admin_server::throw_on_error(
                 "stabilized yet: {}",
                 ec.message()),
               ss::http::reply::status_type::service_unavailable);
+        case cluster::tx::errc::stale:
+            throw ss::httpd::base_exception(
+              fmt::format(
+                "Stale request, check the transaction state before retrying: "
+                "{}",
+                ec.message()),
+              ss::http::reply::status_type::unprocessable_entity);
 
         default:
             throw ss::httpd::server_error_exception(
