@@ -177,6 +177,14 @@ class CertificateRevocationTest(RedpandaTest):
                 timeout=10,
             )
 
+        def expect_connection_exception(node: ClusterNode) -> bool:
+            with expect_exception((requests.exceptions.SSLError,
+                                   requests.exceptions.ConnectionError),
+                                  lambda e: "certificate revoked" in str(
+                                      e) or "Connection aborted" in str(e)):
+                get_topics(node)
+            return True
+
         node = self.redpanda.nodes[0]
 
         with get_topics(node) as res:
@@ -185,11 +193,11 @@ class CertificateRevocationTest(RedpandaTest):
         self.tls.revoke_cert(self.user_cert)
         self.redpanda.write_crl_file(node, self.tls.ca)
 
-        with expect_exception((requests.exceptions.SSLError,
-                               requests.exceptions.ConnectionError),
-                              lambda e: "certificate revoked" in str(
-                                  e) or "Connection aborted" in str(e)):
-            get_topics(node)
+        wait_until(lambda: expect_connection_exception(node),
+                   timeout_sec=5,
+                   backoff_sec=0.5,
+                   err_msg="Did not receive expected SSL exception",
+                   retry_on_exc=True)
 
         with get_topics(self.redpanda.nodes[1]) as res:
             assert res.status_code == 200, f"Bad status: {res.status_code}"
