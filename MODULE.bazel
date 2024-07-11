@@ -73,6 +73,9 @@ use_repo(non_module_dependencies, "lksctp")
 use_repo(non_module_dependencies, "numactl")
 use_repo(non_module_dependencies, "openssl")
 use_repo(non_module_dependencies, "openssl-fips")
+
+# non-BCR rapidjson is used because BCR publishes v1.1.0 from 2016, and Redpanda
+# depends on newer changes since the last tagged upstream version.
 use_repo(non_module_dependencies, "rapidjson")
 use_repo(non_module_dependencies, "roaring")
 use_repo(non_module_dependencies, "seastar")
