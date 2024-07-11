@@ -281,8 +281,10 @@ class RedpandaKerberosConfigTest(RedpandaKerberosTestBase):
 
     def setUp(self):
         super(RedpandaKerberosConfigTest, self).setUp()
-        krb5_config = render_krb5_config(kdc_node=self.kdc.nodes[0],
-                                         realm="INCORRECT.EXAMPLE")
+        krb5_config = render_krb5_config(
+            kdc_node=self.kdc.nodes[0],
+            realm="INCORRECT.EXAMPLE",
+            permitted_enctypes=self.redpanda.permitted_enctypes)
         for node in self.redpanda.nodes:
             self.logger.debug(
                 f"Rendering incorrect KRB5 config for {node.name} using KDC node {self.kdc.nodes[0].name}"
