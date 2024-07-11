@@ -1829,7 +1829,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
         _term = r.term;
         _voted_for = {};
         term_changed = true;
-        do_step_down("voter_term_greater");
+        do_step_down("candidate_term_greater");
         if (_leader_id) {
             _leader_id = std::nullopt;
             trigger_leadership_notification();
@@ -1837,7 +1837,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
 
         // do not grant vote if log isn't ok
         if (!reply.log_ok) {
-            // even tough we step down we do not want to update the hbeat as it
+            // even though we step down we do not want to update the hbeat as it
             // would cause subsequent votes to fail (_hbeat is updated by the
             // leader)
             _hbeat = clock_type::time_point::min();
