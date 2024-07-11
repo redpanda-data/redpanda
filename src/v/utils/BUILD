@@ -81,8 +81,6 @@ redpanda_cc_library(
     ],
     include_prefix = "utils",
     visibility = ["//visibility:public"],
-    deps = [
-    ],
 )
 
 redpanda_cc_library(
@@ -93,6 +91,7 @@ redpanda_cc_library(
     include_prefix = "utils",
     visibility = ["//visibility:public"],
     deps = [
+        "@fmt",
     ],
 )
 
@@ -104,6 +103,9 @@ redpanda_cc_library(
     include_prefix = "utils",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
+        "@fmt",
+        "@seastar",
     ],
 )
 

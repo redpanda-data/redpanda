@@ -8,5 +8,7 @@ redpanda_cc_library(
     include_prefix = "storage",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
+        "@seastar",
     ],
 )

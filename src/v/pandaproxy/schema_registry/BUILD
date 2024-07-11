@@ -8,5 +8,7 @@ redpanda_cc_library(
     include_prefix = "pandaproxy/schema_registry",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/strings:string_switch",
+        "@seastar",
     ],
 )
