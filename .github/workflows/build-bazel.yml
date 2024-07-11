@@ -12,21 +12,7 @@ on:
   push:
     branches:
       - dev
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
-    paths:
-      - 'src/v/**'
-      - 'bazel/**'
-      - 'MODULE.bazel'
-      - '.bazelrc'
-      - '.bazelversion'
-      - 'BUILD'
-      - '.github/workflows/build-bazel.yml'
-
+      
 jobs:
   build:
     name: build redpanda with bazel
