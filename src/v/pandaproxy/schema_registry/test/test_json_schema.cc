@@ -301,6 +301,7 @@ struct compatibility_test_case {
     std::string_view reader_schema;
     std::string_view writer_schema;
     bool reader_is_compatible_with_writer;
+    bool expected_exception = false;
 };
 
 static constexpr auto compatibility_test_cases = std::to_array<
@@ -716,10 +717,12 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
                     make_json_schema(data.writer_schema)));
             } catch (...) {
                 BOOST_CHECK_MESSAGE(
-                  false,
+                  data.expected_exception,
                   fmt::format(
                     "terminated with exception {}", std::current_exception()));
+                continue;
             }
+            BOOST_CHECK_MESSAGE(!data.expected_exception, "no exception");
         }
     };
 }
