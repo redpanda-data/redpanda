@@ -815,7 +815,7 @@ private:
     bool _transferring_leadership{false};
 
     /// useful for when we are not the leader
-    clock_type::time_point _hbeat = clock_type::now();
+    clock_type::time_point _hbeat = clock_type::now(); // is max() iff leader
     clock_type::time_point _became_leader_at = clock_type::now();
     clock_type::time_point _instantiated_at = clock_type::now();
 

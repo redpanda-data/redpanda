@@ -203,7 +203,7 @@ ss::future<> vote_stm::process_replies() {
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
 ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
-    // use reply term to update voter term
+    // use reply term to update our term
     for (auto& [_, r] : _replies) {
         if (r.value && r.value->has_value()) {
             auto term = r.value->value().term;
@@ -268,7 +268,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
 
     auto ec = co_await replicate_config_as_new_leader(std::move(u));
 
-    // if we didn't replicated configuration, step down
+    // even if failed to replicate, don't step down: followers may be behind
     if (ec) {
         vlog(
           _ctxlog.info,
