@@ -307,6 +307,12 @@ struct compatibility_test_case {
 static constexpr auto compatibility_test_cases = std::to_array<
   compatibility_test_case>({
   //***** not compatible section *****
+  // atoms
+  {
+    .reader_schema = "false",
+    .writer_schema = "true",
+    .reader_is_compatible_with_writer = false,
+  },
   // not allowed promotion
   {
     .reader_schema = R"({"type": "integer"})",
@@ -484,6 +490,12 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
   },
   //***** compatible section *****
+  // atoms
+  {
+    .reader_schema = "true",
+    .writer_schema = "false",
+    .reader_is_compatible_with_writer = true,
+  },
   // same type
   {
     .reader_schema = R"({"type": "boolean"})",

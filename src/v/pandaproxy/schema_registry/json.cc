@@ -272,18 +272,22 @@ result<json::Document> parse_json(iobuf buf) {
     // metaschema
     auto dialect = std::optional<json_schema_dialect>{};
 
-    if (auto it = schema.FindMember("$schema"); it != schema.MemberEnd()) {
-        if (it->value.IsString()) {
-            dialect = from_uri(it->value.GetString());
-        }
+    if (schema.IsObject()) {
+        // "true/false" are valid schemas so here we need to check that the
+        // schema is an actual object
+        if (auto it = schema.FindMember("$schema"); it != schema.MemberEnd()) {
+            if (it->value.IsString()) {
+                dialect = from_uri(it->value.GetString());
+            }
 
-        if (it->value.IsString() == false || dialect == std::nullopt) {
-            // if present, "$schema" have to be a string, and it has to be one
-            // the implemented dialects. If not, return an error
-            return error_info{
-              error_code::schema_invalid,
-              fmt::format(
-                "Unsupported json schema dialect: '{}'", pj{it->value})};
+            if (it->value.IsString() == false || dialect == std::nullopt) {
+                // if present, "$schema" have to be a string, and it has to be
+                // one the implemented dialects. If not, return an error
+                return error_info{
+                  error_code::schema_invalid,
+                  fmt::format(
+                    "Unsupported json schema dialect: '{}'", pj{it->value})};
+            }
         }
     }
 
@@ -367,14 +371,14 @@ constexpr auto parse_json_type(json::Value const& v) {
     return *type;
 }
 
-json::Value const& get_true_schema() {
+json::Value::ConstObject get_true_schema() {
     // A `true` schema is one that validates every possible input, it's literal
     // json value is `{}` Then `"additionalProperty": true` is equivalent to
     // `"additionalProperties": {}` it's used during mainly in
     // is_object_superset(older, newer) and in is_superset to short circuit
     // validation
-    static auto true_schema = json::Value{rapidjson::kObjectType};
-    return true_schema;
+    static auto const true_schema = json::Value{rapidjson::kObjectType};
+    return true_schema.GetObject();
 }
 
 bool is_true_schema(json::Value const& v) {
@@ -397,19 +401,19 @@ bool is_true_schema(json::Value const& v) {
     return false;
 }
 
-json::Value const& get_false_schema() {
+json::Value::ConstObject get_false_schema() {
     // A `false` schema is one that doesn't validate any input, it's literal
     // json value is `{"not": {}}`
     // `"additionalProperty": false` is equivalent to `"additionalProperties":
     // {"not": {}}` it's used during mainly in is_object_superset(older, newer)
     // and in is_superset to short circuit validation
-    static auto false_schema = [] {
+    static auto const false_schema = [] {
         auto tmp = json::Document{};
         tmp.Parse(R"({"not": {}})");
         vassert(!tmp.HasParseError(), "Malformed `false` json schema");
         return tmp;
     }();
-    return false_schema;
+    return false_schema.GetObject();
 }
 
 bool is_false_schema(json::Value const& v) {
@@ -464,6 +468,23 @@ json_type_list normalized_type(json::Value const& v) {
     return ret;
 }
 
+// helper to convert a boolean to a schema
+json::Value::ConstObject get_schema(json::Value const& v) {
+    if (v.IsObject()) {
+        return v.GetObject();
+    }
+
+    if (v.IsBool()) {
+        // in >= draft6 "true/false" is a valid schema and means
+        // {}/{"not":{}}
+        return v.GetBool() ? get_true_schema() : get_false_schema();
+    }
+    throw as_exception(error_info{
+      error_code::schema_invalid,
+      fmt::format(
+        "Invalid JSON Schema, should be object or boolean: '{}'", pj{v})});
+}
+
 // helper to retrieve the object value for a key, or an empty object if the key
 // is not present
 json::Value::ConstObject
@@ -471,11 +492,10 @@ get_object_or_empty(json::Value const& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
     if (it != v.MemberEnd()) {
-        return it->value.GetObject();
+        return get_schema(it->value);
     }
 
-    static const auto empty_obj = json::Value{rapidjson::kObjectType};
-    return empty_obj.GetObject();
+    return get_true_schema();
 }
 
 // helper to retrieve the array value for a key, or an empty array if the key
@@ -890,18 +910,8 @@ bool is_array_superset(json::Value const& older, json::Value const& newer) {
     // 2. older_tuple_schema.Size() <  newer_tuple_schema.Size() -> check
     // excess elements with older["additionalItems"]
 
-    auto const& older_additional_schema = [&]() -> json::Value const& {
-        auto older_it = older.FindMember("additionalItems");
-        if (older_it == older.MemberEnd()) {
-            // default is `true`
-            return get_true_schema();
-        }
-        if (older_it->value.IsBool()) {
-            return older_it->value.GetBool() ? get_true_schema()
-                                             : get_false_schema();
-        }
-        return older_it->value;
-    }();
+    auto older_additional_schema = get_object_or_empty(
+      older, "additionalItems");
 
     // check that all excess schemas are compatible with
     // older["additionalItems"]
@@ -933,21 +943,8 @@ bool is_object_properties_superset(
     auto older_pattern_properties = get_object_or_empty(
       older, "patternProperties");
     // older["additionalProperties"] is a schema
-    auto get_older_additional_properties = [&]() -> json::Value const& {
-        auto older_it = older.FindMember("additionalProperties");
-        if (older_it == older.MemberEnd()) {
-            // default is `true`
-            return get_true_schema();
-        }
-
-        if (older_it->value.IsBool()) {
-            return older_it->value.GetBool() ? get_true_schema()
-                                             : get_false_schema();
-        }
-
-        return older_it->value;
-    };
-
+    auto older_additional_properties = get_object_or_empty(
+      older, "additionalProperties");
     // scan every prop in newer["properties"]
     for (auto const& [prop, schema] : newer_properties) {
         // it is either an evolution of a schema in older["properties"]
@@ -985,7 +982,7 @@ bool is_object_properties_superset(
         // in patternProperties was found
         if (
           !pattern_match_found
-          && !is_superset(get_older_additional_properties(), schema)) {
+          && !is_superset(older_additional_properties, schema)) {
             // not compatible
             return false;
         }
@@ -1178,13 +1175,17 @@ using namespace is_superset_impl;
 // a schema O is a superset of another schema N if every schema that is valid
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
-bool is_superset(json::Value const& older, json::Value const& newer) {
+bool is_superset(
+  json::Value const& older_schema, json::Value const& newer_schema) {
     // break recursion if parameters are atoms:
-    if (is_true_schema(older) || is_false_schema(newer)) {
+    if (is_true_schema(older_schema) || is_false_schema(newer_schema)) {
         // either older is the superset of every possible schema, or newer is
         // the subset of every possible schema
         return true;
     }
+
+    auto older = get_schema(older_schema);
+    auto newer = get_schema(newer_schema);
 
     // extract { "type" : ... }
     auto older_types = normalized_type(older);
