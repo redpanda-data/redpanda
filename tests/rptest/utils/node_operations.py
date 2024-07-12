@@ -441,16 +441,22 @@ class NodeOpsExecutor():
 
 
 class FailureInjectorBackgroundThread():
-    def __init__(self, redpanda: RedpandaService, logger,
-                 lock: threading.Lock):
+    def __init__(self,
+                 redpanda: RedpandaService,
+                 logger,
+                 lock: threading.Lock = threading.Lock(),
+                 max_suspend_duration_seconds: int = 10,
+                 min_inter_failure_time: int = 30,
+                 max_inter_failure_time: int = 60,
+                 failure_specs: list = FailureSpec.FAILURE_TYPES):
         self.stop_ev = threading.Event()
         self.redpanda = redpanda
         self.thread = None
         self.logger = logger
-        self.max_suspend_duration_seconds = 10
-        self.min_inter_failure_time = 30
-        self.max_inter_failure_time = 60
-        self.node_start_stop_mutexes = {}
+        self.max_suspend_duration_seconds = max_suspend_duration_seconds
+        self.min_inter_failure_time = min_inter_failure_time
+        self.max_inter_failure_time = max_inter_failure_time
+        self.allowed_failures = failure_specs
         self.lock = lock
         self.error = None
 
@@ -473,7 +479,7 @@ class FailureInjectorBackgroundThread():
         with FailureInjector(self.redpanda) as f_injector:
             while not self.stop_ev.is_set():
 
-                f_type = random.choice(FailureSpec.FAILURE_TYPES)
+                f_type = random.choice(self.allowed_failures)
                 # failure injector uses only started nodes, this way
                 # we guarantee that failures will not interfere with
                 # nodes start checks
