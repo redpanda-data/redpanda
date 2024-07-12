@@ -11,6 +11,7 @@
 
 #include "tls_config.h"
 
+#include "config/configuration.h"
 #include "config/convert.h"
 #include "utils/to_string.h"
 
@@ -29,6 +30,8 @@ tls_config::get_credentials_builder() const& {
                 {tlsv1_2_cipher_string.data(), tlsv1_2_cipher_string.size()});
               builder.set_ciphersuites(
                 {tlsv1_3_ciphersuites.data(), tlsv1_3_ciphersuites.size()});
+              builder.set_minimum_tls_version(
+                from_config(config::shard_local_cfg().tls_min_version()));
               builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
               if (_require_client_auth) {
                   builder.set_client_auth(ss::tls::client_auth::REQUIRE);

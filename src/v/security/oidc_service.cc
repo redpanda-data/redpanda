@@ -9,6 +9,8 @@
  */
 #include "security/oidc_service.h"
 
+#include "config/configuration.h"
+#include "config/tls_config.h"
 #include "http/client.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
@@ -340,6 +342,8 @@ struct service::impl {
             if (!_creds) {
                 ss::tls::credentials_builder builder;
                 builder.set_client_auth(ss::tls::client_auth::NONE);
+                builder.set_minimum_tls_version(config::from_config(
+                  config::shard_local_cfg().tls_min_version()));
                 co_await builder.set_system_trust();
                 _creds = co_await net::build_reloadable_credentials_with_probe<
                   ss::tls::certificate_credentials>(
