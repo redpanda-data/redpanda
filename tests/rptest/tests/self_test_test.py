@@ -185,3 +185,54 @@ class SelfTestTest(RedpandaTest):
                 # cancelled before it even had a chance to start, resulting in
                 # a 0 value for duration
                 assert report['duration'] >= 0
+
+    @cluster(num_nodes=3)
+    def test_self_test_unknown_test_type(self):
+        """Assert the self test still runs when an invalid test type is passed.
+           This helps ensure the self test will still work in a cluster
+           with mixed versions of Redpanda."""
+        num_nodes = 3
+
+        #Attempt to run with an unknown test type "pandatest"
+        #and possibly unknown "cloud" test.
+        #The rest of the tests should proceed as normal.
+        request_json = {
+            'tests': [{
+                'type': 'pandatest'
+            }, {
+                'type': 'disk'
+            }, {
+                'type': 'network'
+            }, {
+                'type': 'cloud'
+            }]
+        }
+
+        #Manually invoke self test admin endpoint.
+        self.redpanda._admin._request('POST',
+                                      'debug/self_test/start',
+                                      json=request_json)
+
+        #Populate list of unknown reports.
+        unknown_report_types = ['pandatest', 'cloud']
+        redpanda_versions = [
+            self.redpanda.get_version_int_tuple(node)
+            for node in self.redpanda.nodes
+        ]
+
+        #All nodes should have the same version of
+        #Redpanda running.
+        assert len(set(redpanda_versions)) == 1
+
+        # Wait for self test completion.
+        node_reports = self.wait_for_self_test_completion()
+
+        #Assert reports are passing, with the exception of unknown tests.
+        reports = flat_map(lambda node: node['results'], node_reports)
+        assert len(reports) > 0
+        for report in reports:
+            if report['test_type'] in unknown_report_types:
+                assert 'error' in report
+            else:
+                assert 'error' not in report
+                assert 'warning' not in report
