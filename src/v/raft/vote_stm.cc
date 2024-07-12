@@ -215,7 +215,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
                   _ctxlog.info, "Vote failed - received larger term: {}", term);
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
-                _ptr->_vstate = consensus::vote_state::follower;
+                fail_election();
                 co_return;
             }
         }
@@ -245,7 +245,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
           _ctxlog.debug,
           "Ignoring successful vote. Node priority too low: {}",
           _ptr->_node_priority_override.value());
-        _ptr->_vstate = consensus::vote_state::follower;
+        fail_election();
         co_return;
     }
 
@@ -318,4 +318,13 @@ ss::future<> vote_stm::self_vote() {
         m->second.set_value(reply);
     });
 }
+
+void vote_stm::fail_election() {
+    vassert(
+      _ptr->_vstate != consensus::vote_state::leader
+        && _ptr->_hbeat != clock_type::time_point::max(),
+      "Became a leader outside current election");
+    _ptr->_vstate = consensus::vote_state::follower;
+}
+
 } // namespace raft
