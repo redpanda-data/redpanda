@@ -22,6 +22,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "storage/ntp_config.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/do_with.hh>
@@ -223,7 +224,7 @@ create_topic_properties_update(
                   cfg.value,
                   op,
                   // Topic deletion is enabled by default
-                  true);
+                  storage::ntp_config::default_remote_delete);
                 continue;
             }
             if (cfg.name == topic_property_max_message_bytes) {
