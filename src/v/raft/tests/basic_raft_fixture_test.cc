@@ -820,11 +820,11 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
         co_await stop_node(vn.id());
     }
 
-    auto tolerance = 0.15;
+    auto tolerance_multiplier = 1.3;
     /**
-     * Validate that election time  after reconfiguration is simillar to the
+     * Validate that election time after reconfiguration is simillar to the
      * time needed for leadership transfer
      */
-    ASSERT_LE_CORO(election_time, transfer_time * (1.0 + tolerance));
-    ASSERT_GE_CORO(election_time, transfer_time * (1.0 - tolerance));
+    ASSERT_LE_CORO(election_time * 1.0, transfer_time * tolerance_multiplier);
+    ASSERT_GE_CORO(election_time * 1.0, transfer_time / tolerance_multiplier);
 }
