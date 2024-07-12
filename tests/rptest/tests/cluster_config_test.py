@@ -685,6 +685,10 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 valid_value = random.choice(
                     [e for e in p['enum_values'] if e != initial_value])
 
+            if name == "tls_min_version":
+                valid_value = random.choice(
+                    [e for e in p['enum_values'] if e != initial_value])
+
             updates[name] = valid_value
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,

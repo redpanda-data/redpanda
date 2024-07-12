@@ -3275,7 +3275,17 @@ configuration::configuration()
       "internal-only configuration and should be enabled only after consulting "
       "with Redpanda Support or engineers.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      false) {}
+      false)
+  , tls_min_version(
+      *this,
+      "tls_min_version",
+      "The minimum TLS version that Redpanda supports.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      tls_version::v1_2,
+      {tls_version::v1_0,
+       tls_version::v1_1,
+       tls_version::v1_2,
+       tls_version::v1_3}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
