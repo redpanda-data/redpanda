@@ -352,6 +352,11 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
   },
   {
+    .reader_schema = R"({"type": "number", "multipleOf": 20})",
+    .writer_schema = R"({"type": "number", "multipleOf": 10})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
     .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
     .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
     .reader_is_compatible_with_writer = false,
@@ -543,6 +548,11 @@ static constexpr auto compatibility_test_cases = std::to_array<
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
     .writer_schema = R"({"type": "number", "multipleOf": 20.2})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 1.1})",
+    .writer_schema = R"({"type": "number", "multipleOf": 3.3})",
     .reader_is_compatible_with_writer = true,
   },
   // string checks
