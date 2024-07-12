@@ -10,24 +10,101 @@
  */
 #include "cluster/tm_stm_types.h"
 
+#include "model/timeout_clock.h"
+
+#include <seastar/core/lowres_clock.hh>
+
+#include <optional>
+
 namespace cluster {
+
+namespace {
+template<typename... Args>
+bool is_one_of(tx_status status, Args&&... args) {
+    return ((args == status) || ...);
+}
+
+} // namespace
+
+state_transition_error::state_transition_error(tx_status from, tx_status to)
+  : from(from)
+  , to(to) {}
+
+bool is_state_transition_valid(
+  const tx_metadata& current, tx_status target_status) {
+    /**
+     * The state transition validation logic is really a simple definition of
+     * transaction fsm. The validation checks it the current state is a valid
+     * precursor of the requested one.
+     */
+    switch (target_status) {
+    case empty:
+        // ready is an initial state a transaction can never go back to that
+        // state
+        return is_one_of(current.status, tx_status::empty);
+    case ongoing:
+        return is_one_of(current.status, tx_status::empty, tx_status::ongoing);
+    case preparing_commit:
+        return is_one_of(
+          current.status,
+          tx_status::empty,
+          tx_status::ongoing,
+          tx_status::preparing_commit);
+    case completed_commit:
+        return is_one_of(
+          current.status,
+          tx_status::preparing_commit,
+          tx_status::completed_commit);
+    case preparing_abort:
+        return is_one_of(
+          current.status,
+          tx_status::empty,
+          tx_status::ongoing,
+          tx_status::preparing_abort);
+    case preparing_internal_abort:
+        return is_one_of(
+          current.status,
+          tx_status::ongoing,
+          tx_status::preparing_internal_abort);
+    case tombstone:
+        return is_one_of(
+          current.status,
+          tx_status::tombstone,
+          tx_status::completed_commit,
+          tx_status::completed_abort);
+    case completed_abort:
+        return is_one_of(
+          current.status,
+          tx_status::preparing_internal_abort,
+          tx_status::preparing_abort,
+          tx_status::completed_abort);
+    }
+
+    __builtin_unreachable();
+}
+
+bool tx_metadata::is_finished() const {
+    return status == completed_commit || status == completed_abort;
+}
 
 std::string_view tx_metadata::get_status() const {
     switch (status) {
     case tx_status::ongoing:
         return "ongoing";
-    case tx_status::preparing:
-        return "preparing";
-    case tx_status::prepared:
-        return "prepared";
-    case tx_status::aborting:
-        return "aborting";
-    case tx_status::killed:
-        return "killed";
-    case tx_status::ready:
-        return "ready";
+    case tx_status::preparing_commit:
+        return "preparing_commit";
+    case tx_status::completed_commit:
+        return "completed_commit";
+    case tx_status::preparing_abort:
+        return "preparing_abort";
+    case tx_status::preparing_internal_abort:
+        return "expired";
+    case tx_status::empty:
+        return "empty";
     case tx_status::tombstone:
         return "tombstone";
+    case tx_status::completed_abort:
+        return "completed_abort";
     }
 }
 
@@ -39,20 +116,22 @@ std::string_view tx_metadata::get_kafka_status() const {
         }
         return "Ongoing";
     }
-    case tx_status::preparing:
-        return "Ongoing";
-    case tx_status::prepared:
+    case tx_status::preparing_commit:
         return "PrepareCommit";
-    case tx_status::aborting:
+    case tx_status::completed_commit:
+        return "CompleteCommit";
+    case tx_status::preparing_abort:
         return "PrepareAbort";
-    case tx_status::killed:
+    case tx_status::preparing_internal_abort:
         // https://issues.apache.org/jira/browse/KAFKA-6119
         // https://github.com/apache/kafka/commit/501a5e262702bcc043724cb9e1f536e16a66399e
         return "PrepareEpochFence";
-    case tx_status::ready:
+    case tx_status::empty:
         return "Empty";
     case tx_status::tombstone:
         return "Dead";
+    case tx_status::completed_abort:
+        return "CompleteAbort";
     }
 }
 
@@ -72,22 +151,35 @@ bool tx_metadata::delete_partition(const tx_partition& part) {
            > 0;
 }
 
+std::optional<state_transition_error>
+tx_metadata::try_update_status(tx_status requested) {
+    auto is_valid = is_state_transition_valid(*this, requested);
+    if (!is_valid) {
+        return state_transition_error(status, requested);
+    }
+    status = requested;
+    last_update_ts = ss::lowres_system_clock::now();
+    return std::nullopt;
+}
+
 std::ostream& operator<<(std::ostream& o, tx_status status) {
     switch (status) {
     case ongoing:
         return o << "ongoing";
-    case aborting:
-        return o << "aborting";
-    case preparing:
-        return o << "preparing";
-    case prepared:
-        return o << "prepared";
-    case killed:
-        return o << "aborting";
-    case ready:
-        return o << "ready";
+    case preparing_abort:
+        return o << "preparing_abort";
+    case preparing_commit:
+        return o << "preparing_commit";
+    case completed_commit:
+        return o << "completed_commit";
+    case preparing_internal_abort:
+        return o << "expired";
+    case empty:
+        return o << "empty";
     case tombstone:
         return o << "tombstone";
+    case completed_abort:
+        return o << "completed_abort";
     }
 }
 std::ostream& operator<<(std::ostream& o, const tx_metadata::tx_partition& tp) {
@@ -112,6 +204,16 @@ std::ostream& operator<<(std::ostream& o, const tx_metadata& tx) {
       tx.etag,
       tx.tx_seq,
       fmt::join(tx.partitions, ", "));
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const state_transition_error& err) {
+    fmt::print(
+      o,
+      "Can not update transaction state from {} to {} as this transition is "
+      "invalid",
+      err.from,
+      err.to);
     return o;
 }
 

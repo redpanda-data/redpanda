@@ -68,6 +68,8 @@ std::ostream& operator<<(std::ostream& o, errc err) {
         return o << "tx::errc::tx_id_not_found";
     case errc::partition_disabled:
         return o << "tx::errc::partition_disabled";
+    case errc::concurrent_transactions:
+        return o << "tx::errc::concurrent_transactions";
     }
     return o;
 }

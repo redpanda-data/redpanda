@@ -11,6 +11,7 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "reflection/adl.h"
 #include "storage/ntp_config.h"
 
@@ -36,7 +37,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .retention_time = properties.retention_duration,
             // we disable cache for internal topics as they are read only once
             // during bootstrap.
-            .cache_enabled = storage::with_cache(!is_internal()),
+            .cache_enabled = storage::with_cache(
+              !is_internal() || tp_ns.tp == model::tx_manager_topic),
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
             .shadow_indexing_mode = properties.shadow_indexing,

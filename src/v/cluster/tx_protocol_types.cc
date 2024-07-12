@@ -162,7 +162,7 @@ operator<<(std::ostream& o, const fetch_tx_reply::tx_partition& p) {
 }
 
 std::ostream&
-operator<<(std::ostream& o, const add_paritions_tx_request::topic& t) {
+operator<<(std::ostream& o, const add_partitions_tx_request::topic& t) {
     fmt::print(o, "{{topic: {}, partitions: {}}}", t.name, t.partitions);
     return o;
 }
