@@ -33,7 +33,7 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
-#include <boost/math/special_functions/relative_difference.hpp>
+#include <boost/math/special_functions/ulp.hpp>
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/core.h>
@@ -741,14 +741,15 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
 
     if (!is_numeric_property_value_superset(
           older, newer, "multipleOf", [](double older, double newer) {
-              // check that the reminder of newer/older is close enough to 0, as
-              // in some multiples of epsilon.
+              // check that the reminder of newer/older is close enough to 0.
+              // close enough is defined as being close to the Unit in the Last
+              // Place of the bigger between the two.
               // TODO: this is an approximate check, if a bigdecimal
               // representation it would be possible to perform an exact
               // reminder(newer, older)==0 check
-              return boost::math::epsilon_difference(
-                       std::remainder(newer, older), 0.)
-                     <= 10.;
+              constexpr auto max_ulp_error = 3;
+              return std::abs(std::remainder(newer, older))
+                     <= (max_ulp_error * boost::math::ulp(newer));
           })) {
         return false;
     }
