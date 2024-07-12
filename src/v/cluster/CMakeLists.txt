@@ -224,6 +224,8 @@ v_cc_library(
     ../archival/scrubber.cc
     ../archival/archiver_manager.cc
     ../archival/async_data_uploader.cc
+    ../archival/archiver_operations_api.cc
+    ../archival/archiver_operations_impl.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc

@@ -403,6 +403,11 @@ size_t partition_manifest::segments_metadata_bytes() const {
     return _segments.inflated_actual_size().second;
 }
 
+size_t partition_manifest::estimate_serialized_size() const {
+    constexpr auto bytes_per_segment = 10;
+    return _segments.size() * bytes_per_segment;
+}
+
 void partition_manifest::flush_write_buffer() {
     _segments.flush_write_buffer();
 }

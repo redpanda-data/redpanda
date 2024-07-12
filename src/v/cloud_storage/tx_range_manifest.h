@@ -64,6 +64,9 @@ public:
         return std::move(_ranges);
     }
 
+    /// Return approximate size of the serialized manifest
+    size_t estimate_serialized_size() const;
+
 private:
     void do_update(const rapidjson::Document& is);
 
