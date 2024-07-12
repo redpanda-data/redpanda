@@ -414,7 +414,7 @@ class StatusThread(threading.Thread):
                 # status read
                 return
             else:
-                self._stop_requested.wait(self.INTERVAL)
+                self._shutdown_requested.wait(self.INTERVAL)
 
     def join_with_timeout(self):
         """
@@ -436,6 +436,7 @@ class StatusThread(threading.Thread):
         """
         Drop out of poll loop as soon as possible, and join.
         """
+        self._shutdown_requested.set()
         self._stop_requested.set()
         self.join_with_timeout()
 
