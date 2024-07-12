@@ -148,3 +148,90 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "directory_walker_test",
+    timeout = "short",
+    srcs = [
+        "directory_walker_test.cc",
+    ],
+    deps = [
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:directory_walker",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "expiring_promise_test",
+    timeout = "short",
+    srcs = [
+        "expiring_promise_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:expiring_promise",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "retry_chain_node_test",
+    timeout = "short",
+    srcs = [
+        "retry_chain_node_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:retry_chain_node",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "bottomless_token_bucket_test",
+    timeout = "short",
+    srcs = [
+        "bottomless_token_bucket_test.cc",
+    ],
+    deps = [
+        "//src/v/utils:bottomless_token_bucket",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "move_canary_test",
+    timeout = "short",
+    srcs = [
+        "move_canary_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=move_canary",
+    ],
+    deps = [
+        "//src/v/utils:move_canary",
+        "@boost//:test",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "stable_iterator_test",
+    timeout = "short",
+    srcs = [
+        "stable_iterator_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=stable_iterator_test",
+    ],
+    deps = [
+        "//src/v/utils:stable_iterator",
+        "@boost//:test",
+    ],
+)

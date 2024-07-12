@@ -249,3 +249,105 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "directory_walker",
+    srcs = [
+        "directory_walker.cc",
+    ],
+    hdrs = [
+        "directory_walker.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "expiring_promise",
+    hdrs = [
+        "expiring_promise.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "retry_chain_node",
+    srcs = [
+        "retry_chain_node.cc",
+    ],
+    hdrs = [
+        "retry_chain_node.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/random:fast_prng",
+        "//src/v/ssx:sformat",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "bottomless_token_bucket",
+    srcs = [
+        "bottomless_token_bucket.cc",
+    ],
+    hdrs = [
+        "bottomless_token_bucket.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "move_canary",
+    hdrs = [
+        "move_canary.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "exceptions",
+    hdrs = [
+        "exceptions.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "stable_iterator",
+    hdrs = [
+        "stable_iterator_adaptor.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":exceptions",
+        "//src/v/base",
+        "@boost//:iterator",
+        "@fmt",
+    ],
+)
