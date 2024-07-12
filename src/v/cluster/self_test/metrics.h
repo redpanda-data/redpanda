@@ -22,6 +22,13 @@ class omit_metrics_measurement_exception : public std::exception {};
 
 class omit_measure_timed_out_exception : public std::exception {};
 
+template<typename Timepoint>
+uint64_t time_since_epoch(Timepoint tp) {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+             tp.time_since_epoch())
+      .count();
+}
+
 class metrics {
 public:
     explicit metrics(int64_t max_value_hist)
@@ -92,15 +99,11 @@ public:
     }
 
     uint64_t get_start_time_since_epoch() const {
-        return std::chrono::duration_cast<std::chrono::seconds>(
-                 _start_time.time_since_epoch())
-          .count();
+        return time_since_epoch(_start_time);
     }
 
     uint64_t get_end_time_since_epoch() const {
-        return std::chrono::duration_cast<std::chrono::seconds>(
-                 _end_time.time_since_epoch())
-          .count();
+        return time_since_epoch(_end_time);
     }
 
 private:
