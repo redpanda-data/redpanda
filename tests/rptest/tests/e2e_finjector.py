@@ -95,3 +95,4 @@ class EndToEndFinjectorTest(EndToEndTest):
         if self.finjector_thread:
             self.finjector_thread.join()
         make_failure_injector(self.redpanda)._heal_all()
+        make_failure_injector(self.redpanda)._continue_all()
