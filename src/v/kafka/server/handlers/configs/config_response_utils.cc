@@ -294,12 +294,8 @@ static void add_topic_config(
 
 /**
  * For faking DEFAULT_CONFIG status for properties that are actually
- * topic overrides: cloud storage properties.  We do not support cluster
- * defaults for these, the values are always "sticky" to topics, but
- * some Kafka clients insist that after an AlterConfig RPC, anything
- * they didn't set should be DEFAULT_CONFIG.
- *
- * See https://github.com/redpanda-data/redpanda/issues/7451
+ * topic overrides: schema registry properties. This should be avoided for new
+ * properties to be Kafka-compatible.
  */
 template<typename T>
 std::optional<T>
@@ -648,8 +644,7 @@ config_response_container_t make_topic_configs(
       maybe_make_documentation(
         include_documentation,
         config::shard_local_cfg().cloud_storage_enable_remote_read.desc()),
-      &describe_as_string<bool>,
-      true);
+      &describe_as_string<bool>);
 
     add_topic_config_if_requested(
       config_keys,
@@ -665,8 +660,7 @@ config_response_container_t make_topic_configs(
       maybe_make_documentation(
         include_documentation,
         config::shard_local_cfg().cloud_storage_enable_remote_write.desc()),
-      &describe_as_string<bool>,
-      true);
+      &describe_as_string<bool>);
 
     add_topic_config_if_requested(
       config_keys,
@@ -699,9 +693,7 @@ config_response_container_t make_topic_configs(
           topic_property_remote_delete,
           storage::ntp_config::default_remote_delete,
           topic_property_remote_delete,
-          override_if_not_default(
-            std::make_optional<bool>(topic_properties.remote_delete),
-            storage::ntp_config::default_remote_delete),
+          std::make_optional(topic_properties.remote_delete),
           true,
           maybe_make_documentation(
             include_documentation,

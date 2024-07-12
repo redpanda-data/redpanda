@@ -98,17 +98,20 @@ class DescribeTopicsTest(RedpandaTest):
                 config_type="BOOLEAN",
                 value="true",
                 doc_string=
-                "Controls whether topic deletion should imply deletion in S3"),
+                "Controls whether topic deletion should imply deletion in S3",
+                source_type="DYNAMIC_TOPIC_CONFIG"),
             "redpanda.remote.read":
             ConfigProperty(
                 config_type="BOOLEAN",
                 value="false",
-                doc_string="Default remote read config value for new topics"),
+                doc_string="Default remote read config value for new topics",
+                source_type="DYNAMIC_TOPIC_CONFIG"),
             "redpanda.remote.write":
             ConfigProperty(
                 config_type="BOOLEAN",
                 value="false",
-                doc_string="Default remote write value for new topics"),
+                doc_string="Default remote write value for new topics",
+                source_type="DYNAMIC_TOPIC_CONFIG"),
             "retention.bytes":
             ConfigProperty(
                 config_type="LONG",

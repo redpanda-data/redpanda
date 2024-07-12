@@ -605,13 +605,11 @@ class CreateSITopicsTest(RedpandaTest):
 
         # This topic has topic-level properties set from the cluster defaults
         # and the values should _not_ have been changed by the intervening
-        # change to those defaults.  Properties which still match the current
-        # default will be reported as DEFAULT, even though they are sticky,
-        # per issue https://github.com/redpanda-data/redpanda/issues/7451
+        # change to those defaults.
         assert default_si_configs["redpanda.remote.read"] == (
             "true", "DYNAMIC_TOPIC_CONFIG")
         assert default_si_configs["redpanda.remote.write"] == (
-            "true", "DEFAULT_CONFIG")
+            "true", "DYNAMIC_TOPIC_CONFIG")
 
         # This topic was created with explicit properties that differed
         # from the defaults.  Both properties differ from the present
