@@ -46,6 +46,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/switch_to.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -833,6 +834,10 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
         co_return;
     }
     auto gate_holder = _gate.hold();
+
+    // If we don't switch here, reconciliation will inherit the scheduling group
+    // of whoever triggered it (could be e.g. the admin SG).
+    co_await ss::coroutine::switch_to(ss::default_scheduling_group());
 
     while (true) {
         co_await rs->wakeup_event.wait(_housekeeping_jitter.next_duration());
