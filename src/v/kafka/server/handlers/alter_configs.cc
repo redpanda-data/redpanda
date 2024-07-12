@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/alter_configs.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -84,6 +85,20 @@ create_topic_properties_update(alter_configs_resource& resource) {
       std::tuple_size_v<decltype(update.custom_properties.serde_fields())> == 2,
       "If you added a property, please decide on it's default alter config "
       "policy, and handle the update in the loop below");
+
+    /**
+     * The shadow_indexing properties ('redpanda.remote.(read|write|delete)')
+     * are special "sticky" topic properties that are always set as a
+     * topic-level override. We should prevent changing them unless explicitly
+     * requested.
+     *
+     * See: https://github.com/redpanda-data/redpanda/issues/7451
+     */
+    update.properties.shadow_indexing.op = op_t::none;
+    update.properties.remote_delete.op = op_t::none;
+
+    // Now that the defaults are set, continue to set properties from the
+    // request
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       update.properties};

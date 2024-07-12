@@ -126,9 +126,20 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
   model::timeout_clock::time_point timeout) {
     for (auto& tp : topics) {
         /**
+         * The shadow_indexing properties
+         * ('redpanda.remote.(read|write|delete)') are special "sticky" topic
+         * properties that are always set as a topic-level override.
+         *
+         * See: https://github.com/redpanda-data/redpanda/issues/7451
+         *
          * Note that a manually created topic will have this assigned already by
          * kafka/server/handlers/topics/types.cc::to_cluster_type, dependent on
          * client-provided topic properties.
+         *
+         * tp.cfg.properties.remote_delete is stored as a bool (not
+         * std::optional<bool>) defaulted to its default value
+         * (ntp_config::default_remote_delete) on the construction of
+         * topic_properties(), so there is no need to overwrite it here.
          */
         if (!tp.cfg.properties.shadow_indexing.has_value()) {
             tp.cfg.properties.shadow_indexing
