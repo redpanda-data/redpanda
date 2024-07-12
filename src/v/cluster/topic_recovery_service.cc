@@ -407,6 +407,11 @@ static cluster::topic_configuration make_topic_config(
         topic_properties.retention_local_target_bytes = {};
     }
 
+    static_assert(
+      std::tuple_size_v<decltype(topic_properties.serde_fields())> == 31,
+      "Reminder to update this method (setting a recovered topic's properties "
+      "from the manifest) when a new topic property is introduced");
+
     return topic_to_create_cfg;
 }
 
