@@ -761,7 +761,12 @@ using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
 
 // Raft part of the struct that makes starting the partition
 // instance on the destination shard of the x-shard transfer easier.
-struct xshard_transfer_state {};
+struct xshard_transfer_state {
+    // If before the transfer, this partition was the leader, will contain the
+    // corresponding term. It will be used to try to immediately regain the
+    // leadership on the destination shard.
+    std::optional<model::term_id> leader_term;
+};
 
 } // namespace raft
 
