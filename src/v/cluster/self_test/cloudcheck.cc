@@ -16,6 +16,7 @@
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "random/generators.h"
+#include "self_test/metrics.h"
 #include "utils/uuid.h"
 
 #include <algorithm>
@@ -79,6 +80,18 @@ cloudcheck::run(cloudcheck_opts opts) {
 
     co_return co_await ss::with_scheduling_group(
       _opts.sg, [this]() mutable { return run_benchmarks(); });
+}
+
+template<typename Test, typename... Args, typename R>
+R cloudcheck::do_run_test(Test test, Args&&... args) {
+    const auto start = ss::lowres_system_clock::now();
+    auto result = co_await std::invoke(
+      test, *this, std::forward<Args>(args)...);
+    const auto end = ss::lowres_system_clock::now();
+    result.test_result.start_time = time_since_epoch(start);
+    result.test_result.end_time = time_since_epoch(end);
+    result.test_result.duration = end - start;
+    co_return result;
 }
 
 ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {

@@ -74,6 +74,14 @@ private:
       iobuf& payload,
       retry_chain_node& rtc);
 
+    // Wrapper around verify_tests for timing purposes, regardless of test
+    // failure or success.
+    template<
+      typename Test,
+      typename... Args,
+      typename R = std::invoke_result_t<Test, cloudcheck, Args...>>
+    R do_run_test(Test test, Args&&... args);
+
     // Verify that uploading (Put: write operation) to cloud storage works.
     ss::future<self_test_result> verify_upload(
       cloud_storage_clients::bucket_name bucket,
