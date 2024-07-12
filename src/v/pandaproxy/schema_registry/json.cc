@@ -1399,9 +1399,6 @@ bool is_superset(
            "contentMediaType",
            "readOnly",
            "writeOnly",
-           "if",
-           "then",
-           "else",
            // draft 2019-09 unhandled keywords:
            "$anchor",
            "$recursiveRef",
