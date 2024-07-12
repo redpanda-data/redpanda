@@ -99,4 +99,23 @@ inline bool fips_mode_enabled(fips_mode_flag f) {
     return f != fips_mode_flag::disabled;
 }
 
+enum class tls_version { v1_0 = 0, v1_1, v1_2, v1_3 };
+
+constexpr std::string_view to_string_view(tls_version v) {
+    switch (v) {
+    case tls_version::v1_0:
+        return "v1.0";
+    case tls_version::v1_1:
+        return "v1.1";
+    case tls_version::v1_2:
+        return "v1.2";
+    case tls_version::v1_3:
+        return "v1.3";
+    }
+}
+
+inline std::ostream& operator<<(std::ostream& os, const tls_version& v) {
+    return os << to_string_view(v);
+}
+
 } // namespace config
