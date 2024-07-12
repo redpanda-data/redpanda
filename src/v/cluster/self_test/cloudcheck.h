@@ -82,42 +82,68 @@ private:
       typename R = std::invoke_result_t<Test, cloudcheck, Args...>>
     R do_run_test(Test test, Args&&... args);
 
+    struct verify_upload_result {
+        self_test_result test_result;
+    };
+
     // Verify that uploading (Put: write operation) to cloud storage works.
-    ss::future<self_test_result> verify_upload(
+    ss::future<verify_upload_result> verify_upload(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key,
       const std::optional<iobuf>& payload);
 
+    struct verify_list_result {
+        cloud_storage::remote::list_result list_result;
+        self_test_result test_result;
+    };
+
     // Verify that listing (List: read operation) from cloud storage works.
-    ss::future<std::pair<cloud_storage::remote::list_result, self_test_result>>
-    verify_list(
+    ss::future<verify_list_result> verify_list(
       cloud_storage_clients::bucket_name bucket,
       std::optional<cloud_storage_clients::object_key> prefix,
-      size_t max_keys = 5);
+      size_t max_keys = num_default_objects);
+
+    struct verify_head_result {
+        self_test_result test_result;
+    };
 
     // Verify that checking if an object exists (Head: read operation) from
     // cloud storage works.
-    ss::future<self_test_result> verify_head(
+    ss::future<verify_head_result> verify_head(
       cloud_storage_clients::bucket_name bucket,
       std::optional<cloud_storage_clients::object_key> key);
+
+    struct verify_download_result {
+        std::optional<iobuf> buf;
+        self_test_result test_result;
+    };
 
     // Verify that downloading (Get: read operation) from cloud storage works.
-    ss::future<std::pair<std::optional<iobuf>, self_test_result>>
-    verify_download(
+    ss::future<verify_download_result> verify_download(
       cloud_storage_clients::bucket_name bucket,
       std::optional<cloud_storage_clients::object_key> key);
 
+    struct verify_delete_result {
+        self_test_result test_result;
+    };
+
     // Verify that deleting (Delete: write operation) from cloud storage works.
-    ss::future<self_test_result> verify_delete(
+    ss::future<verify_delete_result> verify_delete(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key);
 
+    struct verify_deletes_result {
+        self_test_result test_result;
+    };
+
     // Verify that deleting multiple (Plural Delete: write operation) from cloud
     // storage works.
-    ss::future<self_test_result> verify_deletes(
-      cloud_storage_clients::bucket_name bucket, size_t num_objects = 5);
+    ss::future<verify_deletes_result> verify_deletes(
+      cloud_storage_clients::bucket_name bucket,
+      size_t num_objects = num_default_objects);
 
 private:
+    static constexpr size_t num_default_objects = 5;
     bool _remote_read_enabled{false};
     bool _remote_write_enabled{false};
     bool _cancelled{false};
