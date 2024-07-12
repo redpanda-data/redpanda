@@ -140,3 +140,38 @@ class ShardPlacementScaleTest(RedpandaTest):
         self.logger.info("triggered manual rebalance")
 
         self.finish_omb()
+
+    @cluster(num_nodes=8)
+    @skip_debug_mode
+    def test_node_add(self):
+        self.redpanda.add_extra_rp_conf({
+            "core_balancing_continuous": True,
+        })
+
+        seed_nodes = self.redpanda.nodes[0:4]
+        joiner_nodes = self.redpanda.nodes[4:]
+
+        self.redpanda.start(nodes=seed_nodes)
+
+        self.start_omb()
+
+        time.sleep(120)
+        self.redpanda.start(nodes=joiner_nodes)
+        self.logger.info(
+            f"added nodes {[n.name for n in joiner_nodes]} to the cluster")
+
+        self.finish_omb()
+
+        # check that the node rebalance was finished
+
+        admin = Admin(self.redpanda)
+
+        assert len(admin.list_reconfigurations()) == 0
+
+        omb_topic = self.omb_topics()[0]
+        for node in joiner_nodes:
+            partitions = [
+                p for p in admin.get_partitions(node=node)
+                if p["topic"] == omb_topic
+            ]
+            assert len(partitions) > 0
