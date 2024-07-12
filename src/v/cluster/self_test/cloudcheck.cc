@@ -44,7 +44,10 @@ cloudcheck::run(cloudcheck_opts opts) {
     if (_gate.is_closed()) {
         vlog(clusterlog.debug, "cloudcheck - gate already closed");
         auto result = self_test_result{
-          .name = _opts.name, .warning = "cloudcheck - gate already closed"};
+          .name = _opts.name,
+          .start_time = time_since_epoch(ss::lowres_system_clock::now()),
+          .end_time = time_since_epoch(ss::lowres_system_clock::now()),
+          .warning = "cloudcheck - gate already closed"};
         co_return std::vector<self_test_result>{result};
     }
     auto g = _gate.hold();
@@ -60,7 +63,10 @@ cloudcheck::run(cloudcheck_opts opts) {
           clusterlog.warn,
           "Cloud storage is not enabled, exiting cloud storage self-test.");
         auto result = self_test_result{
-          .name = _opts.name, .warning = "Cloud storage is not enabled."};
+          .name = _opts.name,
+          .start_time = time_since_epoch(ss::lowres_system_clock::now()),
+          .end_time = time_since_epoch(ss::lowres_system_clock::now()),
+          .warning = "Cloud storage is not enabled."};
         co_return std::vector<self_test_result>{result};
     }
 
@@ -71,6 +77,8 @@ cloudcheck::run(cloudcheck_opts opts) {
           "self-test.");
         auto result = self_test_result{
           .name = _opts.name,
+          .start_time = time_since_epoch(ss::lowres_system_clock::now()),
+          .end_time = time_since_epoch(ss::lowres_system_clock::now()),
           .warning = "cloud_storage_api is not initialized."};
         co_return std::vector<self_test_result>{result};
     }
