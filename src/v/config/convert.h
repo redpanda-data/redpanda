@@ -605,4 +605,24 @@ struct convert<config::fips_mode_flag> {
     }
 };
 
+template<>
+struct convert<config::tls_version> {
+    using type = config::tls_version;
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        auto out = string_switch<std::optional<type>>(std::string_view{value})
+                     .match(to_string_view(type::v1_0), type::v1_0)
+                     .match(to_string_view(type::v1_1), type::v1_1)
+                     .match(to_string_view(type::v1_2), type::v1_2)
+                     .match(to_string_view(type::v1_3), type::v1_3)
+                     .default_match(std::nullopt);
+        if (out.has_value()) {
+            rhs = out.value();
+        }
+        return out.has_value();
+    }
+};
+
 } // namespace YAML
