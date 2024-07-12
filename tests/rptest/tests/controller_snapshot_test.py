@@ -155,20 +155,12 @@ class ControllerState:
 
             # Newer versions include a bugfix to change the source type of cleanup.policy from
             # DYNAMIC_TOPIC_CONFIG to DEFAULT_CONFIG if the cleanup.policy wasn't specified as
-            # a config value when the topic is created. Versions that include the bugfix:
-            #  * v23.3.12+
-            #  * v24.1.*
-            #  * v23.3.11* versions, except for the v23.3.11 release, i.e. all development and
-            #    PR builder redpanda versions built off of v23.3.11 before v23.3.12.
-            def contains_config_fix(version: RedpandaVersionTriple,
-                                    version_line: RedpandaVersionLine) -> bool:
-                V23_3_11_RELEASE = "v23.3.11 - 93f88bf377e558132eba04f81e4f83b033cec6e7"
-                return version >= RedpandaVersionTriple((23, 3, 12)) or \
-                    (version == RedpandaVersionTriple((23, 3, 11)) and version_line != V23_3_11_RELEASE)
-
-            if contains_config_fix(self.version, self.version_line) ^ \
-                contains_config_fix(other.version, other.version_line):
-
+            # a config value when the topic is created.
+            # All versions newer that are at least as new as 24.2.1 will have the fix, and so
+            # they don't need this explicit ignore.
+            MIN_VERSION_WITH_ALL_LATER_VERSIONS_FIXED = RedpandaVersionTriple(
+                (24, 2, 1))
+            if self.version < MIN_VERSION_WITH_ALL_LATER_VERSIONS_FIXED:
                 symdiff -= set({('cleanup.policy', ('delete',
                                                     'DYNAMIC_TOPIC_CONFIG'))})
 

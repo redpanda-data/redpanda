@@ -148,6 +148,16 @@ inline void operator&=(cleanup_policy_bitflags& a, cleanup_policy_bitflags b) {
     a = (a & b);
 }
 
+inline bool is_compaction_enabled(cleanup_policy_bitflags flags) {
+    return (flags & cleanup_policy_bitflags::compaction)
+           == cleanup_policy_bitflags::compaction;
+}
+
+inline bool is_deletion_enabled(cleanup_policy_bitflags flags) {
+    return (flags & cleanup_policy_bitflags::deletion)
+           == cleanup_policy_bitflags::deletion;
+}
+
 std::ostream& operator<<(std::ostream&, cleanup_policy_bitflags);
 std::istream& operator>>(std::istream&, cleanup_policy_bitflags&);
 

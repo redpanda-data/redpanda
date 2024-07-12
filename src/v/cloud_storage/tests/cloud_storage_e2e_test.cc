@@ -895,7 +895,7 @@ FIXTURE_TEST(test_mixed_timequery, e2e_fixture) {
     // Disable remote fetch, forcing local data usage only.
     auto disable_fetch_override = storage::ntp_config::default_overrides{
       .shadow_indexing_mode = model::shadow_indexing_mode::archival};
-    log->update_configuration(disable_fetch_override).get();
+    log->set_overrides(disable_fetch_override);
 
     auto make_and_verify_timequery =
       [partition](
@@ -940,7 +940,7 @@ FIXTURE_TEST(test_mixed_timequery, e2e_fixture) {
     // Enable remote fetch.
     auto allow_fetch_override = storage::ntp_config::default_overrides{
       .shadow_indexing_mode = model::shadow_indexing_mode::fetch};
-    log->update_configuration(allow_fetch_override).get();
+    log->set_overrides(allow_fetch_override);
 
     // Now, timequeries should be able to read over the whole domain [0,
     // max_timestamp]

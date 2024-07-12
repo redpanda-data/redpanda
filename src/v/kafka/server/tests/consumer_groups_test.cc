@@ -147,7 +147,8 @@ FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
     storage::ntp_config::default_overrides ov;
     ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion
                                  | model::cleanup_policy_bitflags::compaction;
-    log->update_configuration(ov).get();
+    log->set_overrides(ov);
+    log->notify_compaction_update();
     log->flush().get();
     log->force_roll(ss::default_priority_class()).get();
     for (auto retention_enabled : {false, true}) {

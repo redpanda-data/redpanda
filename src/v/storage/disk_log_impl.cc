@@ -139,11 +139,11 @@ disk_log_impl::disk_log_impl(
   , _readers_cache(std::make_unique<readers_cache>(
       config().ntp(),
       _manager.config().readers_cache_eviction_timeout,
-      config::shard_local_cfg().readers_cache_target_max_size.bind())) {
-    const bool is_compacted = config().is_compacted();
+      config::shard_local_cfg().readers_cache_target_max_size.bind()))
+  , _compaction_enabled(config().is_compacted()) {
     for (auto& s : _segs) {
         _probe->add_initial_segment(*s);
-        if (is_compacted) {
+        if (_compaction_enabled) {
             s->mark_as_compacted_segment();
         }
     }
@@ -2812,33 +2812,29 @@ ss::future<bool> disk_log_impl::update_start_offset(model::offset o) {
     });
 }
 
-ss::future<>
-disk_log_impl::update_configuration(ntp_config::default_overrides o) {
-    // Note: This hook is called to update topic level configuration overrides.
-    // Cluster level configuration updates are handled separately by
-    // binding to shard local configuration properties of interest.
+bool disk_log_impl::notify_compaction_update() {
+    bool new_compaction_enabled = config().is_compacted();
+    bool result = (_compaction_enabled != new_compaction_enabled);
+    _compaction_enabled = new_compaction_enabled;
 
-    auto was_compacted = config().is_compacted();
-    mutable_config().set_overrides(o);
-
-    /**
-     * For most of the settings we always query ntp config, only cleanup_policy
-     * needs special treatment.
-     */
     // enable compaction
-    if (!was_compacted && config().is_compacted()) {
+    if (!_compaction_enabled && new_compaction_enabled) {
         for (auto& s : _segs) {
             s->mark_as_compacted_segment();
         }
     }
     // disable compaction
-    if (was_compacted && !config().is_compacted()) {
+    if (_compaction_enabled && !new_compaction_enabled) {
         for (auto& s : _segs) {
             s->unmark_as_compacted_segment();
         }
     }
 
-    return ss::now();
+    return result;
+}
+
+void disk_log_impl::set_overrides(ntp_config::default_overrides o) {
+    mutable_config().set_overrides(o);
 }
 
 /// Calculate the compaction backlog of the segments within a particular term

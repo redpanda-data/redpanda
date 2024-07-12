@@ -647,20 +647,6 @@ class CreateSITopicsTest(RedpandaTest):
         for k, v in examples.items():
             kcl.alter_topic_config({k: v}, incremental=False, topic=topic)
 
-        # 'cleanup.policy' is defaulted to 'delete' upon topic creation.
-        # AlterConfigs handling should preserve this default, unless explicitly
-        # overriden.
-        topic_config = rpk.describe_topic_configs(topic)
-        value, src = topic_config["cleanup.policy"]
-        assert value == "delete" and src == "DEFAULT_CONFIG"
-
-        kcl.alter_topic_config({"cleanup.policy": "compact"},
-                               incremental=False,
-                               topic=topic)
-        topic_config = rpk.describe_topic_configs(topic)
-        value, src = topic_config["cleanup.policy"]
-        assert value == "compact" and src == "DYNAMIC_TOPIC_CONFIG"
-
         # As a control, confirm that if we did pass an invalid property, we would have got an error
         with expect_exception(RuntimeError, lambda e: "invalid" in str(e)):
             kcl.alter_topic_config({"redpanda.invalid.property": 'true'},

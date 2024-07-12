@@ -278,10 +278,8 @@ std::ostream& operator<<(std::ostream& o, cleanup_policy_bitflags c) {
         return o;
     }
 
-    auto compaction = (c & model::cleanup_policy_bitflags::compaction)
-                      == model::cleanup_policy_bitflags::compaction;
-    auto deletion = (c & model::cleanup_policy_bitflags::deletion)
-                    == model::cleanup_policy_bitflags::deletion;
+    auto compaction = model::is_compaction_enabled(c);
+    auto deletion = model::is_deletion_enabled(c);
 
     if (compaction && deletion) {
         o << "compact,delete";

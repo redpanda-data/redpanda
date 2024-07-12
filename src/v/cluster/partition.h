@@ -21,6 +21,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/replicate.h"
+#include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
@@ -347,6 +348,11 @@ private:
     ss::future<std::optional<storage::timequery_result>>
     local_timequery(storage::timequery_config, bool allow_cloud_fallback);
 
+    // Restarts the archiver
+    // If should_notify_topic_config is set, it marks the topic_manifest as
+    // dirty so that it gets reuploaded
+    ss::future<> restart_archiver(bool should_notify_topic_config);
+
     consensus_ptr _raft;
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
@@ -376,6 +382,7 @@ private:
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
+    config::binding<model::cleanup_policy_bitflags> _log_cleanup_policy;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

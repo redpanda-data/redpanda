@@ -134,18 +134,6 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
             tp.cfg.properties.shadow_indexing
               = _metadata_cache.get_default_shadow_indexing_mode();
         }
-
-        /**
-         * We always override cleanup policy. i.e. topic cleanup policy will
-         * stay the same even if it was changed in defaults (broker
-         * configuration) and there was no override passed by client while
-         * creating a topic. The the same policy is applied in Kafka.
-         */
-
-        if (!tp.cfg.properties.cleanup_policy_bitflags.has_value()) {
-            tp.cfg.properties.cleanup_policy_bitflags
-              = _metadata_cache.get_default_cleanup_policy_bitflags();
-        }
     }
 
     vlog(clusterlog.info, "Create topics {}", topics);
