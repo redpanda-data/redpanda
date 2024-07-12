@@ -70,6 +70,7 @@ class FailureInjectorBase:
 
     def __exit__(self, type, value, traceback):
         self._heal_all()
+        self._continue_all()
 
     def inject_failure(self, spec):
         if spec in self._in_flight:
@@ -153,6 +154,9 @@ class FailureInjectorBase:
         pass
 
     def _heal_all(self):
+        pass
+
+    def _continue_all(self):
         pass
 
     def _suspend(self, node):
@@ -246,7 +250,21 @@ class FailureInjector(FailureInjectorBase):
                     # Cleanups can fail, e.g. rule does not exist
                     self.redpanda.logger.warn(f"_heal_all: {e}")
 
-        self._in_flight.clear()
+        self._in_flight = {
+            spec
+            for spec in self._in_flight
+            if spec.type != FailureSpec.FAILURE_ISOLATE
+        }
+
+    def _contunue_all(self):
+        self.redpanda.logger.info(f"continuing execution on all nodes")
+        for n in self.redpanda.nodes:
+            self._continue(n)
+        self._in_flight = {
+            spec
+            for spec in self._in_flight
+            if spec.type != FailureSpec.FAILURE_SUSPEND
+        }
 
     def _suspend(self, node):
         self.redpanda.logger.info(
