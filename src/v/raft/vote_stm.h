@@ -120,6 +120,8 @@ private:
 
     ss::future<> wait_for_next_reply();
 
+    void fail_election();
+
     friend std::ostream& operator<<(std::ostream&, const vmeta&);
 
     ss::future<election_success> do_vote();
