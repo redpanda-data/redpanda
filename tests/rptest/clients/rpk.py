@@ -1910,6 +1910,10 @@ class RpkTool:
                                         output_format=output_format,
                                         node=node)
 
+    def import_cluster_quota(self, source, output_format="json"):
+        cmd = ["import", "--no-confirm", "--from", source]
+        return self._run_cluster_quotas(cmd, output_format=output_format)
+
     def _run_cluster_quotas(self,
                             cmd,
                             output_format="json",

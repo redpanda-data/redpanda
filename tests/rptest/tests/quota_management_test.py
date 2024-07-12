@@ -99,7 +99,7 @@ class QuotaValue(NamedTuple):
 
     @classmethod
     def from_dict(cls, d: dict):
-        return cls(key=QuotaValueType(d['key']), values=d['values'])
+        return cls(key=QuotaValueType(d['key']), values=d['value'])
 
 
 class Quota(NamedTuple):
