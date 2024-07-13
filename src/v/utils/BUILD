@@ -15,6 +15,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "moving_average",
+    hdrs = [
+        "moving_average.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        ":named_type",
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
     name = "vint",
     srcs = [
         "vint.cc",

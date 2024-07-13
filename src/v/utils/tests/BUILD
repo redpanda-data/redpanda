@@ -295,3 +295,18 @@ redpanda_cc_btest_no_seastar(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "moving_average_test",
+    timeout = "short",
+    srcs = [
+        "moving_average_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:moving_average",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
