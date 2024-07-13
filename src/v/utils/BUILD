@@ -1,5 +1,7 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
+package(default_visibility = ["//visibility:public"])
+
 redpanda_cc_library(
     name = "vint",
     srcs = [
@@ -10,7 +12,6 @@ redpanda_cc_library(
         "vint_iostream.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iostream",
@@ -24,7 +25,6 @@ redpanda_cc_library(
         "functional.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
@@ -33,7 +33,6 @@ redpanda_cc_library(
         "inet_address_wrapper.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
@@ -42,7 +41,6 @@ redpanda_cc_library(
         "tristate.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
     ],
@@ -54,7 +52,6 @@ redpanda_cc_library(
         "memory_data_source.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -67,7 +64,6 @@ redpanda_cc_library(
         "mutex.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/ssx:semaphore",
@@ -80,7 +76,6 @@ redpanda_cc_library(
         "static_deleter_fn.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
@@ -89,7 +84,6 @@ redpanda_cc_library(
         "named_type.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "@fmt",
     ],
@@ -101,7 +95,6 @@ redpanda_cc_library(
         "to_string.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@fmt",
@@ -115,7 +108,6 @@ redpanda_cc_library(
         "object_pool.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
     ],
@@ -130,7 +122,6 @@ redpanda_cc_library(
         "human.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -146,7 +137,6 @@ redpanda_cc_library(
         "file_io.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
@@ -164,7 +154,6 @@ redpanda_cc_library(
         "tracking_allocator.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         ":human",
         "//src/v/container:intrusive",
@@ -179,7 +168,6 @@ redpanda_cc_library(
         "unresolved_address.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/serde",
     ],
@@ -195,7 +183,6 @@ redpanda_cc_library(
     ],
     exclude_layering_check = True,
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         ":human",
         ":static_deleter_fn",
@@ -217,7 +204,6 @@ redpanda_cc_library(
     ],
     exclude_layering_check = True,
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/container:fragmented_vector",
         "//src/v/reflection:adl",
@@ -233,7 +219,6 @@ redpanda_cc_library(
         "uuid.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -254,7 +239,6 @@ redpanda_cc_library(
         "xid.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
@@ -276,7 +260,6 @@ redpanda_cc_library(
     ],
     exclude_layering_check = True,
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -295,7 +278,6 @@ redpanda_cc_library(
         "directory_walker.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -308,7 +290,6 @@ redpanda_cc_library(
         "expiring_promise.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -324,7 +305,6 @@ redpanda_cc_library(
         "retry_chain_node.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/random:fast_prng",
@@ -343,7 +323,6 @@ redpanda_cc_library(
         "bottomless_token_bucket.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@fmt",
@@ -357,7 +336,6 @@ redpanda_cc_library(
         "move_canary.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
@@ -366,7 +344,6 @@ redpanda_cc_library(
         "exceptions.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -379,7 +356,6 @@ redpanda_cc_library(
         "stable_iterator_adaptor.h",
     ],
     include_prefix = "utils",
-    visibility = ["//visibility:public"],
     deps = [
         ":exceptions",
         "//src/v/base",
