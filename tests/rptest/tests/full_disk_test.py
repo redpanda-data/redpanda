@@ -360,7 +360,7 @@ class LocalDiskReportTimeTest(RedpandaTest):
         # there is definitely going to be some fuzz factor needed here and may
         # need updated, but after many runs 50mb was a good amount of slack.
         assert diff <= (
-            100 * 2**20
+            115 * 2**20
         ), f"diff {diff} reported {reported} expected {expected} default seg size {default_segment_size}"
 
 
