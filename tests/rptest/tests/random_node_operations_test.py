@@ -249,7 +249,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             )
             self.producer.wait()
 
-            assert self.producer.produce_status.bad_offsets == 0
+            assert self.producer.produce_status.bad_offsets == 0 or self.tolerate_data_loss
             # Await the consumer that is reading only the subset of data that
             # was written before it started.
             self.consumer.wait()

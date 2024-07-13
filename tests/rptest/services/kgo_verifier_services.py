@@ -599,8 +599,13 @@ class KgoVerifierProducer(KgoVerifierService):
             # the same topic, or that Redpanda showed a buggy behavior with
             # idempotency: producer records should always land at the next offset
             # after the last record they wrote.
-            raise RuntimeError(
-                f"{self.who_am_i()} possible idempotency bug: {self._status}")
+            if self._tolerate_data_loss:
+                self._redpanda.logger.warn(
+                    f"{self.who_am_i()} observed data loss: {self._status}")
+            else:
+                raise RuntimeError(
+                    f"{self.who_am_i()} possible idempotency bug: {self._status}"
+                )
 
         return super().wait_node(node, timeout_sec=timeout_sec)
 
