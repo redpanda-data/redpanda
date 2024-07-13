@@ -235,3 +235,20 @@ redpanda_cc_btest_no_seastar(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "tracking_allocator_test",
+    timeout = "short",
+    srcs = [
+        "tracking_allocator_tests.cc",
+    ],
+    deps = [
+        "//src/v/json",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:tracking_allocator",
+        "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
+    ],
+)

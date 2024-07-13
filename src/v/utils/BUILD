@@ -156,6 +156,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "tracking_allocator",
+    srcs = [
+        "tracking_allocator.cc",
+    ],
+    hdrs = [
+        "tracking_allocator.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":human",
+        "//src/v/container:intrusive",
+        "//src/v/json",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "unresolved_address",
     hdrs = [
         "unresolved_address.h",
