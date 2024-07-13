@@ -266,3 +266,17 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_bench(
+    name = "seastar_histogram_bench",
+    timeout = "short",
+    srcs = [
+        "seastar_histogram_bench.cc",
+    ],
+    deps = [
+        "//src/v/utils:hdr_hist",
+        "//src/v/utils:log_hist",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
