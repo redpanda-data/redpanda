@@ -138,6 +138,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "file_io",
+    srcs = [
+        "file_io.cc",
+    ],
+    hdrs = [
+        "file_io.h",
+    ],
+    include_prefix = "utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "unresolved_address",
     hdrs = [
         "unresolved_address.h",
