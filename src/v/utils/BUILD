@@ -3,6 +3,18 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//visibility:public"])
 
 redpanda_cc_library(
+    name = "auto_fmt",
+    hdrs = [
+        "auto_fmt.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/reflection:to_tuple",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
     name = "vint",
     srcs = [
         "vint.cc",

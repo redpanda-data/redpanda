@@ -280,3 +280,18 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_btest_no_seastar(
+    name = "auto_fmt_test",
+    timeout = "short",
+    srcs = [
+        "auto_fmt_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=auto_fmt",
+    ],
+    deps = [
+        "//src/v/utils:auto_fmt",
+        "@boost//:test",
+    ],
+)
