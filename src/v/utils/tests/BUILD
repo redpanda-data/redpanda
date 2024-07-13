@@ -252,3 +252,17 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_bench(
+    name = "coro_bench",
+    timeout = "short",
+    srcs = [
+        "coro_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:future_util",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
