@@ -215,6 +215,14 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "filtered_lower_bound",
+    hdrs = [
+        "filtered_lower_bound.h",
+    ],
+    include_prefix = "utils",
+)
+
+redpanda_cc_library(
     name = "timed_mutex",
     hdrs = [
         "timed_mutex.h",

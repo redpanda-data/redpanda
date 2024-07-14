@@ -442,3 +442,18 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "filtered_lower_bound_test",
+    timeout = "short",
+    srcs = [
+        "filtered_lower_bound_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:filtered_lower_bound",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
