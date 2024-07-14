@@ -343,3 +343,19 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "waiter_queue_test",
+    timeout = "short",
+    srcs = [
+        "waiter_queue_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:waiter_queue",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

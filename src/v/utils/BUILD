@@ -140,6 +140,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "waiter_queue",
+    hdrs = [
+        "waiter_queue.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "to_string",
     hdrs = [
         "to_string.h",
