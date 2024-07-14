@@ -375,3 +375,23 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "input_stream_fanout_test",
+    timeout = "short",
+    srcs = [
+        "input_stream_fanout_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "//src/v/bytes:random",
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:stream_utils",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

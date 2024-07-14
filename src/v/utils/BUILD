@@ -238,6 +238,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "stream_utils",
+    hdrs = [
+        "stream_utils.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "unresolved_address",
     hdrs = [
         "unresolved_address.h",
