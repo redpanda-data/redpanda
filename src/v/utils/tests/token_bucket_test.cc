@@ -55,14 +55,14 @@ SEASTAR_THREAD_TEST_CASE(test_throttle_shutdown) {
     auto result = throttler.throttle(1, as);
     throttler.shutdown();
     BOOST_REQUIRE_EXCEPTION(
-      result.get(),
-      ss::broken_named_semaphore,
-      [](ss::broken_named_semaphore ex) { return true; });
+      result.get(), ss::broken_named_semaphore, [](ss::broken_named_semaphore) {
+          return true;
+      });
 
     BOOST_REQUIRE_EXCEPTION(
       throttler.throttle(1, as).get(),
       ss::broken_named_semaphore,
-      [](ss::broken_named_semaphore ex) { return true; });
+      [](ss::broken_named_semaphore) { return true; });
     BOOST_REQUIRE(!throttler.try_throttle(1));
 }
 
@@ -75,7 +75,7 @@ SEASTAR_THREAD_TEST_CASE(test_throttle_abort) {
     BOOST_REQUIRE_EXCEPTION(
       result.get(),
       ss::named_semaphore_aborted,
-      [](ss::named_semaphore_aborted ex) { return true; });
+      [](ss::named_semaphore_aborted) { return true; });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_try_throttle) {
