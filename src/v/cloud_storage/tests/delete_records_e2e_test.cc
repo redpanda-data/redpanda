@@ -613,3 +613,143 @@ FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
       stm_manifest, stm_kafka_start);
     check_truncate_removes_override(size_above_override);
 }
+
+// Test that truncations applied to offsets that only exist in cloud storage
+// work as expected. Is similar to `test_delete_from_archive_truncation` with
+// the exception that everything is deleted from the local log before
+// truncations start.
+FIXTURE_TEST(test_no_local_delete_from_archive, delete_records_e2e_fixture) {
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    size_t records_per_seg = 5;
+    BOOST_REQUIRE_GE(
+      200,
+      gen.batches_per_segment(records_per_seg)
+        .num_segments(40)
+        .produce()
+        .get());
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->apply_spillover().get();
+    auto& stm_manifest = archiver->manifest();
+    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    kafka_delete_records_transport deleter(make_kafka_client().get());
+    deleter.start().get();
+
+    // The max collectible offset should of been set to the start of the local
+    // log above.
+    ss::abort_source as;
+    storage::housekeeping_config housekeeping_conf(
+      model::timestamp::min(),
+      0,
+      log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    partition->log()->housekeeping(housekeeping_conf).get();
+    // Wait for raft to write a snapshot and truncate.
+    tests::cooperative_spin_wait_with_timeout(10s, [this] {
+        return log->segments().size() == 1;
+    }).get();
+
+    auto assert_before_local_base = [this](model::offset kafka_offset) {
+        auto local_kafka_base = log->from_log_offset(
+          log->offsets().start_offset);
+        BOOST_REQUIRE_LT(kafka_offset, local_kafka_base);
+    };
+
+    auto get_offset_override = [this] {
+        auto offset_override_res
+          = partition->sync_kafka_start_offset_override(10s).get();
+        BOOST_REQUIRE(!offset_override_res.has_error());
+        return offset_override_res.value();
+    };
+
+    // Truncate within the bounds of the first archive segment. Nothing should
+    // be removed.
+    auto& spillover = stm_manifest.get_spillover_map();
+    auto first_seg_commit_offset
+      = *spillover.get_committed_offset_column().at_index(0);
+    auto first_seg_delta_end
+      = *spillover.get_delta_offset_end_column().at_index(0);
+    auto first_seg_last_kafka_offset = first_seg_commit_offset
+                                       - first_seg_delta_end;
+
+    auto truncate_off = model::offset(first_seg_last_kafka_offset);
+    assert_before_local_base(truncate_off);
+
+    deleter
+      .delete_records_from_partition(
+        topic_name, model::partition_id(0), truncate_off, 5s)
+      .get();
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->housekeeping().get();
+    BOOST_REQUIRE_EQUAL(
+      model::offset(0), stm_manifest.get_archive_start_offset());
+    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    BOOST_REQUIRE_EQUAL(truncate_off, get_offset_override());
+
+    truncate_off = model::offset(first_seg_last_kafka_offset + 1);
+    assert_before_local_base(truncate_off);
+
+    // Now truncate just past the bounds of the first archive segment. It
+    // should actually be removed.
+    deleter
+      .delete_records_from_partition(
+        topic_name, model::partition_id(0), truncate_off, 5s)
+      .get();
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->housekeeping().get();
+    auto new_archive_start = stm_manifest.get_archive_start_offset();
+    BOOST_REQUIRE_GT(new_archive_start, model::offset(0));
+    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    BOOST_REQUIRE_NE(
+      stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
+    BOOST_REQUIRE_EQUAL(truncate_off, get_offset_override());
+
+    // Truncate right at the end of the archive. The archive should retain a
+    // single segment.
+    auto stm_kafka_start = stm_manifest.get_start_kafka_offset().value();
+
+    truncate_off = model::offset(stm_kafka_start() - 1);
+    assert_before_local_base(truncate_off);
+
+    deleter
+      .delete_records_from_partition(
+        topic_name, model::partition_id(0), truncate_off, 5s)
+      .get();
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->housekeeping().get();
+    BOOST_REQUIRE_GT(
+      stm_manifest.get_archive_start_offset(), new_archive_start);
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    BOOST_REQUIRE_NE(
+      stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
+    BOOST_REQUIRE_EQUAL(truncate_off, get_offset_override());
+
+    // Truncate to the beginning of the STM manifest. This should remove the
+    // archive entirely.
+    truncate_off = model::offset(stm_kafka_start());
+    assert_before_local_base(truncate_off);
+
+    deleter
+      .delete_records_from_partition(
+        topic_name, model::partition_id(0), truncate_off, 5s)
+      .get();
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->housekeeping().get();
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_archive_start_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_archive_clean_offset(), model::offset{});
+    BOOST_REQUIRE(stm_manifest.get_spillover_map().empty());
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_start_kafka_offset_override(), stm_kafka_start);
+    BOOST_REQUIRE_EQUAL(truncate_off, get_offset_override());
+
+    // Truncate the manifest past the override.
+    auto size_above_override = segment_bytes_above_offset(
+      stm_manifest, stm_kafka_start);
+    check_truncate_removes_override(size_above_override);
+}
