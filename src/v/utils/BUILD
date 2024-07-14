@@ -84,6 +84,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "token_bucket",
+    hdrs = [
+        "token_bucket.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "memory_data_source",
     hdrs = [
         "memory_data_source.h",

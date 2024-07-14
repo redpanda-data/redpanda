@@ -328,3 +328,18 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "token_bucket_test",
+    timeout = "short",
+    srcs = [
+        "token_bucket_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:token_bucket",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
