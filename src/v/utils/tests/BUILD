@@ -412,3 +412,17 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "remote_test",
+    timeout = "short",
+    srcs = [
+        "remote_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:remote",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

@@ -165,6 +165,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "remote",
+    hdrs = [
+        "remote.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "object_pool",
     hdrs = [
         "object_pool.h",
