@@ -426,3 +426,19 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "retry_test",
+    timeout = "short",
+    srcs = [
+        "retry_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:retry",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

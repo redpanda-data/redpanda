@@ -203,6 +203,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "retry",
+    hdrs = [
+        "retry.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "timed_mutex",
     hdrs = [
         "timed_mutex.h",
