@@ -359,3 +359,19 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "timed_mutex_test",
+    timeout = "short",
+    srcs = [
+        "timed_mutex_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:timed_mutex",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

@@ -191,6 +191,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "timed_mutex",
+    hdrs = [
+        "timed_mutex.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "file_io",
     srcs = [
         "file_io.cc",
