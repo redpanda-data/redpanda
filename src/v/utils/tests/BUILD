@@ -235,3 +235,80 @@ redpanda_cc_btest_no_seastar(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "tracking_allocator_test",
+    timeout = "short",
+    srcs = [
+        "tracking_allocator_tests.cc",
+    ],
+    deps = [
+        "//src/v/json",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:tracking_allocator",
+        "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/container:node_hash_map",
+        "@abseil-cpp//absl/container:node_hash_set",
+        "@boost//:test",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "coro_bench",
+    timeout = "short",
+    srcs = [
+        "coro_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:future_util",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "seastar_histogram_bench",
+    timeout = "short",
+    srcs = [
+        "seastar_histogram_bench.cc",
+    ],
+    deps = [
+        "//src/v/utils:hdr_hist",
+        "//src/v/utils:log_hist",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_btest_no_seastar(
+    name = "auto_fmt_test",
+    timeout = "short",
+    srcs = [
+        "auto_fmt_test.cc",
+    ],
+    defines = [
+        "BOOST_TEST_MODULE=auto_fmt",
+    ],
+    deps = [
+        "//src/v/utils:auto_fmt",
+        "@boost//:test",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "moving_average_test",
+    timeout = "short",
+    srcs = [
+        "moving_average_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:moving_average",
+        "@boost//:test",
+        "@seastar",
+    ],
+)

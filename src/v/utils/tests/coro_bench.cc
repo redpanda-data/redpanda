@@ -25,7 +25,7 @@ bool always_false() {
 template<typename F>
 ss::future<size_t> co_await_in_loop(F f) {
     perf_tests::start_measuring_time();
-    for (int i = 0; i < ITERS; i++) {
+    for (size_t i = 0; i < ITERS; i++) {
         co_await f();
     }
     perf_tests::stop_measuring_time();
@@ -37,7 +37,7 @@ ss::future<size_t> collect_futures(F f) {
     std::vector<ss::future<>> futs;
     futs.reserve(ITERS);
     perf_tests::start_measuring_time();
-    for (int i = 0; i < ITERS; i++) {
+    for (size_t i = 0; i < ITERS; i++) {
         futs.emplace_back(f());
     }
     perf_tests::stop_measuring_time();
