@@ -27,6 +27,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "rwlock",
+    hdrs = [
+        "rwlock.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "vint",
     srcs = [
         "vint.cc",
