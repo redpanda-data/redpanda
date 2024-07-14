@@ -395,3 +395,20 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "seastar_histogram_test",
+    timeout = "short",
+    srcs = [
+        "seastar_histogram_test.cc",
+    ],
+    deps = [
+        "//src/v/metrics",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:hdr_hist",
+        "//src/v/utils:log_hist",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
