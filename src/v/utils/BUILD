@@ -483,3 +483,20 @@ redpanda_cc_library(
         "@fmt",
     ],
 )
+
+redpanda_cc_library(
+    name = "delta_for",
+    hdrs = [
+        "delta_for.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde",
+        "//src/v/serde:array",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:optional",
+        "//src/v/ssx:sformat",
+    ],
+)

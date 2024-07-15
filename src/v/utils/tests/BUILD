@@ -457,3 +457,37 @@ redpanda_cc_btest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "delta_for_test",
+    timeout = "short",
+    srcs = [
+        "delta_for_characterization_data.cc",
+        "delta_for_characterization_data.h",
+        "delta_for_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:delta_for",
+        "@boost//:numeric_conversion",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "delta_for_bench",
+    timeout = "short",
+    srcs = [
+        "delta_for_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/random:generators",
+        "//src/v/utils:delta_for",
+        "@seastar//:benchmark",
+    ],
+)
