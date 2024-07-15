@@ -24,6 +24,7 @@
 #include <expected>
 #include <format>
 #include <print>
+#include <unistd.h>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -394,6 +395,43 @@ private:
     FILE* _info_stream;
     FILE* _err_stream;
 };
+
+std::unordered_map<std::string, std::string> map_from_environ() {
+    std::unordered_map<std::string, std::string> env{};
+    for (char** envp = environ; *envp != nullptr;
+         std::advance(envp, std::ptrdiff_t{1})) {
+        // environ entries are expected to be null terminated
+        const std::string entry{*envp};
+        if (entry.empty()) {
+            continue;
+        }
+        auto delim = entry.find_first_of('=');
+        if (delim == std::string_view::npos) {
+            continue;
+        }
+        auto key = entry.substr(0, delim);
+        auto val = delim + 1 < entry.size() ? entry.substr(delim + 1) : "";
+        env.emplace(std::move(key), std::move(val));
+    }
+    env.try_emplace("NODE_ENV", "production");
+    return env;
+}
+
+std::expected<qjs::value, qjs::exception> env(JSContext* ctx) {
+    auto native_env = map_from_environ();
+    auto js_env = value::object(ctx);
+    for (const auto& [k, v] : native_env) {
+        auto val = value::string(ctx, v);
+        if (!val.has_value()) {
+            return std::unexpected(val.error());
+        }
+        if (auto res = js_env.set_property(k, val.value()); !res.has_value()) {
+            return std::unexpected(res.error());
+        }
+    }
+    return js_env;
+}
+
 } // namespace
 
 std::expected<std::monostate, exception> runtime::create_builtins() {
@@ -406,10 +444,25 @@ std::expected<std::monostate, exception> runtime::create_builtins() {
     console_builder.method<&console::warn>("error");
     auto factory = console_builder.build();
     auto global_this = value::global(_ctx.get());
-    return global_this.set_property(
+    auto result = global_this.set_property(
       "console",
       factory.create(std::make_unique<console>(
         console::config{.info = stdout, .warn = stderr})));
+
+    if (!result.has_value()) {
+        return result;
+    }
+
+    auto process = qjs::value::object(_ctx.get());
+    auto env_obj = env(_ctx.get());
+    if (!env_obj.has_value()) {
+        return std::unexpected(env_obj.error());
+    }
+    result = process.set_property("env", env_obj.value());
+    if (!result.has_value()) {
+        return result;
+    }
+    return global_this.set_property("process", process);
 }
 
 std::expected<compiled_bytecode, exception>
