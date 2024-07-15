@@ -6,6 +6,7 @@ rp_test(
   USE_CWD
   BINARY_NAME iceberg
   SOURCES
+    datatypes_test.cc
     manifest_serialization_test.cc
   LIBRARIES
     Avro::avro

@@ -26,7 +26,11 @@ endforeach()
 
 v_cc_library(
   NAME iceberg
-  SRCS ${avro_hdrs}
+  SRCS
+    ${avro_hdrs}
+    datatypes.cc
+  DEPS
+    v::container
 )
 
 add_subdirectory(tests)
