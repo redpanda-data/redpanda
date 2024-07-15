@@ -2767,9 +2767,13 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
                 } else if (test_type == "network") {
                     r.ntos.push_back(cluster::netcheck_opts::from_json(obj));
                 } else {
-                    throw ss::httpd::bad_param_exception(
-                      "Unknown self_test 'type', valid options are 'disk' or "
-                      "'network'");
+                    rapidjson::StringBuffer buffer;
+                    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                    element.Accept(writer);
+                    r.unknown_checks.push_back(cluster::unknown_check{
+                      .test_type = test_type,
+                      .test_json = ss::sstring{
+                        buffer.GetString(), buffer.GetSize()}});
                 }
             }
         } else {
