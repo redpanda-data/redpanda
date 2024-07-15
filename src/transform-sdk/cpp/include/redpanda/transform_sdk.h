@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <ranges>
@@ -321,6 +322,22 @@ struct subject_schema {
     friend bool operator==(const subject_schema&, const subject_schema&)
       = default;
 };
+
+/**
+ * Extract and decode the schema ID from an arbitrary array of bytes.
+ * buf must be at least 5B long:
+ *   - buf[0]: magic byte (must be 0x00)
+ *   - buf[1..5]: the id, in network byte order (big endian)
+ */
+std::expected<std::pair<schema_id, bytes_view>, std::error_code>
+decode_schema_id(bytes_view buf);
+
+/**
+ * Encode and prepend the schema ID to a byte array.
+ * Creates and returns a copy of the buffer.
+ * The result will be at least 5B long.
+ */
+bytes encode_schema_id(schema_id sid, bytes_view buf);
 
 } // namespace sr
 

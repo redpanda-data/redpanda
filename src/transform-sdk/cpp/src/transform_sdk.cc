@@ -15,6 +15,7 @@
 #include <redpanda/transform_sdk.h>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <climits>
 #include <cstdint>
@@ -490,6 +491,45 @@ schema::new_json(std::string schema, std::optional<reference_container> refs) {
       std::move(refs).value_or(reference_container{})};
 }
 
+std::expected<std::pair<schema_id, bytes_view>, std::error_code>
+decode_schema_id(bytes_view buf) {
+    constexpr size_t HEADER_LEN = 5U;
+    static const bytes MAGIC_BYTES{0x00};
+    if (
+      buf.subview(0, MAGIC_BYTES.size()) != MAGIC_BYTES
+      || buf.size() < HEADER_LEN) {
+        return std::unexpected{
+          std::make_error_code(std::errc::illegal_byte_sequence)};
+    }
+    // NOLINTBEGIN(*-magic-numbers)
+    auto id_bytes = buf.subview(1, HEADER_LEN - 1);
+    const uint32_t raw_id = (static_cast<uint32_t>(id_bytes[3]) << 0U)
+                            | (static_cast<uint32_t>(id_bytes[2]) << 8U)
+                            | (static_cast<uint32_t>(id_bytes[1]) << 16U)
+                            | (static_cast<uint32_t>(id_bytes[0]) << 24U);
+    // NOLINTEND(*-magic-numbers)
+    if (
+      raw_id > static_cast<uint32_t>(
+        std::numeric_limits<sr::schema_id::type>::max())) {
+        return std::unexpected{
+          std::make_error_code(std::errc::illegal_byte_sequence)};
+    }
+    return std::make_pair(
+      schema_id{static_cast<int32_t>(raw_id)}, buf.subview(HEADER_LEN));
+}
+
+bytes encode_schema_id(schema_id sid, bytes_view buf) {
+    static const bytes MAGIC_BYTES{0x00};
+    bytes be_id;
+    be_id.resize(sizeof(schema_id::type));
+    auto reversed = std::byteswap(sid.value());
+    std::memcpy(be_id.data(), &reversed, be_id.size());
+    bytes result = MAGIC_BYTES;
+    result.append_range(be_id);
+    result.append_range(buf);
+    return result;
+}
+
 } // namespace sr
 
 } // namespace redpanda
@@ -648,6 +688,35 @@ void test_record_roundtrip(random_bytes_engine* rng) {
     }
 }
 
+void test_schema_id_codec_roundtrip(random_bytes_engine* rng) {
+    constexpr size_t len = 1024;
+    constexpr size_t tiny = 4;
+    static const sr::schema_id sid{
+      std::numeric_limits<sr::schema_id::type>::max()};
+    auto buf = make_bytes(rng, len);
+    auto encoded = sr::encode_schema_id(sid, buf);
+    auto result = sr::decode_schema_id(encoded);
+    assert(result.has_value(), "decode failed");
+    auto [decoded, rest] = result.value();
+    assert(decoded == sid, "schema id mismatch");
+    assert(rest == buf, "buffer mismatch");
+
+    buf = make_bytes(rng, tiny);
+    result = sr::decode_schema_id(buf);
+    assert(!result.has_value(), "decode should fail on too small buffer");
+
+    // NOLINTNEXTLINE(*-magic-numbers)
+    buf = bytes{0x00, 0xFF, 0xFF, 0xFF, 0xFF};
+    result = sr::decode_schema_id(buf);
+    assert(!result.has_value(), "decode should fail if ID exceeds INT_MAX");
+
+    // NOLINTNEXTLINE(*-magic-numbers)
+    buf = bytes{0x01, 0x00, 0x00, 0x00, 0x01};
+    result = sr::decode_schema_id(buf);
+    assert(
+      !result.has_value(), "decode should fail if magic byte is incorrect");
+}
+
 // NOLINTEND(*-unchecked-optional-access)
 
 void run_test_suite() {
@@ -659,6 +728,7 @@ void run_test_suite() {
     test_null_buffer_roundtrip();
     test_sized_buffer_roundtrip(&rng);
     test_record_roundtrip(&rng);
+    test_schema_id_codec_roundtrip(&rng);
     std::println("tests successful");
 }
 
