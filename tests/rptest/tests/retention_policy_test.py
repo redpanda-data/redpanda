@@ -365,7 +365,8 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         si_settings = SISettings(test_context,
                                  log_segment_size=self.segment_size,
-                                 fast_uploads=True)
+                                 fast_uploads=True,
+                                 cloud_storage_housekeeping_interval_ms=1000)
         super(ShadowIndexingCloudRetentionTest,
               self).__init__(test_context=test_context,
                              si_settings=si_settings,
