@@ -330,6 +330,9 @@ copy_data_segment_reducer::operator()(model::record_batch b) {
     if (_inject_failure) {
         throw std::runtime_error("injected error");
     }
+    if (_as) {
+        _as->check();
+    }
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
         co_return co_await filter_and_append(comp, std::move(b));
