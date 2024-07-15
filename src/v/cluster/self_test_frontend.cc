@@ -133,7 +133,7 @@ ss::future<uuid_t> self_test_frontend::start_test(
     if (ids.empty()) {
         throw self_test_exception("No node ids provided");
     }
-    if (req.dtos.empty() && req.ntos.empty()) {
+    if (req.dtos.empty() && req.ntos.empty() && req.unknown_checks.empty()) {
         throw self_test_exception("No tests specified to run");
     }
     /// Validate input
@@ -185,7 +185,10 @@ ss::future<uuid_t> self_test_frontend::start_test(
               }
           }
           return handle->start_test(start_test_request{
-            .id = test_id, .dtos = req.dtos, .ntos = new_ntos});
+            .id = test_id,
+            .dtos = std::move(req.dtos),
+            .ntos = std::move(new_ntos),
+            .unknown_checks = std::move(req.unknown_checks)});
       });
     co_return test_id;
 }
