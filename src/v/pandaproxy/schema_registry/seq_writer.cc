@@ -170,7 +170,7 @@ ss::future<bool> seq_writer::produce_and_apply(
         model::schema_registry_internal_tp, batch.copy());
 
     if (res.error_code != kafka::error_code::none) {
-        throw kafka::exception(res.error_code, *res.error_message);
+        throw kafka::exception(res.error_code, res.error_message.value_or(""));
     }
 
     auto success = write_at.value_or(res.base_offset) == res.base_offset;
