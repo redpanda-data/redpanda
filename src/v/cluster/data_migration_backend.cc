@@ -121,7 +121,8 @@ ss::future<> backend::work_once() {
     }
 
     // process RPC responses
-    for (const auto& [node_id, response] : _rpc_responses) {
+    auto rpc_responses = std::move(_rpc_responses);
+    for (const auto& [node_id, response] : rpc_responses) {
         co_await ssx::async_for_each(
           response.actual_states, [this](const auto& ntp_resp) {
               auto rs_it = _migration_states.find(ntp_resp.migration);
@@ -158,13 +159,12 @@ ss::future<> backend::work_once() {
     // defer RPC retries
     // todo: configure timeout
     auto new_deadline = now + 5s;
-    for (const auto& node_id : _rpc_responses | std::views::keys) {
+    for (const auto& node_id : rpc_responses | std::views::keys) {
         if (_node_states.contains(node_id)) {
             _nodes_to_retry.try_emplace(node_id, new_deadline);
             next_tick = std::min(next_tick, new_deadline);
         }
     }
-    _rpc_responses.clear();
 
     // schedule fibers
     for (auto node_id : to_send_rpc) {
