@@ -233,4 +233,95 @@ using on_record_written_callback
  */
 [[noreturn]] void on_record_written(const on_record_written_callback& callback);
 
+namespace sr {
+
+/**
+ * enum indicating the format of some schema
+ * Supported formats:
+ *   - avro (fully supported)
+ *   - protobuf (fully supported)
+ *   - json (redpanda v24.2+ WIP)
+ */
+enum class schema_format {
+    avro = 0,
+    protobuf = 1,
+    json = 2,
+};
+
+/**
+ * Type-safe wrapper for a the ID (int32) of some registered schema
+ */
+using schema_id = detail::simple_named_type<int32_t, struct schema_id_tag>;
+
+/**
+ * Type-safe wrapper for a bare schema version (int32)
+ */
+using schema_version
+  = detail::simple_named_type<int32_t, struct schema_version_tag>;
+
+/**
+ * Aggregate representing a reference to a schema defined elsewhere.
+ * The details are format dependent; e.g Avro schemas will use a different
+ * reference syntax from protobuf of JSON schemas. For more information , see:
+ *
+ *   https://docs.redpanda.com/current/manage/schema-reg/schema-reg-api/#reference-a-schema
+ */
+struct reference {
+    std::string name;
+    std::string subject;
+    schema_version version;
+
+private:
+    friend bool operator==(const reference&, const reference&) = default;
+};
+
+/**
+ * A schema that can be registered to schema registry
+ */
+struct schema {
+    using reference_container = std::vector<reference>;
+
+    std::string raw_schema;
+    schema_format format;
+    reference_container references;
+
+    /**
+     * Construct a new schema in Avro format
+     */
+    [[nodiscard]] static schema new_avro(
+      std::string schema,
+      std::optional<reference_container> refs = std::nullopt);
+
+    /**
+     * Construct a new schema in protobuf format
+     */
+    [[nodiscard]] static schema new_protobuf(
+      std::string schema,
+      std::optional<reference_container> refs = std::nullopt);
+
+    /**
+     * Construct a new schema in json format
+     */
+    [[nodiscard]] static schema new_json(
+      std::string schema,
+      std::optional<reference_container> refs = std::nullopt);
+
+    friend bool operator==(const schema&, const schema&) = default;
+};
+
+/**
+ * A schema along with its subject, version, and ID
+ */
+struct subject_schema {
+    sr::schema schema;
+    std::string subject;
+    schema_version version;
+    schema_id id;
+
+    friend bool operator==(const subject_schema&, const subject_schema&)
+      = default;
+};
+
+} // namespace sr
+
 } // namespace redpanda

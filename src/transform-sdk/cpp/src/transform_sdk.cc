@@ -464,6 +464,34 @@ on_record_written(const on_record_written_callback& callback) {
     }
 }
 
+namespace sr {
+
+schema
+schema::new_avro(std::string schema, std::optional<reference_container> refs) {
+    return {
+      std::move(schema),
+      schema_format::avro,
+      std::move(refs).value_or(reference_container{})};
+}
+
+schema schema::new_protobuf(
+  std::string schema, std::optional<reference_container> refs) {
+    return {
+      std::move(schema),
+      schema_format::protobuf,
+      std::move(refs).value_or(reference_container{})};
+}
+
+schema
+schema::new_json(std::string schema, std::optional<reference_container> refs) {
+    return {
+      std::move(schema),
+      schema_format::json,
+      std::move(refs).value_or(reference_container{})};
+}
+
+} // namespace sr
+
 } // namespace redpanda
 
 #ifdef REDPANDA_TRANSFORM_SDK_ENABLE_TESTING
