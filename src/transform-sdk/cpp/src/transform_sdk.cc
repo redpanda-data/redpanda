@@ -397,6 +397,96 @@ struct batch_header {
     int32_t base_sequence;
 };
 
+std::expected<sr::schema, std::error_code>
+read_schema_def(redpanda::bytes_view payload) {
+    ASSIGN_OR_RETURN(auto fmt_d, varint::read(payload));
+    ASSIGN_OR_RETURN(
+      auto format,
+      ([&fmt_d]() -> std::expected<sr::schema_format, std::error_code> {
+          switch (fmt_d.value) {
+          case 0:
+              return sr::schema_format::avro;
+          case 1:
+              return sr::schema_format::protobuf;
+          case 2:
+              return sr::schema_format::json;
+          default:
+              return std::unexpected(
+                std::make_error_code(std::errc::illegal_byte_sequence));
+          }
+      }()));
+
+    payload = payload.subview(fmt_d.read);
+    ASSIGN_OR_RETURN(auto schema_d, varint::read_sized_buffer(payload));
+    payload = payload.subview(schema_d.read);
+
+    const std::string_view schema = schema_d.value
+                                      .transform([](bytes_view buf) {
+                                          return std::string_view{buf};
+                                      })
+                                      .value_or(std::string_view{});
+
+    ASSIGN_OR_RETURN(auto refs_d, varint::read(payload));
+    payload = payload.subview(refs_d.read);
+
+    std::vector<sr::reference> refs;
+    refs.reserve(refs_d.value);
+
+    for ([[maybe_unused]] auto idx : std::views::iota(0, refs_d.value)) {
+        ASSIGN_OR_RETURN(auto name_d, varint::read_sized_buffer(payload));
+        payload = payload.subview(name_d.read);
+        const std::string_view name = name_d.value
+                                        .transform([](bytes_view buf) {
+                                            return std::string_view{buf};
+                                        })
+                                        .value_or(std::string_view{});
+        ASSIGN_OR_RETURN(auto subject_d, varint::read_sized_buffer(payload));
+        payload = payload.subview(subject_d.read);
+        const std::string_view subject = subject_d.value
+                                           .transform([](bytes_view buf) {
+                                               return std::string_view{buf};
+                                           })
+                                           .value_or(std::string_view{});
+        ASSIGN_OR_RETURN(auto version_d, varint::read(payload));
+        payload = payload.subview(version_d.read);
+        refs.emplace_back(
+          std::string{name.data(), name.size()},
+          std::string{subject.data(), subject.size()},
+          sr::schema_version{static_cast<int32_t>(version_d.value)});
+    };
+
+    return sr::schema{
+      std::string{schema.data(), schema.size()}, format, std::move(refs)};
+}
+
+std::expected<sr::subject_schema, std::error_code>
+read_schema(std::string_view subject, redpanda::bytes_view payload) {
+    ASSIGN_OR_RETURN(auto id_d, varint::read(payload));
+    payload = payload.subview(id_d.read);
+    ASSIGN_OR_RETURN(auto version_d, varint::read(payload));
+    payload = payload.subview(version_d.read);
+    ASSIGN_OR_RETURN(auto schema, read_schema_def(payload));
+    return sr::subject_schema{
+      std::move(schema),
+      std::string{subject},
+      sr::schema_version{static_cast<int32_t>(version_d.value)},
+      sr::schema_id{static_cast<int32_t>(id_d.value)}};
+}
+
+void write_schema_def(bytes* payload, const sr::schema& schema) {
+    varint::write(payload, static_cast<int64_t>(schema.format));
+    varint::write_sized_buffer(
+      payload, std::make_optional<bytes_view>(schema.raw_schema));
+    varint::write(payload, static_cast<int64_t>(schema.references.size()));
+    for (const auto& ref : schema.references) {
+        varint::write_sized_buffer(
+          payload, std::make_optional<bytes_view>(ref.name));
+        varint::write_sized_buffer(
+          payload, std::make_optional<bytes_view>(ref.subject));
+        varint::write(payload, static_cast<int64_t>(ref.version));
+    }
+}
+
 } // namespace decode
 
 class abi_record_writer : public record_writer {
@@ -776,6 +866,33 @@ void test_record_roundtrip(random_bytes_engine* rng) {
     }
 }
 
+void test_schema_def_roundtrip(random_bytes_engine* rng) {
+    constexpr size_t small = 42;
+    constexpr size_t big = 1028;
+    const auto schema_no_refs = sr::schema::new_avro(make_string(rng, big));
+    const auto schema_with_refs = sr::schema::new_avro(
+      make_string(rng, big),
+      sr::schema::reference_container{
+        sr::reference{
+          .name = make_string(rng, small),
+          .subject = make_string(rng, small),
+          .version = sr::schema_version{1},
+        },
+        sr::reference{
+          .name = make_string(rng, small),
+          .subject = make_string(rng, small),
+          .version = sr::schema_version{1},
+        },
+      });
+    for (const sr::schema& schema : {schema_no_refs, schema_with_refs}) {
+        bytes encoded;
+        decode::write_schema_def(&encoded, schema);
+        auto result = decode::read_schema_def(encoded);
+        assert(result.has_value(), "expected value");
+        assert(result.value() == schema, "schema mismatch");
+    }
+}
+
 void test_schema_id_codec_roundtrip(random_bytes_engine* rng) {
     constexpr size_t len = 1024;
     constexpr size_t tiny = 4;
@@ -816,6 +933,7 @@ void run_test_suite() {
     test_null_buffer_roundtrip();
     test_sized_buffer_roundtrip(&rng);
     test_record_roundtrip(&rng);
+    test_schema_def_roundtrip(&rng);
     test_schema_id_codec_roundtrip(&rng);
     std::println("tests successful");
 }
