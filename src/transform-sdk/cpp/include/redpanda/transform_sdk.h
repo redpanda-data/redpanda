@@ -25,6 +25,26 @@
 #include <system_error>
 #include <vector>
 
+namespace detail {
+
+template<typename T, typename Tag>
+struct simple_named_type {
+    using type = T;
+    explicit simple_named_type(type val)
+      : _val(val) {}
+    [[nodiscard]] type value() const { return _val; }
+    constexpr operator type() const { return _val; }
+    type* data() { return &_val; }
+
+private:
+    friend bool operator==(
+      const simple_named_type<type, Tag>&, const simple_named_type<type, Tag>&)
+      = default;
+    type _val;
+};
+
+} // namespace detail
+
 namespace redpanda {
 
 /**
