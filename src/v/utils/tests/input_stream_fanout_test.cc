@@ -50,7 +50,7 @@ void test_sync_read(
     static_assert(
       std::tuple_size_v<decltype(streams)> == N,
       "Incorrect number of tuple elements");
-    int niter = 0;
+    size_t niter = 0;
     while (true) {
         auto buf = std::apply(
           [](auto&&... s) { return (std::make_tuple(s.read().get()...)); },
@@ -168,7 +168,7 @@ void test_detached_consumer(
     // Stop first stream
     head.close().get();
 
-    int niter = 0;
+    size_t niter = 0;
     while (true) {
         auto buf = std::apply(
           [](auto&&... s) { return (std::make_tuple(s.read().get()...)); },
