@@ -11,7 +11,6 @@
 #include "bytes/iobuf.h"
 #include "delta_for_characterization_data.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "utils/delta_for.h"
 
 #include <seastar/testing/test_case.hh>
