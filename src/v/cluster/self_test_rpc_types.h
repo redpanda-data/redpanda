@@ -179,6 +179,26 @@ struct netcheck_opts
     }
 };
 
+// Captures unknown test types passed to self test frontend for logging
+// purposes.
+struct unknown_check
+  : serde::
+      envelope<unknown_check, serde::version<0>, serde::compat_version<0>> {
+    ss::sstring test_type;
+    ss::sstring test_json;
+    auto serde_fields() { return std::tie(test_type, test_json); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const unknown_check& unknown_check) {
+        fmt::print(
+          o,
+          "{{test_type: {}, test_json: {}}}",
+          unknown_check.test_type,
+          unknown_check.test_json);
+        return o;
+    }
+};
+
 struct self_test_result
   : serde::
       envelope<self_test_result, serde::version<0>, serde::compat_version<0>> {
@@ -234,13 +254,14 @@ struct empty_request
 struct start_test_request
   : serde::envelope<
       start_test_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     uuid_t id;
     std::vector<diskcheck_opts> dtos;
     std::vector<netcheck_opts> ntos;
+    std::vector<unknown_check> unknown_checks;
 
     friend std::ostream&
     operator<<(std::ostream& o, const start_test_request& r) {
@@ -250,6 +271,9 @@ struct start_test_request
         }
         for (auto& v : r.ntos) {
             fmt::print(ss, "netcheck_opts: {}", v);
+        }
+        for (const auto& v : r.unknown_checks) {
+            fmt::print(ss, "unknown_check: {}", v);
         }
         fmt::print(o, "{{id: {} {}}}", r.id, ss.str());
         return o;
