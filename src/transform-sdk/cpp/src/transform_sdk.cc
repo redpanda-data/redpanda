@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <expected>
+#include <ranges>
 #include <system_error>
 #include <utility>
 
@@ -706,6 +707,92 @@ inline std::error_code make_error_code(errc code) noexcept {
     return {static_cast<int>(code), error_category()};
 }
 } // namespace
+
+class abi_schema_registry_client final : public schema_registry_client {
+public:
+    abi_schema_registry_client() { abi::sr::check(); }
+
+    [[nodiscard]] std::expected<schema, std::error_code>
+    lookup_schema_by_id(schema_id sid) const final {
+        int32_t length = 0;
+        auto errc = abi::sr::get_schema_definition_len(sid.value(), &length);
+        if (errc != 0) {
+            return std::unexpected{
+              sr::make_error_code(static_cast<sr::errc>(errc))};
+        }
+        redpanda::bytes buf;
+        buf.resize(length, 0);
+        auto ec_or_n = abi::sr::get_schema_definition(
+          sid.value(), buf.data(), static_cast<int32_t>(buf.size()));
+        if (ec_or_n < 0) {
+            return std::unexpected{
+              sr::make_error_code(static_cast<sr::errc>(ec_or_n))};
+        }
+        return decode::read_schema_def(
+          redpanda::bytes_view{buf.data(), static_cast<size_t>(ec_or_n)});
+    }
+
+    [[nodiscard]] std::expected<subject_schema, std::error_code>
+    lookup_schema_by_version(
+      std::string_view subject, schema_version version) const final {
+        int32_t length = 0;
+        auto errc = abi::sr::get_subject_schema_len(
+          bytes_view{subject}.begin(),
+          static_cast<int32_t>(subject.size()),
+          version.value(),
+          &length);
+        if (errc != 0) {
+            return std::unexpected{
+              sr::make_error_code(static_cast<sr::errc>(errc))};
+        }
+        redpanda::bytes buf;
+        buf.resize(length, 0);
+        auto ec_or_n = abi::sr::get_subject_schema(
+          bytes_view{subject}.begin(),
+          static_cast<int32_t>(subject.size()),
+          version.value(),
+          buf.data(),
+          static_cast<int32_t>(buf.size()));
+        if (ec_or_n < 0) {
+            return std::unexpected{
+              sr::make_error_code(static_cast<sr::errc>(ec_or_n))};
+        }
+        return decode::read_schema(
+          subject, bytes_view{buf.data(), static_cast<size_t>(ec_or_n)});
+    }
+
+    [[nodiscard]] std::expected<subject_schema, std::error_code>
+    lookup_latest_schema(std::string_view subject) const final {
+        return lookup_schema_by_version(subject, schema_version{-1});
+    }
+
+    [[nodiscard]] std::expected<subject_schema, std::error_code>
+    create_schema(std::string_view subject, sr::schema schema) final {
+        bytes buf;
+        buf.reserve(schema.raw_schema.size() + varint::MAX_LENGTH);
+        decode::write_schema_def(&buf, schema);
+        sr::schema_id sid{0};
+        // NOTE: A planned ABI update will add a `version` output parameter to
+        // create_subject_schema
+        const sr::schema_version version{0};
+        auto errc = abi::sr::create_subject_schema(
+          bytes_view{subject}.begin(),
+          static_cast<int32_t>(subject.size()),
+          buf.data(),
+          static_cast<int32_t>(buf.size()),
+          sid.data());
+        if (errc != 0) {
+            return std::unexpected{
+              sr::make_error_code(static_cast<sr::errc>(errc))};
+        }
+        return sr::subject_schema{
+          std::move(schema), std::string{subject}, version, sid};
+    };
+};
+
+std::unique_ptr<schema_registry_client> new_client() {
+    return std::make_unique<abi_schema_registry_client>();
+}
 
 std::expected<std::pair<schema_id, bytes_view>, std::error_code>
 decode_schema_id(bytes_view buf) {

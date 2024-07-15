@@ -324,6 +324,57 @@ struct subject_schema {
 };
 
 /**
+ * A client for interacting with the schema registry within Redpanda.
+ */
+class schema_registry_client {
+public:
+    schema_registry_client() = default;
+    schema_registry_client(const schema_registry_client&) = delete;
+    schema_registry_client& operator=(const schema_registry_client&) = delete;
+    schema_registry_client(schema_registry_client&&) noexcept = delete;
+    schema_registry_client& operator=(schema_registry_client&&) noexcept
+      = delete;
+    virtual ~schema_registry_client() = default;
+
+    /**
+     * Look up a schema by its global ID
+     */
+    [[nodiscard]] virtual std::expected<schema, std::error_code>
+    lookup_schema_by_id(schema_id id) const = 0;
+
+    /**
+     * Look up a schema by subject and specific version
+     */
+    [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
+    lookup_schema_by_version(
+      std::string_view subject, schema_version version) const
+      = 0;
+
+    /**
+     * Look up the latest version of a schema (by subject)
+     *
+     * Equivalent to calling lookup_schema_by_version with schema_version{-1}
+     */
+    [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
+    lookup_latest_schema(std::string_view subject) const = 0;
+
+    /**
+     * Create a schema under the given subject, returning the version and ID
+     *
+     * If an equivalent schema already exists globally, that schema ID is
+     * reused. If an equivalent schema already exists within that subject, this
+     * has no effect and returns the existing schema
+     */
+    [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
+    create_schema(std::string_view subject, schema the_schema) = 0;
+};
+
+/**
+ * Create a new schema registry client
+ */
+std::unique_ptr<schema_registry_client> new_client();
+
+/**
  * Extract and decode the schema ID from an arbitrary array of bytes.
  * buf must be at least 5B long:
  *   - buf[0]: magic byte (must be 0x00)
