@@ -16,6 +16,7 @@
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
 #include "model/record.h"
+#include "model/record_batch_types.h"
 
 template<typename T>
 T parse_tx_batch(const model::record_batch& batch, int8_t version) {
@@ -80,6 +81,10 @@ protected:
     ss::future<> parse(model::record_batch b) {
         if (b.header().type == model::record_batch_type::raft_data) {
             return handle_raft_data(std::move(b));
+        }
+        // silently ignore raft configuration.
+        if (b.header().type == model::record_batch_type::raft_configuration) {
+            return ss::now();
         }
         if (b.header().type == model::record_batch_type::group_prepare_tx) {
             auto data = parse_tx_batch<kafka::group_tx::offsets_metadata>(
