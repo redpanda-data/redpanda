@@ -14,13 +14,22 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "model/fundamental.h"
+#include "serde/envelope.h"
+#include "serde/rw/array.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/tags.h"
+#include "ssx/sformat.h"
 
 #include <seastar/util/log.hh>
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <variant>
