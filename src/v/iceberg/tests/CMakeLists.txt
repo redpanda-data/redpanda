@@ -11,6 +11,7 @@ rp_test(
     datatypes_json_test.cc
   LIBRARIES
     Avro::avro
+    Boost::iostreams
     v::bytes
     v::gtest_main
     v::iceberg
