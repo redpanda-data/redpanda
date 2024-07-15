@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
@@ -30,7 +32,7 @@ import (
 
 type Status struct {
 	Partition   int32
-	CloudStatus adminapi.CloudStorageStatus
+	CloudStatus rpadmin.CloudStorageStatus
 }
 
 const (

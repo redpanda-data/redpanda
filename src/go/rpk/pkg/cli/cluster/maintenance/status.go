@@ -12,6 +12,8 @@ package maintenance
 import (
 	"fmt"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -35,7 +37,7 @@ func nullableToStr[V any](v *V) string {
 	return fmt.Sprint(*v)
 }
 
-func addBrokerMaintenanceReport(table *out.TabWriter, b adminapi.Broker) {
+func addBrokerMaintenanceReport(table *out.TabWriter, b rpadmin.Broker) {
 	table.Print(
 		b.NodeID,
 		b.Maintenance.Draining,

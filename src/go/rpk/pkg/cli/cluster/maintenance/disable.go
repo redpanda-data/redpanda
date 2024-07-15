@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -52,7 +53,7 @@ func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			err = client.DisableMaintenanceMode(cmd.Context(), nodeID, true)
-			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+			if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()
 					if bodyErr == nil {

@@ -1,6 +1,7 @@
 package brokers
 
 import (
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -27,7 +28,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			headers := []string{"Node-ID", "Num-Cores", "Membership-Status"}
 
-			args := func(b *adminapi.Broker) []interface{} {
+			args := func(b *rpadmin.Broker) []interface{} {
 				ret := []interface{}{b.NodeID, b.NumCores, b.MembershipStatus}
 				return ret
 			}
@@ -35,7 +36,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if b.IsAlive != nil {
 					headers = append(headers, "Is-Alive", "Broker-Version")
 					orig := args
-					args = func(b *adminapi.Broker) []interface{} {
+					args = func(b *rpadmin.Broker) []interface{} {
 						return append(orig(b), *b.IsAlive, b.Version)
 					}
 					break

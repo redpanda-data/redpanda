@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -47,7 +48,7 @@ recovery process until it's finished.`,
 			ctx := cmd.Context()
 
 			_, err = client.StartAutomatedRecovery(ctx)
-			var he *adminapi.HTTPResponseError
+			var he *rpadmin.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()

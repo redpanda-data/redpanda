@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -49,7 +50,7 @@ following conditions are met:
 			// --exit-when-healthy only makes sense with --watch, so we enable
 			// watch if --exit-when-healthy is provided.
 			watch = exit || watch
-			var lastOverview adminapi.ClusterHealthOverview
+			var lastOverview rpadmin.ClusterHealthOverview
 			for {
 				ret, err := cl.GetHealthOverview(cmd.Context())
 				out.MaybeDie(err, "unable to request cluster health: %v", err)
@@ -72,7 +73,7 @@ following conditions are met:
 	return cmd
 }
 
-func printHealthOverview(hov *adminapi.ClusterHealthOverview) {
+func printHealthOverview(hov *rpadmin.ClusterHealthOverview) {
 	types.Sort(hov)
 	out.Section("CLUSTER HEALTH OVERVIEW")
 

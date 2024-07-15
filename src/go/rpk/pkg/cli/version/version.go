@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
@@ -91,8 +93,8 @@ Admin API hosts via flags, profile, or environment variables.`,
 			cl, err := adminapi.NewClient(
 				fs,
 				p,
-				adminapi.ClientTimeout(3*time.Second),
-				adminapi.MaxRetries(2),
+				rpadmin.ClientTimeout(3*time.Second),
+				rpadmin.MaxRetries(2),
 			)
 			if err != nil {
 				zap.L().Sugar().Errorf("unable to create the admin client: %v", err)

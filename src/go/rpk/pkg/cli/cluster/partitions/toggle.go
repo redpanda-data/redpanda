@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -162,7 +164,7 @@ Disable partition 1, and 2 of topic 'foo', and partition 5 of topic 'bar' in the
 	return cmd
 }
 
-func runToggle(ctx context.Context, cl *adminapi.AdminAPI, all bool, topicArg, partitionFlag []string, verb string) error {
+func runToggle(ctx context.Context, cl *rpadmin.AdminAPI, all bool, topicArg, partitionFlag []string, verb string) error {
 	isDisable := verb == "disable"
 	if all {
 		ns, topicName := nsTopic(topicArg[0])

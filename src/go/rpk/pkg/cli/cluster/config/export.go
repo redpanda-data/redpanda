@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -24,7 +25,7 @@ import (
 )
 
 func exportConfig(
-	file *os.File, schema adminapi.ConfigSchema, config adminapi.Config, all bool,
+	file *os.File, schema rpadmin.ConfigSchema, config rpadmin.Config, all bool,
 ) (err error) {
 	// Present properties in alphabetical order, providing some pseudo-grouping based on common prefixes
 	keys := make([]string, 0, len(schema))
@@ -156,7 +157,7 @@ to include all properties including these low level tunables.
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			var currentConfig adminapi.Config
+			var currentConfig rpadmin.Config
 			currentConfig, err = client.Config(cmd.Context(), true)
 			out.MaybeDie(err, "unable to query current config: %v", err)
 

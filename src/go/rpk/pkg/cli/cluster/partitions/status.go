@@ -12,6 +12,8 @@ package partitions
 import (
 	"fmt"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -94,7 +96,7 @@ investigation. A few areas to investigate:
 	return cmd
 }
 
-func printBalancerStatus(pbs adminapi.PartitionBalancerStatus) {
+func printBalancerStatus(pbs rpadmin.PartitionBalancerStatus) {
 	tw := out.NewTable()
 	defer tw.Flush()
 	tw.Print("Status:", pbs.Status)
