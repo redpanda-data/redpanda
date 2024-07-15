@@ -8,6 +8,7 @@ rp_test(
   SOURCES
     datatypes_test.cc
     manifest_serialization_test.cc
+    datatypes_json_test.cc
   LIBRARIES
     Avro::avro
     v::bytes
