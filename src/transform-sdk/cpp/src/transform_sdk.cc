@@ -108,6 +108,54 @@ WASM_IMPORT(redpanda_transform, write_record)
 int32_t redpanda_transform_write_record(uint8_t* buf, uint32_t len);
 constexpr auto write_record = redpanda_transform_write_record;
 
+/**
+ * Schema Registry ABI
+ */
+namespace sr {
+
+WASM_IMPORT(redpanda_schema_registry, check_abi_version_0)
+void redpanda_schema_registry_check();
+constexpr auto check = redpanda_schema_registry_check;
+
+WASM_IMPORT(redpanda_schema_registry, get_schema_definition_len)
+int32_t redpanda_schema_registry_get_schema_definition_len(
+  int32_t schemaId, int32_t* len);
+constexpr auto get_schema_definition_len
+  = redpanda_schema_registry_get_schema_definition_len;
+
+WASM_IMPORT(redpanda_schema_registry, get_schema_definition)
+int32_t redpanda_schema_registry_get_schema_definition(
+  int32_t schema_id, uint8_t* buf, int32_t len);
+constexpr auto get_schema_definition
+  = redpanda_schema_registry_get_schema_definition;
+
+WASM_IMPORT(redpanda_schema_registry, get_subject_schema_len)
+int32_t redpanda_schema_registry_get_subject_schema_len(
+  const uint8_t* subject, int32_t subject_len, int32_t version, int32_t* len);
+constexpr auto get_subject_schema_len
+  = redpanda_schema_registry_get_subject_schema_len;
+
+WASM_IMPORT(redpanda_schema_registry, get_subject_schema)
+int32_t redpanda_schema_registry_get_subject_schema(
+  const uint8_t* subject,
+  int32_t subject_len,
+  int32_t version,
+  uint8_t* buf,
+  int32_t len);
+constexpr auto get_subject_schema = redpanda_schema_registry_get_subject_schema;
+
+WASM_IMPORT(redpanda_schema_registry, create_subject_schema)
+int32_t redpanda_schema_registry_create_subject_schema(
+  const uint8_t* subject,
+  int32_t subject_len,
+  uint8_t* buf,
+  int32_t len,
+  int32_t* schema_id_out);
+constexpr auto create_subject_schema
+  = redpanda_schema_registry_create_subject_schema;
+
+} // namespace sr
+
 #undef WASM_IMPORT
 }
 
@@ -141,6 +189,46 @@ int32_t read_next_record(
 int32_t write_record(const uint8_t* /*unused*/, uint32_t /*unused*/) {
     abort("write_record - stub");
 }
+
+namespace sr {
+
+void check() { abort("sr_check_abi - stub"); }
+
+int32_t get_schema_definition_len(int32_t /*unused*/, int32_t* /*unused*/) {
+    abort("get_schema_definition_len - stub");
+}
+
+int32_t get_schema_definition(
+  int32_t /*unused*/, uint8_t* /*unused*/, int32_t /*unused*/) {
+    abort("get_schema_definition - stub");
+}
+
+int32_t get_subject_schema_len(
+  const uint8_t* /*unused*/,
+  int32_t /*unused*/,
+  int32_t /*unused*/,
+  int32_t* /*unused*/) {
+    abort("get_subject_schema_len - stub");
+}
+
+int32_t get_subject_schema(
+  const uint8_t* /*unused*/,
+  int32_t /*unused*/,
+  int32_t /*unused*/,
+  uint8_t* /*unused*/,
+  int32_t /*unused*/) {
+    abort("get_subject_schema - stub");
+}
+
+int32_t create_subject_schema(
+  const uint8_t* /*unused*/,
+  int32_t /*unused*/,
+  uint8_t* /*unused*/,
+  int32_t /*unused*/,
+  int32_t* /*unused*/) {
+    abort("create_subject_schema - stub");
+}
+} // namespace sr
 
 #endif
 } // namespace abi
