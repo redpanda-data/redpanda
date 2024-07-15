@@ -67,9 +67,17 @@ using cmd_key = named_type<uint8_t, struct cmd_key_tag>;
 
 } // namespace
 
+/// Envelope version history:
+/// v=0, cv=0 - Initial version.
+/// v=1, cv=0 - Added 'is_validated' field to the segment.
+/// v=2, cv=2 - No fields changed, just logical version bump to communicate that
+///             segments MUST be validated before being added to the metadata.
+///             This is necessary to ensure that all prior during log replay
+///             will retain their original behavior. This also bumped
+///             compat_version to ensure that replicas don't diverge.
 struct archival_metadata_stm::segment
   : public serde::
-      envelope<segment, serde::version<1>, serde::compat_version<0>> {
+      envelope<segment, serde::version<2>, serde::compat_version<2>> {
     // ntp_revision is needed to reconstruct full remote path of
     // the segment. Deprecated because ntp_revision is now part of
     // segment_meta.
@@ -1370,8 +1378,14 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     bool disable_safe_add
       = config::shard_local_cfg()
           .cloud_storage_disable_metadata_consistency_checks.value();
+
+    auto should_run_optional_validation = !disable_safe_add
+                                          && segment.is_validated
+                                               == segment_validated::yes;
+    auto should_run_mandatory_validation = segment.version > 1;
+
     if (
-      !disable_safe_add && segment.is_validated == segment_validated::yes
+      (should_run_optional_validation || should_run_mandatory_validation)
       && !_manifest->safe_segment_meta_to_add(meta)) {
         // We're only validating segment metadata records if they're validated.
         // It goes like this
