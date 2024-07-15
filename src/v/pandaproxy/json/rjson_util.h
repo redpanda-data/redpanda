@@ -28,6 +28,7 @@
 #include <seastar/http/request.hh>
 
 #include <concepts>
+#include <memory>
 
 namespace pandaproxy::json {
 
@@ -155,7 +156,7 @@ rjson_parse(std::unique_ptr<ss::http::request> req, Handler handler) {
                 return ss::make_ready_future<ss::stop_iteration>(
                   ss::stop_iteration::yes);
             }
-            buf.append(std::move(tmp_buf));
+            buf.append(std::make_unique<iobuf::fragment>(std::move(tmp_buf)));
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
         });
