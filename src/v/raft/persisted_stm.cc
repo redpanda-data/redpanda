@@ -492,16 +492,16 @@ ss::future<bool>
 persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     auto term = _raft->term();
     if (!_raft->is_leader()) {
-        co_return false;
+        return ss::make_ready_future<bool>(false);
     }
     if (_insync_term == term) {
-        co_return true;
+        return ss::make_ready_future<bool>(true);
     }
     if (_is_catching_up) {
         auto deadline = model::timeout_clock::now() + timeout;
         auto sync_waiter = ss::make_lw_shared<expiring_promise<bool>>();
         _sync_waiters.push_back(sync_waiter);
-        co_return co_await sync_waiter->get_future_with_timeout(
+        return sync_waiter->get_future_with_timeout(
           deadline, [] { return false; });
     }
     _is_catching_up = true;
@@ -527,14 +527,16 @@ persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
         // of the term yet.
         sync_offset = log_offsets.dirty_offset;
     }
-    auto is_synced = co_await do_sync(timeout, sync_offset, term);
 
-    _is_catching_up = false;
-    for (auto& sync_waiter : _sync_waiters) {
-        sync_waiter->set_value(is_synced);
-    }
-    _sync_waiters.clear();
-    co_return is_synced;
+    return do_sync(timeout, sync_offset, term).then([this](bool is_synced) {
+        _is_catching_up = false;
+        for (auto& sync_waiter : _sync_waiters) {
+            sync_waiter->set_value(is_synced);
+        }
+        _sync_waiters.clear();
+
+        return is_synced;
+    });
 }
 
 template<supported_stm_snapshot T>
