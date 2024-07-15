@@ -13,7 +13,6 @@
 #include "random/generators.h"
 #include "serde/serde.h"
 #include "utils/delta_for.h"
-#include "version.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -478,8 +477,6 @@ BOOST_AUTO_TEST_CASE(
 
 #include <cstdint>
 
-// data produced from {}
-
 constexpr auto characterization_data = std::to_array<deltafor_datapoint>({{
 {}
 }});
@@ -488,7 +485,6 @@ auto get_characterization_data() -> std::span<const deltafor_datapoint> {{
     return characterization_data;
 }}
 )cpp",
-      redpanda_version(),
       fmt::join(
         to_save | std::views::transform(deltafor_datapoint_printer), ",\n"));
 }
