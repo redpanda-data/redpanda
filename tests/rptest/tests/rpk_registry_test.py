@@ -18,7 +18,6 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services import tls
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.util import expect_exception
-from ducktape.mark import ok_to_fail
 
 schema1_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
 schema2_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]}'
@@ -447,3 +446,96 @@ message AddressBook {
 
         assert json.loads(msg["value"]) == expected_msg_1
         assert json.loads(msg["key"]) == expected_msg_2
+
+    @cluster(num_nodes=3)
+    def test_produce_consume_json(self):
+        # First we register the schemas with their references.
+        subject_1 = "subject_for_warehouse"
+        reference_json = """
+{
+   "type":"object",
+   "properties":{
+      "latitude":{
+         "type":"number"
+      },
+      "longitude":{
+         "type":"number"
+      }
+   }
+}"""
+
+        self.create_schema(subject_1, reference_json, ".json")  # ID 1
+
+        test_topic = "test_topic_sr"
+        self._rpk.create_topic(test_topic)
+
+        # Using topicName strategy:
+        subject_2 = test_topic + "-value"
+
+        json_with_reference = """
+{
+   "type":"object",
+   "properties":{
+      "productId":{
+         "type":"integer"
+      },
+      "productName":{
+         "type":"string"
+      },
+      "tags":{
+         "type":"array",
+         "items":{
+            "type":"string"
+         }
+      },
+      "warehouseLocation":{
+         "$ref":"https://example.com/geographical-location.schema.json"
+      }
+   }
+}"""
+        self.create_schema(
+            subject_2, json_with_reference, ".json",
+            f"https://example.com/geographical-location.schema.json:{subject_1}:1"
+        )  # ID 2
+
+        # Produce: unencoded key, encoded value:
+        key_1 = "somekey"
+        msg_1 = '{"productId":123,"productName":"redpanda","tags":["foo","bar"],"warehouseLocation":{"latitude":37.2795481,"longitude":127.047077}}'
+        expected_msg_1 = json.loads(msg_1)
+
+        self._rpk.produce(test_topic, msg=msg_1, key=key_1, schema_id="topic")
+
+        # We consume as is, i.e: it will show the encoded value.
+        out = self._rpk.consume(test_topic, offset="0:1")
+        msg = json.loads(out)
+
+        # We check that:
+        # - we are not storing the value without encoding.
+        # - first byte is the magic number 0 from the serde header.
+        # - key is not encoded.
+        raw_bytes_string = msg["value"]
+        assert raw_bytes_string != expected_msg_1
+        assert msg["key"] == key_1
+        bytes_from_string = bytes(
+            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+        assert bytes_from_string[0] == 0
+
+        # Now we decode the same message:
+        out = self._rpk.consume(test_topic,
+                                offset="0:1",
+                                use_schema_registry="value")
+        msg = json.loads(out)
+
+        assert json.loads(msg["value"]) == expected_msg_1
+        assert msg["key"] == key_1
+
+        # Finally we will check that we fail when the validation fails
+        with expect_exception(
+                RpkException,
+                lambda e: "jsonschema validation failed" in str(e)):
+            # Error here is that productId should be an integer and not a string.
+            bad_msg = '{"productId":"123","productName":"redpanda","tags":["foo","bar"],"warehouseLocation":{"latitude":37.2795481,"longitude":127.047077}}'
+            self._rpk.produce(test_topic,
+                              msg=bad_msg,
+                              key=key_1,
+                              schema_id="topic")
