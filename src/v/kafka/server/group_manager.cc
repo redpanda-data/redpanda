@@ -1558,7 +1558,7 @@ group_manager::offset_delete(offset_delete_request&& r) {
     co_return response;
 }
 
-std::pair<error_code, std::vector<listed_group>>
+std::pair<error_code, chunked_vector<listed_group>>
 group_manager::list_groups(const list_groups_filter_data& filter_data) const {
     auto loading = std::any_of(
       _partitions.cbegin(),
@@ -1568,7 +1568,7 @@ group_manager::list_groups(const list_groups_filter_data& filter_data) const {
           return p.second->loading;
       });
 
-    std::vector<listed_group> groups;
+    chunked_vector<listed_group> groups;
     for (const auto& it : _groups) {
         const auto& g = it.second;
 

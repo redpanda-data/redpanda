@@ -660,7 +660,7 @@ ss::future<response_ptr> list_groups_handler::handle(
                 security::acl_operation::describe, group.group_id);
           });
 
-        resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+        resp.data.groups.erase_to_end(non_visible_it);
     }
 
     if (!ctx.audit()) {
