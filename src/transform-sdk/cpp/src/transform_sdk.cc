@@ -669,6 +669,44 @@ schema::new_json(std::string schema, std::optional<reference_container> refs) {
       std::move(refs).value_or(reference_container{})};
 }
 
+namespace {
+
+// NOLINTBEGIN(*-enum-size)
+enum class errc : int32_t {
+    success = 0,
+    not_enabled = -1,
+    schema_registry_error = -2,
+};
+// NOLINTEND(*-enum-size)
+
+struct errc_category final : public std::error_category {
+    [[nodiscard]] const char* name() const noexcept final {
+        return "redpanda::sr::errc";
+    }
+
+    [[nodiscard]] std::string message(int code) const final {
+        switch (static_cast<errc>(code)) {
+        case errc::success:
+            return "redpanda::sr: Success";
+        case errc::not_enabled:
+            return "redpanda::sr: Schema Registry is not enabled";
+        case errc::schema_registry_error:
+            return "redpanda::sr: Schema Registry internal error";
+        }
+        return "redpanda::sr: Unknown error";
+    }
+};
+
+inline const std::error_category& error_category() noexcept {
+    static const errc_category cat;
+    return cat;
+}
+
+inline std::error_code make_error_code(errc code) noexcept {
+    return {static_cast<int>(code), error_category()};
+}
+} // namespace
+
 std::expected<std::pair<schema_id, bytes_view>, std::error_code>
 decode_schema_id(bytes_view buf) {
     constexpr size_t HEADER_LEN = 5U;
@@ -711,6 +749,11 @@ bytes encode_schema_id(schema_id sid, bytes_view buf) {
 } // namespace sr
 
 } // namespace redpanda
+
+namespace std {
+template<>
+struct is_error_code_enum<redpanda::sr::errc> : true_type {};
+} // namespace std
 
 #ifdef REDPANDA_TRANSFORM_SDK_ENABLE_TESTING
 
