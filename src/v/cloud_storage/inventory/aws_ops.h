@@ -40,6 +40,10 @@ public:
       cloud_storage::cloud_storage_api&,
       retry_chain_node&) const noexcept override;
 
+    cloud_storage_clients::bucket_name bucket() const override {
+        return _bucket;
+    }
+
 private:
     ss::future<op_result<report_metadata>> do_fetch_latest_report_metadata(
       cloud_storage::cloud_storage_api&, retry_chain_node&) const;

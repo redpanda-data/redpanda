@@ -10,16 +10,14 @@
 
 #include "cloud_storage/inventory/inv_ops.h"
 
-#include "cloud_storage/configuration.h"
 #include "cloud_storage/inventory/types.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/types.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/coroutine/all.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <utility>
-
 namespace {
 // TODO (abhijat) - cluster config
 constexpr auto frequency
@@ -101,6 +99,10 @@ ss::future<op_result<report_metadata>> inv_ops::fetch_latest_report_metadata(
     return ss::visit(_inv_ops, [&remote, &parent](auto& ops) {
         return ops.fetch_latest_report_metadata(remote, parent);
     });
+}
+
+cloud_storage_clients::bucket_name inv_ops::bucket() const {
+    return ss::visit(_inv_ops, [](const auto& ops) { return ops.bucket(); });
 }
 
 ss::future<inv_ops> make_inv_ops(
