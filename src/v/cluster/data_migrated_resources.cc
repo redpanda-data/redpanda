@@ -45,6 +45,7 @@ migrated_resource_state get_outbound_migration_resource_state(state state) {
         return migrated_resource_state::restricted;
     case state::executing:
     case state::executed:
+    case state::cut_over:
         return migrated_resource_state::blocked;
     case state::finished:
         return migrated_resource_state::non_restricted;

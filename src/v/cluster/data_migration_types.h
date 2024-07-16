@@ -37,16 +37,16 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
 /**
  * Migration state
  *  ┌─────────┐
- *  │ planned ├────────────────────┐
- *  └────┬────┘                    │
- *       │                         │
- * ┌─────▼─────┐                   │
- * │ preparing ├─────────────────┐ │
- * └─────┬─────┘                 │ │
- *       │                       │ │
- * ┌─────▼────┐          ┌───────▼─▼──┐
- * │ prepared ├──────────► cancelling │
- * └─────┬────┘          └▲──▲─┬──────┘
+ *  │ planned ├───────────────────┐
+ *  └────┬────┘                   │
+ *       │                        │
+ * ┌─────▼─────┐                  │
+ * │ preparing ├────────────────┐ │
+ * └─────┬─────┘                │ │
+ *       │                      │ │
+ * ┌─────▼────┐          ┌──────▼─▼──┐
+ * │ prepared ├──────────► canceling │
+ * └─────┬────┘          └▲──▲─┬─────┘
  *       │                │  │ │
  * ┌─────▼─────┐          │  │ │
  * │ executing ├──────────┘  │ │
@@ -57,8 +57,14 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
  * └─────┬────┘                │
  *       │                     │
  * ┌─────▼────┐          ┌─────▼─────┐
- * │ finished │          │ cancelled │
- * └──────────┘          └───────────┘
+ * │ cut_over │          │ cancelled │
+ * └─────┬────┘          └───────────┘
+ *       │
+ * ┌─────▼────┐
+ * │ finished │
+ * └──────────┘
+ *
+ *
  */
 enum class state {
     planned,
@@ -66,6 +72,7 @@ enum class state {
     prepared,
     executing,
     executed,
+    cut_over,
     finished,
     canceling,
     cancelled,

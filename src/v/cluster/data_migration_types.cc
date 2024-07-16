@@ -74,6 +74,8 @@ std::ostream& operator<<(std::ostream& o, state state) {
         return o << "executing";
     case state::executed:
         return o << "executed";
+    case state::cut_over:
+        return o << "cut_over";
     case state::finished:
         return o << "finished";
     case state::canceling:

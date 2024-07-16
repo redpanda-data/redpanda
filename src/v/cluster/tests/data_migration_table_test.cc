@@ -355,6 +355,7 @@ TEST_F_CORO(data_migration_table_fixture, test_migration_stm_happy_path) {
         cluster::data_migrations::state::prepared,
         cluster::data_migrations::state::executing,
         cluster::data_migrations::state::executed,
+        cluster::data_migrations::state::cut_over,
         cluster::data_migrations::state::finished,
       });
 
@@ -371,6 +372,7 @@ TEST_F_CORO(data_migration_table_fixture, test_invalid_transition) {
         cluster::data_migrations::state::preparing,
         cluster::data_migrations::state::executing,
         cluster::data_migrations::state::executed,
+        cluster::data_migrations::state::cut_over,
         cluster::data_migrations::state::finished,
       });
 
@@ -395,6 +397,7 @@ TEST_F_CORO(data_migration_table_fixture, test_invalid_transition) {
         cluster::data_migrations::state::prepared,
         cluster::data_migrations::state::executing,
         cluster::data_migrations::state::executed,
+        cluster::data_migrations::state::cut_over,
         cluster::data_migrations::state::finished,
         cluster::data_migrations::state::executed,
       });
@@ -455,7 +458,25 @@ TEST_F_CORO(data_migration_table_fixture, test_cancellation) {
         cluster::data_migrations::state::prepared,
         cluster::data_migrations::state::executing,
         cluster::data_migrations::state::executed,
+        cluster::data_migrations::state::cut_over,
         cluster::data_migrations::state::finished,
+        cluster::data_migrations::state::canceling,
+      });
+
+    EXPECT_EQ(r, cluster::errc::invalid_data_migration_state);
+    /**
+     * Can not cancel after cut_over
+     */
+    r = co_await apply_remove_migration(id);
+    id = co_await create_simple_migration();
+    r = co_await progress_through_states(
+      id,
+      {
+        cluster::data_migrations::state::preparing,
+        cluster::data_migrations::state::prepared,
+        cluster::data_migrations::state::executing,
+        cluster::data_migrations::state::executed,
+        cluster::data_migrations::state::cut_over,
         cluster::data_migrations::state::canceling,
       });
 
