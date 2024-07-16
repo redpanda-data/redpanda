@@ -132,13 +132,13 @@ ss::future<> backend::work_once() {
                   return;
               }
               migration_reconciliation_state& rs = rs_it->second;
-              if (rs.sought_state > ntp_resp.state) {
+              if (rs.scope.sought_state > ntp_resp.state) {
                   // migration advanced since then, ignore
                   return;
               }
               mark_migration_step_done_for_ntp(rs, ntp_resp.ntp);
               if (rs.outstanding_topics.empty()) {
-                  to_advance(ntp_resp.migration, rs.sought_state);
+                  to_advance(ntp_resp.migration, *rs.scope.sought_state);
                   _migration_states.erase(rs_it);
               }
           });
@@ -214,8 +214,8 @@ ss::future<> backend::send_rpc(model::node_id node_id) {
           req.sought_states.push_back(
             {.ntp = ntp,
              .migration = migration_id,
-             .state
-             = _migration_states.find(migration_id)->second.sought_state});
+             .state = *_migration_states.find(migration_id)
+                         ->second.scope.sought_state});
       });
 
     ssx::spawn_with_gate(
@@ -277,8 +277,7 @@ ss::future<> backend::handle_raft0_leadership_update() {
         // start coordinating
         for (auto& [id, mrstate] : _migration_states) {
             for (auto& [nt, tstate] : mrstate.outstanding_topics) {
-                co_await reconcile_topic(
-                  nt, tstate, id, mrstate.sought_state, false);
+                co_await reconcile_topic(nt, tstate, id, mrstate.scope, false);
             }
         }
         // resend advance requests
@@ -292,6 +291,7 @@ ss::future<> backend::handle_raft0_leadership_update() {
         for (auto& [id, mrstate] : _migration_states) {
             for (auto& [id, tstate] : mrstate.outstanding_topics) {
                 tstate.outstanding_partitions.clear();
+                tstate.topic_scoped_work_needed = false;
             }
         }
         _nodes_to_retry.clear();
@@ -319,8 +319,9 @@ ss::future<> backend::handle_migration_update(id id) {
           dm_log.debug,
           "migration {} old sought state is {}",
           id,
-          old_mrstate.sought_state);
-        if (!new_maybe_metadata || new_state >= old_mrstate.sought_state) {
+          old_mrstate.scope.sought_state);
+        if (
+          !new_maybe_metadata || new_state >= old_mrstate.scope.sought_state) {
             vlog(
               dm_log.debug, "dropping migration {} reconciliation state", id);
             drop_migration_reconciliation_rstate(old_it);
@@ -329,12 +330,11 @@ ss::future<> backend::handle_migration_update(id id) {
     // create new state if needed
     if (new_maybe_metadata) {
         const auto& new_metadata = new_maybe_metadata->get();
-        auto sought_state = new_metadata.next_replica_state();
-        if (sought_state.has_value()) {
+        auto scope = get_work_scope(new_metadata);
+        if (scope.sought_state.has_value()) {
             vlog(
               dm_log.debug, "creating migration {} reconciliation state", id);
-            auto new_it = _migration_states.emplace_hint(
-              old_it, id, sought_state.value());
+            auto new_it = _migration_states.emplace_hint(old_it, id, scope);
             co_await reconcile_migration(new_it->second, new_metadata);
             need_wakeup = true;
         }
@@ -373,17 +373,17 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
     auto& tstate = mrstate.outstanding_topics[nt];
     clear_tstate_belongings(nt, tstate);
     tstate.outstanding_partitions.clear();
+    tstate.topic_scoped_work_needed = false;
     // We potentially re-enqueue an already coordinated partition here.
     // The first RPC reply will clear it.
-    co_await reconcile_topic(
-      nt, tstate, migration_id, mrstate.sought_state, false);
+    co_await reconcile_topic(nt, tstate, migration_id, mrstate.scope, false);
 
     // local work
     if (has_local_replica(delta.ntp)) {
         _work_states[nt].try_emplace(
           delta.ntp.tp.partition,
           migration_id,
-          _migration_states.find(migration_id)->second.sought_state);
+          *_migration_states.find(migration_id)->second.scope.sought_state);
     } else {
         auto topic_work_it = _work_states.find(nt);
         if (topic_work_it != _work_states.end()) {
@@ -560,7 +560,7 @@ ss::future<> backend::reconcile_topic(
   const model::topic_namespace& nt,
   topic_reconciliation_state& tstate,
   id migration,
-  state sought_state,
+  work_scope scope,
   bool schedule_local_work) {
     if (!schedule_local_work && !_is_coordinator) {
         vlog(
@@ -568,7 +568,7 @@ ss::future<> backend::reconcile_topic(
           "not tracking topic {} transition towards state {} as part of "
           "migration {}",
           nt,
-          sought_state,
+          scope.sought_state,
           migration);
         co_return;
     }
@@ -577,74 +577,80 @@ ss::future<> backend::reconcile_topic(
       "tracking topic {} transition towards state {} as part of "
       "migration {}, schedule_local_work={}, _is_coordinator={}",
       nt,
-      sought_state,
+      scope.sought_state,
       migration,
       schedule_local_work,
       _is_coordinator);
-    auto maybe_assignments = _topic_table.get_topic_assignments(nt);
-    if (!maybe_assignments) {
-        co_return;
-    }
-    auto assignments = *maybe_assignments | std::views::values;
-    auto now = model::timeout_clock::now();
-    co_await ssx::async_for_each(
-      assignments,
-      [this, nt, &tstate, sought_state, migration, now, schedule_local_work](
-        const auto& assignment) {
-          model::ntp ntp{nt.ns, nt.tp, assignment.id};
-          auto nodes = assignment.replicas
-                       | std::views::transform(&model::broker_shard::node_id);
-          if (_is_coordinator) {
-              auto [it, ins] = tstate.outstanding_partitions.emplace(
-                std::piecewise_construct,
-                std::tuple{assignment.id},
-                std::tuple{nodes.begin(), nodes.end()});
-              vassert(
-                ins,
-                "tried to repeatedly track partition {} "
-                "as part of migration {}",
-                ntp,
-                migration);
-          }
-          for (const auto& node_id : nodes) {
+    if (scope.partition_work_needed) {
+        auto maybe_assignments = _topic_table.get_topic_assignments(nt);
+        if (!maybe_assignments) {
+            co_return;
+        }
+        auto assignments = *maybe_assignments | std::views::values;
+        auto now = model::timeout_clock::now();
+        co_await ssx::async_for_each(
+          assignments,
+          [this, nt, &tstate, scope, migration, now, schedule_local_work](
+            const auto& assignment) {
+              model::ntp ntp{nt.ns, nt.tp, assignment.id};
+              auto nodes = assignment.replicas
+                           | std::views::transform(
+                             &model::broker_shard::node_id);
               if (_is_coordinator) {
-                  auto [it, ins] = _node_states[node_id].emplace(
-                    ntp, migration);
+                  auto [it, ins] = tstate.outstanding_partitions.emplace(
+                    std::piecewise_construct,
+                    std::tuple{assignment.id},
+                    std::tuple{nodes.begin(), nodes.end()});
                   vassert(
                     ins,
-                    "tried to track partition {} on node {} as part of "
-                    "migration {}, while it is already tracked as part "
-                    "of migration {}",
+                    "tried to repeatedly track partition {} "
+                    "as part of migration {}",
                     ntp,
-                    node_id,
-                    migration,
-                    it->second);
-                  _nodes_to_retry.insert_or_assign(node_id, now);
-              }
-              if (schedule_local_work && _self == node_id) {
-                  vlog(
-                    dm_log.debug,
-                    "tracking ntp {} transition towards state {} as part "
-                    "of "
-                    "migration {}",
-                    ntp,
-                    sought_state,
                     migration);
-                  auto& topic_work_state = _work_states[nt];
-                  auto [it, _] = topic_work_state.try_emplace(
-                    assignment.id, migration, sought_state);
-                  auto& rwstate = it->second;
-                  if (
-                    rwstate.sought_state != sought_state
-                    || rwstate.migration_id != migration) {
-                      if (it->second.shard) {
-                          stop_partition_work(ntp, rwstate);
+              }
+              for (const auto& node_id : nodes) {
+                  if (_is_coordinator) {
+                      auto [it, ins] = _node_states[node_id].emplace(
+                        ntp, migration);
+                      vassert(
+                        ins,
+                        "tried to track partition {} on node {} as part of "
+                        "migration {}, while it is already tracked as part "
+                        "of migration {}",
+                        ntp,
+                        node_id,
+                        migration,
+                        it->second);
+                      _nodes_to_retry.insert_or_assign(node_id, now);
+                  }
+                  if (schedule_local_work && _self == node_id) {
+                      vlog(
+                        dm_log.debug,
+                        "tracking ntp {} transition towards state {} as part "
+                        "of "
+                        "migration {}",
+                        ntp,
+                        scope.sought_state,
+                        migration);
+                      auto& topic_work_state = _work_states[nt];
+                      auto [it, _] = topic_work_state.try_emplace(
+                        assignment.id, migration, *scope.sought_state);
+                      auto& rwstate = it->second;
+                      if (
+                        rwstate.sought_state != scope.sought_state
+                        || rwstate.migration_id != migration) {
+                          if (it->second.shard) {
+                              stop_partition_work(ntp, rwstate);
+                          }
+                          rwstate = {migration, *scope.sought_state};
                       }
-                      rwstate = {migration, sought_state};
                   }
               }
-          }
-      });
+          });
+    }
+    if (scope.topic_work_needed) {
+        tstate.topic_scoped_work_needed = true;
+    }
 }
 
 ss::future<> backend::reconcile_migration(
@@ -653,7 +659,7 @@ ss::future<> backend::reconcile_migration(
       dm_log.debug,
       "tracking migration {} transition towards state {}",
       metadata.id,
-      mrstate.sought_state);
+      mrstate.scope.sought_state);
     co_await std::visit(
       [this, &metadata, &mrstate](const auto& migration) mutable {
           return ss::do_with(
@@ -672,7 +678,7 @@ ss::future<> backend::reconcile_migration(
                       tstate.idx_in_migration = idx;
                       _topic_migration_map.emplace(nt, metadata.id);
                       return reconcile_topic(
-                        nt, tstate, metadata.id, mrstate.sought_state, true);
+                        nt, tstate, metadata.id, mrstate.scope, true);
                   });
             });
       },
