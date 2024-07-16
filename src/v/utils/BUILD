@@ -500,3 +500,16 @@ redpanda_cc_library(
         "//src/v/ssx:sformat",
     ],
 )
+
+redpanda_cc_library(
+    name = "prefix_logger",
+    hdrs = [
+        "prefix_logger.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "@seastar",
+    ],
+)
