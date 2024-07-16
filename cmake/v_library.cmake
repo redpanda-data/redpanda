@@ -106,7 +106,7 @@ function(v_cc_library)
       )
   else()
     # Generating header-only library
-    add_library(${_NAME} INTERFACE)
+    add_library(${_NAME} INTERFACE ${V_CC_LIB_SRCS})
     target_include_directories(${_NAME}
       INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
     target_link_libraries(${_NAME}

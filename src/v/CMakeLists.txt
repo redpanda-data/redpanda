@@ -107,6 +107,7 @@ add_subdirectory(rpc)
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(finjector)
+add_subdirectory(iceberg)
 add_subdirectory(utils)
 add_subdirectory(metrics)
 add_subdirectory(model)
