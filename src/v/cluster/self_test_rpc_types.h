@@ -241,7 +241,7 @@ struct cloudcheck_opts
 
 struct self_test_result
   : serde::
-      envelope<self_test_result, serde::version<1>, serde::compat_version<1>> {
+      envelope<self_test_result, serde::version<1>, serde::compat_version<0>> {
     double p50{0};
     double p90{0};
     double p99{0};
@@ -288,6 +288,27 @@ struct self_test_result
           r.warning ? *r.warning : "<no_value>",
           r.error ? *r.error : "<no_value>");
         return o;
+    }
+
+    auto serde_fields() {
+        return std::tie(
+          p50,
+          p90,
+          p99,
+          p999,
+          max,
+          rps,
+          bps,
+          timeouts,
+          test_id,
+          name,
+          info,
+          test_type,
+          duration,
+          warning,
+          error,
+          start_time,
+          end_time);
     }
 };
 
