@@ -49,12 +49,13 @@ private:
     struct topic_reconciliation_state {
         size_t idx_in_migration;
         chunked_hash_map<model::partition_id, std::vector<model::node_id>>
-          outstanding_partitions;
+          outstanding_partitions; // for partition scoped ops
+        bool topic_scoped_work_needed;
     };
     struct migration_reconciliation_state {
-        explicit migration_reconciliation_state(state sought_state)
-          : sought_state(sought_state){};
-        state sought_state;
+        explicit migration_reconciliation_state(work_scope scope)
+          : scope(scope){};
+        work_scope scope;
         chunked_hash_map<model::topic_namespace, topic_reconciliation_state>
           outstanding_topics;
     };
@@ -124,7 +125,7 @@ private:
       const model::topic_namespace& nt,
       topic_reconciliation_state& tstate,
       id migration,
-      state sought_state,
+      work_scope scope,
       bool schedule_local_work);
 
     std::optional<std::reference_wrapper<replica_work_state>>
@@ -152,12 +153,13 @@ private:
      *
      * When we are not the coordinator, _mrstates stores sought states and
      * topics only, but no partititons, _nstates and _nodes_to_retry are
-     * empty
+     * empty. The same applies to the migration states with topic scoped work
+     * only needed.
      *
      * The following invariants can only be violated between tasks by a fiber
      * that has the lock.
      *
-     * When we are the coordinator:
+     * When we are the coordinator and need partition scoped work:
      * - _mrstates and _nstates store the same set of migration-ntp
      * combinations.
      * - For each node there is no more than one RPC in flight at a time.
