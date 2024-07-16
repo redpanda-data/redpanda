@@ -641,8 +641,8 @@ private:
 
     class snapshot_applier;
 
-    std::error_code
-    do_local_delete(model::topic_namespace nt, model::offset offset);
+    std::error_code do_local_delete(
+      model::topic_namespace nt, model::offset offset, bool ignore_migration);
     ss::future<std::error_code>
       do_apply(update_partition_replicas_cmd_data, model::offset);
 
