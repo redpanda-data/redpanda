@@ -100,7 +100,7 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
         # az-cli is installed via snap and /snap/bin only appears in
         # $PATH on *interactive* shells
         cmd = self.redpanda.kubectl._ssh_prefix() + [
-            'env', 'PATH=/usr/bin:/bin:/snap/bin',
+            'env', 'PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin',
             'az', 'aks', 'nodepool', 'list',
             '--cluster-name', f'aks-rpcloud-{self._clusterId}',
             '--resource-group', f'rg-rpcloud-{self._clusterId}',
@@ -111,15 +111,12 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
         res = subprocess.check_output(cmd)
         resd = json.loads(res)
 
-        self.logger.debug(
-            "asserting nodes_count: expected: {}, actual: {}".format(
-                self._configProfile['nodes_count'], len(resd)))
-        assert len(resd) == self._configProfile['nodes_count']
+        nc = self._configProfile['nodes_count']
+        assert len(
+            resd) == nc, f"expected nodes_count: {nc}, actual: {len(resd)}"
 
-        self.logger.debug(
-            "asserting machineType: expected: {}, actual: {}".format(
-                self._configProfile['machine_type'], resd[1]))
-        assert resd[1] == self._configProfile['machine_type']
+        mt = self._configProfile['machine_type']
+        assert resd[1] == mt, f"expected machineType: {mt}, actual: {resd[1]}"
 
     def _check_gcp_nodes(self):
         cmd = self.redpanda.kubectl._ssh_prefix() + [

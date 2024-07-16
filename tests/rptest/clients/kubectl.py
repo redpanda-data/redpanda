@@ -28,20 +28,14 @@ def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
     # - That reuses the SAME generateName (bad!)
     try:
         if pod_obj['metadata']['generateName'] == 'redpanda-broker-':
-            if pod_obj['metadata']["labels"][
-                    "app.kubernetes.io/component"] == "redpanda-statefulset":
+            if pod_obj['metadata']['labels'][
+                    'app.kubernetes.io/component'] == 'redpanda-statefulset':
                 return True
     except KeyError:
         pass
 
     # Other providers like AWS / GCP behave this way ("the old way")
-    try:
-        if pod_obj['metadata']['name'].startswith(f'rp-{cluster_id}'):
-            return True
-    except (KeyError, TypeError):
-        pass
-
-    return False
+    return pod_obj['metadata']['name'].startswith(f'rp-{cluster_id}')
 
 
 class KubectlTool:
@@ -60,7 +54,7 @@ class KubectlTool:
         remote_uri=None,
         namespace='redpanda',
         cluster_id='',
-        cluster_privider='aws',
+        cluster_provider='aws',
         cluster_region='us-west-2',
         tp_proxy=None,
         tp_token=None,
@@ -70,7 +64,7 @@ class KubectlTool:
         self._namespace = namespace
         self._cluster_id = cluster_id
 
-        self._provider = cluster_privider.lower()
+        self._provider = cluster_provider.lower()
         if self._provider not in SUPPORTED_PROVIDERS:
             raise RuntimeError("KubectlTool does not yet support "
                                f"'{self._provider}' cloud provider")
@@ -259,6 +253,16 @@ class KubectlTool:
         # return that instead.
         return s_out if len(s_out) > 0 else s_err
 
+    @property
+    def _redpanda_operator_v2(self) -> bool:
+        return self._provider == 'azure'
+
+    def _redpanda_broker_pod_name(self) -> str:
+        if self._redpanda_operator_v2:
+            return 'redpanda-broker-0'
+        else:
+            return f'rp-{self._cluster_id}-0'
+
     def _ssh_cmd(
             self,
             cmd: list[str],
@@ -303,10 +307,7 @@ class KubectlTool:
 
         self._install()
         if pod_name is None:
-            if self._provider == 'azure':
-                pod_name = 'redpanda-broker-0'
-            else:
-                pod_name = f'rp-{self._cluster_id}-0'
+            pod_name = self._redpanda_broker_pod_name()
         cmd = [
             'kubectl', 'exec', pod_name, f'-n={self._namespace}',
             '-c=redpanda', '--', 'bash', '-c'
@@ -316,10 +317,7 @@ class KubectlTool:
     def exists(self, remote_path, pod_name=None):
         self._install()
         if pod_name is None:
-            if self._provider == 'azure':
-                pod_name = 'redpanda-broker-0'
-            else:
-                pod_name = f'rp-{self._cluster_id}-0'
+            pod_name = self._redpanda_broker_pod_name()
         try:
             self._ssh_cmd([
                 'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',

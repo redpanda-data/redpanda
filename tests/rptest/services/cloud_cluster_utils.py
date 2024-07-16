@@ -54,8 +54,7 @@ class CloudClusterUtils:
             self.logger.info(f"Using GCP project '{self.gcp_project_id}'")
             self.env.update({"GOOGLE_APPLICATION_CREDENTIALS": infra_id})
         elif self.provider == 'azure':
-            self.subscription_id = context.globals.get('azure_subscription_id',
-                                                       None)
+            self.subscription_id = context.globals['azure_subscription_id']
             self.logger.debug(
                 f"Using Azure subscription ID: {self.subscription_id}")
 

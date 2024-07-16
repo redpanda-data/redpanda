@@ -1670,7 +1670,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         self._provider_config = {}
         match get_cloud_provider():
-            case "aws":
+            case "aws" | "gcp":
                 self._provider_config.update({
                     'access_key':
                         context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
@@ -1718,7 +1718,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             self,
             remote_uri=remote_uri,
             cluster_id=cluster_id,
-            cluster_privider=self._cloud_cluster.config.provider,
+            cluster_provider=self._cloud_cluster.config.provider,
             cluster_region=self._cloud_cluster.config.region,
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
@@ -1810,6 +1810,8 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def get_redpanda_statefulset(self):
         """Get the statefulset for redpanda brokers"""
+        if not self.__is_operator_v2_cluster():
+            return None
         return json.loads(
             self.kubectl.cmd(
                 'get statefulset -n redpanda redpanda-broker -o json'))
@@ -1882,8 +1884,8 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Call to rebuild metadata for all cloud brokers
         self.rebuild_pods_classes()
 
-    def is_operator_v2_cluster(self):
-        return len(self.__kubectl.cmd(['get', 'redpanda', '-n=redpanda'])) > 0
+    def __is_operator_v2_cluster(self):
+        return len(self.kubectl.cmd(['get', 'redpanda', '-n=redpanda'])) > 0
 
     def rolling_restart_pods(self, pod_timeout: int = 180):
         """Restart all pods in the cluster one at a time.
@@ -1894,27 +1896,17 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         :param pod_timeout: seconds to wait for each pod to be ready after restart
         """
-        is_operator_v2 = self.is_operator_v2_cluster()
-        self.logger.info(
-            "Detected operator v2 ... rolling restart of pods will be done using operator v2 mode"
-        )
 
         pod_names = [p.name for p in self.pods]
         self.logger.info(f'rolling restart on pods: {pod_names}')
 
         for pod_name in pod_names:
             self.restart_pod(pod_name, pod_timeout)
-            if is_operator_v2:
-                expected_replicas = self.cluster_desired_replicas_operator_v2()
-                # Check cluster readiness after pod restart
-                self.check_cluster_readiness_operator_v2(
-                    expected_replicas, pod_timeout)
-            else:
-                cluster_name = f'rp-{self._cloud_cluster.cluster_id}'
-                expected_replicas = self.cluster_desired_replicas(cluster_name)
-                # Check cluster readiness after pod restart
-                self.check_cluster_readiness(cluster_name, expected_replicas,
-                                             pod_timeout)
+            cluster_name = f'rp-{self._cloud_cluster.cluster_id}'
+            expected_replicas = self.cluster_desired_replicas(cluster_name)
+            # Check cluster readiness after pod restart
+            self.check_cluster_readiness(cluster_name, expected_replicas,
+                                         pod_timeout)
 
     def concurrent_restart_pods(self, pod_timeout):
         """
@@ -1970,27 +1962,11 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             f"Cluster {cluster_name} arrived at readyReplicas {expected_replicas}"
         )
 
-    def check_cluster_readiness_operator_v2(self, expected_replicas: int,
-                                            pod_timeout: int):
-        """Checks if the cluster has the expected number of ready replicas."""
-        self.logger.info(
-            f"Waiting for cluster (operator-v2) to have readyReplicas {expected_replicas} with timeout {pod_timeout}"
-        )
-
-        wait_until(
-            lambda: self.cluster_ready_replicas_operator_v2(
-            ) == expected_replicas,
-            timeout_sec=pod_timeout,
-            backoff_sec=1,
-            err_msg=
-            f"Cluster (operator-v2) failed to arrive at readyReplicas {expected_replicas}"
-        )
-
-        self.logger.info(
-            f"Cluster (operator-v2) arrived at readyReplicas {expected_replicas}"
-        )
-
-    def cluster_desired_replicas(self, cluster_name: str):
+    def cluster_desired_replicas(self, cluster_name: str = ''):
+        """Return cluster desired replica count."""
+        if self.__is_operator_v2_cluster():
+            rp_statefulset = self.get_redpanda_statefulset()
+            return int(rp_statefulset['status']['replicas'])
         expected_replicas = int(
             self.kubectl.cmd([
                 'get', 'cluster', cluster_name, '-n=redpanda',
@@ -1998,29 +1974,16 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             ]))
         return expected_replicas
 
-    def cluster_desired_replicas_operator_v2(self):
-        """Return cluster desired replica count for operator v2"""
-        try:
-            rp_statefulset = self.get_redpanda_statefulset()
-            return int(rp_statefulset["status"]["replicas"])
-        except (subprocess.CalledProcessError, KeyError, TypeError):
-            return None
-
-    def cluster_ready_replicas(self, cluster_name: str):
+    def cluster_ready_replicas(self, cluster_name: str = ''):
         """Retrieves the number of ready replicas for the given cluster."""
+        if self.__is_operator_v2_cluster():
+            rp_statefulset = self.get_redpanda_statefulset()
+            return int(rp_statefulset['status']['readyReplicas'])
         ret = self.kubectl.cmd([
             'get', 'cluster', cluster_name, '-n=redpanda',
             "-o=jsonpath='{.status.readyReplicas}'"
         ])
         return int(0 if not ret else ret)
-
-    def cluster_ready_replicas_operator_v2(self):
-        """Return cluster ready replica count for operator v2"""
-        try:
-            rp_statefulset = self.get_redpanda_statefulset()
-            return int(rp_statefulset["status"]["readyReplicas"])
-        except (subprocess.CalledProcessError, KeyError, TypeError):
-            return None
 
     def verify_basic_produce_consume(self, producer, consumer):
         self.logger.info("Checking basic producer functions")

@@ -9,6 +9,7 @@
 
 from subprocess import CalledProcessError
 from ducktape.mark import matrix
+from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test
 
 from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
@@ -365,9 +366,6 @@ class KubectlSelfTest(Test):
                 assert False, 'expected this command to throw'
             except CalledProcessError:
                 pass
-
-
-from ducktape.mark.resource import cluster as dt_cluster
 
 
 class KubectlLocalOnlyTest(Test):

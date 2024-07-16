@@ -18,7 +18,7 @@ class MachineTypeName(str, Enum):
     IM4GN_8XLARGE = 'im4gn.8xlarge'
 
     # Azure X86
-    STANDARD_L8S_V3 = 'Standard_L8as_v3'
+    STANDARD_L8S_V3 = 'Standard_L8s_v3'
     STANDARD_L8AS_V3 = 'Standard_L8as_v3'
 
     # GCP X86
