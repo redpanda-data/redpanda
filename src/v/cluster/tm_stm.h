@@ -391,6 +391,8 @@ private:
 
     fragmented_vector<tx_metadata> get_transactions_list() const;
 
+    void setup_metrics();
+
 private:
     std::chrono::milliseconds _sync_timeout;
     config::binding<std::chrono::milliseconds> _transactional_id_expiration;
@@ -439,6 +441,11 @@ private:
     chunked_hash_map<kafka::transactional_id, tx_wrapper> _transactions;
 
     mutex _tx_thrashing_lock{"tm_stm::tx_thrashing_lock"};
+
+    probe _probe;
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
+
     prefix_logger _ctx_log;
 };
 

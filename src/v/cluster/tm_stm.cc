@@ -13,6 +13,7 @@
 #include "cluster/types.h"
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/types.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/record.h"
 #include "raft/errc.h"
 #include "storage/record_batch_builder.h"
@@ -62,9 +63,101 @@ tm_stm::tm_stm(
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.bind())
   , _feature_table(feature_table)
-  , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
+  , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {
+    setup_metrics();
+}
 
 ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
+
+void tm_stm::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+
+    const auto& ntp = _raft->ntp();
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    auto setup = [this, &labels]<typename MetricDef, bool internal>(
+                   const std::vector<sm::label>& aggregate_labels) {
+        std::vector<MetricDef> defs;
+
+        defs.emplace_back(
+          sm::make_gauge(
+            "open_transactions",
+            [this] { return _probe.open_transactions; },
+            sm::description(
+              "Number of open transactions, not committed/aborted."),
+            labels)
+            .aggregate(aggregate_labels));
+
+        defs.emplace_back(
+          sm::make_counter(
+            "committed_transactions",
+            [this] { return _probe.committed_transactions; },
+            sm::description("Number of committed transactions."),
+            labels)
+            .aggregate(aggregate_labels));
+
+        defs.emplace_back(sm::make_counter(
+                            "aborted_transactions",
+                            [this] { return _probe.aborted_transactions; },
+                            sm::description("Number of aborted transactions."),
+                            labels)
+                            .aggregate(aggregate_labels));
+
+        if constexpr (internal) {
+            defs.emplace_back(
+              sm::make_histogram(
+                "participants_per_transaction",
+                [this] {
+                    return _probe.participants_per_transaction
+                      .tx_participants_histogram_logform();
+                },
+                sm::description("Number of partitions and groups participating "
+                                "in a transaction."),
+                labels)
+                .aggregate(aggregate_labels));
+        }
+        defs.emplace_back(
+          sm::make_gauge(
+            "active_transaction_ids",
+            [this] { return _transactions.size(); },
+            sm::description(
+              "Number of transaction ids active on the coordinator."),
+            labels)
+            .aggregate(aggregate_labels));
+        defs.emplace_back(
+          sm::make_counter(
+            "expired_transaction_ids",
+            [this] { return _probe.expired_transaction_ids; },
+            sm::description(
+              "Number of transaction ids that got garbage collected."),
+            labels)
+            .aggregate(aggregate_labels));
+        return defs;
+    };
+    if (!config::shard_local_cfg().disable_metrics()) {
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("tx:coordinator"),
+          setup.template
+          operator()<ss::metrics::impl::metric_definition_impl, true>({}),
+          {},
+          {});
+    }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("tx:coordinator"),
+          setup.template operator()<ss::metrics::metric_definition, false>(
+            {sm::shard_label, topic_label, ns_label, partition_label}));
+    }
+}
 
 uint8_t tm_stm::active_snapshot_version() { return tm_snapshot::version; }
 
@@ -554,6 +647,28 @@ void tm_stm::upsert_transaction(tx_metadata tx) {
     }
     tx_it->second._hook.unlink();
     _transactions_lru.push_back(tx_it->second);
+
+    const auto& tx_md = tx_it->second.tx;
+    switch (tx_md.status) {
+    case ongoing: {
+        _probe.add_ongoing();
+        break;
+    }
+    case preparing_commit: {
+        _probe.add_committed(tx_md.partitions.size(), tx_md.groups.size());
+        break;
+    }
+    case preparing_internal_abort:
+    case preparing_abort: {
+        _probe.add_aborted(tx_md.partitions.size(), tx_md.groups.size());
+        break;
+    }
+    case empty:
+    case completed_commit:
+    case completed_abort:
+    case tombstone:
+        break;
+    }
 }
 
 fragmented_vector<tx_metadata> tm_stm::get_transactions_list() const {
@@ -702,6 +817,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
           tx,
           _insync_term);
         _pid_tx_id.erase(tx.pid);
+        _probe.expired_transaction_ids++;
         return ss::now();
     }
     // NOTE: currently we do not validate the transaction state on apply, for
