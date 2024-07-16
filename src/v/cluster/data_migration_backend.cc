@@ -10,6 +10,9 @@
  */
 #include "cluster/data_migration_backend.h"
 
+#include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_manifest_downloader.h"
+#include "cloud_storage/topic_mount_handler.h"
 #include "cluster/partition_leaders_table.h"
 #include "config/node_config.h"
 #include "data_migration_frontend.h"
@@ -21,11 +24,14 @@
 #include "model/metadata.h"
 #include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
+#include "topics_frontend.h"
 #include "types.h"
 
 #include <seastar/core/abort_source.hh>
 
 #include <chrono>
+#include <exception>
+#include <memory>
 #include <optional>
 #include <ranges>
 
@@ -38,16 +44,20 @@ backend::backend(
   frontend& frontend,
   ss::sharded<worker>& worker,
   partition_leaders_table& leaders_table,
+  topics_frontend& topics_frontend,
   topic_table& topic_table,
   shard_table& shard_table,
+  cloud_storage::remote& cloud_storage_api,
   ss::abort_source& as)
   : _self(*config::node().node_id())
   , _table(table)
   , _frontend(frontend)
   , _worker(worker)
   , _leaders_table(leaders_table)
+  , _topics_frontend(topics_frontend)
   , _topic_table(topic_table)
   , _shard_table(shard_table)
+  , _cloud_storage_api(cloud_storage_api)
   , _as(as) {}
 
 void backend::start() {
@@ -88,7 +98,32 @@ void backend::start() {
           handle_shard_update(ntp, g, shard);
       });
 
-    ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+    _table_notification_id = _table.register_notification([this](id id) {
+        ssx::spawn_with_gate(
+          _gate, [this, id]() { return handle_migration_update(id); });
+    });
+    // process those that were already there when we subscribed
+    for (auto id : _table.get_migrations()) {
+        co_await handle_migration_update(id);
+    }
+
+    if (_cloud_storage_api) {
+        auto maybe_bucket = cloud_storage::configuration::get_bucket_config()();
+        vassert(
+          maybe_bucket, "cloud_storage_api active but no bucket configured");
+        cloud_storage_clients::bucket_name bucket{*maybe_bucket};
+        _topic_mount_handler
+          = std::make_unique<cloud_storage::topic_mount_handler>(
+            bucket, *_cloud_storage_api);
+
+        ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+
+        vlog(dm_log.info, "backend started");
+    } else {
+        vlog(
+          dm_log.info,
+          "backend not started as cloud_storage_api is not available");
+    }
 }
 
 ss::future<> backend::stop() {

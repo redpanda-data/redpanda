@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cloud_storage/fwd.h"
+#include "cloud_storage/topic_mount_handler.h"
 #include "cluster/data_migration_table.h"
 #include "cluster/shard_table.h"
 #include "container/chunked_hash_map.h"
@@ -33,8 +35,10 @@ public:
       frontend& frontend,
       ss::sharded<worker>& worker,
       partition_leaders_table& leaders_table,
+      topics_frontend& topics_frontend,
       topic_table& topic_table,
       shard_table& shard_table,
+      cloud_storage::remote& _cloud_storage_api,
       ss::abort_source& as);
 
     void start();
@@ -252,9 +256,13 @@ private:
     frontend& _frontend;
     ss::sharded<worker>& _worker;
     partition_leaders_table& _leaders_table;
+    topics_frontend& _topics_frontend;
     topic_table& _topic_table;
     shard_table& _shard_table;
+    cloud_storage::remote& _cloud_storage_api;
     ss::abort_source& _as;
+
+    std::unique_ptr<cloud_storage::topic_mount_handler> _topic_mount_handler;
 
     ss::gate _gate;
     ssx::semaphore _sem{0, "c/data-migration-be"};
