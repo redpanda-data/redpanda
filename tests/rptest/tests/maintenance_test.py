@@ -131,8 +131,12 @@ class MaintenanceTest(RedpandaTest):
         """
         self.logger.debug(
             f"Checking that node {node.name} has a leadership role")
+        # In case the node is unlucky and doesn't get any leaders "naturally",
+        # we have to wait for the leadership balancer to do its job. We have to wait
+        # at least 1 minute for it to unmute just restarted nodes and perform another
+        # tick. Wait more than leader_balancer_idle_timeout (2 minutes) just to be sure.
         wait_until(lambda: self._has_leadership_role(node),
-                   timeout_sec=60,
+                   timeout_sec=150,
                    backoff_sec=10)
 
         self.logger.debug(
