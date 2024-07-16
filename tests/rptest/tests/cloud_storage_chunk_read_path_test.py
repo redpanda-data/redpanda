@@ -229,12 +229,6 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             self._assert_not_in_cache(
                 fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
 
-            # We cannot assert that there are chunks in cache because the deleting thread
-            # could delete them all before we run the assertion, causing it to fail.
-            # We can check that the thread deleted some chunks.
-            assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during rand-cons, none deleted"
-            rm_chunks.deleted_chunks = 0
-
             consumer = KgoVerifierSeqConsumer(self.test_context,
                                               self.redpanda,
                                               self.topic,
@@ -244,7 +238,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             consumer.wait(timeout_sec=120)
             rm_chunks.stop()
             rm_chunks.join(timeout=10)
-            assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during seq-cons, none deleted"
+            assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files, none deleted"
 
             self._assert_not_in_cache(
                 fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
