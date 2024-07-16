@@ -41,6 +41,11 @@ public:
     ss::future<> stop();
 
 private:
+    struct work_scope {
+        std::optional<state> sought_state;
+        bool partition_work_needed;
+        bool topic_work_needed;
+    };
     struct topic_reconciliation_state {
         size_t idx_in_migration;
         chunked_hash_map<model::partition_id, std::vector<model::node_id>>
@@ -132,6 +137,16 @@ private:
       const model::ntp& ntp, const outbound_migration& om, id migration_id);
     partition_work_info get_partition_work_info(
       const model::ntp& ntp, const migration_metadata& metadata);
+
+    template<class M>
+    struct migration_direction_tag {};
+    static work_scope get_work_scope(const migration_metadata& metadata);
+    static work_scope get_work_scope(
+      migration_direction_tag<inbound_migration>,
+      const migration_metadata& metadata);
+    static work_scope get_work_scope(
+      migration_direction_tag<outbound_migration>,
+      const migration_metadata& metadata);
     /*
      * Reconciliation-related data.
      *
