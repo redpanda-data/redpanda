@@ -11,13 +11,10 @@
 
 #include "utils/log_hist.h"
 
-template<
-  typename duration_t,
-  int number_of_buckets,
-  uint64_t first_bucket_upper_bound>
+template<int number_of_buckets, uint64_t first_bucket_upper_bound>
 template<typename cfg>
 seastar::metrics::histogram
-log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+log_hist<number_of_buckets, first_bucket_upper_bound>::
   seastar_histogram_logform() const {
     seastar::metrics::histogram hist;
     hist.buckets.resize(cfg::bucket_count);
@@ -68,59 +65,91 @@ log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
     return hist;
 }
 
-template<
-  typename duration_t,
-  int number_of_buckets,
-  uint64_t first_bucket_upper_bound>
+template<int number_of_buckets, uint64_t first_bucket_upper_bound>
 seastar::metrics::histogram
-log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+log_hist<number_of_buckets, first_bucket_upper_bound>::
   public_histogram_logform() const {
     using public_hist_config = logform_config<1'000'000l, 256ul, 18>;
 
     return seastar_histogram_logform<public_hist_config>();
 }
 
-template<
-  typename duration_t,
-  int number_of_buckets,
-  uint64_t first_bucket_upper_bound>
+template<int number_of_buckets, uint64_t first_bucket_upper_bound>
 seastar::metrics::histogram
-log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+log_hist<number_of_buckets, first_bucket_upper_bound>::
   internal_histogram_logform() const {
     using internal_hist_config = logform_config<1l, 8ul, 26>;
 
     return seastar_histogram_logform<internal_hist_config>();
 }
 
-template<
-  typename duration_t,
-  int number_of_buckets,
-  uint64_t first_bucket_upper_bound>
+template<int number_of_buckets, uint64_t first_bucket_upper_bound>
 seastar::metrics::histogram
-log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+log_hist<number_of_buckets, first_bucket_upper_bound>::
   read_dist_histogram_logform() const {
     using read_distribution_config = logform_config<1l, 4ul, 16>;
 
     return seastar_histogram_logform<read_distribution_config>();
 }
 
-template<
-  typename duration_t,
-  int number_of_buckets,
-  uint64_t first_bucket_upper_bound>
+template<int number_of_buckets, uint64_t first_bucket_upper_bound>
 seastar::metrics::histogram
-log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+log_hist<number_of_buckets, first_bucket_upper_bound>::
   client_quota_histogram_logform() const {
     using client_quota_config = logform_config<1'000l, 1ul, 15>;
 
     return seastar_histogram_logform<client_quota_config>();
 }
 
+template<
+  class duration_t,
+  int number_of_buckets,
+  uint64_t first_bucket_upper_bound>
+requires detail::is_duration_v<duration_t>
+seastar::metrics::histogram
+latency_log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+  public_histogram_logform() const {
+    return _histo.public_histogram_logform();
+}
+
+template<
+  class duration_t,
+  int number_of_buckets,
+  uint64_t first_bucket_upper_bound>
+requires detail::is_duration_v<duration_t>
+seastar::metrics::histogram
+latency_log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+  internal_histogram_logform() const {
+    return _histo.internal_histogram_logform();
+}
+
+template<
+  class duration_t,
+  int number_of_buckets,
+  uint64_t first_bucket_upper_bound>
+requires detail::is_duration_v<duration_t>
+seastar::metrics::histogram
+latency_log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+  read_dist_histogram_logform() const {
+    return _histo.read_dist_histogram_logform();
+}
+
+template<
+  class duration_t,
+  int number_of_buckets,
+  uint64_t first_bucket_upper_bound>
+requires detail::is_duration_v<duration_t>
+seastar::metrics::histogram
+latency_log_hist<duration_t, number_of_buckets, first_bucket_upper_bound>::
+  client_quota_histogram_logform() const {
+    return _histo.client_quota_histogram_logform();
+}
+
 // Explicit instantiation for log_hist_public
-template class log_hist<std::chrono::microseconds, 18, 256ul>;
+template class latency_log_hist<std::chrono::microseconds, 18, 256ul>;
 // Explicit instantiation for log_hist_internal
-template class log_hist<std::chrono::microseconds, 26, 8ul>;
+template class latency_log_hist<std::chrono::microseconds, 26, 8ul>;
 // Explicit instantiation for log_hist_read_dist
-template class log_hist<std::chrono::minutes, 16, 4ul>;
+template class latency_log_hist<std::chrono::minutes, 16, 4ul>;
 // Explicit instantiation for log_hist_client_quota
-template class log_hist<std::chrono::milliseconds, 15, 1ul>;
+template class latency_log_hist<std::chrono::milliseconds, 15, 1ul>;

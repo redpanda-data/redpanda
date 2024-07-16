@@ -42,108 +42,24 @@
  * [32, 64)  = 2
  * [64, 128) = 0
  */
-template<
-  typename duration_t,
-  int number_of_buckets,
-  uint64_t first_bucket_upper_bound>
+template<int number_of_buckets, uint64_t first_bucket_upper_bound>
 class log_hist {
     static_assert(
       first_bucket_upper_bound >= 1
         && (first_bucket_upper_bound & (first_bucket_upper_bound - 1)) == 0,
       "first bucket bound must be power of 2");
 
-    using measurement_canary_t = seastar::lw_shared_ptr<bool>;
-
 public:
     static constexpr int first_bucket_clz = std::countl_zero(
       first_bucket_upper_bound - 1);
     static constexpr int first_bucket_exp = 64 - first_bucket_clz;
 
-    using duration_type = duration_t;
-    using clock_type = std::chrono::high_resolution_clock;
-
-    /// \brief move-only type to tracking durations
-    /// if the log_hist ptr goes out of scope, it will detach itself
-    /// and the recording will simply be ignored.
-    class measurement {
-    public:
-        explicit measurement(log_hist& h)
-          : _canary(h._canary)
-          , _h(std::ref(h))
-          , _begin_t(log_hist::clock_type::now())
-          , _total_latency(duration_t(0)) {}
-        measurement(const measurement&) = delete;
-        measurement& operator=(const measurement&) = delete;
-        measurement(measurement&& o) noexcept
-          : _canary(o._canary)
-          , _h(o._h)
-          , _begin_t(o._begin_t)
-          , _total_latency(o._total_latency) {
-            o.cancel();
-        }
-        measurement& operator=(measurement&& o) noexcept {
-            if (this != &o) {
-                this->~measurement();
-                new (this) measurement(std::move(o));
-            }
-            return *this;
-        }
-        ~measurement() noexcept {
-            if (_canary && *_canary) {
-                _h.get().record(compute_total_latency().count());
-            }
-        }
-
-        // Cancels this measurements and prevents any values from
-        // being recorded to the underlying histogram.
-        void cancel() { _canary = nullptr; }
-
-        // Temporarily stops measuring latency.
-        void stop() {
-            _total_latency = compute_total_latency();
-            _begin_t = std::nullopt;
-        }
-
-        // Resumes measuring latency.
-        void start() {
-            if (!_begin_t.has_value()) {
-                _begin_t = log_hist::clock_type::now();
-            }
-        }
-
-        // Returns the total latency that has been measured so far.
-        duration_t compute_total_latency() const {
-            if (_begin_t) {
-                return _total_latency
-                       + std::chrono::duration_cast<duration_t>(
-                         log_hist::clock_type::now() - *_begin_t);
-            } else {
-                return _total_latency;
-            }
-        }
-
-    private:
-        measurement_canary_t _canary;
-        std::reference_wrapper<log_hist> _h;
-        std::optional<log_hist::clock_type::time_point> _begin_t;
-        duration_t _total_latency;
-    };
-
-    std::unique_ptr<measurement> auto_measure() {
-        return std::make_unique<measurement>(*this);
-    }
-
     log_hist()
-      : _canary(seastar::make_lw_shared(true))
-      , _counts() {}
+      : _counts() {}
     log_hist(const log_hist& o) = delete;
     log_hist& operator=(const log_hist&) = delete;
     log_hist(log_hist&& o) = delete;
     log_hist& operator=(log_hist&& o) = delete;
-    ~log_hist() {
-        // Notify any active measurements that this object no longer exists.
-        *_canary = false;
-    }
 
     /*
      * record expects values of that are equivalent to `duration_t::count()`
@@ -156,14 +72,6 @@ public:
           0,
           static_cast<int>(_counts.size() - 1));
         _counts[i]++;
-    }
-
-    template<
-      typename dur_t,
-      typename = std::enable_if_t<detail::is_duration_v<dur_t>, dur_t>>
-    void record(dur_t dur) {
-        record(static_cast<uint64_t>(
-          std::chrono::duration_cast<duration_t>(dur).count()));
     }
 
     template<int64_t _scale, uint64_t _first_bucket_bound, int _bucket_count>
@@ -218,13 +126,131 @@ public:
     seastar::metrics::histogram client_quota_histogram_logform() const;
 
 private:
-    friend measurement;
-
-    // Used to inform measurements whether `log_hist` has been destroyed
-    measurement_canary_t _canary;
-
     std::array<uint64_t, number_of_buckets> _counts;
     uint64_t _sample_sum{0};
+};
+
+template<
+  class duration_t,
+  int number_of_buckets,
+  uint64_t first_bucket_upper_bound>
+requires detail::is_duration_v<duration_t>
+class latency_log_hist {
+    using base_histo_t = log_hist<number_of_buckets, first_bucket_upper_bound>;
+    using duration_type = duration_t;
+    using measurement_canary_t = seastar::lw_shared_ptr<bool>;
+
+public:
+    using clock_type = std::chrono::high_resolution_clock;
+    static constexpr int first_bucket_exp = base_histo_t::first_bucket_exp;
+    latency_log_hist()
+      : _canary(seastar::make_lw_shared(true)) {}
+    latency_log_hist(const latency_log_hist& o) = delete;
+    latency_log_hist& operator=(const latency_log_hist&) = delete;
+    latency_log_hist(latency_log_hist&& o) = delete;
+    latency_log_hist& operator=(latency_log_hist&& o) = delete;
+    ~latency_log_hist() {
+        // Notify any active measurements that this object no longer exists.
+        *_canary = false;
+    }
+
+    /// \brief move-only type to tracking durations
+    /// if the log_hist ptr goes out of scope, it will detach itself
+    /// and the recording will simply be ignored.
+    class measurement {
+    public:
+        explicit measurement(latency_log_hist& h)
+          : _canary(h._canary)
+          , _h(std::ref(h))
+          , _begin_t(latency_log_hist::clock_type::now())
+          , _total_latency(duration_t(0)) {}
+        measurement(const measurement&) = delete;
+        measurement& operator=(const measurement&) = delete;
+        measurement(measurement&& o) noexcept
+          : _canary(o._canary)
+          , _h(o._h)
+          , _begin_t(o._begin_t)
+          , _total_latency(o._total_latency) {
+            o.cancel();
+        }
+        measurement& operator=(measurement&& o) noexcept {
+            if (this != &o) {
+                this->~measurement();
+                new (this) measurement(std::move(o));
+            }
+            return *this;
+        }
+        ~measurement() noexcept {
+            if (_canary && *_canary) {
+                _h.get().record(compute_total_latency());
+            }
+        }
+
+        // Cancels this measurements and prevents any values from
+        // being recorded to the underlying histogram.
+        void cancel() { _canary = nullptr; }
+
+        // Temporarily stops measuring latency.
+        void stop() {
+            _total_latency = compute_total_latency();
+            _begin_t = std::nullopt;
+        }
+
+        // Resumes measuring latency.
+        void start() {
+            if (!_begin_t.has_value()) {
+                _begin_t = latency_log_hist::clock_type::now();
+            }
+        }
+
+        // Returns the total latency that has been measured so far.
+        duration_t compute_total_latency() const {
+            if (_begin_t) {
+                return _total_latency
+                       + std::chrono::duration_cast<duration_t>(
+                         latency_log_hist::clock_type::now() - *_begin_t);
+            } else {
+                return _total_latency;
+            }
+        }
+
+    private:
+        measurement_canary_t _canary;
+        std::reference_wrapper<latency_log_hist> _h;
+        std::optional<latency_log_hist::clock_type::time_point> _begin_t;
+        duration_t _total_latency;
+    };
+
+    template<
+      typename dur_t,
+      typename = std::enable_if_t<detail::is_duration_v<dur_t>, dur_t>>
+    void record(dur_t dur) {
+        _histo.record(static_cast<uint64_t>(
+          std::chrono::duration_cast<duration_t>(dur).count()));
+    }
+
+    void record(duration_t::rep dur) {
+        _histo.record(static_cast<uint64_t>(dur));
+    }
+
+    std::unique_ptr<measurement> auto_measure() {
+        return std::make_unique<measurement>(*this);
+    }
+
+    seastar::metrics::histogram public_histogram_logform() const;
+
+    seastar::metrics::histogram internal_histogram_logform() const;
+
+    seastar::metrics::histogram read_dist_histogram_logform() const;
+
+    seastar::metrics::histogram client_quota_histogram_logform() const;
+
+private:
+    friend measurement;
+
+    log_hist<number_of_buckets, first_bucket_upper_bound> _histo;
+    // Used to inform measurements whether `latency_log_hist` has been destroyed
+    measurement_canary_t _canary;
 };
 
 /*
@@ -234,7 +260,7 @@ private:
  * will produce the same seastar histogram as
  * `metrics::report_default_histogram(hdr_hist)`.
  */
-using log_hist_public = log_hist<std::chrono::microseconds, 18, 256ul>;
+using log_hist_public = latency_log_hist<std::chrono::microseconds, 18, 256ul>;
 
 /*
  * This histogram produces results that are similar, but not indentical to the
@@ -242,14 +268,14 @@ using log_hist_public = log_hist<std::chrono::microseconds, 18, 256ul>;
  * following bounds; [log_hist_internal upper bounds, internal hdr_hist upper
  * bounds] [8, 10], [16, 20], [32, 41], [64, 83], [128, 167], [256, 335]
  */
-using log_hist_internal = log_hist<std::chrono::microseconds, 26, 8ul>;
+using log_hist_internal = latency_log_hist<std::chrono::microseconds, 26, 8ul>;
 
 /*
  * This histogram has units of minutes instead of microseconds, and is used for
  * measuring the Kafka read distribution on the scale of less than 4 minutes in
  * the first bucket to greater than 91 days in the last bucket.
  */
-using log_hist_read_dist = log_hist<std::chrono::minutes, 16, 4ul>;
+using log_hist_read_dist = latency_log_hist<std::chrono::minutes, 16, 4ul>;
 
 /*
  * This histogram has units of milliseconds instead of microseconds, and is
@@ -257,4 +283,5 @@ using log_hist_read_dist = log_hist<std::chrono::minutes, 16, 4ul>;
  * 1 milliseconds in the first bucket to greater than 32 seconds in the last
  * bucket.
  */
-using log_hist_client_quota = log_hist<std::chrono::milliseconds, 15, 1ul>;
+using log_hist_client_quota
+  = latency_log_hist<std::chrono::milliseconds, 15, 1ul>;
