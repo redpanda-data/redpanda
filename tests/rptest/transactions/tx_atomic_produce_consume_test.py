@@ -12,13 +12,18 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from concurrent import futures
 import time
+
+from ducktape.mark import matrix
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 import confluent_kafka as ck
+from rptest.services.failure_injector import FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from ducktape.utils.util import wait_until
+
+from rptest.utils.node_operations import FailureInjectorBackgroundThread
 
 
 def deserialize_str(value: bytes, ctx) -> str:
@@ -366,7 +371,8 @@ class TxAtomicProduceConsumeTest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=3)
-    def test_basic_tx_consumer_transform_produce(self):
+    @matrix(with_failures=[True, False])
+    def test_basic_tx_consumer_transform_produce(self, with_failures):
         partition_count = 5
         topic = TopicSpec(name='src-test-exactly-once',
                           replication_factor=3,
@@ -379,6 +385,14 @@ class TxAtomicProduceConsumeTest(RedpandaTest):
             {"group_new_member_join_timeout": "3000"})
         self.client().create_topic(topic)
         self.client().create_topic(dst_topic)
+        fi = None
+        if with_failures:
+            fi = FailureInjectorBackgroundThread(
+                self.redpanda,
+                self.logger,
+                max_inter_failure_time=30,
+                min_inter_failure_time=10,
+                max_suspend_duration_seconds=7)
 
         def simple_transform(k, v):
             return f"{k}-t", f"{v}-tv"
@@ -391,7 +405,10 @@ class TxAtomicProduceConsumeTest(RedpandaTest):
                                           self.logger,
                                           2000,
                                           progress_timeout_sec=180)
-
+        if fi:
+            fi.start()
         transformer.start_workload(2)
         transformer.wait_for_finish()
+        if fi:
+            fi.stop()
         transformer.validate_transform()
