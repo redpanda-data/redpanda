@@ -77,3 +77,16 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
     ],
 )
+
+redpanda_cc_library(
+    name = "schema",
+    hdrs = [
+        "schema.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/utils:named_type",
+    ],
+)
