@@ -29,6 +29,7 @@ v_cc_library(
   SRCS
     ${avro_hdrs}
     datatypes.cc
+    json_utils.cc
   DEPS
     v::container
 )
