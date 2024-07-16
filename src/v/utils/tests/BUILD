@@ -312,3 +312,182 @@ redpanda_cc_btest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "rwlock_test",
+    timeout = "short",
+    srcs = [
+        "rwlock_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:rwlock",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "token_bucket_test",
+    timeout = "short",
+    srcs = [
+        "token_bucket_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:token_bucket",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "waiter_queue_test",
+    timeout = "short",
+    srcs = [
+        "waiter_queue_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:waiter_queue",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "timed_mutex_test",
+    timeout = "short",
+    srcs = [
+        "timed_mutex_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:timed_mutex",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "input_stream_fanout_test",
+    timeout = "short",
+    srcs = [
+        "input_stream_fanout_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "//src/v/bytes:random",
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:stream_utils",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "seastar_histogram_test",
+    timeout = "short",
+    srcs = [
+        "seastar_histogram_test.cc",
+    ],
+    deps = [
+        "//src/v/metrics",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:hdr_hist",
+        "//src/v/utils:log_hist",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "remote_test",
+    timeout = "short",
+    srcs = [
+        "remote_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:remote",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "retry_test",
+    timeout = "short",
+    srcs = [
+        "retry_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:retry",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "filtered_lower_bound_test",
+    timeout = "short",
+    srcs = [
+        "filtered_lower_bound_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:filtered_lower_bound",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "delta_for_test",
+    timeout = "short",
+    srcs = [
+        "delta_for_characterization_data.cc",
+        "delta_for_characterization_data.h",
+        "delta_for_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:delta_for",
+        "@boost//:numeric_conversion",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "delta_for_bench",
+    timeout = "short",
+    srcs = [
+        "delta_for_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/random:generators",
+        "//src/v/utils:delta_for",
+        "@seastar//:benchmark",
+    ],
+)

@@ -27,6 +27,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "rwlock",
+    hdrs = [
+        "rwlock.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "vint",
     srcs = [
         "vint.cc",
@@ -67,6 +80,19 @@ redpanda_cc_library(
     include_prefix = "utils",
     deps = [
         "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
+    name = "token_bucket",
+    hdrs = [
+        "token_bucket.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
     ],
 )
 
@@ -114,6 +140,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "waiter_queue",
+    hdrs = [
+        "waiter_queue.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "to_string",
     hdrs = [
         "to_string.h",
@@ -122,6 +160,18 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "remote",
+    hdrs = [
+        "remote.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
         "@seastar",
     ],
 )
@@ -148,6 +198,39 @@ redpanda_cc_library(
     include_prefix = "utils",
     deps = [
         "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "retry",
+    hdrs = [
+        "retry.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "filtered_lower_bound",
+    hdrs = [
+        "filtered_lower_bound.h",
+    ],
+    include_prefix = "utils",
+)
+
+redpanda_cc_library(
+    name = "timed_mutex",
+    hdrs = [
+        "timed_mutex.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
         "@seastar",
     ],
 )
@@ -182,6 +265,19 @@ redpanda_cc_library(
         ":human",
         "//src/v/container:intrusive",
         "//src/v/json",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "stream_utils",
+    hdrs = [
+        "stream_utils.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
         "@seastar",
     ],
 )
@@ -385,5 +481,35 @@ redpanda_cc_library(
         "//src/v/base",
         "@boost//:iterator",
         "@fmt",
+    ],
+)
+
+redpanda_cc_library(
+    name = "delta_for",
+    hdrs = [
+        "delta_for.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde",
+        "//src/v/serde:array",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:optional",
+        "//src/v/ssx:sformat",
+    ],
+)
+
+redpanda_cc_library(
+    name = "prefix_logger",
+    hdrs = [
+        "prefix_logger.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "@seastar",
     ],
 )

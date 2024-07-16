@@ -10,7 +10,6 @@ rp_test(
     expiring_promise_test.cc
     input_stream_fanout_test.cc
     object_pool_test.cc
-    outcome_utils_test.cc
     retry_chain_node_test.cc
     seastar_histogram_test.cc
     timed_mutex_test.cc
