@@ -123,7 +123,8 @@ class RpkACLTest(RedpandaTest):
         # We check that we can list the topics:
         assert topic in topic_list
 
-        out = self._rpk.sasl_update_user(self.username, new_password)
+        out = self._rpk.sasl_update_user(self.username, new_password,
+                                         self.mechanism)
         assert f'Updated user "{self.username}" successfully' in out
 
         with expect_exception(
