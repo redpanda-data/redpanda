@@ -24,6 +24,15 @@ GENERATED_CODE = {
     pathlib.Path("rpc/test/echo_v2_service.h"),
 }
 
+# Violations to ignore. Why? Because we are replacing CMake with Bazel and we
+# need to move some files around to make Bazel happy. Eventually Bazel will
+# enforce the rules we need and we can remove this. Until then, we'll add
+# exceptions as needed so we can still get the benefits of this linter.
+IGNORE = {
+    pathlib.Path("http/tests/http_imposter.h"),
+    pathlib.Path("http/tests/registered_urls.h"),
+}
+
 def get_modules(root):
     """
     Get new-style modules (ie those that use the new layout where public headers
@@ -177,7 +186,7 @@ def run(root):
     print(
         f"Checking {len(module_includes)} includes from {len(modules)} modules against {len(exports)} exported files"
     )
-    violations = module_includes - exports
+    violations = module_includes - exports - IGNORE
     assert not violations, f"Non-exported include found: {violations}"
 
 
