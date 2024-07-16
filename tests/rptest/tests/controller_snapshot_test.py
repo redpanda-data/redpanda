@@ -429,6 +429,13 @@ class ControllerSnapshotTest(RedpandaTest):
         for iter in range(5):
             self.redpanda.stop_node(joiner)
 
+            # wait for the joiner to step down in case it was the controller
+            joiner_id = self.redpanda.node_id(joiner)
+            admin.await_stable_leader(namespace='redpanda',
+                                      topic='controller',
+                                      check=lambda id: id != joiner_id,
+                                      timeout_s=30)
+
             executed = 0
             to_execute = random.randint(1, 5)
             while executed < to_execute:
