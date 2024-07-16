@@ -37,7 +37,9 @@ bool migrations_table::is_valid_state_transition(state current, state target) {
     case state::executing:
         return target == state::executed || target == state::canceling;
     case state::executed:
-        return target == state::finished || target == state::canceling;
+        return target == state::cut_over || target == state::canceling;
+    case state::cut_over:
+        return target == state::finished;
     case state::canceling:
         return target == state::cancelled;
     /**
