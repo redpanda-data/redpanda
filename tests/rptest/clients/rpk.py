@@ -517,10 +517,11 @@ class RpkTool:
 
         return self._run(cmd)
 
-    def sasl_update_user(self, user, new_password):
+    def sasl_update_user(self, user, new_password, new_mechanism):
         cmd = [
             "acl", "user", "update", user, "--new-password", new_password,
-            "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
+            "--mechanism", new_mechanism, "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints()
         ]
         return self._run(cmd)
 
