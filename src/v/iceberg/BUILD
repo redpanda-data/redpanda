@@ -79,6 +79,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest",
+    hdrs = [
+        "manifest.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":manifest_entry",
+        ":partition",
+        ":schema",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:named_type",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition",
     srcs = [
         "partition.cc",
