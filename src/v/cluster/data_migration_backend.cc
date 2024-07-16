@@ -823,4 +823,40 @@ bool backend::has_local_replica(const model::ntp& ntp) {
     return false;
 }
 
+backend::work_scope
+backend::get_work_scope(const migration_metadata& metadata) {
+    return std::visit(
+      [&metadata](const auto& migration) {
+          migration_direction_tag<std::decay_t<decltype(migration)>> tag;
+          return get_work_scope(tag, metadata);
+      },
+      metadata.migration);
+}
+
+backend::work_scope backend::get_work_scope(
+  migration_direction_tag<inbound_migration>,
+  const migration_metadata& metadata) {
+    switch (metadata.state) {
+    case state::preparing:
+        return {state::prepared, true, false};
+    default:
+        return {{}, false, false};
+    };
+}
+
+backend::work_scope backend::get_work_scope(
+  migration_direction_tag<outbound_migration>,
+  const migration_metadata& metadata) {
+    switch (metadata.state) {
+    case state::preparing:
+        return {state::prepared, true, false};
+    case state::executing:
+        return {state::executed, true, false};
+    case state::cut_over:
+        return {state::finished, false, true};
+    default:
+        return {{}, false, false};
+    };
+}
+
 } // namespace cluster::data_migrations
