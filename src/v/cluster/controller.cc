@@ -767,8 +767,10 @@ ss::future<> controller::start(
       std::ref(_data_migration_frontend.local()),
       std::ref(_data_migration_worker),
       std::ref(_partition_leaders.local()),
+      std::ref(_tp_frontend.local()),
       std::ref(_tp_state.local()),
       std::ref(_shard_table.local()),
+      std::ref(_cloud_storage_api.local()),
       std::ref(_as.local()));
     co_await _data_migration_backend.invoke_on_instance(
       &data_migrations::backend::start);
