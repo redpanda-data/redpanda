@@ -177,8 +177,6 @@ struct inbound_migration
 
     inbound_migration copy() const;
 
-    static std::optional<state> next_replica_state(state state);
-
     auto serde_fields() { return std::tie(topics, groups); }
 
     friend bool operator==(const inbound_migration&, const inbound_migration&)
@@ -225,8 +223,6 @@ struct outbound_migration
     std::optional<copy_target> copy_to;
 
     outbound_migration copy() const;
-
-    static std::optional<state> next_replica_state(state state);
 
     auto serde_fields() { return std::tie(topics, groups, copy_to); }
 
@@ -281,8 +277,6 @@ struct migration_metadata
         return migration_metadata{
           .id = id, .migration = copy_migration(migration), .state = state};
     }
-
-    std::optional<data_migrations::state> next_replica_state() const;
 
     auto serde_fields() { return std::tie(id, migration, state); }
 

@@ -40,26 +40,9 @@ inbound_migration inbound_migration::copy() const {
     return inbound_migration{.topics = topics.copy(), .groups = groups.copy()};
 }
 
-std::optional<state> inbound_migration::next_replica_state(state state) {
-    if (state == state::preparing) {
-        return state::prepared;
-    };
-    return std::nullopt;
-}
-
 outbound_migration outbound_migration::copy() const {
     return outbound_migration{
       .topics = topics.copy(), .groups = groups.copy(), .copy_to = copy_to};
-}
-
-std::optional<state> outbound_migration::next_replica_state(state state) {
-    if (state == state::preparing) {
-        return state::prepared;
-    };
-    if (state == state::executing) {
-        return state::executed;
-    };
-    return std::nullopt;
 }
 
 std::ostream& operator<<(std::ostream& o, state state) {
@@ -143,14 +126,6 @@ std::ostream& operator<<(std::ostream& o, const outbound_migration& dm) {
       fmt::join(dm.groups, ", "),
       dm.copy_to);
     return o;
-}
-
-std::optional<state> migration_metadata::next_replica_state() const {
-    return std::visit(
-      [this](const auto& migration) {
-          return migration.next_replica_state(state);
-      },
-      migration);
 }
 
 std::ostream& operator<<(std::ostream& o, const migration_metadata& m) {
