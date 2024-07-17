@@ -109,6 +109,8 @@ enum class json_schema_dialect {
     draft4,
     draft6,
     draft7,
+    draft201909,
+    draft202012,
 };
 
 constexpr std::string_view
@@ -122,6 +124,10 @@ to_uri(json_schema_dialect draft, bool strip = false) {
             return "http://json-schema.org/draft-06/schema#";
         case draft7:
             return "http://json-schema.org/draft-07/schema#";
+        case draft201909:
+            return "https://json-schema.org/draft/2019-09/schema#";
+        case draft202012:
+            return "https://json-schema.org/draft/2020-12/schema#";
         }
     }();
 
@@ -139,6 +145,8 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
       .match_all(to_uri(draft4), to_uri(draft4, true), draft4)
       .match_all(to_uri(draft6), to_uri(draft6, true), draft6)
       .match_all(to_uri(draft7), to_uri(draft7, true), draft7)
+      .match_all(to_uri(draft201909), to_uri(draft201909, true), draft201909)
+      .match_all(to_uri(draft202012), to_uri(draft202012, true), draft202012)
       .default_match(std::nullopt);
 }
 
@@ -167,6 +175,12 @@ jsoncons::jsonschema::json_schema<jsoncons::json> const& get_metaschema() {
             case json_schema_dialect::draft7:
                 return jsoncons::jsonschema::draft7::schema_draft7<
                   jsoncons::json>::get_schema();
+            case json_schema_dialect::draft201909:
+                return jsoncons::jsonschema::draft201909::schema_draft201909<
+                  jsoncons::json>::get_schema();
+            case json_schema_dialect::draft202012:
+                return jsoncons::jsonschema::draft202012::schema_draft202012<
+                  jsoncons::json>::get_schema();
             }
         }();
 
@@ -190,6 +204,10 @@ result<void> validate_json_schema(
             return get_metaschema<draft6>();
         case draft7:
             return get_metaschema<draft7>();
+        case draft201909:
+            return get_metaschema<draft201909>();
+        case draft202012:
+            return get_metaschema<draft202012>();
         }
     }();
 
@@ -217,7 +235,7 @@ result<void> try_validate_json_schema(const jsoncons::json& schema) {
 
     // no explicit $schema: try to validate from newest to oldest draft
     auto first_error = std::optional<error_info>{};
-    for (auto d : {draft7, draft6, draft4}) {
+    for (auto d : {draft202012, draft201909, draft7, draft6, draft4}) {
         auto res = validate_json_schema(d, schema);
         if (res.has_value()) {
             return outcome::success();
@@ -1255,7 +1273,19 @@ bool is_superset(json::Value const& older, json::Value const& newer) {
            "if",
            "then",
            "else",
-           // later drafts:
+           // draft 2019-09 unhandled keywords:
+           "$anchor",
+           "$recursiveRef",
+           "$recursiveAnchor",
+           "unevaluatedItems",
+           "unevaluatedProperties",
+           "dependentRequired",
+           "maxContains",
+           "minContains",
+           "deprecated",
+           // draft 2020-12 unhandled keywords:
+           "$dynamicRef",
+           "$dynamicAnchor",
            "prefixItems",
          }) {
         if (
