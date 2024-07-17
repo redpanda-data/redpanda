@@ -47,7 +47,7 @@ public:
           {
             sm::make_histogram(
               "fetch_latency_us",
-              sm::description("Fetch Latency"),
+              sm::description("Latency of the initial read in a fetch request"),
               labels,
               [this] { return _fetch_latency.internal_histogram_logform(); }),
             sm::make_histogram(
@@ -77,7 +77,7 @@ public:
               .aggregate({sm::shard_label}),
             sm::make_histogram(
               "request_latency_seconds",
-              sm::description("Internal latency of kafka consume requests"),
+              sm::description("Latency of the initial read in a kafka consume request"),
               {metrics::make_namespaced_label("request")("consume")},
               [this] { return _fetch_latency.public_histogram_logform(); })
               .aggregate({sm::shard_label}),
