@@ -218,8 +218,8 @@ func buildJavaScript(ctx context.Context, fs afero.Fs, cfg project.Config) error
 	if err != nil {
 		return err
 	}
-	wasmMerge := path.Join(bpRoot, "wasm-merge")
-	jsVmWasm := path.Join(bpRoot, "redpanda_js_transform")
+	wasmMerge := path.Join(bpRoot, "bin", "wasm-merge")
+	jsVmWasm := path.Join(bpRoot, "bin", "redpanda_js_transform")
 	cmd = exec.CommandContext(
 		ctx,
 		wasmMerge,
