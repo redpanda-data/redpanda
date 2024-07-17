@@ -105,7 +105,6 @@ ss::future<std::optional<ss::sstring>> get_record_name(
   subject_name_strategy sns,
   canonical_schema_definition schema,
   std::optional<std::vector<int32_t>>& offsets) {
-    vlog(plog.warn, "get_record_name: sns: {}, schema: {}", sns, schema);
     if (sns == subject_name_strategy::topic_name) {
         // Result is succesfully nothing
         co_return "";
