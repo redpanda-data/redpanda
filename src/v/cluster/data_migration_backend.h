@@ -104,6 +104,7 @@ private:
     on_partition_work_completed(model::ntp&& ntp, id migration, state state);
 
     /* deferred event handlers */
+    // call only with _mutex lock grabbed
     ss::future<> process_delta(cluster::topic_table_delta&& delta);
 
     /* helpers */
@@ -119,10 +120,12 @@ private:
       const model::topic_namespace& nt,
       const topic_reconciliation_state& tstate);
 
+    // call only with _mutex lock grabbed
     ss::future<> reconcile_migration(
       migration_reconciliation_state& mrstate,
       const migration_metadata& metadata);
 
+    // call only with _mutex lock grabbed
     ss::future<> reconcile_topic(
       const model::topic_namespace& nt,
       topic_reconciliation_state& tstate,
