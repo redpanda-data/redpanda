@@ -14,11 +14,13 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_balancer_types.h"
+#include "cluster/producer_state.h"
 #include "cluster/rm_stm_types.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "storage/tests/randoms.h"
 #include "test_utils/randoms.h"
+#include "utils/prefix_logger.h"
 
 #include <iterator>
 
@@ -171,7 +173,7 @@ inline cluster::tx::prepare_marker random_prepare_marker() {
 }
 
 inline cluster::tx::abort_index random_abort_index() {
-    return {model::random_offset(), model::random_offset()};
+    return tx::abort_index{model::random_offset(), model::random_offset()};
 }
 
 inline cluster::tx::deprecated_seq_entry::deprecated_seq_cache_entry

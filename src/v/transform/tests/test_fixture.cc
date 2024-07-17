@@ -68,7 +68,7 @@ kafka::offset fake_source::latest_offset() {
     return _batches.rbegin()->first;
 }
 
-ss::future<kafka::offset>
+ss::future<std::optional<kafka::offset>>
 fake_source::offset_at_timestamp(model::timestamp ts, ss::abort_source*) {
     // Walk through the batches from most recent and look for the first batch
     // where the timestamp bounds is inclusive of `ts`.
@@ -85,7 +85,14 @@ fake_source::offset_at_timestamp(model::timestamp ts, ss::abort_source*) {
             co_return model::offset_cast(batch.second.header().last_offset());
         }
     }
-    co_return kafka::offset{};
+    co_return std::nullopt;
+}
+
+kafka::offset fake_source::start_offset() const {
+    if (_batches.empty()) {
+        return {};
+    }
+    return _batches.begin()->first;
 }
 
 ss::future<model::record_batch_reader>

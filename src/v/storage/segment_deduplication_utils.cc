@@ -225,7 +225,8 @@ ss::future<index_state> deduplicate_segment(
       should_offset_delta_times,
       seg->offsets().get_committed_offset(),
       &cmp_idx_writer,
-      inject_reader_failure);
+      inject_reader_failure,
+      cfg.asrc);
 
     auto new_idx = co_await std::move(rdr).consume(
       std::move(copy_reducer), model::no_timeout);

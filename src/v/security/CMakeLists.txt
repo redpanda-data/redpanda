@@ -3,6 +3,9 @@ v_cc_library(
   SRCS
     config_bsl.cc
     config_rcl.cc
+    mtls_rule.cc
+    gssapi_rule.cc
+    logger.cc
   DEPS
     v::json
     Seastar::seastar
@@ -24,7 +27,7 @@ v_cc_library(
     license.cc
     mtls.cc
     oidc_authenticator.cc
-    oidc_principal_mapping.cc
+    oidc_principal_mapping_applicator.cc
     oidc_service.cc
     request_auth.cc
     role.cc

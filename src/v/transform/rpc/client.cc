@@ -11,6 +11,7 @@
 
 #include "transform/rpc/client.h"
 
+#include "base/type_traits.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -28,7 +29,6 @@
 #include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
-#include "utils/type_traits.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -146,7 +146,7 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
             ec = r.ec;
         } else {
             static_assert(
-              utils::unsupported_type<result_type>::value,
+              base::unsupported_type<result_type>::value,
               "unsupported response type");
         }
         switch (ec) {

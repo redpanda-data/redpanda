@@ -15,7 +15,11 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "serde/rw/bool_class.h"
+#include "serde/rw/map.h"
 #include "serde/rw/rw.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
 #include "utils/vint.h"
 
 #include <seastar/core/print.hh>
@@ -74,6 +78,16 @@ void append_vint_to_iobuf(iobuf& b, int64_t v) {
 
 } // namespace
 
+std::ostream& operator<<(std::ostream& os, const transform_from_start& o) {
+    fmt::print(os, "{{ start + {} }}", o.delta);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const transform_from_end& o) {
+    fmt::print(os, "{{ end - {} }}", o.delta);
+    return os;
+}
+
 std::ostream&
 operator<<(std::ostream& os, const transform_offset_options& opts) {
     ss::visit(
@@ -83,8 +97,62 @@ operator<<(std::ostream& os, const transform_offset_options& opts) {
       },
       [&os](model::timestamp ts) {
           fmt::print(os, "{{ timequery: {} }}", ts.value());
+      },
+      [&os](model::transform_from_start off) {
+          fmt::print(os, "{{ offset: {} }}", off);
+      },
+      [&os](model::transform_from_end off) {
+          fmt::print(os, "{{ offset: {} }}", off);
       });
     return os;
+}
+
+/**
+ * Legacy version of transform_offset_options
+ *
+ * When writing out transform metadata, we write this version if and
+ * only if the position variant contains one of the legacy alternatives.
+ * This allows us to feature-gate the use of the new alternatives
+ * (see model/transform.h) without completely blocking transform deploys
+ * during an upgrade.
+ */
+struct legacy_transform_offset_options
+  : serde::envelope<
+      legacy_transform_offset_options,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    serde::variant<transform_offset_options::latest_offset, model::timestamp>
+      position;
+    bool operator==(const legacy_transform_offset_options&) const = default;
+
+    void serde_write(iobuf& out) const { serde::write(out, position); }
+};
+
+bool transform_offset_options::is_legacy_compat() const {
+    return std::holds_alternative<transform_offset_options::latest_offset>(
+             position)
+           || std::holds_alternative<model::timestamp>(position);
+}
+
+void transform_offset_options::serde_read(
+  iobuf_parser& in, const serde::header& h) {
+    using serde::read_nested;
+
+    if (h._version == 0) {
+        auto p = read_nested<serde::variant<latest_offset, model::timestamp>>(
+          in, h._bytes_left_limit);
+        ss::visit(p, [this](auto v) { position = v; });
+    } else {
+        position = read_nested<decltype(position)>(in, h._bytes_left_limit);
+    }
+
+    if (in.bytes_left() > h._bytes_left_limit) {
+        in.skip(in.bytes_left() - h._bytes_left_limit);
+    }
+}
+
+void transform_offset_options::serde_write(iobuf& out) const {
+    serde::write(out, position);
 }
 
 std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
@@ -100,6 +168,31 @@ std::ostream& operator<<(std::ostream& os, const transform_metadata& meta) {
       meta.source_ptr,
       meta.paused);
     return os;
+}
+
+void transform_metadata::serde_write(iobuf& out) const {
+    serde::write(out, name);
+    write(out, input_topic);
+    serde::write(out, output_topics);
+    serde::write(out, environment);
+    serde::write(out, uuid);
+    serde::write(out, source_ptr);
+    ss::visit(
+      offset_options.position,
+      [&out](transform_offset_options::latest_offset v) {
+          serde::write(out, legacy_transform_offset_options{.position = v});
+      },
+      [&out](model::timestamp v) {
+          serde::write(out, legacy_transform_offset_options{.position = v});
+      },
+      [this, &out](auto) { serde::write(out, offset_options); });
+    serde::write(out, paused);
+    serde::write(out, compression_mode);
+}
+
+bool transform_metadata_patch::empty() const noexcept {
+    return !env.has_value() && !paused.has_value()
+           && !compression_mode.has_value();
 }
 
 std::ostream& operator<<(std::ostream& os, const transform_offsets_key& key) {
@@ -345,4 +438,5 @@ void tag_invoke(
         }
     }
 }
+
 } // namespace model

@@ -189,8 +189,13 @@ public:
     virtual bool is_compacted(model::offset first, model::offset last) const
       = 0;
 
-    virtual ss::future<>
-      update_configuration(ntp_config::default_overrides) = 0;
+    /// Mutates the ntp_config stored in the log with the new
+    /// topic/partition-level overrides
+    virtual void set_overrides(ntp_config::default_overrides) = 0;
+
+    /// Notifies the log about a possible change to the log compaction config.
+    /// Returns true if the log compaction changed.
+    virtual bool notify_compaction_update() = 0;
 
     virtual int64_t compaction_backlog() const = 0;
 

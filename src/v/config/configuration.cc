@@ -16,16 +16,13 @@
 #include "config/validators.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "pandaproxy/schema_registry/schema_id_validation.h"
-#include "security/gssapi_principal_mapper.h"
-#include "security/mtls.h"
-#include "security/oidc_principal_mapping.h"
+#include "security/config.h"
 #include "security/oidc_url_parser.h"
+#include "serde/rw/chrono.h"
 #include "ssx/sformat.h"
-#include "storage/chunk_cache.h"
-#include "storage/segment_appender.h"
-#include "utils/bottomless_token_bucket.h"
+#include "storage/config.h"
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -499,12 +496,12 @@ configuration::configuration()
   , target_quota_byte_rate(
       *this,
       "target_quota_byte_rate",
-      "Target request size quota byte rate (bytes per second) - 2GB default",
+      "Target request size quota byte rate (bytes per second)",
       {.needs_restart = needs_restart::no,
        .example = "1073741824",
        .visibility = visibility::user},
-      2_GiB,
-      {.min = 1_MiB})
+      target_produce_quota_byte_rate_default,
+      {.min = 0})
   , target_fetch_quota_byte_rate(
       *this,
       "target_fetch_quota_byte_rate",
@@ -666,6 +663,7 @@ configuration::configuration()
       {
         model::fetch_read_strategy::polling,
         model::fetch_read_strategy::non_polling,
+        model::fetch_read_strategy::non_polling_with_debounce,
       })
   , alter_topic_cfg_timeout_ms(
       *this,
@@ -930,7 +928,8 @@ configuration::configuration()
       "tx_log_stats_interval_s",
       "How often to log per partition tx stats, works only with debug logging "
       "enabled.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       10s)
   , create_topic_timeout_ms(
       *this,
@@ -1171,7 +1170,7 @@ configuration::configuration()
        .example = "32768",
        .visibility = visibility::tunable},
       32_MiB,
-      storage::segment_appender::validate_fallocation_step)
+      storage::validate_fallocation_step)
   , storage_target_replay_bytes(
       *this,
       "storage_target_replay_bytes",
@@ -1681,7 +1680,7 @@ configuration::configuration()
       "Optional API endpoint",
       {.visibility = visibility::user},
       std::nullopt,
-      &validate_non_empty_string_opt)
+      &validate_cloud_storage_api_endpoint)
   , cloud_storage_url_style(
       *this,
       "cloud_storage_url_style",
@@ -1699,9 +1698,7 @@ configuration::configuration()
        .example = "virtual_host",
        .visibility = visibility::user},
       std::nullopt,
-      {cloud_storage_clients::s3_url_style::virtual_host,
-       cloud_storage_clients::s3_url_style::path,
-       std::nullopt})
+      {s3_url_style::virtual_host, s3_url_style::path, std::nullopt})
   , cloud_storage_credentials_source(
       *this,
       "cloud_storage_credentials_source",
@@ -1740,14 +1737,14 @@ configuration::configuration()
       "cloud_storage_upload_loop_initial_backoff_ms",
       "Initial backoff interval when there is nothing to upload for a "
       "partition (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms)
   , cloud_storage_upload_loop_max_backoff_ms(
       *this,
       "cloud_storage_upload_loop_max_backoff_ms",
       "Max backoff interval when there is nothing to upload for a "
       "partition (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
   , cloud_storage_max_connections(
       *this,
@@ -1773,6 +1770,13 @@ configuration::configuration()
       "cloud_storage_trust_file",
       "Path to certificate that should be used to validate server certificate "
       "during TLS handshake",
+      {.visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , cloud_storage_crl_file(
+      *this,
+      "cloud_storage_crl_file",
+      "Path to certificate revocation list for cloud_storage_trust_file.",
       {.visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
@@ -1811,7 +1815,7 @@ configuration::configuration()
       "cloud_storage_segment_max_upload_interval_sec",
       "Time that segment can be kept locally without uploading it to the "
       "remote storage (sec)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1h)
   , cloud_storage_manifest_max_upload_interval_sec(
       *this,
@@ -2157,6 +2161,15 @@ configuration::configuration()
       "timeout error.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       600s)
+  , cloud_storage_disable_remote_labels_for_tests(
+      *this,
+      "cloud_storage_disable_remote_labels_for_tests",
+      "If 'true', Redpanda disables remote labels and falls back on the "
+      "hash-based object naming scheme for new topics. This property exists to "
+      "simplify testing "
+      "and shouldn't be set in production.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
@@ -2436,6 +2449,16 @@ configuration::configuration()
       "elapsed",
       {.visibility = visibility::tunable},
       5s)
+  , cloud_storage_cache_trim_walk_concurrency(
+      *this,
+      "cloud_storage_cache_trim_walk_concurrency",
+      "The maximum number of concurrent tasks launched for directory walk "
+      "during cache trimming. A higher number allows cache trimming to run "
+      "faster but can cause latency spikes due to increased pressure on I/O "
+      "subsystem and syscall threads.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1,
+      {.min = 1, .max = 1000})
   , cloud_storage_max_segment_readers_per_shard(
       *this,
       "cloud_storage_max_segment_readers_per_shard",
@@ -2529,6 +2552,33 @@ configuration::configuration()
       "Number of chunks to prefetch ahead of every downloaded chunk",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0)
+  , cloud_storage_cache_num_buckets(
+      *this,
+      "cloud_storage_cache_num_buckets",
+      "Divide cloud storage cache across specified number of buckets. This "
+      "only works for objects with randomized prefixes. The names will not be "
+      "changed if the value is set to zero.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0,
+      {.min = 0, .max = 1024})
+  , cloud_storage_cache_trim_threshold_percent_size(
+      *this,
+      "cloud_storage_cache_trim_threshold_percent_size",
+      "Trim is triggered when the cache reaches this percent of the maximum "
+      "cache size. If this is unset, the default behavior"
+      "is to start trim when the cache is about 100\% full.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1.0, .max = 100.0})
+  , cloud_storage_cache_trim_threshold_percent_objects(
+      *this,
+      "cloud_storage_cache_trim_threshold_percent_objects",
+      "Trim is triggered when the cache reaches this percent of the maximum "
+      "object count. If this is unset, the default behavior"
+      "is to start trim when the cache is about 100\% full.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1.0, .max = 100.0})
   , superusers(
       *this,
       "superusers",
@@ -2736,6 +2786,28 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       512,
       {.min = 1, .max = 2048})
+  , core_balancing_on_core_count_change(
+      *this,
+      "core_balancing_on_core_count_change",
+      "If set to 'true', and if after a restart the number of cores changes, "
+      "Redpanda will move partitions between cores to maintain balanced "
+      "partition distribution.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
+  , core_balancing_continuous(
+      *this,
+      "core_balancing_continuous",
+      "If set to 'true', move partitions between cores in runtime to maintain "
+      "balanced partition distribution.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , core_balancing_debounce_timeout(
+      *this,
+      "core_balancing_debounce_timeout",
+      "Interval, in milliseconds, between trigger and invocation of core "
+      "balancing.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , internal_topic_replication_factor(
       *this,
       "internal_topic_replication_factor",
@@ -2981,7 +3053,8 @@ configuration::configuration()
       "balancer, in milliseconds",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       5000ms,
-      {.min = 1ms, .max = bottomless_token_bucket::max_width})
+      {.min = 1ms,
+       .max = std::chrono::milliseconds(std::numeric_limits<int32_t>::max())})
   , kafka_quota_balancer_node_period(
       *this,
       "kafka_quota_balancer_node_period_ms",

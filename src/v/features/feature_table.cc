@@ -71,8 +71,6 @@ std::string_view to_string_view(feature f) {
         return "raft_append_entries_serde";
     case feature::delete_records:
         return "delete_records";
-    case feature::lightweight_heartbeats:
-        return "lightweight_heartbeats";
     case feature::raft_coordinated_recovery:
         return "raft_coordinated_recovery";
     case feature::cloud_storage_scrubbing:
@@ -101,8 +99,18 @@ std::string_view to_string_view(feature f) {
         return "role_based_access_control";
     case feature::cluster_topic_manifest_format_v2:
         return "cluster_topic_manifest_format_v2";
-    case feature::shard_placement_persistence:
-        return "shard_placement_persistence";
+    case feature::node_local_core_assignment:
+        return "node_local_core_assignment";
+    case feature::unified_tx_state:
+        return "unified_tx_state";
+    case feature::data_migrations:
+        return "data_migrations";
+    case feature::group_tx_fence_dedicated_batch_type:
+        return "group_tx_fence_dedicated_batch_type";
+    case feature::transforms_specify_offset:
+        return "transforms_specify_offset";
+    case feature::remote_labels:
+        return "remote_labels";
 
     /*
      * testing features

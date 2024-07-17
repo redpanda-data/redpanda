@@ -183,7 +183,10 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         num_nodes=4,
         log_allow_list=[
             # Ignore trim related errors caused by deleting chunk files manually.
-            "failed to free sufficient space in exhaustive trim"
+            "failed to free sufficient space in exhaustive trim",
+            # With tracker based trim and the manual deletes in this test, sometimes
+            # the cache tries to trim chunks which have already been removed externally.
+            "filesystem error: remove failed: No such file or directory"
         ])
     def test_read_chunks(self):
         self.default_chunk_size = 1048576
@@ -218,33 +221,41 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         # delete chunks more aggressively to make sure some materialization ops fail.
         rm_chunks = DeleteRandomChunks(self.redpanda, self.topic)
         rm_chunks.start()
-        rand_cons.start()
-        rand_cons.wait(timeout_sec=300)
-        m.expect([(metric, lambda a, b: a < b <= 2 * self.default_chunk_size)])
 
-        # There should be no log files in cache
-        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        try:
+            rand_cons.start()
+            rand_cons.wait(timeout_sec=300)
+            m.expect([(metric,
+                       lambda a, b: a < b <= 2 * self.default_chunk_size)])
 
-        # We cannot assert that there are chunks in cache because the deleting thread
-        # could delete them all before we run the assertion, causing it to fail.
-        # We can check that the thread deleted some chunks.
-        assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during rand-cons, none deleted"
-        rm_chunks.deleted_chunks = 0
+            # There should be no log files in cache
+            self._assert_not_in_cache(
+                fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
 
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic,
-                                          0,
-                                          nodes=self.preallocated_nodes)
-        consumer.start()
-        consumer.wait(timeout_sec=120)
-        rm_chunks.stop()
-        rm_chunks.join(timeout=10)
-        assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files during seq-cons, none deleted"
+            consumer = KgoVerifierSeqConsumer(self.test_context,
+                                              self.redpanda,
+                                              self.topic,
+                                              0,
+                                              nodes=self.preallocated_nodes)
+            consumer.start()
+            consumer.wait(timeout_sec=120)
+            rm_chunks.stop()
+            rm_chunks.join(timeout=10)
+            assert rm_chunks.deleted_chunks > 0, "Expected to delete some chunk files, none deleted"
 
-        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+            self._assert_not_in_cache(
+                fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
 
-        self._trim_and_verify()
+            self._trim_and_verify()
+        except Exception as ex:
+            try:
+                if not rm_chunks.stop_requested:
+                    rm_chunks.stop()
+                    rm_chunks.join(timeout=10)
+            except Exception as timed_out:
+                self.redpanda.logger.error(
+                    f'failed to stop rm_chunks: {timed_out}')
+            raise ex
 
     @cluster(num_nodes=4)
     @parametrize(prefetch=0)
@@ -388,9 +399,19 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         observe_cache_dir = ObserveCacheDir(self.redpanda, self.topic)
         observe_cache_dir.start()
 
-        self._consume_baseline(timeout=180, max_msgs=read_count)
-        observe_cache_dir.stop()
-        observe_cache_dir.join(timeout=10)
+        try:
+            self._consume_baseline(timeout=180, max_msgs=read_count)
+            observe_cache_dir.stop()
+            observe_cache_dir.join(timeout=10)
+        except Exception as ex:
+            try:
+                if not observe_cache_dir.stop_requested:
+                    observe_cache_dir.stop()
+                    observe_cache_dir.join(timeout=10)
+            except Exception as timed_out:
+                self.redpanda.logger.error(
+                    f'failed to stop observe_cache_dir: {timed_out}')
+            raise ex
         assert not observe_cache_dir.is_alive(
         ), 'cache observer is unexpectedly alive'
 
@@ -479,10 +500,6 @@ class DeleteRandomChunks(Thread):
         self.n_delete = n_delete
         self.deleted_chunks = 0
 
-        leader_id = Admin(self.redpanda).get_partition_leader(
-            namespace='kafka', topic=self.topic, partition=0)
-        self.leader = self.redpanda.get_node_by_id(leader_id)
-
     def run(self) -> None:
         cmd = f"""
 find {self.redpanda.DATA_DIR}/cloud_storage_cache -regex '.*kafka/{self.topic}/.*_chunks/[0-9]+' -print0 |\
@@ -491,11 +508,15 @@ find {self.redpanda.DATA_DIR}/cloud_storage_cache -regex '.*kafka/{self.topic}/.
  xargs --no-run-if-empty --null rm -v"""
         while not self.stop_requested:
             sleep(self.sleep_interval)
-            if self.leader in self.redpanda.started_nodes():
+            leader_id = Admin(self.redpanda).get_partition_leader(
+                namespace='kafka', topic=self.topic, partition=0)
+            leader_node = self.redpanda.get_node_by_id(leader_id)
+
+            if leader_node in self.redpanda.started_nodes():
                 try:
-                    for row in self.leader.account.ssh_capture(cmd):
+                    for row in leader_node.account.ssh_capture(cmd):
                         self.redpanda.logger.debug(
-                            f'{self.leader.account.hostname}: {row.strip()}')
+                            f'{leader_node.account.hostname}: {row.strip()}')
                         self.deleted_chunks += 1
                 except Exception as ex:
                     self.redpanda.logger.info(

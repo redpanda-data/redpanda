@@ -24,8 +24,11 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/thread.hh>
 
 #include <filesystem>
+#include <iterator>
+#include <optional>
 #include <set>
 #include <string_view>
 
@@ -108,7 +111,8 @@ public:
       config::binding<double>,
       config::binding<uint64_t>,
       config::binding<std::optional<double>>,
-      config::binding<uint32_t>) noexcept;
+      config::binding<uint32_t>,
+      config::binding<uint16_t>) noexcept;
 
     cache(const cache&) = delete;
     cache(cache&& rhs) = delete;
@@ -216,9 +220,22 @@ private:
         bool trim_missed_tmp_files{false};
     };
 
+    ss::future<std::optional<cache_item>> _get(std::filesystem::path key);
+
+    /// Remove object from cache
+    ss::future<> _invalidate(const std::filesystem::path& key);
+
+    ss::future<cache_element_status>
+    _is_cached(const std::filesystem::path& key);
+
     /// Ordinary trim: prioritze trimming data chunks, only delete indices etc
     /// if all their chunks are dropped.
     ss::future<trim_result> trim_fast(
+      const fragmented_vector<file_list_item>& candidates,
+      uint64_t delete_bytes,
+      size_t delete_objects);
+
+    ss::future<trim_result> do_trim(
       const fragmented_vector<file_list_item>& candidates,
       uint64_t delete_bytes,
       size_t delete_objects);
@@ -234,7 +251,16 @@ private:
     std::optional<std::chrono::milliseconds> get_trim_delay() const;
 
     /// Invoke trim, waiting if not enough time passed since the last trim
-    ss::future<> trim_throttled();
+    ss::future<> trim_throttled_unlocked(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
+
+    // Take the cleanup semaphore before calling trim_throttled
+    ss::future<> trim_throttled(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
+
+    void maybe_background_trim();
 
     /// Whether an objects path makes it impervious to pinning, like
     /// the access time tracker.
@@ -286,6 +312,9 @@ private:
     ss::future<cache::trim_result>
     remove_segment_full(const file_list_item& file_stat);
 
+    ss::future<> sync_access_time_tracker(
+      access_time_tracker::add_entries_t add_entries
+      = access_time_tracker::add_entries_t::no);
     std::filesystem::path _cache_dir;
     size_t _disk_size;
     config::binding<double> _disk_reservation;
@@ -293,6 +322,7 @@ private:
     config::binding<std::optional<double>> _max_percent;
     uint64_t _max_bytes;
     config::binding<uint32_t> _max_objects;
+    config::binding<uint16_t> _walk_concurrency;
     void update_max_bytes();
 
     ss::abort_source _as;
@@ -355,6 +385,10 @@ private:
 
     // List of probable deletion candidates from the last trim.
     std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
+
+    ss::timer<ss::lowres_clock> _tracker_sync_timer;
+    ssx::semaphore _tracker_sync_timer_sem{
+      1, "cloud/cache/access_tracker_sync"};
 };
 
 } // namespace cloud_storage

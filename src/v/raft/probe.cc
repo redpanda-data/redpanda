@@ -10,8 +10,8 @@
 #include "raft/probe.h"
 
 #include "config/configuration.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"
-#include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -49,8 +49,8 @@ void probe::setup_public_metrics(const model::ntp& ntp) {
       {sm::make_counter(
          "leadership_changes",
          [this] { return _leadership_changes; },
-         sm::description("Number of leadership changes across all partitions "
-                         "of a given topic"),
+         sm::description("Number of won leader elections across all partitions "
+                         "in given topic"),
          labels)
          .aggregate(aggregate_labels)});
 }
@@ -119,7 +119,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
         sm::make_counter(
           "leadership_changes",
           [this] { return _leadership_changes; },
-          sm::description("Number of leadership changes"),
+          sm::description("Number of won leader elections"),
           labels),
         sm::make_counter(
           "replicate_request_errors",

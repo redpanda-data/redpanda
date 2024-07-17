@@ -101,6 +101,7 @@ class CloudClusterConfig:
     oauth_audience: str = ""
     api_url: str = ""
     admin_api_url: str = ""
+    public_api_url: str = ""
     teleport_auth_server: str = ""
     teleport_bot_token: str = ""
     id: str = ""  # empty string makes it easier to pass thru default value from duck.py
@@ -479,8 +480,8 @@ class CloudCluster():
         for p in products:
             if p['redpandaConfigProfileName'] == config_profile_name:
                 return p['name']
-        self._logger.warning("CloudV2 API returned empty 'product_name' list "
-                             f"for request: '{params}'")
+        self._logger.warning("Could not find product for install pack, "
+                             f"request: '{params}', response:\n{products}")
         return None
 
     def _create_cluster_payload(self):
@@ -657,7 +658,7 @@ class CloudCluster():
                                f"'{self.config.region}'")
 
         # Call Api to create cluster
-        self._logger.info(f'creating cluster name {self.current.name}')
+        self._logger.warning(f'creating cluster name {self.current.name}')
         # Prepare cluster payload block
         _body = self._create_cluster_payload()
         self._logger.debug(f'body: {json.dumps(_body)}')
@@ -681,8 +682,8 @@ class CloudCluster():
             _cluster_id = self._wait_for_cluster_id(r['id'])
             c = self._get_cluster(_cluster_id)
             self.current.last_status = c['state']
-            self._logger.info("Cluster status when id was available: "
-                              f"'{self.current.last_status}'")
+            self._logger.warning(f"Cluster ID is {_cluster_id}, last status: "
+                                 f"'{self.current.last_status}'")
         except Exception as e:
             raise RuntimeError("Failed to get initial cluster spec") from e
 
@@ -725,6 +726,9 @@ class CloudCluster():
         # just save the id to reuse it in next test
         if self.config.use_same_cluster:
             self.save_cluster_id(self.current.cluster_id)
+
+        self._logger.warning(
+            f"Cloud cluster {_cluster_id} created successfully.")
 
         return
 

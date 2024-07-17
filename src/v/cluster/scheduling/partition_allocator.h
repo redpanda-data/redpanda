@@ -17,6 +17,7 @@
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/types.h"
 #include "config/property.h"
+#include "features/fwd.h"
 
 namespace cluster {
 
@@ -31,6 +32,7 @@ public:
     static constexpr ss::shard_id shard = 0;
     partition_allocator(
       ss::sharded<members_table>&,
+      ss::sharded<features::feature_table>&,
       config::binding<std::optional<size_t>> memory_per_partition,
       config::binding<std::optional<int32_t>> fds_per_partition,
       config::binding<uint32_t> partitions_per_shard,
@@ -148,6 +150,7 @@ private:
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;
     ss::sharded<members_table>& _members;
+    features::feature_table& _feature_table;
 
     config::binding<std::optional<size_t>> _memory_per_partition;
     config::binding<std::optional<int32_t>> _fds_per_partition;

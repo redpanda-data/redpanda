@@ -85,7 +85,9 @@ public:
       include_deleted inc_dec);
 
     ///\brief Return a list of subjects.
-    ss::future<chunked_vector<subject>> get_subjects(include_deleted inc_del);
+    ss::future<chunked_vector<subject>> get_subjects(
+      include_deleted inc_del,
+      std::optional<ss::sstring> subject_prefix = std::nullopt);
 
     ///\brief Return whether there are any subjects.
     ss::future<bool> has_subjects(include_deleted inc_del);
@@ -183,6 +185,7 @@ public:
 private:
     ss::future<bool>
     upsert_schema(schema_id id, canonical_schema_definition def);
+    ss::future<> delete_schema(schema_id id);
 
     struct insert_subject_result {
         schema_version version;

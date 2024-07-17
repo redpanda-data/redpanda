@@ -49,7 +49,6 @@ rp_test(
   SOURCES
     util.cc
     s3_imposter.cc
-    remote_test.cc
     remote_file_test.cc
     remote_segment_test.cc
     remote_partition_test.cc
@@ -59,9 +58,35 @@ rp_test(
     async_manifest_view_test.cc
     read_replica_test.cc
     anomalies_detector_test.cc
+    segment_chunk_hydration_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework
+    v::seastar_testing_main
+    v::cloud_storage
+    v::storage_test_utils
+    v::cloud_roles
+    v::application
+    v::kafka_test_utils
+    v::http_test_utils
+  ARGS "-- -c 1"
+  LABELS cloud_storage
+)
+
+rp_test(
+  FIXTURE_TEST
+  GTEST
+  TIMEOUT 1000
+  BINARY_NAME gtest_cloud_storage
+  SOURCES
+    partition_manifest_downloader_test.cc
+    remote_path_provider_test.cc
+    remote_test.cc
+    s3_imposter.cc
+    topic_manifest_downloader_test.cc
+    util.cc
+  LIBRARIES
+    v::gtest_main
     v::seastar_testing_main
     v::cloud_storage
     v::storage_test_utils

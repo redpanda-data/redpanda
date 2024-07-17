@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
+
 	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -70,8 +72,6 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveDataDirStructure(ps, bp.y),
 		saveDiskUsage(ctx, ps, bp.y),
 		saveInterrupts(ps),
-		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes, bp.labelSelector),
-		saveK8SResources(ctx, ps, bp.namespace, bp.labelSelector),
 		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveKernelSymbols(ps),
 		saveMdstat(ps),
@@ -81,12 +81,35 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveSlabInfo(ps),
 	}
 
-	adminAddresses, err := adminAddressesFromK8S(ctx, bp.namespace)
-	if err != nil {
-		zap.L().Sugar().Debugf("unable to get admin API addresses from the k8s API: %v", err)
+	// We use the K8S to discover the cluster's admin API addresses and collect
+	// logs and k8s resources. First we check if we have enough permissions
+	// before kicking the steps.
+	var adminAddresses []string
+	if err := checkK8sPermissions(ctx, bp.namespace); err != nil {
+		errs = multierror.Append(
+			errs,
+			fmt.Errorf("skipping log collection and Kubernetes resource collection (such as Pods and Services) in the namespace %q. To enable this, grant additional permissions to your Service Account. For more information, visit https://docs.redpanda.com/current/manage/kubernetes/troubleshooting/k-diagnostics-bundle/", err),
+		)
+	} else {
+		steps = append(steps, []step{
+			saveK8SResources(ctx, ps, bp.namespace, bp.labelSelector),
+			saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes, bp.labelSelector),
+		}...)
+
+		adminAddresses, err = adminAddressesFromK8S(ctx, bp.namespace)
+		if err != nil {
+			zap.L().Sugar().Debugf("unable to get admin API addresses from the k8s API: %v", err)
+		}
 	}
 	if len(adminAddresses) == 0 {
-		adminAddresses = []string{fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)}
+		if len(bp.p.AdminAPI.Addresses) > 0 {
+			zap.L().Sugar().Debugf("using admin API addresses from profile: %v", bp.p.AdminAPI.Addresses)
+			adminAddresses = bp.p.AdminAPI.Addresses
+		} else {
+			defaultAddress := fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)
+			zap.L().Sugar().Debugf("profile empty, using %v for the Admin API address", defaultAddress)
+			adminAddresses = []string{defaultAddress}
+		}
 	}
 	steps = append(steps, []step{
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
@@ -136,6 +159,41 @@ func k8sPodList(ctx context.Context, namespace string, labelSelector map[string]
 		return nil, nil, fmt.Errorf("unable to get pods in the %q namespace: %v", namespace, err)
 	}
 	return clientset, pods, nil
+}
+
+// checkK8sPermissions will check for the minimal service account permissions
+// needed to perform the k8s-API-related steps in the debug bundle collection
+// process.
+func checkK8sPermissions(ctx context.Context, namespace string) error {
+	cl, err := k8sClientset()
+	if err != nil {
+		return fmt.Errorf("unable to create kubernetes client: %v", err)
+	}
+
+	// These are the minimal permissions needed for the k8s bundle to function.
+	perMap := map[string]string{
+		"services": "list",
+		"pods":     "list",
+	}
+	for resource, verb := range perMap {
+		sar := &authorizationv1.SelfSubjectAccessReview{
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: namespace,
+					Verb:      verb,
+					Resource:  resource,
+				},
+			},
+		}
+		response, err := cl.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to check service account permissions: %v", err)
+		}
+		if !response.Status.Allowed {
+			return fmt.Errorf("permission denied to %s %s", verb, resource)
+		}
+	}
+	return nil
 }
 
 // adminAddressesFromK8S returns the admin API host:port list by querying the
@@ -372,7 +430,7 @@ func saveK8SResources(ctx context.Context, ps *stepParams, namespace string, lab
 	return func() error {
 		clientset, pods, err := k8sPodList(ctx, namespace, labelSelector)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to save k8s resources: unable to list k8s pods: %v", err)
 		}
 		// This is a safeguard, so we don't end up saving empty request for
 		// namespace who don't have any pods.
@@ -414,7 +472,7 @@ func saveK8SLogs(ctx context.Context, ps *stepParams, namespace, since string, l
 	return func() error {
 		clientset, pods, err := k8sPodList(ctx, namespace, labelSelector)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to save logs: unable to list k8s pods: %v", err)
 		}
 		podsInterface := clientset.CoreV1().Pods(namespace)
 

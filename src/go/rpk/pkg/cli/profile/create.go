@@ -198,7 +198,7 @@ func CreateFlow(
 		var err error
 		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud)
 		if err != nil {
-			if err == ErrNoCloudClusters {
+			if errors.Is(err, ErrNoCloudClusters) {
 				fmt.Println("Your cloud account has no clusters available to select, avoiding creating a cloud profile.")
 				return nil
 			}

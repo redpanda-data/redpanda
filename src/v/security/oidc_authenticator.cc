@@ -15,7 +15,7 @@
 #include "security/errc.h"
 #include "security/jwt.h"
 #include "security/logger.h"
-#include "security/oidc_principal_mapping.h"
+#include "security/oidc_principal_mapping_applicator.h"
 #include "security/oidc_service.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -61,7 +61,7 @@ result<authentication_data> authenticate(
         return errc::jwt_invalid_nbf;
     }
 
-    auto principal = mapping.apply(jwt);
+    auto principal = principal_mapping_rule_apply(mapping, jwt);
     if (principal.has_error()) {
         return principal.assume_error();
     }

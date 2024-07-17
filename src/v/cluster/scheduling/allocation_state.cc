@@ -11,6 +11,7 @@
 
 #include "base/oncore.h"
 #include "cluster/logger.h"
+#include "features/feature_table.h"
 #include "ssx/sformat.h"
 
 namespace cluster {
@@ -153,12 +154,26 @@ bool allocation_state::is_empty(model::node_id id) const {
     return it->second->empty();
 }
 
+bool allocation_state::node_local_core_assignment_enabled() const {
+    return _feature_table.is_active(
+      features::feature::node_local_core_assignment);
+}
+
 void allocation_state::add_allocation(
   const model::broker_shard& replica,
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->allocate_on(replica.shard, domain);
+        it->second->add_allocation(domain);
+        if (!node_local_core_assignment_enabled()) {
+            it->second->add_allocation(replica.shard);
+        }
+        vlog(
+          clusterlog.trace,
+          "add allocation [node: {}, core: {}], total allocated: {}",
+          replica.node_id,
+          replica.shard,
+          it->second->_allocated_partitions);
     }
 }
 
@@ -167,7 +182,16 @@ void allocation_state::remove_allocation(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->deallocate_on(replica.shard, domain);
+        it->second->remove_allocation(domain);
+        if (!node_local_core_assignment_enabled()) {
+            it->second->remove_allocation(replica.shard);
+        }
+        vlog(
+          clusterlog.trace,
+          "remove allocation [node: {}, core: {}], total allocated: {}",
+          replica.node_id,
+          replica.shard,
+          it->second->_allocated_partitions);
     }
 }
 
@@ -177,7 +201,20 @@ uint32_t allocation_state::allocate(
     auto it = _nodes.find(id);
     vassert(
       it != _nodes.end(), "allocated node with id {} have to be present", id);
-    return it->second->allocate(domain);
+
+    it->second->add_allocation(domain);
+    it->second->add_final_count(domain);
+    if (node_local_core_assignment_enabled()) {
+#ifndef NDEBUG
+        // return invalid shard in debug mode so that we can spot places where
+        // we are still using it.
+        return 12312312;
+#else
+        return 0;
+#endif
+    } else {
+        return it->second->allocate_shard();
+    }
 }
 
 void allocation_state::add_final_count(
@@ -185,8 +222,7 @@ void allocation_state::add_final_count(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        ++it->second->_final_partitions;
-        ++it->second->_final_domain_partitions[domain];
+        it->second->add_final_count(domain);
     }
 }
 
@@ -195,8 +231,7 @@ void allocation_state::remove_final_count(
   const partition_allocation_domain domain) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        --it->second->_final_partitions;
-        --it->second->_final_domain_partitions[domain];
+        it->second->remove_final_count(domain);
     }
 }
 

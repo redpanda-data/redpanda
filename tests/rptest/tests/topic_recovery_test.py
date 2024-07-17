@@ -456,6 +456,7 @@ class MissingPartition(BaseCase):
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
+        self.original_cluster_uuid = self._redpanda._admin.get_cluster_uuid()
         for topic in self.topics:
             producer = self._rpk_producer_maker(topic=topic.name,
                                                 msg_count=10000,
@@ -486,7 +487,8 @@ class MissingPartition(BaseCase):
           max([seg_meta['delta_offset_end'] for _, seg_meta in manifest_1['segments'].items()])
 
         manifest_0_path = view.gen_manifest_path(
-            ntp_0.to_ntpr(manifest_0['revision']))
+            ntp_0.to_ntpr(manifest_0['revision']),
+            remote_label=self.original_cluster_uuid)
         self._delete(manifest_0_path)
         self.logger.info(
             f"manifest {manifest_0_path} is removed, partition-1 last offset is {self._part1_offset}"
@@ -1329,12 +1331,13 @@ class TopicRecoveryTest(RedpandaTest):
             self.redpanda.remove_local_data(node)
 
     @staticmethod
-    def _normalize_lw_seg_key(key: str, lw_seg_meta: dict) -> str:
-        """adds archiver_term to key, to match the actual object key in cloud storage"""
-        if not key.endswith(".log"):
-            # key already has archiver term set in the name
-            return key
-        return f"{key}.{lw_seg_meta['archiver_term']}" if "archiver_term" in lw_seg_meta else key
+    def _cloud_segment_key(lw_seg_meta: dict) -> str:
+        """calculates the segment key in cloud storage from segment meta"""
+        assert lw_seg_meta.get("sname_format") == 3
+        sm = lw_seg_meta
+        return (
+            f"{sm['base_offset']}-{sm['committed_offset']}-{sm['size_bytes']}"
+            f"-{sm['segment_term']}-v1.log.{sm['archiver_term']}")
 
     def _collect_replaced_segments(self, replaced: dict[NTPR, dict[str, dict]],
                                    manifest_key: str):
@@ -1349,7 +1352,7 @@ class TopicRecoveryTest(RedpandaTest):
         assert manifest is not None, f"failed to load manifest from path {manifest_key}"
         if replaced_segments := manifest.get('replaced'):
             replaced[parse_s3_manifest_path(manifest_key)] = {
-                TopicRecoveryTest._normalize_lw_seg_key(k, v): v
+                TopicRecoveryTest._cloud_segment_key(v): v
                 for k, v in replaced_segments.items()
             }
 
@@ -1419,8 +1422,7 @@ class TopicRecoveryTest(RedpandaTest):
                         tmp_size += size
                 size_on_disk = max(tmp_size, size_on_disk)
 
-            size_in_cloud = sum(obj.content_length for obj in segments
-                                if obj.content_length > EMPTY_SEGMENT_SIZE)
+            size_in_cloud = sum(obj.content_length for obj in segments)
             self.logger.debug(
                 f'segments in cloud: {pprint.pformat(segments, indent=2)}, '
                 f'size in cloud: {size_in_cloud}')
@@ -1762,7 +1764,7 @@ class TopicRecoveryTest(RedpandaTest):
                                        num_topics=5,
                                        num_partitions_per_topic=20,
                                        check_mode=check_mode)
-        self.do_run(test_case)
+        self.do_run(test_case, upload_delay_sec=120)
 
     @cluster(num_nodes=4,
              log_allow_list=TRANSIENT_ERRORS +

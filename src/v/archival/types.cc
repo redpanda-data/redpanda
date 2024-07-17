@@ -46,12 +46,9 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
       "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        cfg.cloud_storage_initial_backoff),
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        cfg.segment_upload_timeout),
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        cfg.manifest_upload_timeout()),
+      cfg.cloud_storage_initial_backoff(),
+      cfg.segment_upload_timeout(),
+      cfg.manifest_upload_timeout(),
       cfg.time_limit);
     return o;
 }
@@ -97,22 +94,22 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
       .bucket_name = cloud_storage_clients::bucket_name(
         get_value_or_throw(bucket_config, bucket_config.name())),
       .cloud_storage_initial_backoff
-      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
+      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.bind(),
       .segment_upload_timeout
       = config::shard_local_cfg()
-          .cloud_storage_segment_upload_timeout_ms.value(),
+          .cloud_storage_segment_upload_timeout_ms.bind(),
       .manifest_upload_timeout
       = config::shard_local_cfg()
           .cloud_storage_manifest_upload_timeout_ms.bind(),
       .garbage_collect_timeout
       = config::shard_local_cfg()
-          .cloud_storage_garbage_collect_timeout_ms.value(),
+          .cloud_storage_garbage_collect_timeout_ms.bind(),
       .upload_loop_initial_backoff
       = config::shard_local_cfg()
-          .cloud_storage_upload_loop_initial_backoff_ms.value(),
+          .cloud_storage_upload_loop_initial_backoff_ms.bind(),
       .upload_loop_max_backoff
       = config::shard_local_cfg()
-          .cloud_storage_upload_loop_max_backoff_ms.value(),
+          .cloud_storage_upload_loop_max_backoff_ms.bind(),
       .svc_metrics_disabled = service_metrics_disabled(
         static_cast<bool>(disable_metrics)),
       .ntp_metrics_disabled = per_ntp_metrics_disabled(
@@ -122,88 +119,6 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
       .upload_io_priority = p};
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     return cfg;
-}
-
-bool adjacent_segment_run::maybe_add_segment(
-  const cloud_storage::segment_meta& s, size_t max_size) {
-    vlog(
-      archival_log.debug,
-      "{} Segments collected, looking at segment meta: {}, current run meta: "
-      "{}",
-      num_segments,
-      s,
-      meta);
-    if (num_segments == 1 && meta.size_bytes + s.size_bytes > max_size) {
-        // Corner case, we hit a segment which is smaller than the max_size
-        // but it's larger than max_size when combined with its neighbor. In
-        // this case we need to skip previous the segment.
-        num_segments = 0;
-        segments.clear();
-        meta = {};
-    }
-    if (num_segments == 0) {
-        // Find the begining of the small segment
-        // run.
-        if (s.size_bytes < max_size) {
-            meta = s;
-            num_segments = 1;
-            segments.push_back(
-              cloud_storage::partition_manifest::generate_remote_segment_path(
-                ntp, s));
-        }
-    } else {
-        if (
-          meta.segment_term == s.segment_term
-          && meta.size_bytes + s.size_bytes <= max_size) {
-            // Cross term merging is disallowed. Because of that we need to stop
-            // if the term doesn't match the previous term.
-            if (model::next_offset(meta.committed_offset) != s.base_offset) {
-                // In case if we're dealing with one of the old manifests
-                // with inconsistencies (overlapping offsets, etc).
-                num_segments = 0;
-                meta = {};
-                segments.clear();
-                vlog(
-                  archival_log.debug,
-                  "Reseting the upload, current committed offset: {}, next "
-                  "base offset: {}, meta: {}",
-                  meta.committed_offset,
-                  s.base_offset,
-                  meta);
-                return false;
-            }
-            // Move the end of the small segment run forward
-            meta.committed_offset = s.committed_offset;
-            meta.max_timestamp = s.max_timestamp;
-            num_segments++;
-            meta.size_bytes += s.size_bytes;
-            segments.push_back(
-              cloud_storage::partition_manifest::generate_remote_segment_path(
-                ntp, s));
-        } else {
-            return num_segments > 1;
-        }
-    }
-    return false;
-}
-
-std::ostream& operator<<(std::ostream& os, const adjacent_segment_run& run) {
-    std::vector<ss::sstring> names;
-    names.reserve(run.segments.size());
-    std::transform(
-      run.segments.begin(),
-      run.segments.end(),
-      std::back_inserter(names),
-      [](const cloud_storage::remote_segment_path& rsp) {
-          return rsp().native();
-      });
-    fmt::print(
-      os,
-      "{{meta: {}, num_segments: {}, segments: {}}}",
-      run.meta,
-      run.num_segments,
-      names);
-    return os;
 }
 
 } // namespace archival

@@ -1,5 +1,6 @@
 import logging
 from io import BytesIO
+from pathlib import Path
 from model import *
 from reader import Reader
 from storage import Segment
@@ -16,6 +17,10 @@ def read_remote_topic_properties_serde(rdr: Reader):
             "remote_revision": rdr.read_int64(),
             "remote_partition_count": rdr.read_int32(),
         })
+
+
+def read_remote_label_serde(rdr: Reader):
+    return rdr.read_envelope(lambda rdr, _: {"cluster_uuid": rdr.read_uuid()})
 
 
 def read_topic_properties_serde(rdr: Reader, version):
@@ -112,6 +117,10 @@ def read_topic_properties_serde(rdr: Reader, version):
             'flush_ms': rdr.read_optional(Reader.read_int64),
             'flush_bytes': rdr.read_optional(Reader.read_int64)
         }
+    if version >= 9:
+        topic_properties |= {
+            'remote_label': rdr.read_optional(read_remote_label_serde)
+        }
 
     return topic_properties
 
@@ -127,7 +136,7 @@ def read_topic_config(rdr: Reader, version):
         'replication_factor':
         rdr.read_int16(),
         'properties':
-        rdr.read_envelope(read_topic_properties_serde, max_version=8),
+        rdr.read_envelope(read_topic_properties_serde, max_version=9),
     }
     if version < 1:
         # see https://github.com/redpanda-data/redpanda/pull/6613
@@ -533,42 +542,44 @@ def decode_user_command_adl(k_rdr: Reader, rdr: Reader):
 
 
 def read_acl_binding_serde(k_rdr: Reader):
-    return k_rdr.read_envelope(
-        lambda k_rdr, _: {
-            'pattern':
-            k_rdr.read_envelope(
-                lambda k_rdr, _: {
-                    'resource': decode_acl_resource(k_rdr.read_serde_enum()),
-                    'name': k_rdr.read_string(),
-                    'pattern': decode_acl_pattern_type(k_rdr.read_serde_enum())
-                }),
-            'entry':
-            k_rdr.read_envelope(
-                lambda k_rdr, _: {
-                    'principal':
-                    k_rdr.read_envelope(
-                        lambda k_rdr, _: {
-                            'type':
-                            decode_acl_principal_type(k_rdr.read_serde_enum()),
-                            'name':
-                            k_rdr.read_string()
-                        }),
-                    'host':
-                    k_rdr.read_envelope(
-                        lambda k_rdr, _: {
-                            'addr':
-                            k_rdr.read_optional(
-                                lambda k_rdr: {
-                                    'ipv4': k_rdr.read_bool(),
-                                    'data': k_rdr.read_iobuf().hex()
-                                })
-                        }),
-                    'operation':
-                    decode_acl_operation(k_rdr.read_serde_enum()),
-                    'permission':
-                    decode_acl_permission(k_rdr.read_serde_enum()),
-                }),
-        })
+    def read_pattern(rdr: Reader, version: int):
+        r = {
+            'resource': decode_acl_resource(rdr.read_serde_enum()),
+            'name': rdr.read_string(),
+            'pattern': decode_acl_pattern_type(rdr.read_serde_enum())
+        }
+        return r
+
+    def read_principal(rdr: Reader, version: int):
+
+        r = {'type': decode_acl_principal_type(rdr.read_serde_enum())}
+        r |= {'name': rdr.read_string()}
+        return r
+
+    def read_host(rdr: Reader, version: int):
+        return {
+            'addr':
+            rdr.read_optional(lambda k_rdr: {
+                'ipv4': k_rdr.read_bool(),
+                'data': k_rdr.read_iobuf().hex()
+            })
+        }
+
+    def read_entry(rdr: Reader, version: int):
+        return {
+            'principal': rdr.read_envelope(read_principal),
+            'host': rdr.read_envelope(read_host),
+            'operation': decode_acl_operation(rdr.read_serde_enum()),
+            'permission': decode_acl_permission(rdr.read_serde_enum()),
+        }
+
+    def do_read_binding(rdr: Reader, version: int):
+        return {
+            'pattern': rdr.read_envelope(read_pattern),
+            'entry': rdr.read_envelope(read_entry),
+        }
+
+    return k_rdr.read_envelope(do_read_binding)
 
 
 def decode_serialized_pattern_type(v):
@@ -820,12 +831,18 @@ def decode_node_management_command(k_rdr: Reader, rdr: Reader):
 
 
 def decode_user_and_credential(rdr: Reader):
+    def read_credentials(rdr: Reader, v: int):
+        return {
+            'salt': obfuscate_secret(rdr.read_iobuf().hex()),
+            'server_key': obfuscate_secret(rdr.read_iobuf().hex()),
+            'stored_key': obfuscate_secret(rdr.read_iobuf().hex()),
+            'iterations': rdr.read_int32(),
+        }
+
     return rdr.read_envelope(
         lambda r, _: {
             'username': r.read_string(),
-            'salt': obfuscate_secret(r.read_iobuf().hex()),
-            'server_key': obfuscate_secret(r.read_iobuf().hex()),
-            'stored_key': obfuscate_secret(r.read_iobuf().hex()),
+            'credentials': r.read_envelope(read_credentials)
         })
 
 
@@ -930,3 +947,394 @@ class ControllerLog:
             for b in s:
                 for r in b:
                     yield decode_record(b, r, self.bin_dump)
+
+
+def read_feature_state_snapshot(rdr: Reader, version: int):
+    ret = {}
+    ret |= {"name": rdr.read_string()}
+    ret |= {"state": rdr.read_serde_enum()}
+    return ret
+
+
+def read_license(rdr: Reader, version: int):
+    ret = {}
+    ret |= {"format_version": rdr.read_int8()}
+    ret |= {"type": rdr.read_serde_enum()}
+    ret |= {"organization": rdr.read_string()}
+    ret |= {"expiry": rdr.read_int64()}
+    ret |= {"checksum": rdr.read_string()}
+    return ret
+
+
+def read_features_table_snapshot(rdr: Reader, version: int):
+    ret = {}
+    ret |= {"applied_offset": rdr.read_int64()}
+    ret |= {"cluster_version": rdr.read_int64()}
+    ret |= {
+        "states":
+        rdr.read_serde_vector(lambda rdr: rdr.read_envelope(
+            type_read=read_feature_state_snapshot))
+    }
+
+    ret |= {
+        "license":
+        rdr.read_optional(lambda rdr: rdr.read_envelope(type_read=read_license,
+                                                        max_version=1))
+    }
+    ret |= {"original_version": rdr.read_int64()}
+    return ret
+
+
+def read_config_status(rdr: Reader, v: int):
+    r = {'node': rdr.read_int32()}
+    r |= {'version': rdr.read_int64()}
+    r |= {'restart': rdr.read_bool()}
+    r |= {'unknown': rdr.read_vector(Reader.read_string)}
+    r |= {'invalid': rdr.read_vector(Reader.read_string)}
+    return r
+
+
+def read_topic_metadata_fields(rdr: Reader, v: int):
+    v = {}
+    v |= {"configuration": rdr.read_envelope(read_topic_config, max_version=1)}
+    v |= {"src_topic": rdr.read_optional(Reader.read_string)}
+    v |= {"revision": rdr.read_int64()}
+    v |= {"remote_revision": rdr.read_optional(Reader.read_int64)}
+
+    return v
+
+
+def read_disabled_partitions_set(rdr: Reader, v: int):
+    return {
+        "partitions":
+        rdr.read_optional(lambda r: r.read_serde_vector(Reader.read_int32))
+    }
+
+
+def read_role_member(rdr: Reader, version: int):
+    return {"type": rdr.read_serde_enum(), "name": rdr.read_string()}
+
+
+def read_role(rdr: Reader, version: int):
+    return {
+        "members":
+        rdr.read_serde_vector(lambda r: r.read_envelope(read_role_member))
+    }
+
+
+def read_transform_metadata(rdr: Reader, version: int):
+    return {
+        "name": rdr.read_string(),
+        "input_topic": read_topic_namespace(rdr),
+        "output_topics": rdr.read_serde_vector(read_topic_namespace),
+        "environment": rdr.read_serde_map(Reader.read_string,
+                                          Reader.read_string),
+        "uuid": rdr.read_uuid(),
+        "offset_options": rdr.read_envelope()
+    }
+
+
+class ControllerSnapshot():
+    def __init__(self, ntp, bin_dump: bool):
+        self.ntp = ntp
+        self.bin_dump = bin_dump
+
+    @property
+    def snapshot_path(self):
+        return Path(self.ntp.path) / "snapshot"
+
+    def read_bootstrap(self, rdr: Reader, version: int):
+        return {"uuid": rdr.read_optional(Reader.read_uuid)}
+
+    def read_features(self, rdr: Reader, version: int):
+        return rdr.read_envelope(type_read=read_features_table_snapshot,
+                                 max_version=1)
+
+    def read_members(self, rdr: Reader, version: int):
+        def read_update_t(inner: Reader, v: int):
+            ret = {}
+            ret |= {"update_type": inner.read_serde_enum()}
+            ret |= {"offset": inner.read_int64()}
+            ret |= {
+                "decommission_update_revision":
+                inner.read_optional(Reader.read_int64)
+            }
+            return ret
+
+        def read_node_t(inner: Reader, v: int):
+            ret = {}
+            ret |= {
+                "broker":
+                inner.read_envelope(type_read=lambda r, _: read_broker(r))
+            }
+            ret |= {
+                "state":
+                inner.read_envelope(
+                    type_read=lambda r, _: read_broker_state(r), max_version=1)
+            }
+            return ret
+
+        ret = {}
+        ret |= {
+            'node_ids_by_uuid':
+            rdr.read_serde_map(Reader.read_uuid, Reader.read_int32)
+        }
+        ret |= {"next_assigned_id": rdr.read_int32()}
+        ret |= {
+            "nodes":
+            rdr.read_serde_map(
+                Reader.read_int32,
+                lambda r: r.read_envelope(type_read=read_node_t))
+        }
+
+        ret |= {
+            "removed_nodes":
+            rdr.read_serde_map(
+                Reader.read_int32,
+                lambda r: r.read_envelope(type_read=read_node_t))
+        }
+        ret |= {
+            "removed_nodes_still_in_raft0":
+            rdr.read_serde_vector(Reader.read_int32)
+        }
+        ret |= {
+            "in_progress_updates":
+            rdr.read_serde_map(
+                Reader.read_int32,
+                lambda r: r.read_envelope(type_read=read_update_t))
+        }
+        ret |= {"first_node_operation_command_offset": rdr.read_int64()}
+        return ret
+
+    def read_config(self, rdr: Reader, version: int):
+        ret = {}
+        ret |= {"config_version": rdr.read_int64()}
+        ret |= {
+            "values":
+            rdr.read_serde_map(k_reader=Reader.read_string,
+                               v_reader=Reader.read_string)
+        }
+        ret |= {
+            'nodes_status':
+            rdr.read_serde_vector(
+                lambda r: r.read_envelope(type_read=read_config_status))
+        }
+
+        return ret
+
+    def read_topics(self, rdr: Reader, version: int):
+        def read_tp_ns_to_str(rdr: Reader):
+            v = read_topic_namespace(rdr)
+            return f"{v['namespace']}/{v['topic']}"
+
+        def read_partition_t(rdr: Reader, version: int):
+            v = {}
+            v |= {'group_id': rdr.read_int64()}
+            v |= {'replicas': rdr.read_serde_vector(read_broker_shard)}
+            v |= {
+                'replica_revisions':
+                rdr.read_serde_map(Reader.read_int32, Reader.read_int64)
+            }
+            v |= {'last_finished_rev': rdr.read_int64()}
+            return v
+
+        def read_update_t(rdr: Reader, version: int):
+            v = {}
+            v |= {
+                'target_assignment': rdr.read_serde_vector(read_broker_shard)
+            }
+            v |= {'state': rdr.read_serde_enum()}
+            v |= {'revision': rdr.read_int64()}
+            v |= {'last_cmd_revision': rdr.read_int64()}
+            v |= {'policy': rdr.read_serde_enum()}
+            return v
+
+        def read_topic_t(rdr: Reader, version: int):
+            v = {}
+            v |= {
+                "metadata_fields":
+                rdr.read_envelope(read_topic_metadata_fields)
+            }
+            v |= {
+                "partitions":
+                rdr.read_serde_map(
+                    Reader.read_int32,
+                    lambda r: r.read_envelope(type_read=read_partition_t))
+            }
+            v |= {
+                "updates":
+                rdr.read_serde_map(
+                    Reader.read_int32,
+                    lambda r: r.read_envelope(type_read=read_update_t))
+            }
+            v |= {
+                "disabled_set":
+                rdr.read_optional(
+                    lambda r: r.read_envelope(read_disabled_partitions_set))
+            }
+            return v
+
+        v = {}
+        v |= {
+            "topics":
+            rdr.read_serde_map(
+                read_tp_ns_to_str,
+                lambda r: r.read_envelope(type_read=read_topic_t,
+                                          max_version=1))
+        }
+        v |= {"highest_group_id": rdr.read_int64()}
+
+        def read_nt_revision_to_str(rdr: Reader):
+            res = rdr.read_envelope(
+                lambda r, _: {
+                    "topic_namespace": read_tp_ns_to_str(r),
+                    "initial_revision_id": r.read_int64()
+                })
+
+            return f"{res['topic_namespace']}/{res['initial_revision_id']}"
+
+        def read_nt_lifecycle_marker(rdr: Reader, version: int):
+            return {
+                "initial_revision_id": rdr.read_int64(),
+                "timestamp": rdr.read_optional(Reader.read_int64)
+            }
+
+        v |= {
+            "lifecycle_markers":
+            rdr.read_serde_map(
+                read_nt_revision_to_str,
+                lambda r: r.read_envelope(read_nt_lifecycle_marker))
+        }
+
+        def read_ntp_to_str(rdr: Reader):
+            ntp = read_ntp(rdr)
+            return f"{ntp['namespace']/ntp['topic']/ntp['partition']}"
+
+        def read_ntp_with_majority_loss(rdr: Reader):
+            pass
+
+        v |= {
+            "force_recoverable_partitions":
+            rdr.read_serde_map(
+                read_ntp_to_str,
+                lambda r: r.read_serde_vector(read_ntp_with_majority_loss))
+        }
+
+        return v
+
+    def read_security(self, rdr: Reader, version: int):
+        def read_named_role_t(rdr: Reader, version: int):
+            return {
+                "name": rdr.read_string(),
+                "role": rdr.read_envelope(read_role)
+            }
+
+        r = {
+            "user_credentials":
+            rdr.read_serde_vector(decode_user_and_credential)
+        }
+
+        r |= {"acls": rdr.read_serde_vector(read_acl_binding_serde)}
+        if version > 0:
+            r |= {
+                "roles":
+                rdr.read_serde_vector(
+                    lambda r: r.read_envelope(read_named_role_t))
+            }
+
+        return r
+
+    def read_metrics_reporter(self, rdr: Reader, version: int):
+        return rdr.read_envelope(lambda r, _: {
+            "uuid": r.read_string(),
+            "creation_ts": r.read_int64()
+        })
+
+    def read_plugins(self, rdr: Reader, version: int):
+        return rdr.read_serde_map(
+            Reader.read_int64,
+            lambda r: r.read_envelope(read_transform_metadata, max_version=1))
+
+    def read_cluster_recovery(self, rdr: Reader, version: int):
+        def read_cluster_metadata_manifest(rdr: Reader, version: int):
+            r = {"upload_time_since_epoch": rdr.read_int64()}
+            r |= {"cluster_uuid": rdr.read_uuid()}
+            r |= {"metadata_id": rdr.read_int64()}
+            r |= {"controller_snapshot_offset": rdr.read_int64()}
+            r |= {"controller_snapshot_path": rdr.read_string()}
+            r |= {
+                "offsets_snapshots_by_partition":
+                rdr.read_vector(lambda r: r.read_vector(Reader.read_string))
+            }
+            return r
+
+        def read_cluster_recovery_state(rdr: Reader, version: int):
+            r = {}
+            r |= {"stage": rdr.read_serde_enum()}
+            r |= {
+                "manifest": rdr.read_envelope(read_cluster_metadata_manifest)
+            }
+            r |= {"bucket": rdr.read_string()}
+            r |= {"wait_for_nodes": rdr.read_bool()}
+            r |= {"error_message": rdr.read_optional(Reader.read_string)}
+
+            return r
+
+        return {
+            "recovery_states":
+            rdr.read_serde_vector(
+                lambda r: r.read_envelope(read_cluster_recovery_state))
+        }
+
+    def read_snapshot(self, rdr: Reader):
+        data = {}
+        data['bootstrap'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_bootstrap(r, v), max_version=0)
+        data['features'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_features(r, v), max_version=0)
+        data['members'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_members(r, v), max_version=1)
+        data['config'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_config(r, v), max_version=0)
+        data['topics'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_topics(r, v), max_version=1)
+        data['security'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_security(r, v), max_version=1)
+        data['metrics_reporter'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_metrics_reporter(r, v),
+            max_version=0)
+        data['plugins'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_plugins(r, v), max_version=0)
+        data['cluster_recovery'] = rdr.read_envelope(
+            type_read=lambda r, v: self.read_cluster_recovery(r, v),
+            max_version=0)
+        for _, v in data.items():
+            if 'envelope' in v:
+                del v['envelope']
+        return data
+
+    def parse_snapshot(self, snapshot_file):
+        meta = {}
+        reader = Reader(snapshot_file)
+        meta['header_crc'] = reader.read_uint32()
+        meta['header_data_crc'] = reader.read_uint32()
+        meta['header_version'] = reader.read_int8()
+        meta['md_size'] = reader.read_uint32()
+        meta['last_included_index'] = reader.read_int64()
+        meta['last_included_term'] = reader.read_int64()
+        meta['current_version'] = reader.read_int8()
+        meta['configuration'] = decode_config(None, reader)
+        meta['ts'] = reader.read_int64()
+        meta['log_start_delta'] = reader.read_int64()
+
+        data = reader.read_checksum_envelope(
+            type_read=lambda r, _: self.read_snapshot(r), max_version=2)
+
+        return {'metadata': meta, 'data': data}
+
+    def to_dict(self):
+        if not self.snapshot_path.exists:
+            return {}
+
+        with open(self.snapshot_path, "rb") as sf:
+            return self.parse_snapshot(sf)

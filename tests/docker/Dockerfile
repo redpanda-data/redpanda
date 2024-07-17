@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM public.ecr.aws/docker/library/ubuntu:jammy-20230816 as base
+FROM public.ecr.aws/docker/library/ubuntu:jammy-20230816 AS base
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
@@ -35,7 +35,7 @@ RUN /tool-pkgs && \
 
 #################################
 
-FROM base as kafka-streams-examples
+FROM base AS kafka-streams-examples
 
 # Install kafka streams examples.  This is a very slow step (tens of minutes), doing
 # many maven dependency downloads without any parallelism.  To avoid re-running it
@@ -46,7 +46,7 @@ RUN /kafka-streams-examples && \
 
 #################################
 
-FROM base as omb
+FROM base AS omb
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/omb /
 RUN /omb && \
@@ -54,7 +54,7 @@ RUN /omb && \
 
 #################################
 
-FROM base as java-verifiers
+FROM base AS java-verifiers
 
 COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
 COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
@@ -65,7 +65,7 @@ RUN /java-verifiers && \
 
 #################################
 
-FROM base as kafka-tools
+FROM base AS kafka-tools
 
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kafka-tools /
@@ -74,7 +74,7 @@ RUN /kafka-tools && \
 
 #################################
 
-FROM base as librdkafka
+FROM base AS librdkafka
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/librdkafka /
 RUN /librdkafka && \
@@ -82,7 +82,7 @@ RUN /librdkafka && \
 
 #################################
 
-FROM librdkafka as kcat
+FROM librdkafka AS kcat
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kcat /
 RUN /kcat && \
@@ -90,7 +90,7 @@ RUN /kcat && \
 
 #################################
 
-FROM base as golang
+FROM base AS golang
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/golang /
 RUN /golang && \
@@ -99,7 +99,7 @@ ENV PATH="${PATH}:/usr/local/go/bin"
 
 #################################
 
-FROM golang as kaf
+FROM golang AS kaf
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kaf /
 RUN /kaf && \
@@ -107,7 +107,7 @@ RUN /kaf && \
 
 #################################
 
-FROM base as rust
+FROM base AS rust
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/rust /
 RUN /rust && \
     rm /rust
@@ -115,7 +115,7 @@ ENV PATH="${PATH}:/root/.cargo/bin"
 
 #################################
 
-FROM rust as client-swarm
+FROM rust AS client-swarm
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/client-swarm /
 RUN /client-swarm && \
@@ -123,7 +123,7 @@ RUN /client-swarm && \
 
 #################################
 
-FROM rust as rp-storage-tool
+FROM rust AS rp-storage-tool
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/rp-storage-tool /
 COPY --chown=0:0 --chmod=0755 tools/rp_storage_tool /rp_storage_tool
@@ -132,7 +132,7 @@ RUN /rp-storage-tool && \
 
 #################################
 
-FROM golang as sarama-examples
+FROM golang AS sarama-examples
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/sarama-examples /
 RUN /sarama-examples && \
@@ -140,7 +140,7 @@ RUN /sarama-examples && \
 
 #################################
 
-FROM golang as golang-test-clients
+FROM golang AS golang-test-clients
 
 COPY --chown=0:0 --chmod=0755 tests/go /opt/redpanda-tests/go
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/golang-test-clients /
@@ -149,7 +149,7 @@ RUN /golang-test-clients && \
 
 #################################
 
-FROM golang as franz-bench
+FROM golang AS franz-bench
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/franz-bench /
 RUN /franz-bench && \
@@ -157,7 +157,7 @@ RUN /franz-bench && \
 
 #################################
 
-FROM base as flink
+FROM base AS flink
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/flink /
 RUN /flink && \
@@ -165,7 +165,7 @@ RUN /flink && \
 
 #################################
 
-FROM golang as kcl
+FROM golang AS kcl
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kcl /
 RUN /kcl && \
@@ -173,7 +173,7 @@ RUN /kcl && \
 
 #################################
 
-FROM golang as kgo-verifier
+FROM golang AS kgo-verifier
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kgo-verifier /
 RUN /kgo-verifier && \
@@ -181,7 +181,7 @@ RUN /kgo-verifier && \
 
 #################################
 
-FROM base as k8s
+FROM base AS k8s
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/k8s /
 RUN /k8s && \
@@ -189,7 +189,7 @@ RUN /k8s && \
 
 #################################
 
-FROM golang as byoc-mock
+FROM golang AS byoc-mock
 
 COPY --chown=0:0 --chmod=0755 tests/go/byoc-mock /opt/redpanda-tests/go/byoc-mock
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/byoc-mock /
@@ -197,14 +197,14 @@ RUN /byoc-mock && rm /byoc-mock
 
 #################################
 
-FROM base as keycloak
+FROM base AS keycloak
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/keycloak /
 RUN /keycloak && rm /keycloak
 
 #################################
 
-FROM golang as tinygo
+FROM golang AS tinygo
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo /
 RUN /tinygo && \
@@ -213,7 +213,7 @@ ENV PATH="${PATH}:/usr/local/tinygo/bin"
 
 #################################
 
-FROM tinygo as wasi-transforms
+FROM tinygo AS wasi-transforms
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo-wasi-transforms /
 COPY --chown=0:0 --chmod=0755 src/transform-sdk /transform-sdk
@@ -222,13 +222,13 @@ RUN /tinygo-wasi-transforms && \
 
 #################################
 
-FROM base as ocsf
+FROM base AS ocsf
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/ocsf-server /
 RUN /ocsf-server && rm /ocsf-server
 
 #################################
 
-FROM librdkafka as final
+FROM librdkafka AS final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
 RUN /python-deps

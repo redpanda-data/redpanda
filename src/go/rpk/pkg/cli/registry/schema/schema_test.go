@@ -83,6 +83,22 @@ foo bar 2`,
   subject: bar
   version: 2`,
 			exp: []sr.SchemaReference{{Name: "foo", Subject: "bar", Version: 1}, {Name: "foo", Subject: "bar", Version: 2}},
+		}, {
+			name:          "single URL reference",
+			referenceFlag: "http://example.com/foo/referenced.json:ref_test:1",
+			exp:           []sr.SchemaReference{{Name: "http://example.com/foo/referenced.json", Subject: "ref_test", Version: 1}},
+		}, {
+			name:          "single URL reference with port",
+			referenceFlag: "http://example.com:8080/referenced.json:ref_test:1",
+			exp:           []sr.SchemaReference{{Name: "http://example.com:8080/referenced.json", Subject: "ref_test", Version: 1}},
+		}, {
+			name:          "multiple URL reference + normal references",
+			referenceFlag: "http://example.com/asdf/referenced.json:ref_test:1,foo:bar:2,file:///tmp/foo.json:ref_test:3",
+			exp: []sr.SchemaReference{
+				{Name: "http://example.com/asdf/referenced.json", Subject: "ref_test", Version: 1},
+				{Name: "foo", Subject: "bar", Version: 2},
+				{Name: "file:///tmp/foo.json", Subject: "ref_test", Version: 3},
+			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

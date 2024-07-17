@@ -12,6 +12,10 @@
 #include "base/seastarx.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "serde/envelope.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -58,7 +62,7 @@ consteval resource_type get_resource_type() {
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
     } else {
-        static_assert(utils::unsupported_type<T>::value, "Unsupported type");
+        static_assert(base::unsupported_type<T>::value, "Unsupported type");
     }
 }
 

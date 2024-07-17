@@ -26,11 +26,23 @@ jobs:
         run: pip install -r ${SCRIPT_DIR}/requirements.txt
       - name: install pandoc
         run: sudo apt-get update && sudo apt-get install -y pandoc
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      - name: get secrets from aws sm
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/jira
+          parse-json-secrets: true
       - name: Manage JIRA Issue
         env:
           SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN  }}
-          JIRA_USER: ${{ secrets.JIRA_USER  }}
+          JIRA_TOKEN: ${{ env.JIRA_TOKEN  }}
+          JIRA_USER: ${{ env.JIRA_USER  }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}

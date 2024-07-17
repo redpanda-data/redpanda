@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/errc.h"
+#include "cluster/tx_errc.h"
 #include "kafka/protocol/errors.h"
 
 namespace kafka {
@@ -54,6 +55,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::no_update_in_progress:
         return error_code::no_reassignment_in_progress;
     case cluster::errc::topic_disabled:
+    case cluster::errc::resource_is_being_migrated:
     case cluster::errc::partition_disabled:
         return error_code::policy_violation;
     case cluster::errc::replication_error:
@@ -107,9 +109,59 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::waiting_for_shard_placement_update:
     case cluster::errc::producer_ids_vcluster_limit_exceeded:
     case cluster::errc::validation_of_recovery_topic_failed:
+    case cluster::errc::replica_does_not_exist:
+    case cluster::errc::invalid_data_migration_state:
+    case cluster::errc::data_migration_already_exists:
+    case cluster::errc::data_migration_not_exists:
+    case cluster::errc::data_migration_invalid_resources:
         break;
     }
     return error_code::unknown_server_error;
+}
+
+constexpr error_code map_tx_errc(cluster::tx::errc ec) {
+    switch (ec) {
+    case cluster::tx::errc::none:
+        return error_code::none;
+    case cluster::tx::errc::leader_not_found:
+    case cluster::tx::errc::shard_not_found:
+    case cluster::tx::errc::partition_not_found:
+    case cluster::tx::errc::stm_not_found:
+    case cluster::tx::errc::partition_not_exists:
+    case cluster::tx::errc::not_coordinator:
+    case cluster::tx::errc::stale:
+        return error_code::not_coordinator;
+    case cluster::tx::errc::coordinator_not_available:
+        return error_code::coordinator_not_available;
+    case cluster::tx::errc::pid_not_found:
+        return error_code::unknown_producer_id;
+    case cluster::tx::errc::timeout:
+        return error_code::request_timed_out;
+    case cluster::tx::errc::conflict:
+        return error_code::invalid_txn_state;
+    case cluster::tx::errc::fenced:
+    case cluster::tx::errc::invalid_producer_epoch:
+        return error_code::invalid_producer_epoch;
+    case cluster::tx::errc::invalid_txn_state:
+        return error_code::invalid_txn_state;
+    case cluster::tx::errc::tx_id_not_found:
+    case cluster::tx::errc::tx_not_found:
+        return error_code::transactional_id_not_found;
+    case cluster::tx::errc::invalid_producer_id_mapping:
+        return error_code::invalid_producer_id_mapping;
+    case cluster::tx::errc::partition_disabled:
+        return error_code::replica_not_available;
+    case cluster::tx::errc::concurrent_transactions:
+        return error_code::concurrent_transactions;
+    case cluster::tx::errc::preparing_rebalance:
+    case cluster::tx::errc::rebalance_in_progress:
+        return error_code::rebalance_in_progress;
+    case cluster::tx::errc::coordinator_load_in_progress:
+        return error_code::coordinator_load_in_progress;
+    case cluster::tx::errc::request_rejected:
+    case cluster::tx::errc::unknown_server_error:
+        return error_code::unknown_server_error;
+    }
 }
 
 } // namespace kafka

@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from re import T
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, List
 from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
@@ -16,10 +16,10 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.util import expect_exception
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import CloudStorageType, MetricsEndpoint, RedpandaService, get_cloud_storage_type, make_redpanda_service
+from rptest.services.redpanda import CloudStorageType, CloudStorageTypeAndUrlStyle, MetricsEndpoint, RedpandaService, get_cloud_storage_type, get_cloud_storage_url_style, get_cloud_storage_type_and_url_style, make_redpanda_service
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -407,13 +407,18 @@ class TestReadReplicaService(EndToEndTest):
             # count is permitted to increase.
             assert len(objects_after) >= len(objects_before)
 
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
-    def test_simple_end_to_end(self, partition_count: int,
-                               cloud_storage_type: CloudStorageType) -> None:
-
+    @matrix(
+        partition_count=[10],
+        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
+        ))
+    def test_simple_end_to_end(
+        self, partition_count: int,
+        cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
+    ) -> None:
         data_timeout = 300
-
         self._setup_read_replica(num_messages=100000,
                                  partition_count=partition_count,
                                  producer_timeout=300)
@@ -480,6 +485,8 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             cloud_storage_housekeeping_interval_ms=1)
         self.second_cluster = None
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))

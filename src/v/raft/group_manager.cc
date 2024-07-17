@@ -12,8 +12,8 @@
 #include "base/likely.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/metadata.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "raft/group_configuration.h"
 #include "raft/rpc_client_protocol.h"
 #include "resource_mgmt/io_priority.h"
@@ -51,6 +51,18 @@ group_manager::group_manager(
       _configuration.recovery_concurrency_per_shard,
       _configuration.heartbeat_interval)
   , _feature_table(feature_table.local())
+  // we use a reasonable default not to bloat the configuration properties
+  , _metric_collection_interval(5s)
+  , _metrics_timer([this] {
+      try {
+          collect_learner_metrics();
+      } catch (...) {
+          vlog(
+            raftlog.error,
+            "failed to collect learner metrics - {}",
+            std::current_exception());
+      }
+  })
   , _is_ready(false) {
     _configuration.write_caching.watch(
       [this]() { trigger_config_update_notification(); });
@@ -64,9 +76,13 @@ group_manager::group_manager(
 ss::future<> group_manager::start() {
     co_await _heartbeats.start();
     co_await _recovery_scheduler.start();
+    _metrics_timer.arm_periodic(_metric_collection_interval);
 }
 
 ss::future<> group_manager::stop() {
+    _metrics.clear();
+    _public_metrics.clear();
+    _metrics_timer.cancel();
     auto f = _gate.close();
 
     f = f.then([this] { return _recovery_scheduler.stop(); });
@@ -219,9 +235,22 @@ void group_manager::setup_metrics() {
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
       {sm::make_gauge(
-        "group_count",
-        [this] { return _groups.size(); },
-        sm::description("Number of raft groups"))});
+         "group_count",
+         [this] { return _groups.size(); },
+         sm::description("Number of raft groups")),
+       sm::make_gauge(
+         "learners_gap_bytes",
+         [this] { return _learners_gap_bytes; },
+         sm::description(
+           "Total numbers of bytes that must be delivered to learners"))});
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("raft"),
+      {sm::make_gauge(
+        "learners_gap_bytes",
+        [this] { return _learners_gap_bytes; },
+        sm::description(
+          "Total numbers of bytes that must be delivered to learners"))});
 }
 
 void group_manager::trigger_config_update_notification() {
@@ -230,6 +259,15 @@ void group_manager::trigger_config_update_notification() {
     }
     for (auto& group : _groups) {
         group->notify_config_update();
+    }
+}
+
+void group_manager::collect_learner_metrics() {
+    // we can use a synchronous loop here as the number of raft groups per core
+    // is limited.
+    _learners_gap_bytes = 0;
+    for (const auto& group : _groups) {
+        _learners_gap_bytes += group->bytes_to_deliver_to_learners();
     }
 }
 

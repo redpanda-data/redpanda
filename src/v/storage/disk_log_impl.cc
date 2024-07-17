@@ -20,6 +20,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
+#include "storage/api.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
@@ -138,11 +139,11 @@ disk_log_impl::disk_log_impl(
   , _readers_cache(std::make_unique<readers_cache>(
       config().ntp(),
       _manager.config().readers_cache_eviction_timeout,
-      config::shard_local_cfg().readers_cache_target_max_size.bind())) {
-    const bool is_compacted = config().is_compacted();
+      config::shard_local_cfg().readers_cache_target_max_size.bind()))
+  , _compaction_enabled(config().is_compacted()) {
     for (auto& s : _segs) {
         _probe->add_initial_segment(*s);
-        if (is_compacted) {
+        if (_compaction_enabled) {
             s->mark_as_compacted_segment();
         }
     }
@@ -184,14 +185,7 @@ ss::future<> disk_log_impl::remove() {
                 vlog(stlog.info, "Finished removing all segments:{}", config());
             })
             .then([this] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage,
-                  internal::start_offset_key(config().ntp()));
-            })
-            .then([this] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage,
-                  internal::clean_segment_key(config().ntp()));
+                return remove_kvstore_state(config().ntp(), _kvstore);
             });
       })
       .finally([this] { _probe->clear_metrics(); });
@@ -2161,7 +2155,7 @@ disk_log_impl::offset_range_size(
     size_t current_size = 0;
     // Last offset included to the result, default value means that we didn't
     // find anything
-    model::offset last_included_offset;
+    model::offset last_included_offset = {};
     size_t num_segments = 0;
     auto it = _segs.lower_bound(first);
     for (; it < _segs.end(); it++) {
@@ -2511,7 +2505,12 @@ ss::future<>
 disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
+          // base_offset check is for the case of an empty segment
+          // (where dirty = base - 1). We don't want to remove it because
+          // batches may be concurrently appended to it and we should keep them.
           return _segs.empty()
+                 || _segs.front()->offsets().get_base_offset()
+                      >= cfg.start_offset
                  || _segs.front()->offsets().get_dirty_offset()
                       >= cfg.start_offset;
       },
@@ -2813,33 +2812,29 @@ ss::future<bool> disk_log_impl::update_start_offset(model::offset o) {
     });
 }
 
-ss::future<>
-disk_log_impl::update_configuration(ntp_config::default_overrides o) {
-    // Note: This hook is called to update topic level configuration overrides.
-    // Cluster level configuration updates are handled separately by
-    // binding to shard local configuration properties of interest.
+bool disk_log_impl::notify_compaction_update() {
+    bool new_compaction_enabled = config().is_compacted();
+    bool result = (_compaction_enabled != new_compaction_enabled);
+    _compaction_enabled = new_compaction_enabled;
 
-    auto was_compacted = config().is_compacted();
-    mutable_config().set_overrides(o);
-
-    /**
-     * For most of the settings we always query ntp config, only cleanup_policy
-     * needs special treatment.
-     */
     // enable compaction
-    if (!was_compacted && config().is_compacted()) {
+    if (!_compaction_enabled && new_compaction_enabled) {
         for (auto& s : _segs) {
             s->mark_as_compacted_segment();
         }
     }
     // disable compaction
-    if (was_compacted && !config().is_compacted()) {
+    if (_compaction_enabled && !new_compaction_enabled) {
         for (auto& s : _segs) {
             s->unmark_as_compacted_segment();
         }
     }
 
-    return ss::now();
+    return result;
+}
+
+void disk_log_impl::set_overrides(ntp_config::default_overrides o) {
+    mutable_config().set_overrides(o);
 }
 
 /// Calculate the compaction backlog of the segments within a particular term
@@ -3680,6 +3675,42 @@ size_t disk_log_impl::reclaimable_size_bytes() const {
         return 0;
     }
     return _reclaimable_size_bytes;
+}
+
+ss::future<> disk_log_impl::copy_kvstore_state(
+  model::ntp ntp,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& storage) {
+    const auto ks = kvstore::key_space::storage;
+    std::optional<iobuf> start_offset = source_kvs.get(
+      ks, internal::start_offset_key(ntp));
+    std::optional<iobuf> clean_segment = source_kvs.get(
+      ks, internal::clean_segment_key(ntp));
+
+    co_await storage.invoke_on(target_shard, [&](storage::api& api) {
+        const auto ks = kvstore::key_space::storage;
+        std::vector<ss::future<>> write_futures;
+        write_futures.reserve(2);
+        if (start_offset) {
+            write_futures.push_back(api.kvs().put(
+              ks, internal::start_offset_key(ntp), start_offset->copy()));
+        }
+        if (clean_segment) {
+            write_futures.push_back(api.kvs().put(
+              ks, internal::clean_segment_key(ntp), clean_segment->copy()));
+        }
+        return ss::when_all_succeed(std::move(write_futures));
+    });
+}
+
+ss::future<> disk_log_impl::remove_kvstore_state(
+  const model::ntp& ntp, storage::kvstore& kvs) {
+    const auto ks = kvstore::key_space::storage;
+    return ss::when_all_succeed(
+             kvs.remove(ks, internal::start_offset_key(ntp)),
+             kvs.remove(ks, internal::clean_segment_key(ntp)))
+      .discard_result();
 }
 
 } // namespace storage

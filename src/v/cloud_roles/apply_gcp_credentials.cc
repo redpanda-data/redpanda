@@ -10,6 +10,8 @@
 
 #include "apply_gcp_credentials.h"
 
+#include "base/vlog.h"
+
 namespace cloud_roles {
 apply_gcp_credentials::apply_gcp_credentials(gcp_credentials credentials)
   : _oauth_token{fmt::format("Bearer {}", credentials.oauth_token())} {}

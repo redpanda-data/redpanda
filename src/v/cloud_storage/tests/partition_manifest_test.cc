@@ -14,6 +14,8 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/segment_path_utils.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -31,6 +33,10 @@
 #include <boost/test/unit_test.hpp>
 
 using namespace cloud_storage;
+
+namespace {
+const remote_path_provider path_provider(std::nullopt);
+} // anonymous namespace
 
 static constexpr std::string_view empty_manifest_json = R"json({
     "version": 1,
@@ -471,7 +477,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_type) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
-    auto path = generate_remote_segment_path(
+    auto path = prefixed_segment_path(
       manifest_ntp,
       model::initial_revision_id(0),
       segment_name("22-11-v1.log"),
@@ -479,45 +485,6 @@ SEASTAR_THREAD_TEST_CASE(test_segment_path) {
     // use pre-calculated murmur hash value from full ntp path + file name
     BOOST_REQUIRE_EQUAL(
       path, "2bea9275/test-ns/test-topic/42_0/22-11-v1.log.123");
-}
-
-SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing) {
-    std::filesystem::path path
-      = "b0000000/meta/kafka/redpanda-test/4_2/manifest.json";
-    auto res = cloud_storage::get_partition_manifest_path_components(path);
-    BOOST_REQUIRE_EQUAL(res->_origin, path);
-    BOOST_REQUIRE_EQUAL(res->_ns(), "kafka");
-    BOOST_REQUIRE_EQUAL(res->_topic(), "redpanda-test");
-    BOOST_REQUIRE_EQUAL(res->_part(), 4);
-    BOOST_REQUIRE_EQUAL(res->_rev(), 2);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_1) {
-    std::filesystem::path path
-      = "b0000000/meta/kafka/redpanda-test/a_b/manifest.json";
-    auto res = cloud_storage::get_partition_manifest_path_components(path);
-    BOOST_REQUIRE(res.has_value() == false);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_2) {
-    std::filesystem::path path
-      = "b0000000/kafka/redpanda-test/4_2/manifest.json";
-    auto res = cloud_storage::get_partition_manifest_path_components(path);
-    BOOST_REQUIRE(res.has_value() == false);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_3) {
-    std::filesystem::path path
-      = "b0000000/meta/kafka/redpanda-test//manifest.json";
-    auto res = cloud_storage::get_partition_manifest_path_components(path);
-    BOOST_REQUIRE(res.has_value() == false);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_4) {
-    std::filesystem::path path
-      = "b0000000/meta/kafka/redpanda-test/4_2/foo.bar";
-    auto res = cloud_storage::get_partition_manifest_path_components(path);
-    BOOST_REQUIRE(res.has_value() == false);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing) {
@@ -542,7 +509,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing_failure_2) {
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
     partition_manifest m(manifest_ntp, model::initial_revision_id(0));
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.bin");
 }
@@ -551,7 +518,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
     partition_manifest m;
     m.update(manifest_format::json, make_manifest_stream(empty_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.bin");
 }
@@ -578,7 +545,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     m.update(
        manifest_format::json, make_manifest_stream(complete_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 5);
@@ -672,7 +639,7 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
        manifest_format::json,
        make_manifest_stream(max_segment_meta_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 1);
@@ -741,7 +708,7 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
        manifest_format::json,
        make_manifest_stream(segment_meta_gets_smaller_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 2);
@@ -791,8 +758,8 @@ SEASTAR_THREAD_TEST_CASE(test_no_closing_bracket_meta) {
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
                    "Failed to parse partition manifest "
-                   "\"b0000000/meta///-2147483648_-9223372036854775808/"
-                   "manifest.json\": Missing a comma or '}' after an object "
+                   "b0000000/meta///-2147483648_-9223372036854775808/"
+                   "manifest.json: Missing a comma or '}' after an object "
                    "member. at offset 325")
                  != std::string::npos;
       });
@@ -803,7 +770,7 @@ SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
     m.update(
        manifest_format::json, make_manifest_stream(fields_after_segments_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 1);
@@ -2052,7 +2019,7 @@ SEASTAR_THREAD_TEST_CASE(test_reset_manifest) {
     m.update(
        manifest_format::json, make_manifest_stream(complete_manifest_json))
       .get();
-    auto path = m.get_manifest_path();
+    auto path = m.get_manifest_path(path_provider);
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 5);
@@ -2153,11 +2120,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(10));
         auto expected = remote_segment_path(
           "9b367cb7/test-ns/test-topic/42_1/10-1-v1.log.1");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 
     {
@@ -2165,11 +2129,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(20));
         auto expected = remote_segment_path(
           "96c6b7a9/test-ns/test-topic/42_1/20-29-2048-1-v1.log.2");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 
     {
@@ -2177,11 +2138,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(30));
         auto expected = remote_segment_path(
           "df1262f5/test-ns/test-topic/42_1/30-1-v1.log");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 
     {
@@ -2189,11 +2147,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto s = m.find(model::offset(40));
         auto expected = remote_segment_path(
           "e44e8104/test-ns/test-topic/42_1/40-42-4096-2-v1.log");
-        auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), *s);
-        auto actual2 = m.generate_segment_path(*s);
-        BOOST_REQUIRE_EQUAL(expected, actual1);
-        BOOST_REQUIRE_EQUAL(expected, actual2);
+        auto actual = m.generate_segment_path(*s, path_provider);
+        BOOST_REQUIRE_EQUAL(expected, actual);
     }
 }
 

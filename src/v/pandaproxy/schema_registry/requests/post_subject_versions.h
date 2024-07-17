@@ -141,8 +141,10 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::schema: {
+            iobuf buf;
+            buf.append(sv.data(), sv.size());
             _schema.def = unparsed_schema_definition::raw_string{
-              ss::sstring{sv}};
+              std::move(buf)};
             _state = state::record;
             return true;
         }
@@ -241,8 +243,9 @@ struct post_subject_versions_response {
     schema_id id;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w,
   const schema_registry::post_subject_versions_response& res) {
     w.StartObject();
     w.Key("id");

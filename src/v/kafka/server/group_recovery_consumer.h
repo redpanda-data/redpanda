@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "kafka/server/group_data_parser.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_stm.h"
 #include "model/fundamental.h"
@@ -34,7 +35,10 @@ struct group_recovery_consumer_state {
     model::offset last_read_offset;
 };
 
-class group_recovery_consumer {
+class group_recovery_consumer
+  : public group_data_parser<group_recovery_consumer> {
+    using base_t = group_data_parser<group_recovery_consumer>;
+
 public:
     /*
      * This batch consumer is used during partition recovery to read, index, and
@@ -50,8 +54,22 @@ public:
 
     group_recovery_consumer_state end_of_stream() { return std::move(_state); }
 
+    ss::future<> handle_raft_data(model::record_batch);
+    ss::future<> handle_tx_offsets(
+      model::record_batch_header, kafka::group_tx::offsets_metadata);
+    ss::future<> handle_fence_v0(
+      model::record_batch_header, kafka::group_tx::fence_metadata_v0);
+    ss::future<> handle_fence_v1(
+      model::record_batch_header, kafka::group_tx::fence_metadata_v1);
+    ss::future<>
+      handle_fence(model::record_batch_header, kafka::group_tx::fence_metadata);
+    ss::future<>
+      handle_abort(model::record_batch_header, kafka::group_tx::abort_metadata);
+    ss::future<> handle_commit(
+      model::record_batch_header, kafka::group_tx::commit_metadata);
+    ss::future<> handle_version_fence(features::feature_table::version_fence);
+
 private:
-    void apply_tx_fence(model::record_batch&&);
     void handle_record(model::record);
     void handle_group_metadata(group_metadata_kv);
     void handle_offset_metadata(offset_metadata_kv);

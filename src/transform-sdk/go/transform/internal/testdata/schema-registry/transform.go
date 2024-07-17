@@ -16,6 +16,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/sr"
@@ -36,7 +37,7 @@ func main() {
 		Schema: e.Schema(),
 	})
 	if err != nil {
-		println("unable to registry schema: ", err)
+		println("unable to register schema ", err)
 	}
 	transform.OnRecordWritten(avroToJsonTransform)
 }
@@ -53,9 +54,9 @@ func avroToJsonTransform(e transform.WriteEvent, w transform.RecordWriter) error
 		if err != nil {
 			return err
 		}
-		schema, err := c.LookupSchemaById(id)
-		if err != nil {
-			return err
+		schema := sr.Schema{
+			Type:   sr.TypeAvro,
+			Schema: ex.Schema(),
 		}
 		// Register the new schema
 		s.Register(id, sr.DecodeFn[*avro.Example](func(b []byte, e *avro.Example) error {
@@ -64,6 +65,9 @@ func avroToJsonTransform(e transform.WriteEvent, w transform.RecordWriter) error
 				schema.Schema,
 			)
 			*e = ex
+			return err
+		}), sr.ValueSubjectTopicName[*avro.Example](os.Getenv("REDPANDA_INPUT_TOPIC"), func(sn string) error {
+			_, err = c.CreateSchema(sn, schema)
 			return err
 		}))
 		// Now try and decode the value now that we've looked it up.

@@ -320,7 +320,7 @@
                     "description": "Node maintenance status"
                 },
                 "in_fips_mode": {
-                    "type": "boolean",
+                    "type": "string",
                     "description": "indicates if node is operating in FIPS Mode"
                 }
             }

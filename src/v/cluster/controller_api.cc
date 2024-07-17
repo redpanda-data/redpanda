@@ -139,11 +139,11 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     ntps.reserve(metadata->get().get_assignments().size());
 
     std::transform(
-      metadata->get().get_assignments().cbegin(),
-      metadata->get().get_assignments().cend(),
+      metadata->get().get_assignments().begin(),
+      metadata->get().get_assignments().end(),
       std::back_inserter(ntps),
-      [tp_ns](const partition_assignment& p_as) {
-          return model::ntp(tp_ns.ns, tp_ns.tp, p_as.id);
+      [tp_ns](const assignments_set::value_type& p_as) {
+          return model::ntp(tp_ns.ns, tp_ns.tp, p_as.second.id);
       });
 
     co_return co_await get_reconciliation_state(std::move(ntps));
@@ -296,7 +296,7 @@ ss::future<std::error_code> controller_api::wait_for_topic(
             continue;
         }
         std::deque<model::ntp> all_ntps;
-        for (const auto& p_as : metadata->get().get_assignments()) {
+        for (const auto& [_, p_as] : metadata->get().get_assignments()) {
             all_ntps.emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
         }
 

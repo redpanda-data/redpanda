@@ -15,6 +15,7 @@
 #include "config/property.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/internal/cpu_profiler.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>

@@ -8,17 +8,12 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #pragma once
+
 #include "base/outcome.h"
-#include "base/seastarx.h"
-#include "config/property.h"
 #include "json/pointer.h"
-#include "security/acl.h"
-#include "security/fwd.h"
-#include "security/mtls.h"
+#include "security/mtls_rule.h"
 
-#include <seastar/core/sstring.hh>
-
-#include <optional>
+#include <string_view>
 
 namespace security::oidc {
 
@@ -32,7 +27,8 @@ public:
         swap(_claim, claim);
     }
 
-    result<acl_principal> apply(jwt const& jwt) const;
+    const json::Pointer& claim() const { return _claim; }
+    const tls::rule& mapping() const { return _mapping; }
 
 private:
     json::Pointer _claim{"/sub"};
@@ -40,7 +36,5 @@ private:
 };
 
 result<principal_mapping_rule> parse_principal_mapping_rule(std::string_view);
-std::optional<ss::sstring>
-validate_principal_mapping_rule(ss::sstring const& rule);
 
 } // namespace security::oidc

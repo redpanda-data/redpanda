@@ -36,6 +36,7 @@ rp_test(
     offset_translator_state_test.cc
     file_sanitizer_test.cc
     compaction_reducer_test.cc
+    batch_consumer_utils_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"

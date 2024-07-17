@@ -76,9 +76,9 @@ public:
     ///
     /// return the schema_version and schema_id, and whether it's new.
     insert_result insert(canonical_schema schema) {
-        auto id = insert_schema(std::move(schema).def()).id;
-        // NOLINTNEXTLINE(bugprone-use-after-move)
-        auto [version, inserted] = insert_subject(std::move(schema).sub(), id);
+        auto [sub, def] = std::move(schema).destructure();
+        auto id = insert_schema(std::move(def)).id;
+        auto [version, inserted] = insert_subject(std::move(sub), id);
         return {version, id, inserted};
     }
 
@@ -89,7 +89,7 @@ public:
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->second.definition};
+        return {it->second.definition.share()};
     }
 
     ///\brief Return the id of the schema, if it already exists.
@@ -174,7 +174,9 @@ public:
     }
 
     ///\brief Return a list of subjects.
-    chunked_vector<subject> get_subjects(include_deleted inc_del) const {
+    chunked_vector<subject> get_subjects(
+      include_deleted inc_del,
+      const std::optional<ss::sstring>& subject_prefix = std::nullopt) const {
         chunked_vector<subject> res;
         res.reserve(_subjects.size());
         for (const auto& sub : _subjects) {
@@ -182,7 +184,9 @@ public:
                 auto has_version = absl::c_any_of(
                   sub.second.versions,
                   [inc_del](auto const& v) { return inc_del || !v.deleted; });
-                if (has_version) {
+                if (
+                  has_version
+                  && sub.first().starts_with(subject_prefix.value_or(""))) {
                     res.push_back(sub.first);
                 }
             }
@@ -382,7 +386,14 @@ public:
     result<std::vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        return sub_it->second.versions;
+        std::vector<subject_version_entry> res;
+        absl::c_copy_if(
+          sub_it->second.versions,
+          std::back_inserter(res),
+          [inc_del](const subject_version_entry& e) {
+              return inc_del || !e.deleted;
+          });
+        return {std::move(res)};
     }
 
     ///\brief Return whether this subject has a version that references the
@@ -391,8 +402,8 @@ public:
       const subject& sub, schema_id id, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& vs = sub_it->second.versions;
-        return std::any_of(vs.cbegin(), vs.cend(), [id](const auto& entry) {
-            return entry.id == id;
+        return absl::c_any_of(vs, [id, inc_del](const auto& entry) {
+            return entry.id == id && (inc_del || !entry.deleted);
         });
     }
 
@@ -420,11 +431,13 @@ public:
         return has_ids;
     }
 
-    bool subject_versions_has_any_of(const schema_id_set& ids) {
-        return absl::c_any_of(_subjects, [&ids](const auto& s) {
-            return absl::c_any_of(s.second.versions, [&ids, &s](const auto& v) {
-                return !s.second.deleted && ids.contains(v.id);
-            });
+    bool subject_versions_has_any_of(
+      const schema_id_set& ids, include_deleted inc_del) {
+        return absl::c_any_of(_subjects, [&ids, inc_del](const auto& s) {
+            return absl::c_any_of(
+              s.second.versions, [&ids, &s, inc_del](const auto& v) {
+                  return (inc_del || !s.second.deleted) && ids.contains(v.id);
+              });
         });
     }
 
@@ -617,6 +630,8 @@ public:
           .second;
     }
 
+    void delete_schema(schema_id id) { _schemas.erase(id); }
+
     struct insert_subject_result {
         schema_version version;
         bool inserted;
@@ -684,7 +699,7 @@ public:
     result<void> check_mode_mutability(force f) const {
         if (!_mutable && !f) {
             return error_info{
-              error_code::subject_version_operaton_not_permitted,
+              error_code::subject_version_operation_not_permitted,
               "Mode changes are not allowed"};
         }
         return outcome::success();

@@ -11,8 +11,8 @@
 
 #include "http/client.h"
 #include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "net/tls_certificate_probe.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "security/exceptions.h"
 #include "security/jwt.h"
 #include "security/logger.h"

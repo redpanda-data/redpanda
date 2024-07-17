@@ -17,12 +17,13 @@ from time import sleep
 import urllib.parse
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 from ducktape.cluster.cluster import ClusterNode
-from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
+from typing import Any, List, Optional, Callable, NamedTuple, Protocol, cast
 from rptest.util import wait_until_result
 from requests.exceptions import HTTPError
 from requests import Response
+from json.decoder import JSONDecodeError
 
 DEFAULT_TIMEOUT = 30
 
@@ -260,6 +261,100 @@ class RoleMemberUpdateResponse:
         return cls.from_json(rsp.content)
 
 
+class NamespacedTopic:
+    def __init__(self, topic: str, namespace: str = "kafka"):
+        self.ns = namespace
+        self.topic = topic
+
+    def as_dict(self):
+        return {'ns': self.ns, 'topic': self.topic}
+
+    @classmethod
+    def from_json(cls, body: bytes):
+        d = json.loads(body)
+        expected_keys = set(['ns', 'topic'])
+        assert all(k in expected_keys
+                   for k in d), f"Unexpected key(s): {d.keys()}"
+        assert 'topic' in d, "Expected 'topic' key"
+        topic = d['topic']
+        namespace = "kafka"
+        if 'ns' in d:
+            namespace = d['ns']
+
+        return cls(topic, namespace)
+
+
+class OutboundDataMigration:
+    migration_type: str
+    topics: list[NamespacedTopic]
+    consumer_groups: list[str]
+
+    def __init__(self, topics: list[NamespacedTopic],
+                 consumer_groups: list[str]):
+        self.migration_type = "outbound"
+        self.topics = topics
+        self.consumer_groups = consumer_groups
+
+    @classmethod
+    def from_json(cls, body: bytes):
+        d = json.loads(body)
+        expected_keys = set(['type', 'topics', 'consumer_groups'])
+        assert all(k in expected_keys
+                   for k in d), f"Unexpected key(s): {d.keys()}"
+        assert all(
+            k in d
+            for k in expected_keys), f"Missing keys: {expected_keys - set(d)}"
+
+        return cls(d['topics'], d['consumer_groups'])
+
+    def as_dict(self):
+        return {
+            'migration_type': self.migration_type,
+            'topics': [t.as_dict() for t in self.topics],
+            'consumer_groups': self.consumer_groups
+        }
+
+
+class InboundTopic:
+    def __init__(self, src_topic: NamespacedTopic,
+                 alias: NamespacedTopic | None):
+        self.src_topic = src_topic
+        self.alias = alias
+
+    def as_dict(self):
+        d = {
+            'source_topic': self.src_topic.as_dict(),
+        }
+        if self.alias:
+            d['alias'] = self.alias.as_dict()
+        return d
+
+
+class InboundDataMigration:
+    migration_type: str
+    topics: list[InboundTopic]
+    consumer_groups: list[str]
+
+    def __init__(self, topics: list[InboundTopic], consumer_groups: list[str]):
+        self.migration_type = "inbound"
+        self.topics = topics
+        self.consumer_groups = consumer_groups
+
+    def as_dict(self):
+        return {
+            "migration_type": self.migration_type,
+            'topics': [t.as_dict() for t in self.topics],
+            'consumer_groups': self.consumer_groups
+        }
+
+
+class MigrationAction(Enum):
+    prepare = "prepare"
+    execute = "execute"
+    finish = "finish"
+    cancel = "cancel"
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -333,7 +428,7 @@ class Admin:
                 json = r.json()
                 self.redpanda.logger.debug(f"Response OK, JSON: {json}")
                 return json
-            except json.decoder.JSONDecodeError as e:
+            except JSONDecodeError as e:
                 self.redpanda.logger.debug(
                     f"Response OK, Malformed JSON: '{r.text}' ({e})")
                 return None
@@ -488,6 +583,9 @@ class Admin:
                                                   backoff_s=backoff_s)
             if check(info.leader):
                 return True, info.leader
+
+            self.redpanda.logger.debug(
+                f"check failed (leader id: {info.leader})")
             return False
 
         return wait_until_result(
@@ -812,6 +910,14 @@ class Admin:
 
         return self._request('post', path, node=node)
 
+    def trigger_cores_rebalance(self, node):
+        """
+        Trigger core placement rebalancing for partitions in this node.
+        """
+        path = f"partitions/rebalance_cores"
+
+        return self._request('post', path, node=node)
+
     def list_reconfigurations(self, node=None):
         """
         List pending reconfigurations
@@ -1002,6 +1108,16 @@ class Admin:
         assert payload
         path = "partitions/force_recover_from_nodes"
         return self._request('post', path, node, json=payload)
+
+    def set_partition_replica_core(self,
+                                   topic: str,
+                                   partition: int,
+                                   replica: int,
+                                   core: int,
+                                   namespace: str = "kafka",
+                                   node=None):
+        path = f"partitions/{namespace}/{topic}/{partition}/replicas/{replica}"
+        return self._request('post', path, node=node, json={"core": core})
 
     def create_user(self,
                     username,
@@ -1230,7 +1346,7 @@ class Admin:
         return self._request("GET", f"debug/controller_status",
                              node=node).json()
 
-    def get_cluster_uuid(self, node):
+    def get_cluster_uuid(self, node=None):
         try:
             r = self._request("GET", "cluster/uuid", node=node)
         except HTTPError as ex:
@@ -1552,3 +1668,30 @@ class Admin:
         if env is not None:
             body["env"] = [dict(key=k, value=env[k]) for k in env]
         return self._request("PUT", path, json=body)
+
+    def list_data_migrations(self, node: Optional[ClusterNode] = None):
+        path = "migrations"
+        return self._request("GET", path, node=node)
+
+    def create_data_migration(self,
+                              migration: InboundDataMigration
+                              | OutboundDataMigration,
+                              node: Optional[ClusterNode] = None):
+
+        path = "migrations"
+        return self._request("PUT", path, node=node, json=migration.as_dict())
+
+    def execute_data_migration_action(self,
+                                      migration_id: int,
+                                      action: MigrationAction,
+                                      node: Optional[ClusterNode] = None):
+
+        path = f"migrations/{migration_id}?action={action.value}"
+        return self._request("POST", path, node=node)
+
+    def delete_data_migration(self,
+                              migration_id: int,
+                              node: Optional[ClusterNode] = None):
+
+        path = f"migrations/{migration_id}"
+        return self._request("DELETE", path, node=node)

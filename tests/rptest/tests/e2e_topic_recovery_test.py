@@ -288,6 +288,7 @@ class EndToEndTopicRecovery(RedpandaTest):
                                               msg_size,
                                               loop=False,
                                               nodes=[traffic_node],
+                                              use_transactions=True,
                                               debug_logs=True,
                                               trace_logs=True)
             consumer.start(clean=False)

@@ -34,6 +34,7 @@
 #include "cluster/cluster_uuid.h"
 #include "cluster/controller.h"
 #include "cluster/controller_snapshot.h"
+#include "cluster/data_migration_service_handler.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/ephemeral_credential_service.h"
 #include "cluster/fwd.h"
@@ -60,7 +61,6 @@
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
 #include "cluster/tm_stm.h"
-#include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topic_recovery_service.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topic_recovery_status_rpc_handler.h"
@@ -76,6 +76,7 @@
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
 #include "config/seed_server.h"
+#include "config/types.h"
 #include "crypto/ossl_context_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
@@ -84,12 +85,14 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
+#include "kafka/server/group_tx_tracker_stm.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
+#include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
 #include "model/fundamental.h"
@@ -653,6 +656,15 @@ void application::setup_public_metrics() {
                  [] { return 1; },
                  sm::description("Redpanda build information"),
                  build_labels)
+                 .aggregate({sm::shard_label}),
+               sm::make_gauge(
+                 "fips_mode",
+                 [] {
+                     return static_cast<unsigned int>(
+                       config::node().fips_mode());
+                 },
+                 sm::description("Identifies whether or not Redpanda is "
+                                 "running in FIPS mode."))
                  .aggregate({sm::shard_label})});
         })
       .get();
@@ -692,22 +704,26 @@ void application::setup_internal_metrics() {
 
     _metrics.add_group(
       "application",
-      {
-        sm::make_gauge(
-          "uptime",
-          [] {
-              return std::chrono::duration_cast<std::chrono::milliseconds>(
-                       ss::engine().uptime())
-                .count();
-          },
-          sm::description("Redpanda uptime in milliseconds")),
+      {sm::make_gauge(
+         "uptime",
+         [] {
+             return std::chrono::duration_cast<std::chrono::milliseconds>(
+                      ss::engine().uptime())
+               .count();
+         },
+         sm::description("Redpanda uptime in milliseconds")),
 
-        sm::make_gauge(
-          "build",
-          [] { return 1; },
-          sm::description("Redpanda build information"),
-          build_labels),
-      });
+       sm::make_gauge(
+         "build",
+         [] { return 1; },
+         sm::description("Redpanda build information"),
+         build_labels),
+
+       sm::make_gauge(
+         "fips_mode",
+         [] { return static_cast<unsigned int>(config::node().fips_mode()); },
+         sm::description(
+           "Identifies whether or not Redpanda is running in FIPS mode."))});
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
@@ -887,21 +903,53 @@ void application::check_environment() {
         }
     }
 
-    if (config::node().fips_mode()) {
+    if (config::fips_mode_enabled(config::node().fips_mode())) {
         if (!ss::file_exists(fips_enabled_file).get()) {
-            throw std::runtime_error(fmt::format(
-              "File '{}' does not exist.  Redpanda cannot start in FIPS mode",
-              fips_enabled_file));
-        }
-
-        auto fd = ss::file_desc::open(fips_enabled_file.data(), O_RDONLY);
-        char buf[1];
-        fd.read(buf, 1);
-        if (buf[0] != '1') {
-            throw std::runtime_error(fmt::format(
-              "File '{}' not reporting '1'.  Redpanda cannot start in FIPS "
-              "mode",
-              fips_enabled_file));
+            if (config::node().fips_mode() == config::fips_mode_flag::enabled) {
+                throw std::runtime_error(fmt::format(
+                  "File '{}' does not exist.  Redpanda cannot start in FIPS "
+                  "mode",
+                  fips_enabled_file));
+            } else if (
+              config::node().fips_mode()
+              == config::fips_mode_flag::permissive) {
+                vlog(
+                  _log.warn,
+                  "File '{}' does not exist.  Redpanda will start in FIPS mode "
+                  "but this is not a support configuration",
+                  fips_enabled_file);
+            } else {
+                vassert(
+                  false,
+                  "Should not be performing environment check for FIPS when "
+                  "fips_mode flag is {}",
+                  config::node().fips_mode());
+            }
+        } else {
+            auto fd = ss::file_desc::open(fips_enabled_file.data(), O_RDONLY);
+            char buf[1];
+            fd.read(buf, 1);
+            if (buf[0] != '1') {
+                auto msg = fmt::format(
+                  "File '{}' not reporting '1'.  Redpanda cannot start in FIPS "
+                  "mode",
+                  fips_enabled_file);
+                if (
+                  config::node().fips_mode()
+                  == config::fips_mode_flag::enabled) {
+                    throw std::runtime_error(msg);
+                } else if (
+                  config::node().fips_mode()
+                  == config::fips_mode_flag::permissive) {
+                    vlog(_log.warn, "{}", msg);
+                } else {
+                    vassert(
+                      false,
+                      "Should not be performing environment check for FIPS "
+                      "when fips_mode flag is {}",
+                      config::node().fips_mode());
+                }
+            }
         }
         syschecks::systemd_message("Starting Redpanda in FIPS mode").get();
     }
@@ -1457,10 +1505,6 @@ void application::wire_up_redpanda_services(
           .get();
     }
 
-    syschecks::systemd_message("Creating tm_stm_cache_manager").get();
-
-    construct_service(tm_stm_cache_manager).get();
-
     syschecks::systemd_message("Initializing producer state manager").get();
     construct_service(
       producer_manager,
@@ -1670,7 +1714,7 @@ void application::wire_up_redpanda_services(
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota managers").get();
-    construct_service(quota_mgr).get();
+    construct_service(quota_mgr, std::ref(controller->get_quota_store())).get();
     construct_service(snc_quota_mgr, std::ref(snc_node_quota)).get();
 
     syschecks::systemd_message("Creating auditing subsystem").get();
@@ -1711,6 +1755,10 @@ void application::wire_up_redpanda_services(
           ss::sharded_parameter([] {
               return config::shard_local_cfg()
                 .cloud_storage_cache_max_objects.bind();
+          }),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .cloud_storage_cache_trim_walk_concurrency.bind();
           }))
           .get();
 
@@ -1920,12 +1968,11 @@ void application::wire_up_redpanda_services(
       std::ref(metadata_cache),
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
-      controller.get(),
+      node_id,
       std::ref(id_allocator_frontend),
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager),
       std::ref(tx_topic_manager),
       ss::sharded_parameter([] {
           return config::shard_local_cfg()
@@ -2070,6 +2117,8 @@ void application::wire_up_redpanda_services(
         std::ref(controller->get_topics_frontend()),
         std::ref(controller->get_config_frontend()),
         std::ref(controller->get_feature_table()),
+        std::ref(controller->get_quota_frontend()),
+        std::ref(controller->get_quota_store()),
         std::ref(quota_mgr),
         std::ref(snc_quota_mgr),
         std::ref(group_router),
@@ -2127,18 +2176,32 @@ void application::trigger_abort_source() {
 void application::wire_up_and_start_crypto_services() {
     construct_single_service(thread_worker);
     thread_worker->start({.name = "worker"}).get();
+    auto fips_mode_flag = config::node().fips_mode();
     // config file and module path are not necessary when not
     // running in FIPS mode
     construct_service(
       ossl_context_service,
       std::ref(*thread_worker),
-      ss::sstring{config::node_config().openssl_config_file().value_or("")},
-      ss::sstring{
-        config::node_config().openssl_module_directory().value_or("")},
-      config::node_config().fips_mode() ? crypto::is_fips_mode::yes
-                                        : crypto::is_fips_mode::no)
+      ss::sstring{config::node().openssl_config_file().value_or("")},
+      ss::sstring{config::node().openssl_module_directory().value_or("")},
+      config::fips_mode_enabled(fips_mode_flag) ? crypto::is_fips_mode::yes
+                                                : crypto::is_fips_mode::no)
       .get();
     ossl_context_service.invoke_on_all(&crypto::ossl_context_service::start)
+      .get();
+    ossl_context_service.map([](auto& s) { return s.fips_mode(); })
+      .then([fips_mode_flag](auto fips_mode_vals) {
+          auto expected = config::fips_mode_enabled(fips_mode_flag)
+                            ? crypto::is_fips_mode::yes
+                            : crypto::is_fips_mode::no;
+          for (auto fips_mode : fips_mode_vals) {
+              vassert(
+                fips_mode == expected,
+                "Mismatch in FIPS mode: {} != {}",
+                fips_mode,
+                expected);
+          }
+      })
       .get();
 }
 
@@ -2506,6 +2569,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             *controller));
         _migrators.push_back(
           std::make_unique<features::migrators::rbac_migrator>(*controller));
+        _migrators.push_back(
+          std::make_unique<features::migrators::shard_placement_migrator>(
+            *controller));
     }
 
     if (cd.is_cluster_founder().get()) {
@@ -2596,8 +2662,7 @@ void application::start_runtime_services(
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager
       .invoke_on_all([this](cluster::partition_manager& pm) {
-          pm.register_factory<cluster::tm_stm_factory>(
-            tm_stm_cache_manager, feature_table);
+          pm.register_factory<cluster::tm_stm_factory>(feature_table);
           pm.register_factory<cluster::id_allocator_stm_factory>();
           pm.register_factory<transform::transform_offsets_stm_factory>(
             controller->get_topics_state());
@@ -2613,7 +2678,9 @@ void application::start_runtime_services(
           pm.register_factory<cluster::archival_metadata_stm_factory>(
             config::shard_local_cfg().cloud_storage_enabled(),
             cloud_storage_api,
-            feature_table);
+            feature_table,
+            controller->get_topics_state());
+          pm.register_factory<kafka::group_tx_tracker_stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
@@ -2734,7 +2801,8 @@ void application::start_runtime_services(
             std::ref(controller->get_health_monitor()),
             std::ref(_connection_cache),
             std::ref(controller->get_partition_manager()),
-            std::ref(node_status_backend)));
+            std::ref(node_status_backend),
+            std::ref(controller->get_quota_frontend())));
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(
               sched_groups.cluster_sg(),
@@ -2791,6 +2859,13 @@ void application::start_runtime_services(
                   std::ref(controller->get_partition_leaders()),
                   config::node().node_id().value()));
           }
+          runtime_services.push_back(
+            std::make_unique<cluster::data_migrations::service_handler>(
+              sched_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(controller->get_data_migration_frontend()),
+              std::ref(controller->get_data_migration_irpc_frontend())));
+
           s.add_services(std::move(runtime_services));
 
           // Done! Disallow unknown method errors.

@@ -110,7 +110,7 @@ class RpkClusterTest(RedpandaTest):
         assert f'{root_name}/redpanda.log' in files
 
         # At least the first controller log is being saved:
-        assert f'{root_name}/controller/0-1-v1.log' in files
+        assert f'{root_name}/controller-logs/redpanda/controller/0_0/0-1-v1.log' in files
 
         # Cluster admin API calls:
         assert f'{root_name}/admin/brokers.json' in files

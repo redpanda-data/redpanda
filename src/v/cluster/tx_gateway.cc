@@ -17,6 +17,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "tx_protocol_types.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
@@ -35,9 +36,8 @@ tx_gateway::tx_gateway(
   , _rm_partition_frontend(rm_partition_frontend) {}
 
 ss::future<fetch_tx_reply>
-tx_gateway::fetch_tx(fetch_tx_request request, rpc::streaming_context&) {
-    return _tx_gateway_frontend.local().fetch_tx_locally(
-      request.tx_id, request.term, request.tm);
+tx_gateway::fetch_tx(fetch_tx_request, rpc::streaming_context&) {
+    co_return fetch_tx_reply{};
 }
 
 ss::future<try_abort_reply>
@@ -51,7 +51,7 @@ tx_gateway::init_tm_tx(init_tm_tx_request request, rpc::streaming_context&) {
       request.tx_id,
       request.transaction_timeout_ms,
       request.timeout,
-      model::unknown_pid);
+      std::nullopt);
 }
 
 ss::future<begin_tx_reply>

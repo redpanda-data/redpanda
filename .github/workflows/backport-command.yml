@@ -25,11 +25,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: get secrets from aws sm
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
 
       - name: Get type of backport (issue or PR)
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
           CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
         id: get_backport_type
         run: $SCRIPT_DIR/get_backport_type.sh
@@ -39,7 +53,7 @@ jobs:
         uses: peter-evans/create-or-update-comment@v1
         if: failure()
         with:
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
           reaction-type: "-1"
@@ -48,7 +62,7 @@ jobs:
         if: failure()
         env:
           COMMENTED_ON: ${{ steps.get_backport_type.outputs.commented_on }}
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
         run: $SCRIPT_DIR/post_error.sh
         shell: bash
 
@@ -62,11 +76,25 @@ jobs:
       BACKPORT_BRANCH: ${{ needs.backport-type.outputs.backport_branch }}
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: get secrets from aws sm
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
 
       - name: Get user
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
         id: user
         run: |
           username=$(gh api user --jq .login)
@@ -82,7 +110,7 @@ jobs:
 
       - name: Discover and create milestone
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
           TARGET_MILESTONE: ${{ needs.backport-type.outputs.target_milestone }}
         id: create_milestone
         run: $SCRIPT_DIR/create_milestone.sh
@@ -91,7 +119,7 @@ jobs:
       - name: Create issue
         if: needs.backport-type.outputs.commented_on == 'issue'
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
           TARGET_MILESTONE: ${{ steps.create_milestone.outputs.milestone }}
           ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
           ORIG_LABELS: ${{ toJson(github.event.client_payload.github.payload.issue.labels) }}
@@ -104,23 +132,23 @@ jobs:
         if: needs.backport-type.outputs.commented_on == 'pr'
         env:
           BACKPORT_PR_NUMBER: ${{ github.event.client_payload.pull_request.number }}
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
         id: backport_commits
         run: |
           backport_commits=$(gh api "repos/$TARGET_FULL_REPO/pulls/$BACKPORT_PR_NUMBER/commits" --jq .[].sha | paste -s -d ' ' -)
           echo "backport_commits=$backport_commits" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         if: needs.backport-type.outputs.commented_on == 'pr'
         with:
           repository: ${{ steps.user.outputs.username }}/${{ steps.user.outputs.repo }}
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           path: ./fork
 
       - name: Backport commits and get details
         if: needs.backport-type.outputs.commented_on == 'pr'
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
           ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
           BACKPORT_COMMITS: ${{ steps.backport_commits.outputs.backport_commits }}
           IS_MERGED: ${{ github.event.client_payload.pull_request.merged }}
@@ -135,7 +163,7 @@ jobs:
       - name: Create pull request
         if: needs.backport-type.outputs.commented_on == 'pr'
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
           TARGET_MILESTONE: ${{ steps.create_milestone.outputs.milestone }}
           ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
           AUTHOR: ${{ github.event.client_payload.pull_request.user.login }}
@@ -151,7 +179,7 @@ jobs:
       - name: Add reaction
         uses: peter-evans/create-or-update-comment@v1
         with:
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
           reaction-type: hooray
@@ -160,7 +188,7 @@ jobs:
         uses: peter-evans/create-or-update-comment@v1
         if: failure()
         with:
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
           reaction-type: "-1"
@@ -169,14 +197,14 @@ jobs:
         if: failure()
         env:
           COMMENTED_ON: ${{ needs.backport-type.outputs.commented_on }}
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
         run: $SCRIPT_DIR/post_error.sh
         shell: bash
 
       - name: Create Issue On Error
         if: failure()
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
           TARGET_MILESTONE: ${{ steps.create_milestone.outputs.milestone }}
           ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
           ORIG_LABELS: ${{ toJson(github.event.client_payload.github.payload.issue.labels) }}

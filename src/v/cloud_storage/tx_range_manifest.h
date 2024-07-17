@@ -49,7 +49,7 @@ public:
     ss::future<serialized_data_stream> serialize() const override;
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
+    remote_manifest_path get_manifest_path() const;
 
     /// Serialize manifest object
     ///
@@ -63,6 +63,9 @@ public:
     fragmented_vector<model::tx_range>&& get_tx_range() && {
         return std::move(_ranges);
     }
+
+    /// Return approximate size of the serialized manifest
+    size_t estimate_serialized_size() const;
 
 private:
     void do_update(const rapidjson::Document& is);

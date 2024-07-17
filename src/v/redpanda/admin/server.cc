@@ -15,6 +15,7 @@
 #include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cluster/cluster_recovery_manager.h"
 #include "cluster/cluster_recovery_table.h"
@@ -405,6 +406,7 @@ void admin_server::configure_admin_routes() {
     register_cluster_routes();
     register_shadow_indexing_routes();
     register_wasm_transform_routes();
+    register_data_migration_routes();
     /**
      * Special REST apis active only in recovery mode
      */
@@ -450,7 +452,7 @@ get_integer_query_param(const ss::http::request& req, std::string_view name) {
 
     const ss::sstring& str_param = req.query_parameters.at(key);
     try {
-        return std::stoi(str_param);
+        return std::stoull(str_param);
     } catch (const std::invalid_argument&) {
         throw ss::httpd::bad_request_exception(
           fmt::format("Parameter {} must be an integer", name));
@@ -961,7 +963,8 @@ get_brokers(cluster::controller* const controller) {
               b.maintenance_status = fill_maintenance_status(nm.state);
               b.internal_rpc_address = nm.broker.rpc_address().host();
               b.internal_rpc_port = nm.broker.rpc_address().port();
-              b.in_fips_mode = nm.broker.properties().in_fips_mode;
+              b.in_fips_mode = fmt::format(
+                "{}", nm.broker.properties().in_fips_mode);
 
               broker_map[id] = b;
           }
@@ -1120,14 +1123,17 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
         }
-    } else if (ec.category() == cluster::tx_error_category()) {
-        switch (cluster::tx_errc(ec.value())) {
-        case cluster::tx_errc::leader_not_found:
+    } else if (ec.category() == cluster::tx::error_category()) {
+        switch (cluster::tx::errc(ec.value())) {
+        case cluster::tx::errc::leader_not_found:
             throw co_await redirect_to_leader(req, ntp);
-        case cluster::tx_errc::pid_not_found:
+        case cluster::tx::errc::pid_not_found:
             throw ss::httpd::not_found_exception(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
-        case cluster::tx_errc::partition_not_found: {
+        case cluster::tx::errc::tx_id_not_found:
+            throw ss::httpd::not_found_exception(fmt_with_ctx(
+              fmt::format, "Unable to find requested transactional id"));
+        case cluster::tx::errc::partition_not_found: {
             ss::sstring error_msg;
             if (
               ntp.tp.topic == model::tx_manager_topic
@@ -1139,13 +1145,20 @@ ss::future<> admin_server::throw_on_error(
             }
             throw ss::httpd::bad_request_exception(error_msg);
         }
-        case cluster::tx_errc::not_coordinator:
+        case cluster::tx::errc::not_coordinator:
             throw ss::httpd::base_exception(
               fmt::format(
                 "Node not a coordinator or coordinator leader is not "
                 "stabilized yet: {}",
                 ec.message()),
               ss::http::reply::status_type::service_unavailable);
+        case cluster::tx::errc::stale:
+            throw ss::httpd::base_exception(
+              fmt::format(
+                "Stale request, check the transaction state before retrying: "
+                "{}",
+                ec.message()),
+              ss::http::reply::status_type::unprocessable_entity);
 
         default:
             throw ss::httpd::server_error_exception(
@@ -2862,6 +2875,8 @@ self_test_result_to_json(const cluster::self_test_result& str) {
     r.name = str.name;
     r.info = str.info;
     r.test_type = str.test_type;
+    r.start_time = str.start_time;
+    r.end_time = str.end_time;
     r.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                    str.duration)
                    .count();
@@ -3272,12 +3287,12 @@ fragmented_vector<cluster_partition_info> topic2cluster_partitions(
             ret.push_back(cluster_partition_info{
               .ns_tp = shared_ns_tp,
               .id = id,
-              .replicas = as_it->replicas,
+              .replicas = as_it->second.replicas,
               .disabled = true,
             });
         }
     } else {
-        for (const auto& p_as : assignments) {
+        for (const auto& [_, p_as] : assignments) {
             bool disabled = disabled_set && disabled_set->is_disabled(p_as.id);
 
             if (disabled_filter && *disabled_filter != disabled) {
@@ -3962,6 +3977,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
 
 ss::httpd::shadow_indexing_json::cloud_storage_partition_anomalies
 map_anomalies_to_json(
+  const cloud_storage::remote_path_provider& path_provider,
   const model::ntp& ntp,
   const model::initial_revision_id& initial_rev,
   const cloud_storage::anomalies& detected) {
@@ -3994,24 +4010,21 @@ map_anomalies_to_json(
         json.missing_partition_manifest = true;
     }
 
+    cloud_storage::partition_manifest tmp{ntp, initial_rev};
     if (detected.missing_spillover_manifests.size() > 0) {
         const auto& missing_spills = detected.missing_spillover_manifests;
         for (auto iter = missing_spills.begin(); iter != missing_spills.end();
              ++iter) {
             json.missing_spillover_manifests.push(
-              cloud_storage::generate_spillover_manifest_path(
-                ntp, initial_rev, *iter)()
-                .string());
+              path_provider.spillover_manifest_path(tmp, *iter));
         }
     }
 
     if (detected.missing_segments.size() > 0) {
-        cloud_storage::partition_manifest tmp{ntp, initial_rev};
         const auto& missing_segs = detected.missing_segments;
         for (auto iter = missing_segs.begin(); iter != missing_segs.end();
              ++iter) {
-            json.missing_segments.push(
-              tmp.generate_segment_path(*iter)().string());
+            json.missing_segments.push(path_provider.segment_path(tmp, *iter));
         }
     }
 
@@ -4106,7 +4119,7 @@ admin_server::delete_cloud_storage_lifecycle(
     model::initial_revision_id revision;
     try {
         revision = model::initial_revision_id(
-          std::stoi(req->get_path_param("revision")));
+          std::stoll(req->get_path_param("revision")));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
           "Revision id must be an integer: {}",
@@ -4126,13 +4139,13 @@ admin_server::delete_cloud_storage_lifecycle(
 ss::future<ss::json::json_return_type>
 admin_server::post_cloud_storage_cache_trim(
   std::unique_ptr<ss::http::request> req) {
-    auto size_limit = get_integer_query_param(*req, "objects");
-    auto bytes_limit = static_cast<std::optional<size_t>>(
+    auto max_objects = get_integer_query_param(*req, "objects");
+    auto max_bytes = static_cast<std::optional<size_t>>(
       get_integer_query_param(*req, "bytes"));
 
     co_await _cloud_storage_cache.invoke_on(
-      ss::shard_id{0}, [size_limit, bytes_limit](auto& c) {
-          return c.trim_manually(size_limit, bytes_limit);
+      ss::shard_id{0}, [max_objects, max_bytes](auto& c) {
+          return c.trim_manually(max_bytes, max_objects);
       });
 
     co_return ss::json::json_return_type(ss::json::json_void());
@@ -4211,11 +4224,12 @@ admin_server::get_cloud_storage_anomalies(
 
     const auto& topic_table = _controller->get_topics_state().local();
     const auto initial_rev = topic_table.get_initial_revision(ntp);
-    if (!initial_rev) {
+    const auto& tp = topic_table.get_topic_cfg(
+      model::topic_namespace{ntp.ns, ntp.tp.topic});
+    if (!initial_rev.has_value() || !tp.has_value()) {
         throw ss::httpd::not_found_exception(
           fmt::format("topic {} not found", ntp.tp));
     }
-
     const auto shard = _shard_table.local().shard_for(ntp);
     if (!shard) {
         throw ss::httpd::not_found_exception(fmt::format(
@@ -4224,6 +4238,8 @@ admin_server::get_cloud_storage_anomalies(
           ntp));
     }
 
+    cloud_storage::remote_path_provider path_provider(
+      tp->properties.remote_label);
     auto status = co_await _partition_manager.invoke_on(
       *shard,
       [&ntp](const auto& pm) -> std::optional<cloud_storage::anomalies> {
@@ -4242,7 +4258,7 @@ admin_server::get_cloud_storage_anomalies(
           "Cloud partition {} could not be found on shard {}.", ntp, *shard));
     }
 
-    co_return map_anomalies_to_json(ntp, *initial_rev, *status);
+    co_return map_anomalies_to_json(path_provider, ntp, *initial_rev, *status);
 }
 
 ss::future<std::unique_ptr<ss::http::reply>>

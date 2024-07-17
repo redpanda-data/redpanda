@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -155,12 +156,19 @@ func makeReportTable(report adminapi.SelfTestNodeReport) [][]string {
 		table = append(table, []string{"TYPE", sr.TestType})
 		table = append(table, []string{"TEST ID", sr.TestID})
 		table = append(table, []string{"TIMEOUTS", fmt.Sprintf("%d", sr.Timeouts)})
-		table = append(table, []string{"DURATION", fmt.Sprintf("%dms", sr.Duration)})
+		table = append(table, []string{"START TIME", time.Unix(sr.StartTime, 0).UTC().Format(time.UnixDate)})
+		table = append(table, []string{"END TIME", time.Unix(sr.EndTime, 0).UTC().Format(time.UnixDate)})
+		table = append(table, []string{"AVG DURATION", fmt.Sprintf("%dms", sr.Duration)})
 		if sr.Warning != nil {
 			table = append(table, []string{"WARNING", *sr.Warning})
 		}
 		if sr.Error != nil {
 			table = append(table, []string{"ERROR", *sr.Error})
+			table = append(table, []string{""})
+			continue
+		}
+		if sr.TestType == adminapi.CloudcheckTagIdentifier {
+			// Cloudcheck does not have any IOPS, THROUGHPUT, or LATENCY results.
 			table = append(table, []string{""})
 			continue
 		}

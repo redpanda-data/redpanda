@@ -18,9 +18,12 @@ v_cc_library(
     cache_probe.cc
     download_exception.cc
     partition_manifest.cc
+    partition_manifest_downloader.cc
+    partition_path_utils.cc
     recursive_directory_walker.cc
     remote.cc
     remote_file.cc
+    remote_path_provider.cc
     offset_translation_layer.cc
     remote_probe.cc
     read_path_probes.cc
@@ -38,16 +41,24 @@ v_cc_library(
     segment_chunk.cc
     segment_chunk_api.cc
     segment_chunk_data_source.cc
+    segment_path_utils.cc
+    topic_manifest.cc
+    topic_manifest_downloader.cc
+    topic_path_utils.cc
     async_manifest_view.cc
     materialized_manifest_cache.cc
     anomalies_detector.cc
     inventory/inv_ops.cc
     inventory/aws_ops.cc
     inventory/types.cc
+    inventory/report_parser.cc
+    inventory/inv_consumer.cc
+    inventory/ntp_hashes.cc
   DEPS
     Seastar::seastar
     v::bytes
     v::http
+    v::cluster_topic_properties
     v::cloud_storage_clients
     v::json
     v::model

@@ -16,6 +16,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/members_table.h"
@@ -47,9 +48,13 @@
 
 namespace archival {
 
+namespace {
+cloud_storage::remote_path_provider path_provider(std::nullopt);
+} // namespace
+
 using namespace std::chrono_literals;
 
-inline ss::logger fixt_log("fixture"); // NOLINT
+inline ss::logger fixt_log("archiver_fixture"); // NOLINT
 
 archiver_fixture::archiver_fixture()
   : http_imposter_fixture(4441)
@@ -182,7 +187,7 @@ archiver_fixture::get_configurations() {
       ss::sstring(httpd_host_name), httpd_port_number());
     cloud_storage_clients::s3_configuration s3conf;
     s3conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
-    s3conf.access_key = cloud_roles::public_key_str("acess-key");
+    s3conf.access_key = cloud_roles::public_key_str("access-key");
     s3conf.secret_key = cloud_roles::private_key_str("secret-key");
     s3conf.region = cloud_roles::aws_region_name("us-east-1");
     s3conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
@@ -194,16 +199,15 @@ archiver_fixture::get_configurations() {
     s3conf.server_addr = server_addr;
 
     archival::configuration aconf{
+      .cloud_storage_initial_backoff = config::mock_binding(100ms),
+      .segment_upload_timeout = config::mock_binding(1000ms),
       .manifest_upload_timeout = config::mock_binding(1000ms),
-    };
+      .garbage_collect_timeout = config::mock_binding(1000ms),
+      .upload_loop_initial_backoff = config::mock_binding(100ms),
+      .upload_loop_max_backoff = config::mock_binding(5000ms)};
     aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
     aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
     aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
-    aconf.cloud_storage_initial_backoff = 100ms;
-    aconf.segment_upload_timeout = 1s;
-    aconf.garbage_collect_timeout = 1s;
-    aconf.upload_loop_initial_backoff = 100ms;
-    aconf.upload_loop_max_backoff = 5s;
     aconf.time_limit = std::nullopt;
 
     cloud_storage::configuration cconf;
@@ -510,7 +514,7 @@ archival::remote_segment_path get_segment_path(
     BOOST_REQUIRE(meta);
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
-    return manifest.generate_segment_path(*meta);
+    return manifest.generate_segment_path(*meta, path_provider);
 }
 
 archival::remote_segment_path get_segment_index_path(

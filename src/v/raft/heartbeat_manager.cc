@@ -10,12 +10,13 @@
 #include "raft/heartbeat_manager.h"
 
 #include "base/likely.h"
+#include "base/outcome_future_utils.h"
 #include "base/vlog.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "follower_stats.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
@@ -24,6 +25,7 @@
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
+#include "ssx/async_algorithm.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>
@@ -50,19 +52,19 @@ heartbeat_manager::follower_request_meta::follower_request_meta(
   , seq(seq)
   , dirty_offset(dirty_offset)
   , follower_vnode(target)
-  , hb_guard(c->suppress_heartbeats(follower_vnode)) {}
+  , append_guard(c->track_append_inflight(follower_vnode)) {}
 
-heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
-    absl::node_hash_map<
-      model::node_id,
-      ss::chunked_fifo<std::pair<
-        heartbeat_metadata,
-        heartbeat_manager::follower_request_meta>>>
+ss::future<heartbeat_manager::heartbeat_requests>
+heartbeat_manager::requests_for_range() {
+    using hb_pair
+      = std::pair<group_heartbeat, heartbeat_manager::follower_request_meta>;
+    absl::node_hash_map<model::node_id, ss::chunked_fifo<hb_pair>>
       pending_beats;
 
     if (_consensus_groups.empty()) {
-        return {};
+        co_return heartbeat_requests{};
     }
+    ssx::async_counter counter;
 
     // Set of follower nodes whose heartbeat_failed status indicates
     // that we should tear down their TCP connection before next heartbeat
@@ -74,128 +76,79 @@ heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
             continue;
         }
 
-        for (auto& [id, follower_metadata] : r->_fstats) {
-            if (follower_metadata.are_heartbeats_suppressed()) {
-                vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
-                continue;
-            }
-            if (
-              follower_metadata.last_sent_append_entries_req_timestamp
-              > last_heartbeat) {
-                vlog(r->_ctxlog.trace, "[{}] heartbeat skipped", id);
-                continue;
-            }
-            auto const seq_id = follower_metadata.next_follower_sequence();
-            auto hb_meta = r->meta();
-            follower_metadata.last_sent_protocol_meta = hb_meta;
-            pending_beats[id.id()].emplace_back(
-              heartbeat_metadata{hb_meta, r->self(), id},
-              heartbeat_manager::follower_request_meta(
-                r, seq_id, hb_meta.prev_log_index, id));
-            if (r->should_reconnect_follower(follower_metadata)) {
-                reconnect_nodes.insert(id.id());
-            }
-        }
-    }
+        co_await ssx::async_for_each_counter(
+          counter,
+          r->_fstats.begin(),
+          r->_fstats.end(),
+          [this, r, last_heartbeat, &pending_beats, &reconnect_nodes](
+            follower_stats::value_type& p) {
+              auto& [id, follower_metadata] = p;
+              if (
+                follower_metadata.last_received_reply_timestamp
+                > last_heartbeat) {
+                  vlog(r->_ctxlog.trace, "[{}] heartbeat skipped", id);
+                  return;
+              }
 
+              if (unlikely(
+                    !_enable_lw_heartbeat()
+                    && follower_metadata.has_inflight_appends())) {
+                  // Revert back to old behavior of heartbeat suppression during
+                  // inflight appends as we cannot make use of lw heartbeats
+                  // optitmization. This is unlikely in practice  because lw
+                  // heartbeats are enabled by default in the binary.
+                  vlog(
+                    r->_ctxlog.trace,
+                    "[{}] heartbeat suppressed, lw hearbeats are disabled",
+                    id);
+                  return;
+              }
+
+              auto [it, _] = pending_beats.try_emplace(id.id());
+              group_heartbeat group_beat{
+                .group = r->group(),
+              };
+              const auto raft_metadata = r->meta();
+              if (
+                _enable_lw_heartbeat()
+                && !needs_full_heartbeat(
+                  follower_metadata, raft_metadata, r->flushed_offset())) {
+                  r->_probe->lw_heartbeat();
+                  // we do not fill the dirty offset and follower request
+                  // sequence here as those fields are not used to process
+                  // lightweight heartbeats
+                  it->second.emplace_back(
+                    group_beat,
+                    heartbeat_manager::follower_request_meta(
+                      r, raft::follower_req_seq{}, model::offset{}, id));
+                  return;
+              }
+              vlog(r->_ctxlog.trace, "[{}] full heartbeat", id);
+              r->_probe->full_heartbeat();
+              auto const seq_id = follower_metadata.next_follower_sequence();
+
+              follower_metadata.last_sent_protocol_meta = raft_metadata;
+              group_beat.data = heartbeat_request_data{
+                .source_revision = r->_self.revision(),
+                .target_revision = id.revision(),
+                .commit_index = raft_metadata.commit_index,
+                .term = raft_metadata.term,
+                .prev_log_index = raft_metadata.prev_log_index,
+                .prev_log_term = raft_metadata.prev_log_term,
+                .last_visible_index = raft_metadata.last_visible_index,
+              };
+              it->second.emplace_back(
+                group_beat,
+                heartbeat_manager::follower_request_meta(
+                  r, seq_id, raft_metadata.prev_log_index, id));
+
+              if (r->should_reconnect_follower(follower_metadata)) {
+                  reconnect_nodes.insert(id.id());
+              }
+          });
+    }
+    ssx::async_counter counter_collect;
     std::vector<heartbeat_manager::node_heartbeat> reqs;
-    reqs.reserve(pending_beats.size());
-    for (auto& p : pending_beats) {
-        std::vector<heartbeat_metadata> requests;
-        absl::node_hash_map<
-          raft::group_id,
-          heartbeat_manager::follower_request_meta>
-          meta_map;
-        requests.reserve(p.second.size());
-        for (auto& [hb, follower_meta] : p.second) {
-            meta_map.emplace(hb.meta.group, std::move(follower_meta));
-            requests.push_back(std::move(hb));
-        }
-        reqs.emplace_back(
-          p.first, heartbeat_request{std::move(requests)}, std::move(meta_map));
-    }
-
-    return heartbeat_requests{
-      .requests{std::move(reqs)}, .reconnect_nodes{reconnect_nodes}};
-}
-heartbeat_manager::heartbeat_requests_v2
-heartbeat_manager::requests_for_range_v2() {
-    absl::node_hash_map<
-      model::node_id,
-      ss::chunked_fifo<
-        std::pair<group_heartbeat, heartbeat_manager::follower_request_meta>>>
-      pending_beats;
-
-    if (_consensus_groups.empty()) {
-        return {};
-    }
-
-    // Set of follower nodes whose heartbeat_failed status indicates
-    // that we should tear down their TCP connection before next heartbeat
-    absl::flat_hash_set<model::node_id> reconnect_nodes;
-
-    const auto last_heartbeat = clock_type::now() - _heartbeat_interval();
-    for (auto& r : _consensus_groups) {
-        if (!r->is_elected_leader()) {
-            continue;
-        }
-
-        for (auto& [id, follower_metadata] : r->_fstats) {
-            if (follower_metadata.are_heartbeats_suppressed()) {
-                vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
-                continue;
-            }
-            if (
-              follower_metadata.last_sent_append_entries_req_timestamp
-              > last_heartbeat) {
-                vlog(r->_ctxlog.trace, "[{}] heartbeat skipped", id);
-                continue;
-            }
-            auto [it, _] = pending_beats.try_emplace(id.id());
-            group_heartbeat group_beat{
-              .group = r->group(),
-            };
-            const auto raft_metadata = r->meta();
-            if (
-              _enable_lw_heartbeat()
-              && !needs_full_heartbeat(
-                follower_metadata, raft_metadata, r->flushed_offset())) {
-                r->_probe->lw_heartbeat();
-                // we do not fill the dirty offset and follower request sequence
-                // here as those fields are not used to process lightweight
-                // heartbeats
-                it->second.emplace_back(
-                  group_beat,
-                  heartbeat_manager::follower_request_meta(
-                    r, raft::follower_req_seq{}, model::offset{}, id));
-                continue;
-            }
-            vlog(r->_ctxlog.trace, "[{}] full heartbeat", id);
-            r->_probe->full_heartbeat();
-            auto const seq_id = follower_metadata.next_follower_sequence();
-
-            follower_metadata.last_sent_protocol_meta = raft_metadata;
-            group_beat.data = heartbeat_request_data{
-              .source_revision = r->_self.revision(),
-              .target_revision = id.revision(),
-              .commit_index = raft_metadata.commit_index,
-              .term = raft_metadata.term,
-              .prev_log_index = raft_metadata.prev_log_index,
-              .prev_log_term = raft_metadata.prev_log_term,
-              .last_visible_index = raft_metadata.last_visible_index,
-            };
-            it->second.emplace_back(
-              group_beat,
-              heartbeat_manager::follower_request_meta(
-                r, seq_id, raft_metadata.prev_log_index, id));
-
-            if (r->should_reconnect_follower(follower_metadata)) {
-                reconnect_nodes.insert(id.id());
-            }
-        }
-    }
-
-    std::vector<heartbeat_manager::node_heartbeat_v2> reqs;
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
         ss::chunked_fifo<group_heartbeat> requests;
@@ -204,22 +157,34 @@ heartbeat_manager::requests_for_range_v2() {
           heartbeat_manager::follower_request_meta>
           meta_map;
         requests.reserve(p.second.size());
+        meta_map.reserve(p.second.size());
         heartbeat_request_v2 req(_self, p.first);
-        for (auto& [hb, follower_meta] : p.second) {
-            meta_map.emplace(hb.group, std::move(follower_meta));
-            req.add(hb);
-        }
+        co_await ssx::async_for_each_counter(
+          counter_collect,
+          p.second.begin(),
+          p.second.end(),
+          [&meta_map, &req](hb_pair& inner) {
+              auto& [hb, follower_meta] = inner;
+              meta_map.emplace(hb.group, std::move(follower_meta));
+              req.add(hb);
+          });
+
         reqs.emplace_back(p.first, std::move(req), std::move(meta_map));
     }
 
-    return heartbeat_requests_v2{
-      .requests{std::move(reqs)}, .reconnect_nodes{reconnect_nodes}};
+    co_return heartbeat_requests{
+      .requests{std::move(reqs)}, .reconnect_nodes{std::move(reconnect_nodes)}};
 }
 
 bool heartbeat_manager::needs_full_heartbeat(
   const follower_index_metadata& f_meta,
   const protocol_metadata& p_meta,
   model::offset leader_flushed_offset) const {
+    if (f_meta.has_inflight_appends()) {
+        // in flight append will result in a full blown response
+        // until then a full heartbeat is not needed.
+        return false;
+    }
     /**
      * This condition makes sending lw_heartbeats not vulnerable for
      * requests/replies reordering.
@@ -269,33 +234,9 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
           return ss::when_all_succeed(futures.begin(), futures.end());
       });
 }
-ss::future<>
-heartbeat_manager::send_heartbeats(std::vector<node_heartbeat_v2> reqs) {
-    return ss::do_with(
-      std::move(reqs), [this](std::vector<node_heartbeat_v2>& reqs) mutable {
-          std::vector<ss::future<>> futures;
-          futures.reserve(reqs.size());
-          for (auto& r : reqs) {
-              futures.push_back(do_heartbeat(std::move(r)));
-          }
-          return ss::when_all_succeed(futures.begin(), futures.end());
-      });
-}
 
-ss::future<> heartbeat_manager::do_dispatch_heartbeats_v2() {
-    auto reqs = requests_for_range_v2();
-
-    for (const auto& node_id : reqs.reconnect_nodes) {
-        if (co_await _client_protocol.ensure_disconnect(node_id)) {
-            vlog(
-              hbeatlog.info, "Closed unresponsive connection to {}", node_id);
-        };
-    }
-
-    co_await send_heartbeats(std::move(reqs.requests));
-}
 ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
-    auto reqs = requests_for_range();
+    auto reqs = co_await requests_for_range();
 
     for (const auto& node_id : reqs.reconnect_nodes) {
         if (co_await _client_protocol.ensure_disconnect(node_id)) {
@@ -306,54 +247,8 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
 
     co_await send_heartbeats(std::move(reqs.requests));
 }
-ss::future<> heartbeat_manager::do_dispatch_versioned() {
-    if (likely(_feature_table.is_active(
-          features::feature::lightweight_heartbeats))) {
-        return do_dispatch_heartbeats_v2();
-    }
 
-    return do_dispatch_heartbeats();
-}
-
-ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
-    auto gate = _bghbeats.hold();
-    vlog(
-      hbeatlog.trace,
-      "Dispatching hearbeats for {} groups to node: {}",
-      r.meta_map.size(),
-      r.target);
-
-    auto f = _client_protocol
-               .heartbeat(
-                 r.target,
-                 std::move(r.request),
-                 rpc::client_opts(
-                   rpc::timeout_spec::from_now(_heartbeat_timeout()),
-                   rpc::compression_type::zstd,
-                   512))
-               .then([node = r.target,
-                      groups = std::move(r.meta_map),
-                      gate = std::move(gate),
-                      this](result<heartbeat_reply> ret) mutable {
-                   // this will happen after RPC client will return and resume
-                   // sending heartbeats to follower
-                   process_reply(node, groups, std::move(ret));
-               });
-    // fail fast to make sure that not lagging nodes will be able to receive
-    // hearteats
-    return ss::with_timeout(next_heartbeat_timeout(), std::move(f))
-      .handle_exception_type([n = r.target](const ss::timed_out_error&) {
-          vlog(hbeatlog.trace, "Heartbeat timeout, node: {}", n);
-          // we just ignore this exception since it is the timeout so we do not
-          // have to update consensus instances with results
-      })
-      .handle_exception_type([](const ss::gate_closed_exception&) {})
-      .handle_exception([n = r.target](const std::exception_ptr& e) {
-          vlog(hbeatlog.trace, "Heartbeat exception, node: {} - {}", n, e);
-      });
-}
-
-ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat_v2 r) {
+ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat r) {
     auto gate = _bghbeats.hold();
     vlog(
       hbeatlog.trace,
@@ -689,7 +584,7 @@ void heartbeat_manager::process_reply(
 void heartbeat_manager::dispatch_heartbeats() {
     ssx::background = ssx::spawn_with_gate_then(_bghbeats, [this] {
                           return _lock.with([this] {
-                              return do_dispatch_versioned().finally([this] {
+                              return do_dispatch_heartbeats().finally([this] {
                                   if (!_bghbeats.is_closed()) {
                                       _heartbeat_timer.arm(
                                         next_heartbeat_timeout());

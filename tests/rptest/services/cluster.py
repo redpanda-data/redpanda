@@ -8,8 +8,9 @@
 # by the Apache License, Version 2.0
 
 import functools
+from re import Pattern
 import time
-from typing import Protocol
+from typing import Any, Protocol
 
 import psutil
 from ducktape.mark._mark import Mark
@@ -17,13 +18,14 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import RedpandaServiceBase, RedpandaServiceCloud
+from rptest.services.redpanda_types import LogAllowList
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 
-def cluster(log_allow_list=None,
-            check_allowed_error_logs=True,
-            check_for_storage_usage_inconsistencies=True,
-            **kwargs):
+def cluster(log_allow_list: LogAllowList | None = None,
+            check_allowed_error_logs: bool = True,
+            check_for_storage_usage_inconsistencies: bool = True,
+            **kwargs: Any):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
     redpanda-specific checks and defaults.
@@ -84,7 +86,7 @@ def cluster(log_allow_list=None,
             test_context: TestContext
 
         @functools.wraps(f)
-        def wrapped(self: HasRedpanda, *args, **kwargs):
+        def wrapped(self: HasRedpanda, *args: Any, **kwargs: Any):
             # This decorator will only work on test classes that have a RedpandaService,
             # such as RedpandaTest subclasses
             assert hasattr(self, 'redpanda')

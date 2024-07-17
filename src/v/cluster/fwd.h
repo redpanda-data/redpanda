@@ -25,8 +25,6 @@ class id_allocator_frontend;
 class rm_partition_frontend;
 class log_eviction_stm;
 class tx_coordinator_mapper;
-class tm_stm_cache;
-class tm_stm_cache_manager;
 class tx_gateway_frontend;
 class partition_leaders_table;
 class partition_allocator;
@@ -81,12 +79,22 @@ class shard_balancer;
 class id_allocator_stm;
 class tm_stm;
 class rm_stm;
+namespace data_migrations {
+class migrated_resources;
+class migration_frontend;
+class worker;
+class backend;
+class migrations_table;
+class frontend;
+class irpc_frontend;
+} // namespace data_migrations
 
 namespace tx {
 class producer_state_manager;
 class producer_state;
 class request;
 struct producer_state_snapshot;
+struct producer_partition_transaction_state;
 } // namespace tx
 
 namespace node {
@@ -107,6 +115,12 @@ class offsets_uploader;
 class producer_id_recovery_manager;
 class uploader;
 } // namespace cloud_metadata
+
+namespace client_quota {
+class frontend;
+class backend;
+class store;
+}; // namespace client_quota
 
 } // namespace cluster
 

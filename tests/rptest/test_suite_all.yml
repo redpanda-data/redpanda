@@ -10,3 +10,4 @@
 all:
     included:
         - tests/
+        - transactions/

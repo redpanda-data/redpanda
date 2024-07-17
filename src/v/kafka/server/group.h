@@ -13,8 +13,9 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_protocol_types.h"
 #include "cluster/tx_utils.h"
-#include "cluster/types.h"
+#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "kafka/group_probe.h"
@@ -106,9 +107,9 @@ using enable_group_metrics = ss::bool_class<struct enable_gr_metrics_tag>;
 std::ostream& operator<<(std::ostream&, group_state gs);
 
 ss::sstring group_state_to_kafka_name(group_state);
-cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
-cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
-cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
+cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx::errc);
+cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx::errc);
+cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx::errc);
 kafka::error_code map_store_offset_error_code(std::error_code);
 
 /// \brief A Kafka group.
@@ -149,10 +150,51 @@ public:
     using offset_commit_stages = stages<offset_commit_response>;
     using join_group_stages = stages<join_group_response>;
     using sync_group_stages = stages<sync_group_response>;
+    /**
+     * represents an offset that is to be stored as a part of transaction
+     */
+    struct pending_tx_offset {
+        group_tx::partition_offset offset_metadata;
+        model::offset log_offset;
+    };
+    /**
+     * In memory representation of active transaction. The transaction is added
+     * when a state machine executes begin transaction request. The transaction
+     * is removed when the state machine executes commit or abort transaction
+     * request. The transaction holds all pending offset commits.
+     */
+    struct ongoing_transaction {
+        ongoing_transaction(
+          model::tx_seq, model::partition_id, model::timeout_clock::duration);
 
-    struct tx_data {
         model::tx_seq tx_seq;
-        model::partition_id tm_partition;
+        model::partition_id coordinator_partition;
+
+        model::timeout_clock::duration timeout;
+        model::timeout_clock::time_point last_update;
+
+        bool is_expiration_requested{false};
+
+        model::timeout_clock::time_point deadline() const {
+            return last_update + timeout;
+        }
+
+        bool is_expired() const {
+            return is_expiration_requested || deadline() <= clock_type::now();
+        }
+
+        void update_last_update_time() {
+            last_update = model::timeout_clock::now();
+        }
+
+        chunked_hash_map<model::topic_partition, pending_tx_offset> offsets;
+    };
+
+    struct tx_producer {
+        explicit tx_producer(model::producer_epoch);
+
+        model::producer_epoch epoch;
+        std::unique_ptr<ongoing_transaction> transaction;
     };
 
     struct offset_metadata {
@@ -191,7 +233,7 @@ public:
         }
     };
 
-    struct prepared_tx {
+    struct ongoing_tx_offsets {
         model::producer_identity pid;
         model::tx_seq tx_seq;
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
@@ -591,48 +633,13 @@ public:
         }
     }
 
-    void insert_prepared(prepared_tx);
-
+    void
+    insert_ongoing_tx(model::producer_identity pid, ongoing_transaction tx);
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
-        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second <= epoch) {
-            fence_it->second = epoch;
-        }
-    }
-
-    void try_set_tx_data(
-      model::producer_identity id,
-      model::tx_seq txseq,
-      model::partition_id tm_partition) {
-        auto fence_it = _fence_pid_epoch.find(id.get_id());
-        if (fence_it == _fence_pid_epoch.end()) {
-            return;
-        }
-        if (fence_it->second != id.get_epoch()) {
-            return;
-        }
-        auto [ongoing_it, _] = _tx_data.try_emplace(
-          id.get_id(), tx_data{txseq, tm_partition});
-        if (ongoing_it->second.tx_seq <= txseq) {
-            ongoing_it->second.tx_seq = txseq;
-            ongoing_it->second.tm_partition = tm_partition;
-        }
-    }
-
-    void try_set_timeout(
-      model::producer_identity id,
-      model::timeout_clock::duration transaction_timeout_ms) {
-        auto fence_it = _fence_pid_epoch.find(id.get_id());
-        if (fence_it == _fence_pid_epoch.end()) {
-            return;
-        }
-        if (fence_it->second != id.get_epoch()) {
-            return;
-        }
-        auto [info_it, inserted] = _expiration_info.try_emplace(
-          id, expiration_info(transaction_timeout_ms));
-        if (inserted) {
-            try_arm(info_it->second.deadline());
+        auto [it, _] = _producers.try_emplace(id, epoch);
+        if (it->second.epoch < epoch) {
+            it->second.epoch = epoch;
+            it->second.transaction.reset();
         }
     }
 
@@ -692,6 +699,7 @@ public:
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
+    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
 
     friend std::ostream& operator<<(std::ostream&, const group&);
 
@@ -814,9 +822,6 @@ private:
     error_code
     validate_expected_group(const txn_offset_commit_request& r) const;
 
-    cluster::abort_origin
-    get_abort_origin(const model::producer_identity&, model::tx_seq) const;
-
     bool has_offsets() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
@@ -828,19 +833,9 @@ private:
         }
 
         if (std::any_of(
-              _volatile_txs.begin(),
-              _volatile_txs.end(),
-              [&tp](const auto& tp_info) {
-                  return tp_info.second.offsets.contains(tp);
-              })) {
-            return true;
-        }
-
-        if (std::any_of(
-              _prepared_txs.begin(),
-              _prepared_txs.end(),
-              [&tp](const auto& tp_info) {
-                  return tp_info.second.offsets.contains(tp);
+              _producers.begin(), _producers.end(), [&tp](const auto& p) {
+                  return p.second.transaction
+                         && p.second.transaction->offsets.contains(tp);
               })) {
             return true;
         }
@@ -874,7 +869,7 @@ private:
     void abort_old_txes();
     ss::future<> do_abort_old_txes();
     ss::future<> try_abort_old_tx(model::producer_identity);
-    ss::future<cluster::tx_errc> do_try_abort_old_tx(model::producer_identity);
+    ss::future<cluster::tx::errc> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 
@@ -889,13 +884,24 @@ private:
     std::vector<model::topic_partition>
     get_expired_offsets(std::chrono::seconds retention_period);
 
+    bool use_dedicated_batch_type_for_fence() const {
+        // Prior to this change group_tx_fence shared the fence record
+        // batch type with data partitions (tx_fence). This made compaction
+        // logic complicated particularly because different compaction rules
+        // applied for fence batch in groups and data paritions. With the new
+        // feature, group fence has a separate dedicated batch type so it is
+        // easy to diambiguate both fence types.
+        return _feature_table.local().is_active(
+          features::feature::group_tx_fence_dedicated_batch_type);
+    }
+
     kafka::group_id _id;
     group_state _state;
     std::optional<model::timestamp> _state_timestamp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
-    absl::node_hash_map<group_instance_id, member_id> _static_members;
+    chunked_hash_map<group_instance_id, member_id> _static_members;
     int _num_members_joining;
     absl::node_hash_map<kafka::member_id, ss::timer<clock_type>>
       _pending_members;
@@ -907,7 +913,7 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<ssx::rwlock> _catchup_lock;
     ss::lw_shared_ptr<cluster::partition> _partition;
-    absl::node_hash_map<
+    chunked_hash_map<
       model::topic_partition,
       std::unique_ptr<offset_metadata_with_probe>>
       _offsets;
@@ -928,50 +934,10 @@ private:
 
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;
-    absl::node_hash_map<model::producer_id, model::producer_epoch>
-      _fence_pid_epoch;
-    absl::node_hash_map<model::producer_id, tx_data> _tx_data;
-    absl::node_hash_map<model::topic_partition, offset_metadata>
+    producers_map _producers;
+    chunked_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
-    struct volatile_offset {
-        model::offset offset;
-        kafka::leader_epoch leader_epoch;
-        std::optional<ss::sstring> metadata;
-    };
-
-    struct volatile_tx {
-        model::tx_seq tx_seq;
-        absl::node_hash_map<model::topic_partition, volatile_offset> offsets;
-    };
-
-    absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;
-    absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
-
-    struct expiration_info {
-        expiration_info(model::timeout_clock::duration timeout)
-          : timeout(timeout)
-          , last_update(model::timeout_clock::now()) {}
-
-        model::timeout_clock::duration timeout;
-        model::timeout_clock::time_point last_update;
-        bool is_expiration_requested{false};
-
-        model::timeout_clock::time_point deadline() const {
-            return last_update + timeout;
-        }
-
-        bool is_expired() const {
-            return is_expiration_requested || deadline() <= clock_type::now();
-        }
-
-        void update_last_update_time() {
-            last_update = model::timeout_clock::now();
-        }
-    };
-
-    absl::node_hash_map<model::producer_identity, expiration_info>
-      _expiration_info;
 
     ss::gate _gate;
     ss::timer<clock_type> _auto_abort_timer;

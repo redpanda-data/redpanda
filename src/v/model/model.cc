@@ -16,7 +16,7 @@
 #include "model/record_batch_types.h"
 #include "model/timestamp.h"
 #include "model/validation.h"
-#include "serde/serde.h"
+#include "serde/rw/rw.h"
 #include "strings/string_switch.h"
 #include "utils/to_string.h"
 
@@ -176,13 +176,21 @@ std::filesystem::path ntp::topic_path() const {
 std::istream& operator>>(std::istream& i, compression& c) {
     ss::sstring s;
     i >> s;
-    c = string_switch<compression>(s)
-          .match_all("none", "uncompressed", compression::none)
-          .match("gzip", compression::gzip)
-          .match("snappy", compression::snappy)
-          .match("lz4", compression::lz4)
-          .match("zstd", compression::zstd)
-          .match("producer", compression::producer);
+    auto tmp = string_switch<std::optional<compression>>(s)
+                 .match_all("none", "uncompressed", compression::none)
+                 .match("gzip", compression::gzip)
+                 .match("snappy", compression::snappy)
+                 .match("lz4", compression::lz4)
+                 .match("zstd", compression::zstd)
+                 .match("producer", compression::producer)
+                 .default_match(std::nullopt);
+
+    if (tmp.has_value()) {
+        c = tmp.value();
+    } else {
+        i.setstate(std::ios_base::failbit);
+    }
+
     return i;
 }
 
@@ -270,10 +278,8 @@ std::ostream& operator<<(std::ostream& o, cleanup_policy_bitflags c) {
         return o;
     }
 
-    auto compaction = (c & model::cleanup_policy_bitflags::compaction)
-                      == model::cleanup_policy_bitflags::compaction;
-    auto deletion = (c & model::cleanup_policy_bitflags::deletion)
-                    == model::cleanup_policy_bitflags::deletion;
+    auto compaction = model::is_compaction_enabled(c);
+    auto deletion = model::is_deletion_enabled(c);
 
     if (compaction && deletion) {
         o << "compact,delete";
@@ -370,6 +376,12 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::compaction_placeholder";
     case record_batch_type::role_management_cmd:
         return o << "batch_type::role_management_cmd";
+    case record_batch_type::client_quota:
+        return o << "batch_type::client_quota";
+    case record_batch_type::data_migration_cmd:
+        return o << "batch_type::data_migration_cmd";
+    case record_batch_type::group_fence_tx:
+        return o << "batch_type::group_fence_tx";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";
@@ -500,7 +512,11 @@ std::istream& operator>>(std::istream& i, fetch_read_strategy& strat) {
                 fetch_read_strategy::polling)
               .match(
                 fetch_read_strategy_to_string(fetch_read_strategy::non_polling),
-                fetch_read_strategy::non_polling);
+                fetch_read_strategy::non_polling)
+              .match(
+                fetch_read_strategy_to_string(
+                  fetch_read_strategy::non_polling_with_debounce),
+                fetch_read_strategy::non_polling_with_debounce);
     return i;
 }
 
@@ -565,6 +581,24 @@ std::istream& operator>>(std::istream& is, recovery_validation_mode& vm) {
     } catch (std::runtime_error const&) {
         is.setstate(std::ios::failbit);
     }
+    return is;
+}
+
+std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f) {
+    return os << to_string_view(f);
+}
+
+std::istream& operator>>(std::istream& is, fips_mode_flag& f) {
+    ss::sstring s;
+    is >> s;
+    f = string_switch<fips_mode_flag>(s)
+          .match(
+            to_string_view(fips_mode_flag::disabled), fips_mode_flag::disabled)
+          .match(
+            to_string_view(fips_mode_flag::enabled), fips_mode_flag::enabled)
+          .match(
+            to_string_view(fips_mode_flag::permissive),
+            fips_mode_flag::permissive);
     return is;
 }
 

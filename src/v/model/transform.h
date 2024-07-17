@@ -77,6 +77,62 @@ using transform_name_view
 using is_transform_paused = ss::bool_class<struct is_paused_tag>;
 
 /**
+ * A structure for describing a raw offset delta from the start of a topic
+ * partition.
+ *
+ * Intended for use as a variant alternative for transform_offset_options.
+ */
+struct transform_from_start
+  : serde::envelope<
+      transform_from_start,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_from_start() = default;
+    explicit transform_from_start(kafka::offset_delta d)
+      : delta(d) {
+        vassert(
+          delta >= kafka::offset_delta{0},
+          "Transform offset delta must be >= 0");
+    }
+
+    // A positive offset from the beginning of an input topic.
+    kafka::offset_delta delta;
+
+    auto serde_fields() { return std::tie(delta); }
+
+    friend std::ostream& operator<<(std::ostream&, const transform_from_start&);
+    bool operator==(const transform_from_start&) const = default;
+};
+
+/**
+ * A structure for describing a raw offset delta from the end of a topic
+ * partition.
+ *
+ * Intended for use as a variant alternative for transform_offset_options.
+ *
+ */
+struct transform_from_end
+  : serde::envelope<
+      transform_from_end,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    transform_from_end() = default;
+    explicit transform_from_end(kafka::offset_delta d)
+      : delta(d) {
+        vassert(
+          delta >= kafka::offset_delta{0},
+          "Transform offset delta must be >= 0");
+    }
+    // A positive offset from the end of an input topic.
+    kafka::offset_delta delta;
+
+    auto serde_fields() { return std::tie(delta); }
+
+    friend std::ostream& operator<<(std::ostream&, const transform_from_end&);
+    bool operator==(const transform_from_end&) const = default;
+};
+
+/**
  * The options related to the offset at which transforms are at.
  *
  * Currently, this struct only supports specifying an initial position, but in
@@ -86,7 +142,7 @@ using is_transform_paused = ss::bool_class<struct is_paused_tag>;
 struct transform_offset_options
   : serde::envelope<
       transform_offset_options,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     // Signifies that a transform should start at the latest offset available.
     //
@@ -98,18 +154,33 @@ struct transform_offset_options
           envelope<latest_offset, serde::version<0>, serde::compat_version<0>> {
         bool operator==(const latest_offset&) const = default;
     };
-    // A transform can either start at the latest offset or at a timestamp.
+    // A transform can either start at the latest offset, at a timestamp, or at
+    // some delta from the start or end of an input partition.
     //
     // When a timestamp is used, a timequery is used to resolve the offset for
     // each partition.
-    serde::variant<latest_offset, model::timestamp> position;
+    //
+    // When transform_from_start is used, the offset_delta therein is added to
+    // the start offset for each partition.
+    //
+    // When transform_from_end is used, the offset_denta therein is subtracted
+    // from the latest offset of each partition.
+    serde::variant<
+      latest_offset,
+      model::timestamp,
+      model::transform_from_start,
+      model::transform_from_end>
+      position;
+
+    bool is_legacy_compat() const;
 
     bool operator==(const transform_offset_options&) const = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const transform_offset_options&);
 
-    auto serde_fields() { return std::tie(position); }
+    void serde_read(iobuf_parser& in, const serde::header& h);
+    void serde_write(iobuf& out) const;
 };
 
 /**
@@ -141,10 +212,14 @@ struct transform_metadata
 
     model::is_transform_paused paused{false};
 
+    model::compression compression_mode{model::compression::none};
+
     friend bool operator==(const transform_metadata&, const transform_metadata&)
       = default;
 
     friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
+
+    void serde_write(iobuf& out) const;
 
     auto serde_fields() {
         return std::tie(
@@ -155,7 +230,8 @@ struct transform_metadata
           uuid,
           source_ptr,
           offset_options,
-          paused);
+          paused,
+          compression_mode);
     }
 };
 
@@ -165,11 +241,19 @@ struct transform_metadata
 // See `redpanda/admin/transform.cc` or `redpanda/admin/api-doc/transform.json`
 // for detail.
 struct transform_metadata_patch {
-    // This has PUT semantics, such that the existing env values will be
-    // completely overwritten by the contents of this map.
+    // Update the env map for a transform.
+    // If absent, the existing map is unchanged.
+    // NOTE: The update has PUT semantics, with the existing transform env
+    // map replaced by the new one, wholesale.
     std::optional<absl::flat_hash_map<ss::sstring, ss::sstring>> env;
-    // Desired paused state for the transform
+    // Update paused state for a transform.
+    // If absent, transform state is unchanged.
     std::optional<is_transform_paused> paused;
+    // Update compression mode for a transform.
+    // If absent, transform compression mode is unchanged.
+    std::optional<compression> compression_mode;
+
+    bool empty() const noexcept;
 };
 
 using output_topic_index = named_type<uint32_t, struct output_topic_index_tag>;

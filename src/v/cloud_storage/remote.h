@@ -237,7 +237,13 @@ public:
       retry_chain_node& parent);
 
     /// compatibility version of download_manifest for json format
-    ss::future<download_result> download_manifest(
+    ss::future<download_result> download_manifest_json(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_manifest_path& key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+    /// version of download_manifest for serde format
+    ss::future<download_result> download_manifest_bin(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
@@ -258,37 +264,20 @@ public:
     /// \return future that returns success code
     ss::future<download_result> maybe_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
-      const std::pair<manifest_format, remote_manifest_path>& format_key,
-      base_manifest& manifest,
-      retry_chain_node& parent);
-
-    /// compatibility version of maybe_download_manifest for json format
-    ss::future<download_result> maybe_download_manifest(
-      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
-
-    /// \brief Try downloading partition_manifest. the function tries first the
-    /// manifest_format::serde path, and then manifest_format::json path. it's
-    /// expected that manifest is constructed with the approprieate npt and
-    /// revision_id, as it will be used to generate the paths return type is
-    /// download_result and index of path that generated the result
-    ss::future<std::pair<download_result, manifest_format>>
-    try_download_partition_manifest(
-      const cloud_storage_clients::bucket_name& bucket,
-      partition_manifest& manifest,
-      retry_chain_node& parent,
-      bool expect_missing = false);
 
     /// \brief Upload manifest to the pre-defined S3 location
     ///
     /// \param bucket is a bucket name
     /// \param manifest is a manifest to upload
+    /// \param key is the remote object name
     /// \return future that returns success code
     ss::future<upload_result> upload_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,
+      const remote_manifest_path& key,
       retry_chain_node& parent);
 
     /// \brief Upload segment to S3
@@ -299,13 +288,15 @@ public:
     ///                  segment's data
     /// \param exposed_name is a segment's name in S3
     /// \param manifest is a manifest that should have the segment metadata
+    /// \param max_retries is a maximal number of allowed retries
     ss::future<upload_result> upload_segment(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& segment_path,
       uint64_t content_length,
       const reset_input_stream& reset_str,
       retry_chain_node& parent,
-      lazy_abort_source& lazy_abort_source);
+      lazy_abort_source& lazy_abort_source,
+      std::optional<size_t> max_retries = std::nullopt);
 
     /// \brief Download segment from S3
     ///
@@ -385,28 +376,6 @@ public:
     ss::future<download_result> segment_exists(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
-      retry_chain_node& parent);
-
-    struct partition_manifest_existence {
-        download_result download_result;
-        manifest_format manifest_format;
-    };
-
-    /// \brief Specialization of object_exists for partition_manifest.
-    /// Checks the existence of either serde or json format.
-    /// This a chained operation, possible results are
-    /// <success, manifest_format::serde>, <success, manifest_format::json>,
-    /// <notfound/failed/timedout, [don't care]> the serde format is checked
-    /// first, if found the function will not check the existence of the json
-    /// format.
-    /// \param ntp ntp to query.
-    /// \param rev_id initial revision id of the remote partition.
-    /// \return partition_manifest_exists_result that
-    /// contains the result of the download and the format of the manifest.
-    ss::future<partition_manifest_existence> partition_manifest_exists(
-      const cloud_storage_clients::bucket_name& bucket,
-      model::ntp npt,
-      model::initial_revision_id rev_id,
       retry_chain_node& parent);
 
     /// \brief Delete object from S3
@@ -565,7 +534,8 @@ private:
       api_activity_type event_type,
       FailedUploadMetricFn failed_upload_metric,
       SuccessfulUploadMetricFn successful_upload_metric,
-      UploadBackoffMetricFn upload_backoff_metric);
+      UploadBackoffMetricFn upload_backoff_metric,
+      std::optional<size_t> max_retries);
 
     template<
       typename DownloadLatencyMeasurementFn,

@@ -193,6 +193,10 @@ public:
         return tp_equals(other.tp, tp) && kafka_ns_view == other.ns();
     }
 
+    auto operator<=>(const ktp& other) const noexcept {
+        return tp <=> other.tp;
+    }
+
     friend std::ostream& operator<<(std::ostream& os, const ktp& t) {
         os << t.to_ntp();
         return os;

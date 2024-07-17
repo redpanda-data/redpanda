@@ -16,7 +16,6 @@
 #include <boost/beast/core/detail/buffers_ref.hpp>
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/http.hpp>
-#include <boost/core/ignore_unused.hpp>
 #include <boost/optional/optional.hpp>
 
 namespace http {

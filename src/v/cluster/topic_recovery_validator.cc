@@ -10,6 +10,9 @@
 #include "topic_recovery_validator.h"
 
 #include "cloud_storage/anomalies_detector.h"
+#include "cloud_storage/partition_manifest_downloader.h"
+#include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/types.h"
 #include "cluster/logger.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -28,12 +31,14 @@ partition_validator::partition_validator(
   ss::abort_source& as,
   model::ntp ntp,
   model::initial_revision_id rev_id,
+  const cloud_storage::remote_path_provider& path_provider,
   recovery_checks checks)
   : remote_{&remote}
   , bucket_{&bucket}
   , as_{&as}
   , ntp_{std::move(ntp)}
   , rev_id_{rev_id}
+  , remote_path_provider_(path_provider)
   , op_rtc_{retry_chain_node{
       as,
       300s,
@@ -66,31 +71,28 @@ ss::future<validation_result> partition_validator::run() {
 
 ss::future<validation_result>
 partition_validator::do_validate_manifest_existence() {
-    auto [download_res, manifest_format]
-      = co_await remote_->partition_manifest_exists(
-        *bucket_, ntp_, rev_id_, op_rtc_);
-    // only res==success (manifest found) or res==notfound (manifest NOT
-    // found) make sense. warn for timedout and failed
-    if (download_res == cloud_storage::download_result::success) {
+    auto dl = cloud_storage::partition_manifest_downloader(
+      *bucket_, remote_path_provider_, ntp_, rev_id_, *remote_);
+    auto download_res = co_await dl.manifest_exists(op_rtc_);
+    if (download_res.has_error()) {
+        // Abnormal failure mode: could be a configuration issue or an external
+        // service issue.
+        op_logger_.error(
+          "manifest download error: download_result: {}, validation not ok",
+          download_res.error());
+        co_return validation_result::download_issue;
+    }
+    // Note that missing manifests is okay -- it may mean that the partition
+    // didn't live long enough to upload a manifest. In that case, recovery can
+    // proceed with an empty partition.
+    switch (download_res.value()) {
+    case cloud_storage::find_partition_manifest_outcome::no_matching_manifest:
+        op_logger_.info("no manifest, validation ok");
+        co_return validation_result::missing_manifest;
+    case cloud_storage::find_partition_manifest_outcome::success:
         op_logger_.info("manifest found, validation ok");
         co_return validation_result::passed;
     }
-
-    if (download_res == cloud_storage::download_result::notfound) {
-        op_logger_.info("no manifest, validation ok");
-        co_return validation_result::missing_manifest;
-    }
-
-    // abnormal failure mode: could be a configuration issue or an
-    // external service issue (note that the manifest path will end in
-    // .bin but the value is just a hint of the HEAD request that
-    // generated the abnormal result)
-    op_logger_.error(
-      "manifest {} download error: download_result: {}, validation not ok",
-      get_path(manifest_format),
-      download_res);
-
-    co_return validation_result::download_issue;
 }
 
 ss::future<validation_result>
@@ -103,6 +105,7 @@ partition_validator::do_validate_manifest_metadata() {
       *bucket_,
       ntp_,
       rev_id_,
+      remote_path_provider_,
       *remote_,
       op_logger_,
       *as_,
@@ -206,10 +209,9 @@ partition_validator::do_validate_manifest_metadata() {
     }
 }
 
-cloud_storage::remote_manifest_path
-partition_validator::get_path(cloud_storage::manifest_format format) {
-    return cloud_storage::generate_partition_manifest_path(
-      ntp_, rev_id_, format);
+cloud_storage::remote_manifest_path partition_validator::get_path() {
+    return cloud_storage::remote_manifest_path{
+      remote_path_provider_.partition_manifest_path(ntp_, rev_id_)};
 }
 
 // wrap allocation and execution of partition_validation,
@@ -219,10 +221,17 @@ ss::future<validation_result> do_validate_recovery_partition(
   ss::abort_source& as,
   model::ntp ntp,
   model::initial_revision_id rev_id,
+  const cloud_storage::remote_path_provider& path_provider,
   model::recovery_validation_mode mode,
   size_t max_segment_depth) {
     auto p_validator = partition_validator{
-      remote, bucket, as, std::move(ntp), rev_id, {mode, max_segment_depth}};
+      remote,
+      bucket,
+      as,
+      std::move(ntp),
+      rev_id,
+      path_provider,
+      {mode, max_segment_depth}};
     co_return co_await p_validator.run();
 }
 
@@ -291,6 +300,8 @@ maybe_validate_recovery_topic(
 
     // start validation for each partition, collect the results and return
     // them
+    const cloud_storage::remote_path_provider path_provider(
+      assignable_config.cfg.properties.remote_label);
 
     co_await ss::max_concurrent_for_each(
       enumerate_partitions, concurrency, [&](model::partition_id p) {
@@ -300,6 +311,7 @@ maybe_validate_recovery_topic(
                    as,
                    model::ntp{ns, topic, p},
                    initial_rev_id,
+                   path_provider,
                    checks_mode,
                    checks_depth)
             .then([&results, p](validation_result res) { results[p] = res; });

@@ -98,6 +98,7 @@ public:
     ss::future<candidate_creation_result> get_next_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
+      std::optional<model::offset> flush_offset,
       ss::shared_ptr<storage::log>,
       ss::lowres_clock::duration segment_lock_duration);
 
@@ -126,6 +127,7 @@ private:
     lookup_result find_segment(
       model::offset last_offset,
       model::offset adjusted_lso,
+      std::optional<model::offset> flush_offset,
       ss::shared_ptr<storage::log>);
 
     model::ntp _ntp;

@@ -1,4 +1,4 @@
-# Copyright 2023 Redpanda Data, Inc.
+# Copyright 2024 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -11,7 +11,7 @@
 
 redpanda:
   # Data directory where all the files will be stored.
-  # This directory MUST resides on xfs partion.
+  # This directory MUST reside on an ext4 or xfs partition.
   data_directory: "/var/lib/redpanda/data"
 
   # The initial cluster nodes addresses

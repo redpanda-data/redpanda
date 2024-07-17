@@ -32,7 +32,7 @@ configuration::configuration()
       {},
       {},
       config::endpoint_tls_config::validate_many)
-  , mode_mutability(*this, "mode_mutability", "Allow modifying mode", {}, false)
+  , mode_mutability(*this, "mode_mutability", "Allow modifying mode", {}, true)
   , schema_registry_replication_factor(
       *this,
       "schema_registry_replication_factor",

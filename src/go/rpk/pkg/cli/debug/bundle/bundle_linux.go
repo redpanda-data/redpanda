@@ -56,11 +56,15 @@ const linuxUtilsRoot = "utils"
 //   - File Extension: if no extension is provided we default to .zip
 //   - File Location: we check for write permissions in the pwd (for backcompat);
 //     if permission is denied we default to $HOME unless isFlag is true.
-func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string, err error) {
+func determineFilepath(fs afero.Fs, rp *config.RedpandaYaml, path string, isFlag bool) (finalPath string, err error) {
 	// if it's empty, use ./<timestamp>-bundle.zip
 	if path == "" {
 		timestamp := time.Now().Unix()
-		path = fmt.Sprintf("%d-bundle.zip", timestamp)
+		if rp.Redpanda.AdvertisedRPCAPI != nil {
+			path = fmt.Sprintf("%v-%d-bundle.zip", sanitizeName(rp.Redpanda.AdvertisedRPCAPI.Address), timestamp)
+		} else {
+			path = fmt.Sprintf("%d-bundle.zip", timestamp)
+		}
 	} else if isDir, _ := afero.IsDir(fs, path); isDir {
 		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
 	}
@@ -310,14 +314,9 @@ func writeCommandOutputToZipLimit(
 	err = cmd.Wait()
 	if err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
-			return fmt.Errorf("couldn't save '%s': %w", filename, err)
+			return fmt.Errorf("couldn't save '%s': %w; %[1]v contains the full error message", filename, err)
 		}
-		zap.L().Sugar().Debugf(
-			"Got '%v' while running '%s'. This is probably due to the"+
-				" command's output exceeding its limit in bytes.",
-			err,
-			cmd,
-		)
+		zap.L().Sugar().Warnf("%v: got '%v' while running '%s'. This is probably due to the command's output exceeding its limit in bytes.", filename, err, cmd)
 	}
 	return nil
 }
@@ -557,6 +556,9 @@ func saveSlabInfo(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/slabinfo")
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				return fmt.Errorf("%v: you may need to run the command as root to read this file", err)
+			}
 			return err
 		}
 		return writeFileToZip(ps, "proc/slabinfo", bs)
@@ -940,17 +942,25 @@ func sliceControllerDir(cFiles []fileSize, logLimitBytes int64) (slice []fileSiz
 
 func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes int) step {
 	return func() error {
+		if y.Redpanda.Directory == "" {
+			return fmt.Errorf("failed to save controller logs: 'redpanda.data_directory' is empty on the provided configuration file")
+		}
 		controllerDir := filepath.Join(y.Redpanda.Directory, "redpanda", "controller", "0_0")
 
 		// We don't need the .base_index files to parse out the messages.
 		exclude := regexp.MustCompile(`^*.base_index$`)
 		cFiles, size, err := walkSizeDir(controllerDir, exclude)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to save controller logs: %v", err)
 		}
 
+		// Our decoding tools look for the base of the data directory, and it
+		// searches for the expected directory: redpanda/controller/0_0. If we
+		// use this folder structure, we will make the life easier to the users
+		// who wish to decode the controller logs using our tools.
+		baseDestDir := filepath.Join("controller-logs", "redpanda", "controller", "0_0")
 		if int(size) < logLimitBytes {
-			return writeDirToZip(ps, controllerDir, "controller", exclude)
+			return writeDirToZip(ps, controllerDir, baseDestDir, exclude)
 		}
 
 		fmt.Printf("WARNING: controller logs directory size is too big (%v). Saving a slice of the logs; you can adjust the limit by changing --controller-logs-size-limit flag\n", units.HumanSize(float64(size)))
@@ -966,11 +976,11 @@ func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes 
 		for _, cLog := range slice {
 			file, err := os.ReadFile(cLog.path)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
-			err = writeFileToZip(ps, filepath.Join("controller", filepath.Base(cLog.path)), file)
+			err = writeFileToZip(ps, filepath.Join(baseDestDir, filepath.Base(cLog.path)), file)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
 		}
 		return nil

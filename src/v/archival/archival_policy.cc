@@ -167,6 +167,7 @@ bool archival_policy::upload_deadline_reached() {
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
   model::offset adjusted_lso,
+  std::optional<model::offset> flush_offset,
   ss::shared_ptr<storage::log> log) {
     vlog(
       archival_log.debug,
@@ -207,11 +208,14 @@ archival_policy::lookup_result archival_policy::find_segment(
     }
     // Invariant: it != set.end()
     bool closed = !(*it)->has_appender();
-    bool force_upload = upload_deadline_reached();
+    bool below_flush_offset = flush_offset.has_value()
+                              && (*it)->offsets().get_base_offset()
+                                   <= flush_offset.value();
+    bool force_upload = below_flush_offset || upload_deadline_reached();
     if (!closed && !force_upload) {
-        std::string_view reason = _upload_limit.has_value()
-                                    ? "upload deadline not reached"
-                                    : "candidate is not closed";
+        std::string_view reason
+          = closed ? "upload is not forced by flush, or deadline not reached"
+                   : "candidate is not closed";
         // Fast path, next upload candidate is not yet ready. We may want to
         // optimize this case because it's expected to happen pretty often. This
         // can be done by saving weak_ptr to the segment inside the policy
@@ -225,7 +229,7 @@ archival_policy::lookup_result archival_policy::find_segment(
         return {};
     }
 
-    if (!closed) {
+    if (!closed && !below_flush_offset) {
         auto kafka_start_offset = log->from_log_offset(start_offset);
         auto kafka_lso = log->from_log_offset(model::next_offset(adjusted_lso));
         if (kafka_start_offset >= kafka_lso) {
@@ -432,13 +436,14 @@ static ss::future<candidate_creation_result> create_upload_candidate(
 ss::future<candidate_creation_result> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
+  std::optional<model::offset> flush_offset,
   ss::shared_ptr<storage::log> log,
   ss::lowres_clock::duration segment_lock_duration) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
     auto adjusted_lso = end_exclusive - model::offset(1);
     auto [segment, ntp_conf, forced] = find_segment(
-      begin_inclusive, adjusted_lso, std::move(log));
+      begin_inclusive, adjusted_lso, flush_offset, std::move(log));
     if (segment.get() == nullptr) {
         co_return candidate_creation_error::no_segment_for_begin_offset;
     }

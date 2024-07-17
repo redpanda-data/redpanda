@@ -16,6 +16,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
@@ -369,14 +370,14 @@ void async_manifest_view_cursor::on_timeout() {
               vlog(
                 _view._ctxlog.debug,
                 "Spillover manifest {} is being evicted, last offset: {}",
-                m->manifest.get_manifest_path(),
+                m->manifest.get_manifest_filename(),
                 m->manifest.get_last_offset());
               return model::next_offset(m->manifest.get_last_offset());
           } else {
               vlog(
                 _view._ctxlog.debug,
                 "Spillover manifest {} is not evicted, rearming",
-                m->manifest.get_manifest_path());
+                m->manifest.get_manifest_filename());
               return model::offset{};
           }
       });
@@ -391,8 +392,10 @@ async_manifest_view::async_manifest_view(
   ss::sharded<remote>& remote,
   ss::sharded<cache>& cache,
   const partition_manifest& stm_manifest,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  const remote_path_provider& path_provider)
   : _bucket(bucket)
+  , _remote_path_provider(path_provider)
   , _remote(remote)
   , _cache(cache)
   , _ts_probe(remote.local().materialized().get_read_path_probe())
@@ -792,7 +795,7 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
                   vlog(
                     _ctxlog.debug,
                     "Scanning manifest {} for term {}",
-                    manifest.get_manifest_path(),
+                    manifest.get_manifest_path(path_provider()),
                     term);
                   for (auto meta : manifest) {
                       if (meta.segment_term > term) {
@@ -1149,7 +1152,7 @@ async_manifest_view::time_based_retention(
               "Failed to find the retention boundary, the manifest {} "
               "doesn't "
               "have any matching segment",
-              cursor->manifest()->get_manifest_path());
+              cursor->manifest()->get_manifest_path(path_provider()));
         }
     } catch (const std::system_error& err) {
         // Thrown by `async_manifest_view::maybe_sync_manifest`
@@ -1420,7 +1423,7 @@ async_manifest_view::hydrate_manifest(
         auto [str, len] = co_await manifest.serialize();
         auto reservation = co_await _cache.local().reserve_space(len, 1);
         co_await _cache.local().put(
-          manifest.get_manifest_path()(),
+          manifest.get_manifest_path(path_provider())(),
           str,
           reservation,
           priority_manager::local().shadow_indexing_priority());
@@ -1599,8 +1602,8 @@ remote_manifest_path async_manifest_view::get_spillover_manifest_path(
       .base_ts = meta.base_timestamp,
       .last_ts = meta.max_timestamp,
     };
-    return generate_spillover_manifest_path(
-      get_ntp(), _stm_manifest.get_revision_id(), comp);
+    return remote_manifest_path{
+      path_provider().spillover_manifest_path(_stm_manifest, comp)};
 }
 
 ss::future<result<spillover_manifest, error_outcome>>

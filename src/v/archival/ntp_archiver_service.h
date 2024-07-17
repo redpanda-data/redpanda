@@ -17,6 +17,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cluster/fwd.h"
@@ -35,7 +36,7 @@
 namespace archival {
 
 // Forward declaration for test class that we will befriend
-class archival_fixture;
+class archiver_fixture;
 
 using namespace std::chrono_literals;
 
@@ -84,6 +85,29 @@ private:
     std::optional<cloud_storage::segment_record_stats> _stats;
     cloud_storage::upload_result _result{cloud_storage::upload_result::success};
 };
+
+// Indicates whether the flush() command was accepted or not.
+// In the unaccepted case, the flush() command should be
+// re-dispatched to the partition leader by caller.
+enum class flush_response { rejected, accepted };
+
+std::ostream& operator<<(std::ostream& os, flush_response fr);
+
+struct flush_result {
+    flush_response response;
+    // The inclusive offset which the archiver will flush() to, if response is
+    // accepted.
+    std::optional<model::offset> offset;
+};
+
+std::ostream& operator<<(std::ostream& os, flush_result fr);
+
+// Indicates whether a flush is still in progress, if it is complete, or if
+// the flush needs to be retried (in case of a leadership change during
+// flush())
+enum class wait_result { not_in_progress, complete, lost_leadership, failed };
+
+std::ostream& operator<<(std::ostream& os, wait_result wr);
 
 /// This class performs per-ntp archival workload. Every ntp can be
 /// processed independently, without the knowledge about others. All
@@ -233,6 +257,25 @@ public:
     /// STM manifest.
     ss::future<> apply_spillover();
 
+    // Request a flush operation of all current local data to cloud storage.
+    // This function can be used in combination with wait() to block until the
+    // flush operation is complete.
+    // Calling this function does not guarantee a flush will begin, in the case
+    // the partition is not the leader or is a read replica. It also does not
+    // guarantee that the flush will complete, in the case of a leadership
+    // change occurs during the operation. It is important to issue a call to
+    // wait() to be certain of the state post a call to flush().
+    // Calling flush() multiple times without resolving wait() futures can also
+    // lead to undesired behavior, as waiters will only be alerted once the most
+    // recently issued flush has completed.
+    flush_result flush();
+
+    // Returns a future that indicates if a requested flush() result is
+    // complete. This future resolves once the flush is complete, or will return
+    // early in other cases, such as a flush not being in progress, or a loss of
+    // leadership.
+    ss::future<wait_result> wait(model::offset o);
+
     virtual ~ntp_archiver() = default;
 
     /**
@@ -329,6 +372,7 @@ public:
     void complete_transfer_leadership();
 
     const storage::ntp_config& ntp_config() const;
+    const cloud_storage::remote_path_provider& remote_path_provider() const;
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.
@@ -366,6 +410,8 @@ private:
       = "made_dirty_post_add_segments";
     static constexpr const char* concurrent_with_segs_ctx_label
       = "was_dirty_concurrent_with_segments";
+    static constexpr const char* upload_loop_flush_complete_ctx_label
+      = "upload_loop_flush_complete";
     static constexpr const char* upload_loop_epilogue_ctx_label
       = "upload_loop_epilogue";
     static constexpr const char* upload_loop_prologue_ctx_label
@@ -556,8 +602,24 @@ private:
     ss::future<cloud_storage::upload_result>
     delete_segment(const remote_segment_path& path);
 
+    // If true, we are not the leader, or are no longer the leader.
+    bool lost_leadership() const;
+
     /// If true, we are holding up trimming of local storage
     bool local_storage_pressure() const;
+
+    // If true, a flush request has been issued and is still in progress.
+    bool flush_in_progress() const;
+
+    // If true, the manifest's last offset is greater than the provided offset,
+    // and the archival stm is clean past the provided offset.
+    bool uploaded_and_clean_past_offset(model::offset o) const;
+
+    // If true, the current (most recently issued) flush operation has uploaded
+    // past the set _flush_uploads_offset. If false, we are not flushing, or the
+    // flush is still in progress. Note that this does not reflect or consider
+    // the state of manifest uploads.
+    bool uploaded_data_past_flush_offset() const;
 
     void update_probe();
 
@@ -581,7 +643,7 @@ private:
       model::term_id archiver_term, const upload_candidate& candidate);
 
     /// Method to use with lazy_abort_source
-    std::optional<ss::sstring> upload_should_abort();
+    std::optional<ss::sstring> upload_should_abort() const;
 
     // Adjacent segment merging
 
@@ -652,6 +714,14 @@ private:
     // be triggered by notify_leadership.
     ss::condition_variable _leader_cond;
 
+    // Used by clients wait()'ing on flush. Will be signalled by a complete
+    // flush(), or by a change in leadership.
+    ss::condition_variable _flush_cond;
+
+    // Indicates that a request to flush all local data up to and including
+    // offset() (inclusive) has been made when has_value() is true.
+    std::optional<model::offset> _flush_uploads_offset;
+
     std::optional<ntp_level_probe> _probe{std::nullopt};
 
     ss::sharded<features::feature_table>& _feature_table;
@@ -677,7 +747,7 @@ private:
 
     ss::shared_ptr<cloud_storage::async_manifest_view> _manifest_view;
 
-    friend class archival_fixture;
+    friend class archiver_fixture;
 };
 
 } // namespace archival

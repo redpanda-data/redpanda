@@ -26,3 +26,11 @@ rp_test(
   LABELS s3
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_cloud_storage_clients
+  SOURCES types_test.cc
+  LIBRARIES v::gtest_main v::config v::cloud_storage_clients
+  LABELS utils
+)

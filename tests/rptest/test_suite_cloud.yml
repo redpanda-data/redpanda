@@ -15,8 +15,6 @@ cloud:
     - redpanda_cloud_tests/high_throughput_test.py::HighThroughputTest.test_decommission_and_add
     - redpanda_cloud_tests/observe_test.py
     - redpanda_cloud_tests/rolling_restart_test.py
-    - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_max_connections
-    - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_max_partitions
-    - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest.test_common_workload
+    - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest
     - redpanda_cloud_tests/cloud_self_test.py
     - tests/services_self_test.py::SimpleSelfTest.test_cloud

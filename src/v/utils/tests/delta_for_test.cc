@@ -12,11 +12,11 @@
 #include "delta_for_characterization_data.h"
 #include "random/generators.h"
 #include "utils/delta_for.h"
-#include "version.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <boost/numeric/conversion/cast.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -24,6 +24,19 @@
 #include <stdexcept>
 
 static ss::logger test("test-logger-df");
+
+template<typename T>
+static bool safe_less_than(uint64_t lhs, T rhs) {
+    if constexpr (std::is_unsigned_v<T>) {
+        return lhs < rhs;
+    } else {
+        if (rhs <= 0) {
+            // the minimum value of lhs is 0, so lhs cannot be less than 0.
+            return false;
+        }
+        return lhs < boost::numeric_cast<uint64_t>(rhs);
+    }
+}
 
 template<class TVal, class DeltaT>
 std::vector<TVal> populate_encoder(
@@ -34,11 +47,11 @@ std::vector<TVal> populate_encoder(
     auto p = initial_value + deltas.front().first;
     for (auto [min_delta, max_delta] : deltas) {
         std::array<TVal, details::FOR_buffer_depth> buf = {};
-        for (int x = 0; x < details::FOR_buffer_depth; x++) {
+        for (uint32_t x = 0; x < details::FOR_buffer_depth; x++) {
             result.push_back(p);
             buf.at(x) = p;
             p += random_generators::get_int(min_delta, max_delta);
-            if (p < buf.at(x)) {
+            if (safe_less_than(p, buf.at(x))) {
                 throw std::out_of_range("delta can't be represented");
             }
         }
@@ -240,8 +253,8 @@ BOOST_AUTO_TEST_CASE(random_walk_test_8) {
 }
 
 BOOST_AUTO_TEST_CASE(test_compression_ratio) {
-    const int num_rows = 100000;
-    const int num_elements = num_rows * 16;
+    const size_t num_rows = 100000;
+    const size_t num_elements = num_rows * 16;
     static constexpr uint64_t initial_value = 0;
     static constexpr uint64_t min_step = 10000;
     deltafor_encoder<uint64_t> enc_xor(initial_value);
@@ -249,7 +262,7 @@ BOOST_AUTO_TEST_CASE(test_compression_ratio) {
       initial_value, details::delta_delta(min_step));
     std::vector<std::pair<uint64_t, uint64_t>> deltas;
     deltas.reserve(num_rows);
-    for (int i = 0; i < num_rows; i++) {
+    for (size_t i = 0; i < num_rows; i++) {
         deltas.emplace_back(std::make_pair(min_step, min_step + 100));
     }
     populate_encoder(enc_xor, initial_value, deltas);
@@ -270,10 +283,10 @@ std::vector<std::array<TVal, details::FOR_buffer_depth>> populate_encoder(
     auto p = initial_value + deltas.front().first;
     for (auto [min_delta, max_delta] : deltas) {
         std::array<TVal, details::FOR_buffer_depth> buf = {};
-        for (int x = 0; x < details::FOR_buffer_depth; x++) {
+        for (uint32_t x = 0; x < details::FOR_buffer_depth; x++) {
             buf.at(x) = p;
             p += random_generators::get_int(min_delta, max_delta);
-            if (p < buf.at(x)) {
+            if (safe_less_than(p, buf.at(x))) {
                 throw std::out_of_range("delta can't be represented");
             }
         }
@@ -293,7 +306,7 @@ void skip_test(const std::vector<std::pair<TVal, TVal>>& deltas, DeltaT delta) {
 
     BOOST_REQUIRE_EQUAL(positions.size(), expected.size());
 
-    for (auto i = 0; i < expected.size(); i++) {
+    for (size_t i = 0; i < expected.size(); i++) {
         auto row = expected.at(i);
         auto pos = positions.at(i);
         deltafor_decoder<TVal, DeltaT> dec(
@@ -477,8 +490,6 @@ BOOST_AUTO_TEST_CASE(
 
 #include <cstdint>
 
-// data produced from {}
-
 constexpr auto characterization_data = std::to_array<deltafor_datapoint>({{
 {}
 }});
@@ -487,7 +498,6 @@ auto get_characterization_data() -> std::span<const deltafor_datapoint> {{
     return characterization_data;
 }}
 )cpp",
-      redpanda_version(),
       fmt::join(
         to_save | std::views::transform(deltafor_datapoint_printer), ",\n"));
 }

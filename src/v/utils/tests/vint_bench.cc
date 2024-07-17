@@ -269,66 +269,6 @@ static constexpr size_t STREAM_SIZE = 1000;
     return count;
 }
 
-[[gnu::noinline]] ss::future<> ss_now() { return ss::now(); }
-
-[[gnu::noinline]] ss::future<> empty_cont() {
-    // return yield().then([] { return; });
-    return maybe_yield();
-}
-
-bool always_false = false;
-
-[[gnu::noinline]] static auto ready_future() {
-    return make_ready_future<int>(1);
-}
-
-ss::future<int> empty_coro() {
-    int x = 0;
-    if (always_false) {
-        x = co_await seastar::coroutine::without_preemption_check(
-          ready_future());
-    }
-    co_return x;
-}
-
-ss::future<> never_awaits() {
-    if (always_false) {
-        co_await make_ready_future<>();
-    }
-}
-
-inline ss::future<> co_await_ready() { co_await make_ready_future<>(); }
-inline ss::future<> co_await_ready_nest2() { co_await co_await_ready(); }
-inline ss::future<> co_await_ready_nest3() { co_await co_await_ready_nest2(); }
-
-static constexpr size_t ITERS = 10000;
-
-template<typename F>
-ss::future<size_t> co_await_in_loop(F f) {
-    perf_tests::start_measuring_time();
-    for (int i = 0; i < ITERS; i++) {
-        co_await f();
-    }
-    perf_tests::stop_measuring_time();
-    co_return ITERS;
-}
-
-template<typename F>
-ss::future<size_t> collect_futures(F f) {
-    std::vector<ss::future<>> futs;
-    futs.reserve(ITERS);
-    perf_tests::start_measuring_time();
-    for (int i = 0; i < ITERS; i++) {
-        futs.emplace_back(f());
-    }
-    perf_tests::stop_measuring_time();
-
-    for (auto& fut : futs) {
-        co_await std::move(fut);
-    }
-    co_return ITERS;
-}
-
 namespace {
 template<typename F>
 inline ss::future<size_t> decode_test(F f) {
@@ -368,44 +308,6 @@ PERF_TEST_F(vint_bench, decode_iobuf_sync) {
     perf_tests::stop_measuring_time();
     assert(s == STREAM_SIZE);
     return s;
-}
-
-PERF_TEST_F(vint_bench, empty_cont) { return co_await_in_loop(empty_cont); }
-
-PERF_TEST_F(vint_bench, ss_now) { return co_await_in_loop(ss_now); }
-
-PERF_TEST_F(vint_bench, ss_now_collect) { return collect_futures(ss_now); }
-
-PERF_TEST_F(vint_bench, co_await_ready) {
-    return co_await_in_loop(co_await_ready);
-}
-
-PERF_TEST_F(vint_bench, co_await_ready_collect) {
-    return collect_futures(co_await_ready);
-}
-
-PERF_TEST_F(vint_bench, co_await_ready_nest2) {
-    return co_await_in_loop(co_await_ready_nest2);
-}
-
-PERF_TEST_F(vint_bench, co_await_ready_nest2_collect) {
-    return collect_futures(co_await_ready_nest2);
-}
-
-PERF_TEST_F(vint_bench, co_await_ready_nest3) {
-    return co_await_in_loop(co_await_ready_nest3);
-}
-
-PERF_TEST_F(vint_bench, co_await_ready_nest3_collect) {
-    return collect_futures(co_await_ready_nest3);
-}
-
-PERF_TEST_F(vint_bench, empty_coro) { return co_await_in_loop(empty_coro); }
-
-PERF_TEST_F(vint_bench, never_awaits) { return co_await_in_loop(never_awaits); }
-
-PERF_TEST_F(vint_bench, never_awaits_collect) {
-    return collect_futures(never_awaits);
 }
 
 PERF_TEST(vint_bench, make_stream) {

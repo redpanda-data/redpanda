@@ -246,13 +246,13 @@ class ControllerPartitionMovementLimitTest(PartitionMovementMixin,
     def perform_move(self, topic, partition):
         old_assignments, new_assignment = self._dispatch_random_partition_move(
             topic=topic.name, partition=partition)
-        return old_assignments == new_assignment
+        return self._equal_assignments(old_assignments, new_assignment)
 
     @cluster(num_nodes=3)
     def test_move_partition_limit(self):
         self.start_redpanda(num_nodes=3)
 
-        topic = TopicSpec(partition_count=3)
+        topic = TopicSpec(partition_count=3, replication_factor=1)
         self.client().create_topic(topic)
         try:
             while (self.perform_move(topic, 0)):

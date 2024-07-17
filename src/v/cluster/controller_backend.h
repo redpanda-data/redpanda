@@ -34,6 +34,7 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <optional>
 
 namespace cluster {
 
@@ -209,6 +210,11 @@ public:
         initial_retention_local_target_bytes,
       config::binding<std::optional<std::chrono::milliseconds>>
         initial_retention_local_target_ms,
+      config::binding<std::optional<size_t>>
+        retention_local_target_bytes_default,
+      config::binding<std::chrono::milliseconds>
+        retention_local_target_ms_default,
+      config::binding<bool> retention_local_strict,
       ss::sharded<seastar::abort_source>&);
     ~controller_backend();
 
@@ -231,6 +237,12 @@ public:
     get_current_op(const model::ntp&) const;
 
     void notify_reconciliation(const model::ntp&);
+
+    /// Copy partition kvstore data from an extra shard (i.e. kvstore shard that
+    /// is >= ss::smp::count). This method is expected to be called *before*
+    /// start().
+    ss::future<> transfer_partitions_from_extra_shard(
+      storage::kvstore&, shard_placement_table&);
 
 private:
     struct ntp_reconciliation_state;
@@ -300,6 +312,15 @@ private:
       model::revision_id cmd_revision,
       partition_removal_mode mode);
 
+    ss::future<> remove_partition_kvstore_state(
+      model::ntp, raft::group_id, model::revision_id log_revision);
+
+    ss::future<> transfer_partition_from_extra_shard(
+      const model::ntp&,
+      shard_placement_table::placement_state,
+      storage::kvstore&,
+      shard_placement_table&);
+
     ss::future<result<ss::stop_iteration>> reconcile_partition_reconfiguration(
       ntp_reconciliation_state&,
       ss::lw_shared_ptr<partition>,
@@ -355,6 +376,7 @@ private:
     bool should_skip(const model::ntp&) const;
 
     std::optional<model::offset> calculate_learner_initial_offset(
+      reconfiguration_policy policy,
       const ss::lw_shared_ptr<partition>& partition) const;
 
     ss::sharded<topic_table>& _topics;
@@ -374,12 +396,18 @@ private:
       _initial_retention_local_target_bytes;
     config::binding<std::optional<std::chrono::milliseconds>>
       _initial_retention_local_target_ms;
+    config::binding<std::optional<size_t>>
+      _retention_local_target_bytes_default;
+    config::binding<std::chrono::milliseconds>
+      _retention_local_target_ms_default;
+    config::binding<bool> _retention_local_strict;
     ss::sharded<ss::abort_source>& _as;
 
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
       _states;
 
-    cluster::notification_id_type _topic_table_notify_handle;
+    cluster::notification_id_type _topic_table_notify_handle
+      = notification_id_type_invalid;
     // Limits the number of concurrently executing reconciliation fibers.
     // Initially reconciliation is blocked and we deposit a non-zero amount of
     // units when we are ready to start reconciling.

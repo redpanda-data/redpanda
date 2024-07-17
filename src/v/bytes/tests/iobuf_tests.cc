@@ -15,7 +15,7 @@
 #include "bytes/random.h"
 #include "bytes/scattered_message.h"
 #include "bytes/streambuf.h"
-#include "bytes/tests/utils.h"
+#include "utils.h"
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/temporary_buffer.hh>

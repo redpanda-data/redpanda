@@ -1045,7 +1045,9 @@ ss::future<> abs_client::do_delete_path(
         try {
             co_await do_delete_file(name, *iter, timeout);
         } catch (const abs_rest_error_response& abs_error) {
-            if (abs_error.code() == abs_error_code::path_not_found) {
+            if (
+              abs_error.code() == abs_error_code::path_not_found
+              || abs_error.code() == abs_error_code::blob_not_found) {
                 vlog(
                   abs_log.debug,
                   "Object to be deleted was not found in cloud storage: "

@@ -31,14 +31,14 @@ using segment_meta = cloud_storage::partition_manifest::segment_meta;
 namespace {
 ss::logger fixture_logger{"archival_stm_fixture"};
 
-constexpr const char* httpd_host_name = "127.0.0.1";
+constexpr const char* httpd_host_name = "localhost";
 constexpr uint16_t httpd_port_number = 4442;
 
 cloud_storage_clients::s3_configuration get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     cloud_storage_clients::s3_configuration conf;
     conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
-    conf.access_key = cloud_roles::public_key_str("acess-key");
+    conf.access_key = cloud_roles::public_key_str("access-key");
     conf.secret_key = cloud_roles::private_key_str("secret-key");
     conf.region = cloud_roles::aws_region_name("us-east-1");
     conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
@@ -102,7 +102,8 @@ public:
               node->raft().get(),
               stm_node.remote.local(),
               node->get_feature_table().local(),
-              fixture_logger);
+              fixture_logger,
+              std::nullopt);
 
             stm_node.archival_stm = std::move(stm);
 

@@ -468,7 +468,7 @@ TEST(Vector, FromInitializerListConstructor) {
 TEST(ChunkedVector, PushPop) {
     for (int i = 0; i < 100; ++i) {
         chunked_vector<int32_t> vec;
-        for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+        for (size_t i = 0; i < vec.elements_per_fragment(); ++i) {
             bool push_back = vec.empty() || bool(random_generators::get_int(1));
             if (push_back) {
                 vec.push_back(i);
@@ -483,7 +483,7 @@ TEST(ChunkedVector, PushPop) {
 TEST(ChunkedVector, PushPopN) {
     for (int i = 0; i < 100; ++i) {
         chunked_vector<int32_t> vec;
-        for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+        for (size_t i = 0; i < vec.elements_per_fragment(); ++i) {
             // Slight preference to make larger vectors because we could be
             // popping back multiple
             switch (random_generators::get_int(4)) {
@@ -508,7 +508,7 @@ TEST(ChunkedVector, PushPopN) {
 
 TEST(ChunkedVector, FirstChunkCapacityDoubles) {
     chunked_vector<int32_t> vec;
-    for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+    for (size_t i = 0; i < vec.elements_per_fragment(); ++i) {
         vec.push_back(i);
         EXPECT_TRUE(fragmented_vector_validator::validate(vec));
     }
@@ -519,7 +519,7 @@ TEST(ChunkedVector, ReserveAndPushBack) {
     vec.reserve(vec.elements_per_fragment());
     vec.push_back(-1);
     int* initial_location = &vec.front();
-    for (int i = 0; i < vec.elements_per_fragment(); ++i) {
+    for (size_t i = 0; i < vec.elements_per_fragment(); ++i) {
         vec.push_back(i);
         EXPECT_EQ(initial_location, &vec.front());
     }
@@ -527,7 +527,8 @@ TEST(ChunkedVector, ReserveAndPushBack) {
 
 TEST(ChunkedVector, Reserve) {
     chunked_vector<int32_t> growing_vec;
-    for (int i = 0; i < chunked_vector<int32_t>::elements_per_fragment(); ++i) {
+    for (size_t i = 0; i < chunked_vector<int32_t>::elements_per_fragment();
+         ++i) {
         growing_vec.reserve(i);
         EXPECT_EQ(growing_vec.capacity(), i);
         EXPECT_TRUE(fragmented_vector_validator::validate(growing_vec));

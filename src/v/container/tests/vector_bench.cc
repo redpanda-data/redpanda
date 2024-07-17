@@ -9,11 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/type_traits.h"
 #include "container/fragmented_vector.h"
 #include "container/tests/bench_utils.h"
 #include "random/generators.h"
-#include "utils/functional.h"
-#include "utils/type_traits.h"
 
 #include <seastar/testing/perf_tests.hh>
 

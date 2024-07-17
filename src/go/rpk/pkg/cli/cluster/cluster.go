@@ -14,6 +14,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/license"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/maintenance"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/partitions"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/quotas"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/selftest"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/storage"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/txn"
@@ -47,6 +48,7 @@ func NewCommand(fs afero.Fs, p *pkgconfig.Params) *cobra.Command {
 		selftest.NewSelfTestCommand(fs, p),
 		storage.NewCommand(fs, p),
 		txn.NewCommand(fs, p),
+		quotas.NewCommand(fs, p),
 		offsets,
 	)
 

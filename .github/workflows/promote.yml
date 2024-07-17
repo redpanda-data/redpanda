@@ -7,10 +7,22 @@ jobs:
   trigger-promote:
     runs-on: ubuntu-latest
     steps:
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      - name: get secrets from aws sm
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/buildkite_token
+          parse-json-secrets: true
       - name: trigger redpanda promote pipeline
         uses: "buildkite/trigger-pipeline-action@v2.0.0"
         with:
-          buildkite_api_access_token: ${{ secrets.BUILDKITE_TOKEN }}
+          buildkite_api_access_token: ${{ env.BUILDKITE_TOKEN }}
           pipeline: "redpanda/redpanda"
           branch: dev
           message: ":github: Promote redpanda packages"

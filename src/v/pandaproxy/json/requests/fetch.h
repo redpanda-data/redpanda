@@ -12,18 +12,13 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "bytes/iobuf.h"
-#include "bytes/iobuf_parser.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 #include "storage/parser_utils.h"
@@ -43,8 +38,8 @@ public:
       , _tpv(tpv)
       , _base_offset(base_offset) {}
 
-    bool
-    operator()(::json::Writer<::json::StringBuffer>& w, model::record record) {
+    template<typename Buffer>
+    bool operator()(::json::iobuf_writer<Buffer>& w, model::record record) {
         auto offset = _base_offset() + record.offset_delta();
 
         w.StartObject();
@@ -97,8 +92,9 @@ public:
     explicit rjson_serialize_impl(serialization_format fmt)
       : _fmt(fmt) {}
 
-    bool operator()(
-      ::json::Writer<::json::StringBuffer>& w, kafka::fetch_response&& res) {
+    template<typename Buffer>
+    bool
+    operator()(::json::iobuf_writer<Buffer>& w, kafka::fetch_response&& res) {
         // Eager check for errors
         for (auto& v : res) {
             if (v.partition_response->error_code != kafka::error_code::none) {

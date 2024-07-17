@@ -13,10 +13,12 @@
 
 #include "base/seastarx.h"
 #include "cluster/logger.h"
+#include "cluster/notification.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "raft/fundamental.h"
+#include "utils/notification_list.h"
 
 #include <seastar/core/reactor.hh> // shard_id
 
@@ -74,6 +76,8 @@ public:
           log_rev);
         _ntp_idx.insert_or_assign(ntp, shard_revision{shard, log_rev});
         _group_idx.insert_or_assign(g, shard_revision{shard, log_rev});
+
+        _notification_list.notify(ntp, g, shard);
     }
 
     void
@@ -104,6 +108,21 @@ public:
           log_rev);
         _ntp_idx.erase(ntp);
         _group_idx.erase(g);
+
+        _notification_list.notify(ntp, g, std::nullopt);
+    }
+
+    using change_cb_t = ss::noncopyable_function<void(
+      const model::ntp& ntp,
+      raft::group_id g,
+      std::optional<ss::shard_id> shard)>;
+
+    notification_id_type register_notification(change_cb_t&& cb) {
+        return _notification_list.register_cb(std::move(cb));
+    }
+
+    void unregister_delta_notification(cluster::notification_id_type id) {
+        _notification_list.unregister_cb(id);
     }
 
 private:
@@ -131,5 +150,7 @@ private:
       _ntp_idx;
     // raft index
     chunked_hash_map<raft::group_id, shard_revision> _group_idx;
+
+    notification_list<change_cb_t, notification_id_type> _notification_list;
 };
 } // namespace cluster

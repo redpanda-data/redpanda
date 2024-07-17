@@ -31,11 +31,9 @@ deb_deps=(
   clang-tidy
   cmake
   git
-  gnutls-dev
   golang
   libboost-all-dev
   libc-ares-dev
-  libcrypto++-dev
   libgssapi-krb5-2
   libkrb5-dev
   liblz4-dev
@@ -69,9 +67,7 @@ fedora_deps=(
   clang-tools-extra
   cmake
   compiler-rt
-  cryptopp-devel
   git
-  gnutls-devel
   golang
   hwloc-devel
   krb5-devel
@@ -91,7 +87,7 @@ fedora_deps=(
   python3
   python3-jinja2
   python3-jsonschema
-  ragel-devel
+  ragel
   re2-devel
   rust
   snappy-devel

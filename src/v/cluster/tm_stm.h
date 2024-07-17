@@ -14,8 +14,9 @@
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/state_machine_registry.h"
-#include "cluster/tm_stm_cache.h"
+#include "cluster/tm_stm_types.h"
 #include "cluster/tx_hash_ranges.h"
+#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -35,9 +36,6 @@
 #include <string_view>
 
 namespace cluster {
-
-using use_tx_version_with_last_pid_bool
-  = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
 
 class tm_stm;
 
@@ -219,30 +217,23 @@ public:
         static constexpr uint8_t version = 0;
 
         model::offset offset;
-        fragmented_vector<tm_transaction> transactions;
+        fragmented_vector<tx_metadata> transactions;
     };
 
     struct tm_snapshot {
         static constexpr uint8_t version = 1;
 
         model::offset offset;
-        fragmented_vector<tm_transaction> transactions;
+        fragmented_vector<tx_metadata> transactions;
         locally_hosted_txs hash_ranges;
     };
 
     explicit tm_stm(
-      ss::logger&,
-      raft::consensus*,
-      ss::sharded<features::feature_table>&,
-      ss::lw_shared_ptr<cluster::tm_stm_cache>);
+      ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
 
     void try_rm_lock(const kafka::transactional_id& tid) {
-        auto tx_opt = _cache->find_mem(tid);
-        if (tx_opt) {
-            return;
-        }
-        tx_opt = _cache->find_log(tid);
-        if (tx_opt) {
+        auto it = _transactions.find(tid);
+        if (it == _transactions.end()) {
             return;
         }
         if (_tx_locks.contains(tid)) {
@@ -257,25 +248,32 @@ public:
 
     ss::future<> start() override;
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
       get_tx(kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_ongoing(model::term_id, kafka::transactional_id);
+    ss::future<checked<tx_metadata, tm_stm::op_status>> finish_transaction(
+      model::term_id expected_term,
+      kafka::transactional_id tx_id,
+      tx_status completed_status);
     ss::future<tm_stm::op_status> add_partitions(
       model::term_id,
       kafka::transactional_id,
-      std::vector<tm_transaction::tx_partition>);
+      model::tx_seq,
+      std::vector<tx_metadata::tx_partition>);
     ss::future<tm_stm::op_status> add_group(
-      model::term_id, kafka::transactional_id, kafka::group_id, model::term_id);
+      model::term_id,
+      kafka::transactional_id,
+      model::tx_seq,
+      kafka::group_id,
+      model::term_id);
     bool is_actual_term(model::term_id term) { return _insync_term == term; }
+
     std::optional<kafka::transactional_id>
-    get_id_by_pid(model::producer_identity pid) {
+    get_id_by_pid(model::producer_identity pid) const {
         auto tx_it = _pid_tx_id.find(pid);
-        std::optional<kafka::transactional_id> r;
-        if (tx_it != _pid_tx_id.end()) {
-            r = tx_it->second;
+        if (tx_it == _pid_tx_id.end()) {
+            return std::nullopt;
         }
-        return r;
+        return tx_it->second;
     }
 
     ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
@@ -286,27 +284,21 @@ public:
     }
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
-        return _cache->read_lock();
+        return _state_lock.hold_read_lock();
     }
     uint8_t active_snapshot_version();
 
-    ss::future<> checkpoint_ongoing_txs();
-
     ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      reset_transferring(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_aborting(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_prepared(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_killed(model::term_id, kafka::transactional_id);
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
+      update_transaction_status(
+        model::term_id, kafka::transactional_id, tx_status);
+
     // todo: cleanup last_pid and rolled_pid. It seems like they are doing
     // the same thing but in practice they are not. last_pid is not updated
     // in all cases whereas rolled_pid is need to cleanup all the state
     // from previous epochs.
-    ss::future<tm_stm::op_status> re_register_producer(
+    ss::future<tm_stm::op_status> update_tx_producer(
       model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
@@ -321,11 +313,7 @@ public:
     ss::future<tm_stm::op_status>
       expire_tx(model::term_id, kafka::transactional_id);
 
-    bool is_expired(const tm_transaction&);
-
-    // before calling a tm_stm modifying operation a caller should
-    // take get_tx_lock mutex
-    ss::lw_shared_ptr<mutex> get_tx_lock(kafka::transactional_id);
+    bool is_expired(const tx_metadata&);
 
     ss::future<txlock_unit> lock_tx(kafka::transactional_id, std::string_view);
 
@@ -335,17 +323,17 @@ public:
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
     using get_txs_result
-      = checked<fragmented_vector<tm_transaction>, tm_stm::op_status>;
+      = checked<fragmented_vector<tx_metadata>, tm_stm::op_status>;
     ss::future<get_txs_result> get_all_transactions();
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
     delete_partition_from_tx(
       model::term_id term,
       kafka::transactional_id tid,
-      tm_transaction::tx_partition ntp);
+      tx_metadata::tx_partition ntp);
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      update_tx(tm_transaction, model::term_id);
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
+      update_tx(tx_metadata, model::term_id);
 
     model::partition_id get_partition() const {
         return _raft->ntp().tp.partition;
@@ -355,29 +343,24 @@ public:
 
     size_t tx_cache_size() const;
 
-    std::optional<tm_transaction> oldest_tx() const;
+    std::optional<tx_metadata> oldest_tx() const;
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
+
+    /**
+     * Resets state of finished transaction. This operation is done in memory.
+     * It increments the tx_seq and resets the transaction state to empty.
+     */
+    checked<tx_metadata, tm_stm::op_status>
+    reset_transaction_state(tx_metadata& tx);
 
 protected:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
 private:
-    std::optional<tm_transaction> find_tx(kafka::transactional_id);
+    std::optional<tx_metadata> find_tx(const kafka::transactional_id&);
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
     ss::future<raft::stm_snapshot> take_local_snapshot() override;
-
-    std::chrono::milliseconds _sync_timeout;
-    config::binding<std::chrono::milliseconds> _transactional_id_expiration;
-    absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
-      _pid_tx_id;
-    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
-      _tx_locks;
-    ss::sharded<features::feature_table>& _feature_table;
-    ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
-
-    mutex _tx_thrashing_lock{"tm_stm::tx_thrashing_lock"};
-    prefix_logger _ctx_log;
 
     ss::future<> apply(const model::record_batch& b) final;
 
@@ -387,8 +370,8 @@ private:
     ss::future<checked<model::term_id, tm_stm::op_status>> do_barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
       do_sync(model::timeout_clock::duration);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      do_update_tx(tm_transaction, model::term_id);
+    ss::future<checked<tx_metadata, tm_stm::op_status>>
+      do_update_tx(tx_metadata, model::term_id);
 
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
@@ -402,17 +385,61 @@ private:
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch);
 
-    bool is_transaction_ga() {
-        return _feature_table.local().is_active(
-          features::feature::transaction_ga);
-    }
+    model::record_batch serialize_tx(tx_metadata tx);
 
-    use_tx_version_with_last_pid_bool use_new_tx_version() {
-        return is_transaction_ga() ? use_tx_version_with_last_pid_bool::yes
-                                   : use_tx_version_with_last_pid_bool::no;
-    }
+    void upsert_transaction(tx_metadata);
 
-    model::record_batch serialize_tx(tm_transaction tx);
+    fragmented_vector<tx_metadata> get_transactions_list() const;
+
+private:
+    std::chrono::milliseconds _sync_timeout;
+    config::binding<std::chrono::milliseconds> _transactional_id_expiration;
+    chunked_hash_map<model::producer_identity, kafka::transactional_id>
+      _pid_tx_id;
+    chunked_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
+      _tx_locks;
+    ss::sharded<features::feature_table>& _feature_table;
+
+    struct tx_wrapper {
+        tx_wrapper() = default;
+
+        explicit tx_wrapper(tx_metadata tx)
+          : tx(std::move(tx)) {}
+
+        tx_wrapper(const tx_wrapper&) = delete;
+        tx_wrapper& operator=(const tx_wrapper&) = delete;
+
+        tx_wrapper(tx_wrapper&& other) noexcept
+          : tx(std::move(other.tx)) {
+            _hook.swap_nodes(other._hook);
+        }
+
+        tx_wrapper& operator=(tx_wrapper&& other) noexcept {
+            if (&other == this) {
+                return *this;
+            }
+            tx = std::move(other.tx);
+            _hook.swap_nodes(other._hook);
+            return *this;
+        }
+
+        ~tx_wrapper() = default;
+
+        tx_metadata tx;
+        intrusive_list_hook _hook;
+    };
+
+    // Tracks the LRU order of tx sessions. When the count exceeds
+    // max_transactions_per_coordinator, we abort tx sessions in the
+    // LRU order.
+    intrusive_list<tx_wrapper, &tx_wrapper::_hook> _transactions_lru;
+
+    ss::basic_rwlock<> _state_lock;
+
+    chunked_hash_map<kafka::transactional_id, tx_wrapper> _transactions;
+
+    mutex _tx_thrashing_lock{"tm_stm::tx_thrashing_lock"};
+    prefix_logger _ctx_log;
 };
 
 inline txlock_unit::~txlock_unit() noexcept {
@@ -425,9 +452,7 @@ inline txlock_unit::~txlock_unit() noexcept {
 
 class tm_stm_factory : public state_machine_factory {
 public:
-    tm_stm_factory(
-      ss::sharded<tm_stm_cache_manager>&,
-      ss::sharded<features::feature_table>&);
+    explicit tm_stm_factory(ss::sharded<features::feature_table>&);
     bool is_applicable_for(const storage::ntp_config& raft) const final;
 
     void create(
@@ -435,7 +460,6 @@ public:
       raft::consensus* raft) final;
 
 private:
-    ss::sharded<tm_stm_cache_manager>& _tm_stm_cache_manager;
     ss::sharded<features::feature_table>& _feature_table;
 };
 

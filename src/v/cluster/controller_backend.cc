@@ -12,6 +12,7 @@
 #include "archival/archival_metadata_stm.h"
 #include "base/outcome.h"
 #include "base/vassert.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -28,14 +29,15 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "raft/fundamental.h"
 #include "raft/group_configuration.h"
 #include "ssx/event.h"
 #include "ssx/future-util.h"
 #include "storage/offset_translator.h"
+#include "types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -54,6 +56,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <optional>
 #include <variant>
 
 /// on every core, sharded
@@ -209,6 +212,15 @@ std::error_code check_configuration_update(
           partition->ntp());
         return errc::partition_configuration_in_joint_mode;
     }
+
+    if (includes_self && partition->raft()->has_configuration_override()) {
+        vlog(
+          clusterlog.trace,
+          "[{}] contains current node and there is configuration override "
+          "active",
+          partition->ntp());
+        return errc::partition_configuration_in_joint_mode;
+    }
     /*
      * if replica set is a leader it must have configuration committed i.e. it
      * was successfully replicated to majority of followers.
@@ -314,6 +326,9 @@ controller_backend::controller_backend(
   config::binding<std::optional<size_t>> initial_retention_local_target_bytes,
   config::binding<std::optional<std::chrono::milliseconds>>
     initial_retention_local_target_ms,
+  config::binding<std::optional<size_t>> retention_local_target_bytes_default,
+  config::binding<std::chrono::milliseconds> retention_local_target_ms_default,
+  config::binding<bool> retention_local_strict,
   ss::sharded<ss::abort_source>& as)
   : _topics(tp_state)
   , _shard_placement(shard_placement.local())
@@ -332,6 +347,11 @@ controller_backend::controller_backend(
       std::move(initial_retention_local_target_bytes))
   , _initial_retention_local_target_ms(
       std::move(initial_retention_local_target_ms))
+  , _retention_local_target_bytes_default(
+      std::move(retention_local_target_bytes_default))
+  , _retention_local_target_ms_default(
+      std::move(retention_local_target_ms_default))
+  , _retention_local_strict(std::move(retention_local_strict))
   , _as(as) {
     _housekeeping_interval.watch([this] {
         _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>(
@@ -400,7 +420,7 @@ create_topic_table_snapshot(
         if (!ntp_meta) {
             continue;
         }
-        for (const auto& p : ntp_meta->get_assignments()) {
+        for (const auto& [_, p] : ntp_meta->get_assignments()) {
             auto ntp = model::ntp(nt.ns, nt.tp, p.id);
             auto revision_id = ntp_meta->get_revision();
             if (cluster::contains_node(p.replicas, current_node)) {
@@ -559,7 +579,7 @@ std::optional<T> get_topic_property(
 
 std::optional<model::offset>
 controller_backend::calculate_learner_initial_offset(
-  const ss::lw_shared_ptr<partition>& p) const {
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
     /**
      * Initial learner start offset only makes sense for partitions with cloud
      * storage data
@@ -573,24 +593,68 @@ controller_backend::calculate_learner_initial_offset(
     /**
      * Calculate retention targets based on cluster and topic configuration
      */
-    const auto initial_retention_bytes = get_topic_property(
+    auto initial_retention_bytes = get_topic_property(
       _initial_retention_local_target_bytes(),
       log->config().has_overrides()
         ? log->config().get_overrides().initial_retention_local_target_bytes
         : tristate<size_t>{std::nullopt});
 
-    const auto initial_retention_ms = get_topic_property(
+    auto initial_retention_ms = get_topic_property(
       _initial_retention_local_target_ms(),
       log->config().has_overrides()
         ? log->config().get_overrides().initial_retention_local_target_ms
         : tristate<std::chrono::milliseconds>{std::nullopt});
+
     /**
-     * Initial target retention disabled
+     * There are two possibilities for learner start offset calculation:
+     *
+     * >>> fast partition movement <<<
+     * - the reconfiguration policy is set to use target_initial_retention and
+     *   initial retention is configured, in this case the initial learner
+     *   offset will be calculated based on the initial target retention
+     *   settings
+     *
+     * >>> full local retention move <<<
+     * - with non strict local retention the storage manager may allow
+     *   partitions to grow beyond their configured local retention target. In
+     *   this case the controller backend will use the local retention target
+     *   properties and will schedule move delivering only the data that would
+     *   be retained if local retention was working in strict mode regardless of
+     *   initial retention settings and configured move policy.
      */
-    if (
-      !initial_retention_bytes.has_value()
-      && !initial_retention_ms.has_value()) {
-        return std::nullopt;
+    const bool no_initial_retention_settings = !(
+      initial_retention_bytes.has_value()
+      || initial_retention_bytes.has_value());
+
+    bool full_move = policy == reconfiguration_policy::full_local_retention
+                     || no_initial_retention_settings;
+    // full local retention move
+    if (full_move) {
+        // strict local retention, no need to override learner start
+        if (_retention_local_strict()) {
+            return std::nullopt;
+        }
+
+        // use default target local retention settings
+        initial_retention_bytes = get_topic_property(
+          _retention_local_target_bytes_default(),
+          log->config().has_overrides()
+            ? log->config().get_overrides().retention_local_target_bytes
+            : tristate<size_t>{std::nullopt});
+
+        initial_retention_ms = get_topic_property(
+          {_retention_local_target_ms_default()},
+          log->config().has_overrides()
+            ? log->config().get_overrides().retention_local_target_ms
+            : tristate<std::chrono::milliseconds>{std::nullopt});
+
+        vlog(
+          clusterlog.trace,
+          "[{}] full partition move requested. Using default target local "
+          "retention settings for the topic - target bytes: {}, target ms: {}",
+          p->ntp(),
+          initial_retention_bytes,
+          initial_retention_ms->count());
     }
 
     model::timestamp retention_timestamp_threshold(0);
@@ -614,7 +678,7 @@ controller_backend::calculate_learner_initial_offset(
      * uploaded to Cloud Storage.
      */
     vlog(
-      clusterlog.trace,
+      clusterlog.info,
       "[{}] calculated retention offset: {}, last uploaded to cloud: {}, "
       "manifest clean offset: {}, max_collectible_offset: {}",
       p->ntp(),
@@ -995,7 +1059,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
       = log_revision_on_node(replicas_view, _self);
 
     switch (placement.get_reconciliation_action(expected_log_revision)) {
-    case shard_placement_table::reconciliation_action::remove: {
+    case shard_placement_table::reconciliation_action::remove_partition: {
         // Cleanup obsolete revisions that should not exist on this node. This
         // is typically done after the replicas update is finished.
         rs.set_cur_operation(
@@ -1012,6 +1076,17 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         }
         co_return ss::stop_iteration::no;
     }
+    case shard_placement_table::reconciliation_action::remove_kvstore_state:
+        // Cleanup obsolete kvstore state (without removing the partition data
+        // itself). This can be required after a cross-shard transfer is
+        // retried.
+        rs.set_cur_operation(
+          replicas_view.last_update_finished_revision(),
+          partition_operation_type::finish_update,
+          replicas_view.assignment);
+        co_await remove_partition_kvstore_state(
+          ntp, placement.current.value().group, expected_log_revision.value());
+        co_return ss::stop_iteration::no;
     case shard_placement_table::reconciliation_action::wait_for_target_update:
         co_return errc::waiting_for_shard_placement_update;
     case shard_placement_table::reconciliation_action::transfer: {
@@ -1329,7 +1404,10 @@ ss::future<std::error_code> controller_backend::create_partition(
               group_id,
               std::move(initial_brokers),
               cfg->properties.remote_topic_properties,
-              read_replica_bucket);
+              read_replica_bucket,
+              raft::with_learner_recovery_throttle::yes,
+              raft::keep_snapshotted_log::no,
+              cfg->properties.remote_label);
 
             co_await add_to_shard_table(
               ntp, group_id, ss::this_shard_id(), log_revision);
@@ -1607,10 +1685,8 @@ controller_backend::update_partition_replica_set(
            * We want to keep full local retention on the learner, do not return
            * initial offset override
            */
-          std::optional<model::offset> learner_initial_offset;
-          if (policy == reconfiguration_policy::target_initial_retention) {
-              learner_initial_offset = calculate_learner_initial_offset(p);
-          }
+          auto learner_initial_offset = calculate_learner_initial_offset(
+            policy, p);
 
           return do_update_replica_set(
             std::move(p),
@@ -1664,40 +1740,141 @@ ss::future<std::error_code> controller_backend::transfer_partition(
       ntp,
       log_revision);
 
-    auto maybe_dest = co_await _shard_placement.prepare_transfer(
-      ntp, log_revision);
-    if (maybe_dest.has_error()) {
-        co_return maybe_dest.error();
+    auto transfer_info = co_await _shard_placement.prepare_transfer(
+      ntp, log_revision, _shard_placement.container());
+    if (transfer_info.source_error != errc::success) {
+        co_return transfer_info.source_error;
+    } else if (transfer_info.dest_error != errc::success) {
+        co_return transfer_info.dest_error;
+    } else if (transfer_info.is_finished) {
+        co_return errc::success;
     }
-    ss::shard_id destination = maybe_dest.value();
+    ss::shard_id destination = transfer_info.destination.value();
 
     auto partition = _partition_manager.local().get(ntp);
     if (partition) {
         co_await shutdown_partition(std::move(partition));
     }
 
-    // TODO: copy, not move
-    co_await raft::details::move_persistent_state(
-      group, ss::this_shard_id(), destination, _storage);
-    co_await storage::offset_translator::move_persistent_state(
-      group, ss::this_shard_id(), destination, _storage);
-    co_await raft::move_persistent_stm_state(
-      ntp, ss::this_shard_id(), destination, _storage);
+    co_await copy_persistent_state(
+      ntp, group, _storage.local().kvs(), destination, _storage);
 
-    co_await container().invoke_on(
-      destination, [&ntp, log_revision](controller_backend& dest) {
-          return dest._shard_placement
-            .finish_transfer_on_destination(ntp, log_revision)
-            .then([&] {
-                auto it = dest._states.find(ntp);
-                if (it != dest._states.end()) {
-                    it->second->wakeup_event.set();
-                }
-            });
-      });
+    auto shard_callback = [this](const model::ntp& ntp) {
+        auto& dest = container().local();
+        auto it = dest._states.find(ntp);
+        if (it != dest._states.end()) {
+            it->second->wakeup_event.set();
+        }
+    };
 
-    co_await _shard_placement.finish_transfer_on_source(ntp, log_revision);
+    co_await _shard_placement.finish_transfer(
+      ntp, log_revision, _shard_placement.container(), shard_callback);
     co_return errc::success;
+}
+
+ss::future<> controller_backend::transfer_partitions_from_extra_shard(
+  storage::kvstore& extra_kvs, shard_placement_table& extra_spt) {
+    vassert(
+      _topic_table_notify_handle == notification_id_type_invalid,
+      "method is expected to be called before controller_backend is started");
+
+    co_await ss::max_concurrent_for_each(
+      extra_spt.shard_local_states(),
+      256,
+      [&](const shard_placement_table::ntp2state_t::value_type& kv) {
+          const auto& [ntp, state] = kv;
+          return transfer_partition_from_extra_shard(
+            ntp, state, extra_kvs, extra_spt);
+      });
+}
+
+ss::future<> controller_backend::transfer_partition_from_extra_shard(
+  const model::ntp& ntp,
+  shard_placement_table::placement_state placement,
+  storage::kvstore& extra_kvs,
+  shard_placement_table& extra_spt) {
+    vlog(
+      clusterlog.debug,
+      "[{}] transferring partition from extra shard, placement: {}",
+      ntp,
+      placement);
+
+    auto target = _shard_placement.get_target(ntp);
+    if (!target) {
+        co_return;
+    }
+    model::revision_id log_rev = target->log_revision;
+
+    using reconciliation_action = shard_placement_table::reconciliation_action;
+
+    if (
+      placement.get_reconciliation_action(log_rev)
+      != reconciliation_action::transfer) {
+        // this can happen if the partition is already superceded by a partition
+        // with greater log revision.
+        co_return;
+    }
+
+    auto transfer_info = co_await extra_spt.prepare_transfer(
+      ntp, log_rev, _shard_placement.container());
+    if (transfer_info.source_error != errc::success) {
+        // This can happen if this extra shard was the destination of an
+        // unfinished x-shard transfer. We can ignore this partition as we
+        // already have a valid copy of kvstore data on one of the valid shards.
+        co_return;
+    }
+
+    if (transfer_info.dest_error != errc::success) {
+        // clear kvstore state on destination
+        co_await container().invoke_on(
+          transfer_info.destination.value(),
+          [&ntp, log_rev](controller_backend& dest) {
+              auto dest_placement = dest._shard_placement.state_on_this_shard(
+                ntp);
+              vassert(dest_placement, "[{}] expected placement", ntp);
+              switch (dest_placement->get_reconciliation_action(log_rev)) {
+              case reconciliation_action::create:
+              case reconciliation_action::transfer:
+              case reconciliation_action::wait_for_target_update:
+                  vassert(
+                    false,
+                    "[{}] unexpected reconciliation action, placement: {}",
+                    ntp,
+                    *dest_placement);
+              case reconciliation_action::remove_partition:
+                  // TODO: remove obsolete log directory
+              case reconciliation_action::remove_kvstore_state:
+                  break;
+              }
+              return remove_persistent_state(
+                       ntp,
+                       dest_placement->current.value().group,
+                       dest._storage.local().kvs())
+                .then([&dest, &ntp, log_rev] {
+                    return dest._shard_placement.finish_delete(ntp, log_rev);
+                });
+          });
+
+        transfer_info = co_await extra_spt.prepare_transfer(
+          ntp, log_rev, _shard_placement.container());
+    }
+
+    vassert(
+      transfer_info.destination && transfer_info.dest_error == errc::success,
+      "[{}] expected successful prepare_transfer, destination error: {}",
+      ntp,
+      transfer_info.dest_error);
+
+    if (transfer_info.is_finished) {
+        co_return;
+    }
+
+    ss::shard_id destination = transfer_info.destination.value();
+    co_await copy_persistent_state(
+      ntp, target->group, extra_kvs, destination, _storage);
+
+    co_await extra_spt.finish_transfer(
+      ntp, log_rev, _shard_placement.container(), [](const model::ntp&) {});
 }
 
 ss::future<>
@@ -1771,12 +1948,27 @@ ss::future<std::error_code> controller_backend::delete_partition(
     if (part) {
         co_await remove_from_shard_table(ntp, part->group(), log_revision);
         co_await _partition_manager.local().remove(ntp, mode);
-    }
+    } else {
+        // TODO: delete log directory even when there is no partition object
 
-    // TODO: delete kvstore state even when there is no partition object
+        co_await remove_persistent_state(
+          ntp, placement->current->group, _storage.local().kvs());
+    }
 
     co_await _shard_placement.finish_delete(ntp, log_revision);
     co_return errc::success;
+}
+
+ss::future<> controller_backend::remove_partition_kvstore_state(
+  model::ntp ntp, raft::group_id group, model::revision_id log_revision) {
+    vlog(
+      clusterlog.debug,
+      "[{}] removing obsolete partition kvstore state, log_revision: {}",
+      ntp,
+      log_revision);
+
+    co_await remove_persistent_state(ntp, group, _storage.local().kvs());
+    co_await _shard_placement.finish_delete(ntp, log_revision);
 }
 
 bool controller_backend::should_skip(const model::ntp& ntp) const {

@@ -14,7 +14,7 @@ import time
 from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccountSSHConfig
 from ducktape.cluster.windows_remoteaccount import WindowsRemoteAccount
 from ducktape.errors import TimeoutError
-from ducktape.mark import env, ok_to_fail, parametrize
+from ducktape.mark import env, ok_to_fail, ok_to_fail_fips, parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
@@ -178,6 +178,7 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
         )
 
     @cluster(num_nodes=3)
+    @ok_to_fail_fips  # See NOTE below
     def test_license_nag(self):
         wait_until(self._license_nag_is_set,
                    timeout_sec=30,
@@ -185,6 +186,8 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
 
         self.logger.debug("Ensuring no license nag")
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        # NOTE: This assertion will FAIL if running in FIPS mode because
+        # being in FIPS mode will trigger the license nag
         assert not self._has_license_nag()
 
         self.logger.debug("Setting cluster config")
@@ -281,8 +284,10 @@ class RedpandaKerberosConfigTest(RedpandaKerberosTestBase):
 
     def setUp(self):
         super(RedpandaKerberosConfigTest, self).setUp()
-        krb5_config = render_krb5_config(kdc_node=self.kdc.nodes[0],
-                                         realm="INCORRECT.EXAMPLE")
+        krb5_config = render_krb5_config(
+            kdc_node=self.kdc.nodes[0],
+            realm="INCORRECT.EXAMPLE",
+            permitted_enctypes=self.redpanda.permitted_enctypes)
         for node in self.redpanda.nodes:
             self.logger.debug(
                 f"Rendering incorrect KRB5 config for {node.name} using KDC node {self.kdc.nodes[0].name}"

@@ -134,6 +134,10 @@ void leader_balancer::on_leadership_change(
     // Update in flight state
     if (auto it = _in_flight_changes.find(group);
         it != _in_flight_changes.end()) {
+        vlog(
+          clusterlog.trace,
+          "transfer of group {} finished, removing from in-flight set",
+          group);
         _in_flight_changes.erase(it);
         check_unregister_leadership_change_notification();
 
@@ -403,7 +407,20 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         _need_controller_refresh = false;
     }
 
-    auto group_replicas = co_await collect_group_replicas_from_health_report();
+    auto health_report = co_await _health_monitor.get_cluster_health(
+      cluster_report_filter{},
+      force_refresh::no,
+      model::timeout_clock::now() + 5s);
+    if (!health_report) {
+        vlog(
+          clusterlog.warn,
+          "couldn't get health report: {}",
+          health_report.error());
+        co_return ss::stop_iteration::no;
+    }
+
+    auto group_replicas = co_await collect_group_replicas_from_health_report(
+      health_report.value());
     auto index = build_index(std::move(group_replicas));
     auto group_id_to_topic = build_group_id_to_topic_rev();
 
@@ -411,6 +428,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         vlog(clusterlog.warn, "Leadership balancer tick: invalid indexes.");
         co_return ss::stop_iteration::no;
     }
+
+    auto muted_nodes = collect_muted_nodes(health_report.value());
 
     auto mode = config::shard_local_cfg().leader_balancer_mode();
     std::unique_ptr<leader_balancer_strategy> strategy;
@@ -422,12 +441,12 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           leader_balancer_types::random_hill_climbing_strategy>(
           std::move(index),
           std::move(group_id_to_topic),
-          leader_balancer_types::muted_index{muted_nodes(), {}});
+          leader_balancer_types::muted_index{std::move(muted_nodes), {}});
         break;
     case model::leader_balancer_mode::greedy_balanced_shards:
         vlog(clusterlog.debug, "using greedy_balanced_shards");
         strategy = std::make_unique<greedy_balanced_shards>(
-          std::move(index), muted_nodes());
+          std::move(index), std::move(muted_nodes));
         break;
     default:
         vlog(clusterlog.error, "unexpected mode value: {}", mode);
@@ -496,6 +515,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::yes;
     }
 
+    size_t num_dispatched = 0;
     for (size_t i = 0; i < allowed_change_cnt; i++) {
         if (should_stop_balance()) {
             co_return ss::stop_iteration::yes;
@@ -504,17 +524,30 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         auto transfer = strategy->find_movement(muted_groups());
         if (!transfer) {
             vlog(
-              clusterlog.debug,
-              "No leadership balance improvements found with total delta {}, "
-              "number of muted groups {}",
+              clusterlog.info,
+              "Leadership balancer tick: no further improvements found, "
+              "total error: {:.4}, number of muted groups: {}, "
+              "number in flight: {}, dispatched in this tick: {}",
               strategy->error(),
-              _muted.size());
+              _muted.size(),
+              _in_flight_changes.size(),
+              num_dispatched);
             if (!_timer.armed()) {
                 _timer.arm(_idle_timeout());
             }
             _probe.leader_transfer_no_improvement();
             co_return ss::stop_iteration::yes;
         }
+
+        vlog(
+          clusterlog.trace,
+          "dispatching transfer of group {}: {} -> {}, "
+          "current num_dispatched: {}, in_flight: {}",
+          transfer->group,
+          transfer->from,
+          transfer->to,
+          num_dispatched,
+          _in_flight_changes.size());
 
         _in_flight_changes[transfer->group] = {
           *transfer, clock_type::now() + _mute_timeout()};
@@ -524,10 +557,12 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         if (!success) {
             vlog(
               clusterlog.info,
-              "Error transferring leadership group {} from {} to {}",
+              "Error transferring leadership group {} from {} to {} "
+              "(already dispatched in this tick: {})",
               transfer->group,
               transfer->from,
-              transfer->to);
+              transfer->to,
+              num_dispatched);
 
             _in_flight_changes.erase(transfer->group);
             check_unregister_leadership_change_notification();
@@ -547,6 +582,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
         } else {
             _probe.leader_transfer_succeeded();
+            num_dispatched += 1;
             strategy->apply_movement(*transfer);
         }
 
@@ -564,7 +600,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     co_return ss::stop_iteration::no;
 }
 
-absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
+absl::flat_hash_set<model::node_id>
+leader_balancer::collect_muted_nodes(const cluster_health_report& hr) {
     absl::flat_hash_set<model::node_id> nodes;
     const auto now = raft::clock_type::now();
     for (const auto& follower : _raft0->get_follower_metrics()) {
@@ -578,6 +615,7 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 last_hbeat_age)
                 .count());
+            continue;
         }
 
         if (auto nm = _members.get_node_metadata_ref(follower.id); nm) {
@@ -590,7 +628,41 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
                   "Leadership rebalancer muting node {} in a maintenance "
                   "state.",
                   follower.id);
+                continue;
             }
+        }
+
+        auto report_it = std::find_if(
+          hr.node_reports.begin(),
+          hr.node_reports.end(),
+          [id = follower.id](const node_health_report_ptr& n) {
+              return n->id == id;
+          });
+        if (report_it == hr.node_reports.end()) {
+            nodes.insert(follower.id);
+            vlog(
+              clusterlog.info,
+              "Leadership rebalancer muting node {} without a health report.",
+              follower.id);
+            continue;
+        }
+
+        auto uptime = (*report_it)->local_state.uptime;
+        if (uptime < leader_activation_delay) {
+            nodes.insert(follower.id);
+            vlog(
+              clusterlog.info,
+              "Leadership rebalancer muting node {} that "
+              "just restarted ({}s. ago)",
+              follower.id,
+              uptime / 1s);
+
+            // schedule a tick soon so that we can rebalance to the restarted
+            // node.
+            _timer.cancel();
+            _timer.arm(leader_activation_delay);
+
+            continue;
         }
     }
     return nodes;
@@ -611,7 +683,7 @@ leader_balancer::build_group_id_to_topic_rev() const {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
-        for (const auto& partition : topic.second.get_assignments()) {
+        for (const auto& [_, partition] : topic.second.get_assignments()) {
             if (partition.replicas.empty()) {
                 vlog(
                   clusterlog.warn,
@@ -632,20 +704,16 @@ leader_balancer::build_group_id_to_topic_rev() const {
 /// Returns nullopt if shard info from health report can not yet be used. In
 /// this case callers have to rely on shard info from topic table.
 ss::future<std::optional<leader_balancer::group_replicas_t>>
-leader_balancer::collect_group_replicas_from_health_report() {
+leader_balancer::collect_group_replicas_from_health_report(
+  const cluster_health_report& hr) {
     if (!_feature_table.is_active(
           features::feature::partition_shard_in_health_report)) {
         co_return std::nullopt;
     }
 
-    auto hr = co_await _health_monitor.get_cluster_health(
-      cluster_report_filter{},
-      force_refresh::no,
-      model::timeout_clock::now() + 5s);
-
     group_replicas_t group_replicas;
     ssx::async_counter counter;
-    for (const auto& node : hr.value().node_reports) {
+    for (const auto& node : hr.node_reports) {
         for (const auto& topic : node->topics) {
             auto maybe_meta = _topics.get_topic_metadata_ref(topic.tp_ns);
             if (!maybe_meta) {
@@ -660,7 +728,7 @@ leader_balancer::collect_group_replicas_from_health_report() {
               [&](const partition_status& partition) {
                   auto as_it = meta.get_assignments().find(partition.id);
                   if (as_it != meta.get_assignments().end()) {
-                      group_replicas[as_it->group].push_back(
+                      group_replicas[as_it->second.group].push_back(
                         model::broker_shard{
                           .node_id = node->id,
                           .shard = partition.shard,
@@ -688,7 +756,7 @@ leader_balancer::index_type leader_balancer::build_index(
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
         const auto* disabled_set = _topics.get_topic_disabled_set(topic.first);
-        for (const auto& partition : topic.second.get_assignments()) {
+        for (const auto& [_, partition] : topic.second.get_assignments()) {
             /*
              * skip balancing for the controller partition, otherwise we might
              * just constantly move ourselves around.
@@ -853,13 +921,6 @@ leader_balancer::index_type leader_balancer::build_index(
 }
 
 ss::future<bool> leader_balancer::do_transfer(reassignment transfer) {
-    vlog(
-      clusterlog.debug,
-      "Transferring leadership for group {} from {} to {}",
-      transfer.group,
-      transfer.from,
-      transfer.to);
-
     if (transfer.from.node_id == _raft0->self().id()) {
         co_return co_await do_transfer_local(transfer);
     } else {
@@ -986,10 +1047,6 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
           res.error().message());
         co_return false;
     } else if (res.value().data.success) {
-        vlog(
-          clusterlog.trace,
-          "Leadership transfer of group {} succeeded",
-          transfer.group);
         co_return true;
     } else {
         vlog(

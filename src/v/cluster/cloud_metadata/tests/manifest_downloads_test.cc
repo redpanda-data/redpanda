@@ -76,6 +76,7 @@ FIXTURE_TEST(test_download_manifest, cluster_metadata_fixture) {
           .upload_manifest(
             cloud_storage_clients::bucket_name("test-bucket"),
             manifest,
+            manifest.get_manifest_path(),
             retry_node)
           .get();
 
@@ -112,7 +113,10 @@ FIXTURE_TEST(
     manifest.metadata_id = cluster_metadata_id(10);
     remote
       .upload_manifest(
-        cloud_storage_clients::bucket_name("test-bucket"), manifest, retry_node)
+        cloud_storage_clients::bucket_name("test-bucket"),
+        manifest,
+        manifest.get_manifest_path(),
+        retry_node)
       .get();
 
     m_res
@@ -128,7 +132,10 @@ FIXTURE_TEST(
     // Upload a new manifest with a higher metadata ID for a new cluster.
     remote
       .upload_manifest(
-        cloud_storage_clients::bucket_name("test-bucket"), manifest, retry_node)
+        cloud_storage_clients::bucket_name("test-bucket"),
+        manifest,
+        manifest.get_manifest_path(),
+        retry_node)
       .get();
     m_res
       = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();

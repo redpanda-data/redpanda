@@ -19,7 +19,7 @@
 #include "features/feature_table.h"
 #include "model/namespace.h"
 #include "ssx/future-util.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sleep.hh>
@@ -216,7 +216,7 @@ tx_topic_manager::create_and_wait_for_coordinator_topic() {
               ec);
             // topic is creating, reply with not_coordinator error for
             // the client to retry
-            co_return tx_errc::partition_not_exists;
+            co_return tx::errc::partition_not_exists;
         }
     } catch (const ss::timed_out_error& e) {
         vlog(

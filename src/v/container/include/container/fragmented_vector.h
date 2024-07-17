@@ -509,11 +509,11 @@ private:
                 // items.
                 constexpr size_t initial_cap = std::max(1UL, 32UL / sizeof(T));
                 _capacity = initial_cap;
-                _frags.emplace_back().reserve(_capacity);
+                _frags.emplace_back(_frags.get_allocator()).reserve(_capacity);
                 return;
             }
         }
-        _frags.emplace_back().reserve(elems_per_frag);
+        _frags.emplace_back(_frags.get_allocator()).reserve(elems_per_frag);
         _capacity += elems_per_frag;
     }
 

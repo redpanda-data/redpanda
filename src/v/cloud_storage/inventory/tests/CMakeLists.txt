@@ -3,8 +3,11 @@ rp_test(
   GTEST
   BINARY_NAME inv_api
   SOURCES
+    common.cc
     create_inventory_config_test.cc
     fetch_report_tests.cc
+    report_parser_tests.cc
+    inv_consumer_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework

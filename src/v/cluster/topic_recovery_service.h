@@ -15,6 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/types.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/gate.hh>
@@ -127,11 +128,6 @@ private:
       const recovery_request& request,
       std::optional<model::ns> filter_ns);
 
-    /// \brief Try to download a manifest JSON file, parse it and return the
-    /// parsed manifest
-    ss::future<result<cloud_storage::topic_manifest, recovery_error_ctx>>
-    download_manifest(ss::sstring path);
-
     ss::future<std::vector<cluster::topic_result>>
     create_topics(const recovery_request& request);
 
@@ -192,7 +188,7 @@ private:
     // once the recovery has ended. One example is the topic retention which
     // could be set to some small value during recovery and restored back to
     // original value from manifest once recovery has ended.
-    std::optional<std::vector<topic_manifest>> _downloaded_manifests;
+    std::optional<chunked_vector<topic_manifest>> _downloaded_manifests;
 
     boost::circular_buffer<recovery_status> _status_log;
 };

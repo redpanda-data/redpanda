@@ -18,7 +18,7 @@
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
 #include "metrics/metrics.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 

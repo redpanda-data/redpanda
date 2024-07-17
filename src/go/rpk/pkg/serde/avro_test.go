@@ -129,6 +129,7 @@ func Test_encodeDecodeAvroRecordNoReferences(t *testing.T) {
 			noopCl, _ := sr.NewClient()
 			schema := sr.Schema{
 				Schema: tt.schema,
+				Type:   sr.TypeAvro,
 			}
 			serde, err := NewSerde(context.Background(), noopCl, &schema, tt.schemaID, "")
 			if tt.expErr {

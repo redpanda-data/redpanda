@@ -11,21 +11,23 @@
 #include "wasmtime.h"
 
 #include "allocator.h"
+#include "base/type_traits.h"
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "engine_probe.h"
 #include "ffi.h"
 #include "logger.h"
 #include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "schema_registry_module.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
 #include "transform_module.h"
 #include "utils/human.h"
-#include "utils/type_traits.h"
+#include "utils/to_string.h"
 #include "wasi.h"
 #include "wasm/api.h"
 #include "wasm/errc.h"
@@ -49,6 +51,7 @@
 
 #include <absl/algorithm/container.h>
 #include <absl/strings/escaping.h>
+#include <fmt/ostream.h>
 
 #include <alloca.h>
 #include <csignal>
@@ -341,7 +344,7 @@ wasmtime_val_t convert_to_wasmtime(T value) {
           .kind = WASMTIME_I32, .of = {.i32 = static_cast<int32_t>(value)}};
     } else {
         static_assert(
-          utils::unsupported_type<T>::value, "Unsupported wasm result type");
+          base::unsupported_type<T>::value, "Unsupported wasm result type");
     }
 }
 
@@ -549,7 +552,7 @@ public:
             return &_sr_module;
         } else {
             static_assert(
-              utils::unsupported_type<T>::value, "unsupported module");
+              base::unsupported_type<T>::value, "unsupported module");
         }
     }
 

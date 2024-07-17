@@ -90,7 +90,7 @@ class DisruptiveAction:
         self.nodes_for_action.remove(node)
         return node
 
-    def do_action(self) -> ClusterNode:
+    def do_action(self) -> ClusterNode | None:
         """
         Applies the disruptive action, returns node or entity the action was applied on
         """
@@ -129,6 +129,7 @@ class ProcessKill(DisruptiveAction):
         self.failure_injector = make_failure_injector(self.redpanda)
 
     def max_affected_nodes_reached(self):
+        assert self.config.max_affected_nodes is not None
         return len(self.affected_nodes) >= self.config.max_affected_nodes
 
     def do_action(self):
@@ -150,6 +151,7 @@ class ProcessKill(DisruptiveAction):
             return None
 
     def do_reverse_action(self):
+        assert self.last_affected_node
         self._start_rp(node=self.last_affected_node)
         self.recover_node(self.last_affected_node)
         self.redpanda.add_to_started_nodes(self.last_affected_node)
@@ -269,7 +271,7 @@ class ActionCtx:
 
 def create_context_with_defaults(redpanda: RedpandaService,
                                  op_type,
-                                 config: ActionConfig = None,
+                                 config: ActionConfig | None = None,
                                  *args,
                                  **kwargs) -> ActionCtx:
     admin = Admin(redpanda)
@@ -283,5 +285,5 @@ def create_context_with_defaults(redpanda: RedpandaService,
 
 
 def random_process_kills(redpanda: RedpandaService,
-                         config: ActionConfig = None) -> ActionCtx:
+                         config: ActionConfig | None = None) -> ActionCtx:
     return create_context_with_defaults(redpanda, ProcessKill, config=config)

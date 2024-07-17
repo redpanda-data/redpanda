@@ -165,6 +165,15 @@ func Execute() {
 		}
 	})
 
+	// Cobra does not return an 'unknown command' error unless cobra.NoArgs is
+	// specified.
+	// See: https://github.com/spf13/cobra/issues/706
+	cobraext.Walk(root, func(c *cobra.Command) {
+		if c.Args == nil && c.HasSubCommands() {
+			c.Args = cobra.NoArgs
+		}
+	})
+
 	cobra.AddTemplateFunc("wrappedLocalFlagUsages", wrappedLocalFlagUsages)
 	cobra.AddTemplateFunc("wrappedGlobalFlagUsages", wrappedGlobalFlagUsages)
 	root.SetUsageTemplate(usageTemplate)

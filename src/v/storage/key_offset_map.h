@@ -174,7 +174,8 @@ private:
 
     /**
      * hash the compaction key. this helper will catch exceptions and reset the
-     * hashing object which is reused to avoid reinitialization of gnutls state.
+     * hashing object which is reused to avoid reinitialization of OpenSSL
+     * state.
      */
     hash_type::digest_type hash_key(const compaction_key&) const;
 

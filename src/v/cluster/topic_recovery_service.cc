@@ -14,10 +14,13 @@
 #include "cloud_storage/recovery_request.h"
 #include "cloud_storage/recovery_utils.h"
 #include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_manifest_downloader.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/http/request.hh>
 #include <seastar/util/defer.hh>
 
@@ -30,12 +33,6 @@
 #include <boost/uuid/uuid_io.hpp>
 
 namespace {
-
-const std::regex manifest_path_expr{
-  R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest\.(json|bin))REGEX"};
-
-// Possible prefix for a path which contains a topic manifest file
-const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
 
 constexpr size_t list_api_timeout_multiplier{10};
 
@@ -226,50 +223,6 @@ topic_recovery_service::recovery_status_log() const {
     return {_status_log.begin(), _status_log.end()};
 }
 
-// NOTE rewritten as continuations to address arm64 miscompilation of coroutines
-// under clang-14
-static ss::future<std::vector<remote_segment_path>> collect_manifest_paths(
-  remote& remote, ss::abort_source& as, const recovery_task_config& cfg) {
-    // Look under each manifest prefix for topic manifests.
-    constexpr static auto hex_chars = std::string_view{"0123456789abcdef"};
-    return ss::do_with(std::vector<remote_segment_path>{}, [&](auto& paths) {
-        return ss::do_for_each(
-                 hex_chars,
-                 [&](char hex_ch) {
-                     return ss::do_with(
-                       std::make_unique<retry_chain_node>(
-                         as, cfg.operation_timeout_ms, cfg.backoff_ms),
-                       fmt::format("{}0000000/", hex_ch),
-                       [&](auto& rtc, auto& prefix) {
-                           return remote
-                             .list_objects(
-                               cfg.bucket,
-                               *rtc,
-                               cloud_storage_clients::object_key{prefix})
-                             .then([&](auto meta) {
-                                 if (meta.has_error()) {
-                                     vlog(
-                                       cst_log.error,
-                                       "Failed to list meta items: {}",
-                                       meta.error());
-                                     return;
-                                 }
-
-                                 for (auto&& item : meta.value().contents) {
-                                     vlog(
-                                       cst_log.trace,
-                                       "adding path {} for {}",
-                                       item.key,
-                                       prefix);
-                                     paths.emplace_back(item.key);
-                                 }
-                             });
-                       });
-                 })
-          .then([&] { return std::move(paths); });
-    });
-}
-
 ss::future<result<void, recovery_error_ctx>>
 topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     vlog(cst_log.info, "Starting recovery task with request: {}", request);
@@ -298,12 +251,59 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     _recovery_request.emplace(request);
 
     set_state(state::scanning_bucket);
-    vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
-    auto bucket_contents = co_await collect_manifest_paths(
-      _remote.local(), _as, _config);
 
-    auto manifests = co_await filter_existing_topics(
-      bucket_contents, request, model::ns{"kafka"});
+    vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
+    auto fib = make_rtc(_as, _config);
+    std::optional<std::regex> requested_pattern = std::nullopt;
+    if (request.topic_names_pattern().has_value()) {
+        requested_pattern.emplace(
+          request.topic_names_pattern().value().data(),
+          request.topic_names_pattern().value().size());
+    }
+    const auto requested_topic =
+      [&requested_pattern](const model::topic_namespace& topic) {
+          if (!requested_pattern) {
+              return true;
+          }
+          return std::regex_search(topic.tp().c_str(), *requested_pattern);
+      };
+
+    absl::flat_hash_set<model::topic_namespace> existing_topics;
+    for (auto topic : _topic_state.local().all_topics()) {
+        if (requested_topic(topic)) {
+            existing_topics.emplace(std::move(topic));
+        }
+    }
+
+    auto should_create = [&requested_topic, &existing_topics](
+                           const model::topic_namespace& topic) {
+        return requested_topic(topic) && !existing_topics.contains(topic);
+    };
+
+    chunked_vector<topic_manifest> manifests;
+    auto res
+      = co_await cloud_storage::topic_manifest_downloader::find_manifests(
+        _remote.local(),
+        _config.bucket,
+        fib,
+        ss::lowres_clock::now() + _config.operation_timeout_ms,
+        10ms,
+        std::move(should_create),
+        &manifests);
+    if (res.has_error()) {
+        _recovery_request = std::nullopt;
+        set_state(state::inactive);
+        co_return recovery_error_ctx::make(
+          fmt::format("failed to create topics: {}", res.error()),
+          recovery_error_code::error_creating_topics);
+    }
+    if (res.value() != find_topic_manifest_outcome::success) {
+        _recovery_request = std::nullopt;
+        set_state(state::inactive);
+        co_return recovery_error_ctx::make(
+          "failed to create topics",
+          recovery_error_code::error_creating_topics);
+    }
 
     if (manifests.empty()) {
         vlog(cst_log.info, "exiting recovery, no topics to create");
@@ -314,14 +314,14 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     vlog(cst_log.info, "found {} topics to create", manifests.size());
     for (const auto& manifest : manifests) {
-        vlog(cst_log.debug, "topic manifest: {}", manifest.get_manifest_path());
+        vlog(cst_log.debug, "topic manifest: {}", manifest.display_name());
     }
     _download_counts.clear();
 
     auto clear_fib = make_rtc(_as, _config);
     co_await clear_recovery_results(
       _remote.local(), _config.bucket, clear_fib, std::nullopt);
-    _downloaded_manifests.emplace(manifests);
+    _downloaded_manifests = std::move(manifests);
 
     populate_recovery_status();
 
@@ -366,7 +366,7 @@ static cluster::topic_configuration make_topic_config(
         vlog(
           cst_log.warn,
           "skipping topic creation for {}, missing values in manifest",
-          tm.get_manifest_path());
+          tm.display_name());
     }
 
     cluster::topic_configuration topic_to_create_cfg(
@@ -424,110 +424,6 @@ topic_recovery_service::create_topics(const recovery_request& request) {
     co_return co_await _topics_frontend.local().autocreate_topics(
       std::move(topic_configs),
       config::shard_local_cfg().create_topic_timeout_ms());
-}
-
-ss::future<std::vector<cloud_storage::topic_manifest>>
-topic_recovery_service::filter_existing_topics(
-  std::vector<remote_segment_path> items,
-  const recovery_request& request,
-  std::optional<model::ns>) {
-    absl::flat_hash_map<ss::sstring, absl::flat_hash_set<ss::sstring>>
-      topic_index;
-
-    for (const auto& topic : _topic_state.local().all_topics()) {
-        topic_index.try_emplace(topic.ns, absl::flat_hash_set<ss::sstring>{});
-        topic_index[topic.ns].insert(topic.tp);
-    }
-
-    std::vector<topic_manifest> manifests;
-    manifests.reserve(items.size());
-
-    std::optional<std::regex> requested_pattern = std::nullopt;
-    if (request.topic_names_pattern().has_value()) {
-        requested_pattern.emplace(
-          request.topic_names_pattern().value().data(),
-          request.topic_names_pattern().value().size());
-    }
-
-    for (const auto& item : items) {
-        // Although we filter for topic manifest pattern earlier, we still use
-        // this regex match here to extract the namespace and topic from the
-        // pattern.
-        std::smatch matches;
-        const auto& path = item().string();
-        const auto is_topic_manifest = std::regex_match(
-          path.cbegin(), path.cend(), matches, manifest_path_expr);
-        if (!is_topic_manifest) {
-            continue;
-        }
-
-        const auto& ns = matches[1].str();
-        const auto& tp = matches[2].str();
-
-        if (
-          requested_pattern.has_value()
-          && !std::regex_search(tp, requested_pattern.value())) {
-            vlog(
-              cst_log.debug,
-              "will skip topic {}, it does not match pattern {}",
-              tp,
-              request.topic_names_pattern().value());
-            continue;
-        }
-
-        if (topic_index.contains(ns) && topic_index[ns].contains(tp)) {
-            vlog(
-              cst_log.debug,
-              "will skip creating {}:{}, topic already exists",
-              ns,
-              tp);
-            continue;
-        }
-
-        if (auto download_r = co_await download_manifest(path);
-            download_r.has_value()) {
-            manifests.push_back(std::move(download_r.value()));
-        }
-    }
-    co_return manifests;
-}
-
-ss::future<result<cloud_storage::topic_manifest, recovery_error_ctx>>
-topic_recovery_service::download_manifest(ss::sstring path) {
-    cloud_storage::topic_manifest m;
-    auto fib = make_rtc(_as, _config);
-    auto expected_format = path.ends_with("json") ? manifest_format::json
-                                                  : manifest_format::serde;
-    try {
-        auto download_r = co_await _remote.local().download_manifest(
-          _config.bucket,
-          {expected_format, remote_manifest_path{path}},
-          m,
-          fib);
-        if (download_r != download_result::success) {
-            auto error = recovery_error_ctx::make(
-              fmt::format(
-                "failed to download manifest from {} format {}: {}",
-                path,
-                expected_format,
-                download_r),
-              recovery_error_code::error_downloading_manifest);
-            vlog(cst_log.error, "{}", error.context);
-            co_return error;
-        }
-        co_return m;
-
-    } catch (const std::exception& ex) {
-        auto error = recovery_error_ctx::make(
-          fmt::format(
-            "failed to download manifest from {} format {}: {}",
-            path,
-            expected_format,
-            ex.what()),
-          recovery_error_code::error_downloading_manifest);
-        vlog(cst_log.error, "{}", error.context);
-        co_return error;
-    }
 }
 
 void topic_recovery_service::start_download_bg_tracker() {
@@ -684,7 +580,7 @@ void topic_recovery_service::populate_recovery_status() {
             vlog(
               cst_log.warn,
               "skipping {}, missing ntp config in manifest",
-              m.get_manifest_path());
+              m.display_name());
             continue;
         }
         auto topic = ntp_cfg->tp_ns.tp;

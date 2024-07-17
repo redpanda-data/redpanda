@@ -180,13 +180,18 @@ func parseSeekFile(
 }
 
 func seekFetch(
-	adm *kadm.Client, group string, topics map[string]bool,
+	adm *kadm.Client, group string, topics map[string]bool, allowUnknownGroup bool,
 ) kadm.Offsets {
 	resps, err := adm.FetchOffsets(context.Background(), group)
 	if err == nil {
 		err = resps.Error()
 	}
-	out.MaybeDie(err, "unable to fetch offsets for %q: %v", group, err)
+	if errors.Is(err, kerr.GroupIDNotFound) && allowUnknownGroup {
+		err = nil
+	}
+	if err != nil {
+		out.MaybeDie(err, "unable to fetch offsets for %q: %v", group, err)
+	}
 	// If we have a filter, keep only what is in the filter.
 	if len(topics) > 0 {
 		resps.KeepFunc(func(o kadm.OffsetResponse) bool { return topics[o.Topic] })
@@ -204,14 +209,14 @@ func seek(
 	topics map[string]bool,
 	allowNewTopics bool,
 ) {
-	current := seekFetch(adm, group, topics)
+	current := seekFetch(adm, group, topics, true)
 	var commitTo kadm.Offsets
 	if toFile != "" {
 		var err error
 		commitTo, err = parseSeekFile(fs, toFile, topics)
 		out.MaybeDieErr(err)
 	} else if toGroup != "" {
-		commitTo = seekFetch(adm, toGroup, topics)
+		commitTo = seekFetch(adm, toGroup, topics, false)
 	} else { // --to, we need to list offsets currently used, as well as any extra
 		tps := current.TopicsSet()
 		for topic := range topics {

@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import copy
 import random
 import time
 import signal
@@ -15,7 +16,7 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import ignore, matrix
+from ducktape.mark import ignore, matrix, ok_to_fail_fips
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.types import TopicSpec
@@ -91,12 +92,12 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         admin = Admin(self.redpanda)
 
         # choose a random topic-partition
-        self.logger.info(f"selected topic-partition: {topic}-{partition}")
+        self.logger.info(f"selected topic-partition: {topic}/{partition}")
 
         # get the partition's replica set, including core assignments. the kafka
         # api doesn't expose core information, so we use the redpanda admin api.
         assignments = self._get_assignments(admin, topic, partition)
-        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
+        self.logger.info(f"assignments for {topic}/{partition}: {assignments}")
 
         brokers = admin.get_brokers()
         # replace all node cores in assignment
@@ -105,31 +106,38 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 if broker['node_id'] == assignment['node_id']:
                     assignment['core'] = random.randint(
                         0, broker["num_cores"] - 1)
-        self.logger.info(
-            f"new assignments for {topic}-{partition}: {assignments}")
 
-        r = admin.set_partition_replicas(topic, partition, assignments)
+        self._set_partition_assignments(
+            topic,
+            partition,
+            assignments,
+            admin=admin,
+            node_local_core_assignment=not test_mixed_versions)
 
-        def status_done():
+        def node_assignments_converged():
             info = admin.get_partitions(topic, partition)
+            node_assignments = [{
+                "node_id": r["node_id"]
+            } for r in info["replicas"]]
             self.logger.info(
-                f"current assignments for {topic}-{partition}: {info}")
-            converged = self._equal_assignments(info["replicas"], assignments)
+                f"node assignments for {topic}/{partition}: {node_assignments}, "
+                f"partition status: {info['status']}")
+            converged = self._equal_assignments(node_assignments, assignments)
             return converged and info["status"] == "done"
 
         # unset failures
         for n in self.redpanda.nodes:
             hb.unset_failures(n, 'raftgen_service::failure_probes', 'vote')
         # wait until redpanda reports complete
-        wait_until(status_done, timeout_sec=60, backoff_sec=2)
+        wait_until(node_assignments_converged, timeout_sec=60, backoff_sec=2)
 
-        def derived_done():
-            info = self._get_current_partitions(admin, topic, partition)
+        def cores_converged():
+            info = self._get_current_node_cores(admin, topic, partition)
             self.logger.info(
-                f"derived assignments for {topic}-{partition}: {info}")
+                f"derived assignments for {topic}/{partition}: {info}")
             return self._equal_assignments(info, assignments)
 
-        wait_until(derived_done, timeout_sec=60, backoff_sec=2)
+        wait_until(cores_converged, timeout_sec=60, backoff_sec=2)
 
     @cluster(num_nodes=3, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2])
@@ -156,7 +164,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self.client().create_topic(spec)
 
         for _ in range(25):
-            self._move_and_verify()
+            self._move_and_verify(
+                node_local_core_assignment=not test_mixed_versions)
 
     @cluster(num_nodes=4,
              log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS +
@@ -202,7 +211,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self.logger.info(f"Producer stop complete.")
 
         for _ in range(25):
-            self._move_and_verify()
+            self._move_and_verify(
+                node_local_core_assignment=not test_mixed_versions)
 
         for spec in topics:
             self.logger.info(f"Verifying records in {spec}")
@@ -280,7 +290,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
         for _ in range(moves):
-            self._move_and_verify()
+            self._move_and_verify(
+                node_local_core_assignment=not test_mixed_versions)
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
@@ -319,11 +330,16 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         partition = 0
 
         for _ in range(moves):
-            assignments = self._get_assignments(admin, topic, partition)
+            assignments = self._get_current_node_cores(admin, topic, partition)
             for a in assignments:
                 # Bounce between core 0 and 1
                 a['core'] = (a['core'] + 1) % 2
-            admin.set_partition_replicas(topic, partition, assignments)
+            self._set_partition_assignments(
+                topic,
+                partition,
+                assignments,
+                admin=admin,
+                node_local_core_assignment=not test_mixed_versions)
             self._wait_post_move(topic, partition, assignments, 360)
 
         self.run_validation(enable_idempotence=False,
@@ -350,7 +366,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
         # execute single move
-        self._move_and_verify()
+        self._move_and_verify(
+            node_local_core_assignment=not test_mixed_versions)
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
         # snapshot offsets
@@ -414,41 +431,34 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         invalid_shard = 1000
         invalid_dest = 30
 
+        def dispatch_and_assert_status_code(assignments, expected_sc):
+            try:
+                r = admin.set_partition_replicas(topic, partition, assignments)
+                status_code = r.status_code
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code
+            assert status_code == expected_sc, \
+                f"Expected {expected_sc} but got {status_code}"
+
+        node_local_core_assignment = not test_mixed_versions
+
         # A valid node but an invalid core
         assignments = [{"node_id": valid_dest, "core": invalid_shard}]
-        try:
-            r = admin.set_partition_replicas(topic, partition, assignments)
-        except requests.exceptions.HTTPError as e:
-            assert e.response.status_code == 400
-        else:
-            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+        dispatch_and_assert_status_code(
+            assignments,
+            expected_sc=200 if node_local_core_assignment else 400)
 
         # An invalid node but a valid core
         assignments = [{"node_id": invalid_dest, "core": 0}]
-        try:
-            r = admin.set_partition_replicas(topic, partition, assignments)
-        except requests.exceptions.HTTPError as e:
-            assert e.response.status_code == 400
-        else:
-            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+        dispatch_and_assert_status_code(assignments, expected_sc=400)
 
         # An syntactically invalid destination (float instead of int)
         # Reproducer for https://github.com/redpanda-data/redpanda/issues/2286
         assignments = [{"node_id": valid_dest, "core": 3.14}]
-        try:
-            r = admin.set_partition_replicas(topic, partition, assignments)
-        except requests.exceptions.HTTPError as e:
-            assert e.response.status_code == 400
-        else:
-            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+        dispatch_and_assert_status_code(assignments, expected_sc=400)
 
         assignments = [{"node_id": 3.14, "core": 0}]
-        try:
-            r = admin.set_partition_replicas(topic, partition, assignments)
-        except requests.exceptions.HTTPError as e:
-            assert e.response.status_code == 400
-        else:
-            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+        dispatch_and_assert_status_code(assignments, expected_sc=400)
 
         # Not unique replicas in replica set
         assignments = [{
@@ -458,17 +468,11 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             "node_id": valid_dest,
             "core": 0
         }]
-        try:
-            r = admin.set_partition_replicas(topic, partition, assignments)
-        except requests.exceptions.HTTPError as e:
-            assert e.response.status_code == 400
-        else:
-            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+        dispatch_and_assert_status_code(assignments, expected_sc=400)
 
         # Finally a valid move
         assignments = [{"node_id": valid_dest, "core": 0}]
-        r = admin.set_partition_replicas(topic, partition, assignments)
-        assert r.status_code == 200
+        dispatch_and_assert_status_code(assignments, expected_sc=200)
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2])
@@ -538,7 +542,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         # Start an inter-node move, which should take some time
         # to complete because of recovery network traffic
-        assignments = self._get_assignments(admin, name, 0)
+        assignments = self._get_assignments(admin, name, 0, with_cores=True)
         new_node = list(node_ids - set([a['node_id'] for a in assignments]))[0]
         self.logger.info(f"old assignments: {assignments}")
         old_assignments = assignments
@@ -603,7 +607,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # get current assignments
         assignments = self._get_assignments(admin, topic, partition)
         assert len(assignments) == 1
-        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
+        self.logger.info(f"assignments for {topic}/{partition}: {assignments}")
         brokers = admin.get_brokers()
         self.logger.info(f"available brokers: {brokers}")
         candidates = list(
@@ -612,7 +616,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         replacement = random.choice(candidates)
         target_assignment = [{'node_id': replacement['node_id'], 'core': 0}]
         self.logger.info(
-            f"target assignments for {topic}-{partition}: {target_assignment}")
+            f"target assignments for {topic}/{partition}: {target_assignment}")
         # shutdown target node to make sure that move will never complete
         node = self.redpanda.get_node(replacement['node_id'])
         self.redpanda.stop_node(node)
@@ -649,7 +653,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 else:
                     raise e
             self.logger.info(
-                f"current assignments for {topic}-{partition}: {partition_info}"
+                f"current assignments for {topic}/{partition}: {partition_info}"
             )
             return partition_info["status"]
 
@@ -683,7 +687,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         for partition in range(0, partition_count):
             assignments = self._get_assignments(admin, self.topic, partition)
             new_assignment = [assignments[0]]
-            admin.set_partition_replicas(self.topic, partition, new_assignment)
+            self._set_partition_assignments(self.topic, partition,
+                                            new_assignment, admin)
             self._wait_post_move(self.topic, partition, new_assignment, 60)
 
         self.run_validation(enable_idempotence=False,
@@ -725,7 +730,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         ]
         selected = random.choice(to_select)
         # replace one of the assignments
-        assignments[0] = {'node_id': selected['node_id'], 'core': 0}
+        assignments[0] = {'node_id': selected['node_id']}
         self.logger.info(
             f"new assignment for {self.topic}/{partition_id}: {assignments}")
 
@@ -745,7 +750,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         wait_until(new_controller_available, 30, 1)
         # ask partition to move
-        admin.set_partition_replicas(self.topic, partition_id, assignments)
+        self._set_partition_assignments(self.topic, partition_id, assignments,
+                                        admin)
 
         def status_done():
             info = admin.get_partitions(self.topic, partition_id)
@@ -798,7 +804,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         selected = random.choice(to_select)
         # replace one of the assignments
         replaced = assignments[0]['node_id']
-        assignments[0] = {'node_id': selected['node_id'], 'core': 0}
+        assignments[0] = {'node_id': selected['node_id']}
         self.logger.info(
             f"target assignment for {self.topic}/{partition_id}: {assignments}"
         )
@@ -820,7 +826,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         wait_until(new_controller_available, 30, 1)
 
         # ask partition to move
-        admin.set_partition_replicas(self.topic, partition_id, assignments)
+        self._set_partition_assignments(self.topic, partition_id, assignments,
+                                        admin)
 
         def status_done():
             info = admin.get_partitions(self.topic, partition_id)
@@ -836,8 +843,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             "first movement done, scheduling second movement back")
 
         # bring replaced node back
-        assignments[0] = {'node_id': replaced, 'core': 0}
-        admin.set_partition_replicas(self.topic, partition_id, assignments)
+        assignments[0] = {'node_id': replaced}
+        self._set_partition_assignments(self.topic, partition_id, assignments,
+                                        admin)
 
         time.sleep(5)
         self.logger.info(f"unfreezing node: {replaced} again")
@@ -866,17 +874,18 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         brokers = admin.get_brokers()
         for partition in range(0, partition_count):
             assignments = self._get_assignments(admin, self.topic, partition)
-            prev_assignments = assignments.copy()
+            prev_assignments = copy.deepcopy(assignments)
             replicas = set([r['node_id'] for r in prev_assignments])
             for b in brokers:
                 if b['node_id'] not in replicas:
-                    assignments[0]['node_id'] = b['node_id']
+                    assignments[0] = {"node_id": b['node_id']}
                     break
 
             self.logger.info(
                 f"initial assignments for {self.topic}/{partition}: {prev_assignments}, new assignment: {assignments}"
             )
-            admin.set_partition_replicas(self.topic, partition, assignments)
+            self._set_partition_assignments(self.topic, partition, assignments,
+                                            admin)
 
         wait_until(
             lambda: len(admin.list_reconfigurations()) == partition_count, 30)
@@ -953,6 +962,8 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                                             start_timeout=90,
                                             stop_timeout=90)
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2], cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
@@ -989,7 +1000,8 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             if i == upgrade_at_step and test_mixed_versions:
                 self._partial_upgrade(num_to_upgrade)
 
-            self._move_and_verify()
+            self._move_and_verify(
+                node_local_core_assignment=not test_mixed_versions)
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
@@ -1037,11 +1049,16 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             if i == upgrade_at_step and test_mixed_versions:
                 self._partial_upgrade(num_to_upgrade)
 
-            assignments = self._get_assignments(admin, topic, partition)
+            assignments = self._get_current_node_cores(admin, topic, partition)
             for a in assignments:
                 # Bounce between core 0 and 1
                 a['core'] = (a['core'] + 1) % 2
-            admin.set_partition_replicas(topic, partition, assignments)
+            self._set_partition_assignments(
+                topic,
+                partition,
+                assignments,
+                admin=admin,
+                node_local_core_assignment=not test_mixed_versions)
             self._wait_post_move(topic, partition, assignments, 360)
 
         self.run_validation(enable_idempotence=False,

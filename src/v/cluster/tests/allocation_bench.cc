@@ -30,7 +30,7 @@ PERF_TEST_F(partition_allocator_fixture, allocation_3) {
     auto req = make_allocation_request(1, 3);
 
     perf_tests::start_measuring_time();
-    return allocator.allocate(std::move(req)).then([](auto vals) {
+    return allocator().allocate(std::move(req)).then([](auto vals) {
         perf_tests::do_not_optimize(vals);
         perf_tests::stop_measuring_time();
     });
@@ -48,19 +48,19 @@ PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
 
     std::vector<model::broker_shard> replicas;
 
-    return allocator.allocate(std::move(req)).then([this](auto r) {
+    return allocator().allocate(std::move(req)).then([this](auto r) {
         std::vector<model::broker_shard> replicas;
         {
             auto units = std::move(r.value());
             replicas = units->get_assignments().front().replicas;
-            allocator.add_allocations_for_new_partition(
+            allocator().add_allocations_for_new_partition(
               units->get_assignments().front().replicas,
               units->get_assignments().front().group,
               cluster::partition_allocation_domains::common);
         }
         perf_tests::do_not_optimize(replicas);
         perf_tests::start_measuring_time();
-        allocator.remove_allocations(
+        allocator().remove_allocations(
           replicas, cluster::partition_allocation_domains::common);
         perf_tests::stop_measuring_time();
     });
@@ -84,7 +84,7 @@ PERF_TEST_F(partition_allocator_fixture, recovery) {
     }
 
     perf_tests::start_measuring_time();
-    allocator.add_allocations_for_new_partition(
+    allocator().add_allocations_for_new_partition(
       replicas,
       raft::group_id(replicas.size() / 3),
       cluster::partition_allocation_domains::common);

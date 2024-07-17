@@ -20,4 +20,7 @@ class purger;
 class scrubber;
 class archiver_manager;
 
+class archiver_operations_api;
+class archiver_scheduler_api;
+
 } // namespace archival

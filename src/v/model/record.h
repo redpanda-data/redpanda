@@ -19,8 +19,11 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "model/timestamp.h"
-#include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/async.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/rw.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>
@@ -532,11 +535,13 @@ using tx_seq = named_type<int64_t, struct tm_tx_seq>;
 using producer_id = named_type<int64_t, struct producer_identity_id>;
 using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
 
+static constexpr producer_epoch no_producer_epoch{-1};
+static constexpr producer_id no_producer_id{-1};
 struct producer_identity
   : serde::
       envelope<producer_identity, serde::version<0>, serde::compat_version<0>> {
-    int64_t id{-1};
-    int16_t epoch{0};
+    producer_id id{no_producer_id};
+    producer_epoch epoch{0};
 
     producer_identity() noexcept = default;
 
@@ -548,6 +553,15 @@ struct producer_identity
 
     model::producer_epoch get_epoch() const {
         return model::producer_epoch(epoch);
+    }
+
+    static model::producer_identity
+    with_next_epoch(const model::producer_identity pid) {
+        return {pid.id, pid.epoch + producer_epoch(1)};
+    }
+
+    bool has_exhausted_epoch() const {
+        return epoch >= (producer_epoch::max() - producer_epoch{1});
     }
 
     auto operator<=>(const producer_identity&) const = default;
@@ -565,10 +579,20 @@ struct producer_identity
 /// This structure is a part of rm_stm snapshot.
 /// Any change has to be reconciled with the
 /// snapshot (de)serialization logic.
-struct tx_range {
+struct tx_range
+  : serde::envelope<tx_range, serde::version<0>, serde::compat_version<0>> {
+    tx_range() = default;
+
+    tx_range(model::producer_identity pid, model::offset f, model::offset l)
+      : pid(pid)
+      , first(f)
+      , last(l) {}
+
     model::producer_identity pid;
     model::offset first;
     model::offset last;
+
+    auto serde_fields() { return std::tie(pid, first, last); }
 
     auto operator<=>(const tx_range&) const = default;
     friend std::ostream& operator<<(std::ostream&, const tx_range&);
@@ -581,7 +605,7 @@ struct tx_range_cmp {
     }
 };
 
-static constexpr producer_identity unknown_pid{-1, -1};
+static constexpr producer_identity no_pid{no_producer_id, no_producer_epoch};
 
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {
@@ -610,7 +634,7 @@ struct batch_identity {
     timestamp max_timestamp;
     bool is_transactional{false};
 
-    bool is_idempotent() const { return pid.id >= 0; }
+    bool is_idempotent() const { return pid.id > no_producer_id; }
 
     friend std::ostream& operator<<(std::ostream&, const batch_identity&);
 };

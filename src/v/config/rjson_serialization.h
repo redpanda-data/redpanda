@@ -15,15 +15,32 @@
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
-#include "config/tests/custom_aggregate.h"
 #include "config/tls_config.h"
+#include "config/types.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
-#include "pandaproxy/schema_registry/subject_name_strategy.h"
 
 #include <seastar/core/sstring.hh>
+
+/*
+ * this type is only used for config/tests but the rjson_serialize overload
+ * needs to be here so it can be picked up by the configuration/property bits
+ * (at least without some additional c++ tricks).
+ */
+namespace testing {
+struct custom_aggregate {
+    ss::sstring string_value;
+    int int_value;
+
+    bool operator==(const custom_aggregate& rhs) const {
+        return string_value == rhs.string_value && int_value == rhs.int_value;
+    }
+
+    static consteval std::string_view type_name() { return "custom_aggregate"; }
+};
+} // namespace testing
 
 namespace json {
 
@@ -44,7 +61,7 @@ void rjson_serialize(
   const std::vector<config::seed_server>& v);
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const custom_aggregate& v);
+  json::Writer<json::StringBuffer>& w, const testing::custom_aggregate& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const config::endpoint_tls_config& v);
@@ -63,8 +80,7 @@ void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::cleanup_policy_bitflags& v);
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cloud_storage_clients::s3_url_style& v);
+  json::Writer<json::StringBuffer>& w, const config::s3_url_style& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
@@ -92,10 +108,6 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
-  const pandaproxy::schema_registry::subject_name_strategy& v);
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
   const pandaproxy::schema_registry::schema_id_validation_mode& v);
 
 void rjson_serialize(
@@ -103,4 +115,8 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const model::recovery_validation_mode&);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, const config::fips_mode_flag& f);
+
 } // namespace json

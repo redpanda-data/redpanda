@@ -10,10 +10,9 @@
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 
 #include "base/seastarx.h"
+#include "pandaproxy/json/rjson_util.h"
 
 #include <seastar/testing/thread_test_case.hh>
-
-#include <type_traits>
 
 namespace ppj = pandaproxy::json;
 namespace pps = pandaproxy::schema_registry;
@@ -30,7 +29,9 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_version_response) {
     const pps::subject sub{"imported-ref"};
 
     pps::post_subject_versions_version_response response{
-      .schema{pps::subject{"imported-ref"}, schema_def}, .id{12}, .version{2}};
+      .schema{pps::subject{"imported-ref"}, schema_def.copy()},
+      .id{12},
+      .version{2}};
 
     const ss::sstring expected{
       R"(
@@ -48,7 +49,7 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_version_response) {
   "schema": ")"
       + escaped_schema_def + R"("})"};
 
-    auto result{ppj::rjson_serialize(response)};
+    auto result = ppj::rjson_serialize_str(response);
 
     BOOST_REQUIRE_EQUAL(::json::minify(expected), result);
 }

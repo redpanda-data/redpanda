@@ -10,11 +10,11 @@
 #include "rpc/reconnect_transport.h"
 
 #include "model/timeout_clock.h"
-#include "raft/logger.h"
 #include "rpc/errc.h"
 #include "rpc/logger.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
+#include "utils/to_string.h"
 
 #include <seastar/net/inet_address.hh>
 

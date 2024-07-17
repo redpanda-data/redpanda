@@ -3,7 +3,8 @@
     "service_name": "controller",
     "includes": [
         "cluster/types.h",
-        "cluster/health_monitor_types.h"
+        "cluster/health_monitor_types.h",
+        "cluster/client_quota_serde.h"
     ],
     "methods": [
         {
@@ -160,6 +161,16 @@
             "name": "delete_topics",
             "input_type": "delete_topics_request",
             "output_type": "delete_topics_reply"
+        },
+        {
+            "name": "set_partition_shard",
+            "input_type": "set_partition_shard_request",
+            "output_type": "set_partition_shard_reply"
+        },
+        {
+            "name": "alter_client_quotas",
+            "input_type": "client_quota::alter_quotas_request",
+            "output_type": "client_quota::alter_quotas_response"
         }
     ]
 }

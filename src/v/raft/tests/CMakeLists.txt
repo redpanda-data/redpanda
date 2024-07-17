@@ -30,7 +30,6 @@ set(srcs
     leadership_test.cc
     append_entries_test.cc
     offset_monitor_test.cc
-    mux_state_machine_test.cc
     mutex_buffer_test.cc
     state_removal_test.cc
     configuration_manager_test.cc
@@ -54,12 +53,13 @@ set(gsrcs
     raft_reconfiguration_test.cc
     persisted_stm_test.cc
     replication_monitor_tests.cc
+    mux_state_machine_test.cc
 )
 
 rp_test(
   UNIT_TEST
   GTEST
-  TIMEOUT 1000
+  TIMEOUT 1500
   BINARY_NAME gtest_raft
   SOURCES ${gsrcs}
   LIBRARIES  v::raft v::storage_test_utils v::model_test_utils v::features v::gtest_main

@@ -140,7 +140,11 @@ struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
         create_raft();
         raft::state_machine_manager_builder builder;
         archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-          _raft.get(), cloud_api.local(), feature_table.local(), logger);
+          _raft.get(),
+          cloud_api.local(),
+          feature_table.local(),
+          logger,
+          std::nullopt);
 
         _raft->start(std::move(builder)).get();
         _started = true;
@@ -351,7 +355,11 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 
     raft::state_machine_manager_builder builder;
     auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(), cloud_api.local(), feature_table.local(), logger);
+      _raft.get(),
+      cloud_api.local(),
+      feature_table.local(),
+      logger,
+      std::nullopt);
     _raft->start(std::move(builder)).get();
     _started = true;
     wait_for_confirmed_leader();
@@ -446,7 +454,11 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
 
     raft::state_machine_manager_builder builder;
     auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(), cloud_api.local(), feature_table.local(), logger);
+      _raft.get(),
+      cloud_api.local(),
+      feature_table.local(),
+      logger,
+      std::nullopt);
 
     _raft->start(std::move(builder)).get();
     _started = true;
@@ -655,7 +667,11 @@ FIXTURE_TEST(
 
     raft::state_machine_manager_builder builder;
     auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(), cloud_api.local(), feature_table.local(), logger);
+      _raft.get(),
+      cloud_api.local(),
+      feature_table.local(),
+      logger,
+      std::nullopt);
     _raft->start(std::move(builder)).get();
     _started = true;
     wait_for_confirmed_leader();

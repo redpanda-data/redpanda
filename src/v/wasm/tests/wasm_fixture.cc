@@ -56,7 +56,7 @@ public:
     get_schema_definition(ppsr::schema_id id) const override {
         for (const auto& s : _schemas) {
             if (s.id == id) {
-                co_return s.schema.def();
+                co_return s.schema.def().share();
             }
         }
         throw std::runtime_error("unknown schema id");
@@ -75,9 +75,9 @@ public:
             if (found && found->version > s.version) {
                 continue;
             }
-            found = s;
+            found.emplace(s.share());
         }
-        co_return found.value();
+        co_return std::move(found).value();
     }
 
     ss::future<ppsr::schema_id>
@@ -95,13 +95,15 @@ public:
             }
         }
         // TODO: validate references too
+        auto [sub, unparsed_def] = std::move(unparsed).destructure();
+        auto [def, type, refs] = std::move(unparsed_def).destructure();
         _schemas.push_back({
           .schema = ppsr::canonical_schema(
-            unparsed.sub(),
+            std::move(sub),
             ppsr::canonical_schema_definition(
-              unparsed.def().raw(),
-              unparsed.def().type(),
-              unparsed.def().refs())),
+              ppsr::canonical_schema_definition::raw_string{std::move(def)()},
+              type,
+              std::move(refs))),
           .version = version + 1,
           .id = ppsr::schema_id(int32_t(_schemas.size() + 1)),
           .deleted = ppsr::is_deleted::no,
@@ -109,7 +111,7 @@ public:
         co_return _schemas.back().id;
     }
 
-    std::vector<ppsr::subject_schema> get_all() { return _schemas; }
+    const std::vector<ppsr::subject_schema>& get_all() { return _schemas; }
 
 private:
     std::vector<ppsr::subject_schema> _schemas;
@@ -230,7 +232,7 @@ model::record_batch WasmTestFixture::make_tiny_batch(iobuf record_value) {
     b.add_raw_kv(model::test::make_iobuf(), std::move(record_value));
     return std::move(b).build();
 }
-std::vector<pandaproxy::schema_registry::subject_schema>
+const std::vector<pandaproxy::schema_registry::subject_schema>&
 WasmTestFixture::registered_schemas() const {
     return _sr->get_all();
 }

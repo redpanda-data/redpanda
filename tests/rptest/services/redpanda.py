@@ -29,14 +29,14 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Callable, List, Generator, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
+from typing import Callable, List, Generator, Literal, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
 
 import yaml
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError
-from rptest.archival.s3_client import S3Client
+from rptest.archival.s3_client import S3Client, S3AddressingStyle
 from rptest.archival.abs_client import ABSClient
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
@@ -58,7 +58,7 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import redpanda_types, tls
-from rptest.services.redpanda_types import KafkaClientSecurity
+from rptest.services.redpanda_types import KafkaClientSecurity, LogAllowListElem
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, RedpandaVersionTriple, int_tuple as ri_int_tuple
 from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
@@ -222,6 +222,10 @@ class CloudStorageType(IntEnum):
     ABS = 2
 
 
+CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, Literal['virtual_host',
+                                                              'path']]
+
+
 def prepare_allow_list(allow_list):
     if allow_list is None:
         allow_list = DEFAULT_LOG_ALLOW_LIST
@@ -245,6 +249,13 @@ def one_or_many(value):
         return value[0]
     else:
         return value
+
+
+def get_cloud_provider() -> str:
+    """
+    Returns the cloud provider in use.  If one is not set then return 'docker'
+    """
+    return os.getenv("CLOUD_PROVIDER", "docker")
 
 
 def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
@@ -271,7 +282,7 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
     if applies_only_on is None:
         applies_only_on = []
 
-    cloud_provider = os.getenv("CLOUD_PROVIDER", "docker")
+    cloud_provider = get_cloud_provider()
     if cloud_provider == "docker":
         if docker_use_arbitrary:
             cloud_storage_type = [CloudStorageType.S3]
@@ -290,6 +301,34 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
     return cloud_storage_type
 
 
+def get_cloud_storage_url_style(
+    cloud_storage_type: CloudStorageType
+    | None = None
+) -> list[Literal['virtual_host', 'path']]:
+    if cloud_storage_type is None:
+        return ['virtual_host', 'path']
+
+    if cloud_storage_type == CloudStorageType.S3:
+        return ['virtual_host', 'path']
+    else:
+        return ['virtual_host']
+
+
+def get_cloud_storage_type_and_url_style(
+) -> List[CloudStorageTypeAndUrlStyle]:
+    """
+    Returns a list of compatible cloud storage types and url styles.
+    I.e, Returns [(CloudStorageType.S3, 'virtual_host'),
+                  (CloudStorageType.S3, 'path'),
+                  (CloudStorageType.ABS, 'virtual_host')]
+    """
+    return [
+        tus for tus_list in map(
+            lambda t: [(t, us) for us in get_cloud_storage_url_style(t)],
+            get_cloud_storage_type()) for tus in tus_list
+    ]
+
+
 def is_redpanda_cloud(context: TestContext):
     """
     Returns True if we are running againt a Redpanda Cloud cluster,
@@ -301,8 +340,7 @@ def is_redpanda_cloud(context: TestContext):
         context.globals.get(RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG))
 
 
-def should_compile(
-        allow_list_element: str | AllowLogsOnPredicate | re.Pattern) -> bool:
+def should_compile(allow_list_element: LogAllowListElem) -> bool:
     return not isinstance(allow_list_element, re.Pattern) and not isinstance(
         allow_list_element, AllowLogsOnPredicate)
 
@@ -427,6 +465,8 @@ class SISettings:
     GLOBAL_S3_SECRET_KEY = "s3_secret_key"
     GLOBAL_S3_REGION_KEY = "s3_region"
     GLOBAL_GCP_PROJECT_ID_KEY = "gcp_project_id"
+    GLOBAL_USE_FIPS_S3_ENDPOINT = "use_fips_s3_endpoint"
+    DEFAULT_USE_FIPS_S3_ENDPOINT = "OFF"
 
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
@@ -472,19 +512,25 @@ class SISettings:
                  cloud_storage_max_throughput_per_shard: Optional[int] = None,
                  cloud_storage_signature_version: str = "s3v4",
                  before_call_headers: Optional[dict[str, Any]] = None,
-                 skip_end_of_test_scrubbing: bool = False):
+                 skip_end_of_test_scrubbing: bool = False,
+                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
         """
 
+        self._context = test_context
         self.cloud_storage_type = get_cloud_storage_type()[0]
         if hasattr(test_context, 'injected_args') \
-        and test_context.injected_args is not None \
-        and 'cloud_storage_type' in test_context.injected_args:
-            self.cloud_storage_type = cast(
-                CloudStorageType,
-                test_context.injected_args['cloud_storage_type'])
+        and test_context.injected_args is not None:
+            if 'cloud_storage_type' in test_context.injected_args:
+                self.cloud_storage_type = cast(
+                    CloudStorageType,
+                    test_context.injected_args['cloud_storage_type'])
+            elif 'cloud_storage_type_and_url_style' in test_context.injected_args:
+                self.cloud_storage_type = cast(
+                    CloudStorageType, test_context.
+                    injected_args['cloud_storage_type_and_url_style'][0])
 
         if self.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
@@ -501,10 +547,13 @@ class SISettings:
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
 
             if hasattr(test_context, 'injected_args') \
-            and test_context.injected_args is not None \
-            and 'cloud_storage_url_style' in test_context.injected_args:
-                self.cloud_storage_url_style = test_context.injected_args[
-                    'cloud_storage_url_style']
+            and test_context.injected_args is not None:
+                if 'cloud_storage_url_style' in test_context.injected_args:
+                    self.cloud_storage_url_style = test_context.injected_args[
+                        'cloud_storage_url_style']
+                elif 'cloud_storage_type_and_url_style' in test_context.injected_args:
+                    self.cloud_storage_url_style = test_context.injected_args[
+                        'cloud_storage_type_and_url_style'][1]
 
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self.cloud_storage_azure_shared_key = self.ABS_AZURITE_KEY
@@ -536,6 +585,7 @@ class SISettings:
         self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
         self.cloud_storage_signature_version = cloud_storage_signature_version
         self.before_call_headers = before_call_headers
+        self.addressing_style = addressing_style
 
         # Allow disabling end of test scrubbing.
         # It takes a long time with lots of segments i.e. as created in scale
@@ -548,6 +598,32 @@ class SISettings:
             self.cloud_storage_manifest_max_upload_interval_sec = 1
 
         self._expected_damage_types = set()
+
+    def get_use_fips_s3_endpoint(self) -> bool:
+        use_fips_option = self._context.globals.get(
+            self.GLOBAL_USE_FIPS_S3_ENDPOINT,
+            self.DEFAULT_USE_FIPS_S3_ENDPOINT)
+        if use_fips_option == "ON":
+            return True
+        elif use_fips_option == "OFF":
+            return False
+
+        self.logger.warn(
+            f"{self.GLOBAL_USE_FIPS_S3_ENDPOINT} should be 'ON', or 'OFF'")
+        return False
+
+    def use_fips_endpoint(self) -> bool:
+        """
+        Returns whether or not to use the FIPS S3 endpoints.  Only true if:
+        * Cloud provider is AWS, and
+        * Cloud storage type is S3, and
+        * Either
+          * we are in a FIPS environment or,
+          * the global variable 'use_fips_s3_endpoint' is 'ON'
+        """
+        return get_cloud_provider() == "aws" and  \
+            self.cloud_storage_type == CloudStorageType.S3 and \
+                  (self.get_use_fips_s3_endpoint() or in_fips_environment())
 
     def load_context(self, logger, test_context):
         if self.cloud_storage_type == CloudStorageType.S3:
@@ -606,6 +682,7 @@ class SISettings:
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
+            self.addressing_style = S3AddressingStyle.VIRTUAL
         elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             # `config_file`` source allows developers to run ducktape tests from
             # non-AWS hardware but targeting a real S3 backend.
@@ -619,6 +696,7 @@ class SISettings:
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
+            self.addressing_style = S3AddressingStyle.VIRTUAL
         else:
             logger.info('No AWS credentials supplied, assuming minio defaults')
 
@@ -630,6 +708,12 @@ class SISettings:
             bucket = self._cloud_storage_azure_container
 
         return bucket
+
+    def reset_cloud_storage_bucket(self, new_bucket_name: str) -> None:
+        if self.cloud_storage_type == CloudStorageType.S3:
+            self._cloud_storage_bucket = new_bucket_name
+        elif self.cloud_storage_type == CloudStorageType.ABS:
+            self._cloud_storage_azure_container = new_bucket_name
 
     def gcp_iam_token(self, logger):
         logger.info('Getting gcp iam token')
@@ -850,6 +934,7 @@ class TlsConfig(AuthConfig):
         self.server_key: Optional[str] = None
         self.server_crt: Optional[str] = None
         self.truststore_file: Optional[str] = None
+        self.crl_file: Optional[str] = None
         self.client_key: Optional[str] = None
         self.client_crt: Optional[str] = None
         self.require_client_auth: bool = True
@@ -940,7 +1025,11 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
          on this broker."""
         pass
 
-    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg: str = ""):
+    def wait_until(self,
+                   fn: Callable[[], Any],
+                   timeout_sec: int,
+                   backoff_sec: int,
+                   err_msg: str | Callable[[], str] = "") -> None:
         """
         Cluster-aware variant of wait_until, which will fail out
         early if a node dies.
@@ -1148,11 +1237,13 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
     TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
+    TLS_CA_CRL_FILE = "/etc/redpanda/ca.crl"
     SYSTEM_TLS_CA_CRT_FILE = "/usr/local/share/ca-certificates/ca.crt"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
+    TEMP_OSSL_CONFIG_FILE = "/etc/openssl.cnf"
     DEFAULT_NODE_READY_TIMEOUT_SEC = 20
     NODE_READY_TIMEOUT_MIN_SEC_KEY = "node_ready_timeout_min_sec"
     DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
@@ -1168,8 +1259,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
 
     FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
 
-    OPENSSL_CONFIG_FILE = "/opt/redpanda/openssl/openssl.cnf"
-    OPENSSL_MODULES_PATH = "/opt/redpanda/lib/ossl-modules/"
+    OPENSSL_CONFIG_FILE_BASE = "openssl/openssl.cnf"
+    OPENSSL_MODULES_PATH_BASE = "lib/ossl-modules/"
 
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
@@ -1213,6 +1304,11 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
             "collect_default": True
         }
     }
+
+    class FIPSMode(Enum):
+        disabled = 0
+        permissive = 1
+        enabled = 2
 
     def __init__(self,
                  context: TestContext,
@@ -1318,7 +1414,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
                    namespace: str | None = None,
                    topic: str | None = None,
-                   nodes=None):
+                   nodes: Any = None):
         '''
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
@@ -1960,7 +2056,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
                    namespace: str | None = None,
                    topic: str | None = None,
-                   pods=None):
+                   pods: Any = None):
         '''
         Pings the 'metrics_endpoint' of each pod and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
@@ -2672,6 +2768,15 @@ class RedpandaService(RedpandaServiceBase):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
+    def write_crl_file(self, node: ClusterNode, ca: tls.CertificateAuthority):
+        self.logger.info(
+            f"Writing Redpanda node tls ca CRL file: {RedpandaService.TLS_CA_CRL_FILE}"
+        )
+        self.logger.debug(open(ca.crl, "r").read())
+        node.account.mkdirs(os.path.dirname(RedpandaService.TLS_CA_CRL_FILE))
+        node.account.copy_to(ca.crl, RedpandaService.TLS_CA_CRL_FILE)
+        node.account.ssh(f"chmod 755 {RedpandaService.TLS_CA_CRL_FILE}")
+
     def write_tls_certs(self):
         if not self._security.tls_provider:
             return
@@ -2705,6 +2810,9 @@ class RedpandaService(RedpandaServiceBase):
             node.account.copy_to(ca.crt, RedpandaService.TLS_CA_CRT_FILE)
             node.account.ssh(f"chmod 755 {RedpandaService.TLS_CA_CRT_FILE}")
 
+            assert ca.crl is not None, "Missing CRL file"
+            self.write_crl_file(node, ca)
+
             node.account.copy_to(ca.crt,
                                  RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
             node.account.ssh(
@@ -2718,6 +2826,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._pandaproxy_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._pandaproxy_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._pandaproxy_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
+                self._pandaproxy_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
 
             if self._schema_registry_config is not None:
                 self._schema_registry_config.maybe_write_client_certs(
@@ -2727,6 +2836,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._schema_registry_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._schema_registry_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._schema_registry_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
+                self._schema_registry_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
 
             if self._audit_log_config is not None:
                 self._audit_log_config.maybe_write_client_certs(
@@ -2736,6 +2846,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._audit_log_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._audit_log_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._audit_log_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
+                self._audit_log_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
 
     def start_redpanda(self, node):
         preamble, res_args = self._resource_settings.to_cli(
@@ -2904,6 +3015,8 @@ class RedpandaService(RedpandaServiceBase):
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
+        self.write_openssl_config_file(node)
+
         if write_config:
             self.write_node_conf_file(
                 node,
@@ -3043,7 +3156,9 @@ class RedpandaService(RedpandaServiceBase):
                 logger=self.logger,
                 signature_version=self.si_settings.
                 cloud_storage_signature_version,
-                before_call_headers=self.si_settings.before_call_headers)
+                before_call_headers=self.si_settings.before_call_headers,
+                use_fips_endpoint=self.si_settings.use_fips_endpoint(),
+                addressing_style=self.si_settings.addressing_style)
 
             self.logger.debug(
                 f"Creating S3 bucket: {self.si_settings.cloud_storage_bucket}")
@@ -3210,20 +3325,25 @@ class RedpandaService(RedpandaServiceBase):
 
     def set_feature_active(self, feature_name: str, active: bool, *,
                            timeout_sec: int):
-        self._admin.put_feature(feature_name,
-                                {"state": "active" if active else "disabled"})
-        self.await_feature(feature_name, active, timeout_sec=timeout_sec)
+        state = 'active' if active else 'disabled'
+        self._admin.put_feature(feature_name, {"state": state})
+        self.await_feature(feature_name, state, timeout_sec=timeout_sec)
 
-    def await_feature(self, feature_name: str, active: bool, *,
-                      timeout_sec: int):
+    def await_feature(self,
+                      feature_name: str,
+                      await_state: str,
+                      *,
+                      timeout_sec: int,
+                      nodes: list[ClusterNode] | None = None):
         """
         For use during upgrade tests, when after upgrade yo uwould like to block
         until a particular feature's active status updates (e.g. if it does migrations)
         """
-        await_state = 'active' if active else 'disabled'
+        if nodes is None:
+            nodes = self.nodes
 
         def is_awaited_state():
-            for n in self.nodes:
+            for n in nodes:
                 f = self._admin.get_features(node=n)
                 by_name = dict((f['name'], f) for f in f['features'])
                 try:
@@ -3400,7 +3520,7 @@ class RedpandaService(RedpandaServiceBase):
 
                 # Decode binary manifests for convenience, but don't give up
                 # if we fail
-                if ".bin" in m:
+                if "/manifest.bin" in m:
                     try:
                         decoded = RpStorageTool(
                             self.logger).decode_partition_manifest(body)
@@ -3684,6 +3804,14 @@ class RedpandaService(RedpandaServiceBase):
                                   clean_shutdown=False,
                                   allow_fail=True)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
+            hidden_cache_folder = f'{RedpandaService.PERSISTENT_ROOT}/.cache'
+            self.logger.debug(
+                f"Checking for presence of {hidden_cache_folder}")
+            if node.account.exists(hidden_cache_folder):
+                self.logger.debug(
+                    f"Seeing {hidden_cache_folder}, removing that specifically first"
+                )
+                node.account.remove(hidden_cache_folder)
             if node.account.sftp_client.listdir(
                     RedpandaService.PERSISTENT_ROOT):
                 if not preserve_logs:
@@ -3705,6 +3833,9 @@ class RedpandaService(RedpandaServiceBase):
         if node.account.exists(RedpandaService.SYSTEM_TLS_CA_CRT_FILE):
             node.account.remove(RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
             node.account.ssh(f"update-ca-certificates")
+
+        if node.account.exists(RedpandaService.TEMP_OSSL_CONFIG_FILE):
+            node.account.remove(RedpandaService.TEMP_OSSL_CONFIG_FILE)
 
         if not preserve_current_install or not self._installer._started:
             # Reset the binaries to use the original binaries.
@@ -3753,6 +3884,38 @@ class RedpandaService(RedpandaServiceBase):
             cmd=f"host {hostname}",
             timeout_sec=10).decode('utf-8').split(' ')[0]
         return fqdn
+
+    def write_openssl_config_file(self, node):
+        conf = self.render("openssl.cnf",
+                           fips_conf_file=os.path.join(
+                               self.rp_install_path(),
+                               "openssl/fipsmodule.cnf"))
+        self.logger.debug(
+            f'Writing {RedpandaService.TEMP_OSSL_CONFIG_FILE} to {node.name}:\n{conf}'
+        )
+        node.account.create_file(RedpandaService.TEMP_OSSL_CONFIG_FILE, conf)
+
+    def get_openssl_config_file_path(self) -> str:
+        path = os.path.join(self.rp_install_path(),
+                            self.OPENSSL_CONFIG_FILE_BASE)
+        if self.rp_install_path() != "/opt/redpanda":
+            # If we aren't using an 'installed' Redpanda instance, the openssl config file
+            # located in the install path will not point to the correct location of the FIPS
+            # module config file.  We generate an openssl config file just for this purpose
+            # see write_openssl_config_file above
+            path = RedpandaService.TEMP_OSSL_CONFIG_FILE
+
+        self.logger.debug(
+            f'OpenSSL Config File Path: {path} ({self.rp_install_path()})')
+        return path
+
+    def get_openssl_modules_directory(self) -> str:
+        path = os.path.join(self.rp_install_path(),
+                            self.OPENSSL_MODULES_PATH_BASE)
+
+        self.logger.debug(
+            f'OpenSSL Modules Directory: {path} ({self.rp_install_path()})')
+        return path
 
     def write_node_conf_file(self,
                              node,
@@ -3808,6 +3971,22 @@ class RedpandaService(RedpandaServiceBase):
                            endpoint_authn_method=self.endpoint_authn_method(),
                            auto_auth=self._security.auto_auth)
 
+        def is_fips_capable(node) -> bool:
+            cur_ver = self._installer.installed_version(node)
+            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
+
+        if in_fips_environment() and is_fips_capable(node):
+            self.logger.info(
+                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
+            )
+            doc = yaml.full_load(conf)
+            doc["redpanda"].update(
+                dict(fips_mode="enabled",
+                     openssl_config_file=self.get_openssl_config_file_path(),
+                     openssl_module_directory=self.
+                     get_openssl_modules_directory()))
+            conf = yaml.dump(doc)
+
         if override_cfg_params or node in self._extra_node_conf:
             doc = yaml.full_load(conf)
             doc["redpanda"].update(self._extra_node_conf[node])
@@ -3829,26 +4008,11 @@ class RedpandaService(RedpandaServiceBase):
                     key_file=RedpandaService.TLS_SERVER_KEY_FILE,
                     cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                     truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+                    crl_file=RedpandaService.TLS_CA_CRL_FILE,
                 ) for n in ["dnslistener", "iplistener"]
             ]
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
-            conf = yaml.dump(doc)
-
-        def is_fips_capable(node) -> bool:
-            cur_ver = self._installer.installed_version(node)
-            return cur_ver == RedpandaInstaller.HEAD or cur_ver >= (24, 2, 1)
-
-        if in_fips_environment() and is_fips_capable(node):
-            self.logger.info(
-                "Operating in FIPS environment, enabling FIPS mode for Redpanda"
-            )
-            doc = yaml.full_load(conf)
-            doc["redpanda"].update(
-                dict(fips_mode=True,
-                     openssl_config_file=RedpandaService.OPENSSL_CONFIG_FILE,
-                     openssl_module_directory=RedpandaService.
-                     OPENSSL_MODULES_PATH))
             conf = yaml.dump(doc)
 
         self.logger.info("Writing Redpanda node config file: {}".format(
@@ -4141,7 +4305,8 @@ class RedpandaService(RedpandaServiceBase):
         """Run command that computes MD5 hash of every file in redpanda data
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
-        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \; -exec stat -c ' %s' '{{}}' \;"
+        script_path = inject_remote_script(node, "compute_storage.py")
+        cmd = f"python3 {script_path} --sizes --md5 --print-flat --data-dir {RedpandaService.DATA_DIR}"
         lines = node.account.ssh_output(cmd, timeout_sec=120)
         lines = lines.decode().split("\n")
 
@@ -4162,7 +4327,7 @@ class RedpandaService(RedpandaServiceBase):
             lines.pop()
 
         return {
-            tokens[1].rstrip("\x00"): (tokens[0], int(tokens[2]))
+            tokens[0]: (tokens[2], int(tokens[1]))
             for tokens in map(lambda l: l.split(), lines)
         }
 
@@ -4574,7 +4739,7 @@ class RedpandaService(RedpandaServiceBase):
         if not any_anomalies:
             self.logger.info(f"No anomalies in object storage scrub")
         elif not fatal_anomalies:
-            self.logger.warn(
+            self.logger.info(
                 f"Non-fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
             )
         else:
@@ -4949,3 +5114,6 @@ def make_redpanda_mixed_service(context: TestContext,
         return make_redpanda_cloud_service(context, min_brokers=min_brokers)
     else:
         return make_redpanda_service(context, num_brokers=min_brokers)
+
+
+AnyRedpandaService = RedpandaService | RedpandaServiceCloud

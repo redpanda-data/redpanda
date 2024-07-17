@@ -11,6 +11,7 @@ package schema
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,7 +22,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-var supportedTypes = []string{"avro", "protobuf"}
+var supportedTypes = []string{"avro", "protobuf", "json"}
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
@@ -117,6 +118,8 @@ func typeFromFlag(typeFlag string) (sr.SchemaType, error) {
 		return sr.TypeAvro, nil
 	case "proto", "protobuf":
 		return sr.TypeProtobuf, nil
+	case "json":
+		return sr.TypeJSON, nil
 	default:
 		return 0, fmt.Errorf("unrecognized type %q", typeFlag)
 	}
@@ -128,10 +131,25 @@ func typeFromFile(schemaFile string) (sr.SchemaType, error) {
 		return sr.TypeAvro, nil
 	case strings.HasSuffix(schemaFile, ".proto") || strings.HasSuffix(schemaFile, ".protobuf"):
 		return sr.TypeProtobuf, nil
+	case strings.HasSuffix(schemaFile, ".json"):
+		return sr.TypeJSON, nil
 	default:
 		return 0, fmt.Errorf("unable to determine the schema type from %q", schemaFile)
 	}
 }
+
+// This regexp captures the reference flag in its simplest form which is:
+//
+//	name:subject:version
+//
+// However, name can also be a URI. Therefore, this regexp has 3 capturing
+// groups:
+//  1. Either alphabetic characters (scheme) followed by '://', then followed by
+//     any other character except ':', or ':' followed by numbers and more
+//     characters to capture optional ports in the authority and the path.
+//  2. Captures any character except ':' (subject).
+//  3. Captures any character except ':' (version).
+var referenceRegex = regexp.MustCompile(`^([a-zA-Z]+://[^:]+(?::\d+)?(?:/[^:]+)*|[^:]+):([^:]+):([^:]+)$`)
 
 // parseReferenceFlag parses the --reference flag which can be either a comma
 // separated list of name:subject:version or a path to a file containing the
@@ -145,11 +163,11 @@ func parseReferenceFlag(fs afero.Fs, referenceFlag string) ([]sr.SchemaReference
 	if strings.Contains(referenceFlag, ":") {
 		split := strings.Split(referenceFlag, ",")
 		for _, v := range split {
-			s := strings.SplitN(v, ":", 3)
-			if len(s) != 3 {
+			match := referenceRegex.FindStringSubmatch(v)
+			if len(match) == 0 {
 				return nil, fmt.Errorf("unexpected format %q, please use name:subject:version format", referenceFlag)
 			}
-			name, subject, versionString := s[0], s[1], s[2]
+			name, subject, versionString := match[1], match[2], match[3] // match[0] is the full match
 			if name == "" || subject == "" || versionString == "" {
 				return nil, fmt.Errorf("invalid empty values in %q", referenceFlag)
 			}

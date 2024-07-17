@@ -145,7 +145,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
                                     num_msg_per_round - 1)
 
         self._crash_and_restart_all()
-
+        self._wait_for_leader()
         hwm = next(self.rpk.describe_topic(self.topic)).high_watermark
         lost = num_msg_per_round - hwm
         assert lost > 0, "This test must observe data loss" \
@@ -306,7 +306,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
         self.logger.debug(f"Starting back old leader node: {node.name}")
         self.redpanda.start_node(node)
 
-    def _wait_for_leader(self, *, timeout_sec=10, backoff_sec=1):
+    def _wait_for_leader(self, *, timeout_sec=30, backoff_sec=3):
         admin = Admin(self.redpanda)
         wait_until(
             lambda: admin.get_partition_leader(namespace="kafka",

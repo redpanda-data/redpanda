@@ -4,6 +4,7 @@ v_cc_library(
     cloud_storage_config.cc
     feature_migrator.cc
     rbac_migrator.cc
+    shard_placement_migrator.cc
   DEPS
     Seastar::seastar
     v::model

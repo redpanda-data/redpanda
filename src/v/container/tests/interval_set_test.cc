@@ -27,8 +27,8 @@ namespace {
 void check_no_overlap(const set_t& s) {
     std::optional<uint64_t> prev_last;
     for (const auto& interval : s) {
-        auto start = interval.start;
-        auto end = interval.end;
+        auto start = interval.first;
+        auto end = interval.second;
         EXPECT_GT(end, start);
         if (prev_last) {
             EXPECT_GT(start, prev_last.value());
@@ -63,8 +63,8 @@ TEST(IntervalSet, InsertMergeOverlappingIntervals) {
         //    [i, i + 10)
         const auto ret1 = set.insert({0, 10});
         EXPECT_TRUE(ret1.second);
-        EXPECT_EQ(ret1.first->start, 0);
-        EXPECT_EQ(ret1.first->end, 10);
+        EXPECT_EQ(ret1.first->first, 0);
+        EXPECT_EQ(ret1.first->second, 10);
 
         // Insertion of a sub-interval results in the first interval being
         // extended. Note that because of this, the iterators are safe (i.e.
@@ -73,8 +73,8 @@ TEST(IntervalSet, InsertMergeOverlappingIntervals) {
         auto expected_end = 10 + i;
         EXPECT_TRUE(ret2.second);
         EXPECT_EQ(ret1, ret2);
-        EXPECT_EQ(ret1.first->start, 0);
-        EXPECT_EQ(ret1.first->end, expected_end);
+        EXPECT_EQ(ret1.first->first, 0);
+        EXPECT_EQ(ret1.first->second, expected_end);
 
         // Confirm we can still find the expanded intervals.
         const auto found_iter_first = set.find(0);
@@ -99,8 +99,8 @@ TEST(IntervalSet, InsertMergesAdjacentIntervals) {
 
     // Since the intervals were exactly adjacent, they should be merged.
     EXPECT_EQ(ret1, ret2);
-    EXPECT_EQ(ret1.first->start, 0);
-    EXPECT_EQ(ret1.first->end, 20);
+    EXPECT_EQ(ret1.first->first, 0);
+    EXPECT_EQ(ret1.first->second, 20);
     check_no_overlap(set);
 }
 
@@ -139,8 +139,8 @@ TEST(IntervalSet, InsertOverlapFront) {
     EXPECT_TRUE(ret3.second);
     EXPECT_EQ(ret1, ret2);
     EXPECT_EQ(ret1, ret3);
-    EXPECT_EQ(ret1.first->start, 0);
-    EXPECT_EQ(ret1.first->end, 100);
+    EXPECT_EQ(ret1.first->first, 0);
+    EXPECT_EQ(ret1.first->second, 100);
     EXPECT_EQ(1, set.size());
 
     check_no_overlap(set);
@@ -150,8 +150,8 @@ TEST(IntervalSet, InsertOverlapCompletely) {
     set_t set;
     EXPECT_TRUE(set.insert({10, 20}).second);
     EXPECT_TRUE(set.insert({0, 100}).second);
-    EXPECT_EQ(set.begin()->start, 0);
-    EXPECT_EQ(set.begin()->end, 100);
+    EXPECT_EQ(set.begin()->first, 0);
+    EXPECT_EQ(set.begin()->second, 100);
     check_no_overlap(set);
 }
 
@@ -239,16 +239,16 @@ TEST(IntervalSet, EraseBeginToEnd) {
     EXPECT_TRUE(set.insert({20, 10}).second);
     EXPECT_TRUE(set.insert({40, 10}).second);
     EXPECT_EQ(3, set.size());
-    EXPECT_TRUE(set.begin()->start == 0);
-    EXPECT_TRUE(set.begin()->end == 10);
+    EXPECT_TRUE(set.begin()->first == 0);
+    EXPECT_TRUE(set.begin()->second == 10);
 
     set.erase(set.begin());
-    EXPECT_EQ(set.begin()->start, 20);
-    EXPECT_EQ(set.begin()->end, 30);
+    EXPECT_EQ(set.begin()->first, 20);
+    EXPECT_EQ(set.begin()->second, 30);
 
     set.erase(set.begin());
-    EXPECT_EQ(set.begin()->start, 40);
-    EXPECT_EQ(set.begin()->end, 50);
+    EXPECT_EQ(set.begin()->first, 40);
+    EXPECT_EQ(set.begin()->second, 50);
 
     set.erase(set.begin());
     EXPECT_EQ(set.begin(), set.end());
@@ -269,9 +269,9 @@ TEST_P(RandomizedIntervalSetTest, RandomInsertsSequentialErase) {
     const auto params = GetParam();
     const auto interval_max_size = params.interval_max_size;
     const double target_fill_percent = params.target_fill_percent;
-    const auto buf_size = 5000;
+    const size_t buf_size = 5000;
 
-    const int target_fill_size = target_fill_percent * buf_size;
+    const size_t target_fill_size = target_fill_percent * buf_size;
 
     ss::sstring buf(buf_size, 'O');
     auto current_filled = [&buf] {
@@ -291,7 +291,7 @@ TEST_P(RandomizedIntervalSetTest, RandomInsertsSequentialErase) {
         const int start_max = buf_size - rand_size;
         const uint64_t rand_start = random_generators::get_int(0, start_max);
         EXPECT_TRUE(filled_intervals.insert({rand_start, rand_size}).second);
-        for (int i = 0; i < rand_size; i++) {
+        for (size_t i = 0; i < rand_size; i++) {
             buf[rand_start + i] = 'X';
         }
     }
@@ -306,11 +306,11 @@ TEST_P(RandomizedIntervalSetTest, RandomInsertsSequentialErase) {
     while (!filled_intervals.empty()) {
         auto it = filled_intervals.begin();
         if (highest_so_far) {
-            EXPECT_GT(it->start, *highest_so_far);
+            EXPECT_GT(it->first, *highest_so_far);
         }
-        highest_so_far = it->end;
-        interval_filled_size += it->end - it->start;
-        for (auto i = it->start; i < it->end; i++) {
+        highest_so_far = it->second;
+        interval_filled_size += it->second - it->first;
+        for (auto i = it->first; i < it->second; i++) {
             EXPECT_EQ(buf[i], 'X');
         }
         filled_intervals.erase(it);

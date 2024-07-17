@@ -246,6 +246,8 @@ vbuild/
 
 /.vtools.yml
 /vtools
+/benthos
+/connect
 /Taskfile.yml
 /.dockerignore
 /.task/
@@ -261,3 +263,6 @@ vbuild/
 
 #asdf tool version file
 .tool-versions
+
+# bazel
+user.bazelrc

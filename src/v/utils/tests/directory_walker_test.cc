@@ -21,7 +21,7 @@ SEASTAR_THREAD_TEST_CASE(empty_dir) {
     ss::recursive_touch_directory(dir).get();
 
     int count = 0;
-    directory_walker::walk(dir, [&count](ss::directory_entry de) mutable {
+    directory_walker::walk(dir, [&count](ss::directory_entry) mutable {
         count++;
         return ss::make_ready_future<>();
     }).get();
@@ -36,7 +36,7 @@ SEASTAR_THREAD_TEST_CASE(non_empty_dir) {
     // sees directories
     int count = 0;
     ss::recursive_touch_directory(dir + "/dir0").get();
-    directory_walker::walk(dir, [&count](ss::directory_entry de) mutable {
+    directory_walker::walk(dir, [&count](ss::directory_entry) mutable {
         count++;
         return ss::make_ready_future<>();
     }).get();
@@ -48,7 +48,7 @@ SEASTAR_THREAD_TEST_CASE(non_empty_dir) {
       dir + "/file0", ss::open_flags::ro | ss::open_flags::create)
       .discard_result()
       .get();
-    directory_walker::walk(dir, [&count](ss::directory_entry de) mutable {
+    directory_walker::walk(dir, [&count](ss::directory_entry) mutable {
         count++;
         return ss::make_ready_future<>();
     }).get();
@@ -57,7 +57,7 @@ SEASTAR_THREAD_TEST_CASE(non_empty_dir) {
     // sees links
     count = 0;
     ss::link_file(dir + "/file0", dir + "/file1").get();
-    directory_walker::walk(dir, [&count](ss::directory_entry de) mutable {
+    directory_walker::walk(dir, [&count](ss::directory_entry) mutable {
         count++;
         return ss::make_ready_future<>();
     }).get();
@@ -77,11 +77,10 @@ SEASTAR_THREAD_TEST_CASE(exceptional_future) {
           .discard_result()
           .get();
     }
-    auto f = directory_walker::walk(
-      dir, [&count](ss::directory_entry de) mutable {
-          count++;
-          return ss::make_ready_future<>();
-      });
+    auto f = directory_walker::walk(dir, [&count](ss::directory_entry) mutable {
+        count++;
+        return ss::make_ready_future<>();
+    });
     f.wait();
     BOOST_REQUIRE(!f.failed());
     f.ignore_ready_future();
@@ -91,7 +90,7 @@ SEASTAR_THREAD_TEST_CASE(exceptional_future) {
     // should stop early and the returned future should be failed.
     count = 0;
     auto f2 = directory_walker::walk(
-      dir, [&count](ss::directory_entry de) mutable {
+      dir, [&count](ss::directory_entry) mutable {
           count++;
           if (count == 2) {
               return ss::make_exception_future<>(std::runtime_error("foo"));

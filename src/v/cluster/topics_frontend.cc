@@ -26,11 +26,14 @@
 #include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
+#include "cluster/shard_balancer.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_recovery_validator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "data_migration_types.h"
 #include "features/feature_table.h"
+#include "fwd.h"
 #include "model/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -74,6 +77,9 @@ topics_frontend::topics_frontend(
   ss::sharded<cluster::members_table>& members_table,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& shard_table,
+  ss::sharded<shard_balancer>& sb,
+  ss::sharded<storage::api>& storage,
+  data_migrations::migrated_resources& migrated_resources,
   plugin_table& plugin_table,
   metadata_cache& metadata_cache,
   config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -89,11 +95,14 @@ topics_frontend::topics_frontend(
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
+  , _shard_balancer(sb)
+  , _storage(storage)
   , _plugin_table(plugin_table)
   , _metadata_cache(metadata_cache)
   , _members_table(members_table)
   , _pm(pm)
   , _shard_table(shard_table)
+  , _migrated_resources(migrated_resources)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio)
   , _minimum_topic_replication(minimum_topic_replication)
   , _partition_autobalancing_topic_aware(
@@ -124,18 +133,6 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
         if (!tp.cfg.properties.shadow_indexing.has_value()) {
             tp.cfg.properties.shadow_indexing
               = _metadata_cache.get_default_shadow_indexing_mode();
-        }
-
-        /**
-         * We always override cleanup policy. i.e. topic cleanup policy will
-         * stay the same even if it was changed in defaults (broker
-         * configuration) and there was no override passed by client while
-         * creating a topic. The the same policy is applied in Kafka.
-         */
-
-        if (!tp.cfg.properties.cleanup_policy_bitflags.has_value()) {
-            tp.cfg.properties.cleanup_policy_bitflags
-              = _metadata_cache.get_default_cleanup_policy_bitflags();
         }
     }
 
@@ -312,6 +309,17 @@ ss::future<std::error_code> topics_frontend::do_update_replication_factor(
 
 ss::future<topic_result> topics_frontend::do_update_topic_properties(
   topic_properties_update update, model::timeout_clock::time_point timeout) {
+    auto state = _migrated_resources.get_topic_state(update.tp_ns);
+    if (state != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(
+          clusterlog.warn,
+          "can not update topic {} properties as the topic is being migrated",
+          state);
+
+        co_return topic_result{
+          std::move(update.tp_ns), errc::resource_is_being_migrated};
+    }
+
     update_topic_properties_cmd cmd(update.tp_ns, update.properties);
     try {
         auto update_rf_res = co_await do_update_replication_factor(
@@ -409,6 +417,15 @@ ss::future<topic_result> topics_frontend::do_create_topic(
   custom_assignable_topic_configuration assignable_config,
   model::timeout_clock::time_point timeout) {
     if (_topics.local().contains(assignable_config.cfg.tp_ns)) {
+        co_return topic_result(
+          assignable_config.cfg.tp_ns, errc::topic_already_exists);
+    }
+
+    if (_migrated_resources.is_already_migrated(assignable_config.cfg.tp_ns)) {
+        vlog(
+          clusterlog.warn,
+          "unable to create topic {} as it is being migrated",
+          assignable_config.cfg.tp_ns);
         co_return topic_result(
           assignable_config.cfg.tp_ns, errc::topic_already_exists);
     }
@@ -527,6 +544,31 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           "Configured topic recovery for {}, topic configuration: {}",
           assignable_config.cfg.tp_ns,
           assignable_config.cfg);
+    }
+    bool configured_label_from_manifest
+      = assignable_config.is_read_replica()
+        || assignable_config.is_recovery_enabled();
+    // We set a remote label if:
+    // - we haven't got a remote label from the cloud (i.e. this isn't a read
+    //   replica or recovery topic),
+    // - there is a cluster UUID (always expected),
+    // - the remote labels feature is active,
+    // - the config to disable remote labels is False
+    if (
+      !configured_label_from_manifest
+      && !assignable_config.cfg.properties.remote_label.has_value()
+      && _storage.local().get_cluster_uuid().has_value()
+      && _features.local().is_active(features::feature::remote_labels)
+      && !config::shard_local_cfg()
+            .cloud_storage_disable_remote_labels_for_tests.value()) {
+        auto remote_label = std::make_optional<cloud_storage::remote_label>(
+          _storage.local().get_cluster_uuid().value());
+        assignable_config.cfg.properties.remote_label = remote_label;
+        vlog(
+          clusterlog.debug,
+          "Configuring topic {} with remote label {}",
+          assignable_config.cfg.tp_ns,
+          remote_label);
     }
 
     auto units = co_await _allocator.invoke_on(
@@ -662,6 +704,15 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
     auto topic_meta_opt = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!topic_meta_opt.has_value()) {
         topic_result result(std::move(tp_ns), errc::topic_not_exists);
+        return ss::make_ready_future<topic_result>(result);
+    }
+    auto state = _migrated_resources.get_topic_state(tp_ns);
+    if (state != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(
+          clusterlog.warn,
+          "can not delete topic as it is being {} by migration",
+          state);
+        topic_result result(std::move(tp_ns), errc::resource_is_being_migrated);
         return ss::make_ready_future<topic_result>(result);
     }
     // Before deleting a topic we need to make sure there are no transforms
@@ -978,7 +1029,7 @@ topics_frontend::partitions_with_lost_majority(
             const auto& tn = it->first;
             const auto& assignments = (it->second).get_assignments();
             const auto topic_revision = it->second.get_revision();
-            for (const auto& assignment : assignments) {
+            for (const auto& [_, assignment] : assignments) {
                 const auto& current = assignment.replicas;
                 auto remaining = subtract_replica_sets_by_node_id(
                   current, dead_nodes);
@@ -1339,6 +1390,17 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     if (!tp_cfg || !replication_factor) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
     }
+    auto state = _migrated_resources.get_topic_state(p_cfg.tp_ns);
+    if (state != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(
+          clusterlog.warn,
+          "can not create {} topic partitions as the topic is being migrated",
+          state);
+
+        co_return topic_result{
+          std::move(p_cfg.tp_ns), errc::resource_is_being_migrated};
+    }
+
     // we only support increasing number of partitions
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
@@ -1356,7 +1418,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         }
 
         node2count_t node2count;
-        for (const auto& p_as : md_ref->get().get_assignments()) {
+        for (const auto& [_, p_as] : md_ref->get().get_assignments()) {
             for (const auto& r : p_as.replicas) {
                 node2count[r.node_id] += 1;
             }
@@ -1600,10 +1662,11 @@ ss::future<result<allocation_units::pointer>> do_increase_replication_factor(
     co_await ssx::async_for_each(
       assignments.begin(),
       assignments.end(),
-      [&](const partition_assignment& assignment) {
+      [&](const assignments_set::value_type& assignment) {
           allocation_constraints allocation_constraints;
 
-          auto partition_size_it = capacity_info.ntp_sizes.find(assignment.id);
+          auto partition_size_it = capacity_info.ntp_sizes.find(
+            assignment.second.id);
           if (partition_size_it != capacity_info.ntp_sizes.end()) {
               // Add constraint on partition max_disk_usage_ratio overfill
               allocation_constraints.add(disk_not_overflowed_by_partition(
@@ -1619,7 +1682,7 @@ ss::future<result<allocation_units::pointer>> do_increase_replication_factor(
           }
 
           req.partitions.emplace_back(
-            assignment, new_rf, std::move(allocation_constraints));
+            assignment.second, new_rf, std::move(allocation_constraints));
       });
     req.existing_replica_counts = existing_replica_counts;
 
@@ -1671,7 +1734,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
     std::optional<node2count_t> existing_replica_counts;
     if (_partition_autobalancing_topic_aware()) {
         node2count_t node2count;
-        for (const auto& p_as : tp_metadata->get_assignments()) {
+        for (const auto& [_, p_as] : tp_metadata->get_assignments()) {
             for (const auto& bs : p_as.replicas) {
                 node2count[bs.node_id] += 1;
             }
@@ -1718,7 +1781,7 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
   model::timeout_clock::time_point timeout) {
     std::vector<move_topic_replicas_data> new_assignments;
 
-    auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
+    auto tp_metadata = _topics.local().get_topic_metadata(topic);
     if (!tp_metadata.has_value()) {
         co_return errc::topic_not_exists;
     }
@@ -1729,26 +1792,24 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
 
     std::optional<std::error_code> error;
 
-    auto metadata_ref = tp_metadata.value().get();
-
     co_await ss::max_concurrent_for_each(
-      metadata_ref.get_assignments(),
+      tp_metadata->get_assignments(),
       32,
       [&new_assignments, &error, topic, new_replication_factor](
-        partition_assignment& assignment) {
+        assignments_set::value_type& assignment) {
           if (error) {
               return ss::now();
           }
-          if (assignment.replicas.size() < new_replication_factor()) {
+          if (assignment.second.replicas.size() < new_replication_factor()) {
               error = errc::topic_invalid_replication_factor;
               return ss::now();
           }
 
           new_assignments.emplace_back(move_topic_replicas_data());
-          new_assignments.back().partition = assignment.id;
+          new_assignments.back().partition = assignment.second.id;
           new_assignments.back().replicas.resize(new_replication_factor);
           std::copy_n(
-            assignment.replicas.begin(),
+            assignment.second.replicas.begin(),
             new_replication_factor,
             new_assignments.back().replicas.begin());
           return ss::now();
@@ -1973,6 +2034,69 @@ void topics_frontend::print_rf_warning_message() {
           rf,
           min_rf);
     }
+}
+
+bool topics_frontend::node_local_core_assignment_enabled() const {
+    return _features.local().is_active(
+      features::feature::node_local_core_assignment);
+}
+
+ss::future<std::error_code> topics_frontend::set_partition_replica_shard(
+  model::ntp ntp,
+  model::node_id replica,
+  ss::shard_id shard,
+  model::timeout_clock::time_point deadline) {
+    if (!node_local_core_assignment_enabled()) {
+        co_return errc::feature_disabled;
+    }
+
+    if (replica == _self) {
+        co_return co_await set_local_partition_shard(ntp, shard);
+    }
+
+    auto replicas_view = _topics.local().get_replicas_view(ntp);
+    if (!replicas_view) {
+        co_return errc::partition_not_exists;
+    }
+    if (!log_revision_on_node(replicas_view.value(), replica)) {
+        co_return errc::replica_does_not_exist;
+    }
+
+    auto reply = co_await _connections.local()
+                   .with_node_client<cluster::controller_client_protocol>(
+                     _self,
+                     ss::this_shard_id(),
+                     replica,
+                     deadline,
+                     [ntp, shard, deadline](
+                       controller_client_protocol cp) mutable {
+                         return cp
+                           .set_partition_shard(
+                             set_partition_shard_request{
+                               .ntp = std::move(ntp), .shard = shard},
+                             rpc::client_opts(deadline))
+                           .then(&rpc::get_ctx_data<set_partition_shard_reply>);
+                     });
+
+    if (reply.has_error()) {
+        co_return reply.error();
+    }
+    co_return reply.value().ec;
+}
+
+ss::future<errc>
+topics_frontend::set_local_partition_shard(model::ntp ntp, ss::shard_id shard) {
+    return _shard_balancer.invoke_on(
+      shard_balancer::shard_id,
+      [ntp = std::move(ntp), shard](shard_balancer& sb) {
+          return sb.reassign_shard(ntp, shard);
+      });
+}
+
+ss::future<errc> topics_frontend::trigger_local_partition_shard_rebalance() {
+    return _shard_balancer.invoke_on(
+      shard_balancer::shard_id,
+      [](shard_balancer& sb) { return sb.trigger_rebalance(); });
 }
 
 } // namespace cluster

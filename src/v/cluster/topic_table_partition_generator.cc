@@ -50,9 +50,9 @@ topic_table_partition_generator::next_batch() {
 
     while (!_exhausted && batch.size() < _batch_size) {
         model::topic_namespace tn = _topic_iterator->first;
-        model::partition_id pid = _partition_iterator->id;
+        model::partition_id pid = _partition_iterator->second.id;
         std::vector<model::broker_shard> replicas
-          = _partition_iterator->replicas;
+          = _partition_iterator->second.replicas;
         partition_replicas entry{
           .partition = model::ntp{tn.ns, tn.tp, pid},
           .replicas = std::move(replicas)};

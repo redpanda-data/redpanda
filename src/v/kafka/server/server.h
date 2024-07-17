@@ -16,6 +16,7 @@
 #include "features/feature_table.h"
 #include "kafka/latency_probe.h"
 #include "kafka/protocol/types.h"
+#include "kafka/read_distribution_probe.h"
 #include "kafka/sasl_probe.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_metadata_cache.hh"
@@ -54,6 +55,8 @@ public:
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::config_frontend>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::client_quota::frontend>&,
+      ss::sharded<cluster::client_quota::store>&,
       ss::sharded<quota_manager>&,
       ss::sharded<snc_quota_manager>&,
       ss::sharded<kafka::group_router>&,
@@ -121,6 +124,10 @@ public:
     coordinator_ntp_mapper& coordinator_mapper();
 
     fetch_session_cache& fetch_sessions_cache() { return _fetch_session_cache; }
+    cluster::client_quota::frontend& quota_frontend() {
+        return _quota_frontend.local();
+    }
+    cluster::client_quota::store& quota_store() { return _quota_store.local(); }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
     usage_manager& usage_mgr() { return _usage_manager.local(); }
     snc_quota_manager& snc_quota_mgr() { return _snc_quota_mgr.local(); }
@@ -174,6 +181,8 @@ public:
 
     sasl_probe& sasl_probe() { return *_sasl_probe; }
 
+    read_distribution_probe& read_probe() { return *_read_dist_probe; }
+
     ssx::singleton_thread_worker& thread_worker() { return _thread_worker; }
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
@@ -214,6 +223,8 @@ private:
     ss::sharded<cluster::config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<cluster::client_quota::frontend>& _quota_frontend;
+    ss::sharded<cluster::client_quota::store>& _quota_store;
     ss::sharded<quota_manager>& _quota_mgr;
     ss::sharded<snc_quota_manager>& _snc_quota_mgr;
     ss::sharded<kafka::group_router>& _group_router;
@@ -243,6 +254,7 @@ private:
     metrics::internal_metric_groups _metrics;
     std::unique_ptr<class latency_probe> _probe;
     std::unique_ptr<class sasl_probe> _sasl_probe;
+    std::unique_ptr<read_distribution_probe> _read_dist_probe;
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;

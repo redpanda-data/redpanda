@@ -13,11 +13,13 @@
 
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_manifest_downloader.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/timeout_clock.h"
 
 namespace cluster {
 
@@ -25,8 +27,7 @@ remote_topic_configuration_source::remote_topic_configuration_source(
   cloud_storage::remote& remote)
   : _remote(remote) {}
 
-static ss::future<std::tuple<errc, cloud_storage::remote_manifest_path>>
-download_topic_manifest(
+static ss::future<errc> download_topic_manifest(
   cloud_storage::remote& remote,
   custom_assignable_topic_configuration& cfg,
   cloud_storage::topic_manifest& manifest,
@@ -35,59 +36,24 @@ download_topic_manifest(
     auto timeout
       = config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms();
     auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
-    retry_chain_node rc_node(as, timeout, backoff);
-
-    model::ns ns = cfg.cfg.tp_ns.ns;
-    model::topic topic = cfg.cfg.tp_ns.tp;
-    auto serde_path = std::pair{
-      cloud_storage::manifest_format::serde,
-      cloud_storage::topic_manifest::get_topic_manifest_path(
-        ns, topic, cloud_storage::manifest_format::serde),
-    };
-    // try serde first
-    auto res = co_await remote.download_manifest(
-      bucket, serde_path, manifest, rc_node);
-
-    if (res == cloud_storage::download_result::success) {
-        co_return std::make_tuple(errc::success, serde_path.second);
-    }
-
-    if (res != cloud_storage::download_result::notfound) {
-        vlog(
-          clusterlog.warn,
-          "Could not download topic manifest {} from bucket {}: {}",
-          serde_path.second,
-          bucket,
-          res);
-        co_return std::make_tuple(
-          errc::topic_operation_error, serde_path.second);
-    }
-
-    vlog(
-      clusterlog.debug,
-      "Could not find serde manifest from bucket {}: {}. trying json",
+    retry_chain_node retry_node(as);
+    cloud_storage::topic_manifest_downloader dl(
       bucket,
-      serde_path.second);
-
-    // no serde manifest and no generic error. try to fallback to json
-    auto json_path = std::pair{
-      cloud_storage::manifest_format::json,
-      cloud_storage::topic_manifest::get_topic_manifest_path(
-        ns, topic, cloud_storage::manifest_format::json)};
-    res = co_await remote.download_manifest(
-      bucket, json_path.second, manifest, rc_node);
-
-    if (res == cloud_storage::download_result::success) {
-        co_return std::make_tuple(errc::success, json_path.second);
+      /*remote_label=*/std::nullopt,
+      cfg.cfg.tp_ns,
+      remote);
+    auto deadline = model::timeout_clock::now() + timeout;
+    auto download_res = co_await dl.download_manifest(
+      retry_node, deadline, backoff, &manifest);
+    if (download_res.has_error()) {
+        co_return errc::topic_operation_error;
     }
-
-    vlog(
-      clusterlog.warn,
-      "Could not download topic manifest {} from bucket {}: {}",
-      json_path.second,
-      bucket,
-      res);
-    co_return std::make_tuple(errc::topic_operation_error, json_path.second);
+    if (
+      download_res.value()
+      != cloud_storage::find_topic_manifest_outcome::success) {
+        co_return errc::topic_operation_error;
+    }
+    co_return errc::success;
 }
 
 ss::future<errc>
@@ -97,22 +63,19 @@ remote_topic_configuration_source::set_remote_properties_in_config(
   ss::abort_source& as) {
     cloud_storage::topic_manifest manifest;
 
-    auto [res, key] = co_await download_topic_manifest(
+    auto res = co_await download_topic_manifest(
       _remote, cfg, manifest, bucket, as);
     if (res != errc::success) {
         co_return res;
     }
 
     if (!manifest.get_topic_config()) {
-        vlog(
-          clusterlog.warn,
-          "Topic manifest {} doesn't contain topic config",
-          key);
         co_return errc::topic_operation_error;
     } else {
+        const auto& dl_cfg = manifest.get_topic_config();
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
-          manifest.get_revision(),
-          manifest.get_topic_config()->partition_count);
+          manifest.get_revision(), dl_cfg->partition_count);
+        cfg.cfg.properties.remote_label = dl_cfg->properties.remote_label;
     }
     co_return errc::success;
 }
@@ -140,17 +103,13 @@ remote_topic_configuration_source::set_recovered_topic_properties(
   ss::abort_source& as) {
     cloud_storage::topic_manifest manifest;
 
-    auto [res, key] = co_await download_topic_manifest(
+    auto res = co_await download_topic_manifest(
       _remote, cfg, manifest, bucket, as);
     if (res != errc::success) {
         co_return res;
     }
 
     if (!manifest.get_topic_config()) {
-        vlog(
-          clusterlog.warn,
-          "Topic manifest {} doesn't contain topic config",
-          key);
         co_return errc::topic_operation_error;
     } else {
         // Update all topic properties
@@ -163,6 +122,7 @@ remote_topic_configuration_source::set_recovered_topic_properties(
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
           manifest.get_revision(),
           manifest.get_topic_config()->partition_count);
+        cfg.cfg.properties.remote_label = rc.value().properties.remote_label;
     }
     co_return errc::success;
 }

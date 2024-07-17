@@ -41,8 +41,9 @@ std::ostream& operator<<(std::ostream& os, const std::variant<T...>& v) {
     return os;
 }
 
+template<typename Rep, typename Period>
 inline std::ostream&
-operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
+operator<<(std::ostream& o, const std::chrono::duration<Rep, Period>& d) {
     fmt::print(
       o,
       "{}",

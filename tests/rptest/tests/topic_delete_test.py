@@ -73,7 +73,9 @@ def get_kvstore_topic_key_counts(redpanda):
             keys = [i['key'] for i in items]
 
             for k in keys:
-                if k['keyspace'] == "cluster" or k['keyspace'] == "usage":
+                if (k['keyspace'] == "cluster" or k['keyspace'] == "usage"
+                        or (k['keyspace'] == "shard_placement"
+                            and k['data']['type'] in (0, 3))):
                     # Not a per-partition key
                     continue
 
@@ -267,7 +269,8 @@ class TopicDeleteAfterMovementTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
-    def movement_done(self, partition, assignments):
+    def movement_done(self, partition, to_nodes):
+        assignments = [dict(node_id=n) for n in to_nodes]
         results = []
         for n in self.redpanda._started:
             info = self.admin.get_partitions(self.topic, partition, node=n)
@@ -278,7 +281,7 @@ class TopicDeleteAfterMovementTest(RedpandaTest):
             results.append(converged and info["status"] == "done")
         return all(results)
 
-    def move_topic(self, assignments):
+    def move_topic(self, to_nodes):
         for partition in range(3):
 
             def get_nodes(partition):
@@ -286,13 +289,17 @@ class TopicDeleteAfterMovementTest(RedpandaTest):
 
             nodes_before = set(
                 get_nodes(self.admin.get_partitions(self.topic, partition)))
-            nodes_after = {r['node_id'] for r in assignments}
+            nodes_after = set(to_nodes)
             if nodes_before == nodes_after:
                 continue
+            assignments = [
+                dict(node_id=n, core=PartitionMovementMixin.INVALID_CORE)
+                for n in to_nodes
+            ]
             self.admin.set_partition_replicas(self.topic, partition,
                                               assignments)
 
-            wait_until(lambda: self.movement_done(partition, assignments),
+            wait_until(lambda: self.movement_done(partition, to_nodes),
                        timeout_sec=60,
                        backoff_sec=2)
 
@@ -307,8 +314,7 @@ class TopicDeleteAfterMovementTest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
         # Move every partition to nodes 1,2,3
-        assignments = [dict(node_id=n, core=0) for n in [1, 2, 3]]
-        self.move_topic(assignments)
+        self.move_topic([1, 2, 3])
 
         down_node = self.redpanda.nodes[0]
         try:
@@ -317,8 +323,7 @@ class TopicDeleteAfterMovementTest(RedpandaTest):
                 f"chattr +i {self.redpanda.DATA_DIR}/kafka/{self.topic}")
 
             # Move every partition from node 1 to node 4
-            new_assignments = [dict(node_id=n, core=0) for n in [2, 3, 4]]
-            self.move_topic(new_assignments)
+            self.move_topic([2, 3, 4])
 
             def topic_exist_on_every_node(redpanda, topic_name):
                 storage = redpanda.storage()
@@ -852,7 +857,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         nodes_after = nodes_before[1:] + [
             replacement_node,
         ]
-        new_assignments = list({'core': 0, 'node_id': n} for n in nodes_after)
+        new_assignments = list({
+            'node_id': n,
+            'core': PartitionMovementMixin.INVALID_CORE
+        } for n in nodes_after)
         admin.set_partition_replicas(self.topic, 0, new_assignments)
 
         def move_complete():

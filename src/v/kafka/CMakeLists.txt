@@ -27,8 +27,7 @@ set(handlers_srcs
   server/handlers/describe_producers.cc
   server/handlers/describe_transactions.cc
   server/handlers/handler_probe.cc
-  server/handlers/alter_client_quotas.cc
-  server/handlers/describe_client_quotas.cc
+  server/handlers/client_quotas.cc
 )
 
 v_cc_library(
@@ -48,12 +47,14 @@ v_cc_library(
     server/server.cc
     server/protocol_utils.cc
     server/quota_manager.cc
+    server/client_quota_translator.cc
     server/snc_quota_manager.cc
     server/fetch_session_cache.cc
     server/replicated_partition.cc
     server/partition_proxy.cc
     server/group_recovery_consumer.cc
     server/group_metadata.cc
+    server/group_tx_tracker_stm.cc
  DEPS
     Seastar::seastar
     v::bytes

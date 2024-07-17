@@ -14,7 +14,10 @@
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
-#include "serde/serde.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
 #include "ssx/sformat.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
@@ -33,10 +36,13 @@
 namespace kafka {
 
 using offset = named_type<int64_t, struct kafka_offset_type>;
+using offset_delta = named_type<int64_t, struct kafka_offset_delta_type>;
 
 inline offset next_offset(offset p) {
     if (p < offset{0}) {
         return offset{0};
+    } else if (p == offset::max()) {
+        return offset::max();
     }
     return p + offset{1};
 }
@@ -47,6 +53,24 @@ inline constexpr offset prev_offset(offset o) {
     }
     return o - offset{1};
 }
+
+inline constexpr offset operator+(offset o, offset_delta d) {
+    if (o >= offset{0}) {
+        if (d() <= offset::max() - o) {
+            return offset{o() + d()};
+        } else {
+            return offset::max();
+        }
+    } else {
+        if (d() >= offset::min() - o) {
+            return offset{o() + d()};
+        } else {
+            return offset::min();
+        }
+    }
+}
+
+inline constexpr offset operator-(offset o, offset_delta d) { return o + (-d); }
 
 } // namespace kafka
 
@@ -122,6 +146,16 @@ operator&(cleanup_policy_bitflags a, cleanup_policy_bitflags b) {
 
 inline void operator&=(cleanup_policy_bitflags& a, cleanup_policy_bitflags b) {
     a = (a & b);
+}
+
+inline bool is_compaction_enabled(cleanup_policy_bitflags flags) {
+    return (flags & cleanup_policy_bitflags::compaction)
+           == cleanup_policy_bitflags::compaction;
+}
+
+inline bool is_deletion_enabled(cleanup_policy_bitflags flags) {
+    return (flags & cleanup_policy_bitflags::deletion)
+           == cleanup_policy_bitflags::deletion;
 }
 
 std::ostream& operator<<(std::ostream&, cleanup_policy_bitflags);
@@ -292,6 +326,8 @@ struct topic_partition {
         return topic < other.topic
                || (topic == other.topic && partition < other.partition);
     }
+
+    auto operator<=>(const topic_partition& other) const noexcept = default;
 
     operator topic_partition_view() {
         return topic_partition_view(topic, partition);
@@ -470,6 +506,28 @@ std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
 using client_address_t = named_type<ss::sstring, struct client_address_tag>;
 
+enum class fips_mode_flag : uint8_t {
+    // FIPS mode disabled
+    disabled = 0,
+    // FIPS mode enabled with permissive environment checks
+    permissive = 1,
+    // FIPS mode enabled with strict environment checks
+    enabled = 2,
+};
+
+constexpr std::string_view to_string_view(fips_mode_flag f) {
+    switch (f) {
+    case fips_mode_flag::disabled:
+        return "disabled";
+    case fips_mode_flag::permissive:
+        return "permissive";
+    case fips_mode_flag::enabled:
+        return "enabled";
+    }
+}
+
+std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f);
+std::istream& operator>>(std::istream& is, fips_mode_flag& f);
 } // namespace model
 
 namespace kafka {

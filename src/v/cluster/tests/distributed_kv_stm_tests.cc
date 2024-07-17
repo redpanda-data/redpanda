@@ -30,7 +30,7 @@ using test_value = int;
 using stm_t = cluster::distributed_kv_stm<test_key, test_value>;
 using stm_cssshptrr_t = const ss::shared_ptr<stm_t>&;
 
-struct kv_stm_fixture : stm_raft_fixture<kv_stm_fixture, stm_t> {
+struct kv_stm_fixture : stm_raft_fixture<stm_t> {
     static constexpr auto TIMEOUT = 30s;
     //
     stm_shptrs_t create_stms(

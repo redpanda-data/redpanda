@@ -78,6 +78,32 @@ class ProducerSwarmSelfTest(RedpandaTest):
         producer.wait()
         producer.stop()
 
+    @cluster(num_nodes=4)
+    def test_wait_start_stop(self):
+        spec = TopicSpec(partition_count=10, replication_factor=1)
+        self.client().create_topic(spec)
+        topic_name = spec.name
+
+        producer = ProducerSwarm(self.test_context,
+                                 self.redpanda,
+                                 topic_name,
+                                 producers=10,
+                                 records_per_producer=500,
+                                 messages_per_second_per_producer=10)
+
+        producer.start()
+        assert producer.is_alive()
+        producer.wait_for_all_started()
+        producer.stop()
+
+        assert not producer.is_alive()
+
+        # check that a subsequent start/stop works
+        producer.start()
+        assert producer.is_alive()
+        producer.wait_for_all_started()
+        producer.stop()
+
 
 class KgoRepeaterSelfTest(RedpandaMixedTest):
     def __init__(self, *args, **kwargs):

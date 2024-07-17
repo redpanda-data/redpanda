@@ -11,10 +11,10 @@
 
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 #include "ssx/sharded_ptr.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -279,8 +279,7 @@ delay_t eval_node_delay(
         return delay_t::zero();
     }
     auto& tb = *tbp;
-    return std::chrono::duration_cast<delay_t>(
-      tb.duration_for(tb.deficiency(tb.grab(0))));
+    return tb.calculate_delay<delay_t>();
 }
 
 } // namespace
@@ -383,7 +382,7 @@ void snc_quota_manager::record_request_receive(
     if (_use_throttling_v2()) {
         if (_node_quota.in) {
             _node_quota.in->replenish(now);
-            _node_quota.in->grab(request_size);
+            _node_quota.in->record(request_size);
         }
     } else {
         _shard_quota.in.use(request_size, now);
@@ -408,7 +407,7 @@ void snc_quota_manager::record_response(
     if (_use_throttling_v2()) {
         if (_node_quota.eg) {
             _node_quota.eg->replenish(now);
-            _node_quota.eg->grab(request_size);
+            _node_quota.eg->record(request_size);
         }
     } else {
         _shard_quota.eg.use(request_size, now);

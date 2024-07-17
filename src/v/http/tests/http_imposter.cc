@@ -21,7 +21,7 @@ static ss::logger http_imposter_log("http_imposter"); // NOLINT
 
 http_imposter_fixture::http_imposter_fixture(uint16_t port)
   : _port(port)
-  , _server_addr{ss::ipv4_addr{httpd_host_name.data(), httpd_port_number()}}
+  , _server_addr{ss::ipv4_addr{httpd_host_ip.data(), httpd_port_number()}}
   , _address{
       {httpd_host_name.data(), httpd_host_name.size()}, httpd_port_number()} {
     _id = fmt::format("{}", uuid_t::create());
@@ -41,6 +41,18 @@ void http_imposter_fixture::start_request_masking(
 const std::vector<http_test_utils::request_info>&
 http_imposter_fixture::get_requests() const {
     return _requests;
+}
+
+std::vector<http_test_utils::request_info> http_imposter_fixture::get_requests(
+  http_imposter_fixture::req_pred_t predicate) const {
+    std::vector<http_test_utils::request_info> matching_requests;
+    matching_requests.reserve(_requests.size());
+    std::copy_if(
+      _requests.cbegin(),
+      _requests.cend(),
+      std::back_inserter(matching_requests),
+      std::move(predicate));
+    return matching_requests;
 }
 
 static ss::sstring remove_query_params(std::string_view url) {

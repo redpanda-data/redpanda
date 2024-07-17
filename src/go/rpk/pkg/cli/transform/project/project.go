@@ -77,6 +77,8 @@ type Config struct {
 	OutputTopics []string          `yaml:"output-topics"`
 	Language     WasmLang          `yaml:"language"`
 	Env          map[string]string `yaml:"env,omitempty"`
+	Compression  string            `yaml:"compression,omitempty"`
+	FromOffset   string            `yaml:"from-offset,omitempty"`
 }
 
 var ConfigFileName = "transform.yaml"
@@ -89,6 +91,7 @@ type rawConfig struct {
 	OutputTopics []string          `yaml:"output-topics"`
 	Language     string            `yaml:"language"`
 	Env          map[string]string `yaml:"env,omitempty"`
+	Compression  string            `yaml:"compression,omitempty"`
 }
 
 func MarshalConfig(c Config) ([]byte, error) {
@@ -106,6 +109,7 @@ func UnmarshalConfig(b []byte, c *Config) error {
 		OutputTopics: raw.OutputTopics,
 		Language:     "",
 		Env:          raw.Env,
+		Compression:  raw.Compression,
 	}
 	if (c.OutputTopics == nil || len(c.OutputTopics) == 0) && len(raw.OutputTopic) > 0 {
 		c.OutputTopics = []string{raw.OutputTopic}

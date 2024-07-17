@@ -11,6 +11,8 @@
 
 #pragma once
 #include "bytes/iobuf_parser.h"
+#include "cluster/client_quota_serde.h"
+#include "cluster/data_migration_types.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
@@ -110,10 +112,6 @@ static constexpr int8_t create_role_cmd_type = 10;
 static constexpr int8_t delete_role_cmd_type = 11;
 static constexpr int8_t update_role_cmd_type = 12;
 
-// data policy commands
-static constexpr int8_t create_data_policy_cmd_type = 0;
-static constexpr int8_t delete_data_policy_cmd_type = 1;
-
 // node management commands
 static constexpr int8_t decommission_node_cmd_type = 0;
 static constexpr int8_t recommission_node_cmd_type = 1;
@@ -142,6 +140,14 @@ static constexpr int8_t transform_remove_cmd_type = 1;
 // cluster recovery commands
 static constexpr int8_t cluster_recovery_init_cmd_type = 0;
 static constexpr int8_t cluster_recovery_update_cmd_type = 1;
+
+// client quota commands
+static constexpr int8_t alter_quotas_delta_cmd_type = 0;
+
+// data migration commands
+static constexpr int8_t create_data_migration_cmd_type = 0;
+static constexpr int8_t update_data_migration_state_cmd_type = 1;
+static constexpr int8_t remove_data_migration_cmd_type = 2;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -299,20 +305,6 @@ using delete_acls_cmd = controller_command<
   model::record_batch_type::acl_management_cmd,
   serde_opts::adl_and_serde>;
 
-using create_data_policy_cmd = controller_command<
-  model::topic_namespace,
-  create_data_policy_cmd_data,
-  create_data_policy_cmd_type,
-  model::record_batch_type::data_policy_management_cmd,
-  serde_opts::adl_and_serde>;
-
-using delete_data_policy_cmd = controller_command<
-  model::topic_namespace,
-  std::optional<ss::sstring>,
-  delete_data_policy_cmd_type,
-  model::record_batch_type::data_policy_management_cmd,
-  serde_opts::adl_and_serde>;
-
 using decommission_node_cmd = controller_command<
   model::node_id,
   int8_t, // unused
@@ -424,6 +416,30 @@ using cluster_recovery_update_cmd = controller_command<
   cluster_recovery_update_cmd_data,
   cluster_recovery_update_cmd_type,
   model::record_batch_type::cluster_recovery_cmd>;
+
+using alter_quotas_delta_cmd = controller_command<
+  int8_t, // unused
+  client_quota::alter_delta_cmd_data,
+  alter_quotas_delta_cmd_type,
+  model::record_batch_type::client_quota>;
+
+using create_data_migration_cmd = controller_command<
+  int8_t,
+  data_migrations::create_migration_cmd_data,
+  create_data_migration_cmd_type,
+  model::record_batch_type::data_migration_cmd>;
+
+using update_data_migration_state_cmd = controller_command<
+  int8_t,
+  data_migrations::update_migration_state_cmd_data,
+  update_data_migration_state_cmd_type,
+  model::record_batch_type::data_migration_cmd>;
+
+using remove_data_migration_cmd = controller_command<
+  int8_t,
+  data_migrations::remove_migration_cmd_data,
+  remove_data_migration_cmd_type,
+  model::record_batch_type::data_migration_cmd>;
 
 // typelist utils
 template<typename T>

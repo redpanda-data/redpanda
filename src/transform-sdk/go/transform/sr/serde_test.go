@@ -16,6 +16,8 @@ package sr
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -106,6 +108,129 @@ func TestUnregistered(t *testing.T) {
 	b = append([]byte{0, 0, 0, 0, 3}, b...)
 	err = s.Decode(b, &example{})
 	if err != ErrNotRegistered {
+		t.Fatal("unexpected error", err)
+	}
+}
+
+func TestSubjectNameDerivation(t *testing.T) {
+	e1 := example{
+		A: "foo",
+		B: 42,
+		C: true,
+	}
+	// Register again, with the SNS options
+	ks := ""
+	vs := ""
+	topicName := "demo-topic"
+	recordName := "example"
+
+	s.Register(
+		3,
+		EncodeFn[*example](func(e *example) ([]byte, error) {
+			return json.Marshal(e)
+		}),
+		DecodeFn[*example](func(b []byte, e *example) error {
+			return json.Unmarshal(b, e)
+		}),
+		KeySubjectTopicName[*example](topicName, func(subj_name string) error {
+			ks = subj_name
+			return nil
+		}),
+		ValueSubjectRecordName[*example](recordName, func(subj_name string) error {
+			vs = subj_name
+			return nil
+		}),
+	)
+
+	if ks != fmt.Sprintf("%s-key", topicName) {
+		t.Fatal("Incorrect key subject name TopicNameStrategy", ks)
+	}
+
+	if vs != fmt.Sprintf("%s-value", recordName) {
+		t.Fatal("Incorrect value subject name for RecordNameStrategy", vs)
+	}
+
+	b := s.MustEncode(&e1)
+	e2 := example{}
+	if err := s.Decode(b, &e2); err != nil {
+		t.Fatal(err)
+	}
+
+	s.Register(
+		4,
+		EncodeFn[*example](func(e *example) ([]byte, error) {
+			return json.Marshal(e)
+		}),
+		DecodeFn[*example](func(b []byte, e *example) error {
+			return json.Unmarshal(b, e)
+		}),
+		KeySubjectTopicRecordName[*example](topicName, recordName, func(subj_name string) error {
+			ks = subj_name
+			return nil
+		}),
+	)
+
+	if ks != fmt.Sprintf("%s-%s-key", topicName, recordName) {
+		t.Fatal("Incorrect key subject name for TopicRecordNameStrategy", ks)
+	}
+
+	b = s.MustEncode(&e1)
+	e2 = example{}
+	if err := s.Decode(b, &e2); err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestSubjectNameDerivationErrors(t *testing.T) {
+	e1 := example{
+		A: "foo",
+		B: 42,
+		C: true,
+	}
+
+	var (
+		SomeError = errors.New("Oops")
+	)
+
+	// Register again, with the SNS options
+	topicName := "demo-topic"
+
+	s.Register(
+		5,
+		EncodeFn[*example](func(e *example) ([]byte, error) {
+			return json.Marshal(e)
+		}),
+		DecodeFn[*example](func(b []byte, e *example) error {
+			return json.Unmarshal(b, e)
+		}),
+		KeySubjectTopicName[*example](topicName, func(subj_name string) error {
+			return SomeError
+		}),
+	)
+
+	// Check that encoding fails and reports the error from the user-supplied function
+	_, err := s.Encode(&e1)
+	if err != SomeError {
+		t.Fatal("unexpected error", err)
+	}
+
+	s.Register(
+		6,
+		EncodeFn[*example](func(e *example) ([]byte, error) {
+			return json.Marshal(e)
+		}),
+		DecodeFn[*example](func(b []byte, e *example) error {
+			return json.Unmarshal(b, e)
+		}),
+		ValueSubjectTopicName[*example](topicName, func(subj_name string) error {
+			return SomeError
+		}),
+	)
+
+	// Check that encoding fails and reports the error from the user-supplied function
+	_, err = s.Encode(&e1)
+	if err != SomeError {
 		t.Fatal("unexpected error", err)
 	}
 }

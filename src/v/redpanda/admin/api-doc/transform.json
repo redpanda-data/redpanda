@@ -146,6 +146,23 @@
             "type": "environment_variable"
           },
           "description": "The environment variable configuration for a transform"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "required": false,
+          "description": "Output batch compression mode"
+        },
+        "offset": {
+          "type": "consume_offset",
+          "required": false,
+          "description": "Start reading from this offset"
         }
       }
     },
@@ -176,7 +193,18 @@
             "type": "environment_variable"
           },
           "description": "The environment variable configuration for a transform"
-        }
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "description": "Output batch compression mode"
+        } 
       }
     },
     "partition_transform_status": {
@@ -219,6 +247,25 @@
         }
       }
     },
+    "consume_offset": {
+      "id": "consume_offset",
+      "description": "The offset at which the transform will begin consuming records",
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "from_start",
+            "from_end",
+            "timestamp"
+          ],
+          "required": true
+        },
+        "value": {
+          "type": "int",
+          "required": true
+        }
+      }
+    },
     "committed_offset": {
       "id": "committed_offset",
       "description": "A committed offset for a single partition and transform",
@@ -253,6 +300,18 @@
           "required": false,
           "description": "If present, sets the transform's 'paused' state. If not present, paused state is unchanged.",
           "type": "boolean"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "required": false,
+          "description": "Output batch compression mode"
         }
       }
     }

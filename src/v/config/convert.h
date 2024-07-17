@@ -11,13 +11,12 @@
 
 #pragma once
 
-#include "cloud_storage_clients/types.h"
+#include "config/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
-#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "strings/string_switch.h"
 
 #include <boost/lexical_cast.hpp>
@@ -170,10 +169,8 @@ struct convert<model::cleanup_policy_bitflags> {
     static Node encode(const type& rhs) {
         Node node;
 
-        auto compaction = (rhs & model::cleanup_policy_bitflags::compaction)
-                          == model::cleanup_policy_bitflags::compaction;
-        auto deletion = (rhs & model::cleanup_policy_bitflags::deletion)
-                        == model::cleanup_policy_bitflags::deletion;
+        auto compaction = model::is_compaction_enabled(rhs);
+        auto deletion = model::is_deletion_enabled(rhs);
 
         if (compaction && deletion) {
             node = "compact,delete";
@@ -226,8 +223,8 @@ struct convert<model::timestamp_type> {
 };
 
 template<>
-struct convert<cloud_storage_clients::s3_url_style> {
-    using type = cloud_storage_clients::s3_url_style;
+struct convert<config::s3_url_style> {
+    using type = config::s3_url_style;
     static Node encode(const type& rhs) {
         Node node;
         return node = fmt::format("{}", rhs);
@@ -476,37 +473,6 @@ struct convert<model::cloud_storage_chunk_eviction_strategy> {
 };
 
 template<>
-struct convert<pandaproxy::schema_registry::subject_name_strategy> {
-    using type = pandaproxy::schema_registry::subject_name_strategy;
-
-    static constexpr auto acceptable_values = std::to_array(
-      {to_string_view(type::topic_name),
-       to_string_view(type::record_name),
-       to_string_view(type::topic_record_name)});
-
-    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
-
-    static bool decode(const Node& node, type& rhs) {
-        auto value = node.as<std::string>();
-
-        if (
-          std::find(acceptable_values.begin(), acceptable_values.end(), value)
-          == acceptable_values.end()) {
-            return false;
-        }
-
-        rhs = string_switch<type>(std::string_view{value})
-                .match(to_string_view(type::topic_name), type::topic_name)
-                .match(to_string_view(type::record_name), type::record_name)
-                .match(
-                  to_string_view(type::topic_record_name),
-                  type::topic_record_name);
-
-        return true;
-    }
-};
-
-template<>
 struct convert<pandaproxy::schema_registry::schema_id_validation_mode> {
     using type = pandaproxy::schema_registry::schema_id_validation_mode;
 
@@ -539,9 +505,11 @@ template<>
 struct convert<model::fetch_read_strategy> {
     using type = model::fetch_read_strategy;
 
-    static constexpr auto acceptable_values = std::to_array(
-      {model::fetch_read_strategy_to_string(type::polling),
-       model::fetch_read_strategy_to_string(type::non_polling)});
+    static constexpr auto acceptable_values = std::to_array({
+      model::fetch_read_strategy_to_string(type::polling),
+      model::fetch_read_strategy_to_string(type::non_polling),
+      model::fetch_read_strategy_to_string(type::non_polling_with_debounce),
+    });
 
     static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
 
@@ -560,7 +528,11 @@ struct convert<model::fetch_read_strategy> {
                   type::polling)
                 .match(
                   model::fetch_read_strategy_to_string(type::non_polling),
-                  type::non_polling);
+                  type::non_polling)
+                .match(
+                  model::fetch_read_strategy_to_string(
+                    type::non_polling_with_debounce),
+                  type::non_polling_with_debounce);
 
         return true;
     }
@@ -602,6 +574,33 @@ struct convert<model::recovery_validation_mode> {
             return false;
         }
         rhs = boost::lexical_cast<type>(node_str);
+        return true;
+    }
+};
+
+template<>
+struct convert<config::fips_mode_flag> {
+    using type = config::fips_mode_flag;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {to_string_view(type::disabled),
+       to_string_view(type::enabled),
+       to_string_view(type::permissive)});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(to_string_view(type::disabled), type::disabled)
+                .match(to_string_view(type::enabled), type::enabled)
+                .match(to_string_view(type::permissive), type::permissive);
+
         return true;
     }
 };

@@ -11,6 +11,7 @@
 
 #include "rpc/connection_set.h"
 
+#include "config/configuration.h"
 #include "rpc/rpc_utils.h"
 
 namespace rpc {

@@ -18,17 +18,15 @@ from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
 RESIZE_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
-    re.compile("Decreasing redpanda core count is not allowed"),
-    re.compile(
-        "Failure during startup: cluster::configuration_invariants_changed")
+    re.compile("Detected decrease in number of cores"),
 ]
 
 
 class NodeResizeTest(RedpandaTest):
     """
     Validate redpanda behaviour on node core count changes.  At time of writing this simply checks
-    that redpanda refuses to start if core count has decreased: if we make node resizes more
-    flexible in future, this test should be updated to exercise that.
+    that redpanda refuses to start if core count has decreased and core balancing on core count
+    change is unavailable.
     """
 
     INITIAL_NUM_CPUS = 2
@@ -37,6 +35,7 @@ class NodeResizeTest(RedpandaTest):
         super().__init__(
             *args,
             resource_settings=ResourceSettings(num_cpus=self.INITIAL_NUM_CPUS),
+            extra_rp_conf={"core_balancing_on_core_count_change": False},
             **kwargs)
 
     def _restart_with_num_cpus(self, node: ClusterNode, num_cpus: int,

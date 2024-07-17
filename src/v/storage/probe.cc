@@ -10,7 +10,7 @@
 #include "storage/probe.h"
 
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/segment.h"
 

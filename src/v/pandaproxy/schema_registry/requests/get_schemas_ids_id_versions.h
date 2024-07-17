@@ -21,9 +21,9 @@ struct get_schemas_ids_id_versions_response {
     chunked_vector<subject_version> subject_versions;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const get_schemas_ids_id_versions_response& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const get_schemas_ids_id_versions_response& res) {
     w.StartArray();
     for (const auto& sv : res.subject_versions) {
         w.StartObject();

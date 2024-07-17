@@ -46,7 +46,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_binary_request) {
         ]
       })";
 
-    auto records = ppj::rjson_parse(input, make_binary_v2_handler());
+    auto records = ppj::impl::rjson_parse(input, make_binary_v2_handler());
     BOOST_TEST(records.size() == 2);
     BOOST_TEST(!!records[0].value);
 
@@ -77,7 +77,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_json_request) {
         ]
       })";
 
-    auto records = ppj::rjson_parse(input, make_json_v2_handler());
+    auto records = ppj::impl::rjson_parse(input, make_json_v2_handler());
     BOOST_REQUIRE_EQUAL(records.size(), 2);
     BOOST_REQUIRE_EQUAL(records[0].partition_id, model::partition_id(0));
     BOOST_REQUIRE(!records[0].key);
@@ -111,7 +111,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_invalid_json_request) {
       })";
 
     BOOST_CHECK_THROW(
-      ppj::rjson_parse(input, make_json_v2_handler()),
+      ppj::impl::rjson_parse(input, make_json_v2_handler()),
       pandaproxy::json::parse_error);
 }
 
@@ -121,7 +121,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_empty) {
         "records": []
       })";
 
-    auto records = ppj::rjson_parse(input, make_binary_v2_handler());
+    auto records = ppj::impl::rjson_parse(input, make_binary_v2_handler());
     BOOST_TEST(records.size() == 0);
 }
 
@@ -137,7 +137,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_records_name) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 25");
@@ -156,7 +156,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_partition_name) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 99");
@@ -175,7 +175,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_partition_type) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 112");
@@ -195,7 +195,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_before_records) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 28");
@@ -215,7 +215,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_after_records) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 152");
@@ -235,7 +235,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_between_records) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 144");
@@ -250,7 +250,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_no_records) {
       })";
 
     BOOST_CHECK_EXCEPTION(
-      ppj::rjson_parse(input, make_binary_v2_handler()),
+      ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
       [](ppj::parse_error const& e) {
           return e.what() == std::string_view("parse error at offset 24");
@@ -278,7 +278,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_response) {
       .log_append_time_ms = model::timestamp{},
       .log_start_offset = model::offset{}});
 
-    auto output = ppj::rjson_serialize(topic);
+    auto output = ppj::rjson_serialize_str(topic);
 
     BOOST_TEST(output == expected);
 }

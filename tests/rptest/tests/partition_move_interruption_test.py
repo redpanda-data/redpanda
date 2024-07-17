@@ -354,7 +354,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         wait_until(new_controller, 10, 1)
 
         # update replica set
-        admin.set_partition_replicas(self.topic, partition, new_assignment)
+        self._set_partition_assignments(self.topic, partition, new_assignment,
+                                        admin)
 
         self._wait_for_move_in_progress(self.topic, partition)
 
@@ -549,7 +550,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             id = self.redpanda.node_id(n)
             if id not in replica_ids:
                 previous = assignments.pop()
-                assignments.append({"node_id": id, "core": 0})
+                assignments.append({"node_id": id})
                 # stop a node that is going to be removed from current partition assignment
                 to_stop = self.get_node_by_id(previous['node_id'])
                 self.redpanda.stop_node(to_stop)
@@ -567,7 +568,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.logger.info(
             f"moving {topic}/{partition}: {prev_assignments} -> {assignments}")
 
-        admin.set_partition_replicas(topic, partition, assignments)
+        self._set_partition_assignments(topic, partition, assignments, admin)
 
         self._wait_for_move_in_progress(topic, partition)
 
@@ -639,13 +640,14 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             for id in available_ids:
                 if id not in replica_ids:
                     assignments.pop()
-                    assignments.append({"node_id": id, "core": 0})
+                    assignments.append({"node_id": id})
 
             self.logger.info(
                 f"[{i}] moving {topic}/{partition}: {prev_assignments} -> {assignments}"
             )
 
-            admin.set_partition_replicas(topic, partition, assignments)
+            self._set_partition_assignments(topic, partition, assignments,
+                                            admin)
 
             self._wait_for_move_in_progress(topic, partition)
 

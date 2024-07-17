@@ -14,7 +14,15 @@
 #include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
-#include "serde/envelope.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/io_priority_class.hh>
@@ -233,7 +241,7 @@ struct cloudcheck_opts
 
 struct self_test_result
   : serde::
-      envelope<self_test_result, serde::version<0>, serde::compat_version<0>> {
+      envelope<self_test_result, serde::version<1>, serde::compat_version<1>> {
     double p50{0};
     double p90{0};
     double p99{0};
@@ -246,6 +254,9 @@ struct self_test_result
     ss::sstring name;
     ss::sstring info;
     ss::sstring test_type;
+    uint64_t
+      start_time{}; // lowres_clock::time_point is not serializable in serde
+    uint64_t end_time{};
     ss::lowres_clock::duration duration{};
     std::optional<ss::sstring> warning;
     std::optional<ss::sstring> error;
@@ -255,7 +266,8 @@ struct self_test_result
         fmt::print(
           o,
           "{{p50: {} p90: {} p99: {} p999: {} max: {} rps: {} bps: {} "
-          "timeouts: {} test_id: {} name: {} info: {} type: {} duration: {}ms "
+          "timeouts: {} test_id: {} name: {} info: {} type: {} start_time: {} "
+          "end_time: {} duration: {}ms "
           "warning: {} error: {}}}",
           r.p50,
           r.p90,
@@ -269,6 +281,8 @@ struct self_test_result
           r.name,
           r.info,
           r.test_type,
+          r.start_time,
+          r.end_time,
           std::chrono::duration_cast<std::chrono::milliseconds>(r.duration)
             .count(),
           r.warning ? *r.warning : "<no_value>",

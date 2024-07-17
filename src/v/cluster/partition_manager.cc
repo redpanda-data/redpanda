@@ -16,7 +16,9 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_label.h"
 #include "cloud_storage/remote_partition.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/partition.h"
@@ -117,9 +119,16 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<remote_topic_properties> rtp,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
-  raft::keep_snapshotted_log keep_snapshotted_log) {
+  raft::keep_snapshotted_log keep_snapshotted_log,
+  std::optional<cloud_storage::remote_label> remote_label) {
     auto guard = _gate.hold();
-    auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
+    // NOTE: while the source cluster UUIDs of the path providers will
+    // ultimately be the same, this is a different path provider than what will
+    // be used at runtime by the partition. The latter is owned by the archival
+    // metadata STM and its lifecycle is therefore tied to the partition, which
+    // hasn't been constructed yet.
+    cloud_storage::remote_path_provider path_provider(remote_label);
+    auto dl_result = co_await maybe_download_log(ntp_cfg, rtp, path_provider);
     auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
       = dl_result;
     if (logs_recovered) {
@@ -266,10 +275,15 @@ ss::future<consensus_ptr> partition_manager::manage(
 
 ss::future<cloud_storage::log_recovery_result>
 partition_manager::maybe_download_log(
-  storage::ntp_config& ntp_cfg, std::optional<remote_topic_properties> rtp) {
+  storage::ntp_config& ntp_cfg,
+  std::optional<remote_topic_properties> rtp,
+  cloud_storage::remote_path_provider& path_provider) {
     if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
         auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg, rtp->remote_revision, rtp->remote_partition_count);
+          ntp_cfg,
+          rtp->remote_revision,
+          rtp->remote_partition_count,
+          path_provider);
         co_return res;
     }
     vlog(

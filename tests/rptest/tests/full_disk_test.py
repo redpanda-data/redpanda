@@ -283,7 +283,8 @@ class FullDiskReclaimTest(RedpandaTest):
 
         def observed_data_size(pred):
             observed = self.redpanda.data_stat(node)
-            observed_total = sum(s for _, s in observed)
+            observed_total = sum(s for path, s in observed
+                                 if path.parts[0] == 'kafka')
             return pred(observed_total)
 
         # write around 30 megabytes into the topic
@@ -348,7 +349,7 @@ class LocalDiskReportTimeTest(RedpandaTest):
         # params. the size is about 900k larger than what was written,
         # attributable to per record overheads etc... and determined emperically
         # by looking at trace log stats.
-        size = 32441102
+        size = 32664482
         time = 61
         retention = 3600
         expected = retention * (size / time)

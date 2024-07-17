@@ -14,6 +14,7 @@
 #include "cloud_storage_clients/client.h"
 #include "config/configuration.h"
 #include "http/tests/registered_urls.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -26,6 +27,14 @@
 #include <exception>
 #include <map>
 #include <vector>
+
+inline cloud_storage_clients::bucket_name random_test_bucket_name() {
+    return cloud_storage_clients::bucket_name{
+      "test-bucket-" + ss::sstring{uuid_t::create()}};
+}
+
+static constexpr cloud_storage_clients::s3_url_style default_url_style
+  = cloud_storage_clients::s3_url_style::virtual_host;
 
 /// Emulates S3 REST API for testing purposes.
 /// The imposter is a simple KV-store that contains a set of expectations.
@@ -40,9 +49,11 @@ class s3_imposter_fixture {
 public:
     static constexpr size_t default_max_keys = 100;
     uint16_t httpd_port_number();
-    static constexpr const char* httpd_host_name = "127.0.0.1";
+    static constexpr const char* httpd_host_name = "localhost";
+    static constexpr const char* httpd_ip_addr = "127.0.0.1";
 
-    s3_imposter_fixture();
+    s3_imposter_fixture(
+      cloud_storage_clients::s3_url_style url_style = default_url_style);
     ~s3_imposter_fixture();
 
     s3_imposter_fixture(const s3_imposter_fixture&) = delete;
@@ -67,13 +78,13 @@ public:
     /// to null but there was PUT call that sent some data, subsequent GET call
     /// will retrieve this data.
     void set_expectations_and_listen(
-      const std::vector<expectation>& expectations,
+      std::vector<expectation> expectations,
       std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
       = std::nullopt);
 
     /// Update expectations for the REST API.
-    void add_expectations(const std::vector<expectation>& expectations);
-    void remove_expectations(const std::vector<ss::sstring>& urls);
+    void add_expectations(std::vector<expectation> expectations);
+    void remove_expectations(std::vector<ss::sstring> urls);
 
     /// Get object from S3 or nullopt if it doesn't exist
     std::optional<ss::sstring> get_object(const ss::sstring& url) const;
@@ -95,6 +106,20 @@ public:
     cloud_storage_clients::s3_configuration get_configuration();
 
     void set_search_on_get_list(bool should) { _search_on_get_list = should; }
+
+    void fail_request_if(req_pred_t pred, http_test_utils::response response);
+
+    std::optional<http_test_utils::response>
+    should_fail_request(const http_test_utils::request_info& ri);
+
+    ss::sstring url_base() const;
+
+    const cloud_storage_clients::bucket_name bucket_name
+      = random_test_bucket_name();
+
+protected:
+    cloud_storage_clients::s3_url_style url_style;
+    cloud_storage_clients::s3_configuration conf;
 
 private:
     void set_routes(
@@ -118,6 +143,9 @@ private:
     /// Whether or not to search through expectations for content when handling
     /// a list GET request.
     bool _search_on_get_list{true};
+
+    std::vector<req_pred_t> _fail_request_if;
+    std::vector<http_test_utils::response> _failure_response;
 };
 
 class enable_cloud_storage_fixture {

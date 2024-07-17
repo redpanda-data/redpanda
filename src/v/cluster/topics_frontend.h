@@ -23,6 +23,7 @@
 #include "model/timeout_clock.h"
 #include "partition_balancer_types.h"
 #include "rpc/fwd.h"
+#include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -66,6 +67,9 @@ public:
       ss::sharded<cluster::members_table>&,
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
+      ss::sharded<shard_balancer>&,
+      ss::sharded<storage::api>&,
+      data_migrations::migrated_resources&,
       plugin_table&,
       metadata_cache&,
       config::binding<unsigned> hard_max_disk_usage_ratio,
@@ -206,6 +210,22 @@ public:
     /// less than the minimum specified in minimum_topic_replication
     void print_rf_warning_message();
 
+    bool node_local_core_assignment_enabled() const;
+
+    /// Assign a partition replica to a shard on that node.
+    ss::future<std::error_code> set_partition_replica_shard(
+      model::ntp,
+      model::node_id replica,
+      ss::shard_id,
+      model::timeout_clock::time_point deadline);
+
+    /// Assign a partition that is expected to be present on this node to a
+    /// shard.
+    ss::future<errc> set_local_partition_shard(model::ntp, ss::shard_id);
+
+    /// Trigger shard placement rebalancing for partitions in this node.
+    ss::future<errc> trigger_local_partition_shard_rebalance();
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -283,12 +303,15 @@ private:
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _features;
+    ss::sharded<shard_balancer>& _shard_balancer;
+    ss::sharded<storage::api>& _storage;
     plugin_table& _plugin_table;
     metadata_cache& _metadata_cache;
 
     ss::sharded<cluster::members_table>& _members_table;
     ss::sharded<partition_manager>& _pm;
     ss::sharded<shard_table>& _shard_table;
+    data_migrations::migrated_resources& _migrated_resources;
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
     config::binding<int16_t> _minimum_topic_replication;

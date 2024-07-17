@@ -15,6 +15,7 @@
 #include <boost/test/unit_test.hpp>
 
 #define RPTEST_FAIL(m) BOOST_FAIL(m)
+#define RPTEST_ADD_FAIL(m) BOOST_FAIL(m)
 #define RPTEST_FAIL_CORO(m) BOOST_FAIL(m)
 #define RPTEST_REQUIRE(m) BOOST_REQUIRE(m)
 #define RPTEST_REQUIRE_CORO(m) BOOST_REQUIRE(m)
@@ -26,6 +27,7 @@
 #include "test_utils/test.h"
 
 #define RPTEST_FAIL(m) FAIL() << (m)
+#define RPTEST_ADD_FAIL(m) ADD_FAILURE() << (m)
 #define RPTEST_FAIL_CORO(m) ASSERT_TRUE_CORO(false) << (m)
 #define RPTEST_REQUIRE(m) ASSERT_TRUE(m)
 #define RPTEST_REQUIRE_CORO(m) ASSERT_TRUE_CORO(m)

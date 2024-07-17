@@ -38,6 +38,7 @@ nodes are gone and irrecoverable; this may result in data loss.
 You can perform a dry run and verify the partitions that will be recovered by 
 using the '--dry' flag.
 `,
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if f.Kind != "text" && f.Kind != "help" && !dry {

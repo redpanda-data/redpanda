@@ -88,6 +88,7 @@ func addPluginWithExec(
 			Use:                p0,
 			Short:              p0 + pluginShortSuffix,
 			DisableFlagParsing: true,
+			Args:               cobra.MinimumNArgs(0),
 			Run: func(cmd *cobra.Command, args []string) {
 				keepForPlugin, _ := cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
 				err := osExec(execPath, keepForPlugin)
@@ -263,6 +264,7 @@ func addPluginSubcommands(
 		childCmd := &cobra.Command{
 			Short:              fmt.Sprintf("%s external plugin", childUse),
 			DisableFlagParsing: true,
+			Args:               cobra.MinimumNArgs(0),
 			Run: func(cmd *cobra.Command, args []string) {
 				keepForPlugin, _ := cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
 				osExec(execPath, append(append(leadingPieces, cmd.Use), keepForPlugin...))

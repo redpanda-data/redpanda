@@ -20,6 +20,7 @@ v_cc_library(
     sharded_store.cc
     types.cc
     avro.cc
+    json.cc
     protobuf.cc
     validation.cc
     ${schema_registry_file}

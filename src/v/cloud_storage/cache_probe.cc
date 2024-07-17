@@ -11,7 +11,7 @@
 #include "cloud_storage/cache_probe.h"
 
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -37,7 +37,6 @@ cache_probe::cache_probe() {
               [this] { return _num_cached_gets; },
               sm::description(
                 "Total number of get requests that are already in cache.")),
-
             sm::make_gauge(
               "size_bytes",
               [this] { return _cur_size_bytes; },
@@ -84,6 +83,18 @@ cache_probe::cache_probe() {
                   sm::description(
                     "High watermark of number of objects in cache."))
                   .aggregate(aggregate_labels),
+                sm::make_counter(
+                  "tracker_syncs",
+                  [this] { return _tracker_syncs; },
+                  sm::description(
+                    "Number of times the access tracker was updated "
+                    "with cache disk data"))
+                  .aggregate(aggregate_labels),
+                sm::make_gauge(
+                  "tracker_size",
+                  [this] { return _tracker_size; },
+                  sm::description("Number of entries in cache access tracker"))
+                  .aggregate(aggregate_labels),
               });
 
             _public_metrics.add_group(
@@ -113,6 +124,12 @@ cache_probe::cache_probe() {
                   sm::description(
                     "Number of times could not free the expected amount of "
                     "space, indicating possible bug or configuration issue."))
+                  .aggregate(aggregate_labels),
+                sm::make_counter(
+                  "in_mem_trims",
+                  [this] { return _in_mem_trims; },
+                  sm::description("Number of times we trimmed the cache using "
+                                  "the in-memory access tracker."))
                   .aggregate(aggregate_labels),
               });
         }

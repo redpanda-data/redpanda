@@ -13,6 +13,9 @@
 
 #include "pandaproxy/error.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
+
+#include <ranges>
 
 namespace pandaproxy::schema_registry {
 
@@ -55,7 +58,7 @@ struct error_category final : std::error_category {
                    "configured";
         case error_code::mode_not_found:
             return "Subject does not have subject-level mode configured";
-        case error_code::subject_version_operaton_not_permitted:
+        case error_code::subject_version_operation_not_permitted:
             return "Overwrite new schema is not permitted.";
         case error_code::subject_version_has_references:
             return "One or more references exist to the schema";
@@ -109,9 +112,9 @@ struct error_category final : std::error_category {
             return reply_error_code::schema_empty; // 42201
         case error_code::schema_version_invalid:
             return reply_error_code::schema_version_invalid; // 42202
-        case error_code::subject_version_operaton_not_permitted:
+        case error_code::subject_version_operation_not_permitted:
             return reply_error_code::
-              subject_version_operaton_not_permitted; // 42205
+              subject_version_operation_not_permitted; // 42205
         case error_code::subject_version_has_references:
             return reply_error_code::subject_version_has_references; // 42206
         case error_code::subject_version_schema_id_already_exists:
@@ -136,6 +139,30 @@ const error_category pps_error_category{};
 
 std::error_code make_error_code(error_code e) {
     return {static_cast<int>(e), pps_error_category};
+}
+
+error_info no_reference_found_for(
+  canonical_schema const& schema, const subject& sub, schema_version ver) {
+    // fmt v8 doesn't support formatting for elements in a range
+    auto fmt_refs = schema.def().refs()
+                    | std::views::transform([](auto const& ref) {
+                          return fmt::format("{{{:e}}}", ref);
+                      });
+    return {
+      error_code::schema_empty,
+      fmt::format(
+        "Invalid schema "
+        "{{subject={},version=0,id=-1,schemaType={},references=[{}],metadata="
+        "null,ruleSet=null,schema={}}} with refs [{}] of type {}, details: No "
+        "schema reference found for subject \"{}\" and version {}",
+        schema.sub()(),
+        to_string_view(schema.def().type()),
+        fmt::join(fmt_refs, ", "),
+        schema.def().raw()(),
+        fmt::join(fmt_refs, ", "),
+        to_string_view(schema.type()),
+        sub(),
+        ver())};
 }
 
 } // namespace pandaproxy::schema_registry

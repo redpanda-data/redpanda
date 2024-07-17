@@ -8,7 +8,11 @@
 // by the Apache License, Version 2.0
 
 #include "base/seastarx.h"
+#include "bytes/iobuf_parser.h"
+#include "json/chunked_buffer.h"
+#include "json/chunked_input_stream.h"
 #include "json/document.h"
+#include "json/iobuf_writer.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -41,8 +45,8 @@ struct personne_t {
 
 } // namespace
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const personne_t::nested& obj) {
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, const personne_t::nested& obj) {
     w.StartObject();
 
     w.Key("x");
@@ -57,11 +61,12 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, const personne_t& p) {
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, const personne_t& p) {
     w.StartObject();
 
     w.Key("full_name");
-    json::rjson_serialize<std::string_view>(w, p.full_name);
+    json::rjson_serialize(w, std::string_view{p.full_name});
 
     w.Key("nic");
     json::rjson_serialize(w, p.nic);
@@ -132,4 +137,57 @@ SEASTAR_THREAD_TEST_CASE(json_serialization_test) {
     BOOST_TEST(res_doc["sons_names"].IsArray());
 
     BOOST_TEST(res_doc["obj"].IsObject());
+}
+
+static constexpr std::string_view input_string{
+  R"(The quick brown fox jumps over the lazy dog)"};
+
+static constexpr auto make_chunked_str = []() {
+    constexpr auto half = input_string.size() / 2;
+    iobuf in;
+    in.append_fragments(iobuf::from(input_string.substr(0, half)));
+    in.append_fragments(iobuf::from(input_string.substr(half)));
+    BOOST_REQUIRE_EQUAL(std::distance(in.begin(), in.end()), 2);
+    return in;
+};
+
+static constexpr auto make_chunked_json = []() {
+    iobuf in;
+    in.append_fragments(iobuf::from("\""));
+    in.append_fragments(make_chunked_str());
+    in.append_fragments(iobuf::from("\""));
+    BOOST_REQUIRE_EQUAL(std::distance(in.begin(), in.end()), 4);
+    return in;
+};
+
+SEASTAR_THREAD_TEST_CASE(json_chunked_input_stream_test) {
+    {
+        json::chunked_input_stream is{make_chunked_json()};
+        json::Document doc;
+        doc.ParseStream(is);
+        BOOST_REQUIRE(!doc.HasParseError());
+
+        BOOST_REQUIRE(doc.IsString());
+        auto out_str = std::string_view{doc.GetString(), doc.GetStringLength()};
+        BOOST_REQUIRE_EQUAL(out_str, input_string);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(json_iobuf_writer_test) {
+    constexpr auto to_string = [](const iobuf& buf) {
+        iobuf_const_parser p{std::move(buf)};
+        auto b = p.read_bytes(p.bytes_left());
+        return std::string{b.begin(), b.end()};
+    };
+
+    {
+        json::chunked_buffer out;
+        json::iobuf_writer<json::chunked_buffer> os{out};
+        auto buf = make_chunked_str();
+        os.String(buf);
+        auto out_buf = std::move(out).as_iobuf();
+        auto expected = make_chunked_json();
+        BOOST_CHECK_EQUAL(out_buf, expected);
+        BOOST_CHECK_EQUAL(to_string(out_buf), to_string(expected));
+    }
 }

@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from abc import ABC, abstractmethod
 from enum import Enum, auto, unique
 import json
 import random
@@ -45,12 +46,13 @@ class OperationCtx:
 
 
 # Base class for operation
-class Operation():
+class Operation(ABC):
+    @abstractmethod
     def execute(self, ctx) -> bool:
-        return False
+        ...
 
     def validate(self, ctx) -> bool:
-        pass
+        ...
 
 
 def random_string(length):
@@ -763,9 +765,10 @@ class AdminOperationsFuzzer():
                     f"Operation: {op_type}, retries left: {self.retries-retry}/{self.retries}",
                     exc_info=True)
                 sleep(self.retries_interval)
+        assert error  # will always be set but type checker can't figure it out
         raise error
 
-    def make_random_operation(self) -> Operation:
+    def make_random_operation(self):
         op = random.choice(self.allowed_operations)
         actions = {
             RedpandaAdminOperation.CREATE_TOPIC:

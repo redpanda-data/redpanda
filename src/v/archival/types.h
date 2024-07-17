@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "archival/adjacent_segment_run.h"
 #include "base/seastarx.h"
 #include "cloud_storage/types.h"
 #include "seastar/core/lowres_clock.hh"
@@ -42,17 +43,17 @@ struct configuration {
     /// Bucket used to store all archived data
     cloud_storage_clients::bucket_name bucket_name;
     /// Initial backoff for requests to cloud storage
-    ss::lowres_clock::duration cloud_storage_initial_backoff;
+    config::binding<std::chrono::milliseconds> cloud_storage_initial_backoff;
     /// Long upload timeout
-    ss::lowres_clock::duration segment_upload_timeout;
+    config::binding<std::chrono::milliseconds> segment_upload_timeout;
     /// Shor upload timeout
     config::binding<std::chrono::milliseconds> manifest_upload_timeout;
     /// Timeout for running delete operations during the GC phase
-    ss::lowres_clock::duration garbage_collect_timeout;
+    config::binding<std::chrono::milliseconds> garbage_collect_timeout;
     /// Initial backoff for upload loop in case there is nothing to upload
-    ss::lowres_clock::duration upload_loop_initial_backoff;
+    config::binding<std::chrono::milliseconds> upload_loop_initial_backoff;
     /// Max backoff for upload loop in case there is nothing to upload
-    ss::lowres_clock::duration upload_loop_max_backoff;
+    config::binding<std::chrono::milliseconds> upload_loop_max_backoff;
     /// Flag that indicates that service level metrics are disabled
     service_metrics_disabled svc_metrics_disabled;
     /// Flag that indicates that ntp-archiver level metrics are disabled
@@ -171,36 +172,8 @@ private:
 /// Number of segment reuploads the job can do per housekeeping run
 static constexpr int max_reuploads_per_run = 4;
 
-/// Represents a series of adjacent segments
-/// The object is used to compute a possible reupload
-/// candidate. The series of segment is supposed to be
-/// merged and reuploaded. The object produces metadata
-/// for the reuploaded segment.
-struct adjacent_segment_run {
-    explicit adjacent_segment_run(model::ntp ntp)
-      : ntp(std::move(ntp)) {}
-
-    model::ntp ntp;
-    cloud_storage::segment_meta meta{};
-    size_t num_segments{0};
-    std::vector<cloud_storage::remote_segment_path> segments;
-
-    /// Try to add segment to the run
-    ///
-    /// The subsequent calls are successful until the total size
-    /// of the run is below the threshold. The object keeps track
-    /// of all segment names.
-    ///
-    /// \return true if the run is assembled, false if more segments can be
-    ///         added to the run
-    bool
-    maybe_add_segment(const cloud_storage::segment_meta& s, size_t max_size);
-};
-
-std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
-
 enum class error_outcome {
-    unexpected_failure,
+    unexpected_failure = 1,
     timed_out,
     out_of_range,
     offset_not_found,
@@ -246,3 +219,8 @@ inline std::error_code make_error_code(error_outcome e) noexcept {
 }
 
 } // namespace archival
+
+namespace std {
+template<>
+struct is_error_code_enum<archival::error_outcome> : true_type {};
+} // namespace std

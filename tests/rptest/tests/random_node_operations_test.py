@@ -14,7 +14,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
 from ducktape.utils.util import wait_until
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
@@ -249,7 +249,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             )
             self.producer.wait()
 
-            assert self.producer.produce_status.bad_offsets == 0
+            assert self.producer.produce_status.bad_offsets == 0 or self.tolerate_data_loss
             # Await the consumer that is reading only the subset of data that
             # was written before it started.
             self.consumer.wait()
@@ -265,6 +265,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
             assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self.topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @skip_debug_mode
     @cluster(num_nodes=8,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
@@ -500,3 +502,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.logger.info(
                 f"Read {len(controller_records)} controller records from node {node.name} successfully"
             )
+            if log_viewer.has_controller_snapshot(node):
+                controller_snapshot = log_viewer.read_controller_snapshot(node)
+                self.logger.info(
+                    f"Read controller snapshot: {controller_snapshot} ")

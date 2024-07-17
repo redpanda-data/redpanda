@@ -14,6 +14,7 @@
 #include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -21,7 +22,6 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -57,6 +57,7 @@
 #include <chrono>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <system_error>
 
 template<>
@@ -364,7 +365,7 @@ consensus::success_reply consensus::update_follower_index(
           "Received append entries response node_id doesn't match expected "
           "node_id (received: {}, expected: {})",
           reply.node_id.id(),
-          node);
+          physical_node);
         return success_reply::no;
     }
 
@@ -1321,14 +1322,10 @@ consensus::abort_configuration_change(model::revision_id revision) {
     if (latest_cfg.revision_id() > revision) {
         co_return errc::invalid_configuration_update;
     }
+
     auto new_cfg = latest_cfg;
     new_cfg.abort_configuration_change(revision);
 
-    auto batches = details::serialize_configuration_as_batches(
-      std::move(new_cfg));
-    for (auto& b : batches) {
-        b.set_term(_term);
-    };
     /**
      * Aborting configuration change is an operation that may lead to data loss.
      * It must be possible to abort configuration change even if there is no
@@ -1336,21 +1333,10 @@ consensus::abort_configuration_change(model::revision_id revision) {
      * replicas log. If new leader will be elected using new configuration it
      * will eventually propagate valid configuration to all the followers.
      */
-    auto append_result = co_await disk_append(
-      model::make_memory_record_batch_reader(std::move(batches)),
-      update_last_quorum_index::yes);
-    vlog(
-      _ctxlog.info,
-      "appended reconfiguration aborting configuration at offset {}",
-      append_result.base_offset);
-    // flush log as all configuration changes must eventually be committed.
-    co_await flush_log();
-    // if current node is a leader make sure we will try to update committed
-    // index, it may be required for single participant raft groups
-    if (is_leader()) {
-        maybe_update_majority_replicated_index();
-        maybe_update_leader_commit_idx();
-    }
+    update_follower_stats(new_cfg);
+    _configuration_manager.set_override(std::move(new_cfg));
+    do_step_down("reconfiguration-aborted");
+
     co_return errc::success;
 }
 
@@ -1372,22 +1358,10 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
             new_cfg.set_version(group_configuration::v_6);
         }
         vlog(_ctxlog.info, "Force replacing configuration with: {}", new_cfg);
-        auto batches = details::serialize_configuration_as_batches(
-          std::move(new_cfg));
-        for (auto& b : batches) {
-            b.set_term(_term);
-        };
 
-        auto result = co_await disk_append(
-          model::make_memory_record_batch_reader(std::move(batches)),
-          update_last_quorum_index::yes);
-        vlog(
-          _ctxlog.debug,
-          "appended reconfiguration to force update replica "
-          "set at "
-          "offset {}",
-          result.base_offset);
-        co_await flush_log();
+        update_follower_stats(new_cfg);
+        _configuration_manager.set_override(std::move(new_cfg));
+        do_step_down("forced-reconfiguration");
 
     } catch (const ss::broken_semaphore&) {
         co_return errc::shutting_down;
@@ -2274,6 +2248,7 @@ ss::future<> consensus::hydrate_snapshot() {
         co_await truncate_to_latest_snapshot(truncate_cfg.value());
     }
     _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
+    update_follower_stats(_configuration_manager.get_latest());
 }
 
 std::optional<storage::truncate_prefix_config>
@@ -2358,7 +2333,6 @@ void consensus::update_offset_from_snapshot(
     _last_snapshot_index = metadata.last_included_index;
     _last_snapshot_term = metadata.last_included_term;
 
-    // TODO: add applying snapshot content to state machine
     auto prev_commit_index = _commit_index;
     _commit_index = std::max(_last_snapshot_index, _commit_index);
     maybe_update_last_visible_index(_commit_index);
@@ -2367,8 +2341,6 @@ void consensus::update_offset_from_snapshot(
         _replication_monitor.notify_committed();
         _event_manager.notify_commit_index();
     }
-
-    update_follower_stats(metadata.latest_configuration);
 }
 
 ss::future<install_snapshot_reply>
@@ -2393,10 +2365,10 @@ consensus::do_install_snapshot(install_snapshot_request r) {
     _hbeat = clock_type::now();
 
     // request received from new leader
+    do_step_down("install_snapshot_received");
     if (r.term > _term) {
         _term = r.term;
         _voted_for = {};
-        do_step_down("install_snapshot_term_greater");
         maybe_update_leader(r.source_node());
         co_return co_await do_install_snapshot(std::move(r));
     }
@@ -2863,8 +2835,11 @@ ss::future<storage::append_result> consensus::disk_append(
           auto f = ss::now();
           if (!configurations.empty()) {
               // we can use latest configuration to update follower stats
-              update_follower_stats(configurations.back().cfg);
-              f = _configuration_manager.add(std::move(configurations));
+              f = _configuration_manager.add(std::move(configurations))
+                    .then([this] {
+                        update_follower_stats(
+                          _configuration_manager.get_latest());
+                    });
           }
 
           return f.then([this, ret = ret] {
@@ -3052,7 +3027,11 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
         vlog(
           _ctxlog.trace,
           "current node is not longer group member, stepping down");
-        do_step_down("not_longer_member");
+        co_await transfer_and_stepdown("no_longer_member");
+        if (_leader_id) {
+            _leader_id = std::nullopt;
+            trigger_leadership_notification();
+        }
     }
 }
 
@@ -3138,7 +3117,9 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
-    _probe->leadership_changed();
+    if (_leader_id == _self) {
+        _probe->leadership_changed();
+    }
     vlog(
       _ctxlog.debug,
       "triggering leadership notification with term: {}, new leader: {}",
@@ -3596,6 +3577,67 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
     return f.finally([this] { _transferring_leadership = false; });
 }
 
+ss::future<> consensus::transfer_and_stepdown(std::string_view ctx) {
+    // select a follower with longest log
+    auto voters = _fstats
+                  | std::views::filter(
+                    [](const follower_stats::container_t::value_type& p) {
+                        return !p.second.is_learner;
+                    });
+    auto it = std::max_element(
+      voters.begin(), voters.end(), [](const auto& a, const auto& b) {
+          return a.second.last_dirty_log_index < b.second.last_dirty_log_index;
+      });
+
+    if (unlikely(it == voters.end())) {
+        vlog(
+          _ctxlog.warn,
+          "Unable to find a follower that would be an eligible candidate to "
+          "take over the leadership");
+        do_step_down(ctx);
+        co_return;
+    }
+
+    const auto target = it->first;
+    vlog(
+      _ctxlog.info,
+      "[{}] stepping down as leader in term {}, dirty offset {}, with "
+      "leadership transfer to {}",
+      ctx,
+      _term,
+      _log->offsets().dirty_offset,
+      target);
+
+    timeout_now_request req{
+      .target_node_id = target,
+      .node_id = _self,
+      .group = _group,
+      .term = _term,
+    };
+    auto timeout = raft::clock_type::now()
+                   + config::shard_local_cfg().raft_timeout_now_timeout_ms();
+    auto r = co_await _client_protocol.timeout_now(
+      target.id(), std::move(req), rpc::client_opts(timeout));
+
+    if (r.has_error()) {
+        vlog(
+          _ctxlog.warn,
+          "[{}] stepping down - failed to request timeout_now from {} - "
+          "{}",
+          ctx,
+          target,
+          r.error().message());
+    } else {
+        vlog(
+          _ctxlog.trace,
+          "[{}]  stepping down - timeout now reply result: {} from node {}",
+          ctx,
+          r.value(),
+          target);
+    }
+    do_step_down(ctx);
+}
+
 ss::future<> consensus::remove_persistent_state() {
     // voted for
     co_await _storage.kvs().remove(
@@ -3655,7 +3697,7 @@ void consensus::maybe_update_majority_replicated_index() {
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
-consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
+consensus::inflight_appends_guard::inflight_appends_guard(
   consensus& parent, vnode target) noexcept
   : _parent(&parent)
   , _term(_parent->term())
@@ -3674,10 +3716,10 @@ consensus::suppress_heartbeats_guard::suppress_heartbeats_guard(
         _parent = nullptr;
         return;
     }
-    ++it->second.suppress_heartbeats_count;
+    ++it->second.inflight_append_request_count;
 }
 
-void consensus::suppress_heartbeats_guard::unsuppress() {
+void consensus::inflight_appends_guard::mark_finished() {
     if (!_parent) {
         return;
     }
@@ -3695,16 +3737,16 @@ void consensus::suppress_heartbeats_guard::unsuppress() {
     }
 
     vassert(
-      it->second.suppress_heartbeats_count > 0,
+      it->second.inflight_append_request_count > 0,
       "ntp {}: suppress/unsuppress_heartbeats mismatch for vnode {}",
       _parent->ntp(),
       _target);
-    --it->second.suppress_heartbeats_count;
+    --it->second.inflight_append_request_count;
     _parent = nullptr;
 }
 
-consensus::suppress_heartbeats_guard consensus::suppress_heartbeats(vnode id) {
-    return suppress_heartbeats_guard{*this, id};
+consensus::inflight_appends_guard consensus::track_append_inflight(vnode id) {
+    return inflight_appends_guard{*this, id};
 }
 
 void consensus::update_heartbeat_status(vnode id, bool success) {
@@ -4086,6 +4128,20 @@ void consensus::notify_config_update() {
     if (_deferred_flusher.armed()) {
         _deferred_flusher.rearm(ss::lowres_clock::now() + flush_ms());
     }
+}
+
+size_t consensus::bytes_to_deliver_to_learners() const {
+    if (!is_leader()) {
+        return 0;
+    }
+
+    size_t total = 0;
+    for (auto& [f_id, f_meta] : _fstats) {
+        if (f_meta.is_learner) [[unlikely]] {
+            total += _log->size_bytes_after_offset(f_meta.match_index);
+        }
+    }
+    return total;
 }
 
 } // namespace raft

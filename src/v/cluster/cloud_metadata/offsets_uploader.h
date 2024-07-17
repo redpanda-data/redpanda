@@ -20,6 +20,7 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster::cloud_metadata {

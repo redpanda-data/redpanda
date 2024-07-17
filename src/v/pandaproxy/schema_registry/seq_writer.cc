@@ -170,7 +170,7 @@ ss::future<bool> seq_writer::produce_and_apply(
         model::schema_registry_internal_tp, batch.copy());
 
     if (res.error_code != kafka::error_code::none) {
-        throw kafka::exception(res.error_code, *res.error_message);
+        throw kafka::exception(res.error_code, res.error_message.value_or(""));
     }
 
     auto success = write_at.value_or(res.base_offset) == res.base_offset;
@@ -216,16 +216,20 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
 
     // Check if store already contains this data: if
     // so, we do no I/O and return the schema ID.
-    auto projected = co_await _store.project_ids(schema).handle_exception(
-      [](std::exception_ptr e) {
-          vlog(plog.debug, "write_subject_version: project_ids failed: {}", e);
-          return ss::make_exception_future<sharded_store::insert_result>(e);
-      });
+    auto projected
+      = co_await _store.project_ids(schema.share())
+          .handle_exception([](std::exception_ptr e) {
+              vlog(
+                plog.debug, "write_subject_version: project_ids failed: {}", e);
+              return ss::make_exception_future<sharded_store::insert_result>(e);
+          });
 
     if (!projected.inserted) {
         vlog(plog.debug, "write_subject_version: no-op");
         co_return projected.id;
     } else {
+        auto canonical = std::move(schema.schema);
+        auto sub = canonical.sub();
         vlog(
           plog.debug,
           "seq_writer::write_subject_version project offset={} "
@@ -233,22 +237,22 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
           "schema={} "
           "version={}",
           write_at,
-          schema.schema.sub(),
+          sub,
           projected.id,
           projected.version);
 
         auto key = schema_key{
           .seq{write_at},
           .node{_node_id},
-          .sub{schema.schema.sub()},
+          .sub{sub},
           .version{projected.version}};
         auto value = canonical_schema_value{
-          .schema{schema.schema},
+          .schema{std::move(canonical)},
           .version{projected.version},
           .id{projected.id},
           .deleted = is_deleted::no};
 
-        batch_builder rb(write_at, schema.schema.sub());
+        batch_builder rb(write_at, sub);
         rb(std::move(key), std::move(value));
 
         if (co_await produce_and_apply(write_at, std::move(rb).build())) {
@@ -261,9 +265,9 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
 }
 
 ss::future<schema_id> seq_writer::write_subject_version(subject_schema schema) {
-    return sequenced_write(
-      [schema{std::move(schema)}](model::offset write_at, seq_writer& seq) {
-          return seq.do_write_subject_version(schema, write_at);
+    co_return co_await sequenced_write(
+      [&schema](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_subject_version(schema.share(), write_at);
       });
 }
 
@@ -444,6 +448,13 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
     batch_builder rb(write_at, sub);
     rb(std::move(key), std::move(value));
 
+    {
+        // Clear config if this is a delete of the last version
+        auto vec = co_await _store.get_versions(sub, include_deleted::no);
+        if (vec.size() == 1 && vec.front() == version) {
+            rb(co_await _store.get_subject_config_written_at(sub));
+        }
+    }
     if (co_await produce_and_apply(write_at, std::move(rb).build())) {
         co_return true;
     } else {

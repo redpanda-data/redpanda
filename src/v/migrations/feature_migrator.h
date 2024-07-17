@@ -19,13 +19,12 @@ namespace features {
 
 /**
  * A feature migrator is responsible for waiting til a feature is in
- * 'preparing' state, then executing a certain action at least once
- * on the controller leader.
+ * 'preparing' state, then executing certain actions to get it to 'active'
+ * state.
  *
- * This is not the general case of all migrations: some of them may require
- * running in parallel across all nodes (e.g. `group_metadata_migration`): this
- * class is for the relatively simple cases where we just want to update
- * some controller state on an upgrade.
+ * This base class provides support for both simple cases (when some action has
+ * to be executed at least once on the controller leader), as well as more
+ * general migrations requiring coordinating actions executed on several nodes.
  */
 class feature_migrator {
 public:
@@ -33,22 +32,22 @@ public:
       : _controller(c) {}
     virtual ~feature_migrator() = default;
 
-    virtual void start(ss::abort_source&);
-    virtual ss::future<> stop();
+    void start(ss::abort_source&);
+    ss::future<> stop();
 
 protected:
     virtual features::feature get_feature() = 0;
 
     /**
-     * If not overriding `start` and `do_migrate`, then implement
-     * `do_mutate` to express the change that should be made to
-     * the system during upgrade.
+     * Subclasses should override either `do_migrate` (for migrations that need
+     * to be executed on all nodes) or `do_mutate` (for simpler migrations that
+     * can be executed just on the controller leader).
      *
      * `do_mutate` should be idempotent as it may be executed multiple times if
      * there is a leader reelection while do_mutate is being executed.
      */
+    virtual ss::future<> do_migrate();
     virtual ss::future<> do_mutate() { return ss::now(); }
-    ss::future<> do_migrate();
 
     ss::abort_source& abort_source() { return _as->get(); }
 

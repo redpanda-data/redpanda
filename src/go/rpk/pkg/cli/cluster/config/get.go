@@ -11,6 +11,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -48,10 +49,14 @@ output, use the 'edit' and 'export' commands respectively.`,
 			} else {
 				// currentConfig is the result of json.Unmarshal into a
 				// map[string]interface{}. Due to json rules, all numbers
-				// are float64. We do not want to print floats, especially
-				// for large numbers.
+				// are float64. We do not want to print floats for large
+				// numbers.
 				if f64, ok := val.(float64); ok {
-					val = int64(f64)
+					if math.Mod(f64, 1.0) == 0 {
+						val = int64(f64)
+					} else {
+						val = f64
+					}
 				}
 				// Intentionally bare output, so that the output can be readily
 				// consumed in a script.

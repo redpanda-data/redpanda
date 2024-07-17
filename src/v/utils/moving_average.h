@@ -11,7 +11,7 @@
 #pragma once
 #include "base/likely.h"
 #include "base/vassert.h"
-#include "named_type.h"
+#include "utils/named_type.h"
 
 #include <array>
 #include <chrono>

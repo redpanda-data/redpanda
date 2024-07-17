@@ -57,43 +57,44 @@ stm_snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp) {
     return ssx::sformat("{}/{}", snapshot_name, ntp);
 }
 
-ss::future<> do_move_persistent_stm_state(
+const std::vector<ss::sstring>& stm_snapshot_names() {
+    static const std::vector<ss::sstring> names{
+      cluster::archival_stm_snapshot,
+      cluster::tm_stm_snapshot,
+      cluster::id_allocator_snapshot,
+      cluster::rm_stm_snapshot};
+
+    return names;
+}
+
+ss::future<> do_copy_persistent_stm_state(
   ss::sstring snapshot_name,
   model::ntp ntp,
-  ss::shard_id source_shard,
+  storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>& api) {
-    using state_ptr = std::unique_ptr<iobuf>;
-    using state_fptr = ss::foreign_ptr<state_ptr>;
-
     const auto key_as_str = stm_snapshot_key(snapshot_name, ntp);
     bytes key;
     key.append(
       reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
 
-    state_fptr snapshot = co_await api.invoke_on(
-      source_shard, [key](storage::api& api) {
-          const auto ks = storage::kvstore::key_space::stms;
-          auto snapshot_data = api.kvs().get(ks, key);
-          auto snapshot_ptr = !snapshot_data ? nullptr
-                                             : std::make_unique<iobuf>(
-                                               std::move(*snapshot_data));
-          return ss::make_foreign<state_ptr>(std::move(snapshot_ptr));
-      });
-
+    auto snapshot = source_kvs.get(storage::kvstore::key_space::stms, key);
     if (snapshot) {
         co_await api.invoke_on(
-          target_shard,
-          [key, snapshot = std::move(snapshot)](storage::api& api) {
-              const auto ks = storage::kvstore::key_space::stms;
-              return api.kvs().put(ks, key, snapshot->copy());
+          target_shard, [key, &snapshot](storage::api& api) {
+              return api.kvs().put(
+                storage::kvstore::key_space::stms, key, snapshot->copy());
           });
-
-        co_await api.invoke_on(source_shard, [key](storage::api& api) {
-            const auto ks = storage::kvstore::key_space::stms;
-            return api.kvs().remove(ks, key);
-        });
     }
+}
+
+ss::future<> do_remove_persistent_stm_state(
+  ss::sstring snapshot_name, model::ntp ntp, storage::kvstore& kvs) {
+    const auto key_as_str = stm_snapshot_key(snapshot_name, ntp);
+    bytes key;
+    key.append(
+      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
+    co_await kvs.remove(storage::kvstore::key_space::stms, key);
 }
 
 } // namespace
@@ -491,16 +492,16 @@ ss::future<bool>
 persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     auto term = _raft->term();
     if (!_raft->is_leader()) {
-        co_return false;
+        return ss::make_ready_future<bool>(false);
     }
     if (_insync_term == term) {
-        co_return true;
+        return ss::make_ready_future<bool>(true);
     }
     if (_is_catching_up) {
         auto deadline = model::timeout_clock::now() + timeout;
         auto sync_waiter = ss::make_lw_shared<expiring_promise<bool>>();
         _sync_waiters.push_back(sync_waiter);
-        co_return co_await sync_waiter->get_future_with_timeout(
+        return sync_waiter->get_future_with_timeout(
           deadline, [] { return false; });
     }
     _is_catching_up = true;
@@ -526,14 +527,16 @@ persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
         // of the term yet.
         sync_offset = log_offsets.dirty_offset;
     }
-    auto is_synced = co_await do_sync(timeout, sync_offset, term);
 
-    _is_catching_up = false;
-    for (auto& sync_waiter : _sync_waiters) {
-        sync_waiter->set_value(is_synced);
-    }
-    _sync_waiters.clear();
-    co_return is_synced;
+    return do_sync(timeout, sync_offset, term).then([this](bool is_synced) {
+        _is_catching_up = false;
+        for (auto& sync_waiter : _sync_waiters) {
+            sync_waiter->set_value(is_synced);
+        }
+        _sync_waiters.clear();
+
+        return is_synced;
+    });
 }
 
 template<supported_stm_snapshot T>
@@ -623,23 +626,26 @@ template persisted_stm<file_backed_stm_snapshot>::persisted_stm(
 template persisted_stm<kvstore_backed_stm_snapshot>::persisted_stm(
   ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
 
-ss::future<> move_persistent_stm_state(
+ss::future<> copy_persistent_stm_state(
   model::ntp ntp,
-  ss::shard_id source_shard,
+  storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>& api) {
-    static const std::vector<ss::sstring> stm_snapshot_names{
-      cluster::archival_stm_snapshot,
-      cluster::tm_stm_snapshot,
-      cluster::id_allocator_snapshot,
-      cluster::rm_stm_snapshot};
-
     return ss::parallel_for_each(
-      stm_snapshot_names,
-      [ntp = std::move(ntp), source_shard, target_shard, &api](
+      stm_snapshot_names(),
+      [ntp = std::move(ntp), &source_kvs, target_shard, &api](
         const ss::sstring& snapshot_name) {
-          return do_move_persistent_stm_state(
-            snapshot_name, ntp, source_shard, target_shard, api);
+          return do_copy_persistent_stm_state(
+            snapshot_name, ntp, source_kvs, target_shard, api);
+      });
+}
+
+ss::future<>
+remove_persistent_stm_state(model::ntp ntp, storage::kvstore& kvs) {
+    return ss::parallel_for_each(
+      stm_snapshot_names(),
+      [ntp = std::move(ntp), &kvs](const ss::sstring& snapshot_name) {
+          return do_remove_persistent_stm_state(snapshot_name, ntp, kvs);
       });
 }
 

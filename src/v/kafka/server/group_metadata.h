@@ -14,9 +14,12 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/wire.h"
 #include "kafka/types.h"
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "serde/rw/rw.h"
+#include "serde/serde.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -168,6 +171,8 @@ struct offset_metadata_kv {
 struct group_metadata_kv {
     group_metadata_key key;
     std::optional<group_metadata_value> value;
+
+    group_metadata_kv copy() const;
 };
 
 inline group_metadata_version read_metadata_version(protocol::decoder& reader) {
@@ -220,7 +225,64 @@ group_metadata_serializer make_consumer_offsets_serializer();
 
 using group_metadata_serializer_factory
   = ss::noncopyable_function<group_metadata_serializer()>;
+namespace group_tx {
+struct fence_metadata_v0 {
+    kafka::group_id group_id;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata_v0&);
+};
 
+struct fence_metadata_v1 {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration transaction_timeout_ms;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata_v1&);
+};
+/**
+ * Fence is set by the transaction manager when consumer adds an offset to
+ * transaction.
+ */
+struct fence_metadata {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration transaction_timeout_ms;
+    model::partition_id tm_partition;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata&);
+};
+/**
+ * Single partition committed offset
+ */
+struct partition_offset {
+    model::topic_partition tp;
+    model::offset offset;
+    int32_t leader_epoch;
+    std::optional<ss::sstring> metadata;
+    friend std::ostream& operator<<(std::ostream&, const partition_offset&);
+};
+/**
+ * Consumer offsets commited as a part of transaction
+ */
+struct offsets_metadata {
+    kafka::group_id group_id;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    std::vector<partition_offset> offsets;
+    friend std::ostream& operator<<(std::ostream&, const offsets_metadata&);
+};
+
+/**
+ * Content of transaction commit batch
+ */
+struct commit_metadata {
+    kafka::group_id group_id;
+};
+/**
+ * Content of transaction abort batch
+ */
+struct abort_metadata {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+};
+} // namespace group_tx
 } // namespace kafka
 
 namespace std {

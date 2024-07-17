@@ -173,8 +173,8 @@ enum class describe_client_quotas_match_type : int8_t {
     exact_name = 0,
     /// Return only the default value (ignoring the match field)
     default_name = 1,
-    /// Return only the specified values, that is everything but the default
-    /// value (ignoring the match field)
+    /// Return all specified values, that includes both the default value and
+    /// non-default values for the given entity type (ignoring the match field)
     any_specified_name = 2,
 };
 

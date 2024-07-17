@@ -43,6 +43,8 @@ type SelfTestNodeResult struct {
 	TestName       string  `json:"name"`
 	TestInfo       string  `json:"info"`
 	TestType       string  `json:"test_type"`
+	StartTime      int64   `json:"start_time"`
+	EndTime        int64   `json:"end_time"`
 	Duration       uint    `json:"duration"`
 	Warning        *string `json:"warning,omitempty"`
 	Error          *string `json:"error,omitempty"`

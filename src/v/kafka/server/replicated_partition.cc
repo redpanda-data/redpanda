@@ -45,30 +45,32 @@ const model::ntp& replicated_partition::ntp() const {
 ss::future<result<model::offset, error_code>>
 replicated_partition::sync_effective_start(
   model::timeout_clock::duration timeout) {
-    auto synced_start_offset_override
-      = co_await _partition->sync_kafka_start_offset_override(timeout);
-    if (synced_start_offset_override.has_failure()) {
-        auto err = synced_start_offset_override.error();
-        auto error_code = error_code::unknown_server_error;
-        if (err.category() == cluster::error_category()) {
-            switch (cluster::errc(err.value())) {
-                /**
-                 * In the case of timeout and shutting down errors return
-                 * not_leader_for_partition error to force clients retry.
-                 */
-            case cluster::errc::shutting_down:
-            case cluster::errc::not_leader:
-            case cluster::errc::timeout:
-                error_code = error_code::not_leader_for_partition;
-                break;
-            default:
-                error_code = error_code::unknown_server_error;
-            }
-        }
-        co_return error_code;
-    }
-    co_return kafka_start_offset_with_override(
-      synced_start_offset_override.value());
+    return _partition->sync_kafka_start_offset_override(timeout).then(
+      [this](auto synced_start_offset_override)
+        -> result<model::offset, error_code> {
+          if (synced_start_offset_override.has_failure()) {
+              auto err = synced_start_offset_override.error();
+              auto error_code = error_code::unknown_server_error;
+              if (err.category() == cluster::error_category()) {
+                  switch (cluster::errc(err.value())) {
+                      /**
+                       * In the case of timeout and shutting down errors return
+                       * not_leader_for_partition error to force clients retry.
+                       */
+                  case cluster::errc::shutting_down:
+                  case cluster::errc::not_leader:
+                  case cluster::errc::timeout:
+                      error_code = error_code::not_leader_for_partition;
+                      break;
+                  default:
+                      error_code = error_code::unknown_server_error;
+                  }
+              }
+              return error_code;
+          }
+          return kafka_start_offset_with_override(
+            synced_start_offset_override.value());
+      });
 }
 
 model::offset replicated_partition::start_offset() const {
@@ -220,10 +222,10 @@ replicated_partition::aborted_transactions_local(
     std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
-        target.push_back(cluster::tx::tx_range{
-          .pid = range.pid,
-          .first = ot_state->from_log_offset(std::max(trim_at, range.first)),
-          .last = ot_state->from_log_offset(range.last)});
+        target.emplace_back(
+          range.pid,
+          ot_state->from_log_offset(std::max(trim_at, range.first)),
+          ot_state->from_log_offset(range.last));
     }
 
     co_return target;
@@ -237,11 +239,10 @@ replicated_partition::aborted_transactions_remote(
     std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
-        target.push_back(cluster::tx::tx_range{
-          .pid = range.pid,
-          .first = ot_state->from_log_offset(
-            std::max(offsets.begin_rp, range.first)),
-          .last = ot_state->from_log_offset(range.last)});
+        target.emplace_back(
+          range.pid,
+          ot_state->from_log_offset(std::max(offsets.begin_rp, range.first)),
+          ot_state->from_log_offset(range.last));
     }
     co_return target;
 }
@@ -576,36 +577,40 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
               ec);
         }
 
-        co_return ec;
+        return ss::make_ready_future<error_code>(ec);
     }
 
     // Grab the up to date start offset
     auto timeout = deadline - model::timeout_clock::now();
-    auto start_offset = co_await sync_effective_start(timeout);
-    if (!start_offset) {
-        vlog(
-          klog.warn,
-          "ntp {}: error obtaining latest start offset - {}",
-          ntp(),
-          start_offset.error());
-        co_return start_offset.error();
-    }
+    return sync_effective_start(timeout).then(
+      [this, fetch_offset](auto start_offset) {
+          if (!start_offset) {
+              vlog(
+                klog.warn,
+                "ntp {}: error obtaining latest start offset - {}",
+                ntp(),
+                start_offset.error());
+              return start_offset.error();
+          }
 
-    if (
-      fetch_offset < start_offset.value() || fetch_offset > log_end_offset()) {
-        vlog(
-          klog.warn,
-          "ntp {}: fetch offset_out_of_range on leader, requested: {}, "
-          "partition start offset: {}, high watermark: {}, log end offset: {}",
-          ntp(),
-          fetch_offset,
-          start_offset.value(),
-          high_watermark(),
-          log_end_offset());
-        co_return error_code::offset_out_of_range;
-    }
+          if (
+            fetch_offset < start_offset.value()
+            || fetch_offset > log_end_offset()) {
+              vlog(
+                klog.warn,
+                "ntp {}: fetch offset_out_of_range on leader, requested: {}, "
+                "partition start offset: {}, high watermark: {}, log end "
+                "offset: {}",
+                ntp(),
+                fetch_offset,
+                start_offset.value(),
+                high_watermark(),
+                log_end_offset());
+              return error_code::offset_out_of_range;
+          }
 
-    co_return error_code::none;
+          return error_code::none;
+      });
 }
 
 result<partition_info> replicated_partition::get_partition_info() const {

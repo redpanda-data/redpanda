@@ -133,14 +133,16 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
-    BOOST_CHECK_LT(
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
        - 2_MiB),
-      20_KiB);
-    BOOST_CHECK_LT(
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
        - 2_MiB),
-      20_KiB);
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
 
     // second segment
     builder | storage::add_segment(offset);
@@ -159,14 +161,16 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     }
 
     // the first segment is now eligible for reclaim
-    BOOST_CHECK_LT(
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
        - 3_MiB),
-      20_KiB);
-    BOOST_CHECK_LT(
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
        - 3_MiB),
-      20_KiB);
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
 
     // third segment
     builder | storage::add_segment(offset);
@@ -185,14 +189,16 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     }
 
     // the first,second segment is now eligible for reclaim
-    BOOST_CHECK_LT(
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
        - 4_MiB),
-      20_KiB);
-    BOOST_CHECK_LT(
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
        - 4_MiB),
-      20_KiB);
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
 
     // active segment
     builder | storage::add_segment(offset);
@@ -211,14 +217,16 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     }
 
     // the first,second segment is now eligible for reclaim
-    BOOST_CHECK_LT(
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
        - 5_MiB),
-      20_KiB);
-    BOOST_CHECK_LT(
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
        - 5_MiB),
-      20_KiB);
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
 
     builder | storage::garbage_collect(model::timestamp::now(), 4_MiB);
 
@@ -436,10 +444,11 @@ FIXTURE_TEST(non_collectible_disk_usage_test, gc_fixture) {
     BOOST_CHECK_EQUAL(
       builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention,
       0);
-    BOOST_CHECK_LT(
+    BOOST_CHECK_LE(
       (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
        - 3_MiB),
-      20_KiB);
+      builder.storage().resources().get_falloc_step({})
+        * builder.get_disk_log_impl().segments().size());
 
     builder | storage::stop();
 }

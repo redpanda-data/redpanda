@@ -9,9 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/type_traits.h"
 #include "random/generators.h"
-#include "utils/functional.h"
-#include "utils/type_traits.h"
 
 #include <seastar/testing/perf_tests.hh>
 
@@ -56,6 +55,6 @@ static auto make_value() {
           .okdone = random_generators::get_int<size_t>(),
         };
     } else {
-        static_assert(utils::unsupported_type<ValueT>::value, "unsupported");
+        static_assert(base::unsupported_type<ValueT>::value, "unsupported");
     }
 }

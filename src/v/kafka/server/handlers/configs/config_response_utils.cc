@@ -100,7 +100,6 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::cleanup_policy_bitflags> ||
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
-        std::is_same_v<T, v8_engine::data_policy> ||
         std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode>;
@@ -134,7 +133,7 @@ consteval describe_configs_type property_config_type() {
         return describe_configs_type::list;
     } else {
         static_assert(
-          utils::unsupported_type<T>::value,
+          base::unsupported_type<T>::value,
           "Type name is not supported in describe_configs_type");
     }
 }
@@ -520,8 +519,7 @@ config_response_container_t make_topic_configs(
       maybe_make_documentation(
         include_documentation,
         config::shard_local_cfg().log_cleanup_policy.desc()),
-      &describe_as_string<model::cleanup_policy_bitflags>,
-      true);
+      &describe_as_string<model::cleanup_policy_bitflags>);
 
     const std::string_view docstring{
       topic_properties.is_compacted()

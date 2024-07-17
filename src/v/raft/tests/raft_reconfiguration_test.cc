@@ -11,9 +11,6 @@
 #include "bytes/bytes.h"
 #include "gtest/gtest.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
@@ -21,8 +18,9 @@
 #include "raft/tests/raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "replicate.h"
 #include "serde/rw/rw.h"
-#include "serde/serde.h"
+#include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/async.h"
 #include "test_utils/randoms.h"
@@ -31,12 +29,14 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -428,3 +428,249 @@ INSTANTIATE_TEST_SUITE_P(
       consistency_level::quorum_ack, consistency_level::leader_ack),
     testing::Values(
       isolated_t::old_followers, isolated_t::old_leader, isolated_t::random)));
+
+namespace {
+ss::future<std::error_code> wait_for_offset(
+  model::offset expected,
+  std::vector<model::node_id> ids,
+  raft_fixture& fixture) {
+    auto start = model::timeout_clock::now();
+    // wait for visible offset to propagate
+    while (start + 10s > model::timeout_clock::now()) {
+        bool aligned = std::all_of(
+          ids.begin(), ids.end(), [&](model::node_id id) {
+              auto& rni = fixture.node(id);
+              vlog(
+                test_log.info,
+                "node: {}, last_visible_index: {}, expected_offset: {}",
+                id,
+                rni.raft()->last_visible_index(),
+                expected);
+              return rni.raft()->last_visible_index() >= expected;
+          });
+
+        if (aligned) {
+            co_return errc::success;
+        }
+        co_await ss::sleep(1s);
+    }
+    co_return raft::errc::timeout;
+}
+} // namespace
+
+TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
+    /**
+     * This tests verifies the consistency of logs on all the replicas after a
+     * round of force reconfigurations.
+     */
+    co_await create_simple_group(5);
+    co_await wait_for_leader(10s);
+
+    bool stop = false;
+
+    auto replicate_fiber = ss::do_until(
+      [&stop] { return stop; },
+      [this] {
+          ss::lw_shared_ptr<consensus> raft;
+          for (auto& n : nodes()) {
+              if (n.second->raft()->is_leader()) {
+                  raft = n.second->raft();
+                  break;
+              }
+          }
+
+          if (!raft) {
+              return ss::sleep(100ms);
+          }
+          return raft
+            ->replicate(
+              make_batches(10, 10, 128),
+              replicate_options(raft::consistency_level::quorum_ack))
+            .then([this](result<replicate_result> result) {
+                if (result.has_error()) {
+                    vlog(
+                      logger().info,
+                      "error(replicating): {}",
+                      result.error().message());
+                }
+            });
+      });
+
+    std::vector<vnode> base_replica_set = all_vnodes();
+    size_t reconfiguration_count = 0;
+    model::revision_id next_rev{1};
+
+    auto current_replicas = base_replica_set;
+
+    vlog(logger().info, "initial replicas: {}", current_replicas);
+    auto reconfigure_until_success = [&](
+                                       model::revision_id rev,
+                                       raft::vnode to_skip) {
+        auto deadline = model::timeout_clock::now() + 90s;
+        return ss::repeat([this, rev, deadline, to_skip, &current_replicas] {
+            vassert(
+              model::timeout_clock::now() < deadline,
+              "Timeout waiting for reconfiguration");
+            auto term = node(get_leader().value()).raft()->term();
+            return ss::parallel_for_each(
+                     nodes().begin(),
+                     nodes().end(),
+                     [&current_replicas, to_skip, rev](
+                       const raft_nodes_t::value_type& pair) {
+                         auto raft = pair.second->raft();
+                         if (pair.second->get_vnode() == to_skip) {
+                             return ss::now();
+                         }
+                         return raft
+                           ->force_replace_configuration_locally(
+                             current_replicas, {}, rev)
+                           .discard_result();
+                     })
+              .then([&current_replicas, this, rev, term] {
+                  return wait_for_leader_change(
+                           model::timeout_clock::now() + 10s, term)
+                    .then([this, rev, &current_replicas](
+                            model::node_id new_leader_id) {
+                        vlog(
+                          logger().info,
+                          "new leader {} elected in term: {}",
+                          new_leader_id,
+                          nodes()[new_leader_id]->raft()->term());
+                        auto replica_rev
+                          = node(new_leader_id).raft()->config().revision_id();
+                        if (replica_rev < rev) {
+                            vlog(
+                              logger().warn,
+                              "retrying reconfiguration to {}, requested "
+                              "revision: {}, node {} config revision: {}",
+                              current_replicas,
+                              rev,
+                              new_leader_id,
+                              replica_rev);
+                            return ss::stop_iteration::no;
+                        }
+                        vlog(
+                          logger().info,
+                          "successfully reconfigured to {} with revision: {}",
+                          current_replicas,
+                          rev);
+                        return ss::stop_iteration::yes;
+                    });
+              });
+        });
+    };
+    auto reconfigure_all = [&, this]() {
+        /**
+         * Switch between all 5 replicas and randomly selected 3 of them
+         */
+        if (current_replicas.size() == 5) {
+            std::shuffle(
+              base_replica_set.begin(),
+              base_replica_set.end(),
+              random_generators::internal::gen);
+            current_replicas = {
+              base_replica_set.begin(), std::next(base_replica_set.begin(), 3)};
+        } else {
+            current_replicas = base_replica_set;
+        }
+
+        vlog(logger().info, "reconfiguring group to: {}", current_replicas);
+        auto to_skip = random_generators::random_choice(base_replica_set);
+        auto revision = next_rev++;
+        return reconfigure_until_success(revision, to_skip);
+    };
+
+    auto reconfigure_fiber = ss::do_until(
+      [&] { return stop; },
+      [&] {
+          return reconfigure_all()
+            .then([&]() {
+                reconfiguration_count++;
+
+                if (reconfiguration_count >= 50) {
+                    stop = true;
+                }
+                return ss::now();
+            })
+            .handle_exception([](const std::exception_ptr&) {
+                // ignore exception
+            });
+      });
+
+    auto l_transfer_fiber = ss::do_until(
+      [&stop] { return stop; },
+      [&, this] {
+          std::vector<raft::vnode> not_leaders;
+          ss::lw_shared_ptr<consensus> raft;
+          for (auto& n : current_replicas) {
+              if (node(n.id()).raft()->is_leader()) {
+                  raft = node(n.id()).raft();
+              } else {
+                  not_leaders.push_back(n);
+              }
+          }
+
+          if (!raft) {
+              return ss::sleep(100ms);
+          }
+          auto target = random_generators::random_choice(not_leaders);
+          return raft
+            ->transfer_leadership(transfer_leadership_request{
+              .group = raft->group(),
+              .target = target.id(),
+              .timeout = 25ms,
+            })
+            .then([this](transfer_leadership_reply r) {
+                if (r.result != raft::errc::success) {
+                    vlog(logger().info, "error(transferring): {}", r);
+                }
+            })
+            .then([] { return ss::sleep(200ms); })
+            .handle_exception([](const std::exception_ptr&) {
+                // ignore exception
+            });
+      });
+
+    co_await ss::when_all(
+      std::move(replicate_fiber),
+      std::move(reconfigure_fiber),
+      std::move(l_transfer_fiber));
+
+    logger().info("Validating log consistency");
+    /**
+     * In the last step of the test we validate consistency of offset
+     * translation.
+     */
+    using offset_map_t
+      = absl::btree_map<model::offset, std::vector<model::offset>>;
+
+    auto dirty_offset = co_await retry_with_leader(
+      model::timeout_clock::now() + 30s, [](raft_node_instance& leader_node) {
+          return ::result<model::offset>(leader_node.raft()->dirty_offset());
+      });
+
+    logger().info(
+      "Waiting for all nodes to be up to date. Dirty offset: {}",
+      dirty_offset.value());
+
+    std::vector<model::node_id> node_ids;
+    node_ids.reserve(current_replicas.size());
+    for (auto& vn : current_replicas) {
+        node_ids.push_back(vn.id());
+    }
+    auto ec = co_await wait_for_offset(dirty_offset.value(), node_ids, *this);
+    ASSERT_EQ_CORO(ec, errc::success);
+
+    offset_map_t mapped_offsets;
+    for (auto& vn : current_replicas) {
+        auto& node = this->node(vn.id());
+
+        for (auto o = model::offset(0); o < dirty_offset.value(); ++o) {
+            mapped_offsets[o].push_back(node.raft()->log()->from_log_offset(o));
+        }
+    }
+    using namespace testing;
+    for (auto& [log_offset, kafka_offsets] : mapped_offsets) {
+        EXPECT_THAT(kafka_offsets, Each(Eq(kafka_offsets[0])));
+    }
+}

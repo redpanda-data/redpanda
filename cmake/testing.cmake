@@ -163,12 +163,7 @@ if (RP_ENABLE_TESTS)
   set(OPENSSL_ENV)
 
   if(VECTORIZED_CMAKE_DIR)
-    if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^arm|aarch64")
-      set(OSSL_LIB_DIR "lib")
-    else()
-      set(OSSL_LIB_DIR "lib64")
-    endif()
-    set(OPENSSL_ENV "LD_LIBRARY_PATH=${REDPANDA_DEPS_INSTALL_DIR}/${OSSL_LIB_DIR};OPENSSL_CONF=${REDPANDA_DEPS_INSTALL_DIR}/etc/ssl/openssl.cnf")
+    set(OPENSSL_ENV "LD_LIBRARY_PATH=${REDPANDA_DEPS_INSTALL_DIR}/lib;OPENSSL_CONF=${REDPANDA_DEPS_INSTALL_DIR}/etc/ssl/openssl.cnf")
   endif()
 
   # The following function can be used to setup a simple CA

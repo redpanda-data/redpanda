@@ -972,18 +972,27 @@ ss::future<> group_manager::do_recover_group(
                 .non_reclaimable = meta.metadata.non_reclaimable,
               });
         }
+        for (auto& [id, session] : group_stm.producers()) {
+            group->try_set_fence(id, session.epoch);
+            if (session.tx) {
+                auto& tx = *session.tx;
+                group::ongoing_transaction group_tx(
+                  tx.tx_seq, tx.tm_partition, tx.timeout);
+                for (auto& [tp, o_md] : tx.offsets) {
+                    group_tx.offsets[tp] = group::pending_tx_offset{
+                  .offset_metadata = group_tx::partition_offset{
+                    .tp = tp,
+                    .offset = o_md.offset,
+                    .leader_epoch = o_md.committed_leader_epoch,
+                    .metadata = o_md.metadata,
+                  },
+                  .log_offset = o_md.log_offset};
+                }
 
-        for (const auto& [_, tx] : group_stm.prepared_txs()) {
-            group->insert_prepared(tx);
-        }
-        for (auto& [id, epoch] : group_stm.fences()) {
-            group->try_set_fence(id, epoch);
-        }
-        for (auto& [id, tx_data] : group_stm.tx_data()) {
-            group->try_set_tx_data(id, tx_data.tx_seq, tx_data.tm_partition);
-        }
-        for (auto& [id, timeout] : group_stm.timeouts()) {
-            group->try_set_timeout(id, timeout);
+                group->insert_ongoing_tx(
+                  model::producer_identity(id, session.epoch),
+                  std::move(group_tx));
+            }
         }
 
         if (group_stm.is_removed()) {
@@ -1321,7 +1330,8 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
           cluster::txlog.trace,
           "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::commit_group_tx_reply>(
-          make_commit_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+          make_commit_tx_reply(
+            cluster::tx::errc::coordinator_load_in_progress));
     }
     p->catchup_lock->read_unlock();
 
@@ -1332,17 +1342,17 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
           if (error != error_code::none) {
               if (error == error_code::not_coordinator) {
                   return ss::make_ready_future<cluster::commit_group_tx_reply>(
-                    make_commit_tx_reply(cluster::tx_errc::not_coordinator));
+                    make_commit_tx_reply(cluster::tx::errc::not_coordinator));
               } else {
                   return ss::make_ready_future<cluster::commit_group_tx_reply>(
-                    make_commit_tx_reply(cluster::tx_errc::timeout));
+                    make_commit_tx_reply(cluster::tx::errc::timeout));
               }
           }
 
           auto group = get_group(r.group_id);
           if (!group) {
               return ss::make_ready_future<cluster::commit_group_tx_reply>(
-                make_commit_tx_reply(cluster::tx_errc::timeout));
+                make_commit_tx_reply(cluster::tx::errc::timeout));
           }
 
           return group->handle_commit_tx(std::move(r))
@@ -1360,7 +1370,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
           cluster::txlog.trace,
           "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::begin_group_tx_reply>(
-          make_begin_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+          make_begin_tx_reply(cluster::tx::errc::coordinator_load_in_progress));
     }
     p->catchup_lock->read_unlock();
 
@@ -1370,8 +1380,8 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
               auto ec = error == error_code::not_coordinator
-                          ? cluster::tx_errc::not_coordinator
-                          : cluster::tx_errc::timeout;
+                          ? cluster::tx::errc::not_coordinator
+                          : cluster::tx::errc::timeout;
               return ss::make_ready_future<cluster::begin_group_tx_reply>(
                 make_begin_tx_reply(ec));
           }
@@ -1408,7 +1418,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
           cluster::txlog.trace,
           "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::abort_group_tx_reply>(
-          make_abort_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+          make_abort_tx_reply(cluster::tx::errc::coordinator_load_in_progress));
     }
     p->catchup_lock->read_unlock();
 
@@ -1418,8 +1428,8 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
               auto ec = error == error_code::not_coordinator
-                          ? cluster::tx_errc::not_coordinator
-                          : cluster::tx_errc::timeout;
+                          ? cluster::tx::errc::not_coordinator
+                          : cluster::tx::errc::timeout;
               return ss::make_ready_future<cluster::abort_group_tx_reply>(
                 make_abort_tx_reply(ec));
           }
@@ -1427,7 +1437,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
           auto group = get_group(r.group_id);
           if (!group) {
               return ss::make_ready_future<cluster::abort_group_tx_reply>(
-                make_abort_tx_reply(cluster::tx_errc::timeout));
+                make_abort_tx_reply(cluster::tx::errc::timeout));
           }
 
           return group->handle_abort_tx(std::move(r))

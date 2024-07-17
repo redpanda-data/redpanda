@@ -86,7 +86,8 @@ func newAppCmd(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "app",
 		Short: "Generate a sample application to connect with Redpanda",
 		Long:  appHelpText,
-		Run: func(cmd *cobra.Command, args []string) {
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 

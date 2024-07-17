@@ -23,7 +23,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.workload_license import LicenseWorkload
 from rptest.tests.workload_upgrade_config_defaults import SetLogSegmentMsMinConfig
 from rptest.utils.mode_checks import skip_debug_mode
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix, ok_to_fail_fips
 
 
 def expand_version(
@@ -250,6 +250,8 @@ class RedpandaUpgradeTest(PreallocNodesTest):
     def cluster_version(self) -> int:
         return Admin(self.redpanda).get_features()['cluster_version']
 
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @ok_to_fail_fips
     @skip_debug_mode
     @cluster(num_nodes=4)
     # TODO(vlad): Allow this test on ABS once we have at least two versions

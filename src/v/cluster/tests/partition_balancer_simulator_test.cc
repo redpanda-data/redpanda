@@ -17,6 +17,8 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <cstddef>
+
 static ss::logger logger("balancer_sim");
 
 static constexpr size_t produce_batch_size = 1_MiB;
@@ -124,6 +126,7 @@ public:
               as.replicas,
               human::bytes(size));
         }
+        _total_replicas += static_cast<size_t>(replication_factor) * partitions;
     }
 
     void set_decommissioning(model::node_id id) {
@@ -286,7 +289,7 @@ public:
 
     void print_replica_map() const {
         for (const auto& t : topics().topics_map()) {
-            for (const auto& a : t.second.get_assignments()) {
+            for (const auto& [_, a] : t.second.get_assignments()) {
                 auto ntp = model::ntp(t.first.ns, t.first.tp, a.id);
                 std::vector<model::node_id> replicas;
                 for (const auto& bs : a.replicas) {
@@ -345,7 +348,7 @@ public:
 
         for (auto& [tp_ns, topic_md] :
              _workers.table.local().all_topics_metadata()) {
-            for (auto& p_as : topic_md.get_assignments()) {
+            for (auto& [_, p_as] : topic_md.get_assignments()) {
                 total_topic_replicas[tp_ns] += p_as.replicas.size();
                 for (auto& r : p_as.replicas) {
                     topic_replica_distribution[tp_ns][r.node_id]++;
@@ -415,6 +418,8 @@ public:
                     < 0.8 * double(_last_run_in_progress_updates);
     }
 
+    size_t total_replicas() const { return _total_replicas; }
+
 private:
     void
     do_validate_replica_pair_frequencies(std::optional<ss::sstring> topic) {
@@ -429,7 +434,7 @@ private:
                 continue;
             }
 
-            for (const auto& p_as : topic_md.get_assignments()) {
+            for (const auto& [_, p_as] : topic_md.get_assignments()) {
                 for (const auto& r1 : p_as.replicas) {
                     for (const auto& r2 : p_as.replicas) {
                         if (r1.node_id != r2.node_id) {
@@ -729,6 +734,7 @@ private:
     size_t _cur_tick = 0;
     size_t _last_run_in_progress_updates = 0;
     controller_workers _workers;
+    size_t _total_replicas = 0;
 };
 
 FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
@@ -961,7 +967,7 @@ FIXTURE_TEST(test_mixed_replication_factors, partition_balancer_sim_fixture) {
 
     add_node(model::node_id{4}, 300_GiB, 1);
     add_node_to_rebalance(model::node_id{4});
-    BOOST_REQUIRE(run_to_completion(1000));
+    BOOST_REQUIRE(run_to_completion(total_replicas() * 3));
     set_decommissioning(model::node_id{4});
-    BOOST_REQUIRE(run_to_completion(1000));
+    BOOST_REQUIRE(run_to_completion(total_replicas() * 3));
 }

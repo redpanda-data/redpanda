@@ -76,14 +76,9 @@ bool allocation_node::is_full(
     return !is_internal_topic && count > _max_capacity;
 }
 
-ss::shard_id
-allocation_node::allocate(const partition_allocation_domain domain) {
+ss::shard_id allocation_node::allocate_shard() {
     auto it = std::min_element(_weights.begin(), _weights.end());
     (*it)++; // increment the weights
-    _allocated_partitions++;
-    ++_allocated_domain_partitions[domain];
-    _final_partitions++;
-    ++_final_domain_partitions[domain];
     const ss::shard_id core = std::distance(_weights.begin(), it);
     vlog(
       clusterlog.trace,
@@ -94,17 +89,24 @@ allocation_node::allocate(const partition_allocation_domain domain) {
     return core;
 }
 
-void allocation_node::deallocate_on(
-  ss::shard_id core, const partition_allocation_domain domain) {
+void allocation_node::add_allocation(partition_allocation_domain domain) {
+    _allocated_partitions++;
+    ++_allocated_domain_partitions[domain];
+}
+
+void allocation_node::add_allocation(ss::shard_id core) {
     vassert(
       core < _weights.size(),
-      "Tried to deallocate a non-existing core:{} - {}",
+      "Tried to allocate a non-existing core:{} - {}",
       core,
       *this);
+    _weights[core]++;
+}
+
+void allocation_node::remove_allocation(partition_allocation_domain domain) {
     vassert(
-      _allocated_partitions > allocation_capacity{0} && _weights[core] > 0,
-      "unable to deallocate partition from core {} at node {}",
-      core,
+      _allocated_partitions > allocation_capacity{0},
+      "unable to deallocate partition at node {}",
       *this);
 
     allocation_capacity& domain_partitions
@@ -112,51 +114,41 @@ void allocation_node::deallocate_on(
     vassert(
       domain_partitions > allocation_capacity{0}
         && domain_partitions <= _allocated_partitions,
-      "Unable to deallocate partition from core {} in domain {} at node {}",
-      core,
+      "Unable to deallocate partition in domain {} at node {}",
       domain,
       *this);
-    --domain_partitions;
 
     _allocated_partitions--;
-    _weights[core]--;
-    vlog(
-      clusterlog.trace,
-      "deallocation [node: {}, core: {}], total allocated: {}",
-      _id,
-      core,
-      _allocated_partitions);
+    --domain_partitions;
 }
 
-void allocation_node::allocate_on(
-  ss::shard_id core, const partition_allocation_domain domain) {
+void allocation_node::remove_allocation(ss::shard_id core) {
     vassert(
-      core < _weights.size(),
-      "Tried to allocate a non-existing core:{} - {}",
+      core < _weights.size() && _weights[core] > 0,
+      "unable to deallocate partition from core {} at node {}",
       core,
       *this);
+    _weights[core]--;
+}
 
-    _weights[core]++;
-    _allocated_partitions++;
-    ++_allocated_domain_partitions[domain];
-    vlog(
-      clusterlog.trace,
-      "allocation [node: {}, core: {}], total allocated: {}",
-      _id,
-      core,
-      _allocated_partitions);
+void allocation_node::add_final_count(partition_allocation_domain domain) {
+    ++_final_partitions;
+    ++_final_domain_partitions[domain];
+}
+
+void allocation_node::remove_final_count(partition_allocation_domain domain) {
+    --_final_partitions;
+    --_final_domain_partitions[domain];
 }
 
 void allocation_node::update_core_count(uint32_t core_count) {
-    vassert(
-      core_count >= cpus(),
-      "decreasing node core count is not supported, current core count {} > "
-      "requested core count {}",
-      cpus(),
-      core_count);
-    auto current_cpus = cpus();
-    for (auto i = current_cpus; i < core_count; ++i) {
-        _weights.push_back(0);
+    auto old_count = _weights.size();
+    if (core_count < old_count) {
+        _weights.resize(core_count);
+    } else {
+        for (auto i = old_count; i < core_count; ++i) {
+            _weights.push_back(0);
+        }
     }
     _max_capacity = allocation_capacity(
       (core_count * _partitions_per_shard()) - _partitions_reserve_shard0());

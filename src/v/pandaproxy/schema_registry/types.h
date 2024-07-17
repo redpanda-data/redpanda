@@ -13,6 +13,7 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
+#include "json/iobuf_writer.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
 #include "strings/string_switch.h"
@@ -117,18 +118,33 @@ template<typename Tag>
 class typed_schema_definition {
 public:
     using tag = Tag;
-    using raw_string = named_type<ss::sstring, tag>;
+    struct raw_string : named_type<iobuf, tag> {
+        raw_string() = default;
+        explicit raw_string(iobuf&& buf) noexcept
+          : named_type<iobuf, tag>{std::move(buf)} {}
+        explicit raw_string(std::string_view sv)
+          : named_type<iobuf, tag>{iobuf::from(sv)} {}
+    };
     using references = std::vector<schema_reference>;
+
+    typed_schema_definition() = default;
+    typed_schema_definition(typed_schema_definition&&) noexcept = default;
+    typed_schema_definition(const typed_schema_definition&) = delete;
+    typed_schema_definition& operator=(typed_schema_definition&&) noexcept
+      = default;
+    typed_schema_definition& operator=(const typed_schema_definition& other)
+      = delete;
+    ~typed_schema_definition() noexcept = default;
 
     template<typename T>
     typed_schema_definition(T&& def, schema_type type)
-      : _def{ss::sstring{std::forward<T>(def)}}
+      : _def{std::forward<T>(def)}
       , _type{type}
       , _refs{} {}
 
     template<typename T>
     typed_schema_definition(T&& def, schema_type type, references refs)
-      : _def{ss::sstring{std::forward<T>(def)}}
+      : _def{std::forward<T>(def)}
       , _type{type}
       , _refs{std::move(refs)} {}
 
@@ -143,9 +159,25 @@ public:
 
     const raw_string& raw() const& { return _def; }
     raw_string raw() && { return std::move(_def); }
+    raw_string shared_raw() const {
+        auto& buf = const_cast<iobuf&>(_def());
+        return raw_string{buf.share(0, buf.size_bytes())};
+    }
 
     const references& refs() const& { return _refs; }
     references refs() && { return std::move(_refs); }
+
+    typed_schema_definition share() const {
+        return {shared_raw(), type(), refs()};
+    }
+
+    typed_schema_definition copy() const {
+        return {raw_string{_def().copy()}, type(), refs()};
+    }
+
+    auto destructure() && {
+        return make_tuple(std::move(_def), _type, std::move(_refs));
+    }
 
 private:
     raw_string _def;
@@ -239,10 +271,48 @@ private:
     canonical_schema_definition::references _refs;
 };
 
+class json_schema_definition {
+public:
+    struct impl;
+    using pimpl = ss::shared_ptr<const impl>;
+
+    explicit json_schema_definition(
+      pimpl p, canonical_schema_definition::references refs)
+      : _impl{std::move(p)}
+      , _refs(std::move(refs)) {}
+
+    canonical_schema_definition::raw_string raw() const;
+    canonical_schema_definition::references const& refs() const {
+        return _refs;
+    };
+
+    const impl& operator()() const { return *_impl; }
+
+    friend bool operator==(
+      const json_schema_definition& lhs, const json_schema_definition& rhs);
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const json_schema_definition& rhs);
+
+    constexpr schema_type type() const { return schema_type::json; }
+
+    explicit operator canonical_schema_definition() const {
+        return {raw(), type(), refs()};
+    }
+
+    ss::sstring name() const;
+
+private:
+    pimpl _impl;
+    canonical_schema_definition::references _refs;
+};
+
 ///\brief A schema that has been validated.
 class valid_schema {
-    using impl
-      = std::variant<avro_schema_definition, protobuf_schema_definition>;
+    using impl = std::variant<
+      avro_schema_definition,
+      protobuf_schema_definition,
+      json_schema_definition>;
 
     template<typename T>
     using disable_if_valid_schema = std::
@@ -379,6 +449,13 @@ public:
     const schema_definition& def() const& { return _def; }
     schema_definition def() && { return std::move(_def); }
 
+    typed_schema share() const { return {sub(), def().share()}; }
+    typed_schema copy() const { return {sub(), def().copy()}; }
+
+    auto destructure() && {
+        return make_tuple(std::move(_sub), std::move(_def));
+    }
+
 private:
     subject _sub{invalid_subject};
     schema_definition _def{"", schema_type::avro};
@@ -393,6 +470,9 @@ struct subject_schema {
     schema_version version{invalid_schema_version};
     schema_id id{invalid_schema_id};
     is_deleted deleted{false};
+    subject_schema share() const {
+        return {schema.share(), version, id, deleted};
+    }
 };
 
 enum class compatibility_level {
@@ -451,3 +531,56 @@ from_string_view<compatibility_level>(std::string_view sv) {
 }
 
 } // namespace pandaproxy::schema_registry
+
+template<>
+struct fmt::formatter<pandaproxy::schema_registry::schema_reference> {
+    constexpr auto parse(fmt::format_parse_context& ctx)
+      -> decltype(ctx.begin()) {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+        if (it != end && (*it == 'l' || *it == 'e')) {
+            presentation = *it++;
+        }
+        if (it != end && *it != '}') {
+            throw fmt::format_error("invalid format");
+        }
+        return it;
+    }
+
+    template<typename FormatContext>
+    auto format(
+      const pandaproxy::schema_registry::schema_reference& s,
+      FormatContext& ctx) const -> decltype(ctx.out()) {
+        if (presentation == 'l') {
+            return fmt::format_to(
+              ctx.out(),
+              "name: {}, subject: {}, version: {}",
+              s.name,
+              s.sub,
+              s.version);
+        } else {
+            return fmt::format_to(
+              ctx.out(),
+              "name='{}', subject='{}', version={}",
+              s.name,
+              s.sub,
+              s.version);
+        }
+    }
+
+    // l : format for logging
+    // e : format for error_reporting
+    char presentation{'l'};
+};
+
+namespace json {
+
+template<typename Buffer>
+void rjson_serialize(
+  json::iobuf_writer<Buffer>& w,
+  const pandaproxy::schema_registry::canonical_schema_definition::raw_string&
+    def) {
+    w.String(def());
+}
+
+} // namespace json

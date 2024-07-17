@@ -1,4 +1,5 @@
 import threading
+import logging
 
 from rptest.archival.shared_client_utils import key_to_topic
 
@@ -11,6 +12,7 @@ from google.cloud import storage as gcs
 
 from concurrent.futures import ThreadPoolExecutor
 import datetime
+from enum import Enum
 from functools import wraps
 from itertools import islice
 from time import sleep
@@ -27,6 +29,11 @@ class ObjectMetadata(NamedTuple):
     bucket: str
     etag: str
     content_length: int
+
+
+class S3AddressingStyle(str, Enum):
+    VIRTUAL = 'virtual'
+    PATH = 'path'
 
 
 def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
@@ -60,33 +67,74 @@ class S3Client:
                  endpoint=None,
                  disable_ssl=True,
                  signature_version='s3v4',
-                 before_call_headers=None):
+                 before_call_headers=None,
+                 use_fips_endpoint=False,
+                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
 
         logger.debug(
-            f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}"
+            f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}, fips mode {use_fips_endpoint}, addressing style {addressing_style}"
         )
 
+        self._use_fips_endpoint = use_fips_endpoint
         self._region = region
         self._access_key = access_key
         self._secret_key = secret_key
         self._endpoint = endpoint
-        self._disable_ssl = disable_ssl
+        self._disable_ssl = False if self._use_fips_endpoint else disable_ssl
         if signature_version.lower() == "unsigned":
             self._signature_version = UNSIGNED
         else:
             self._signature_version = signature_version
         self._before_call_headers = before_call_headers
+        self.logger = logger
+        self.update_boto3_loggers()
+        self._addressing_style = addressing_style
         self._cli = self.make_client()
         self.register_custom_events()
-        self.logger = logger
+
+    def update_boto3_loggers(self):
+        """Configure loggers related to boto3 to emit messages
+           with FileHandlers similar to ones from ducktape
+           using same filenames for corresponding log levels
+           
+           loggers updated: boto3, botocore
+           
+           loggers list that can be included can be found in ticket: PESDLC-876         
+           
+        """
+        def populate_handler(filename, level):
+            # If something really need debugging, add 'urllib3'
+            loggers_list = ['boto3', 'botocore']
+            # get logger, configure it and set handlers
+            for logger_name in loggers_list:
+                l = logging.getLogger(logger_name)
+                l.setLevel(level)
+                handler = logging.FileHandler(filename)
+                fmt = logging.Formatter('[%(levelname)-5s - %(asctime)s - '
+                                        f'{logger_name} - %(module)s - '
+                                        '%(funcName)s - lineno:%(lineno)s]: '
+                                        '%(message)s')
+                handler.setFormatter(fmt)
+                l.addHandler(handler)
+
+        # Extract info from ducktape loggers
+        # Assume that there is only one DEBUG and one INFO handler
+        #
+        for h in self.logger.handlers:
+            if isinstance(h, logging.FileHandler):
+                if h.level == logging.INFO or h.level == logging.DEBUG:
+                    populate_handler(h.baseFilename, h.level)
 
     def make_client(self):
-        cfg = Config(region_name=self._region,
-                     signature_version=self._signature_version,
-                     retries={
-                         'max_attempts': 10,
-                         'mode': 'adaptive'
-                     })
+        cfg = Config(
+            region_name=self._region,
+            signature_version=self._signature_version,
+            retries={
+                'max_attempts': 10,
+                'mode': 'adaptive'
+            },
+            s3={'addressing_style': f'{self._addressing_style}'},
+            use_fips_endpoint=True if self._use_fips_endpoint else None)
         cl = boto3.client('s3',
                           config=cfg,
                           aws_access_key_id=self._access_key,
@@ -147,13 +195,14 @@ class S3Client:
         def bucket_is_listable():
             try:
                 self._cli.list_objects_v2(Bucket=name)
-            except:
-                self.logger.warning(f"Listing {name} failed after creation")
+            except Exception as e:
+                self.logger.warning(
+                    f"Listing {name} failed after creation: {e}")
 
                 return False
             else:
                 self.logger.info(
-                    "Listing bucket {name} succeeded after creation")
+                    f"Listing bucket {name} succeeded after creation")
                 return True
 
         # Wait until ListObjectsv2 requests start working on the newly created
@@ -438,11 +487,12 @@ class S3Client:
 
     @retry_on_slowdown()
     def _list_objects(self,
+                      *,
                       bucket,
                       token=None,
                       limit=1000,
                       prefix: Optional[str] = None,
-                      client=None):
+                      client):
         try:
             if token is not None:
                 return client.list_objects_v2(Bucket=bucket,
@@ -477,8 +527,8 @@ class S3Client:
         truncated = True
         while truncated:
             try:
-                res = self._list_objects(bucket,
-                                         token,
+                res = self._list_objects(bucket=bucket,
+                                         token=token,
                                          limit=100,
                                          prefix=prefix,
                                          client=client)
@@ -550,9 +600,9 @@ class S3Client:
 
     def _gcp_create_expiration_policy(self, bucket: str, days: int):
         gcs_client = gcs.Client()
-        bucket = gcs_client.get_bucket(bucket)
-        bucket.add_lifecycle_delete_rule(age=days)
-        bucket.patch()
+        gcs_bucket = gcs_client.get_bucket(bucket)
+        gcs_bucket.add_lifecycle_delete_rule(age=days)
+        gcs_bucket.patch()
 
     def _add_header(self, model, params, request_signer, **kwargs):
         params['headers'].update(self._before_call_headers)

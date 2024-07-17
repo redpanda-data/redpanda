@@ -89,13 +89,15 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize admin kafka client: %v", err)
 
 			// We fail if the topic does not exist.
-			listed, err := adm.ListTopics(cmd.Context(), topics...)
-			out.MaybeDie(err, "unable to check topic existence: %v", err)
-			listed.EachError(func(d kadm.TopicDetail) {
-				if errors.Is(d.Err, kerr.UnknownTopicOrPartition) {
-					out.Die("unable to consume topic %q: %v", d.Topic, d.Err.Error())
-				}
-			})
+			if !c.regex {
+				listed, err := adm.ListTopics(cmd.Context(), topics...)
+				out.MaybeDie(err, "unable to check topic existence: %v", err)
+				listed.EachError(func(d kadm.TopicDetail) {
+					if errors.Is(d.Err, kerr.UnknownTopicOrPartition) {
+						out.Die("unable to consume topic %q: %v", d.Topic, d.Err.Error())
+					}
+				})
+			}
 
 			err = c.parseOffset(offset, topics, adm)
 			out.MaybeDie(err, "invalid --offset %q: %v", offset, err)

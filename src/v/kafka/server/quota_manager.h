@@ -13,25 +13,28 @@
 #include "base/seastarx.h"
 #include "config/client_group_byte_rate_quota.h"
 #include "config/property.h"
-#include "kafka/server/token_bucket_rate_tracker.h"
-#include "resource_mgmt/rate.h"
+#include "container/chunked_hash_map.h"
+#include "kafka/server/atomic_token_bucket.h"
+#include "kafka/server/client_quota_translator.h"
+#include "ssx/sharded_value.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
-
-#include <absl/container/flat_hash_map.h>
+#include <seastar/util/noncopyable_function.hh>
+#include <seastar/util/shared_token_bucket.hh>
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string_view>
 
 namespace kafka {
-
-// Shard on which partition mutation rate metrics are aggregated on
-static constexpr ss::shard_id quota_manager_shard = 0;
 
 // quota_manager tracks quota usage
 //
@@ -54,11 +57,36 @@ class quota_manager : public ss::peering_sharded_service<quota_manager> {
 public:
     using clock = ss::lowres_clock;
 
-    struct throttle_delay {
-        clock::duration duration{0};
+    // Accounting for quota on per-client and per-client-group basis
+    // last_seen_ms: used for gc keepalive
+    // tp_produce_rate: produce throughput tracking
+    // tp_fetch_rate: fetch throughput tracking
+    // pm_rate: partition mutation quota tracking
+    struct client_quota {
+        ssx::sharded_value<clock::time_point> last_seen_ms;
+        std::optional<atomic_token_bucket> tp_produce_rate;
+        std::optional<atomic_token_bucket> tp_fetch_rate;
+        std::optional<atomic_token_bucket> pm_rate;
     };
 
-    quota_manager();
+    // Note: the use of std::shared_ptr<> is generally discouraged in the
+    // redpanda codebase because of the overhead of the atomic reference count
+    // and because seastar's memory model expects data to be deallocated on the
+    // same shard as where it was allocated and sharing std::shared_ptr<>'s
+    // across cores makes it easy to have the deallocation be on a different
+    // shard. The reason why it is acceptable to use a std::shared_ptr<> here is
+    // because (1) we're always allocating and deallocating the objects inside
+    // std::shared_ptr<> on shard 0 and (2) we need a way to keep track of a
+    // reference count across multiple shards, which is exactly what
+    // std::shared_ptr<> is meant for.
+    using local_map_t
+      = chunked_hash_map<tracker_key, std::shared_ptr<client_quota>>;
+
+    using global_map_t
+      = chunked_hash_map<tracker_key, std::shared_ptr<client_quota>>;
+
+    explicit quota_manager(
+      ss::sharded<cluster::client_quota::store>& client_quota_store);
     quota_manager(const quota_manager&) = delete;
     quota_manager& operator=(const quota_manager&) = delete;
     quota_manager(quota_manager&&) = delete;
@@ -70,18 +98,18 @@ public:
     ss::future<> start();
 
     // record a new observation
-    throttle_delay record_produce_tp_and_throttle(
+    ss::future<clock::duration> record_produce_tp_and_throttle(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now = clock::now());
 
     // record a new observation
-    void record_fetch_tp(
+    ss::future<> record_fetch_tp(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now = clock::now());
 
-    throttle_delay throttle_fetch_tp(
+    ss::future<clock::duration> throttle_fetch_tp(
       std::optional<std::string_view> client_id,
       clock::time_point now = clock::now());
 
@@ -89,69 +117,53 @@ public:
     // Only for use with the quotas introduced by KIP-599, namely to track
     // partition creation and deletion events (create topics, delete topics &
     // create partitions)
-    //
-    // NOTE: This method will be invoked on shard 0, therefore ensure that it is
-    // not called within a tight loop from another shard
     ss::future<std::chrono::milliseconds> record_partition_mutations(
       std::optional<std::string_view> client_id,
       uint32_t mutations,
       clock::time_point now = clock::now());
 
-private:
-    std::chrono::milliseconds do_record_partition_mutations(
-      std::optional<std::string_view> client_id,
-      uint32_t mutations,
-      clock::time_point now);
-
-    // throttle, return <previous delay, new delay>
-    std::chrono::milliseconds throttle(
-      std::optional<std::string_view> client_id,
-      uint32_t target_rate,
-      const clock::time_point& now,
-      rate_tracker& rate_tracker);
-
-    // Accounting for quota on per-client and per-client-group basis
-    // last_seen: used for gc keepalive
-    // delay: last calculated delay
-    // tp_rate: throughput tracking
-    // pm_rate: partition mutation quota tracking - only on home shard
-    struct client_quota {
-        clock::time_point last_seen;
-        rate_tracker tp_produce_rate;
-        rate_tracker tp_fetch_rate;
-        std::optional<token_bucket_rate_tracker> pm_rate;
-    };
-    using client_quotas_t = absl::flat_hash_map<ss::sstring, client_quota>;
+    const std::optional<global_map_t>& get_global_map_for_testing() const;
 
 private:
+    using quota_mutation_callback_t
+      = ss::noncopyable_function<clock::duration(client_quota&)>;
+
+    using quota_config
+      = std::unordered_map<ss::sstring, config::client_group_quota>;
+
+    class client_quotas_probe;
+
+    clock::duration cap_to_max_delay(const tracker_key&, clock::duration);
+
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
-    void gc(clock::duration full_window);
+    void gc();
+    ss::future<> do_local_gc(clock::time_point expire_threshold);
+    ss::future<> do_global_gc();
 
-    client_quotas_t::iterator maybe_add_and_retrieve_quota(
-      const std::optional<std::string_view>&, const clock::time_point&);
-    int64_t get_client_target_produce_tp_rate(
-      const std::optional<std::string_view>& quota_id);
-    std::optional<int64_t> get_client_target_fetch_tp_rate(
-      const std::optional<std::string_view>& quota_id);
+    ss::future<clock::duration> maybe_add_and_retrieve_quota(
+      tracker_key quota_id,
+      clock::time_point now,
+      quota_mutation_callback_t cb);
+    ss::future<std::shared_ptr<quota_manager::client_quota>>
+    add_quota_id(tracker_key quota_id, clock::time_point now);
+    void update_client_quotas();
+    ss::future<> do_update_client_quotas();
 
-private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
+    config::binding<std::optional<int64_t>> _replenish_threshold;
 
-    config::binding<uint32_t> _default_target_produce_tp_rate;
-    config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
-    config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
-    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
-      _target_produce_tp_rate_per_client_group;
-    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
-      _target_fetch_tp_rate_per_client_group;
-
-    client_quotas_t _client_quotas;
+    local_map_t _local_map;
+    std::optional<global_map_t> _global_map; // Only on shard 0
+    client_quota_translator _translator;
+    std::unique_ptr<client_quotas_probe> _probe;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
+    ss::gate _gate;
+    std::optional<mutex> _global_map_mutex; // Only on shard 0
 };
 
 } // namespace kafka

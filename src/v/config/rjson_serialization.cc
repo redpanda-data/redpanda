@@ -9,6 +9,8 @@
 
 #include "config/rjson_serialization.h"
 
+#include "config/types.h"
+
 namespace json {
 
 void rjson_serialize(
@@ -60,6 +62,11 @@ void rjson_serialize_impl(
         w.Key("truststore_file");
         w.String((*(v.get_truststore_file())).c_str());
     }
+
+    if (v.get_crl_file()) {
+        w.Key("crl_file");
+        w.String((*(v.get_crl_file())).c_str());
+    }
 }
 
 void rjson_serialize(
@@ -80,7 +87,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const custom_aggregate& v) {
+  json::Writer<json::StringBuffer>& w, const testing::custom_aggregate& v) {
     w.StartObject();
 
     w.Key("string_value");
@@ -139,8 +146,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cloud_storage_clients::s3_url_style& v) {
+  json::Writer<json::StringBuffer>& w, const config::s3_url_style& v) {
     stringize(w, v);
 }
 
@@ -184,12 +190,6 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
-  const pandaproxy::schema_registry::subject_name_strategy& v) {
-    stringize(w, v);
-}
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
   const pandaproxy::schema_registry::schema_id_validation_mode& v) {
     stringize(w, v);
 }
@@ -210,6 +210,11 @@ void rjson_serialize(
     w.Key("port");
     w.Uint(ep.address.port());
     w.EndObject();
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::fips_mode_flag& f) {
+    stringize(w, f);
 }
 
 } // namespace json

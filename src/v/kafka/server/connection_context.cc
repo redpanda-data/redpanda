@@ -536,40 +536,41 @@ bool connection_context::is_finished_parsing() const {
     return conn->input().eof() || abort_requested();
 }
 
-connection_context::delay_t
+ss::future<connection_context::delay_t>
 connection_context::record_tp_and_calculate_throttle(
-  const request_header& hdr, const size_t request_size) {
+  request_data r_data, const size_t request_size) {
     using clock = quota_manager::clock;
     static_assert(std::is_same_v<clock, delay_t::clock>);
     const auto now = clock::now();
 
     // Throttle on client based quotas
     connection_context::delay_t client_quota_delay{};
-    if (hdr.key == fetch_api::key) {
-        auto fetch_delay = _server.quota_mgr().throttle_fetch_tp(
-          hdr.client_id, now);
+    if (r_data.request_key == fetch_api::key) {
+        auto fetch_delay = co_await _server.quota_mgr().throttle_fetch_tp(
+          r_data.client_id, now);
         auto fetch_enforced = _throttling_state.update_fetch_delay(
-          fetch_delay.duration, now);
+          fetch_delay, now);
         client_quota_delay = delay_t{
-          .request = fetch_delay.duration,
+          .request = fetch_delay,
           .enforce = fetch_enforced,
         };
-    } else if (hdr.key == produce_api::key) {
-        auto produce_delay = _server.quota_mgr().record_produce_tp_and_throttle(
-          hdr.client_id, request_size, now);
+    } else if (r_data.request_key == produce_api::key) {
+        auto produce_delay
+          = co_await _server.quota_mgr().record_produce_tp_and_throttle(
+            r_data.client_id, request_size, now);
         auto produce_enforced = _throttling_state.update_produce_delay(
-          produce_delay.duration, now);
+          produce_delay, now);
         client_quota_delay = delay_t{
-          .request = produce_delay.duration,
+          .request = produce_delay,
           .enforce = produce_enforced,
         };
     }
 
     // Throttle on shard wide quotas
     connection_context::delay_t snc_delay;
-    if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
+    if (_kafka_throughput_controlled_api_keys().at(r_data.request_key)) {
         _server.snc_quota_mgr().get_or_create_quota_context(
-          _snc_quota_context, hdr.client_id);
+          _snc_quota_context, r_data.client_id);
         _server.snc_quota_mgr().record_request_receive(
           *_snc_quota_context, request_size, now);
         auto shard_delays = _server.snc_quota_mgr().get_shard_delays(
@@ -591,7 +592,7 @@ connection_context::record_tp_and_calculate_throttle(
       delay_enforce != clock::duration::zero()
       || delay_request != clock::duration::zero()) {
         vlog(
-          klog.trace,
+          client_quota_log.trace,
           "[{}:{}] throttle request:{{snc:{}, client:{}}}, "
           "enforce:{{snc:{}, client:{}}}, key:{}, request_size:{}",
           _client_addr,
@@ -600,14 +601,14 @@ connection_context::record_tp_and_calculate_throttle(
           client_quota_delay.request,
           snc_delay.enforce,
           client_quota_delay.enforce,
-          hdr.key,
+          r_data.request_key,
           request_size);
     }
-    return delay_t{.request = delay_request, .enforce = delay_enforce};
+    co_return delay_t{.request = delay_request, .enforce = delay_enforce};
 }
 
 ss::future<session_resources> connection_context::throttle_request(
-  const request_header& hdr, size_t request_size) {
+  const request_data r_data, size_t request_size) {
     // note that when throttling is first determined, the request is
     // allowed to pass through, and only subsequent requests are
     // delayed. this is a similar strategy used by kafka 2.0: the
@@ -615,14 +616,9 @@ ss::future<session_resources> connection_context::throttle_request(
     // distinguish throttling delays from real delays. delays
     // applied to subsequent messages allow backpressure to take
     // affect.
+    const delay_t delay = co_await record_tp_and_calculate_throttle(
+      r_data, request_size);
 
-    const delay_t delay = record_tp_and_calculate_throttle(hdr, request_size);
-    request_data r_data = request_data{
-      .request_key = hdr.key,
-      .client_id = ss::sstring{hdr.client_id.value_or("")}};
-    auto& h_probe = _server.handler_probe(r_data.request_key);
-    auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
-    auto fut = ss::now();
     if (delay.enforce > delay_t::clock::duration::zero()) {
         vlog(
           klog.trace,
@@ -630,40 +626,28 @@ ss::future<session_resources> connection_context::throttle_request(
           _client_addr,
           client_port(),
           delay.enforce);
-        fut = ss::sleep_abortable(delay.enforce, abort_source().local());
+        co_await ss::sleep_abortable(delay.enforce, abort_source().local());
     }
-    auto track = track_latency(hdr.key);
-    return fut
-      .then([this, key = hdr.key, request_size] {
-          return reserve_request_units(key, request_size);
-      })
-      .then([this,
-             r_data = std::move(r_data),
-             delay = delay.request,
-             track,
-             tracker = std::move(tracker),
-             &h_probe](ssx::semaphore_units units) mutable {
-          return server().get_request_unit().then(
-            [this,
-             r_data = std::move(r_data),
-             delay,
-             mem_units = std::move(units),
-             track,
-             tracker = std::move(tracker),
-             &h_probe](ssx::semaphore_units qd_units) mutable {
-                session_resources r{
-                  .backpressure_delay = delay,
-                  .memlocks = std::move(mem_units),
-                  .queue_units = std::move(qd_units),
-                  .tracker = std::move(tracker),
-                  .request_data = std::move(r_data)};
-                if (track) {
-                    r.method_latency = _server.hist().auto_measure();
-                }
-                r.handler_latency = h_probe.auto_latency_measurement();
-                return r;
-            });
-      });
+
+    auto mem_units = co_await reserve_request_units(
+      r_data.request_key, request_size);
+
+    auto qd_units = co_await server().get_request_unit();
+
+    auto& h_probe = _server.handler_probe(r_data.request_key);
+    auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
+    auto track = track_latency(r_data.request_key);
+    session_resources r{
+      .backpressure_delay = delay.request,
+      .memlocks = std::move(mem_units),
+      .queue_units = std::move(qd_units),
+      .tracker = std::move(tracker),
+      .request_data = std::move(r_data)};
+    if (track) {
+        r.method_latency = _server.hist().auto_measure();
+    }
+    r.handler_latency = h_probe.auto_latency_measurement();
+    co_return r;
 }
 
 ss::future<ssx::semaphore_units>
@@ -692,7 +676,13 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
-    auto sres_in = co_await throttle_request(hdr, size);
+    auto r_data = request_data{
+      .request_key = hdr.key,
+      .client_id = hdr.client_id
+                     ? std::make_optional<ss::sstring>(*hdr.client_id)
+                     : std::nullopt,
+    };
+    auto sres_in = co_await throttle_request(std::move(r_data), size);
     if (abort_requested()) {
         // protect against shutdown behavior
         co_return;
@@ -887,82 +877,80 @@ ss::future<> connection_context::client_protocol_state::handle_response(
 }
 
 /**
- * This method processes as many responses as possible, in request order. Since
- * we proces the second stage asynchronously within a given connection, reponses
- * may become ready out of order, but Kafka clients expect responses exactly in
- * request order.
+ * This method is called repeatedly to process the next request from the
+ * connection until there are no more requests to process. The requests are
+ * processed in request order. Since we proces the second stage asynchronously
+ * within a given connection, reponses may become ready out of order, but Kafka
+ * clients expect responses exactly in request order.
  *
  * The _responses queue handles that: responses are enqueued there in completion
  * order, but only sent to the client in response order. So this method, called
  * after every response is ready, may end up sending zero, one or more requests,
  * depending on the completion order.
- *
- * @return ss::future<>
+ */
+ss::future<ss::stop_iteration>
+connection_context::client_protocol_state::do_process_responses(
+  ss::lw_shared_ptr<connection_context> connection_ctx) {
+    auto it = _responses.find(_next_response);
+    if (it == _responses.end()) {
+        co_return ss::stop_iteration::yes;
+    }
+    // found one; increment counter
+    _next_response = _next_response + sequence_id(1);
+
+    auto resp_and_res = std::move(it->second);
+
+    _responses.erase(it);
+
+    if (resp_and_res.response->is_noop()) {
+        co_return ss::stop_iteration::no;
+    }
+
+    auto msg = response_as_scattered(std::move(resp_and_res.response));
+    if (resp_and_res.resources->request_data.request_key == fetch_api::key) {
+        co_await connection_ctx->_server.quota_mgr().record_fetch_tp(
+          resp_and_res.resources->request_data.client_id, msg.size());
+    }
+    // Respose sizes only take effect on throttling at the next
+    // request processing. The better way was to measure throttle
+    // delay right here and apply it to the immediate response, but
+    // that would require drastic changes to kafka message
+    // processing framework - because throttle_ms has been
+    // serialized long ago already. With the current approach,
+    // egress token bucket level will always be an extra burst into
+    // the negative while under pressure.
+    auto response_size = msg.size();
+    auto request_key = resp_and_res.resources->request_data.request_key;
+    if (connection_ctx->_kafka_throughput_controlled_api_keys().at(
+          request_key)) {
+        // see the comment in dispatch_method_once()
+        if (likely(connection_ctx->_snc_quota_context)) {
+            connection_ctx->_server.snc_quota_mgr().record_response(
+              *connection_ctx->_snc_quota_context, response_size);
+        }
+    }
+    connection_ctx->_server.handler_probe(request_key)
+      .add_bytes_sent(response_size);
+    try {
+        co_await connection_ctx->conn->write(std::move(msg));
+    } catch (...) {
+        resp_and_res.resources->tracker->mark_errored();
+        vlog(
+          klog.debug,
+          "Failed to process request: {}",
+          std::current_exception());
+    }
+    co_return ss::stop_iteration::no;
+}
+
+/**
+ * This method processes as many responses as possible from the connection by
+ * calling do_process_responses repeatedly until it returns stop_iteration::yes.
  */
 ss::future<> connection_context::client_protocol_state::maybe_process_responses(
   ss::lw_shared_ptr<connection_context> connection_ctx) {
-    return ss::repeat([this,
-                       connection_ctx = std::move(connection_ctx)]() mutable {
-        auto it = _responses.find(_next_response);
-        if (it == _responses.end()) {
-            return ss::make_ready_future<ss::stop_iteration>(
-              ss::stop_iteration::yes);
-        }
-        // found one; increment counter
-        _next_response = _next_response + sequence_id(1);
-
-        auto resp_and_res = std::move(it->second);
-
-        _responses.erase(it);
-
-        if (resp_and_res.response->is_noop()) {
-            return ss::make_ready_future<ss::stop_iteration>(
-              ss::stop_iteration::no);
-        }
-
-        auto msg = response_as_scattered(std::move(resp_and_res.response));
-        if (
-          resp_and_res.resources->request_data.request_key == fetch_api::key) {
-            connection_ctx->_server.quota_mgr().record_fetch_tp(
-              resp_and_res.resources->request_data.client_id, msg.size());
-        }
-        // Respose sizes only take effect on throttling at the next request
-        // processing. The better way was to measure throttle delay right here
-        // and apply it to the immediate response, but that would require
-        // drastic changes to kafka message processing framework - because
-        // throttle_ms has been serialized long ago already. With the current
-        // approach, egress token bucket level will always be an extra burst
-        // into the negative while under pressure.
-        auto response_size = msg.size();
-        auto request_key = resp_and_res.resources->request_data.request_key;
-        if (connection_ctx->_kafka_throughput_controlled_api_keys().at(
-              request_key)) {
-            // see the comment in dispatch_method_once()
-            if (likely(connection_ctx->_snc_quota_context)) {
-                connection_ctx->_server.snc_quota_mgr().record_response(
-                  *connection_ctx->_snc_quota_context, response_size);
-            }
-        }
-        connection_ctx->_server.handler_probe(request_key)
-          .add_bytes_sent(response_size);
-        try {
-            return connection_ctx->conn->write(std::move(msg))
-              .then([] {
-                  return ss::make_ready_future<ss::stop_iteration>(
-                    ss::stop_iteration::no);
-              })
-              // release the resources only once it has been written to the
-              // connection.
-              .finally([resources = resp_and_res.resources] {});
-        } catch (...) {
-            resp_and_res.resources->tracker->mark_errored();
-            vlog(
-              klog.debug,
-              "Failed to process request: {}",
-              std::current_exception());
-        }
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+    return ss::repeat([this, connection_ctx]() {
+        return do_process_responses(connection_ctx);
     });
 }
 

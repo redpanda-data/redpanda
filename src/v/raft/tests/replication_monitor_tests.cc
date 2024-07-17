@@ -59,14 +59,14 @@ TEST_P_CORO(monitor_test_fixture, replication_monitor_wait) {
     auto raft = node(leader).raft();
 
     auto all = ::populate_waiters(raft, write_caching(), num_waiters());
-    co_await ss::sleep(2s);
+    co_await ss::sleep(500ms);
     ASSERT_FALSE_CORO(all.available());
 
     for (auto i = 0; i < num_waiters(); i++) {
         auto result = co_await raft->replicate(
           make_batches({{"k", "v"}}),
           replicate_options{raft::consistency_level::quorum_ack});
-        ASSERT_TRUE_CORO(result.has_value());
+        ASSERT_TRUE_CORO(result.has_value()) << result.error();
     }
 
     co_await tests::cooperative_spin_wait_with_timeout(
@@ -86,19 +86,13 @@ TEST_P_CORO(monitor_test_fixture, truncation_detection) {
 
     auto raft = node(leader).raft();
     auto all = ::populate_waiters(raft, write_caching(), num_waiters());
-    co_await ss::sleep(2s);
+    co_await ss::sleep(500ms);
     ASSERT_FALSE_CORO(all.available());
 
     for (auto& [id, node] : nodes()) {
         if (id == leader) {
-            node->on_dispatch([](model::node_id, raft::msg_type t) {
-                if (
-                  t == raft::msg_type::append_entries
-                  || t == raft::msg_type::vote) {
-                    return ss::sleep(5s);
-                }
-                return ss::now();
-            });
+            node->on_dispatch(
+              [](model::node_id, raft::msg_type) { return ss::sleep(3s); });
         }
     }
 

@@ -11,8 +11,10 @@
 
 #include "raft/coordinated_recovery_throttle.h"
 
-#include "prometheus/prometheus_sanitize.h"
+#include "config/configuration.h"
+#include "metrics/prometheus_sanitize.h"
 #include "raft/logger.h"
+#include "ssx/future-util.h"
 
 #include <seastar/util/defer.hh>
 

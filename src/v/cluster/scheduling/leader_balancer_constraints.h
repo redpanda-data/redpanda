@@ -11,13 +11,13 @@
 #pragma once
 
 #include "cluster/scheduling/leader_balancer_types.h"
+#include "container/chunked_hash_map.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/sstring.hh>
 
-#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <boost/range/adaptor/reversed.hpp>
@@ -110,12 +110,12 @@ class even_topic_distributon_constraint final
     using topic_id_t = model::revision_id::type;
 
     template<typename ValueType>
-    using topic_map = absl::btree_map<topic_id_t, ValueType>;
+    using topic_map = chunked_hash_map<topic_id_t, ValueType>;
 
 public:
     even_topic_distributon_constraint(
       group_id_to_topic_revision_t group_to_topic_rev,
-      shard_index si,
+      const shard_index& si,
       const muted_index& mi);
 
     even_topic_distributon_constraint(
@@ -152,19 +152,19 @@ public:
     std::optional<reassignment> recommended_reassignment() override;
 
 private:
-    shard_index _si;
+    std::reference_wrapper<const shard_index> _si;
     std::reference_wrapper<const muted_index> _mi;
     group_id_to_topic_revision_t _group_to_topic_rev;
     double _error{0};
 
     // Stores the number of leaders on a given node per topic.
-    topic_map<absl::flat_hash_map<model::node_id, size_t>> _topic_node_index;
+    topic_map<chunked_hash_map<model::broker_shard, size_t>> _topic_shard_index;
     topic_map<size_t> _topic_partition_index;
-    topic_map<absl::flat_hash_set<model::node_id>> _topic_replica_index;
+    topic_map<chunked_hash_set<model::broker_shard>> _topic_replica_index;
     topic_map<double> _topic_skew;
     topic_map<double> _topic_opt_leaders;
 
-    const shard_index& si() const { return _si; }
+    const shard_index& si() const { return _si.get(); }
     const muted_index& mi() const { return _mi.get(); }
     const group_id_to_topic_revision_t& group_to_topic_id() const {
         return _group_to_topic_rev;
@@ -214,8 +214,8 @@ class even_shard_load_constraint final
     static constexpr double error_jitter = 0.000001;
 
 public:
-    even_shard_load_constraint(shard_index si, const muted_index& mi)
-      : _si(std::move(si))
+    even_shard_load_constraint(const shard_index& si, const muted_index& mi)
+      : _si(si)
       , _mi(mi)
       , _num_cores(num_cores())
       , _num_groups(num_groups()) {
@@ -235,7 +235,6 @@ public:
     double error() const { return _error; }
     void update_index(const reassignment& r) override {
         _error = adjusted_error(_error, r.from, r.to);
-        _si.update_index(r);
     }
 
     /*
@@ -260,13 +259,13 @@ public:
     double calc_target_load() const;
 
 private:
-    shard_index _si;
+    std::reference_wrapper<const shard_index> _si;
     std::reference_wrapper<const muted_index> _mi;
     size_t _num_cores;
     size_t _num_groups;
     double _error{0};
 
-    const shard_index& si() const { return _si; }
+    const shard_index& si() const { return _si.get(); }
     const muted_index& mi() const { return _mi.get(); }
 
     /*

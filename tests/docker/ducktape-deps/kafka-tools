@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0"; do
+for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0" "3.7.0"; do
   mkdir -p "/opt/kafka-${ver}"
   chmod a+rw "/opt/kafka-${ver}"
   curl "$KAFKA_MIRROR/kafka_2.12-${ver}.tgz" | tar xz --strip-components=1 -C "/opt/kafka-${ver}"

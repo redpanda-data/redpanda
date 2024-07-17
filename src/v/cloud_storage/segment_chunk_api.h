@@ -11,10 +11,12 @@
 #pragma once
 
 #include "cloud_storage/segment_chunk.h"
+#include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
 
 #include <absl/container/btree_map.h>
@@ -73,11 +75,12 @@ public:
     iterator_t begin();
     iterator_t end();
 
-    /// Returns a map of chunk start offset to metadata. The map is initialized
-    /// once per remote segment, when the segment chunk API is started. The
-    /// contents of the map are fixed and contain one entry per chunk in the
-    /// segment.
-    const chunk_map_t& chunk_map() const { return _chunks; }
+    /// Returns byte range (inclusive) for given chunk start offset. If the
+    /// chunk is the last in segment, the second parameter is used for the end
+    /// of the range. This is required because the chunk API only contains start
+    /// offsets of chunks.
+    std::pair<size_t, size_t> get_byte_range_for_chunk(
+      chunk_start_offset_t start_offset, size_t last_byte_in_segment) const;
 
 private:
     // Periodically closes chunk file handles for the space to be reclaimable by
@@ -88,7 +91,37 @@ private:
     // `segment_chunk::required_after_n_chunks` values.
     ss::future<> trim_chunk_files();
 
+    /// Runs a continuous loop which checks and serves download requests.
+    /// Modelled after remote segment bg loop.
+    ss::future<> run_hydrate_bg();
+
+    /// Hydrate a single chunk during an iteration of the bg loop. Uses remote
+    /// segment to download the chunk and once finished notifies all waiters.
+    ss::future<> do_hydrate_chunk(chunk_start_offset_t start_offset);
+
+    /// Schedules prefetches when a chunk is downloaded, by calculating the next
+    /// `prefetch` chunks and scheduling downloads by adding to the wait queue.
+    /// If prefetch chunks are already hydrated or download is in progress, then
+    /// we skip the download.
+    void schedule_prefetches(
+      chunk_start_offset_t start_offset, size_t n_chunks_to_prefetch);
+
+    /// Periodically resolves prefetch futures. Since there is no explicit
+    /// waiter for prefetch downloads, potential errors during these downloads
+    /// must be consumed to avoid ignored-future warnings. This method inspects
+    /// currently scheduled prefetches, and for those which are available,
+    /// extracts exceptions if any.
+    void resolve_prefetch_futures();
+
+    /// The chunk map holds a mapping from file offset to chunk metadata. This
+    /// struct is initialized when the object starts, and will never change
+    /// after this during the lifetime of this object, IE no inserts or deletes
+    /// are performed on the map. The metadata may change, specifically the
+    /// chunk state or number of waiters. The map cannot be initialized when
+    /// this object is constructed because we need the segment index to be
+    /// available to ocnstruct the map.
     chunk_map_t _chunks;
+
     remote_segment& _segment;
 
     simple_time_jitter<ss::lowres_clock> _cache_backoff_jitter;
@@ -105,6 +138,8 @@ private:
     retry_chain_logger _ctxlog;
 
     uint64_t _max_hydrated_chunks;
+    ss::condition_variable _bg_cvar;
+    fragmented_vector<ss::future<segment_chunk::handle_t>> _prefetches;
 };
 
 class chunk_eviction_strategy {
@@ -167,26 +202,5 @@ std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
   model::cloud_storage_chunk_eviction_strategy k,
   uint64_t max_chunks,
   uint64_t hydrated_chunks);
-
-class segment_chunk_range {
-public:
-    using map_t = absl::
-      btree_map<chunk_start_offset_t, std::optional<chunk_start_offset_t>>;
-
-    segment_chunk_range(
-      const segment_chunks::chunk_map_t& chunks,
-      size_t prefetch,
-      chunk_start_offset_t start);
-
-    std::optional<chunk_start_offset_t> last_offset() const;
-    chunk_start_offset_t first_offset() const;
-    size_t chunk_count() const;
-
-    map_t::iterator begin();
-    map_t::iterator end();
-
-private:
-    map_t _chunks;
-};
 
 } // namespace cloud_storage

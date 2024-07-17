@@ -2,18 +2,29 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_kafka_server
   SOURCES
+    atomic_token_bucket_test.cc
     error_mapping_test.cc
     timeouts_conversion_test.cc
     types_conversion_tests.cc
     topic_utils_test.cc
     handler_interface_test.cc
-    quota_managers_test.cc
+    snc_quota_manager_test.cc
     validator_tests.cc
     fetch_unit_test.cc
     config_utils_test.cc
     config_response_utils_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
+  LABELS kafka
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_consumer_group_recovery
+  SOURCES
+        consumer_group_recovery_test.cc
+  LIBRARIES v::gtest_main v::kafka
   LABELS kafka
 )
 
@@ -39,7 +50,6 @@ v_cc_library(
 
 set(srcs
   consumer_groups_test.cc
-  token_bucket_algorithm_test.cc
   member_test.cc
   group_test.cc
   read_write_roundtrip_test.cc
@@ -68,6 +78,23 @@ rp_test(
   LABELS kafka
 )
 
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME quota_manager
+  SOURCES quota_manager_test.cc
+  LIBRARIES v::seastar_testing_main v::kafka
+  ARGS "-- -c 4"
+  LABELS kafka
+)
+
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME quota_translator
+  SOURCES client_quota_translator_test.cc
+  LIBRARIES v::seastar_testing_main v::kafka
+  ARGS "-- -c 1"
+  LABELS kafka
+)
 
 rp_test(
   BENCHMARK_TEST
@@ -86,5 +113,27 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing Boost::unit_test_framework v::application
   # the args below are just to keep it fast
   ARGS "-c 1 --duration=1 --runs=1 --memory=4G"
+  LABELS kafka
+)
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME quota_manager
+  SOURCES quota_manager_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing Boost::unit_test_framework v::kafka
+
+  # the args below are just to keep it fast
+  ARGS "-c 2 --duration=1 --runs=1 --memory=4G"
+  LABELS kafka
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_group_tx_compaction
+  SOURCES
+        group_tx_compaction_test.cc
+  LIBRARIES v::gtest_main v::kafka v::kafka_test_utils v::application v::raft v::config
+  ARGS "-- -c 1"
   LABELS kafka
 )

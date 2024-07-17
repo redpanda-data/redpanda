@@ -1,5 +1,6 @@
 from rptest.archival.s3_client import ObjectMetadata
 from rptest.archival.shared_client_utils import key_to_topic
+from rptest.utils.type_utils import rcast
 
 from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
 from itertools import islice
@@ -7,7 +8,7 @@ from itertools import islice
 import time
 import datetime
 from logging import Logger
-from typing import Iterator, Optional
+from typing import Iterator, Optional, cast
 
 
 def build_connection_string(proto: str, endpoint: Optional[str],
@@ -44,9 +45,7 @@ class ABSClient:
         self.conn_str = build_connection_string(proto, endpoint,
                                                 storage_account, shared_key)
 
-    def _wait_no_key(self,
-                     blob_client: BlobServiceClient,
-                     timeout_sec: float = 10):
+    def _wait_no_key(self, blob_client: BlobClient, timeout_sec: float = 10):
         deadline = datetime.datetime.now() + datetime.timedelta(
             seconds=timeout_sec)
 
@@ -154,10 +153,11 @@ class ABSClient:
         # as the 'etag'. This is done in order to mimic the S3 behaviour
         # and keep parametrised tests passing without making them aware
         # of the cloud storage client being used.
-        return ObjectMetadata(bucket=props.container,
-                              key=props.name,
-                              etag=props.content_settings.content_md5.hex(),
-                              content_length=props.size)
+        return ObjectMetadata(
+            bucket=rcast(str, props.container),
+            key=rcast(str, props.name),
+            etag=cast(bytearray, props.content_settings.content_md5).hex(),
+            content_length=rcast(int, props.size))
 
     def list_objects(self,
                      bucket: str,

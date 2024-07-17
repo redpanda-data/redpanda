@@ -52,7 +52,7 @@
 using namespace std::chrono_literals;
 
 static const uint16_t httpd_port_number = 4434;
-static constexpr const char* httpd_host_name = "127.0.0.1";
+static constexpr const char* httpd_host_name = "localhost";
 static constexpr const char* expected_payload
   = "Amazon Simple Storage Service (Amazon S3) is storage for the internet. "
     "You can use Amazon S3 to store and retrieve any amount of data at any "

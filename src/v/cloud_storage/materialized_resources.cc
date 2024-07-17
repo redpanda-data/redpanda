@@ -144,9 +144,8 @@ get_throughput_limit(std::optional<size_t> device_throughput) {
     }
 
     auto tp = std::min(hard_limit, device_throughput.value());
-    constexpr auto tput_overshoot_frac = 16;
     return {
-      .disk_node_throughput_limit = tp + (tp / tput_overshoot_frac),
+      .disk_node_throughput_limit = tp,
       .download_shard_throughput_limit = tp / ss::smp::count,
     };
 }

@@ -204,20 +204,21 @@ ss::future<download_result> remote::download_manifest(
     return do_download_manifest(bucket, format_key, manifest, parent);
 }
 
-ss::future<download_result> remote::maybe_download_manifest(
-  const cloud_storage_clients::bucket_name& bucket,
-  const std::pair<manifest_format, remote_manifest_path>& format_key,
-  base_manifest& manifest,
-  retry_chain_node& parent) {
-    return do_download_manifest(bucket, format_key, manifest, parent, true);
-}
-
-ss::future<download_result> remote::download_manifest(
+ss::future<download_result> remote::download_manifest_json(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
     auto fk = std::pair{manifest_format::json, key};
+    co_return co_await do_download_manifest(
+      bucket, fk, manifest, parent, false);
+}
+ss::future<download_result> remote::download_manifest_bin(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    auto fk = std::pair{manifest_format::serde, key};
     co_return co_await do_download_manifest(
       bucket, fk, manifest, parent, false);
 }
@@ -228,33 +229,6 @@ ss::future<download_result> remote::maybe_download_manifest(
   retry_chain_node& parent) {
     auto fk = std::pair{manifest_format::json, key};
     co_return co_await do_download_manifest(bucket, fk, manifest, parent, true);
-}
-
-ss::future<std::pair<download_result, manifest_format>>
-remote::try_download_partition_manifest(
-  const cloud_storage_clients::bucket_name& bucket,
-  partition_manifest& manifest,
-  retry_chain_node& parent,
-  bool expect_missing) {
-    vassert(
-      manifest.get_ntp() != model::ntp{}
-        && manifest.get_revision_id() != model::initial_revision_id{},
-      "partition manifest must have ntp");
-
-    // first try to download the serde format
-    auto format_path = manifest.get_manifest_format_and_path();
-    auto serde_result = co_await do_download_manifest(
-      bucket, format_path, manifest, parent, expect_missing);
-    if (serde_result != download_result::notfound) {
-        // propagate success, timedout and failed to caller
-        co_return std::pair{serde_result, manifest_format::serde};
-    }
-    // fallback to json format
-    format_path = manifest.get_legacy_manifest_format_and_path();
-    co_return std::pair{
-      co_await do_download_manifest(
-        bucket, format_path, manifest, parent, expect_missing),
-      manifest_format::json};
 }
 
 ss::future<download_result> remote::do_download_manifest(
@@ -365,11 +339,11 @@ ss::future<download_result> remote::do_download_manifest(
 ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
+  const remote_manifest_path& key,
   retry_chain_node& parent) {
     auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto key = manifest.get_manifest_path();
     auto path = cloud_storage_clients::object_key(key());
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
@@ -507,7 +481,8 @@ ss::future<upload_result> remote::upload_controller_snapshot(
       api_activity_type::controller_snapshot_upload,
       [this] { _probe.controller_snapshot_failed_upload(); },
       [this] { _probe.controller_snapshot_successful_upload(); },
-      [this] { _probe.controller_snapshot_upload_backoff(); });
+      [this] { _probe.controller_snapshot_upload_backoff(); },
+      std::nullopt);
 }
 
 template<
@@ -525,7 +500,8 @@ ss::future<upload_result> remote::upload_stream(
   api_activity_type event_type,
   FailedUploadMetricFn failed_upload_metric,
   SuccessfulUploadMetricFn successful_upload_metric,
-  UploadBackoffMetricFn upload_backoff_metric) {
+  UploadBackoffMetricFn upload_backoff_metric,
+  std::optional<size_t> max_retries) {
     auto guard = _gate.hold();
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -537,7 +513,11 @@ ss::future<upload_result> remote::upload_stream(
       segment_path,
       content_length);
     std::optional<upload_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
+    while (!_gate.is_closed() && permit.is_allowed && !result
+           && max_retries.value_or(1) > 0) {
+        if (max_retries.has_value()) {
+            max_retries = max_retries.value() - 1;
+        }
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
         notify_external_subscribers(
           api_activity_notification{
@@ -633,7 +613,8 @@ ss::future<upload_result> remote::upload_segment(
   uint64_t content_length,
   const reset_input_stream& reset_str,
   retry_chain_node& parent,
-  lazy_abort_source& lazy_abort_source) {
+  lazy_abort_source& lazy_abort_source,
+  std::optional<size_t> max_retries) {
     return upload_stream(
       bucket,
       segment_path,
@@ -645,7 +626,8 @@ ss::future<upload_result> remote::upload_segment(
       api_activity_type::segment_upload,
       [this] { _probe.failed_upload(); },
       [this] { _probe.successful_upload(); },
-      [this] { _probe.upload_backoff(); });
+      [this] { _probe.upload_backoff(); },
+      max_retries);
 }
 
 ss::future<download_result> remote::download_stream(
@@ -987,40 +969,6 @@ ss::future<download_result> remote::segment_exists(
       cloud_storage_clients::object_key{segment_path},
       parent,
       existence_check_type::segment);
-}
-
-ss::future<remote::partition_manifest_existence>
-remote::partition_manifest_exists(
-  const cloud_storage_clients::bucket_name& bucket,
-  model::ntp ntp,
-  model::initial_revision_id rev_id,
-  retry_chain_node& parent) {
-    // first check serde and exit early if it exists
-    auto serde_res = co_await object_exists(
-      bucket,
-      cloud_storage_clients::object_key{generate_partition_manifest_path(
-        ntp, rev_id, manifest_format::serde)()},
-      parent,
-      existence_check_type::manifest);
-
-    switch (serde_res) {
-    case download_result::success:
-        co_return partition_manifest_existence{
-          download_result::success, manifest_format::serde};
-    case download_result::notfound: {
-        auto json_res = co_await object_exists(
-          bucket,
-          cloud_storage_clients::object_key{generate_partition_manifest_path(
-            ntp, rev_id, manifest_format::json)()},
-          parent,
-          existence_check_type::manifest);
-        co_return partition_manifest_existence{json_res, manifest_format::json};
-    }
-    case download_result::failed:
-    case download_result::timedout:
-        // do not try to check for json in case of failures
-        co_return partition_manifest_existence{serde_res, {}};
-    }
 }
 
 ss::future<upload_result> remote::delete_object(

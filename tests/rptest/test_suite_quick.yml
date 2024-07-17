@@ -10,6 +10,7 @@
 quick:
   included:
   - tests/
+  - transactions/
 
   excluded:
   - tests/rpk_tuner_test.py

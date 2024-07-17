@@ -13,9 +13,9 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "config/configuration.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/async_adl_serde.h"
 #include "model/namespace.h"
-#include "prometheus/prometheus_sanitize.h"
 #include "reflection/adl.h"
 #include "ssx/async_algorithm.h"
 #include "storage/parser.h"
@@ -37,12 +37,13 @@ namespace storage {
 
 kvstore::kvstore(
   kvstore_config kv_conf,
+  ss::shard_id shard,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table)
   : _conf(kv_conf)
   , _resources(resources)
   , _feature_table(feature_table)
-  , _ntpc(model::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
+  , _ntpc(model::kvstore_ntp(shard), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
       simple_snapshot_manager::default_snapshot_filename,
@@ -59,7 +60,9 @@ kvstore::~kvstore() noexcept = default;
 ss::future<> kvstore::start() {
     vlog(lg.debug, "Starting kvstore: dir {}", _ntpc.work_directory());
 
-    if (!config::shard_local_cfg().disable_metrics()) {
+    bool is_main_instance = static_cast<int>(ss::this_shard_id())
+                            == _ntpc.ntp().tp.partition();
+    if (is_main_instance && !config::shard_local_cfg().disable_metrics()) {
         _probe.metrics.add_group(
           prometheus_sanitize::metrics_name("storage:kvstore"),
           {

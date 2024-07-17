@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "config/property.h"
 #include "security/acl.h"
+#include "security/mtls_rule.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -25,34 +26,6 @@
 #include <string_view>
 
 namespace security::tls {
-
-class rule {
-public:
-    using make_lower = ss::bool_class<struct make_lower_tag>;
-    using make_upper = ss::bool_class<struct make_upper_tag>;
-
-    rule() = default;
-
-    rule(
-      std::string_view pattern,
-      std::optional<std::string_view> replacement,
-      make_lower to_lower,
-      make_upper to_upper);
-
-    std::optional<ss::sstring> apply(std::string_view dn) const;
-
-private:
-    friend struct fmt::formatter<rule>;
-
-    friend std::ostream& operator<<(std::ostream& os, const rule& r);
-
-    std::regex _regex;
-    std::optional<ss::sstring> _pattern;
-    std::optional<ss::sstring> _replacement;
-    bool _is_default{true};
-    make_lower _to_lower{false};
-    make_upper _to_upper{false};
-};
 
 class principal_mapper {
 public:
@@ -86,21 +59,7 @@ private:
     std::optional<ss::sstring> _subject;
 };
 
-std::optional<ss::sstring>
-validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept;
-
 } // namespace security::tls
-
-template<>
-struct fmt::formatter<security::tls::rule> {
-    using type = security::tls::rule;
-
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-
-    template<typename FormatContext>
-    typename FormatContext::iterator
-    format(const type& r, FormatContext& ctx) const;
-};
 
 template<>
 struct fmt::formatter<security::tls::principal_mapper> {

@@ -16,12 +16,15 @@
 #include "json/document.h"
 #include "json/istreamwrapper.h"
 #include "json/validator.h"
+#include "model/timestamp.h"
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
 #include "transform/api.h"
 
 #include <seastar/http/exception.hh>
+
+#include <boost/lexical_cast.hpp>
 
 #include <system_error>
 
@@ -126,6 +129,7 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
               s.lag = processor.lag;
               meta.status.push(s);
           }
+          meta.compression = t.metadata.compression_mode;
           return meta;
       }));
 }
@@ -166,6 +170,30 @@ void validate_transform_deploy_document(const json::Document& doc) {
               ],
               "additionalProperties": false
             }
+        },
+        "compression" :{
+            "type": "string",
+            "enum": [
+                "none",
+                "gzip",
+                "snappy",
+                "lz4",
+                "zstd"
+            ]
+        },
+        "offset" : {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["from_start","from_end","timestamp"]
+                },
+                "value": {
+                    "type": "integer"
+                }
+            },
+            "required": ["format", "value"],
+            "additionalProperties": false
         }
     },
     "required": ["name", "input_topic", "output_topics"],
@@ -225,6 +253,51 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
             env.insert_or_assign(v["key"].GetString(), v["value"].GetString());
         }
     }
+    model::compression compression{model::compression::none};
+    if (doc.HasMember("compression")) {
+        std::string_view cs = doc["compression"].GetString();
+        try {
+            compression = boost::lexical_cast<model::compression>(cs);
+        } catch (const boost::bad_lexical_cast& e) {
+            // we expect validate_transform_deploy to prevent this entirely,
+            // so this error is mostly a convenience if the model and schema
+            // diverge in the course of development.
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Unrecognized compression mode: '{}'", cs));
+        }
+    }
+
+    model::transform_offset_options offset_opts{};
+    if (doc.HasMember("offset")) {
+        auto offset = doc["offset"].GetObject();
+        auto format = ss::sstring{
+          offset["format"].GetString(), offset["format"].GetStringLength()};
+        auto value = offset["value"].GetInt64();
+
+        if (value < 0) {
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Bad offset: expected value >= 0, got {}", value));
+        }
+
+        if (format == "timestamp") {
+            using tp = model::timestamp_clock::time_point;
+            using dur = model::timestamp_clock::duration;
+            if (value >= dur::max() / 1ms) {
+                throw ss::httpd::bad_request_exception(fmt::format(
+                  "Bad offset: Timestamp value out of range ({})", value));
+            }
+            offset_opts.position = model::to_timestamp(tp{value * 1ms});
+        } else if (format == "from_start") {
+            offset_opts.position = model::transform_from_start{
+              kafka::offset_delta{value}};
+        } else if (format == "from_end") {
+            offset_opts.position = model::transform_from_end{
+              kafka::offset_delta{value}};
+        } else {
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Bad offset: Unsupported format ({})", format));
+        }
+    }
 
     // Now do the deploy!
     std::error_code ec = co_await _transform_service->local().deploy_transform(
@@ -233,6 +306,8 @@ admin_server::deploy_transform(std::unique_ptr<ss::http::request> req) {
         .input_topic = input_nt,
         .output_topics = output_topics,
         .environment = std::move(env),
+        .offset_options = offset_opts,
+        .compression_mode = compression,
       },
       model::wasm_binary_iobuf(std::make_unique<iobuf>(std::move(body))));
 
@@ -301,6 +376,16 @@ void validate_transform_patch_document(const json::Document& doc) {
         },
         "is_paused": {
             "type": "boolean"
+        },
+        "compression": {
+            "type": "string",
+            "enum": [
+                "none",
+                "gzip",
+                "snappy",
+                "lz4",
+                "zstd"
+            ]
         }
     },
     "required": [],
@@ -338,6 +423,20 @@ parse_json_metadata_patch(const json::Document& doc) {
         result.paused.emplace(doc["is_paused"].GetBool());
     }
 
+    if (doc.HasMember("compression")) {
+        std::string_view csv = doc["compression"].GetString();
+        try {
+            result.compression_mode.emplace(
+              boost::lexical_cast<model::compression>(csv));
+        } catch (const boost::bad_lexical_cast&) {
+            // we expect validate_transform_patch to prevent this entirely,
+            // so this error is mostly a convenience if the model and schema
+            // diverge in the course of development.
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Unrecognized compression mode: '{}'", csv));
+        }
+    }
+
     return result;
 }
 
@@ -361,7 +460,7 @@ admin_server::patch_transform_metadata(std::unique_ptr<ss::http::request> req) {
     }
 
     auto patch = parse_json_metadata_patch(doc);
-    if (!patch.env.has_value() && !patch.paused.has_value()) {
+    if (patch.empty()) {
         vlog(adminlog.debug, "Empty metadata patch ...ignoring");
         co_return ss::json::json_void();
     }

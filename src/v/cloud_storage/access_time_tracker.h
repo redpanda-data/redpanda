@@ -27,50 +27,53 @@
 
 namespace cloud_storage {
 
-/// Access time tracker maintains map from filename hash to
-/// the timestamp that represents the time when the file was
-/// accessed last.
-///
-/// It is possible to have conflicts. In case of conflict
-/// 'add_timestamp' method will overwrite another key. For that
-/// key we will observe larger access time. When one of the
-/// conflicted entries will be deleted another will be deleted
-/// as well. This is OK because the code in the
-/// 'cloud_storage/cache_service' is ready for that.
+enum class tracker_version : uint8_t { v1, v2 };
+
+struct file_metadata {
+    uint32_t atime_sec;
+    uint64_t size;
+    std::chrono::system_clock::time_point time_point() const;
+};
+
+/// Access time tracker maps cache entry file paths to their last accessed
+/// timestamp and file size.
 class access_time_tracker {
     using timestamp_t = uint32_t;
-    using table_t = absl::btree_map<uint32_t, timestamp_t>;
-
-    // Serialized size of each pair in table_t
-    static constexpr size_t table_item_size = 8;
+    using table_t = absl::btree_map<ss::sstring, file_metadata>;
 
 public:
-    /// Add access time to the container.
-    void add_timestamp(
-      std::string_view key, std::chrono::system_clock::time_point ts);
+    /// Add metadata to the container.
+    void add(
+      ss::sstring path,
+      std::chrono::system_clock::time_point atime,
+      size_t size);
 
     /// Remove key from the container.
-    void remove_timestamp(std::string_view) noexcept;
+    void remove(std::string_view) noexcept;
 
-    /// Return access time estimate (it can differ if there is a conflict
-    /// on file name hash).
-    std::optional<std::chrono::system_clock::time_point>
-    estimate_timestamp(std::string_view key) const;
+    /// Return file metadata for key.
+    std::optional<file_metadata> get(const std::string& key) const;
 
-    ss::future<> write(ss::output_stream<char>&);
+    ss::future<> write(
+      ss::output_stream<char>&, tracker_version version = tracker_version::v2);
     ss::future<> read(ss::input_stream<char>&);
 
     /// Returns true if tracker has new data which wasn't serialized
     /// to disk.
     bool is_dirty() const;
 
-    /// Remove every key which isn't present in list of existing files
-    ss::future<> trim(const fragmented_vector<file_list_item>&);
+    using add_entries_t = ss::bool_class<struct trim_additive_tag>;
+    /// Remove every key which isn't present in list of input files
+    ss::future<> sync(
+      const fragmented_vector<file_list_item>&,
+      add_entries_t add_entries = add_entries_t::no);
 
     size_t size() const { return _table.size(); }
 
+    fragmented_vector<file_list_item> lru_entries() const;
+
 private:
-    /// Returns true if the key's access time should be tracked.
+    /// Returns true if the key's metadata should be tracked.
     /// We do not wish to track index files and transaction manifests
     /// as they are just an appendage to segment/chunk files and are
     /// purged along with them.
@@ -79,17 +82,17 @@ private:
     /// Drain _pending_upserts for any writes made while table lock was held
     void on_released_table_lock();
 
-    absl::btree_map<uint32_t, timestamp_t> _table;
+    table_t _table;
 
     // Lock taken during async loops over the table (ser/de and trim())
     // modifications may proceed without the lock if it is not taken.
     // When releasing lock, drain _pending_upserts.
     ss::semaphore _table_lock{1};
 
-    // Calls into add_timestamp/remove_timestamp populate this
-    // if the _serialization_lock is unavailable.  The serialization code is
-    // responsible for draining it upon releasing the lock.
-    absl::btree_map<uint32_t, std::optional<timestamp_t>> _pending_upserts;
+    // Calls into add/remove populate this if the _serialization_lock is
+    // unavailable.  The serialization code is responsible for draining it upon
+    // releasing the lock.
+    absl::btree_map<ss::sstring, std::optional<file_metadata>> _pending_upserts;
 
     bool _dirty{false};
 };

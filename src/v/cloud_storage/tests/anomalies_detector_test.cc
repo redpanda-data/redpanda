@@ -12,7 +12,9 @@
 #include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "http/tests/http_imposter.h"
@@ -41,6 +43,8 @@ bool operator==(const anomalies& lhs, const anomalies& rhs) {
 } // namespace cloud_storage
 
 namespace {
+
+cloud_storage::remote_path_provider path_provider(std::nullopt);
 
 ss::logger test_logger{"anomaly_detection_test"};
 
@@ -223,7 +227,7 @@ ss::sstring iobuf_to_string(iobuf buf) {
 
 class bucket_view_fixture : http_imposter_fixture {
 public:
-    static constexpr auto host_name = "127.0.0.1";
+    static constexpr auto host_name = "localhost";
     static constexpr auto port = 4447;
 
     bucket_view_fixture()
@@ -275,9 +279,10 @@ public:
         listen();
 
         _detector.emplace(
-          cloud_storage_clients::bucket_name{"test_bucket"},
+          cloud_storage_clients::bucket_name{"test-bucket"},
           _stm_manifest.get_ntp(),
           _stm_manifest.get_revision_id(),
+          path_provider,
           _remote.local(),
           _rtc_logger,
           _as);
@@ -352,21 +357,21 @@ public:
     void remove_segment(
       const cloud_storage::partition_manifest& manifest,
       const cloud_storage::segment_meta& meta) {
-        auto path = manifest.generate_segment_path(meta);
+        auto path = manifest.generate_segment_path(meta, path_provider);
         remove_object(ssx::sformat("/{}", path().string()));
     }
 
     void remove_manifest(const cloud_storage::partition_manifest& manifest) {
-        auto path = manifest.get_manifest_path();
+        auto path = manifest.get_manifest_path(path_provider);
         remove_object(ssx::sformat("/{}", path().string()));
     }
 
 private:
     void remove_json_stm_manifest(
       const cloud_storage::partition_manifest& manifest) {
-        auto path = manifest.get_manifest_path(
-          cloud_storage::manifest_format::json);
-        remove_object(ssx::sformat("/{}", path().string()));
+        auto path = cloud_storage::prefixed_partition_manifest_json_path(
+          manifest.get_ntp(), manifest.get_revision_id());
+        remove_object(ssx::sformat("/{}", path));
     }
 
     void remove_object(ss::sstring full_path) {
@@ -425,15 +430,16 @@ private:
               .last_ts = iter->max_timestamp,
             };
 
-            auto spill_path = cloud_storage::generate_spillover_manifest_path(
-              _stm_manifest.get_ntp(), _stm_manifest.get_revision_id(), comp);
-            BOOST_REQUIRE_EQUAL(spill_path, spill.get_manifest_path());
+            auto spill_path = cloud_storage::remote_manifest_path{
+              path_provider.spillover_manifest_path(_stm_manifest, comp)};
+            BOOST_REQUIRE_EQUAL(
+              spill_path, spill.get_manifest_path(path_provider));
         }
     }
 
     void set_expectations_for_manifest(
       const cloud_storage::partition_manifest& manifest) {
-        const auto path = manifest.get_manifest_path()().string();
+        const auto path = manifest.get_manifest_path(path_provider)().string();
         const auto reply_body = iobuf_to_string(manifest.to_iobuf());
 
         when()
@@ -455,7 +461,8 @@ private:
     void set_expectations_for_segments(
       const cloud_storage::partition_manifest& manifest) {
         for (const auto& seg : manifest) {
-            auto path = manifest.generate_segment_path(seg)().string();
+            auto path
+              = manifest.generate_segment_path(seg, path_provider)().string();
             when()
               .request(fmt::format("/{}", path))
               .with_method(ss::httpd::operation_type::HEAD)
@@ -471,7 +478,7 @@ private:
 
         cloud_storage_clients::s3_configuration conf;
         conf.uri = cloud_storage_clients::access_point_uri(host_name);
-        conf.access_key = cloud_roles::public_key_str("acess-key");
+        conf.access_key = cloud_roles::public_key_str("access-key");
         conf.secret_key = cloud_roles::private_key_str("secret-key");
         conf.region = cloud_roles::aws_region_name("us-east-1");
         conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
@@ -602,11 +609,11 @@ FIXTURE_TEST(test_missing_spillover_manifest, bucket_view_fixture) {
 
     const auto& missing_spills = result.detected.missing_spillover_manifests;
     BOOST_REQUIRE_EQUAL(missing_spills.size(), 1);
-    const auto expected_path = cloud_storage::generate_spillover_manifest_path(
-      first_spill.get_ntp(),
-      first_spill.get_revision_id(),
-      *missing_spills.begin());
-    BOOST_REQUIRE_EQUAL(first_spill.get_manifest_path(), expected_path);
+    auto expected_path = cloud_storage::remote_manifest_path{
+      path_provider.spillover_manifest_path(
+        first_spill, *missing_spills.begin())};
+    BOOST_REQUIRE_EQUAL(
+      first_spill.get_manifest_path(path_provider), expected_path);
 
     auto partial_results = run_detector_until_log_end(archival::run_quota_t{6});
 

@@ -11,20 +11,16 @@
 
 #pragma once
 #include "base/oncore.h"
-#include "cloud_storage_clients/types.h"
+#include "base/type_traits.h"
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "container/intrusive_list_helpers.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
-#include "pandaproxy/schema_registry/subject_name_strategy.h"
-#include "reflection/type_traits.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
-
-#include <boost/intrusive/list.hpp>
 
 #include <chrono>
 #include <functional>
@@ -629,9 +625,7 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::
                            is_same_v<type, model::cloud_credentials_source>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           cloud_storage_clients::s3_url_style>) {
+    } else if constexpr (std::is_same_v<type, s3_url_style>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::cloud_storage_backend>) {
         return "string";
@@ -646,11 +640,6 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::is_same_v<
                            type,
                            pandaproxy::schema_registry::
-                             subject_name_strategy>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           pandaproxy::schema_registry::
                              schema_id_validation_mode>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::fetch_read_strategy>) {
@@ -660,9 +649,11 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::
                            is_same_v<type, model::recovery_validation_mode>) {
         return "recovery_validation_mode";
+    } else if constexpr (std::is_same_v<type, config::fips_mode_flag>) {
+        return "string";
     } else {
         static_assert(
-          utils::unsupported_type<T>::value, "Type name not defined");
+          base::unsupported_type<T>::value, "Type name not defined");
     }
 }
 

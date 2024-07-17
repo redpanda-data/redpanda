@@ -18,6 +18,7 @@
 #include "cluster/topic_validators.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "data_migration_types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/ntp_config.h"
@@ -33,11 +34,21 @@
 
 namespace cluster {
 
+topic_table::topic_table(
+  data_migrations::migrated_resources& migrated_resources)
+  : _probe(*this)
+  , _migrated_resources(migrated_resources) {}
+
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
     if (_topics.contains(cmd.key)) {
         // topic already exists
+        return ss::make_ready_future<std::error_code>(
+          errc::topic_already_exists);
+    }
+
+    if (_migrated_resources.is_already_migrated(cmd.key)) {
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
     }
@@ -58,20 +69,20 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     md.partitions.reserve(cmd.value.assignments.size());
     auto rev_id = model::revision_id{offset};
     for (auto& pas : md.get_assignments()) {
-        auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
+        auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.second.id);
         replicas_revision_map replica_revisions;
         _partition_count++;
-        for (auto& r : pas.replicas) {
+        for (auto& r : pas.second.replicas) {
             replica_revisions[r.node_id] = rev_id;
         }
         md.partitions.emplace(
-          pas.id,
+          pas.second.id,
           partition_meta{
             .replicas_revisions = replica_revisions,
             .last_update_finished_revision = rev_id});
         _pending_deltas.emplace_back(
           std::move(ntp),
-          pas.group,
+          pas.second.group,
           model::revision_id(offset),
           topic_table_delta_type::added);
     }
@@ -98,8 +109,14 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
 std::error_code
 topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
+    auto const migration_state = _migrated_resources.get_topic_state(nt);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        return errc::resource_is_being_migrated;
+    }
     if (auto tp = _topics.find(nt); tp != _topics.end()) {
-        for (auto& p_as : tp->second.get_assignments()) {
+        for (auto& [_, p_as] : tp->second.get_assignments()) {
             _partition_count--;
             auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
             _updates_in_progress.erase(ntp);
@@ -181,6 +198,13 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
 
 ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
+    auto const migration_state = _migrated_resources.get_topic_state(
+      cmd.value.cfg.tp_ns);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        co_return errc::resource_is_being_migrated;
+    }
     _last_applied_revision_id = model::revision_id(offset);
     auto tp = _topics.find(cmd.key);
     if (tp == _topics.end()) {
@@ -201,7 +225,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
     for (auto& p_as : cmd.value.assignments) {
         _partition_count++;
         p_as.id += model::partition_id(prev_partition_count);
-        tp->second.get_assignments().emplace(p_as);
+        tp->second.get_assignments().emplace(p_as.id, p_as);
         // propagate deltas
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
         replicas_revision_map replicas_revisions;
@@ -265,7 +289,7 @@ ss::future<std::error_code> topic_table::do_apply(
     change_partition_replicas(
       std::move(cmd_data.ntp),
       cmd_data.replicas,
-      *current_assignment_it,
+      current_assignment_it->second,
       o,
       false,
       cmd_data.policy);
@@ -315,7 +339,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
           errc::partition_not_exists);
     }
 
-    if (current_assignment_it->replicas != cmd.value) {
+    if (current_assignment_it->second.replicas != cmd.value) {
         return ss::make_ready_future<std::error_code>(
           errc::invalid_node_operation);
     }
@@ -349,7 +373,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     // notify backend about finished update
     _pending_deltas.emplace_back(
       std::move(cmd.key),
-      current_assignment_it->group,
+      current_assignment_it->second.group,
       model::revision_id(o),
       topic_table_delta_type::replicas_updated);
 
@@ -413,16 +437,16 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
                       : reconfiguration_state::cancelled,
       model::revision_id{o});
 
-    auto replicas = current_assignment_it->replicas;
+    auto replicas = current_assignment_it->second.replicas;
     // replace replica set with set from in progress operation
-    current_assignment_it->replicas
+    current_assignment_it->second.replicas
       = in_progress_it->second.get_previous_replicas();
 
     _topics_map_revision++;
 
     _pending_deltas.emplace_back(
       std::move(cmd.key),
-      current_assignment_it->group,
+      current_assignment_it->second.group,
       model::revision_id(o),
       topic_table_delta_type::replicas_updated);
     notify_waiters();
@@ -469,13 +493,13 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     }
 
     // revert replica set update
-    current_assignment_it->replicas
+    current_assignment_it->second.replicas
       = in_progress_it->second.get_target_replicas();
 
     partition_assignment delta_assignment{
-      current_assignment_it->group,
-      current_assignment_it->id,
-      current_assignment_it->replicas,
+      current_assignment_it->second.group,
+      current_assignment_it->second.id,
+      current_assignment_it->second.replicas,
     };
 
     // update partition_meta object:
@@ -483,7 +507,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     // update replicas_revisions.
     p_meta_it->second.replicas_revisions = update_replicas_revisions(
       std::move(p_meta_it->second.replicas_revisions),
-      current_assignment_it->replicas,
+      current_assignment_it->second.replicas,
       in_progress_it->second.get_update_revision());
     p_meta_it->second.last_update_finished_revision = model::revision_id{o};
 
@@ -495,7 +519,7 @@ topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
     // notify backend about finished update
     _pending_deltas.emplace_back(
       ntp,
-      current_assignment_it->group,
+      current_assignment_it->second.group,
       model::revision_id(o),
       topic_table_delta_type::replicas_updated);
     notify_waiters();
@@ -559,7 +583,7 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
         change_partition_replicas(
           model::ntp(cmd.key.ns, cmd.key.tp, partition_id),
           new_replicas,
-          *assignment,
+          assignment->second,
           o,
           false,
           // for up replication we use a default reconfiguration policy
@@ -600,7 +624,7 @@ topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
     change_partition_replicas(
       cmd.key,
       cmd.value.replicas,
-      *current_assignment_it,
+      current_assignment_it->second,
       o,
       true,
       /**
@@ -646,7 +670,7 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
         _pending_deltas.emplace_back(
           model::ntp{
             cmd.value.ns_tp.ns, cmd.value.ns_tp.tp, *cmd.value.partition_id},
-          assignment_it->group,
+          assignment_it->second.group,
           model::revision_id{o},
           topic_table_delta_type::disabled_flag_updated);
     } else {
@@ -664,7 +688,7 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
             }
         }
 
-        for (const auto& p_as : assignments) {
+        for (const auto& [_, p_as] : assignments) {
             if (old_disabled_set.is_disabled(p_as.id) == cmd.value.disabled) {
                 continue;
             }
@@ -839,6 +863,12 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     if (tp == _topics.end()) {
         co_return make_error_code(errc::topic_not_exists);
     }
+    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        co_return errc::resource_is_being_migrated;
+    }
     auto& properties = tp->second.get_configuration().properties;
     auto properties_snapshot = properties;
     auto& overrides = cmd.value;
@@ -914,7 +944,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();
-    for (auto& p_as : assignments) {
+    for (auto& [_, p_as] : assignments) {
         _pending_deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
           p_as.group,
@@ -939,7 +969,7 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
           controller_snapshot_parts::topics_t::update_t>
           updates;
 
-        for (const auto& p_as : md_item.get_assignments()) {
+        for (const auto& [_, p_as] : md_item.get_assignments()) {
             replicas_t replicas;
             model::ntp ntp(ns_tp.ns, ns_tp.tp, p_as.id);
             if (auto upd_it = _updates_in_progress.find(ntp);
@@ -1043,7 +1073,7 @@ public:
           clusterlog.trace,
           "deleting topic {} not in controller snapshot",
           ns_tp);
-        for (const auto& p_as : old_md_item.get_assignments()) {
+        for (const auto& [_, p_as] : old_md_item.get_assignments()) {
             delete_ntp(ns_tp, p_as);
             co_await ss::coroutine::maybe_yield();
         }
@@ -1076,7 +1106,7 @@ public:
         model::revision_id prev_update_finished_revision;
         if (auto as_it = md_item.get_assignments().find(p_id);
             as_it != md_item.get_assignments().end()) {
-            prev_assignment = std::move(*as_it);
+            prev_assignment = std::move(as_it->second);
             md_item.get_assignments().erase(as_it);
 
             auto p_it = md_item.partitions.find(p_id);
@@ -1104,9 +1134,9 @@ public:
         // info in the snapshot about an in-progress update, we'll have to
         // update replicas later in this function.
         partition_assignment& cur_assignment
-          = *md_item.get_assignments()
-               .emplace(partition.group, p_id, partition.replicas)
-               .first;
+          = md_item.get_assignments()
+              .emplace(p_id, partition.group, p_id, partition.replicas)
+              .first->second;
 
         md_item.partitions[p_id] = partition_meta{
           .replicas_revisions = partition.replicas_revisions,
@@ -1307,8 +1337,9 @@ ss::future<> topic_table::apply_snapshot(
                 for (auto as_it = md_item.get_assignments().begin();
                      as_it != md_item.get_assignments().end();) {
                     auto as_it_copy = as_it++;
-                    if (!topic_snapshot.partitions.contains(as_it_copy->id)) {
-                        applier.delete_ntp(ns_tp, *as_it_copy);
+                    if (!topic_snapshot.partitions.contains(
+                          as_it_copy->second.id)) {
+                        applier.delete_ntp(ns_tp, as_it_copy->second);
                         md_item.get_assignments().erase(as_it_copy);
                         _topics_map_revision++;
                     }
@@ -1400,7 +1431,7 @@ size_t topic_table::all_topics_count() const { return _topics.size(); }
 std::optional<topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.metadata;
+        return it->second.metadata.copy();
     }
     return {};
 }
@@ -1431,7 +1462,7 @@ std::optional<replication_factor> topic_table::get_topic_replication_factor(
 std::optional<assignments_set>
 topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.get_assignments();
+        return it->second.get_assignments().copy();
     }
     return std::nullopt;
 }
@@ -1458,7 +1489,7 @@ topic_table::get_replicas_view(const model::ntp& ntp) const {
     if (as_it == topic_it->second.get_assignments().end()) {
         return std::nullopt;
     }
-    return get_replicas_view(ntp, topic_it->second, *as_it);
+    return get_replicas_view(ntp, topic_it->second, as_it->second);
 }
 
 topic_table::partition_replicas_view topic_table::get_replicas_view(
@@ -1517,11 +1548,11 @@ topic_table::get_partition_assignment(const model::ntp& ntp) const {
 
     auto p_it = it->second.get_assignments().find(ntp.tp.partition);
 
-    if (p_it == it->second.get_assignments().cend()) {
+    if (p_it == it->second.get_assignments().end()) {
         return {};
     }
 
-    return *p_it;
+    return p_it->second;
 }
 
 bool topic_table::is_update_in_progress(const model::ntp& ntp) const {
@@ -1675,8 +1706,8 @@ size_t topic_table::get_node_partition_count(model::node_id id) const {
         cnt += std::count_if(
           tp_md.get_assignments().begin(),
           tp_md.get_assignments().end(),
-          [id](const partition_assignment& p_as) {
-              return contains_node(p_as.replicas, id);
+          [id](const assignments_set::value_type& p_as) {
+              return contains_node(p_as.second.replicas, id);
           });
     }
     return cnt;

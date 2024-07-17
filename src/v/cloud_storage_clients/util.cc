@@ -10,6 +10,7 @@
 
 #include "cloud_storage_clients/util.h"
 
+#include "base/vlog.h"
 #include "bytes/streambuf.h"
 #include "net/connection.h"
 

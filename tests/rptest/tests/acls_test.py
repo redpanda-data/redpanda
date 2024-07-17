@@ -14,7 +14,7 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException
+from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException, AclList
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
@@ -244,6 +244,38 @@ class AccessControlListTest(RedpandaTest):
                 wait_until(check_super_user_perms,
                            timeout_sec=timeout_sec,
                            err_msg=f'super user: {err_msg}')
+
+    @cluster(num_nodes=3)
+    def test_invalid_acl_topic_name(self):
+        self.prepare_cluster(use_sasl=True, use_tls=False, authn_method=None)
+
+        # Ensure creating an ACL topic resource with a valid kafka topic name works
+        client = self.get_super_client()
+        resource = 'my_topic'
+        results = AclList.parse_raw(
+            client.sasl_allow_principal(principal='base',
+                                        operations=['all'],
+                                        resource='topic',
+                                        resource_name=resource))
+        self.redpanda.logger.info(f'{results._acls}')
+        assert results.has_permission(
+            'base', 'all', 'topic',
+            resource), f'Failed to create_acl for resource {resource}'
+
+        # Assert that appropriate error was returned by the server for invalid
+        # kafka topic names
+        resource = 'my bad topic name'
+        results = AclList.parse_raw(
+            client.sasl_allow_principal(principal='base',
+                                        operations=['all'],
+                                        resource='topic',
+                                        resource_name=resource))
+        acls = results._acls['base']
+        assert acls is not None, "Missing principal from create_acls result"
+
+        acl = [acl for acl in acls if acl.resource_name == resource]
+        assert len(acl) == 1, f'Expected match for {resource} not found'
+        assert acl[0].error == 'INVALID_REQUEST'
 
     '''
     The old config style has use_sasl at the top level, which enables

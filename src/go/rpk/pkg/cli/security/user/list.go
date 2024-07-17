@@ -22,6 +22,7 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
+		Args:    cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]string{}); ok {

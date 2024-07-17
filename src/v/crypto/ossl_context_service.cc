@@ -13,6 +13,7 @@
 
 #include "base/outcome.h"
 #include "base/vassert.h"
+#include "base/vlog.h"
 #include "ssl_utils.h"
 #include "ssx/thread_worker.h"
 
@@ -39,7 +40,8 @@ ss::logger lg("ossl-library-context-service");
 
 using OSSL_PROVIDER_ptr = internal::handle<OSSL_PROVIDER, [](OSSL_PROVIDER* p) {
     if (1 != OSSL_PROVIDER_unload(p)) {
-        lg.warn(
+        vlog(
+          lg.warn,
           "Failed to unload OSSL provider: {}",
           internal::ossl_error::build_error());
     }
@@ -66,7 +68,8 @@ initialize_result<initialize_return> initialize_openssl(
     }
 
     if (!module_path.empty()) {
-        lg.debug("Attempting to set OpenSSL module path to {}", module_path);
+        vlog(
+          lg.debug, "Attempting to set OpenSSL module path to {}", module_path);
         if (!OSSL_PROVIDER_set_default_search_path(ctx, module_path.data())) {
             return make_ssl_error_response(
               fmt::format("Failed to set module path to {}", module_path));
@@ -74,7 +77,7 @@ initialize_result<initialize_return> initialize_openssl(
     }
 
     if (!conf_file.empty()) {
-        lg.debug("Attempting to load OpenSSL config file {}", conf_file);
+        vlog(lg.debug, "Attempting to load OpenSSL config file {}", conf_file);
         if (!OSSL_LIB_CTX_load_config(ctx, conf_file.data())) {
             return make_ssl_error_response(
               fmt::format("Failed to load config file {}", conf_file));
@@ -87,6 +90,7 @@ initialize_result<initialize_return> initialize_openssl(
         if (!fips_provider) {
             return make_ssl_error_response("Failed to load 'fips' provider");
         }
+        vlog(lg.debug, "Successfully loaded FIPS module into context");
     }
 
     auto default_provider = OSSL_PROVIDER_ptr(
@@ -94,6 +98,7 @@ initialize_result<initialize_return> initialize_openssl(
     if (!default_provider) {
         return make_ssl_error_response("Failed to load 'default' provider");
     }
+    vlog(lg.debug, "Successfully loaded default provider into context");
 
     auto base_provider = OSSL_PROVIDER_ptr(OSSL_PROVIDER_load(ctx, "base"));
     if (!base_provider) {
@@ -107,6 +112,7 @@ initialize_result<initialize_return> initialize_openssl(
             return make_ssl_error_response(
               "Failed to set default properties to 'fips=yes'");
         }
+        vlog(lg.debug, "Set default properties to \"fips=yes\"");
     }
 
     if (!OPENSSL_init_ssl(
@@ -135,7 +141,8 @@ initialize_result<initialize_thread_return> initialize_worker_thread(
     // thread instance so any use of OpenSSL within the thread worker (krb5)
     // uses the appropriately initialiazed context
     auto old_context = OSSL_LIB_CTX_set0_default(ctx);
-    lg.debug(
+    vlog(
+      lg.debug,
       "thread worker context: {}, replacing {}",
       fmt::ptr(ctx),
       fmt::ptr(old_context));
@@ -185,7 +192,7 @@ public:
     impl& operator=(impl&&) noexcept = delete;
 
     ss::future<> start() {
-        lg.debug("Starting OpenSSL Context service...");
+        vlog(lg.debug, "Starting OpenSSL Context service...");
         vassert(
           OSSL_LIB_CTX_get0_global_default()
             == OSSL_LIB_CTX_set0_default(nullptr),
@@ -198,7 +205,7 @@ public:
             // cryptographic operation
             _defctxnull = OSSL_PROVIDER_ptr(
               OSSL_PROVIDER_load(nullptr, "null"));
-            lg.debug("Loaded null into global provider");
+            vlog(lg.debug, "Loaded null into global provider");
             // We also need to create a library contxt and load it in just
             // within the thread worker's thread.  This is so the krb5 library
             // will use this loaded context for any operations it needs to
@@ -226,7 +233,8 @@ public:
         // supply nullptr to the OSSL_LIB_CTX parameter to use the thread local
         // context
         _old_context = OSSL_LIB_CTX_set0_default(_shard_ctx.get());
-        lg.debug(
+        vlog(
+          lg.debug,
           "Created new shard context for {} replacing {}",
           fmt::ptr(_shard_ctx.get()),
           fmt::ptr(_old_context));
@@ -243,17 +251,18 @@ public:
         _default_provider = std::move(
           init_resp.assume_value().default_provider);
         _base_provider = std::move(init_resp.assume_value().base_provider);
-        lg.info("OpenSSL Context loaded and ready");
+        vlog(lg.info, "OpenSSL Context loaded and ready");
     }
 
     ss::future<> stop() {
-        lg.trace("Stopping service...");
+        vlog(lg.trace, "Stopping service...");
         _base_provider.reset();
         _default_provider.reset();
         _fips_provider.reset();
         if (_old_context != nullptr) {
             auto replaced_context = OSSL_LIB_CTX_set0_default(_old_context);
-            lg.debug(
+            vlog(
+              lg.debug,
               "Reverted to old context {} and received back {} (expecting {})",
               fmt::ptr(_old_context),
               fmt::ptr(replaced_context),
@@ -275,13 +284,21 @@ public:
                 _defctxnull.reset();
             }
         } else {
-            lg.warn("Original context is null... startup failed?");
+            vlog(lg.warn, "Original context is null... startup failed?");
         }
         _old_context = nullptr;
         _shard_ctx.reset();
     }
 
-    is_fips_mode fips_mode() const { return _fips_mode; }
+    is_fips_mode fips_mode() const {
+        if (
+          EVP_default_properties_is_fips_enabled(_shard_ctx.get())
+          && OSSL_PROVIDER_available(_shard_ctx.get(), "fips")) {
+            return is_fips_mode::yes;
+        } else {
+            return is_fips_mode::no;
+        }
+    }
 
 private:
     ssx::singleton_thread_worker& _thread_worker;
@@ -323,7 +340,8 @@ ossl_context_service::ossl_context_service(
 
 ss::future<> ossl_context_service::start() {
     if (in_rp_fixture_test()) {
-        lg.warn(
+        vlog(
+          lg.warn,
           "Detected RP Fixture test, not initializing OSSL Context service");
         return ss::make_ready_future();
     } else {
@@ -333,7 +351,7 @@ ss::future<> ossl_context_service::start() {
 
 ss::future<> ossl_context_service::stop() {
     if (in_rp_fixture_test()) {
-        lg.warn("Detected RP Fixture test during stop, doing nothing");
+        vlog(lg.warn, "Detected RP Fixture test during stop, doing nothing");
         return ss::make_ready_future();
     } else {
         return _impl->stop();

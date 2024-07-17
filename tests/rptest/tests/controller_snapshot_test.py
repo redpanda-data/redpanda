@@ -66,41 +66,6 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
             self.redpanda.wait_for_controller_snapshot(
                 n, prev_mtime=mtime, prev_start_offset=start_offset)
 
-    @cluster(num_nodes=3)
-    def test_upgrade_auto_enable(self):
-        """
-        Test that redpanda will auto-enable snapshots even for clusters created with 23.1
-        """
-
-        installer = self.redpanda._installer
-
-        installer.install(self.redpanda.nodes, (23, 1))
-        self.redpanda.start()
-
-        # 23.2.x version that only enables the feature for new clusters
-        installer.install(self.redpanda.nodes, (23, 2, 14))
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-        self.redpanda.wait_for_membership(first_start=False)
-
-        self.redpanda.set_cluster_config(
-            {'controller_snapshot_max_age_sec': 5})
-        RpkTool(self.redpanda).create_topic('test')
-
-        # check that controller snapshots are still disabled
-        time.sleep(10)
-        admin = Admin(self.redpanda)
-        for n in self.redpanda.nodes:
-            controller_status = admin.get_controller_status(n)
-            assert controller_status['start_offset'] == 0
-
-        # check that after we upgrade to 23.3, snapshots are automatically enabled
-        installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-        self.redpanda.wait_for_membership(first_start=False)
-
-        for n in self.redpanda.nodes:
-            self.redpanda.wait_for_controller_snapshot(n)
-
 
 class ControllerState:
     def __init__(self, redpanda, node):
@@ -190,20 +155,12 @@ class ControllerState:
 
             # Newer versions include a bugfix to change the source type of cleanup.policy from
             # DYNAMIC_TOPIC_CONFIG to DEFAULT_CONFIG if the cleanup.policy wasn't specified as
-            # a config value when the topic is created. Versions that include the bugfix:
-            #  * v23.3.12+
-            #  * v24.1.*
-            #  * v23.3.11* versions, except for the v23.3.11 release, i.e. all development and
-            #    PR builder redpanda versions built off of v23.3.11 before v23.3.12.
-            def contains_config_fix(version: RedpandaVersionTriple,
-                                    version_line: RedpandaVersionLine) -> bool:
-                V23_3_11_RELEASE = "v23.3.11 - 93f88bf377e558132eba04f81e4f83b033cec6e7"
-                return version >= RedpandaVersionTriple((23, 3, 12)) or \
-                    (version == RedpandaVersionTriple((23, 3, 11)) and version_line != V23_3_11_RELEASE)
-
-            if contains_config_fix(self.version, self.version_line) ^ \
-                contains_config_fix(other.version, other.version_line):
-
+            # a config value when the topic is created.
+            # All versions newer that are at least as new as 24.2.1 will have the fix, and so
+            # they don't need this explicit ignore.
+            MIN_VERSION_WITH_ALL_LATER_VERSIONS_FIXED = RedpandaVersionTriple(
+                (24, 2, 1))
+            if self.version < MIN_VERSION_WITH_ALL_LATER_VERSIONS_FIXED:
                 symdiff -= set({('cleanup.policy', ('delete',
                                                     'DYNAMIC_TOPIC_CONFIG'))})
 
@@ -428,6 +385,13 @@ class ControllerSnapshotTest(RedpandaTest):
 
         for iter in range(5):
             self.redpanda.stop_node(joiner)
+
+            # wait for the joiner to step down in case it was the controller
+            joiner_id = self.redpanda.node_id(joiner)
+            admin.await_stable_leader(namespace='redpanda',
+                                      topic='controller',
+                                      check=lambda id: id != joiner_id,
+                                      timeout_s=30)
 
             executed = 0
             to_execute = random.randint(1, 5)

@@ -47,7 +47,7 @@ struct broker_properties
     // key=value properties in /etc/redpanda/machine_properties.yaml
     std::unordered_map<ss::sstring, ss::sstring> etc_props;
     uint64_t available_memory_bytes = 0;
-    bool in_fips_mode = false;
+    fips_mode_flag in_fips_mode = fips_mode_flag::disabled;
 
     bool operator==(const broker_properties& other) const = default;
 
@@ -525,6 +525,7 @@ operator<<(std::ostream& os, cloud_storage_chunk_eviction_strategy st) {
 enum class fetch_read_strategy : uint8_t {
     polling = 0,
     non_polling = 1,
+    non_polling_with_debounce = 2,
 };
 
 constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
@@ -533,6 +534,8 @@ constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
         return "polling";
     case fetch_read_strategy::non_polling:
         return "non_polling";
+    case fetch_read_strategy::non_polling_with_debounce:
+        return "non_polling_with_debounce";
     default:
         throw std::invalid_argument("unknown fetch_read_strategy");
     }
@@ -668,7 +671,8 @@ struct hash<model::broker_properties> {
             boost::hash_combine(h, std::hash<ss::sstring>()(k));
             boost::hash_combine(h, std::hash<ss::sstring>()(v));
         }
-        boost::hash_combine(h, std::hash<bool>()(b.in_fips_mode));
+        boost::hash_combine(
+          h, std::hash<model::fips_mode_flag>()(b.in_fips_mode));
         return h;
     }
 };

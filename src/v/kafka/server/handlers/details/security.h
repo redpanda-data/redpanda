@@ -12,6 +12,7 @@
 #include "kafka/protocol/schemata/delete_acls_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
 #include "kafka/server/request_context.h"
+#include "model/validation.h"
 #include "security/acl.h"
 namespace kafka::details {
 
@@ -157,6 +158,17 @@ inline security::acl_binding to_acl_binding(const creatable_acl& acl) {
       && pattern.name() != security::default_cluster_name) {
         throw acl_conversion_error(
           fmt::format("Invalid cluster name: {}", pattern.name()));
+    }
+
+    if (pattern.resource() == security::resource_type::topic) {
+        auto errc = model::validate_kafka_topic_name(
+          model::topic_view(pattern.name()));
+        if (pattern.name() != "*" && errc) {
+            throw acl_conversion_error(fmt::format(
+              "ACL topic {} does not conform to kafka topic schema: {}",
+              pattern.name(),
+              errc.message()));
+        }
     }
 
     security::acl_entry entry(

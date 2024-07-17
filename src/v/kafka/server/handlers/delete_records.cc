@@ -64,8 +64,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
             return true;
         }
         const auto& bitflags = cfg.properties.cleanup_policy_bitflags;
-        return (*bitflags & model::cleanup_policy_bitflags::deletion)
-               == model::cleanup_policy_bitflags::deletion;
+        return model::is_deletion_enabled(*bitflags);
     };
     const auto is_nodelete_topic = [](const delete_records_topic& t) {
         const auto& nodelete_topics

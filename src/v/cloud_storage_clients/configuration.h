@@ -12,6 +12,7 @@
 
 #include "cloud_storage_clients/client_probe.h"
 #include "cloud_storage_clients/types.h"
+#include "model/metadata.h"
 #include "net/transport.h"
 #include "net/types.h"
 
@@ -29,7 +30,7 @@ struct default_overrides {
     bool disable_tls = false;
 };
 
-/// Configuration options common accross cloud storage clients
+/// Configuration options common across cloud storage clients
 struct common_configuration : net::base_transport::configuration {
     /// URI of the access point
     access_point_uri uri;
@@ -51,13 +52,15 @@ struct s3_configuration : common_configuration {
     /// AWS URL style, either virtual-hosted-style or path-style.
     s3_url_style url_style = s3_url_style::virtual_host;
 
-    /// \brief opinionated configuraiton initialization
+    /// \brief opinionated configuration initialization
     /// Generates uri field from region, initializes credentials for the
     /// transport, resolves the uri to get the server_addr.
     ///
     /// \param pkey is an AWS access key
     /// \param skey is an AWS secret key
     /// \param region is an AWS region code
+    /// \param bucket is an AWS bucket name. it's needed to form the endpoints
+    /// in fips mode
     /// \param overrides contains a bunch of property overrides like
     ///        non-standard SSL port and alternative location of the
     ///        truststore
@@ -66,7 +69,9 @@ struct s3_configuration : common_configuration {
       const std::optional<cloud_roles::public_key_str>& pkey,
       const std::optional<cloud_roles::private_key_str>& skey,
       const cloud_roles::aws_region_name& region,
-      const std::optional<cloud_storage_clients::s3_url_style>& url_style,
+      const bucket_name& bucket,
+      std::optional<cloud_storage_clients::s3_url_style> url_style,
+      bool node_is_in_fips_mode,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
       net::public_metrics_disabled disable_public_metrics

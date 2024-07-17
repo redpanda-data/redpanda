@@ -7,7 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/map.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
@@ -110,7 +115,7 @@ SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
     BOOST_CHECK(us.opt2 == r.opt2);
     BOOST_CHECK_EQUAL(us.vec, r.vec);
     BOOST_CHECK_EQUAL(us.opt_vec.size(), r.opt_vec.size());
-    for (int i = 0; i < us.opt_vec.size(); ++i) {
+    for (size_t i = 0; i < us.opt_vec.size(); ++i) {
         BOOST_CHECK(us.opt_vec[i] == r.opt_vec[i]);
     }
 

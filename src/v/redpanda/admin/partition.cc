@@ -19,6 +19,7 @@
 #include "cluster/topics_frontend.h"
 #include "container/fragmented_vector.h"
 #include "container/lw_shared_container.h"
+#include "model/record.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/api-doc/partition.json.hh"
 #include "redpanda/admin/server.h"
@@ -29,6 +30,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/lexical_cast.hpp>
 
 using admin::apply_validator;
 
@@ -130,29 +132,26 @@ admin_server::mark_transaction_expired_handler(
     const model::ntp ntp = parse_ntp_from_request(req->param);
 
     model::producer_identity pid;
-    auto node = req->get_query_param("id");
+    auto param = req->get_query_param("id");
     try {
-        pid.id = std::stoi(node);
+        pid.id = boost::lexical_cast<model::producer_id>(param);
     } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt_with_ctx(
-          fmt::format, "Transaction id must be an integer: {}", node));
+        throw ss::httpd::bad_param_exception(
+          fmt_with_ctx(fmt::format, "Invalid producer id: {}", param));
     }
-    node = req->get_query_param("epoch");
+    param = req->get_query_param("epoch");
     try {
-        int64_t epoch = std::stoi(node);
-        if (
-          epoch < std::numeric_limits<int16_t>::min()
-          || epoch > std::numeric_limits<int16_t>::max()) {
-            throw ss::httpd::bad_param_exception(
-              fmt_with_ctx(fmt::format, "Invalid transaction epoch {}", epoch));
-        }
-        pid.epoch = epoch;
+        pid.epoch = boost::lexical_cast<model::producer_epoch>(param);
     } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt_with_ctx(
-          fmt::format, "Transaction epoch must be an integer: {}", node));
+        throw ss::httpd::bad_param_exception(
+          fmt_with_ctx(fmt::format, "Invalid producer epoch: {}", param));
     }
 
-    vlog(adminlog.info, "Mark transaction expired for pid:{}", pid);
+    vlog(
+      adminlog.info,
+      "Mark transaction expired for partition: {}, pid:{}",
+      ntp,
+      pid);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, ntp);
@@ -401,19 +400,32 @@ ss::future<std::vector<model::broker_shard>> validate_set_replicas(
               "`node_id` and `core` must be integers");
         }
         const auto node_id = model::node_id(r["node_id"].GetInt());
-        const auto shard = static_cast<uint32_t>(r["core"].GetInt());
-
-        // Validate node ID and shard - subsequent code assumes
-        // they exist and may assert if not.
-        bool is_valid = co_await topic_fe.validate_shard(node_id, shard);
-        if (!is_valid) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "Replica set refers to non-existent node/shard (node "
-              "{} "
-              "shard {})",
-              node_id,
-              shard));
+        uint32_t shard = 0;
+        if (topic_fe.node_local_core_assignment_enabled()) {
+            bool is_valid = co_await topic_fe.validate_shard(node_id, 0);
+            if (!is_valid) {
+                throw ss::httpd::bad_request_exception(fmt::format(
+                  "Replica set refers to non-existent node {}", node_id));
+            }
+#ifndef NDEBUG
+            // set invalid shard in debug mode so that we can spot places
+            // where we are still using it.
+            shard = 32132132;
+#endif
+        } else {
+            shard = static_cast<uint32_t>(r["core"].GetInt());
+            // Validate node ID and shard - subsequent code assumes
+            // they exist and may assert if not.
+            bool is_valid = co_await topic_fe.validate_shard(node_id, shard);
+            if (!is_valid) {
+                throw ss::httpd::bad_request_exception(fmt::format(
+                  "Replica set refers to non-existent node/shard "
+                  "(node {} shard {})",
+                  node_id,
+                  shard));
+            }
         }
+
         auto contains_already = std::find_if(
                                   replicas.begin(),
                                   replicas.end(),
@@ -574,6 +586,73 @@ admin_server::set_partition_replicas_handler(
     co_return ss::json::json_void();
 }
 
+namespace {
+
+json::validator make_set_replica_core_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "core": {
+            "type": "number"
+        }
+    },
+    "required": [
+        "core"
+    ],
+    "additionalProperties": false
+}
+)";
+    return json::validator(schema);
+}
+
+uint32_t parse_replica_core_from_json(const json::Document& doc) {
+    static thread_local json::validator json_validator(
+      make_set_replica_core_validator());
+    apply_validator(json_validator, doc);
+
+    if (!doc.IsObject()) {
+        throw ss::httpd::bad_request_exception("Expected array");
+    }
+    const auto& core_field = doc["core"];
+    if (!core_field.IsInt()) {
+        throw ss::httpd::bad_request_exception("`core` must be integer");
+    }
+    return uint32_t(core_field.GetInt());
+}
+
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::set_partition_replica_core_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto ntp = parse_ntp_from_request(req->param);
+
+    auto node_str = req->param.get_decoded_param("node");
+    model::node_id node_id;
+    try {
+        node_id = model::node_id(std::stoi(node_str));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("node parameter must be an integer: `{}'", node_str));
+    }
+
+    auto doc = co_await parse_json_body(req.get());
+    uint32_t core = parse_replica_core_from_json(doc);
+
+    if (ntp == model::controller_ntp) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Can't modify controller partition core"));
+    }
+
+    auto ec = co_await _controller->get_topics_frontend()
+                .local()
+                .set_partition_replica_shard(
+                  ntp, node_id, core, model::timeout_clock::now() + 5s);
+    co_await throw_on_error(*req, ec, ntp);
+    co_return ss::json::json_void();
+}
+
 void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
@@ -727,6 +806,12 @@ void admin_server::register_partition_routes() {
           return trigger_on_demand_rebalance_handler(std::move(req));
       });
 
+    register_route<superuser>(
+      ss::httpd::partition_json::trigger_partitions_shard_rebalance,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return trigger_shard_rebalance_handler(std::move(req));
+      });
+
     register_route<user>(
       ss::httpd::partition_json::get_partition_reconfigurations,
       [this](std::unique_ptr<ss::http::request> req) {
@@ -743,6 +828,12 @@ void admin_server::register_partition_routes() {
       ss::httpd::partition_json::force_recover_from_nodes,
       [this](std::unique_ptr<ss::http::request> req) {
           return force_recover_partitions_from_nodes(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::partition_json::set_partition_replica_core,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return set_partition_replica_core_handler(std::move(req));
       });
 }
 namespace {
@@ -867,7 +958,7 @@ admin_server::get_topic_partitions_handler(
       = _controller->get_topics_state().local().get_topic_disabled_set(tp_ns);
 
     // Normal topic
-    for (const auto& p_as : assignments) {
+    for (const auto& [_, p_as] : assignments) {
         partition_t p;
         p.ns = tp_ns.ns;
         p.topic = tp_ns.tp;
@@ -1236,5 +1327,16 @@ admin_server::trigger_on_demand_rebalance_handler(
       });
 
     co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::trigger_shard_rebalance_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto ec = co_await _controller->get_topics_frontend()
+                .local()
+                .trigger_local_partition_shard_rebalance();
+
+    co_await throw_on_error(*req, ec, model::ntp{});
     co_return ss::json::json_return_type(ss::json::json_void());
 }

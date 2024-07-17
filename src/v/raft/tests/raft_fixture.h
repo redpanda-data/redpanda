@@ -169,7 +169,8 @@ public:
       raft_node_map& node_map,
       ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb,
-      bool enable_longest_log_detection);
+      bool enable_longest_log_detection,
+      std::chrono::milliseconds election_timeout);
 
     raft_node_instance(
       model::node_id id,
@@ -177,13 +178,16 @@ public:
       raft_node_map& node_map,
       ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb,
-      bool enable_longest_log_detection);
+      bool enable_longest_log_detection,
+      std::chrono::milliseconds election_timeout);
 
     raft_node_instance(const raft_node_instance&) = delete;
     raft_node_instance(raft_node_instance&&) noexcept = delete;
     raft_node_instance& operator=(raft_node_instance&&) = delete;
     raft_node_instance& operator=(const raft_node_instance&) = delete;
     ~raft_node_instance() = default;
+
+    ss::sstring base_directory() { return _base_directory; }
 
     ss::lw_shared_ptr<consensus> raft() { return _raft; }
 
@@ -238,6 +242,8 @@ public:
     /// dispatched.
     void on_dispatch(dispatch_callback_t);
 
+    ss::shared_ptr<in_memory_test_protocol> get_protocol() { return _protocol; }
+
 private:
     model::node_id _id;
     model::revision_id _revision;
@@ -245,8 +251,6 @@ private:
     ss::sstring _base_directory;
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::sharded<storage::api> _storage;
-    config::binding<std::chrono::milliseconds> _election_timeout
-      = config::mock_binding(500ms);
     ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
@@ -256,12 +260,15 @@ private:
     ss::lw_shared_ptr<consensus> _raft;
     bool started = false;
     bool _enable_longest_log_detection;
+    config::binding<std::chrono::milliseconds> _election_timeout;
 };
 
 class raft_fixture
   : public seastar_test
   , public raft_node_map {
 public:
+    using leader_update_clb_t
+      = ss::noncopyable_function<void(model::node_id, leadership_status)>;
     raft_fixture()
       : _logger("raft-fixture") {}
     using raft_nodes_t = absl::
@@ -292,6 +299,8 @@ public:
     ss::future<model::node_id> wait_for_leader(std::chrono::milliseconds);
     ss::future<model::node_id>
       wait_for_leader(model::timeout_clock::time_point);
+    ss::future<model::node_id> wait_for_leader_change(
+      model::timeout_clock::time_point deadline, model::term_id term);
     seastar::future<> TearDownAsync() override;
     seastar::future<> SetUpAsync() override;
 
@@ -404,8 +413,6 @@ public:
 
     template<typename E>
     struct retry_policy {
-        static_assert(
-          std::is_same_v<E, raft::errc> || std::is_same_v<E, cluster::errc>);
         static E timeout_error() { return E::timeout; }
         static bool should_retry(const E& err) {
             return err == E::timeout || err == E::not_leader;
@@ -424,10 +431,7 @@ public:
                 return retry_policy<cluster::errc>::should_retry(
                   cluster::errc(err.value()));
             } else {
-                vassert(
-                  false,
-                  "error category {} not supported",
-                  err.category().name());
+                return false;
             }
         }
     };
@@ -470,18 +474,15 @@ public:
         };
         return ss::do_with(
           retry_state{},
-          [this, deadline, f = std::forward<Func>(f), backoff](
-            retry_state& state) mutable {
+          std::forward<Func>(f),
+          [this, deadline, backoff](
+            retry_state& state, std::remove_reference_t<Func>& f) {
               return ss::do_until(
                        [&state, deadline] {
                            return model::timeout_clock::now() > deadline
                                   || state.ready();
                        },
-                       [this,
-                        &state,
-                        f = std::forward<Func>(f),
-                        deadline,
-                        backoff]() mutable {
+                       [this, &state, &f, deadline, backoff]() {
                            vlog(
                              _logger.info,
                              "Executing action with leader, current retry: "
@@ -489,11 +490,10 @@ public:
                              state.retry);
 
                            return wait_for_leader(deadline).then(
-                             [this, f = std::forward<Func>(f), &state, backoff](
-                               model::node_id leader_id) {
+                             [this, &f, &state, backoff](
+                               model::node_id leader_id) mutable {
                                  return ss::futurize_invoke(f, node(leader_id))
-                                   .then([this, &state, backoff](
-                                           ret_t result) mutable {
+                                   .then([this, &state, backoff](ret_t result) {
                                        state.result = std::move(result);
                                        // "success"
                                        if (state.ready()) {
@@ -531,6 +531,14 @@ public:
         _enable_longest_log_detection = value;
     }
 
+    void register_leader_callback(leader_update_clb_t clb) {
+        _leader_clb = std::move(clb);
+    }
+
+    void set_election_timeout(std::chrono::milliseconds timeout) {
+        _election_timeout = timeout;
+    }
+
 private:
     void validate_leaders();
 
@@ -541,17 +549,13 @@ private:
 
     ss::sharded<features::feature_table> _features;
     bool _enable_longest_log_detection = true;
+    std::optional<leader_update_clb_t> _leader_clb;
+    std::chrono::milliseconds _election_timeout = 500ms;
 };
 
-template<class CRTPImpl, class... STM>
+template<class... STM>
 struct stm_raft_fixture : raft_fixture {
     using stm_shptrs_t = std::tuple<ss::shared_ptr<STM>...>;
-
-    stm_raft_fixture() {
-        static_assert(std::is_convertible_v<
-                      decltype(&stm_raft_fixture::create_stms),
-                      decltype(&CRTPImpl::create_stms)>);
-    }
 
     ss::future<> initialize_state_machines() {
         return initialize_state_machines(3);
@@ -567,8 +571,7 @@ struct stm_raft_fixture : raft_fixture {
     ss::future<> start_node(raft_node_instance& node) {
         co_await node.initialise(all_vnodes());
         raft::state_machine_manager_builder builder;
-        stm_shptrs_t stm_shptrs = static_cast<CRTPImpl*>(this)->create_stms(
-          builder, node);
+        stm_shptrs_t stm_shptrs = create_stms(builder, node);
         co_await node.start(std::move(builder));
         node_stms.emplace(node.get_vnode(), std::move(stm_shptrs));
     }
@@ -578,7 +581,7 @@ struct stm_raft_fixture : raft_fixture {
           [this](raft_node_instance& node) { return start_node(node); });
     }
 
-    ss::future<> restart_nodes() {
+    ss::future<> stop_and_recreate_nodes() {
         absl::flat_hash_map<model::node_id, ss::sstring> data_directories;
         for (auto& [id, node] : nodes()) {
             data_directories[id]
@@ -593,7 +596,10 @@ struct stm_raft_fixture : raft_fixture {
         for (auto& [id, data_dir] : data_directories) {
             add_node(id, model::revision_id(0), std::move(data_dir));
         }
+    }
 
+    ss::future<> restart_nodes() {
+        co_await stop_and_recreate_nodes();
         co_await start_nodes();
     }
 
@@ -607,7 +613,8 @@ struct stm_raft_fixture : raft_fixture {
     auto stm_retry_with_leader(std::chrono::milliseconds timeout, Func&& f) {
         return retry_with_leader(
           model::timeout_clock::now() + timeout,
-          [this, f = std::move(f)](raft_node_instance& leader_node) {
+          [this,
+           f = std::forward<Func>(f)](raft_node_instance& leader_node) mutable {
               auto stm = get_stm<stm_id>(leader_node);
               return f(stm);
           });
@@ -615,10 +622,9 @@ struct stm_raft_fixture : raft_fixture {
 
     absl::flat_hash_map<raft::vnode, stm_shptrs_t> node_stms;
 
-private:
-    // to be implemented in child classes
-    stm_shptrs_t create_stms(
-      state_machine_manager_builder& builder, raft_node_instance& node);
+    virtual stm_shptrs_t create_stms(
+      state_machine_manager_builder& builder, raft_node_instance& node)
+      = 0;
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);

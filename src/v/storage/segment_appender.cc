@@ -110,7 +110,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
 }
 
 ss::future<> segment_appender::append(const model::record_batch& batch) {
-    _batch_types_to_write |= 1U << static_cast<uint8_t>(batch.header().type);
+    _batch_types_to_write |= 1LU << static_cast<uint8_t>(batch.header().type);
 
     auto hdrbuf = std::make_unique<iobuf>(
       storage::batch_header_to_disk_iobuf(batch.header()));
@@ -358,6 +358,13 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                    _fallocation_offset,
                    _committed_offset);
                  return _out.allocate(_fallocation_offset, step)
+                   .then([this, step] {
+                       // ss::file::allocate does not adjust logical file size
+                       // hence we need to do that explicitly with an extra
+                       // truncate. This allows for more efficient writes.
+                       // https://github.com/redpanda-data/redpanda/pull/18598.
+                       return _out.truncate(_fallocation_offset + step);
+                   })
                    .then([this, step] { _fallocation_offset += step; });
              })
       .handle_exception([this](std::exception_ptr e) {

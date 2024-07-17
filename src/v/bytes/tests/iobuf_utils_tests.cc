@@ -10,7 +10,7 @@
 #include "bytes/bytes.h"
 #include "bytes/hash.h"
 #include "bytes/iostream.h"
-#include "bytes/tests/utils.h"
+#include "utils.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

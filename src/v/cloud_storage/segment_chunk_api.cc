@@ -12,31 +12,26 @@
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote_segment.h"
-#include "ssx/watchdog.h"
 
 #include <chrono>
 
 using namespace std::chrono_literals;
 
+namespace views = std::views;
+
 namespace {
 constexpr auto cache_backoff_duration = 5s;
 constexpr auto eviction_duration = 10s;
 
-ss::future<cloud_storage::segment_chunk::handle_t> add_waiter_to_chunk(
-  cloud_storage::chunk_start_offset_t chunk_start,
-  cloud_storage::segment_chunk& chunk) {
-    ss::promise<cloud_storage::segment_chunk::handle_t> p;
-    auto f = p.get_future();
-    chunk.waiters.push_back(std::move(p), ss::lowres_clock::time_point::max());
-
-    using cloud_storage::cst_log;
-    vlog(
-      cst_log.trace,
-      "hydrate request added to waiters for chunk id {}, current waiter "
-      "size: {}",
-      chunk_start,
-      chunk.waiters.size());
-    return f;
+void set_waiter_errors(
+  ss::expiring_fifo<
+    ss::promise<cloud_storage::segment_chunk::handle_t>,
+    cloud_storage::segment_chunk::expiry_handler>& waiters,
+  const std::exception_ptr& ex) {
+    while (!waiters.empty()) {
+        waiters.front().set_exception(ex);
+        waiters.pop_front();
+    }
 }
 
 } // namespace
@@ -95,24 +90,26 @@ ss::future<> segment_chunks::start() {
         ssx::spawn_with_gate(_gate, [this] { return trim_chunk_files(); });
     });
     _eviction_timer.rearm(_eviction_jitter());
+    ssx::background = run_hydrate_bg();
     return ss::now();
 }
 
 ss::future<> segment_chunks::stop() {
     vlog(_ctxlog.debug, "stopping segment_chunks");
+    _bg_cvar.broken();
     _eviction_timer.cancel();
     if (!_as.abort_requested()) {
         _as.request_abort();
     }
 
     co_await _gate.close();
+    resolve_prefetch_futures();
     vlog(_ctxlog.debug, "stopped segment_chunks");
 }
 
 bool segment_chunks::downloads_in_progress() const {
-    return std::any_of(_chunks.begin(), _chunks.end(), [](const auto& entry) {
-        return entry.second.current_state == chunk_state::download_in_progress;
-    });
+    return std::ranges::any_of(
+      _chunks, [](const auto& chunk) { return !chunk.second.waiters.empty(); });
 }
 
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
@@ -141,63 +138,79 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
         co_return chunk.handle.value();
     }
 
-    // If a download is already in progress, subsequent callers to hydrate are
-    // added to a wait list, and notified when the download finishes.
-    if (curr_state == chunk_state::download_in_progress) {
-        vlog(
-          _ctxlog.debug,
-          "adding waitor for {}, waiters before: {}",
-          chunk_start,
-          chunk.waiters.size());
-        co_return co_await add_waiter_to_chunk(chunk_start, chunk);
-    }
+    chunk.current_state = chunk_state::download_in_progress;
 
-    // Download is not in progress. Set the flag and begin download attempt.
-    try {
-        chunk.current_state = chunk_state::download_in_progress;
+    ss::promise<cloud_storage::segment_chunk::handle_t> p;
+    auto f = p.get_future();
+    chunk.waiters.push_back(std::move(p), ss::lowres_clock::time_point::max());
 
-        watchdog wd(
-          300s, [path = _segment.get_segment_path(), start = chunk_start] {
-              vlog(
-                cst_log.error,
-                "Stuck during do_hydrate_and_materialize for segment path: {}, "
-                "chunk start: {}",
-                path(),
-                start);
-          });
+    vlog(
+      _ctxlog.trace,
+      "hydrate request added to waiters for chunk id {}, current waiter "
+      "size: {}",
+      chunk_start,
+      chunk.waiters.size());
 
-        auto handle = co_await _segment.download_chunk(
-          chunk_start,
-          prefetch_override.value_or(
-            config::shard_local_cfg().cloud_storage_chunk_prefetch));
-        chunk.handle = ss::make_lw_shared(std::move(handle));
-    } catch (const std::exception& ex) {
-        vlog(
-          _ctxlog.debug,
-          "Failed to hydrate chunk start {}, error: {}",
-          chunk_start,
-          ex.what());
-        chunk.current_state = chunk_state::not_available;
-        while (!chunk.waiters.empty()) {
-            chunk.waiters.front().set_to_current_exception();
-            chunk.waiters.pop_front();
-        }
-        throw;
-    }
+    auto n_chunks_to_prefetch = prefetch_override.value_or(
+      config::shard_local_cfg().cloud_storage_chunk_prefetch);
+    schedule_prefetches(chunk_start, n_chunks_to_prefetch);
 
+    _bg_cvar.signal();
+    co_return co_await std::move(f);
+}
+
+void segment_chunks::schedule_prefetches(
+  chunk_start_offset_t start_offset, size_t n_chunks_to_prefetch) {
     vassert(
-      chunk.handle.has_value(),
-      "hydrate loop ended without materializing chunk handle for id {}",
-      chunk_start);
-    auto handle = chunk.handle.value();
-    chunk.current_state = chunk_state::hydrated;
+      _chunks.contains(start_offset),
+      "No chunk starting at offset {}, cannot schedule prefetches",
+      start_offset);
+    for (auto it = std::next(_chunks.find(start_offset));
+         it != _chunks.end() && n_chunks_to_prefetch > 0;
+         ++it, --n_chunks_to_prefetch) {
+        auto& [start, chunk] = *it;
+        if (
+          chunk.current_state == chunk_state::download_in_progress
+          || chunk.current_state == chunk_state::hydrated) {
+            continue;
+        }
 
-    while (!chunk.waiters.empty()) {
-        chunk.waiters.front().set_value(handle);
-        chunk.waiters.pop_front();
+        chunk.current_state = chunk_state::download_in_progress;
+        ss::promise<cloud_storage::segment_chunk::handle_t> p;
+        _prefetches.emplace_back(p.get_future());
+        chunk.waiters.push_back(
+          std::move(p), ss::lowres_clock::time_point::max());
+        vlog(
+          _ctxlog.trace,
+          "prefetch hydrate request added for chunk id {}, current "
+          "waiter size: {}",
+          start,
+          chunk.waiters.size());
     }
+}
 
-    co_return handle;
+void segment_chunks::resolve_prefetch_futures() {
+    auto available_it = std::ranges::partition(
+      _prefetches, [](const auto& f) { return !f.available(); });
+
+    fragmented_vector<ss::future<segment_chunk::handle_t>> resolved;
+    resolved.reserve(available_it.size());
+
+    std::ranges::move(available_it, std::back_inserter(resolved));
+
+    if (!resolved.empty()) {
+        vlog(_ctxlog.trace, "{} completed prefetches", resolved.size());
+        for (auto& f : resolved) {
+            vassert(
+              f.available(), "future not available when resolving prefetches");
+            if (f.failed()) {
+                vlog(
+                  _ctxlog.trace,
+                  "failed prefetch download: {}",
+                  f.get_exception());
+            }
+        }
+    }
 }
 
 ss::future<> segment_chunks::trim_chunk_files() {
@@ -223,7 +236,78 @@ ss::future<> segment_chunks::trim_chunk_files() {
       hydrated_chunks);
 
     co_await eviction_strategy->evict(std::move(to_release), _ctxlog);
+    resolve_prefetch_futures();
     _eviction_timer.rearm(_eviction_jitter());
+}
+
+ss::future<> segment_chunks::run_hydrate_bg() {
+    auto g = _gate.hold();
+    vassert(_started, "chunk API is not started");
+
+    const auto has_waiters = [](const auto& pair) {
+        return !pair.second.waiters.empty();
+    };
+
+    while (!_gate.is_closed()) {
+        try {
+            co_await _bg_cvar.wait(
+              [this] { return downloads_in_progress() || _gate.is_closed(); });
+            // TODO prioritize "real" requests over prefetches
+            co_await ss::max_concurrent_for_each(
+              _chunks | views::filter(has_waiters) | views::keys,
+              _segment.concurrency(),
+              [this](auto start) { return do_hydrate_chunk(start); });
+        } catch (...) {
+            const auto& ex = std::current_exception();
+            for (auto& chunk : views::values(_chunks)) {
+                if (!chunk.waiters.empty()) {
+                    set_waiter_errors(chunk.waiters, ex);
+                }
+            }
+            if (ssx::is_shutdown_exception(ex)) {
+                vlog(_ctxlog.debug, "Chunk API hydration loop shut down");
+                break;
+            } else {
+                vlog(
+                  _ctxlog.error, "Chunk API error in hydration loop: {}", ex);
+            }
+        }
+    }
+}
+
+ss::future<>
+segment_chunks::do_hydrate_chunk(chunk_start_offset_t start_offset) {
+    auto g = _gate.hold();
+    vassert(
+      _chunks.contains(start_offset),
+      "No chunk starting at offset {}, cannot hydrate",
+      start_offset);
+
+    auto& chunk = _chunks[start_offset];
+    auto& waiters = chunk.waiters;
+    if (waiters.empty()) {
+        co_return;
+    }
+
+    try {
+        auto handle = co_await _segment.download_chunk(start_offset);
+        vassert(
+          chunk.handle == std::nullopt,
+          "attempt to set file handle to chunk {} which already has a file "
+          "assigned, this will result in a file descriptor leak",
+          start_offset);
+        chunk.handle = ss::make_lw_shared(std::move(handle));
+        chunk.current_state = chunk_state::hydrated;
+
+        while (!waiters.empty()) {
+            waiters.front().set_value(chunk.handle.value());
+            waiters.pop_front();
+        }
+    } catch (...) {
+        const auto ex = std::current_exception();
+        chunk.current_state = chunk_state::not_available;
+        set_waiter_errors(waiters, ex);
+    }
 }
 
 void segment_chunks::register_readers(
@@ -292,6 +376,16 @@ segment_chunks::get_next_chunk_start(chunk_start_offset_t f) const {
 segment_chunks::iterator_t segment_chunks::begin() { return _chunks.begin(); }
 
 segment_chunks::iterator_t segment_chunks::end() { return _chunks.end(); }
+
+std::pair<size_t, size_t> segment_chunks::get_byte_range_for_chunk(
+  chunk_start_offset_t start_offset, size_t last_byte_in_segment) const {
+    auto it = _chunks.find(start_offset);
+    vassert(it != _chunks.end(), "No chunk found starting at {}", start_offset);
+    if (auto next_ch = std::next(it); next_ch != _chunks.end()) {
+        return {start_offset, next_ch->first - 1};
+    }
+    return {start_offset, last_byte_in_segment};
+}
 
 ss::future<> chunk_eviction_strategy::close_files(
   std::vector<ss::lw_shared_ptr<ss::file>> files_to_close,
@@ -429,65 +523,6 @@ std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
         return std::make_unique<predictive_chunk_eviction_strategy>(
           max_chunks, hydrated_chunks);
     }
-}
-
-segment_chunk_range::segment_chunk_range(
-  const segment_chunks::chunk_map_t& chunks,
-  size_t prefetch,
-  chunk_start_offset_t start) {
-    auto it = chunks.find(start);
-    vassert(
-      it != chunks.end(), "failed to find {} in chunk start offsets", start);
-    auto n_it = std::next(it);
-
-    // We need one chunk which will be downloaded for the current read, plus the
-    // prefetch count
-    size_t num_chunks_required = prefetch + 1;
-
-    // Collects start and end file offsets to be hydrated for the given
-    // prefetch by iterating over adjacent chunk start offsets. The chunk map
-    // does not contain end offsets, so for a given chunk start offset in the
-    // map, the corresponding end of chunk is the next entry in the map minus
-    // one.
-    for (size_t i = 0; i < num_chunks_required && it != chunks.end(); ++i) {
-        auto start = it->first;
-
-        // The last entry in the chunk map always represents data upto the
-        // end of segment. A nullopt here is a signal to
-        // split_segment_into_chunk_range_consumer (which does have access to
-        // the segment size) to use the segment size as the end of the byte
-        // range.
-        std::optional<chunk_start_offset_t> end = std::nullopt;
-        if (n_it != chunks.end()) {
-            end = n_it->first - 1;
-        }
-
-        _chunks[start] = end;
-        if (n_it == chunks.end()) {
-            break;
-        }
-        it++;
-        n_it++;
-    }
-}
-
-std::optional<chunk_start_offset_t> segment_chunk_range::last_offset() const {
-    auto it = _chunks.end();
-    return std::prev(it)->second;
-}
-
-chunk_start_offset_t segment_chunk_range::first_offset() const {
-    return _chunks.begin()->first;
-}
-
-size_t segment_chunk_range::chunk_count() const { return _chunks.size(); }
-
-segment_chunk_range::map_t::iterator segment_chunk_range::begin() {
-    return _chunks.begin();
-}
-
-segment_chunk_range::map_t::iterator segment_chunk_range::end() {
-    return _chunks.end();
 }
 
 } // namespace cloud_storage

@@ -416,31 +416,31 @@ public:
      * lock. In order to prevent reordering and do not flood followers with
      * heartbeats that they will not be able to respond to we suppress sending
      * heartbeats when other append entries request or heartbeat request is in
-     * flight.
+     * flight. This RAII utility keeps track of inflight appends so heartbeat
+     * manager can decide whether to pause heartbeats while appends are in
+     * progress.
      */
 
-    class suppress_heartbeats_guard {
+    class inflight_appends_guard {
     public:
-        suppress_heartbeats_guard() noexcept = default;
-        explicit suppress_heartbeats_guard(
+        inflight_appends_guard() noexcept = default;
+        explicit inflight_appends_guard(
           consensus& parent, vnode target) noexcept;
 
-        void unsuppress();
+        void mark_finished();
 
-        suppress_heartbeats_guard(suppress_heartbeats_guard&& other) noexcept
+        inflight_appends_guard(inflight_appends_guard&& other) noexcept
           : _parent(other._parent)
           , _term(other._term)
           , _target(other._target) {
             other._parent = nullptr;
         }
-        suppress_heartbeats_guard(const suppress_heartbeats_guard& other)
+        inflight_appends_guard(const inflight_appends_guard& other) = delete;
+        inflight_appends_guard& operator=(inflight_appends_guard&& other)
           = delete;
-        suppress_heartbeats_guard& operator=(suppress_heartbeats_guard&& other)
+        inflight_appends_guard& operator=(const inflight_appends_guard& other)
           = delete;
-        suppress_heartbeats_guard&
-        operator=(const suppress_heartbeats_guard& other)
-          = delete;
-        ~suppress_heartbeats_guard() noexcept { unsuppress(); }
+        ~inflight_appends_guard() noexcept { mark_finished(); }
 
     private:
         consensus* _parent = nullptr;
@@ -449,7 +449,7 @@ public:
     };
 
     // precondition: is_elected_leader() must be true.
-    suppress_heartbeats_guard suppress_heartbeats(vnode);
+    inflight_appends_guard track_append_inflight(vnode);
 
     void update_heartbeat_status(vnode, bool);
 
@@ -523,6 +523,15 @@ public:
     replication_monitor& get_replication_monitor() {
         return _replication_monitor;
     }
+    /**
+     * Returns the number of bytes that are required to deliver to all
+     * learners that are being recovered.
+     */
+    size_t bytes_to_deliver_to_learners() const;
+
+    bool has_configuration_override() const {
+        return _configuration_manager.has_configuration_override();
+    }
 
 private:
     friend replication_monitor;
@@ -540,6 +549,9 @@ private:
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void do_step_down(std::string_view);
+    // steps down and requests the other replica to start leader election
+    // immediately
+    ss::future<> transfer_and_stepdown(std::string_view);
     ss::future<vote_reply> do_vote(vote_request);
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&&);

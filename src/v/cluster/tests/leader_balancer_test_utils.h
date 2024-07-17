@@ -51,4 +51,17 @@ static cluster::leader_balancer_strategy::index_type make_cluster_index(
     return index;
 }
 
+static inline cluster::leader_balancer_strategy::index_type copy_cluster_index(
+  const cluster::leader_balancer_strategy::index_type& c_index) {
+    cluster::leader_balancer_strategy::index_type index;
+
+    for (const auto& [bs, leaders] : c_index) {
+        for (const auto& [group_id, replicas] : leaders) {
+            index[bs][group_id] = replicas;
+        }
+    }
+
+    return index;
+}
+
 } // namespace leader_balancer_test_utils

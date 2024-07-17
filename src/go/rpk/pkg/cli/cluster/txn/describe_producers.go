@@ -64,8 +64,8 @@ You can query all topics and partitions that have active producers with --all.
 To filter for specific topics, use --topics. You can additionally filter by
 partitions with --partitions.
 `,
-
-		Run: func(cmd *cobra.Command, txnIDs []string) {
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]describeProducersResponse{}); ok {
 				out.Exit(h)

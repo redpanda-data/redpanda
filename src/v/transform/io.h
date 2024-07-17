@@ -55,10 +55,16 @@ public:
 
     /**
      * The offset of a record the log for a given timestamp - if the log is
-     * empty then `kafka::offset::min()` is returned.
+     * empty or the timestamp is greater than max_timestamp, then std::nullopt
+     * is returned.
      */
-    virtual ss::future<kafka::offset>
+    virtual ss::future<std::optional<kafka::offset>>
     offset_at_timestamp(model::timestamp, ss::abort_source*) = 0;
+
+    /**
+     * The minimum offset in the source log
+     */
+    virtual kafka::offset start_offset() const = 0;
 
     /**
      * Read from the log starting at a given offset, aborting when requested.

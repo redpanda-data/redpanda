@@ -197,7 +197,7 @@ ss::future<error_outcome> uploader::upload_next_metadata(
       manifest.get_manifest_path(),
       manifest);
     auto upload_result = co_await _remote.upload_manifest(
-      _bucket, manifest, retry_node);
+      _bucket, manifest, manifest.get_manifest_path(), retry_node);
     if (upload_result != cloud_storage::upload_result::success) {
         vlog(
           clusterlog.warn,

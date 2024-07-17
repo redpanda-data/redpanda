@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "reflection/type_traits.h"
+
 #include <seastar/core/metrics_types.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -156,6 +158,14 @@ public:
         _counts[i]++;
     }
 
+    template<
+      typename dur_t,
+      typename = std::enable_if_t<detail::is_duration_v<dur_t>, dur_t>>
+    void record(dur_t dur) {
+        record(static_cast<uint64_t>(
+          std::chrono::duration_cast<duration_t>(dur).count()));
+    }
+
     template<int64_t _scale, uint64_t _first_bucket_bound, int _bucket_count>
     struct logform_config {
         static constexpr auto bound_is_pow_2 = _first_bucket_bound >= 1
@@ -189,6 +199,24 @@ public:
      */
     seastar::metrics::histogram internal_histogram_logform() const;
 
+    /*
+     * Generates a Prometheus histogram with 16 buckets. The first bucket has an
+     * upper bound of 4 - 1 and subsequent buckets have an upper bound of 2
+     * times the upper bound of the previous bucket.
+     *
+     * This is the histogram type used for the Kafka read distribution.
+     */
+    seastar::metrics::histogram read_dist_histogram_logform() const;
+
+    /*
+     * Generates a Prometheus histogram with 15 buckets. The first bucket has an
+     * upper bound of 1 - 1 and subsequent buckets have an upper bound of 2
+     * times the upper bound of the previous bucket.
+     *
+     * This is the histogram type used for the Kafka client quota distribution.
+     */
+    seastar::metrics::histogram client_quota_histogram_logform() const;
+
 private:
     friend measurement;
 
@@ -215,3 +243,18 @@ using log_hist_public = log_hist<std::chrono::microseconds, 18, 256ul>;
  * bounds] [8, 10], [16, 20], [32, 41], [64, 83], [128, 167], [256, 335]
  */
 using log_hist_internal = log_hist<std::chrono::microseconds, 26, 8ul>;
+
+/*
+ * This histogram has units of minutes instead of microseconds, and is used for
+ * measuring the Kafka read distribution on the scale of less than 4 minutes in
+ * the first bucket to greater than 91 days in the last bucket.
+ */
+using log_hist_read_dist = log_hist<std::chrono::minutes, 16, 4ul>;
+
+/*
+ * This histogram has units of milliseconds instead of microseconds, and is
+ * used for measuring the Kafka client quota delays on the scale of less than
+ * 1 milliseconds in the first bucket to greater than 32 seconds in the last
+ * bucket.
+ */
+using log_hist_client_quota = log_hist<std::chrono::milliseconds, 15, 1ul>;

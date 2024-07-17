@@ -8,23 +8,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: get secrets from aws sm
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+            ,sdlc/prod/github/buildkite_token
+          parse-json-secrets: true
+
+      - uses: actions/checkout@v4
         with: 
           repository: redpanda-data/sparse-checkout 
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           path: sparse-checkout
 
       - uses: ./sparse-checkout 
         with:
           repository: redpanda-data/vtools
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           patterns: actions
           path: ghca 
 
       - name: Trigger Versions Bump Buildkite Job
         uses: ./ghca/actions/buildkite-pipeline-trigger
         with:
-          buildkite_token: ${{ secrets.BUILDKITE_TOKEN }}
+          buildkite_token: ${{ env.BUILDKITE_TOKEN }}
           buildkite_org: redpanda
           buildkite_pipeline: ${{ vars.CLOUD_PIPELINE }}
           commit: HEAD

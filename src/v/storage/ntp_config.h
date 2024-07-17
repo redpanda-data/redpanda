@@ -15,7 +15,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "ssx/sformat.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -134,24 +134,20 @@ public:
 
     bool has_overrides() const { return _overrides != nullptr; }
 
-    bool is_compacted() const {
-        if (_overrides && _overrides->cleanup_policy_bitflags) {
-            return (_overrides->cleanup_policy_bitflags.value()
-                    & model::cleanup_policy_bitflags::compaction)
-                   == model::cleanup_policy_bitflags::compaction;
+    bool has_compacted_override() const {
+        auto cp_override = cleanup_policy_override();
+        if (!cp_override) {
+            return false;
         }
-        return false;
+        return model::is_compaction_enabled(cp_override.value());
+    }
+
+    bool is_compacted() const {
+        return model::is_compaction_enabled(cleanup_policy());
     }
 
     bool is_collectable() const {
-        // has no overrides
-        if (!_overrides || !_overrides->cleanup_policy_bitflags) {
-            return true;
-        }
-        // check if deletion bitflag is set
-        return (_overrides->cleanup_policy_bitflags.value()
-                & model::cleanup_policy_bitflags::deletion)
-               == model::cleanup_policy_bitflags::deletion;
+        return model::is_deletion_enabled(cleanup_policy());
     }
 
     ss::sstring work_directory() const {
@@ -290,6 +286,17 @@ public:
           std::numeric_limits<size_t>::max());
         return _overrides ? _overrides->flush_bytes.value_or(cluster_default)
                           : cluster_default;
+    }
+
+    std::optional<model::cleanup_policy_bitflags>
+    cleanup_policy_override() const {
+        return _overrides ? _overrides->cleanup_policy_bitflags : std::nullopt;
+    }
+
+    model::cleanup_policy_bitflags cleanup_policy() const {
+        const auto& cluster_default
+          = config::shard_local_cfg().log_cleanup_policy();
+        return cleanup_policy_override().value_or(cluster_default);
     }
 
 private:

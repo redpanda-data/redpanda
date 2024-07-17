@@ -13,6 +13,7 @@
 #include "base/seastarx.h"
 #include "config/property.h"
 #include "config/throughput_control_group.h"
+#include "kafka/server/atomic_token_bucket.h"
 #include "metrics/metrics.h"
 #include "ssx/sharded_ptr.h"
 #include "utils/bottomless_token_bucket.h"
@@ -20,6 +21,7 @@
 #include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
@@ -101,11 +103,7 @@ class snc_quota_manager
 public:
     using clock = ss::lowres_clock;
     using quota_t = bottomless_token_bucket::quota_t;
-    using bucket_t = ss::internal::shared_token_bucket<
-      uint64_t,
-      std::ratio<1>,
-      ss::internal::capped_release::no,
-      clock>;
+    using bucket_t = atomic_token_bucket;
     using buckets_t = kafka::ingress_egress_state<
       ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>>;
 

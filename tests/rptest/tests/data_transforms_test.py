@@ -59,7 +59,11 @@ class BaseDataTransformsTest(RedpandaTest):
                      input_topic: TopicSpec,
                      output_topic: TopicSpec | list[TopicSpec],
                      file="tinygo/identity.wasm",
-                     wait_running=True):
+                     compression_type: TopicSpec.CompressionTypes
+                     | None = None,
+                     wait_running: bool = True,
+                     retry_on_exc: bool = True,
+                     from_offset: str | None = None):
         """
         Deploy a wasm transform and wait for all processors to be running.
         """
@@ -70,7 +74,9 @@ class BaseDataTransformsTest(RedpandaTest):
             self._rpk.deploy_wasm(name,
                                   input_topic.name,
                                   [o.name for o in output_topic],
-                                  file=file)
+                                  file=file,
+                                  compression_type=compression_type,
+                                  from_offset=from_offset)
             return True
 
         wait_until(
@@ -78,7 +84,7 @@ class BaseDataTransformsTest(RedpandaTest):
             timeout_sec=30,
             backoff_sec=5,
             err_msg=f"unable to deploy wasm transform {name}",
-            retry_on_exc=True,
+            retry_on_exc=retry_on_exc,
         )
 
         if not wait_running:
@@ -397,6 +403,154 @@ class DataTransformsTest(BaseDataTransformsTest):
                        backoff_sec=1,
                        err_msg="some partitions did not clear their envs",
                        retry_on_exc=True)
+
+    @cluster(num_nodes=4)
+    def test_consume_from_end(self):
+        """
+        Test that by default transforms read from the end of the topic if no records
+        are produced between deploy time and transform start time.
+        """
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=input_topic,
+                          output_topic=output_topic,
+                          wait_running=True)
+
+        with expect_exception(TimeoutError, lambda _: True):
+            consumer_status = self._consume_output_topic(
+                topic=self.topics[1], status=producer_status)
+
+    @cluster(num_nodes=4)
+    @matrix(compression_type=[
+        TopicSpec.CompressionTypes.GZIP,
+        TopicSpec.CompressionTypes.LZ4,
+        TopicSpec.CompressionTypes.NONE,
+        TopicSpec.CompressionTypes.SNAPPY,
+        TopicSpec.CompressionTypes.ZSTD,
+        TopicSpec.CompressionTypes.PRODUCER,  # broker will reject this
+    ])
+    def test_compression(self, compression_type: TopicSpec.CompressionTypes):
+        INVALID_MODES: list[TopicSpec.CompressionTypes] = [
+            TopicSpec.CompressionTypes.PRODUCER,
+        ]
+        transform_name = "identity-xform"
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+
+        valid = compression_type not in INVALID_MODES
+
+        def deploy():
+            self._deploy_wasm(name=transform_name,
+                              input_topic=input_topic,
+                              output_topic=output_topic,
+                              compression_type=compression_type,
+                              wait_running=True,
+                              retry_on_exc=valid)
+
+        if not valid:
+            with expect_exception(
+                    RpkException,
+                    lambda e: "invalid JSON request body" in str(e)):
+                deploy()
+            # just go ahead and deploy with no compression and let the test finish
+            compression_type = TopicSpec.CompressionTypes.NONE
+            deploy()
+        else:
+            deploy()
+
+        def compression_set(compression_type: TopicSpec.CompressionTypes):
+            report = self._rpk.list_wasm()
+            return report[0].compression == compression_type
+
+        wait_until(lambda: compression_set(compression_type),
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="compression did not update",
+                   retry_on_exc=False)
+
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+        consumer_status = self._consume_output_topic(topic=self.topics[1],
+                                                     status=producer_status)
+        self.logger.info(f"{consumer_status}")
+        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+    @cluster(num_nodes=4)
+    @matrix(offset=[
+        "+0",
+        "-1",
+        f"@{int(time.time() * 1000)}",
+        "+9223372036854775807",  # int64_max - should clamp to start at latest
+    ])
+    def test_consume_from_offset(self, offset):
+        '''
+        Verify that offset-delta based and timestamp based consumption works as expected.
+        That is, records produced prior to deployment should still be accessible given an
+        appropriate offset config.
+        '''
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=input_topic,
+                          output_topic=output_topic,
+                          from_offset=offset,
+                          wait_running=True)
+        consumer_status = self._consume_output_topic(topic=self.topics[1],
+                                                     status=producer_status)
+
+        self.logger.info(f"{consumer_status}")
+        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+
+    @cluster(num_nodes=4)
+    @matrix(offset=[
+        None,  # No offest -> read from the end of the topic
+        "@33276193569000",  # June 3024
+        "-0",  # '0 from end' should commit 'latest'
+    ])
+    def test_consume_off_end(self, offset):
+        '''
+        Verify that consuming off the end of the input topic works as expected.
+        That is, confirm that records produced _prior_ to deployment do not reach the transform.
+        '''
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        producer_status = self._produce_input_topic(topic=self.topics[0])
+        self._deploy_wasm(name="identity-xform",
+                          input_topic=input_topic,
+                          output_topic=output_topic,
+                          from_offset=offset,
+                          wait_running=True)
+
+        with expect_exception(TimeoutError, lambda _: True):
+            _ = self._consume_output_topic(topic=self.topics[1],
+                                           status=producer_status)
+
+    @cluster(num_nodes=3)
+    @matrix(offset=[
+        "@9223372036854775807",  # int64_max (out of range for millis)
+        "+NaN",  # lexical cast error (literal NaN)
+        "-9223372036854775808",  # lexical cast error (int64 overflow)
+        f"@{time.time() * 1000}",  # lexical cast error (float value)
+        "@-10",  # illegal negative value
+        "--10",  # illegal negative value
+        "+-10",  # illegal negative value
+    ])
+    def test_consume_junk_off(self, offset):
+        '''
+        Tests for junk data. Deployment should fail cleanly in the admin API or rpk.
+        '''
+        input_topic = self.topics[0]
+        output_topic = self.topics[1]
+        with expect_exception(RpkException,
+                              lambda e: print(e) or "Bad offset" in str(e)):
+            self._deploy_wasm(name="identity-xform",
+                              input_topic=input_topic,
+                              output_topic=output_topic,
+                              from_offset=offset,
+                              wait_running=False,
+                              retry_on_exc=False)
 
 
 class DataTransformsChainingTest(BaseDataTransformsTest):

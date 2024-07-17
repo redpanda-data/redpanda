@@ -11,6 +11,8 @@
 
 #include "types.h"
 
+#include "util.h"
+
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -47,7 +49,8 @@ std::ostream& operator<<(
       os,
       "type: {}, definition: {}, references: {}",
       to_string_view(def.type()),
-      def.raw(),
+      // TODO BP: Prevent this linearization
+      to_string(def.shared_raw()),
       def.refs());
     return os;
 }
@@ -59,14 +62,14 @@ std::ostream& operator<<(
       os,
       "type: {}, definition: {}, references: {}",
       to_string_view(def.type()),
-      def.raw(),
+      // TODO BP: Prevent this linearization
+      to_string(def.shared_raw()),
       def.refs());
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const schema_reference& ref) {
-    fmt::print(
-      os, "name: {}, subject: {}, version: {}", ref.name, ref.sub, ref.version);
+    fmt::print(os, "{:l}", ref);
     return os;
 }
 

@@ -9,7 +9,6 @@
 
 #include "kafka/server/handlers/alter_configs.h"
 
-#include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -56,8 +55,7 @@ static void parse_and_set_shadow_indexing_mode(
 }
 
 checked<cluster::topic_properties_update, alter_configs_resource_response>
-create_topic_properties_update(
-  const request_context& ctx, alter_configs_resource& resource) {
+create_topic_properties_update(alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
@@ -87,15 +85,6 @@ create_topic_properties_update(
       = cluster::incremental_update_operation::none;
     update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
-
-    /**
-     * Since 'cleanup.policy' is always defaulted to 'delete' at topic creation,
-     * we must special case the handling to preserve this default.
-     */
-    update.properties.cleanup_policy_bitflags.op
-      = cluster::incremental_update_operation::set;
-    update.properties.cleanup_policy_bitflags.value
-      = ctx.metadata_cache().get_default_cleanup_policy_bitflags();
 
     update.properties.record_key_schema_id_validation.op
       = cluster::incremental_update_operation::set;
@@ -303,16 +292,6 @@ create_topic_properties_update(
               error_code::invalid_config,
               fmt::format(
                 "unable to parse property {} value {}", cfg.name, cfg.value));
-        } catch (const v8_engine::data_policy_exeption& e) {
-            return make_error_alter_config_resource_response<
-              alter_configs_resource_response>(
-              resource,
-              error_code::invalid_config,
-              fmt::format(
-                "unable to parse property {}, value{}, error {}",
-                cfg.name,
-                cfg.value,
-                e.what()));
         }
 
         // Unsupported property, return error
@@ -334,11 +313,8 @@ alter_topic_configuration(
     return do_alter_topics_configuration<
       alter_configs_resource,
       alter_configs_resource_response>(
-      ctx,
-      std::move(resources),
-      validate_only,
-      [&ctx](alter_configs_resource& r) {
-          return create_topic_properties_update(ctx, r);
+      ctx, std::move(resources), validate_only, [](alter_configs_resource& r) {
+          return create_topic_properties_update(r);
       });
 }
 

@@ -13,6 +13,8 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
@@ -225,7 +227,11 @@ struct topic_manifest_handler
     key_string _key;
 
     // required fields
+
+    // NOTE: version is no longer explicitly tracked, now that we use the
+    // versioned topic_manifest_state to serialize.
     std::optional<int32_t> _version;
+
     std::optional<model::ns> _namespace{};
     std::optional<model::topic> _topic;
     std::optional<int32_t> _partition_count;
@@ -249,17 +255,10 @@ struct topic_manifest_handler
     };
 };
 
-// use feature table to decide if to encode with serde
 topic_manifest::topic_manifest(
-  const cluster::topic_configuration& cfg,
-  model::initial_revision_id rev,
-  const features::feature_table& ft)
+  const cluster::topic_configuration& cfg, model::initial_revision_id rev)
   : _topic_config(cfg)
-  , _rev(rev)
-  , _manifest_version(
-      ft.is_active(features::feature::cluster_topic_manifest_format_v2)
-        ? serde_version
-        : first_version) {}
+  , _rev(rev) {}
 
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
@@ -271,10 +270,6 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
           "topic manifest version {} is not supported",
           handler._version));
     }
-
-    // just to be explicit, set _manifest_version to first_version, even if it's
-    // already the default construction value
-    _manifest_version = topic_manifest::first_version;
 
     _rev = handler._revision_id.value();
 
@@ -322,7 +317,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid compaction_strategy: "
               "{}",
-              get_manifest_path(),
+              display_name(),
               handler.compaction_strategy_sv.value()));
         }
     }
@@ -336,7 +331,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid timestamp_type "
               "value: {}",
-              get_manifest_path(),
+              display_name(),
               handler.timestamp_type_sv.value()));
         }
     }
@@ -345,12 +340,12 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
             _topic_config->properties.compression
               = boost::lexical_cast<model::compression>(
                 handler.compression_sv.value());
-        } catch (const std::runtime_error& e) {
+        } catch (const boost::bad_lexical_cast& e) {
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
               "Failed to parse topic manifest {}: Invalid compression value: "
               "{}",
-              get_manifest_path(),
+              display_name(),
               handler.compression_sv.value()));
         }
     }
@@ -364,7 +359,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid "
               "cleanup_policy_bitflags value: {}",
-              get_manifest_path(),
+              display_name(),
               handler.cleanup_policy_bitflags_sv.value()));
         }
     }
@@ -379,7 +374,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
               fmt::format,
               "Failed to parse topic manifest {}: Invalid "
               "virtual_cluster_id_sv value: {}",
-              get_manifest_path(),
+              display_name(),
               handler.virtual_cluster_id_sv.value()));
         }
     }
@@ -412,7 +407,7 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
                 throw std::runtime_error(fmt_with_ctx(
                   fmt::format,
                   "Failed to parse topic manifest {}: {} at offset {}",
-                  get_manifest_path(),
+                  display_name(),
                   rapidjson::GetParseError_En(e),
                   o));
             } else {
@@ -432,7 +427,6 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
           std::move(result));
         _topic_config = std::move(m_state.cfg);
         _rev = m_state.initial_revision;
-        _manifest_version = topic_manifest::serde_version;
         break;
     }
 
@@ -441,27 +435,6 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
 
 ss::future<serialized_data_stream> topic_manifest::serialize() const {
     vassert(_topic_config.has_value(), "_topic_config is not initialized");
-
-    if (_manifest_version == first_version) {
-        // serialize in json format. this could still be required in unit-tests
-        // and mixed-versions clusters, when the old node is not yet running
-        // with features::feature::cluster_topic_manifest_format_v2
-        iobuf serialized;
-        iobuf_ostreambuf obuf(serialized);
-        std::ostream os(&obuf);
-        serialize_v1_json(os);
-        if (!os.good()) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "could not serialize topic manifest {}",
-              get_manifest_path()));
-        }
-        size_t size_bytes = serialized.size_bytes();
-        co_return serialized_data_stream{
-          .stream = make_iobuf_input_stream(std::move(serialized)),
-          .size_bytes = size_bytes};
-    }
-
     // serialize in binary format
     auto serialized = serde::to_iobuf(topic_manifest_state{
       .cfg = _topic_config.value(), .initial_revision = _rev});
@@ -551,46 +524,24 @@ void topic_manifest::serialize_v1_json(std::ostream& out) const {
 
     // do not serialize fields that are not deserializable by previous versions
     // of redpanda
-    if (
-      _manifest_version > first_version
-      && _topic_config->properties.mpx_virtual_cluster_id) {
+    if (_topic_config->properties.mpx_virtual_cluster_id) {
         w.Key("virtual_cluster_id");
         w.String(fmt::format(
           "{}", _topic_config->properties.mpx_virtual_cluster_id.value()));
     }
     w.EndObject();
 }
-
-remote_manifest_path topic_manifest::get_topic_manifest_path(
-  model::ns ns, model::topic topic, manifest_format format) {
-    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json or
-    // topic_manifest.bin depending on format
-    constexpr uint32_t bitmask = 0xF0000000;
-    auto path = fmt::format("{}/{}", ns(), topic());
-    uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    // use format to decide if the path is json or bin
-    return remote_manifest_path(fmt::format(
-      "{:08x}/meta/{}/topic_manifest.{}",
-      hash,
-      path,
-      format == manifest_format::json ? "json" : "bin"));
-}
-
-remote_manifest_path topic_manifest::get_manifest_path() const {
+ss::sstring topic_manifest::display_name() const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
     vassert(_topic_config, "Topic config is not set");
-    return get_topic_manifest_path(
-      _topic_config->tp_ns.ns,
-      _topic_config->tp_ns.tp,
-      _manifest_version == first_version ? manifest_format::json
-                                         : manifest_format::serde);
+    return fmt::format("tp_ns: {}, rev: {}", _topic_config->tp_ns, _rev);
 }
 
-std::pair<manifest_format, remote_manifest_path>
-topic_manifest::get_manifest_format_and_path() const {
-    return std::make_pair(
-      _manifest_version == first_version ? manifest_format::json
-                                         : manifest_format::serde,
-      get_manifest_path());
+remote_manifest_path topic_manifest::get_manifest_path(
+  const remote_path_provider& path_provider) const {
+    vassert(_topic_config, "Topic config is not set");
+    return remote_manifest_path{
+      path_provider.topic_manifest_path(_topic_config->tp_ns, _rev)};
 }
+
 } // namespace cloud_storage

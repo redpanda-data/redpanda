@@ -12,7 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cluster/types.h"
+#include "cluster/tx_protocol_types.h"
 
 namespace cluster {
 

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/type_traits.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -32,7 +33,6 @@
 #include "security/types.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
-#include "utils/type_traits.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/scheduling.hh>
@@ -42,6 +42,7 @@
 #include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/http/request.hh>
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
@@ -172,7 +173,7 @@ private:
                 auth_state.pass();
             } else {
                 static_assert(
-                  utils::unsupported_value<required_auth>::value,
+                  base::unsupported_value<required_auth>::value,
                   "Invalid auth_level");
             }
 
@@ -429,6 +430,7 @@ private:
     void register_shadow_indexing_routes();
     void register_wasm_transform_routes();
     void register_recovery_mode_routes();
+    void register_data_migration_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -528,7 +530,12 @@ private:
     ss::future<ss::json::json_return_type>
       force_set_partition_replicas_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
+      set_partition_replica_core_handler(std::unique_ptr<ss::http::request>);
+
+    ss::future<ss::json::json_return_type>
       trigger_on_demand_rebalance_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      trigger_shard_rebalance_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type>
       get_reconfigurations_handler(std::unique_ptr<ss::http::request>);
@@ -638,6 +645,16 @@ private:
       garbage_collect_committed_offsets(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       patch_transform_metadata(std::unique_ptr<ss::http::request>);
+
+    // Data migration routes
+    ss::future<std::unique_ptr<ss::http::reply>> list_data_migrations(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> add_data_migration(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<ss::json::json_return_type>
+      execute_migration_action(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      delete_migration(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,

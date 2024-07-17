@@ -20,6 +20,8 @@
 
 namespace cloud_storage {
 
+constexpr auto cache_tmp_file_extension{".part"};
+
 class access_time_tracker;
 
 struct file_list_item {
@@ -33,6 +35,7 @@ struct walk_result {
     size_t filtered_out_files{0};
     fragmented_vector<file_list_item> regular_files;
     fragmented_vector<ss::sstring> empty_dirs;
+    size_t tmp_files_size{0};
 };
 
 class recursive_directory_walker {
@@ -46,6 +49,7 @@ public:
     ss::future<walk_result> walk(
       ss::sstring start_dir,
       const access_time_tracker& tracker,
+      uint16_t max_concurrency,
       std::optional<filter_type> collect_filter = std::nullopt);
 
 private:

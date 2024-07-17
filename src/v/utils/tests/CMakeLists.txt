@@ -10,7 +10,6 @@ rp_test(
     expiring_promise_test.cc
     input_stream_fanout_test.cc
     object_pool_test.cc
-    outcome_utils_test.cc
     retry_chain_node_test.cc
     seastar_histogram_test.cc
     timed_mutex_test.cc
@@ -20,7 +19,7 @@ rp_test(
     vint_test.cc
     waiter_queue_test.cc
     auto_fmt_test.cc
-  LIBRARIES v::seastar_testing_main v::utils v::bytes v::version absl::flat_hash_set cryptopp
+  LIBRARIES v::seastar_testing_main v::utils v::bytes v::version absl::flat_hash_set
   ARGS "-- -c 1"
   LABELS utils
 )
@@ -59,7 +58,7 @@ rp_test(
   UNIT_TEST
   GTEST
   BINARY_NAME gtest_utils
-  SOURCES     
+  SOURCES
     xid_test.cc
   LIBRARIES v::utils absl::flat_hash_map v::random v::gtest_main
   LABELS utils
@@ -83,8 +82,18 @@ rp_test(
 
 rp_test(
   BENCHMARK_TEST
+  BINARY_NAME coro
+  SOURCES
+    coro_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::utils
+  LABELS utils
+)
+
+rp_test(
+  BENCHMARK_TEST
   BINARY_NAME vint
-  SOURCES vint_bench.cc
+  SOURCES
+    vint_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::utils
   LABELS utils
 )

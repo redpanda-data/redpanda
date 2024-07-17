@@ -75,6 +75,47 @@ struct local_snapshot_stm : public simple_kv {
     };
 };
 
+// State machine that induces lag from the tip of
+// of the log
+class slow_kv : public simple_kv {
+public:
+    static constexpr std::string_view name = "slow_kv";
+
+    explicit slow_kv(raft_node_instance& rn)
+      : simple_kv(rn) {}
+
+    ss::future<> apply(const model::record_batch& batch) override {
+        co_await ss::sleep(5ms);
+        co_return co_await simple_kv::apply(batch);
+    }
+
+    ss::future<> apply_raft_snapshot(const iobuf&) override {
+        return ss::now();
+    }
+};
+
+// Fails the first apply, starts a background fiber and not lets the
+// background apply fiber finish relative to slow_kv
+class bg_only_kv : public slow_kv {
+public:
+    static constexpr std::string_view name = "bg_only_stm";
+
+    explicit bg_only_kv(raft_node_instance& rn)
+      : slow_kv(rn) {}
+
+    ss::future<> apply(const model::record_batch& batch) override {
+        if (_first_apply) {
+            _first_apply = false;
+            throw std::runtime_error("induced failure");
+        }
+        co_await ss::sleep(5ms);
+        co_return co_await slow_kv::apply(batch);
+    }
+
+private:
+    bool _first_apply = true;
+};
+
 TEST_F_CORO(state_machine_fixture, test_basic_apply) {
     /**
      * Create 3 replicas group with simple_kv STM
@@ -98,6 +139,40 @@ TEST_F_CORO(state_machine_fixture, test_basic_apply) {
     for (auto& stm : stms) {
         ASSERT_EQ_CORO(stm->state, expected);
     }
+}
+
+TEST_F_CORO(state_machine_fixture, test_snapshot_with_bg_fibers) {
+    create_nodes();
+    std::vector<ss::shared_ptr<simple_kv>> stms;
+    for (auto& [id, node] : nodes()) {
+        raft::state_machine_manager_builder builder;
+        auto slow_kv_stm = builder.create_stm<slow_kv>(*node);
+        auto bg_kv_stm = builder.create_stm<bg_only_kv>(*node);
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(slow_kv_stm));
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(bg_kv_stm));
+    }
+    auto& leader_node = node(co_await wait_for_leader(10s));
+    bool stop = false;
+    auto write_sleep_f = ss::do_until(
+      [&stop] { return stop; },
+      [&] {
+          return build_random_state(1000).discard_result().then(
+            [] { return ss::sleep(3ms); });
+      });
+
+    auto truncate_sleep_f = ss::do_until(
+      [&stop] { return stop; },
+      [&] {
+          return leader_node.raft()
+            ->write_snapshot({leader_node.raft()->committed_offset(), iobuf{}})
+            .then([] { return ss::sleep(3ms); });
+      });
+
+    co_await ss::sleep(10s);
+    stop = true;
+    co_await std::move(write_sleep_f);
+    co_await std::move(truncate_sleep_f);
 }
 
 TEST_F_CORO(state_machine_fixture, test_apply_throwing_exception) {
@@ -350,4 +425,133 @@ TEST_F_CORO(
     }
 
     ASSERT_EQ_CORO(new_stm->state, partial_expected_state);
+}
+
+struct controllable_throwing_kv : public simple_kv {
+    static constexpr std::string_view name = "controllable_throwing_kv_1";
+    explicit controllable_throwing_kv(raft_node_instance& rn)
+      : simple_kv(rn) {}
+
+    ss::future<> apply(const model::record_batch& batch) override {
+        if (batch.last_offset() > _allow_apply) {
+            throw std::runtime_error(fmt::format(
+              "not allowed to apply batches with last offset greater than {}. "
+              "Current batch last offset: {}",
+              _allow_apply,
+              batch.last_offset()));
+        }
+        vassert(
+          batch.base_offset() == next(),
+          "batch {} base offset is not the next to apply, expected base "
+          "offset: {}",
+          batch.header(),
+          next());
+        co_await simple_kv::apply(batch);
+        co_return;
+    }
+
+    void allow_apply_to(model::offset o) { _allow_apply = o; }
+
+    model::offset _allow_apply;
+};
+
+struct controllable_throwing_kv_2 : public controllable_throwing_kv {
+    using controllable_throwing_kv::controllable_throwing_kv;
+
+    static constexpr std::string_view name = "controllable_throwing_kv_2";
+};
+
+struct controllable_throwing_kv_3 : public controllable_throwing_kv {
+    using controllable_throwing_kv::controllable_throwing_kv;
+
+    static constexpr std::string_view name = "controllable_throwing_kv_3";
+};
+TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
+    /**
+     * This test covers the scenario in which all state machines thrown an
+     * exception during apply, and then one of the state machines makes some
+     * progress.
+     */
+    create_nodes();
+    std::vector<ss::shared_ptr<simple_kv>> stms;
+    for (auto& [id, node] : nodes()) {
+        raft::state_machine_manager_builder builder;
+        auto kv_1 = builder.create_stm<controllable_throwing_kv>(*node);
+        auto kv_2 = builder.create_stm<controllable_throwing_kv_2>(*node);
+        auto kv_3 = builder.create_stm<controllable_throwing_kv_3>(*node);
+
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(kv_1));
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(kv_2));
+        stms.push_back(ss::dynamic_pointer_cast<simple_kv>(kv_3));
+
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
+    }
+    for (auto& [id, node] : nodes()) {
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv>()
+          ->allow_apply_to(model::offset(100));
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv_2>()
+          ->allow_apply_to(model::offset(100));
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv_3>()
+          ->allow_apply_to(model::offset(150));
+    }
+    vlog(logger().info, "Generating state for test");
+    auto expected = co_await build_random_state(
+      500, wait_for_each_batch::no, 1);
+    vlog(logger().info, "Waiting for state machines");
+    RPTEST_REQUIRE_EVENTUALLY_CORO(15s, [&] {
+        return std::ranges::all_of(
+          nodes() | std::views::values,
+          [&](std::unique_ptr<raft_node_instance>& node) {
+              auto la = node->raft()
+                          ->stm_manager()
+                          ->get<controllable_throwing_kv_3>()
+                          ->last_applied_offset();
+              return la >= model::offset(150);
+          });
+    });
+
+    for (auto& [id, node] : nodes()) {
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv_2>()
+          ->allow_apply_to(model::offset(160));
+    }
+    RPTEST_REQUIRE_EVENTUALLY_CORO(15s, [&] {
+        return std::ranges::all_of(
+          nodes() | std::views::values,
+          [&](std::unique_ptr<raft_node_instance>& node) {
+              auto la = node->raft()
+                          ->stm_manager()
+                          ->get<controllable_throwing_kv_2>()
+                          ->last_applied_offset();
+              return la >= model::offset(160);
+          });
+    });
+
+    for (auto& [id, node] : nodes()) {
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv>()
+          ->allow_apply_to(model::offset(1000));
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv_2>()
+          ->allow_apply_to(model::offset(1000));
+        node->raft()
+          ->stm_manager()
+          ->get<controllable_throwing_kv_3>()
+          ->allow_apply_to(model::offset(1000));
+    }
+
+    co_await wait_for_apply();
+
+    for (auto& stm : stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
 }

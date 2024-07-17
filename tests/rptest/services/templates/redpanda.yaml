@@ -94,6 +94,7 @@ pandaproxy:
     key_file: {{ pandaproxy_config.server_key }}
     cert_file: {{ pandaproxy_config.server_crt }}
     truststore_file: {{ pandaproxy_config.truststore_file }}
+    crl_file: {{ pandaproxy_config.crl_file }}
   {% endif %}
 
 pandaproxy_client:
@@ -111,6 +112,7 @@ pandaproxy_client:
     key_file: {{ pandaproxy_config.PP_TLS_CLIENT_KEY_FILE }}
     cert_file: {{ pandaproxy_config.PP_TLS_CLIENT_CRT_FILE }}
     truststore_file: {{ pandaproxy_config.truststore_file }}
+    crl_file: {{ pandaproxy_config.crl_file }}
   {% endif %}
 
   retries: 10
@@ -141,6 +143,7 @@ schema_registry:
     key_file: {{ schema_registry_config.server_key }}
     cert_file: {{ schema_registry_config.server_crt }}
     truststore_file: {{ schema_registry_config.truststore_file }}
+    crl_file: {{ schema_registry_config.crl_file }}
   {% endif %}
 
 schema_registry_client:
@@ -158,6 +161,7 @@ schema_registry_client:
     key_file: {{ schema_registry_config.SR_TLS_CLIENT_KEY_FILE }}
     cert_file: {{ schema_registry_config.SR_TLS_CLIENT_CRT_FILE }}
     truststore_file: {{ schema_registry_config.truststore_file }}
+    crl_file: {{ schema_registry_config.crl_file }}
   {% endif %}
 
   retries: 10
@@ -189,6 +193,7 @@ audit_log_client:
     key_file: {{ audit_log_config.AUDIT_LOG_TLS_CLIENT_KEY_FILE }}
     cert_file: {{ audit_log_config.AUDIT_LOG_TLS_CLIENT_CRT_FILE }}
     truststore_file: {{ audit_log_config.truststore_file }}
+    crl_file: {{ audit_log_config.crl_file }}
   {% endif %}
 {% endif %}
 

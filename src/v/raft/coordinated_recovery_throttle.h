@@ -15,6 +15,7 @@
 #include "metrics/metrics.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 namespace raft {

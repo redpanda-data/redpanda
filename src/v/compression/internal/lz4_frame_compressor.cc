@@ -11,7 +11,7 @@
 
 #include "base/vassert.h"
 #include "compression/lz4_decompression_buffers.h"
-#include "static_deleter_fn.h"
+#include "utils/static_deleter_fn.h"
 
 #include <seastar/core/temporary_buffer.hh>
 

@@ -36,6 +36,9 @@ ss::sstring bytes_to_base64(bytes_view);
 // base64 -> string
 ss::sstring base64_to_string(std::string_view);
 
+// base64 -> iobuf
+iobuf base64_to_iobuf(const iobuf&);
+
 // base64 <-> iobuf
 ss::sstring iobuf_to_base64(const iobuf&);
 

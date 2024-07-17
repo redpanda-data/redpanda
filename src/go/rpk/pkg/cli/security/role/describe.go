@@ -63,6 +63,7 @@ Print only the members of role 'red'
 Print only the ACL associated to the role 'red'
   rpk security role describe red --print-permissions
 `,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
 			if h, ok := f.Help(describeResponse{}); ok {

@@ -11,7 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>

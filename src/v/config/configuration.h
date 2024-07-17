@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cloud_storage_clients/types.h"
 #include "config/bounded_property.h"
 #include "config/broker_endpoint.h"
 #include "config/client_group_byte_rate_quota.h"
@@ -22,6 +21,7 @@
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "config/tls_config.h"
+#include "config/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -46,6 +46,9 @@ namespace config {
 /// can not depend on any other module to prevent cyclic dependencies.
 
 struct configuration final : public config_store {
+    constexpr static auto target_produce_quota_byte_rate_default
+      = 0; // disabled
+
     // WAL
     bounded_property<uint64_t> log_segment_size;
     property<std::optional<uint64_t>> log_segment_size_min;
@@ -309,8 +312,7 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_region;
     property<std::optional<ss::sstring>> cloud_storage_bucket;
     property<std::optional<ss::sstring>> cloud_storage_api_endpoint;
-    enum_property<std::optional<cloud_storage_clients::s3_url_style>>
-      cloud_storage_url_style;
+    enum_property<std::optional<s3_url_style>> cloud_storage_url_style;
     enum_property<model::cloud_credentials_source>
       cloud_storage_credentials_source;
     property<std::optional<ss::sstring>>
@@ -326,6 +328,7 @@ struct configuration final : public config_store {
     property<bool> cloud_storage_disable_tls;
     property<int16_t> cloud_storage_api_endpoint_port;
     property<std::optional<ss::sstring>> cloud_storage_trust_file;
+    property<std::optional<ss::sstring>> cloud_storage_crl_file;
     property<std::chrono::milliseconds> cloud_storage_initial_backoff_ms;
     property<std::chrono::milliseconds> cloud_storage_segment_upload_timeout_ms;
     property<std::chrono::milliseconds>
@@ -391,6 +394,7 @@ struct configuration final : public config_store {
     property<bool> cloud_storage_disable_upload_consistency_checks;
     property<bool> cloud_storage_disable_metadata_consistency_checks;
     property<std::chrono::milliseconds> cloud_storage_hydration_timeout_ms;
+    property<bool> cloud_storage_disable_remote_labels_for_tests;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;
@@ -437,6 +441,7 @@ struct configuration final : public config_store {
     property<uint32_t> cloud_storage_cache_max_objects;
     property<uint32_t> cloud_storage_cache_trim_carryover_bytes;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
+    bounded_property<uint16_t> cloud_storage_cache_trim_walk_concurrency;
     property<std::optional<uint32_t>>
       cloud_storage_max_segment_readers_per_shard;
     property<std::optional<uint32_t>>
@@ -452,6 +457,11 @@ struct configuration final : public config_store {
     enum_property<model::cloud_storage_chunk_eviction_strategy>
       cloud_storage_chunk_eviction_strategy;
     property<uint16_t> cloud_storage_chunk_prefetch;
+    bounded_property<uint32_t> cloud_storage_cache_num_buckets;
+    bounded_property<std::optional<double>, numeric_bounds>
+      cloud_storage_cache_trim_threshold_percent_size;
+    bounded_property<std::optional<double>, numeric_bounds>
+      cloud_storage_cache_trim_threshold_percent_objects;
 
     one_or_many_property<ss::sstring> superusers;
 
@@ -492,6 +502,11 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
     bounded_property<size_t> leader_balancer_transfer_limit_per_shard;
+
+    property<bool> core_balancing_on_core_count_change;
+    property<bool> core_balancing_continuous;
+    property<std::chrono::milliseconds> core_balancing_debounce_timeout;
+
     property<int> internal_topic_replication_factor;
     property<std::chrono::milliseconds> health_manager_tick_interval;
 

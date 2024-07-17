@@ -15,12 +15,13 @@ import time
 import itertools
 import os
 from collections import namedtuple
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda_types import SSL_SECURITY, KafkaClientSecurity, check_username_password
 from rptest.util import wait_until_result
 from rptest.services import tls
+from rptest.clients.types import TopicSpec
 from ducktape.errors import TimeoutError
 from dataclasses import dataclass
 
@@ -105,6 +106,7 @@ class RpkGroupPartition(typing.NamedTuple):
     topic: str
     partition: int
     current_offset: Optional[int]
+    log_start_offset: Optional[int]
     log_end_offset: Optional[int]
     lag: Optional[int]
     member_id: str
@@ -138,6 +140,7 @@ class RpkWasmListResponse(typing.NamedTuple):
     output_topics: list[str]
     status: list[RpkWasmListProcessorResponse]
     environment: dict[str, str]
+    compression: TopicSpec.CompressionTypes
 
 
 class RpkClusterInfoNode:
@@ -329,7 +332,7 @@ class RpkTool:
                      topic: str,
                      partitions: int = 1,
                      replicas: int | None = None,
-                     config=None):
+                     config: dict[str, Any] | None = None):
         def create_topic():
             try:
                 cmd = ["create", topic]
@@ -410,22 +413,22 @@ class RpkTool:
         return self._run(cmd)
 
     def sasl_allow_principal(self, *args, **kwargs):
-        self._sasl_set_principal_access(*args, **kwargs, deny=False)
+        return self._sasl_set_principal_access(*args, **kwargs, deny=False)
 
     def sasl_deny_principal(self, *args, **kwargs):
-        self._sasl_set_principal_access(*args, **kwargs, deny=True)
+        return self._sasl_set_principal_access(*args, **kwargs, deny=True)
 
     def sasl_allow_role(self, *args, **kwargs):
-        self._sasl_set_principal_access(*args,
-                                        **kwargs,
-                                        deny=False,
-                                        ptype="role")
+        return self._sasl_set_principal_access(*args,
+                                               **kwargs,
+                                               deny=False,
+                                               ptype="role")
 
     def sasl_deny_role(self, *args, **kwargs):
-        self._sasl_set_principal_access(*args,
-                                        **kwargs,
-                                        deny=True,
-                                        ptype="role")
+        return self._sasl_set_principal_access(*args,
+                                               **kwargs,
+                                               deny=True,
+                                               ptype="role")
 
     def allow_principal(self, principal, operations, resource, resource_name):
         if resource == "topic":
@@ -840,8 +843,8 @@ class RpkTool:
 
                 received_columns = set(c.name for c in table.columns)
                 required_columns = set([
-                    "TOPIC", "PARTITION", "CURRENT-OFFSET", "LOG-END-OFFSET",
-                    "LAG", "MEMBER-ID", "CLIENT-ID", "HOST"
+                    "TOPIC", "PARTITION", "CURRENT-OFFSET", "LOG-START-OFFSET",
+                    "LOG-END-OFFSET", "LAG", "MEMBER-ID", "CLIENT-ID", "HOST"
                 ])
                 optional_columns = set(["INSTANCE-ID", "ERROR"])
 
@@ -885,6 +888,8 @@ class RpkTool:
                         topic=obj["TOPIC"],
                         partition=int(obj["PARTITION"]),
                         current_offset=maybe_parse_int(obj["CURRENT-OFFSET"]),
+                        log_start_offset=maybe_parse_int(
+                            obj["LOG-START-OFFSET"]),
                         log_end_offset=maybe_parse_int(obj["LOG-END-OFFSET"]),
                         lag=maybe_parse_int(obj["LAG"]),
                         member_id=obj["MEMBER-ID"],
@@ -1251,11 +1256,10 @@ class RpkTool:
             ]
         return flags
 
-    def _kafka_conn_settings(self):
-        flags = [
-            "-X",
-            "brokers=" + self._redpanda.brokers(),
-        ]
+    def _kafka_conn_settings(self, node: Optional[ClusterNode] = None):
+        brokers = self._redpanda.broker_address(node) if node else \
+                  self._redpanda.brokers()
+        flags = ["-X", "brokers=" + brokers]
         if self._username:
             # u, p and mechanism must always be all set or all unset
             assert self._password and self._sasl_mechanism
@@ -1702,11 +1706,18 @@ class RpkTool:
                     name,
                     input_topic,
                     output_topics,
-                    file="tinygo/identity.wasm"):
+                    file="tinygo/identity.wasm",
+                    compression_type: TopicSpec.CompressionTypes
+                    | None = None,
+                    from_offset: str | None = None):
         cmd = [
             "deploy", "--name", name, "--input-topic", input_topic, "--file",
             f"/opt/transforms/{file}"
         ]
+        if compression_type is not None:
+            cmd += ["--compression", compression_type]
+        if from_offset is not None:
+            cmd += ["--from-offset", from_offset]
         assert len(output_topics) > 0, "missing output topics"
         for topic in output_topics:
             cmd += ["--output-topic", topic]
@@ -1739,6 +1750,7 @@ class RpkTool:
                 output_topics=loaded["output_topics"],
                 status=[status_from_json(s) for s in loaded["status"]],
                 environment=loaded["environment"],
+                compression=TopicSpec.CompressionTypes(loaded["compression"]),
             )
 
         return [transform_from_json(o) for o in loaded]
@@ -1760,7 +1772,7 @@ class RpkTool:
 
         return self._run_txn(cmd)
 
-    def describe_txn(self, txn_id, print_partitions=False):
+    def describe_txn(self, txn_id, print_partitions=False) -> dict | str:
         cmd = ["describe", txn_id]
 
         if print_partitions:
@@ -1771,7 +1783,11 @@ class RpkTool:
     def list_txn(self):
         return self._run_txn(["list"])
 
-    def _run_txn(self, cmd, stdin=None, timeout=None, output_format="json"):
+    def _run_txn(self,
+                 cmd,
+                 stdin=None,
+                 timeout=None,
+                 output_format="json") -> dict | str:
         cmd = [
             self._rpk_binary(),
             "cluster",
@@ -1845,6 +1861,70 @@ class RpkTool:
             self._rpk_binary(), "security", "role", "--format", output_format,
             "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
         ] + cmd
+
+        out = self._execute(cmd)
+
+        return json.loads(out) if output_format == "json" else out
+
+    def describe_cluster_quotas(self,
+                                any=[],
+                                default=[],
+                                name=[],
+                                strict=False,
+                                output_format="json"):
+        cmd = ["describe"]
+
+        if strict:
+            cmd += ["--strict"]
+        if len(any) > 0:
+            cmd += ["--any", ",".join(any)]
+        if len(default) > 0:
+            cmd += ["--default", ",".join(default)]
+        if len(name) > 0:
+            cmd += ["--name", ",".join(name)]
+
+        return self._run_cluster_quotas(cmd, output_format=output_format)
+
+    def alter_cluster_quotas(self,
+                             add=[],
+                             delete=[],
+                             default=[],
+                             name=[],
+                             dry=False,
+                             output_format="json",
+                             node: Optional[ClusterNode] = None):
+        cmd = ["alter"]
+
+        if dry:
+            cmd += ["--dry"]
+        if len(add) > 0:
+            cmd += ["--add", ",".join(add)]
+        if len(delete) > 0:
+            cmd += ["--delete", ",".join(delete)]
+        if len(default) > 0:
+            cmd += ["--default", ",".join(default)]
+        if len(name) > 0:
+            cmd += ["--name", ",".join(name)]
+
+        return self._run_cluster_quotas(cmd,
+                                        output_format=output_format,
+                                        node=node)
+
+    def import_cluster_quota(self, source, output_format="json"):
+        cmd = ["import", "--no-confirm", "--from", source]
+        return self._run_cluster_quotas(cmd, output_format=output_format)
+
+    def _run_cluster_quotas(self,
+                            cmd,
+                            output_format="json",
+                            node: Optional[ClusterNode] = None):
+        cmd = [
+            self._rpk_binary(),
+            "cluster",
+            "quotas",
+            "--format",
+            output_format,
+        ] + self._kafka_conn_settings(node) + cmd
 
         out = self._execute(cmd)
 

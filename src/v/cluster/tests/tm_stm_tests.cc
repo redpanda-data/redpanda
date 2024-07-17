@@ -8,193 +8,205 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/tm_stm.h"
-#include "cluster/tm_stm_cache.h"
-#include "cluster/tx_coordinator_mapper.h"
-#include "features/feature_table.h"
-#include "finjector/hbadger.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "model/timestamp.h"
-#include "raft/consensus_utils.h"
-#include "raft/tests/raft_group_fixture.h"
-#include "raft/tests/simple_raft_fixture.h"
-#include "random/generators.h"
-#include "storage/record_batch_builder.h"
-#include "storage/tests/utils/disk_log_builder.h"
-#include "test_utils/async.h"
+#include "test_utils/test.h"
+#include "tests/raft_fixture.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>
+
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <system_error>
 
-static ss::logger tm_logger{"tm_stm-test"};
+namespace {
+using namespace raft;
 
-struct tm_cache_struct {
-    tm_cache_struct() { cache = ss::make_lw_shared<cluster::tm_stm_cache>(); }
+ss::logger tm_logger{"tm_stm-test"};
 
-    ss::lw_shared_ptr<cluster::tm_stm_cache> cache;
-};
+using stm_t = cluster::tm_stm;
+using stm_cssshptrr_t = const ss::shared_ptr<stm_t>&;
+using op_status = stm_t::op_status;
+using transaction_metadata = cluster::tx_metadata;
+using tx_status = cluster::tx_status;
+using partitions_t = std::vector<transaction_metadata::tx_partition>;
 
-using op_status = cluster::tm_stm::op_status;
-using tm_transaction = cluster::tm_transaction;
-using tx_status = cluster::tm_transaction::tx_status;
-
-static tm_transaction expect_tx(checked<tm_transaction, op_status> maybe_tx) {
-    BOOST_REQUIRE(maybe_tx.has_value());
-    return maybe_tx.value();
+ss::future<> check_tx(
+  const checked<transaction_metadata, op_status>& res,
+  kafka::transactional_id tx_id) {
+    ASSERT_TRUE_CORO(res);
+    ASSERT_EQ_CORO(res.assume_value().id, tx_id);
 }
-struct tm_stm_test_fixture : simple_raft_fixture {
-    void create_stm_and_start_raft() {
-        create_raft();
-        raft::state_machine_manager_builder stm_m_builder;
 
-        _stm = stm_m_builder.create_stm<cluster::tm_stm>(
-          tm_logger,
-          _raft.get(),
-          std::ref(_feature_table),
-          std::ref(tm_cache.cache));
+ss::future<> assert_success(op_status status) {
+    ASSERT_EQ_CORO(status, op_status::success);
+}
 
-        _raft->start(std::move(stm_m_builder)).get();
-        _started = true;
+ss::future<transaction_metadata> expect_tx(
+  checked<transaction_metadata, op_status>&& res,
+  kafka::transactional_id tx_id) {
+    auto res_mv = std::move(res);
+    co_await check_tx(res_mv, tx_id);
+    auto ret = std::move(res_mv).value();
+    co_return ret;
+}
+
+auto expect_tx(kafka::transactional_id tx_id) {
+    return [tx_id](checked<transaction_metadata, op_status>&& res)
+             -> ss::future<transaction_metadata> {
+        return expect_tx(std::move(res), tx_id);
+    };
+}
+
+struct tm_stm_test_fixture : stm_raft_fixture<stm_t> {
+    static constexpr std::chrono::milliseconds TIMEOUT = 30s;
+
+    stm_shptrs_t create_stms(
+      state_machine_manager_builder& builder, raft_node_instance& node) {
+        return builder.create_stm<stm_t>(
+          tm_logger, node.raft().get(), node.get_feature_table());
+    }
+
+    template<class Func>
+    auto retry_with_term(Func&& func) {
+        return retry_with_leader(
+          model::timeout_clock::now() + TIMEOUT,
+          [this,
+           func = std::forward<Func>(func)](raft_node_instance& leader_node) {
+              auto stm = get_stm<0>(leader_node);
+              auto term = leader_node.raft()->term();
+              return func(stm, term);
+          });
+    }
+
+    ss::future<> register_new_producer(
+      kafka::transactional_id tx_id, model::producer_identity pid //
+    ) {
+        return retry_with_term(
+                 [tx_id, pid](stm_cssshptrr_t stm, model::term_id term) {
+                     return stm->register_new_producer(term, tx_id, 0s, pid);
+                 })
+          .then(assert_success);
+    }
+
+    ss::future<> add_partitions(
+      kafka::transactional_id tx_id,
+      const partitions_t& partitions,
+      model::tx_seq tx_seq) {
+        return retry_with_term([tx_id, &partitions, tx_seq](
+                                 stm_cssshptrr_t stm, model::term_id term) {
+                   return stm->add_partitions(term, tx_id, tx_seq, partitions);
+               })
+          .then(assert_success);
+    }
+
+    ss::future<transaction_metadata> get_tx(kafka::transactional_id tx_id) {
+        return stm_retry_with_leader<0>(
+                 TIMEOUT,
+                 [tx_id](stm_cssshptrr_t stm) { return stm->get_tx(tx_id); })
+          .then(expect_tx(tx_id));
+    }
+
+    ss::future<transaction_metadata>
+    prepare_commit_tx(kafka::transactional_id tx_id) {
+        return retry_with_term(
+                 [tx_id](stm_cssshptrr_t stm, model::term_id term)
+                   -> ss::future<checked<transaction_metadata, op_status>> {
+                     return stm->update_transaction_status(
+                       term, tx_id, tx_status::preparing_commit);
+                 })
+          .then(expect_tx(tx_id));
+    }
+
+    ss::future<transaction_metadata>
+    finish_tx_commit(kafka::transactional_id tx_id) {
+        return retry_with_term(
+                 [tx_id](stm_cssshptrr_t stm, model::term_id term)
+                   -> ss::future<checked<transaction_metadata, op_status>> {
+                     return stm->finish_transaction(
+                       term, tx_id, tx_status::completed_commit);
+                 })
+          .then(expect_tx(tx_id));
     }
 
     ss::shared_ptr<cluster::tm_stm> _stm;
-    tm_cache_struct tm_cache;
 };
 
-FIXTURE_TEST(test_tm_stm_new_tx, tm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
+TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_new_tx) {
+    co_await initialize_state_machines();
 
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    kafka::transactional_id tx_id("app-id-1");
+    model::producer_identity pid{1, 0};
 
-    auto tx_id = kafka::transactional_id("app-id-1");
-    auto pid = model::producer_identity{1, 0};
+    co_await register_new_producer(tx_id, pid);
 
-    auto op_code = stm
-                     .register_new_producer(
-                       _raft->term(), tx_id, std::chrono::milliseconds(0), pid)
-                     .get0();
-    BOOST_REQUIRE_EQUAL(op_code, op_status::success);
-    auto tx1 = expect_tx(stm.get_tx(tx_id).get0());
-    BOOST_REQUIRE_EQUAL(tx1.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx1.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx1.status, tx_status::ready);
-    BOOST_REQUIRE_EQUAL(tx1.partitions.size(), 0);
-    expect_tx(stm.mark_tx_ongoing(_raft->term(), tx_id).get0());
-    std::vector<tm_transaction::tx_partition> partitions = {
-      tm_transaction::tx_partition{
+    auto tx1 = co_await get_tx(tx_id);
+    ASSERT_EQ_CORO(tx1.pid, pid);
+    ASSERT_EQ_CORO(tx1.status, tx_status::empty);
+    ASSERT_EQ_CORO(tx1.partitions.size(), 0);
+
+    std::vector<transaction_metadata::tx_partition> partitions = {
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
-    BOOST_REQUIRE_EQUAL(
-      stm.add_partitions(_raft->term(), tx_id, partitions).get0(),
-      cluster::tm_stm::op_status::success);
-    BOOST_REQUIRE_EQUAL(tx1.partitions.size(), 0);
-    auto tx2 = expect_tx(stm.get_tx(tx_id).get0());
-    BOOST_REQUIRE_EQUAL(tx2.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx2.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx2.status, tx_status::ongoing);
-    BOOST_REQUIRE_GT(tx2.tx_seq, tx1.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx2.partitions.size(), 2);
-    auto tx4 = expect_tx(stm.mark_tx_prepared(_raft->term(), tx_id).get());
-    BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx4.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx4.status, tx_status::prepared);
-    BOOST_REQUIRE_EQUAL(tx4.tx_seq, tx2.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx4.partitions.size(), 2);
-    auto tx5 = expect_tx(stm.mark_tx_ongoing(_raft->term(), tx_id).get0());
-    BOOST_REQUIRE_EQUAL(tx5.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx5.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx5.status, tx_status::ongoing);
-    BOOST_REQUIRE_GT(tx5.tx_seq, tx2.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx5.partitions.size(), 0);
+    co_await add_partitions(tx_id, partitions, tx1.tx_seq);
+
+    ASSERT_EQ_CORO(tx1.partitions.size(), 0);
+
+    auto ongoing_tx = co_await get_tx(tx_id);
+    ASSERT_EQ_CORO(ongoing_tx.pid, pid);
+    ASSERT_EQ_CORO(ongoing_tx.status, tx_status::ongoing);
+    ASSERT_EQ_CORO(ongoing_tx.tx_seq, tx1.tx_seq);
+    ASSERT_EQ_CORO(ongoing_tx.partitions.size(), 2);
+
+    auto tx4 = co_await prepare_commit_tx(tx_id);
+    ASSERT_EQ_CORO(tx4.pid, pid);
+    ASSERT_EQ_CORO(tx4.status, tx_status::preparing_commit);
+    ASSERT_EQ_CORO(tx4.tx_seq, tx4.tx_seq);
+    ASSERT_EQ_CORO(tx4.partitions.size(), 2);
+
+    auto tx5 = co_await finish_tx_commit(tx_id);
+    ASSERT_EQ_CORO(tx5.pid, pid);
+    ASSERT_EQ_CORO(tx5.status, tx_status::completed_commit);
+    ASSERT_EQ_CORO(tx5.tx_seq, tx4.tx_seq);
+    ASSERT_EQ_CORO(tx5.partitions.size(), 2);
 }
 
-FIXTURE_TEST(test_tm_stm_seq_tx, tm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
+TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_re_tx) {
+    co_await initialize_state_machines();
 
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    kafka::transactional_id tx_id("app-id-1");
+    model::producer_identity pid1{1, 0};
 
-    auto tx_id = kafka::transactional_id("app-id-1");
-    auto pid = model::producer_identity{1, 0};
+    co_await register_new_producer(tx_id, pid1);
+    co_await get_tx(tx_id);
 
-    auto op_code = stm
-                     .register_new_producer(
-                       _raft->term(), tx_id, std::chrono::milliseconds(0), pid)
-                     .get0();
-    BOOST_REQUIRE_EQUAL(op_code, op_status::success);
-    auto tx1 = expect_tx(stm.get_tx(tx_id).get0());
-    auto tx2 = stm.mark_tx_ongoing(_raft->term(), tx_id).get0();
-    std::vector<tm_transaction::tx_partition> partitions = {
-      tm_transaction::tx_partition{
+    partitions_t partitions = {
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
-      tm_transaction::tx_partition{
+      transaction_metadata::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
-    BOOST_REQUIRE_EQUAL(
-      stm.add_partitions(_raft->term(), tx_id, partitions).get0(),
-      cluster::tm_stm::op_status::success);
-    auto tx3 = expect_tx(stm.get_tx(tx_id).get0());
-    auto tx5 = expect_tx(stm.mark_tx_prepared(_raft->term(), tx_id).get());
-    auto tx6 = expect_tx(stm.mark_tx_ongoing(_raft->term(), tx_id).get0());
-    BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx6.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx6.status, tx_status::ongoing);
-    BOOST_REQUIRE_EQUAL(tx6.partitions.size(), 0);
-    BOOST_REQUIRE_NE(tx6.tx_seq, tx1.tx_seq);
+
+    co_await add_partitions(tx_id, partitions, model::tx_seq{0});
+    co_await get_tx(tx_id);
+    co_await prepare_commit_tx(tx_id);
+
+    model::producer_identity pid2{1, 1};
+    model::producer_identity expected_pid(3, 5);
+    co_await retry_with_term([tx_id, pid1, expected_pid, pid2](
+                               stm_cssshptrr_t stm, model::term_id term) {
+        return stm->update_tx_producer(
+          term, tx_id, 0s, pid2, expected_pid, pid1);
+    }).then(assert_success);
+    auto tx7 = co_await get_tx(tx_id);
+    ASSERT_EQ_CORO(tx7.pid, pid2);
+    ASSERT_EQ_CORO(tx7.status, tx_status::empty);
+    ASSERT_EQ_CORO(tx7.partitions.size(), 0);
 }
-
-FIXTURE_TEST(test_tm_stm_re_tx, tm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
-
-    auto tx_id = kafka::transactional_id("app-id-1");
-    auto pid1 = model::producer_identity{1, 0};
-
-    auto op_code = stm
-                     .register_new_producer(
-                       _raft->term(), tx_id, std::chrono::milliseconds(0), pid1)
-                     .get0();
-    BOOST_REQUIRE(op_code == op_status::success);
-    auto tx1 = expect_tx(stm.get_tx(tx_id).get0());
-    std::vector<tm_transaction::tx_partition> partitions = {
-      tm_transaction::tx_partition{
-        .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
-      tm_transaction::tx_partition{
-        .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
-    auto tx2 = stm.mark_tx_ongoing(_raft->term(), tx_id).get0();
-    BOOST_REQUIRE_EQUAL(
-      stm.add_partitions(_raft->term(), tx_id, partitions).get0(),
-      cluster::tm_stm::op_status::success);
-    auto tx3 = expect_tx(stm.get_tx(tx_id).get0());
-    auto tx5 = expect_tx(stm.mark_tx_prepared(_raft->term(), tx_id).get());
-    auto tx6 = expect_tx(stm.mark_tx_ongoing(_raft->term(), tx_id).get0());
-
-    auto pid2 = model::producer_identity{1, 1};
-    auto expected_pid = model::producer_identity(3, 5);
-    op_code = stm
-                .re_register_producer(
-                  _raft->term(),
-                  tx_id,
-                  std::chrono::milliseconds(0),
-                  pid2,
-                  expected_pid,
-                  pid1)
-                .get0();
-    BOOST_REQUIRE_EQUAL(op_code, op_status::success);
-    auto tx7 = expect_tx(stm.get_tx(tx_id).get0());
-    BOOST_REQUIRE_EQUAL(tx7.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx7.pid, pid2);
-    BOOST_REQUIRE_EQUAL(tx7.status, tx_status::ready);
-    BOOST_REQUIRE_EQUAL(tx7.partitions.size(), 0);
-}
+} // namespace

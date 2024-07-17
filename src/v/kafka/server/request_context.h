@@ -141,6 +141,14 @@ public:
         return _conn->server().topics_frontend();
     }
 
+    cluster::client_quota::frontend& quota_frontend() {
+        return _conn->server().quota_frontend();
+    }
+
+    cluster::client_quota::store& quota_store() {
+        return _conn->server().quota_store();
+    }
+
     quota_manager& quota_mgr() { return _conn->server().quota_mgr(); }
 
     ss::sharded<cluster::config_frontend>& config_frontend() const {

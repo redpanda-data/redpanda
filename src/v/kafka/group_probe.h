@@ -12,12 +12,13 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "container/chunked_hash_map.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
-#include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -94,8 +95,8 @@ template<typename KeyType, typename ValType>
 class group_probe {
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using static_member_map
-      = absl::node_hash_map<kafka::group_instance_id, kafka::member_id>;
-    using offsets_map = absl::node_hash_map<KeyType, ValType>;
+      = chunked_hash_map<kafka::group_instance_id, kafka::member_id>;
+    using offsets_map = chunked_hash_map<KeyType, ValType>;
 
 public:
     explicit group_probe(

@@ -9,10 +9,10 @@
 
 #include "raft/recovery_stm.h"
 
+#include "base/outcome_future_utils.h"
 #include "bytes/iostream.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
-#include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -20,6 +20,7 @@
 #include "raft/raftgen_service.h"
 #include "ssx/sformat.h"
 #include "storage/snapshot.h"
+#include "utils/human.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -364,7 +365,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
               = _inflight_snapshot_last_included_index;
         }
         vlog(_ctxlog.trace, "sending install_snapshot request: {}", req);
-        auto hb_guard = _ptr->suppress_heartbeats(_node_id);
+        auto append_guard = _ptr->track_append_inflight(_node_id);
         return _ptr->_client_protocol
           .install_snapshot(
             _node_id.id(),
@@ -375,7 +376,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
                 _ptr->validate_reply_target_node(
                   "install_snapshot", reply, _node_id.id()));
           })
-          .finally([hb_guard = std::move(hb_guard)] {});
+          .finally([append_guard = std::move(append_guard)] {});
     });
 }
 ss::future<iobuf> recovery_stm::read_snapshot_chunk() {
@@ -454,9 +455,14 @@ ss::future<> recovery_stm::install_snapshot(required_snapshot_type s_type) {
 ss::future<>
 recovery_stm::take_on_demand_snapshot(model::offset last_included_offset) {
     vlog(
-      _ctxlog.debug,
-      "creating on demand snapshot with last included offset: {}",
-      last_included_offset);
+      _ctxlog.info,
+      "creating on demand snapshot with last included offset: {}, current "
+      "leader start offset: {}. Total partition size on leader {}, expected to "
+      "transfer to learner: {}",
+      last_included_offset,
+      _ptr->start_offset(),
+      human::bytes(_ptr->log()->size_bytes()),
+      human::bytes(_ptr->log()->size_bytes_after_offset(last_included_offset)));
 
     _inflight_snapshot_last_included_index = last_included_offset;
     // if there is no stm_manager available for the raft group use empty
@@ -576,12 +582,12 @@ ss::future<> recovery_stm::replicate(
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
-    auto hb_guard = _ptr->suppress_heartbeats(_node_id);
+    auto append_guard = _ptr->track_append_inflight(_node_id);
 
     std::vector<ssx::semaphore_units> units;
     units.push_back(std::move(mem_units));
     return dispatch_append_entries(std::move(r), std::move(units))
-      .finally([hb_guard = std::move(hb_guard)] {})
+      .finally([append_guard = std::move(append_guard)] {})
       .then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
           if (!r) {
               vlog(

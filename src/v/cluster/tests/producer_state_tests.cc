@@ -133,20 +133,73 @@ FIXTURE_TEST(test_locked_producer_is_not_evicted, test_fixture) {
     validate_producer_count(0);
 }
 
-FIXTURE_TEST(test_inflight_producer_is_not_evicted, test_fixture) {
+FIXTURE_TEST(test_inflight_idem_producer_is_not_evicted, test_fixture) {
     create_producer_state_manager(1, 1);
     auto producer = new_producer();
+    auto defer = ss::defer(
+      [&] { manager().deregister_producer(*producer, std::nullopt); });
     validate_producer_count(1);
 
-    auto batch = model::test::make_random_batch(
-      model::offset{10}, 7, true, model::record_batch_type::raft_data);
+    model::test::record_batch_spec spec{
+      .offset = model::offset{10},
+      .allow_compression = true,
+      .count = 7,
+      .bt = model::record_batch_type::raft_data,
+      .enable_idempotence = true,
+      .producer_id = producer->id().id,
+      .producer_epoch = producer->id().epoch};
+    auto batch = model::test::make_random_batch(spec);
     auto bid = model::batch_identity::from(batch.header());
-    auto request = producer->try_emplace_request(bid, model::term_id{1});
+    auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
+    BOOST_REQUIRE(!request.has_error());
     // producer has an inflight request
     BOOST_REQUIRE(!producer->can_evict());
-    producer->apply_data(bid, model::term_id{1}, kafka::offset{10});
+    producer->apply_data(batch.header(), kafka::offset{10});
     BOOST_REQUIRE(producer->can_evict());
-    manager().deregister_producer(*producer, std::nullopt);
+}
+
+FIXTURE_TEST(test_inflight_tx_producer_is_not_evicted, test_fixture) {
+    create_producer_state_manager(1, 1);
+    auto producer = new_producer();
+    auto defer = ss::defer(
+      [&] { manager().deregister_producer(*producer, std::nullopt); });
+    validate_producer_count(1);
+
+    // begin a transaction on the producer
+    auto batch = make_fence_batch(
+      producer->id(),
+      model::tx_seq{0},
+      std::chrono::milliseconds{10000},
+      model::partition_id{0});
+
+    auto begin_header = batch.header();
+    producer->apply_transaction_begin(
+      begin_header, read_fence_batch(std::move(batch)));
+    BOOST_REQUIRE(producer->has_transaction_in_progress());
+    BOOST_REQUIRE(!producer->can_evict());
+
+    // Add some data to the partition.
+    model::test::record_batch_spec spec{
+      .offset = model::offset{10},
+      .allow_compression = true,
+      .count = 7,
+      .bt = model::record_batch_type::raft_data,
+      .enable_idempotence = true,
+      .producer_id = producer->id().id,
+      .producer_epoch = producer->id().epoch,
+      .is_transactional = true};
+    batch = model::test::make_random_batch(spec);
+    auto bid = model::batch_identity::from(batch.header());
+    auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
+    BOOST_REQUIRE(!request.has_error());
+    // producer has an inflight request
+    BOOST_REQUIRE(!producer->can_evict());
+    producer->apply_data(batch.header(), kafka::offset{10});
+    // transaction is still open, cannot evict.
+    BOOST_REQUIRE(!producer->can_evict());
+    // commit the transaction.
+    producer->apply_transaction_end(model::control_record_type::tx_commit);
+    BOOST_REQUIRE(producer->can_evict());
 }
 
 FIXTURE_TEST(test_lru_maintenance, test_fixture) {

@@ -31,9 +31,8 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
     KgoVerifierRandomConsumer)
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark, ValidatorDict
-from rptest.services.openmessaging_benchmark_configs import \
-    OMBSampleConfigurations
+from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations, ValidatorDict
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda_cloud import CLOUD_TYPE_FMC
 from rptest.services.redpanda_cloud import CloudTierName, get_config_profile_name, PROVIDER_AWS
@@ -882,7 +881,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 f"Low throughput while preparing for the test: {_throughput} MB/s"
             ) from None
 
-    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """Decommission and add while under load.
@@ -1197,7 +1195,6 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
         self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
 
-    @ignore
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_add_and_decommission(self):
         """Add a new node and then decommission it while under load.

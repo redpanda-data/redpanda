@@ -15,7 +15,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "storage/disk_log_impl.h"
 #include "utils/human.h"
 

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,7 +38,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var file string
 
 	cmd := &cobra.Command{
-		Use:   "deploy [WASM]",
+		Use:   "deploy",
 		Short: "Deploy a transform",
 		Long: `Deploy a transform.
 
@@ -60,6 +61,17 @@ are separated by an equals for example: --var=KEY=VALUE
 The --var flag can be repeated to specify multiple variables like so:
 
   rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ
+
+The --from-offset flag can be used to specify where on the input topic the transform
+should begin processing. Expressed as:
+
+  - @T - Begin reading records with committed timestamp >= T (UNIX time, ms from epoch)
+  - +N - Begin reading N records from the start of each input partition
+  - -N - Begin reading N records prior to the end of each input partition
+
+Note that the broker will only respect from-offset on the first deploy for a given
+transform. Re-deploying the transform will cause processing to pick up at the last
+committed offset. Recall that this state is maintained until the transform is deleted.
 `,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -93,6 +105,9 @@ The --var flag can be repeated to specify multiple variables like so:
 				}
 				cfg.OutputTopics = []string{ot}
 			}
+			if cfg.Compression == "" {
+				cfg.Compression = "none"
+			}
 
 			if file == "" {
 				file = fmt.Sprintf("%s.wasm", cfg.Name)
@@ -105,12 +120,17 @@ The --var flag can be repeated to specify multiple variables like so:
 			}
 			out.MaybeDieErr(err)
 
+			offset, err := parseOffset(cfg.FromOffset)
+			out.MaybeDieErr(err)
+
 			t := adminapi.TransformMetadata{
-				InputTopic:   cfg.InputTopic,
-				OutputTopics: cfg.OutputTopics,
-				Name:         cfg.Name,
-				Status:       nil,
-				Environment:  mapToEnvVars(cfg.Env),
+				InputTopic:      cfg.InputTopic,
+				OutputTopics:    cfg.OutputTopics,
+				Name:            cfg.Name,
+				Status:          nil,
+				Environment:     mapToEnvVars(cfg.Env),
+				CompressionMode: cfg.Compression,
+				FromOffset:      offset,
 			}
 			if p.FromCloud && !p.CloudCluster.IsServerless() {
 				url, err := p.CloudCluster.CheckClusterURL()
@@ -149,6 +169,8 @@ The --var flag can be repeated to specify multiple variables like so:
 	cmd.Flags().StringSliceVarP(&fc.outputTopics, "output-topic", "o", []string{}, "The output topic to write the transform results to (repeatable)")
 	cmd.Flags().StringVar(&fc.functionName, "name", "", "The name of the transform")
 	cmd.Flags().Var(&fc.env, "var", "Specify an environment variable in the form of KEY=VALUE")
+	cmd.Flags().StringVar(&fc.compression, "compression", "", "Output batch compression type")
+	cmd.Flags().StringVar(&fc.fromOffset, "from-offset", "", "Process an input topic partition from a relative offset; check help text for more information")
 	return cmd
 }
 
@@ -196,6 +218,8 @@ type deployFlagConfig struct {
 	outputTopics []string
 	functionName string
 	env          environment
+	compression  string
+	fromOffset   string
 }
 
 // ToProjectConfig creates a project.Config from the specified command line flags.
@@ -204,6 +228,8 @@ func (fc deployFlagConfig) ToProjectConfig() (out project.Config) {
 	out.InputTopic = fc.inputTopic
 	out.OutputTopics = fc.outputTopics
 	out.Env = fc.env.vars
+	out.Compression = fc.compression
+	out.FromOffset = fc.fromOffset
 	return out
 }
 
@@ -233,12 +259,20 @@ func mergeProjectConfigs(lhs project.Config, rhs project.Config) (out project.Co
 	if len(rhs.OutputTopics) > 0 {
 		out.OutputTopics = rhs.OutputTopics
 	}
+	if rhs.Compression != "" {
+		out.Compression = rhs.Compression
+	}
+
+	if rhs.FromOffset != "" {
+		out.FromOffset = rhs.FromOffset
+	}
+
 	return out
 }
 
 // isEmptyProjectConfig checks if a project config is completely empty.
 func isEmptyProjectConfig(cfg project.Config) bool {
-	return cfg.Name == "" && cfg.InputTopic == "" && len(cfg.OutputTopics) == 0 && len(cfg.Env) == 0
+	return cfg.Name == "" && cfg.InputTopic == "" && len(cfg.OutputTopics) == 0 && len(cfg.Env) == 0 && cfg.Compression == ""
 }
 
 // validateProjectConfig validates the merged command line and file configurations.
@@ -297,6 +331,31 @@ func mapToEnvVars(env map[string]string) (vars []adminapi.EnvironmentVariable) {
 		})
 	}
 	return
+}
+
+// parseOffset converts a string formatted offset to the adminapi offset type
+func parseOffset(formatted_offset string) (*adminapi.Offset, error) {
+	if formatted_offset == "" {
+		return nil, nil
+	}
+	format := ""
+	switch pfx := formatted_offset[0:1]; pfx {
+	case "@":
+		format = "timestamp"
+	case "+":
+		format = "from_start"
+	case "-":
+		format = "from_end"
+	default:
+		return nil, fmt.Errorf("Bad prefix: expected one of ['@','+','-'], got: %q", pfx)
+	}
+
+	val, err := strconv.ParseInt(formatted_offset[1:], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("Bad offset: parse error '%v'", err)
+	}
+
+	return &adminapi.Offset{Format: format, Value: val}, nil
 }
 
 func adminApiToDataplaneMetadata(m adminapi.TransformMetadata) *dataplanev1alpha1.DeployTransformRequest {

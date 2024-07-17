@@ -14,7 +14,7 @@
 #include "base/vlog.h"
 #include "config/configuration.h"
 #include "metrics/metrics.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
@@ -220,7 +220,7 @@ ss::future<ss::stop_iteration> server::accept_finish(
             // Connection limit hit, drop this connection.
             _probe->connection_rejected();
             vlog(
-              _log.info,
+              _log.warn,
               "Connection limit reached, rejecting {}",
               ar.remote_address.addr());
             co_return ss::stop_iteration::no;

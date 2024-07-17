@@ -17,7 +17,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "reflection/adl.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>

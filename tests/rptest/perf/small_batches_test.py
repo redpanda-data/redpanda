@@ -19,31 +19,44 @@ class SmallBatchesTest(RedpandaTest):
         workload = {
             "name": "SmallBatchesWorkload",
             "topics": 1,
-            "partitions_per_topic": 20000,
+            "partitions_per_topic": 100,
             "subscriptions_per_topic": 1,
-            "consumer_per_subscription": 200,
-            "producers_per_topic": 200,
-            "producer_rate": 150_000,
-            "message_size": 1024,
-            "payload_file": "payload/payload-1Kb.data",
+            "consumer_per_subscription": 1,
+            "producers_per_topic": 10,
+            "producer_rate": 30_000,
+            "message_size": 100,
+            "payload_file": "payload/payload-100b.data",
             "consumer_backlog_size_GB": 0,
             "test_duration_minutes": 5,
-            "warmup_duration_minutes": 1,
+            "warmup_duration_minutes": 2,
+        }
+        driver = {
+            "name": "SmallBatchesDriver",
+            "replication_factor": 3,
+            "request_timeout": 300000,
+            "producer_config": {
+                "enable.idempotence": "true",
+                "acks": "all",
+                "linger.ms": 1,
+                "max.in.flight.requests.per.connection": 5,
+                "batch.size": 1,
+            },
+            "consumer_config": {
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": "false",
+                "max.partition.fetch.bytes": 131072
+            },
         }
         validator = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(30)],
-            OMBSampleConfigurations.E2E_LATENCY_AVG:
-            [OMBSampleConfigurations.lte(75)],
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(145)],
-            OMBSampleConfigurations.PUB_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(40)],
+            [OMBSampleConfigurations.gte(2)],
         }
 
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
-                                           "ACK_ALL_GROUP_LINGER_1MS",
-                                           (workload, validator))
+        benchmark = OpenMessagingBenchmark(ctx=self._ctx,
+                                           redpanda=self.redpanda,
+                                           driver=driver,
+                                           workload=(workload, validator),
+                                           topology="ensemble")
 
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5

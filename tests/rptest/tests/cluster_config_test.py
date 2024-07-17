@@ -1089,7 +1089,8 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             Example("kafka_qdc_enable", "true", True),
             Example("append_chunk_size", "32768", 32768),
             Example("superusers", "['bob','alice']", ["bob", "alice"]),
-            Example("storage_min_free_bytes", "1234567890", 1234567890)
+            Example("storage_min_free_bytes", "1234567890", 1234567890),
+            Example("kafka_memory_share_for_fetch", "0.6", 0.6)
         ]
 
         def yamlize(input) -> str:
@@ -1180,7 +1181,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # but on a non-secret property, thereby validating that our log scanning procedure
         # would have detected the secret if it had been printed
         unsecret_key = "cloud_storage_api_endpoint"
-        unsecret_value = "http://nowhere"
+        unsecret_value = "nowhere"
         set_and_search(unsecret_key, unsecret_value, True)
 
     @cluster(num_nodes=3)
@@ -1489,6 +1490,22 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 s for s in status
                 if s['node_id'] == self.redpanda.idx(controller_node))
             assert local_status['config_version'] == config_version
+
+    @cluster(num_nodes=3)
+    @parametrize(value="http://pandazone", valid=False)
+    @parametrize(value="https://securepandazone", valid=False)
+    @parametrize(value="pandazone", valid=True)
+    def test_validate_cloud_storage_api_endpoint(self, value, valid):
+        try:
+            self.admin.patch_cluster_config(
+                upsert={"cloud_storage_api_endpoint": value})
+        except requests.exceptions.HTTPError as e:
+            #Invalid api endpoint
+            assert not valid
+            assert e.response.status_code == 400
+        else:
+            #Valid api endpoint
+            assert valid
 
 
 """

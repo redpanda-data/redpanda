@@ -10,11 +10,9 @@
  */
 #pragma once
 
-#include "bytes/random.h"
-#include "cluster/producer_state.h"
 #include "container/fragmented_vector.h"
 #include "random/generators.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/net/inet_address.hh>

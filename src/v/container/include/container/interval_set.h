@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include <absl/container/btree_set.h>
+#include <absl/container/btree_map.h>
 
 /**
  * A container that contains non-empty, open intervals.
@@ -29,25 +29,9 @@
  */
 template<std::integral T>
 class interval_set {
-    struct key {
-        // Inclusive.
-        T start;
-
-        // Exclusive.
-        T end;
-    };
-    struct compare {
-        using is_transparent = void;
-
-        bool operator()(const key& a, const key& b) const {
-            return a.start < b.start;
-        }
-
-        bool operator()(const T& a, const key& b) const { return a < b.start; }
-        bool operator()(const key& a, const T& b) const { return a.start < b; }
-        bool operator()(const T& a, const T& b) const { return a < b; }
-    };
-    using set_t = absl::btree_set<key, compare>;
+    // Key = interval start (inclusive)
+    // Value = interval end (exclusive)
+    using set_t = absl::btree_map<T, T>;
 
 public:
     using const_iterator = set_t::const_iterator;
@@ -103,6 +87,12 @@ public:
      */
     [[nodiscard]] size_t size() const;
 
+    /**
+     * Convenience wrappers.
+     */
+    static auto to_start(const_iterator it) { return it->first; }
+    static auto to_end(const_iterator it) { return it->second; }
+
 private:
     /**
      * Extend the interval being pointed at with any intervals that overlap
@@ -113,20 +103,22 @@ private:
     std::pair<const_iterator, bool> merge_right(const_iterator start_it);
 
     set_t set_;
+
+    static auto& to_end(iterator it) { return it->second; }
 };
 
 template<std::integral T>
 std::pair<typename interval_set<T>::const_iterator, bool>
 interval_set<T>::merge_right(const_iterator start_it) {
-    auto start = start_it->start;
-    auto merged_end = start_it->end;
+    auto start = to_start(start_it);
+    auto merged_end = to_end(start_it);
     auto next_it = std::next(start_it);
     auto merge_end_it = next_it;
 
     // Seek forward as long as the next interval if it overlaps with our merged
     // interval. NOTE: <= because these are open intervals.
-    while (merge_end_it != set_.end() && merge_end_it->start <= merged_end) {
-        merged_end = std::max(merge_end_it->end, merged_end);
+    while (merge_end_it != set_.end() && to_start(merge_end_it) <= merged_end) {
+        merged_end = std::max(to_end(merge_end_it), merged_end);
         merge_end_it = std::next(merge_end_it);
     }
     if (merge_end_it == next_it) {
@@ -136,7 +128,7 @@ interval_set<T>::merge_right(const_iterator start_it) {
     // Replace our initial iterator and subsequent intervals with a merged
     // version.
     set_.erase(start_it, merge_end_it);
-    return set_.emplace(key{start, merged_end});
+    return set_.emplace(start, merged_end);
 }
 
 template<std::integral T>
@@ -150,7 +142,7 @@ interval_set<T>::insert(interval interval) {
     const auto input_start = interval.start;
     const auto input_end = input_start + length;
     if (set_.empty()) {
-        return set_.emplace(key{input_start, input_end});
+        return set_.emplace(input_start, input_end);
     }
 
     auto it = set_.lower_bound(input_start);
@@ -162,8 +154,8 @@ interval_set<T>::insert(interval interval) {
     //             [ )               case 2
     // In either case, just merge the expand the bounds of the existing
     // iterator.
-    if (it != set_.end() && input_start == it->start) {
-        it->end = std::max(input_end, it->end);
+    if (it != set_.end() && input_start == to_start(it)) {
+        to_end(it) = std::max(input_end, to_end(it));
         return merge_right(it);
     }
 
@@ -178,14 +170,14 @@ interval_set<T>::insert(interval interval) {
     // with it.
     if (it != set_.begin()) {
         auto prev = std::prev(it);
-        if (prev->end >= input_start) {
-            prev->end = std::max(input_end, prev->end);
+        if (to_end(prev) >= input_start) {
+            to_end(prev) = std::max(input_end, to_end(prev));
             return merge_right(prev);
         }
         // Intentional fallthrough.
     }
     // Case 2: there's no overlap to the left. Just insert and merge forward.
-    auto ret = set_.emplace(key{input_start, input_end});
+    auto ret = set_.emplace(input_start, input_end);
     return merge_right(ret.first);
 }
 
@@ -198,7 +190,7 @@ interval_set<T>::const_iterator interval_set<T>::find(T index) const {
         }
         it = std::prev(it);
 
-    } else if (it->start == index) {
+    } else if (to_start(it) == index) {
         return it;
     } else if (it == set_.cbegin()) {
         // Equality condition failing before this means that the index is
@@ -208,8 +200,8 @@ interval_set<T>::const_iterator interval_set<T>::find(T index) const {
         --it;
     }
 
-    assert(it->start < index);
-    if (index < it->end) {
+    assert(to_start(it) < index);
+    if (index < to_end(it)) {
         return it;
     }
 

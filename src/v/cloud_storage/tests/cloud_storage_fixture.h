@@ -49,7 +49,8 @@ struct cloud_storage_fixture : s3_imposter_fixture {
             config::mock_binding<double>(0.0),
             config::mock_binding<uint64_t>(1024 * 1024 * 1024),
             config::mock_binding<std::optional<double>>(std::nullopt),
-            config::mock_binding<uint32_t>(100000))
+            config::mock_binding<uint32_t>(100000),
+            config::mock_binding<uint16_t>(3))
           .get();
 
         cache.invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
@@ -68,15 +69,11 @@ struct cloud_storage_fixture : s3_imposter_fixture {
             })
           .get();
 
-        auto conf = get_configuration();
-        pool
-          .start(
-            10, ss::sharded_parameter([this] { return get_configuration(); }))
-          .get();
+        pool.start(10, ss::sharded_parameter([this] { return conf; })).get();
         api
           .start(
             std::ref(pool),
-            ss::sharded_parameter([this] { return get_configuration(); }),
+            ss::sharded_parameter([this] { return conf; }),
             ss::sharded_parameter([] { return config_file; }))
           .get();
         api

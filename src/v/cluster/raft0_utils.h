@@ -38,7 +38,7 @@ static ss::future<consensus_ptr> create_raft0(
         std::nullopt,
         std::nullopt,
         raft::with_learner_recovery_throttle::no,
-        raft::keep_snapshotted_log::yes)
+        raft::keep_snapshotted_log::no)
       .then([&st](consensus_ptr p) {
           // Add raft 0 to shard table
           return st

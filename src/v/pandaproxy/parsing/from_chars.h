@@ -25,19 +25,6 @@
 
 namespace pandaproxy::parse {
 
-namespace detail {
-
-template<typename T>
-struct is_duration : std::false_type {};
-
-template<typename Rep, typename Period>
-struct is_duration<std::chrono::duration<Rep, Period>> : std::true_type {};
-
-template<typename T>
-inline constexpr bool is_duration_v = is_duration<T>::value;
-
-} // namespace detail
-
 // from_chars converts from a string_view using std::from_chars.
 //
 // Recurses through several well-known types as a convenience. E.g.:

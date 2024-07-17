@@ -13,16 +13,17 @@ import sys
 import time
 import traceback
 from collections import namedtuple, defaultdict
-from typing import DefaultDict
+from typing import DefaultDict, List, Optional
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail_fips
+from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import RedpandaService, SISettings, CloudStorageTypeAndUrlStyle, get_cloud_storage_type, get_cloud_storage_type_and_url_style
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     segments_count,
@@ -32,6 +33,7 @@ from rptest.util import (
 )
 from rptest.utils.si_utils import BucketView, NTPR
 from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
+from rptest.services.admin import Admin
 
 # First capture group is the log name. The last (optional) group is the archiver term to be removed.
 LOG_EXPRESSION = re.compile(r'(.*\.log)(\.\d+)?$')
@@ -195,7 +197,8 @@ class ArchivalTest(RedpandaTest):
     s3_topic_name = "panda-topic"
     topics = (TopicSpec(name=s3_topic_name,
                         partition_count=1,
-                        replication_factor=3), )
+                        replication_factor=3,
+                        cleanup_policy=None), )
 
     def __init__(self, test_context):
         si_settings = SISettings(test_context,
@@ -220,6 +223,7 @@ class ArchivalTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
 
     def setUp(self):
         super().setUp()  # topic is created here
@@ -229,9 +233,16 @@ class ArchivalTest(RedpandaTest):
             self.rpk.alter_topic_config(topic.name, 'redpanda.remote.write',
                                         'true')
 
+    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
+    @ok_to_fail_fips
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_write(self, cloud_storage_type):
+    @matrix(
+        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
+        ))
+    def test_write(
+            self,
+            cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
+    ):
         """Simple smoke test, write data to redpanda and check if the
         data hit the S3 storage bucket"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
@@ -807,8 +818,8 @@ class ArchivalTest(RedpandaTest):
         """Get MD5 checksums of log segments stored in S3 (minio). The paths are
         normalized (<namespace>/<topic>/<partition>_<rev>/...)."""
         def normalize(path):
-            # strip archiver term id from the segment path
-            path = path[9:]
+            # strip archiver cluster UUID prefix from the segment path
+            path = path[37:]
             match = LOG_EXPRESSION.match(path)
             if match:
                 return match[1]
@@ -842,3 +853,67 @@ class ArchivalTest(RedpandaTest):
         line = node.account.ssh_output(cmd)
         tokens = line.split()
         return tokens[0].decode()
+
+    def _archiver_restart_msg_seen(self, reason: Optional[str] = None) -> bool:
+        return self.redpanda.search_log_any(
+            f".*updating archiver for {reason or ''}.*")
+
+    @cluster(num_nodes=3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_compaction_cluster_config_change(self, cloud_storage_type):
+        # Note: the ducktape setup currently automatically trims trace level logs
+        # from the output, so while debugging, you need to use
+        # `RP_TRIM_LOGS="false"` to see the logs.
+        self.admin.set_log_level(name="cluster", level="trace")
+
+        # Verify assumptions
+        assert self.topics[0].cleanup_policy == None, \
+            f"The compaction setting is assumed to be `delete` by default"
+        assert not self._archiver_restart_msg_seen(), \
+            "There should be no archival restart message initially"
+
+        self.redpanda.logger.debug(
+            "Change the compaction policy to trigger an archiver restart")
+        self.redpanda.set_cluster_config(
+            {"log_cleanup_policy": "delete,compact"})
+        wait_until(lambda: self._archiver_restart_msg_seen(
+            "cluster config change in log_cleanup_policy"),
+                   timeout_sec=60,
+                   err_msg="archiver not restarted in time")
+
+    @cluster(num_nodes=3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_compaction_topic_config_change(self, cloud_storage_type):
+        # Note: the ducktape setup currently automatically trims trace level logs
+        # from the output, so while debugging, you need to use
+        # `RP_TRIM_LOGS="false"` to see the logs.
+        self.admin.set_log_level(name="cluster", level="trace")
+
+        # Verify assumptions
+        assert self.topics[0].cleanup_policy == None, \
+            f"The compaction setting is assumed to be `delete` by default"
+        assert not self._archiver_restart_msg_seen(), \
+            "There should be no archival restart message initially"
+
+        self.redpanda.logger.debug(
+            "Change the topic config without changing the 'compactedness' and expect no archiver restart"
+        )
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {TopicSpec.PROPERTY_CLEANUP_POLICY: TopicSpec.CLEANUP_DELETE},
+        )
+        time.sleep(10)
+        assert not self._archiver_restart_msg_seen(), \
+            f"Unexpected archival restart when compacted config not changed"
+
+        self.redpanda.logger.debug(
+            "Change the topic config 'compactedness' and expect an archiver restart"
+        )
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {TopicSpec.PROPERTY_CLEANUP_POLICY: TopicSpec.CLEANUP_COMPACT},
+        )
+        wait_until(lambda: self._archiver_restart_msg_seen(
+            "topic config change in compaction"),
+                   timeout_sec=60,
+                   err_msg="archiver not restarted in time")

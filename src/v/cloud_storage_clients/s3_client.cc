@@ -18,6 +18,8 @@
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
+#include "config/types.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "net/types.h"
@@ -40,7 +42,6 @@
 #include <boost/beast/http/status.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
-#include <gnutls/crypto.h>
 
 #include <bit>
 #include <exception>
@@ -597,6 +598,13 @@ s3_client::self_configure() {
         // Virtual-host style request succeeded.
         co_return result;
     }
+
+    // fips mode can only work in virtual_host mode, so if the above test failed
+    // the TS service is likely misconfigured
+    vassert(
+      !config::fips_mode_enabled(config::node().fips_mode.value()),
+      "fips_mode requires the bucket to configured in virtual_host mode, but "
+      "the connectivity test failed");
 
     // Test path style.
     _requestor._ap_style = s3_url_style::path;

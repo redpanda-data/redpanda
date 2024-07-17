@@ -95,7 +95,7 @@ class TopicSpec:
             name: str | None = None,
             partition_count: int = 1,
             replication_factor: int = 3,
-            cleanup_policy: str = CLEANUP_DELETE,
+            cleanup_policy: str | None = CLEANUP_DELETE,
             compression_type: CompressionTypes = COMPRESSION_PRODUCER,
             message_timestamp_type: TIMESTAMP_TYPE = TIMESTAMP_CREATE_TIME,
             segment_bytes: int | None = None,

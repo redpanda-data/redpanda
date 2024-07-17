@@ -1434,7 +1434,7 @@ FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
     // override segment size with ntp_config
     overrides_t ov;
     ov.segment_size = 40_KiB;
-    disk_log->update_configuration(ov).get();
+    disk_log->set_overrides(ov);
     disk_log->force_roll(ss::default_priority_class()).get();
 
     // 60 * 1_KiB batches should yield 2 segments.
@@ -2367,7 +2367,8 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
     overrides.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::deletion;
     // update cleanup policy to deletion
-    log->update_configuration(overrides).get();
+    log->set_overrides(overrides);
+    log->notify_compaction_update();
 
     // read all batches again
     auto second_read = read_and_validate_all_batches(log);
@@ -4559,20 +4560,27 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 namespace storage {
 class segment_index_observer {
 public:
-    explicit segment_index_observer(segment_index& index)
-      : _index{index} {}
+    explicit segment_index_observer(segment_index& index, size_t segment_size)
+      : _index{index}
+      , _size(segment_size) {}
 
     size_t max_step_size() const {
         fragmented_vector<size_t> diffs;
         auto& pos = _index._state.position_index;
-        diffs.reserve(pos.size());
+        diffs.reserve(pos.size() + 1);
         std::adjacent_difference(
           pos.begin(), pos.end(), std::back_inserter(diffs));
+
+        // Difference from last position index to end of file might be the
+        // largest step.
+        auto last = _size - pos.back();
+        diffs.push_back(last);
         return std::ranges::max(diffs);
     }
 
 private:
     segment_index& _index;
+    size_t _size;
 };
 } // namespace storage
 
@@ -4597,7 +4605,7 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
     };
     std::vector<size_target> size_classes = {
       {100, 0, 100},
-      {2000, 1_KiB, 2000},
+      {2000, 256, 2000},
       {10_KiB, 1_KiB, 10_KiB},
       {50_KiB, 1_KiB, 50_KiB},
       {500_KiB, 1_KiB, 500_KiB},
@@ -4641,7 +4649,8 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
         BOOST_REQUIRE(s->index().size() > 0);
         max_step_size = std::max(
           max_step_size,
-          storage::segment_index_observer{s->index()}.max_step_size());
+          storage::segment_index_observer{s->index(), s->size_bytes()}
+            .max_step_size());
     }
 
     BOOST_REQUIRE(max_step_size > 0);

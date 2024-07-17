@@ -45,6 +45,13 @@ class OfflineLogViewer:
     def read_controller(self, node):
         return self._json_cmd(node, "--type controller")
 
+    def has_controller_snapshot(self, node):
+        return node.account.exists(
+            f"{self._redpanda.DATA_DIR}/redpanda/controller/0_0/snapshot")
+
+    def read_controller_snapshot(self, node):
+        return self._json_cmd(node, "--type controller_snapshot")
+
     def read_consumer_offsets(self, node):
         return self._json_cmd(node, "--type consumer_offsets")
 

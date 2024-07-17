@@ -11,7 +11,6 @@ from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurati
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from ducktape.mark import parametrize
 from rptest.services.redpanda import SISettings
 
 
@@ -36,22 +35,53 @@ class TSWriteOpenmessagingTest(RedpandaTest):
                              extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=6)
-    @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT")
-    def test_perf(self, driver_idx):
+    def test_perf(self):
         """
         This adds TS writes to the OMB perf regression tests
         """
 
         assert self.redpanda.dedicated_nodes
-
-        validator = OMBSampleConfigurations.RELEASE_SMOKE_TEST_VALIDATOR | {
-            OMBSampleConfigurations.E2E_LATENCY_75PCT:
-            [OMBSampleConfigurations.lte(6)],
+        workload = {
+            "name": "TSWriteWorkload",
+            "topics": 1,
+            "partitions_per_topic": 100,
+            "subscriptions_per_topic": 1,
+            "consumer_per_subscription": 25,
+            "producers_per_topic": 25,
+            "producer_rate": 45_000,
+            "message_size": 1024,
+            "payload_file": "payload/payload-1Kb.data",
+            "consumer_backlog_size_GB": 0,
+            "test_duration_minutes": 5,
+            "warmup_duration_minutes": 2,
+        }
+        driver = {
+            "name": "TSWriteDriver",
+            "replication_factor": 3,
+            "request_timeout": 300000,
+            "producer_config": {
+                "enable.idempotence": "true",
+                "acks": "all",
+                "linger.ms": 1,
+                "max.in.flight.requests.per.connection": 5,
+                "batch.size": 16384,
+            },
+            "consumer_config": {
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": "false",
+                "max.partition.fetch.bytes": 131072
+            },
         }
 
-        benchmark = OpenMessagingBenchmark(
-            self._ctx, self.redpanda, driver_idx,
-            (OMBSampleConfigurations.RELEASE_CERT_SMOKE_LOAD_625k, validator))
+        validator = {
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
+            [OMBSampleConfigurations.gte(40)]
+        }
+
+        benchmark = OpenMessagingBenchmark(ctx=self._ctx,
+                                           redpanda=self.redpanda,
+                                           driver=driver,
+                                           workload=(workload, validator))
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
         ) + TSWriteOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN
