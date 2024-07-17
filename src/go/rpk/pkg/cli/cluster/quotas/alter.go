@@ -66,8 +66,7 @@ Add quota (consumer_byte_rate) to client ID starting with 'bar-':
     --name client-id-prefix=bar-
 
 Add quota (producer_byte_rate) to default client ID:
-  rpk cluster quotas alter --add producer_byte_rate=180000 \
-    --default client-id=foo
+  rpk cluster quotas alter --add producer_byte_rate=180000 --default client-id
 
 Remove quota (producer_byte_rate) from client ID 'foo':
   rpk cluster quotas alter --delete producer_byte_rate \
