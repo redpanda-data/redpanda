@@ -400,7 +400,7 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
 
         cloud_storage::remote_path_provider path_provider(
           marker.config.properties.remote_label,
-          marker.config.properties.topic_namespace_override);
+          marker.config.properties.remote_topic_namespace_override);
         if (my_global_position.self == hash % my_global_position.total) {
             vlog(
               archival_log.info,

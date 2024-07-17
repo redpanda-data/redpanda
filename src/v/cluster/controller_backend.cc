@@ -1408,7 +1408,7 @@ ss::future<std::error_code> controller_backend::create_partition(
               raft::with_learner_recovery_throttle::yes,
               raft::keep_snapshotted_log::no,
               cfg->properties.remote_label,
-              cfg->properties.topic_namespace_override);
+              cfg->properties.remote_topic_namespace_override);
 
             co_await add_to_shard_table(
               ntp, group_id, ss::this_shard_id(), log_revision);

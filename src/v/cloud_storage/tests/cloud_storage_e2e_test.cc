@@ -69,7 +69,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
     props.shadow_indexing = model::shadow_indexing_mode::full;
     if (GetParam()) {
         // Override topic_namespace.
-        props.topic_namespace_override = model::topic_namespace(
+        props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
     }
     props.retention_local_target_bytes = tristate<size_t>(1);
@@ -140,7 +140,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
     props.shadow_indexing = model::shadow_indexing_mode::full;
     if (GetParam()) {
         // Override topic_namespace.
-        props.topic_namespace_override = model::topic_namespace(
+        props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
     }
     props.retention_local_target_bytes = tristate<size_t>(1);
@@ -395,7 +395,7 @@ public:
         props.shadow_indexing = model::shadow_indexing_mode::full;
         if (GetParam()) {
             // Override topic_namespace.
-            props.topic_namespace_override = model::topic_namespace(
+            props.remote_topic_namespace_override = model::topic_namespace(
               model::kafka_namespace, model::topic("cassava"));
         }
         props.retention_local_target_bytes = tristate<size_t>(1);
@@ -772,7 +772,7 @@ TEST_P(EndToEndFixture, TestCloudStorageTimequery) {
     props.shadow_indexing = model::shadow_indexing_mode::full;
     if (GetParam()) {
         // Override topic_namespace.
-        props.topic_namespace_override = model::topic_namespace(
+        props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
     }
 
@@ -867,7 +867,7 @@ TEST_P(EndToEndFixture, TestMixedTimequery) {
     props.shadow_indexing = model::shadow_indexing_mode::full;
     if (GetParam()) {
         // Override topic_namespace.
-        props.topic_namespace_override = model::topic_namespace(
+        props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
     }
     add_topic({model::kafka_namespace, topic_name}, 1, props).get();

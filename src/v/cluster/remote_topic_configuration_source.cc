@@ -40,7 +40,7 @@ static ss::future<errc> download_topic_manifest(
     cloud_storage::topic_manifest_downloader dl(
       bucket,
       /*remote_label=*/std::nullopt,
-      cfg.cfg.archival_tp_ns(),
+      cfg.cfg.remote_tp_ns(),
       remote);
     auto deadline = model::timeout_clock::now() + timeout;
     auto download_res = co_await dl.download_manifest(

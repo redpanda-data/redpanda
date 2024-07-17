@@ -48,13 +48,13 @@ struct topic_configuration
     bool is_recovery_enabled() const {
         return properties.recovery && properties.recovery.value();
     }
-    bool has_topic_namespace_override() const {
-        return properties.topic_namespace_override.has_value();
+    bool has_remote_topic_namespace_override() const {
+        return properties.remote_topic_namespace_override.has_value();
     }
 
-    const model::topic_namespace& archival_tp_ns() const {
-        if (has_topic_namespace_override()) {
-            return properties.topic_namespace_override.value();
+    const model::topic_namespace& remote_tp_ns() const {
+        if (has_remote_topic_namespace_override()) {
+            return properties.remote_topic_namespace_override.value();
         }
         return tp_ns;
     }

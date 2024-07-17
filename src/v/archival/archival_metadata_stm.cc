@@ -645,7 +645,7 @@ archival_metadata_stm::archival_metadata_stm(
   features::feature_table& ft,
   ss::logger& logger,
   std::optional<cloud_storage::remote_label> remote_label,
-  std::optional<model::topic_namespace> topic_namespace_override)
+  std::optional<model::topic_namespace> remote_topic_namespace_override)
   : raft::persisted_stm<>(archival_stm_snapshot, logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _mem_tracker(ss::make_shared<util::mem_tracker>(raft->ntp().path()))
@@ -653,7 +653,7 @@ archival_metadata_stm::archival_metadata_stm(
       raft->ntp(), raft->log_config().get_initial_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft)
-  , _remote_path_provider(remote_label, topic_namespace_override) {}
+  , _remote_path_provider(remote_label, remote_topic_namespace_override) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
@@ -1717,18 +1717,18 @@ void archival_metadata_stm_factory::create(
       = topic_md.has_value()
           ? topic_md->get().get_configuration().properties.remote_label
           : std::nullopt;
-    auto topic_namespace_override = topic_md.has_value()
-                                      ? topic_md->get()
-                                          .get_configuration()
-                                          .properties.topic_namespace_override
-                                      : std::nullopt;
+    auto remote_topic_namespace_override
+      = topic_md.has_value() ? topic_md->get()
+                                 .get_configuration()
+                                 .properties.remote_topic_namespace_override
+                             : std::nullopt;
     auto stm = builder.create_stm<cluster::archival_metadata_stm>(
       raft,
       _cloud_storage_api.local(),
       _feature_table.local(),
       clusterlog,
       remote_label,
-      topic_namespace_override);
+      remote_topic_namespace_override);
     raft->log()->stm_manager()->add_stm(stm);
 }
 
