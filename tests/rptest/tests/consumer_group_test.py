@@ -32,6 +32,8 @@ from kafka.admin import KafkaAdminClient
 from kafka.protocol.commit import OffsetFetchRequest_v3
 from kafka.protocol.api import Request, Response
 import kafka.protocol.types as types
+from confluent_kafka.admin import AdminClient
+from confluent_kafka import ConsumerGroupState
 
 
 class ConsumerGroupTest(RedpandaTest):
@@ -566,6 +568,49 @@ class ConsumerGroupTest(RedpandaTest):
         list = rpk.group_list()
 
         assert len(list) == groups_in_round * rounds
+
+    @skip_debug_mode
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_filtering_groups_by_state(self):
+        self.create_topic(10)
+        rounds = 10
+        groups_in_round = 100
+        self.start_producer()
+        # create group and close consumer, the group will be empty
+        consumer = KafkaConsumer(group_id=f"group-empty",
+                                 bootstrap_servers=self.redpanda.brokers(),
+                                 enable_auto_commit=True)
+        consumer.subscribe([self.topic_spec.name])
+        for i in range(5):
+            consumer.poll(1)
+        consumer.close(autocommit=True)
+        # create stable group
+        consumer_2 = KafkaConsumer(group_id=f"group-stable",
+                                   bootstrap_servers=self.redpanda.brokers(),
+                                   enable_auto_commit=True)
+        consumer_2.subscribe([self.topic_spec.name])
+        for i in range(5):
+            consumer_2.poll(1)
+
+        admin = AdminClient({"bootstrap.servers": self.redpanda.brokers()})
+
+        non_filtered = admin.list_consumer_groups(states=set()).result().valid
+        assert len(non_filtered) == 2
+
+        groups_with_empty_state = admin.list_consumer_groups(
+            states={ConsumerGroupState.EMPTY}).result().valid
+        assert len(groups_with_empty_state) == 1
+        assert all(g.state == ConsumerGroupState.EMPTY
+                   for g in groups_with_empty_state)
+        groups_with_stable_state = admin.list_consumer_groups(
+            states={ConsumerGroupState.STABLE}).result().valid
+        assert len(groups_with_stable_state) == 1
+        assert all(g.state == ConsumerGroupState.STABLE
+                   for g in groups_with_stable_state)
+        groups_with_stable_or_empty_state = admin.list_consumer_groups(
+            states={ConsumerGroupState.STABLE, ConsumerGroupState.EMPTY
+                    }).result().valid
+        assert len(groups_with_stable_or_empty_state) == 2
 
 
 @dataclass
