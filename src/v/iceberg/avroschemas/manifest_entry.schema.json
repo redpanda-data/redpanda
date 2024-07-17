@@ -26,6 +26,15 @@
      "field-id": 3
    },
    {
+     "name": "file_sequence_number",
+     "type": [
+       "null",
+       "long"
+     ],
+     "default": null,
+     "field-id": 4
+   },
+   {
      "name": "data_file",
      "type": {
        "type": "record",
