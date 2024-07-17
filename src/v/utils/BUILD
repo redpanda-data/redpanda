@@ -27,6 +27,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "stop_signal",
+    hdrs = [
+        "stop_signal.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "rwlock",
     hdrs = [
         "rwlock.h",
