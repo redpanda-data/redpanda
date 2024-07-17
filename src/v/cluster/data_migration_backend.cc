@@ -586,10 +586,9 @@ ss::future<> backend::reconcile_topic(
         if (!maybe_assignments) {
             co_return;
         }
-        auto assignments = *maybe_assignments | std::views::values;
         auto now = model::timeout_clock::now();
         co_await ssx::async_for_each(
-          assignments,
+          *maybe_assignments | std::views::values,
           [this, nt, &tstate, scope, migration, now, schedule_local_work](
             const auto& assignment) {
               model::ntp ntp{nt.ns, nt.tp, assignment.id};
