@@ -84,6 +84,7 @@ rp_test(
     remote_test.cc
     s3_imposter.cc
     topic_manifest_downloader_test.cc
+    topic_namespace_override_recovery_test.cc
     util.cc
   LIBRARIES
     v::gtest_main
