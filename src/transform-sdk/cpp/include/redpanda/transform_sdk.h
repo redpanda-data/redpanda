@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <ranges>
@@ -24,6 +25,26 @@
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+namespace detail {
+
+template<typename T, typename Tag>
+struct simple_named_type {
+    using type = T;
+    explicit simple_named_type(type val)
+      : _val(val) {}
+    [[nodiscard]] type value() const { return _val; }
+    constexpr operator type() const { return _val; }
+    type* data() { return &_val; }
+
+private:
+    friend bool operator==(
+      const simple_named_type<type, Tag>&, const simple_named_type<type, Tag>&)
+      = default;
+    type _val;
+};
+
+} // namespace detail
 
 namespace redpanda {
 
@@ -212,5 +233,163 @@ using on_record_written_callback
  * ```
  */
 [[noreturn]] void on_record_written(const on_record_written_callback& callback);
+
+namespace sr {
+
+/**
+ * enum indicating the format of some schema
+ * Supported formats:
+ *   - avro (fully supported)
+ *   - protobuf (fully supported)
+ *   - json (redpanda v24.2+ WIP)
+ */
+enum class schema_format {
+    avro = 0,
+    protobuf = 1,
+    json = 2,
+};
+
+/**
+ * Type-safe wrapper for a the ID (int32) of some registered schema
+ */
+using schema_id = detail::simple_named_type<int32_t, struct schema_id_tag>;
+
+/**
+ * Type-safe wrapper for a bare schema version (int32)
+ */
+using schema_version
+  = detail::simple_named_type<int32_t, struct schema_version_tag>;
+
+/**
+ * Aggregate representing a reference to a schema defined elsewhere.
+ * The details are format dependent; e.g Avro schemas will use a different
+ * reference syntax from protobuf of JSON schemas. For more information , see:
+ *
+ *   https://docs.redpanda.com/current/manage/schema-reg/schema-reg-api/#reference-a-schema
+ */
+struct reference {
+    std::string name;
+    std::string subject;
+    schema_version version;
+
+private:
+    friend bool operator==(const reference&, const reference&) = default;
+};
+
+/**
+ * A schema that can be registered to schema registry
+ */
+struct schema {
+    using reference_container = std::vector<reference>;
+
+    std::string raw_schema;
+    schema_format format;
+    reference_container references;
+
+    /**
+     * Construct a new schema in Avro format
+     */
+    [[nodiscard]] static schema new_avro(
+      std::string schema,
+      std::optional<reference_container> refs = std::nullopt);
+
+    /**
+     * Construct a new schema in protobuf format
+     */
+    [[nodiscard]] static schema new_protobuf(
+      std::string schema,
+      std::optional<reference_container> refs = std::nullopt);
+
+    /**
+     * Construct a new schema in json format
+     */
+    [[nodiscard]] static schema new_json(
+      std::string schema,
+      std::optional<reference_container> refs = std::nullopt);
+
+    friend bool operator==(const schema&, const schema&) = default;
+};
+
+/**
+ * A schema along with its subject, version, and ID
+ */
+struct subject_schema {
+    sr::schema schema;
+    std::string subject;
+    schema_version version;
+    schema_id id;
+
+    friend bool operator==(const subject_schema&, const subject_schema&)
+      = default;
+};
+
+/**
+ * A client for interacting with the schema registry within Redpanda.
+ */
+class schema_registry_client {
+public:
+    schema_registry_client() = default;
+    schema_registry_client(const schema_registry_client&) = delete;
+    schema_registry_client& operator=(const schema_registry_client&) = delete;
+    schema_registry_client(schema_registry_client&&) noexcept = delete;
+    schema_registry_client& operator=(schema_registry_client&&) noexcept
+      = delete;
+    virtual ~schema_registry_client() = default;
+
+    /**
+     * Look up a schema by its global ID
+     */
+    [[nodiscard]] virtual std::expected<schema, std::error_code>
+    lookup_schema_by_id(schema_id id) const = 0;
+
+    /**
+     * Look up a schema by subject and specific version
+     */
+    [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
+    lookup_schema_by_version(
+      std::string_view subject, schema_version version) const
+      = 0;
+
+    /**
+     * Look up the latest version of a schema (by subject)
+     *
+     * Equivalent to calling lookup_schema_by_version with schema_version{-1}
+     */
+    [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
+    lookup_latest_schema(std::string_view subject) const = 0;
+
+    /**
+     * Create a schema under the given subject, returning the version and ID
+     *
+     * If an equivalent schema already exists globally, that schema ID is
+     * reused. If an equivalent schema already exists within that subject, this
+     * has no effect and returns the existing schema
+     */
+    [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
+    create_schema(std::string_view subject, schema the_schema) = 0;
+};
+
+/**
+ * Create a new schema registry client
+ */
+std::unique_ptr<schema_registry_client> new_client();
+
+/**
+ * Extract and decode the schema ID from an arbitrary array of bytes.
+ * buf must be at least 5B long:
+ *   - buf[0]: magic byte (must be 0x00)
+ *   - buf[1..5]: the id, in network byte order (big endian)
+ */
+std::expected<std::pair<schema_id, bytes_view>, std::error_code>
+decode_schema_id(bytes_view buf);
+
+/**
+ * Encode and prepend the schema ID to a byte array.
+ * Creates and returns a copy of the buffer.
+ * The result will be at least 5B long.
+ */
+bytes encode_schema_id(schema_id sid, bytes_view buf);
+
+} // namespace sr
 
 } // namespace redpanda

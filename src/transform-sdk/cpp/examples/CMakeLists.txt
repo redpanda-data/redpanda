@@ -43,3 +43,12 @@ target_link_libraries(
   identity_logging_transform
   Redpanda::transform_sdk
 )
+
+add_executable(
+  schema_registry_transform
+  schema_registry.cc
+)
+target_link_libraries(
+  schema_registry_transform
+  Redpanda::transform_sdk
+)
