@@ -29,7 +29,8 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     entry.data_file.record_count = 3;
     entry.data_file.file_size_in_bytes = 1024;
 
-    auto out = std::make_unique<avro_iobuf_ostream>(4096);
+    iobuf buf;
+    auto out = std::make_unique<avro_iobuf_ostream>(4096, &buf);
 
     // Encode to the output stream.
     avro::EncoderPtr encoder = avro::binaryEncoder();
@@ -38,7 +39,6 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     encoder->flush();
 
     // Decode the iobuf from the input stream.
-    auto buf = out->release();
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
@@ -69,7 +69,8 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     manifest.existing_rows_count = 10;
     manifest.deleted_rows_count = 11;
 
-    auto out = std::make_unique<avro_iobuf_ostream>(4096);
+    iobuf buf;
+    auto out = std::make_unique<avro_iobuf_ostream>(4096, &buf);
 
     // Encode to the output stream.
     avro::EncoderPtr encoder = avro::binaryEncoder();
@@ -78,7 +79,6 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     encoder->flush();
 
     // Decode the iobuf from the input stream.
-    auto buf = out->release();
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);

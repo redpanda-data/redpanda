@@ -17,18 +17,12 @@
 // iobuf that can be released.
 class avro_iobuf_ostream : public avro::OutputStream {
 public:
-    explicit avro_iobuf_ostream(size_t chunk_size)
+    explicit avro_iobuf_ostream(size_t chunk_size, iobuf* buf)
       : chunk_size_(chunk_size)
+      , buf_(buf)
       , available_(0)
       , byte_count_(0) {}
     ~avro_iobuf_ostream() override = default;
-
-    iobuf release() {
-        buf_.trim_back(buf_.size_bytes() - byte_count_);
-        available_ = 0;
-        byte_count_ = 0;
-        return std::exchange(buf_, iobuf{});
-    }
 
     // If there's no available space in the buffer, allocates `chunk_size_`
     // bytes at the end of the buffer.
@@ -37,10 +31,10 @@ public:
     // space.
     bool next(uint8_t** data, size_t* len) final {
         if (available_ == 0) {
-            buf_.append(ss::temporary_buffer<char>{chunk_size_});
+            buf_->append(ss::temporary_buffer<char>{chunk_size_});
             available_ = chunk_size_;
         }
-        auto back_frag = buf_.rbegin();
+        auto back_frag = buf_->rbegin();
         *data = reinterpret_cast<uint8_t*>(
           back_frag->share(chunk_size_ - available_, available_).get_write());
         *len = available_;
@@ -62,7 +56,7 @@ private:
     // Size in bytes with which to allocate new fragments.
     const size_t chunk_size_;
 
-    iobuf buf_;
+    iobuf* buf_;
 
     // Bytes remaining in the last fragment in the buffer.
     size_t available_;
