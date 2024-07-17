@@ -289,10 +289,9 @@ ss::future<> backend::handle_raft0_leadership_update() {
         vlog(dm_log.debug, "stepping down as a coordinator");
         // stop coordinating
         for (auto& [id, mrstate] : _migration_states) {
-            for (auto& [id, tstate] : mrstate.outstanding_topics) {
-                tstate.outstanding_partitions.clear();
-                tstate.topic_scoped_work_needed = false;
-            }
+            co_await ssx::async_for_each(
+              mrstate.outstanding_topics | std::views::values,
+              std::mem_fn(&topic_reconciliation_state::clear));
         }
         _nodes_to_retry.clear();
         _node_states.clear();
@@ -372,8 +371,7 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
     auto& mrstate = _migration_states.find(migration_id)->second;
     auto& tstate = mrstate.outstanding_topics[nt];
     clear_tstate_belongings(nt, tstate);
-    tstate.outstanding_partitions.clear();
-    tstate.topic_scoped_work_needed = false;
+    tstate.clear();
     // We potentially re-enqueue an already coordinated partition here.
     // The first RPC reply will clear it.
     co_await reconcile_topic(nt, tstate, migration_id, mrstate.scope, false);
@@ -862,6 +860,12 @@ backend::work_scope backend::get_work_scope(
     default:
         return {{}, false, false};
     };
+}
+
+void backend::topic_reconciliation_state::clear() {
+    outstanding_partitions.clear();
+    topic_scoped_work_needed = false;
+    topic_scoped_work_done = false;
 }
 
 } // namespace cluster::data_migrations

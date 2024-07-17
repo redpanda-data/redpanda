@@ -51,6 +51,8 @@ private:
         chunked_hash_map<model::partition_id, std::vector<model::node_id>>
           outstanding_partitions; // for partition scoped ops
         bool topic_scoped_work_needed;
+        bool topic_scoped_work_done;
+        void clear();
     };
     struct migration_reconciliation_state {
         explicit migration_reconciliation_state(work_scope scope)
