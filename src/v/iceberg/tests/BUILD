@@ -1,4 +1,18 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
+
+redpanda_test_cc_library(
+    name = "test_schemas",
+    srcs = [
+        "test_schemas.cc",
+    ],
+    hdrs = [
+        "test_schemas.h",
+    ],
+    include_prefix = "iceberg/tests",
+    deps = [
+        "//src/v/iceberg:datatypes",
+    ],
+)
 
 redpanda_cc_gtest(
     name = "datatypes_test",
@@ -20,6 +34,7 @@ redpanda_cc_gtest(
         "datatypes_json_test.cc",
     ],
     deps = [
+        ":test_schemas",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:datatypes_json",
         "//src/v/json",

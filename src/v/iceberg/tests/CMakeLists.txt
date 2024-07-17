@@ -9,6 +9,7 @@ rp_test(
     datatypes_test.cc
     manifest_serialization_test.cc
     datatypes_json_test.cc
+    test_schemas.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams
