@@ -147,12 +147,24 @@ void worker::unmanage_ntp(managed_ntp_cit it, errc result) {
     _managed_ntps.erase(it);
 }
 
-ss::future<errc> worker::do_work(managed_ntp_cit it) {
-    return std::visit(
-      [this, it](auto& info) {
-          return do_work(it->first, it->second.work.sought_state, info);
-      },
-      it->second.work.info);
+ss::future<errc> worker::do_work(managed_ntp_cit it) noexcept {
+    const auto& ntp = it->first;
+    auto sought_state = it->second.work.sought_state;
+    try {
+        co_return co_await std::visit(
+          [this, &ntp, sought_state](auto& info) {
+              return do_work(ntp, sought_state, info);
+          },
+          it->second.work.info);
+    } catch (...) {
+        vlog(
+          dm_log.warn,
+          "exception occured during partition work on {} towards {} state: {}",
+          ntp,
+          sought_state,
+          std::current_exception());
+        co_return errc::partition_operation_failed;
+    }
 }
 
 ss::future<errc> worker::do_work(

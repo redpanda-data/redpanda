@@ -66,7 +66,8 @@ private:
     void handle_leadership_update(const model::ntp& ntp, bool is_leader);
     void unmanage_ntp(managed_ntp_cit it, errc result);
     void spawn_work_if_leader(managed_ntp_it it);
-    ss::future<errc> do_work(managed_ntp_cit it);
+    // also resulting future cannot throw when co_awaited
+    ss::future<errc> do_work(managed_ntp_cit it) noexcept;
     ss::future<errc> do_work(
       const model::ntp& ntp,
       state sought_state,
