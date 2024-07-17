@@ -634,14 +634,15 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     co_await dispatch_topic_dir_deletion(topic_dir);
 }
 
-ss::future<> remove_orphan_partition_files(
+ss::future<bool> remove_orphan_partition_files(
   ss::sstring topic_directory_path,
   model::topic_namespace nt,
   ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>&
     orphan_filter) {
-    return directory_walker::walk(
+    bool removed = true;
+    co_await directory_walker::walk(
       topic_directory_path,
-      [topic_directory_path, nt, &orphan_filter](
+      [topic_directory_path, nt, &orphan_filter, &removed](
         ss::directory_entry entry) -> ss::future<> {
           auto ntp_directory_data = partition_path::parse_partition_directory(
             entry.name);
@@ -655,9 +656,10 @@ ss::future<> remove_orphan_partition_files(
                                    / std::filesystem::path(entry.name);
               vlog(stlog.info, "Cleaning up ntp directory {} ", ntp_directory);
               return ss::recursive_remove_directory(ntp_directory)
-                .handle_exception_type([ntp_directory](
+                .handle_exception_type([ntp_directory, &removed](
                                          std::filesystem::
                                            filesystem_error const& err) {
+                    removed = false;
                     vlog(
                       stlog.error,
                       "Exception while cleaning orphan files for {} Error: {}",
@@ -665,8 +667,10 @@ ss::future<> remove_orphan_partition_files(
                       err);
                 });
           }
+          removed = false;
           return ss::now();
       });
+    co_return removed;
 }
 
 ss::future<> log_manager::remove_orphan_files(
@@ -704,7 +708,10 @@ ss::future<> log_manager::remove_orphan_files(
                        topic_directory.string(),
                        model::topic_namespace(ns, model::topic(entry.name)),
                        orphan_filter)
-                .then([this, topic_directory]() {
+                .then([this, topic_directory](bool removed) {
+                    if (!removed) {
+                        return ss::now();
+                    }
                     vlog(
                       stlog.info,
                       "Trying to clean up topic directory {} ",
