@@ -9,8 +9,10 @@ redpanda_cc_library(
         "_include_first.h",
         "allocator.h",
         "chunked_buffer.h",
+        "chunked_input_stream.h",
         "document.h",
         "encodings.h",
+        "iobuf_writer.h",
         "istreamwrapper.h",
         "json.h",
         "logger.h",
@@ -30,6 +32,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:streambuf",
         "//src/v/serde",
         "//src/v/utils:named_type",
         "//src/v/utils:unresolved_address",

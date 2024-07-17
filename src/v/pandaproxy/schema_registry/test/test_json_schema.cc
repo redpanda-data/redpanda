@@ -192,7 +192,7 @@ struct test_references_data {
         pps::unparsed_schema schema;
         pps::error_info result;
     };
-    std::vector<data> _schemas;
+    std::array<data, 2> _schemas;
 };
 
 const auto referenced = pps::unparsed_schema{
@@ -231,7 +231,7 @@ const auto referencer = pps::unparsed_schema{
 const auto referencer_wrong_sub = pps::unparsed_schema{
   referencer.sub(),
   pps::unparsed_schema_definition{
-    referencer.def().raw(),
+    referencer.def().shared_raw(),
     referencer.def().type(),
     {pps::schema_reference{
       .name = "example.com/referenced.json",
@@ -240,13 +240,13 @@ const auto referencer_wrong_sub = pps::unparsed_schema{
 
 const std::array test_reference_cases = {
   // Referece correct subject
-  test_references_data{{{referenced, {}}, {referencer, {}}}},
+  test_references_data{{{{referenced.share(), {}}, {referencer.share(), {}}}}},
   // Reference wrong subject
   test_references_data{
-    {{referenced, {}},
-     {referencer_wrong_sub,
-      {pps::error_code::schema_empty,
-       R"(Invalid schema {subject=referencer,version=0,id=-1,schemaType=JSON,references=[{name='example.com/referenced.json', subject='wrong_sub', version=1}],metadata=null,ruleSet=null,schema={
+    {{{referenced.share(), {}},
+      {referencer_wrong_sub.share(),
+       {pps::error_code::schema_empty,
+        R"(Invalid schema {subject=referencer,version=0,id=-1,schemaType=JSON,references=[{name='example.com/referenced.json', subject='wrong_sub', version=1}],metadata=null,ruleSet=null,schema={
   "description": "A schema that references the base schema",
   "type": "object",
   "properties": {
@@ -254,7 +254,7 @@ const std::array test_reference_cases = {
       "$ref": "example.com/referenced.json"
     }
   }
-}} with refs [{name='example.com/referenced.json', subject='wrong_sub', version=1}] of type JSON, details: No schema reference found for subject "wrong_sub" and version 1)"}}}}};
+}} with refs [{name='example.com/referenced.json', subject='wrong_sub', version=1}] of type JSON, details: No schema reference found for subject "wrong_sub" and version 1)"}}}}}};
 
 SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
     for (const auto& test : test_reference_cases) {
@@ -265,7 +265,7 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
             pps::schema_version ver{0};
             pps::canonical_schema canonical{};
             auto make_canonical = [&]() {
-                canonical = f.store.make_canonical_schema(schema).get();
+                canonical = f.store.make_canonical_schema(schema.share()).get();
             };
 
             if (result.code() == pps::error_code{}) {
@@ -280,7 +280,11 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
             }
             f.store
               .upsert(
-                pps::seq_marker{}, canonical, ++id, ++ver, pps::is_deleted::no)
+                pps::seq_marker{},
+                canonical.share(),
+                ++id,
+                ++ver,
+                pps::is_deleted::no)
               .get();
         }
     }

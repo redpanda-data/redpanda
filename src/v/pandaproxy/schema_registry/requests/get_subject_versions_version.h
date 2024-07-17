@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/iobuf_writer.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -23,8 +24,8 @@ struct post_subject_versions_version_response {
 };
 
 template<typename Buffer>
-inline void rjson_serialize(
-  ::json::Writer<Buffer>& w,
+void rjson_serialize(
+  ::json::iobuf_writer<Buffer>& w,
   const post_subject_versions_version_response& res) {
     w.StartObject();
     w.Key("subject");

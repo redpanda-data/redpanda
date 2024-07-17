@@ -24,10 +24,10 @@ bool check_compatible(
     pps::sharded_store s;
     return check_compatible(
       pps::make_avro_schema_definition(
-        s, {pps::subject("r"), {r.raw(), pps::schema_type::avro}})
+        s, {pps::subject("r"), {r.shared_raw(), pps::schema_type::avro}})
         .get(),
       pps::make_avro_schema_definition(
-        s, {pps::subject("w"), {w.raw(), pps::schema_type::avro}})
+        s, {pps::subject("w"), {w.shared_raw(), pps::schema_type::avro}})
         .get());
 }
 
@@ -239,10 +239,11 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
       R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]})",
       pps::schema_type::avro};
     pps::sharded_store s;
-    auto valid
-      = pps::make_avro_schema_definition(
-          s, {pps::subject("s2"), {schema2.raw(), pps::schema_type::avro}})
-          .get();
+    auto valid = pps::make_avro_schema_definition(
+                   s,
+                   {pps::subject("s2"),
+                    {schema2.shared_raw(), pps::schema_type::avro}})
+                   .get();
     static_assert(
       std::
         is_same_v<std::decay_t<decltype(valid)>, pps::avro_schema_definition>,
@@ -267,7 +268,8 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
     auto valid = pps::make_avro_schema_definition(
                    s,
                    {pps::subject("s2"),
-                    {avro_metadata_schema.raw(), pps::schema_type::avro}})
+                    {avro_metadata_schema.shared_raw(),
+                     pps::schema_type::avro}})
                    .get();
     static_assert(
       std::

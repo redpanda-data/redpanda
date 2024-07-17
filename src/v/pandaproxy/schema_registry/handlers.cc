@@ -430,7 +430,7 @@ post_subject(server::request_t rq, server::reply_t rp) {
     }
 
     auto sub_schema = co_await rq.service().schema_store().has_schema(
-      schema, inc_del);
+      std::move(schema), inc_del);
 
     rp.rep->write_body(
       "json",
@@ -460,7 +460,8 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       unparsed.id.value_or(invalid_schema_id),
       is_deleted::no};
 
-    auto ids = co_await rq.service().schema_store().get_schema_version(schema);
+    auto ids = co_await rq.service().schema_store().get_schema_version(
+      schema.share());
 
     schema_id schema_id{ids.id.value_or(invalid_schema_id)};
     if (!ids.version.has_value()) {
@@ -523,7 +524,8 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
     auto get_res = co_await rq.service().schema_store().get_subject_schema(
       sub, version, inc_del);
 
-    rp.rep->write_body("json", get_res.schema.def().raw()());
+    rp.rep->write_body(
+      "json", ppj::as_body_writer(std::move(get_res.schema).def().raw()()));
     co_return rp;
 }
 
@@ -542,7 +544,7 @@ get_subject_versions_version_referenced_by(
     auto references = co_await rq.service().schema_store().referenced_by(
       sub, version);
 
-    rp.rep->write_body("json", ppj::rjson_serialize(references));
+    rp.rep->write_body("json", ppj::rjson_serialize(std::move(references)));
     co_return rp;
 }
 
@@ -647,9 +649,11 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
 
     auto schema = co_await rq.service().schema_store().make_canonical_schema(
       std::move(unparsed.def));
-    auto get_res = co_await get_or_load(rq, [&rq, &schema, version]() {
-        return rq.service().schema_store().is_compatible(version, schema);
-    });
+    auto get_res = co_await get_or_load(
+      rq, [&rq, schema{std::move(schema)}, version]() {
+          return rq.service().schema_store().is_compatible(
+            version, schema.share());
+      });
 
     rp.rep->write_body(
       "json",

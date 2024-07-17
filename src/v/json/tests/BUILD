@@ -8,6 +8,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/json",
         "//src/v/test_utils:seastar_boost",
         "@seastar",

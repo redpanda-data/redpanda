@@ -103,17 +103,19 @@ std::vector<int32_t> get_proto_offsets(iobuf_parser& p) {
 ss::future<std::optional<ss::sstring>> get_record_name(
   pandaproxy::schema_registry::sharded_store& store,
   subject_name_strategy sns,
-  const canonical_schema_definition& schema,
+  canonical_schema_definition schema,
   std::optional<std::vector<int32_t>>& offsets) {
+    vlog(plog.warn, "get_record_name: sns: {}, schema: {}", sns, schema);
     if (sns == subject_name_strategy::topic_name) {
         // Result is succesfully nothing
         co_return "";
     }
 
-    switch (schema.type()) {
+    auto schema_type = schema.type();
+    switch (schema_type) {
     case schema_type::avro: {
         auto s = co_await make_avro_schema_definition(
-          store, {subject("r"), {schema.raw(), schema.type()}});
+          store, {subject("r"), {std::move(schema).raw(), schema_type}});
         co_return s().root()->name().fullname();
     } break;
     case schema_type::protobuf: {
@@ -121,7 +123,7 @@ ss::future<std::optional<ss::sstring>> get_record_name(
             co_return std::nullopt;
         }
         auto s = co_await make_protobuf_schema_definition(
-          store, {subject("r"), {schema.raw(), schema.type()}});
+          store, {subject("r"), {std::move(schema).raw(), schema_type}});
         auto r = s.name(*offsets);
         if (!r) {
             co_return std::nullopt;
@@ -268,7 +270,7 @@ public:
         }
 
         auto record_name = co_await get_record_name(
-          *_api->_store, sns, *schema, proto_offsets);
+          *_api->_store, sns, *std::move(schema), proto_offsets);
         if (!record_name) {
             vlog(
               plog.debug,
