@@ -179,6 +179,49 @@ private:
 #define ASSERT_LE_CORO(val1, val2) GTEST_ASSERT_LE_CORO(val1, val2)
 #define ASSERT_NE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
 
+#define ASSERT_RESULT_EQ_CORO(result_val, exp_naked_value)                     \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        auto result_val_copy = (result_val);                                   \
+        ASSERT_TRUE_CORO(result_val_copy);                                     \
+        GTEST_ASSERT_EQ_CORO(result_val_copy.assume_value(), exp_naked_value); \
+    } while (0);
+#define ASSERT_RESULT_GT_CORO(result_val, exp_naked_value)                     \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        auto result_val_copy = (result_val);                                   \
+        ASSERT_TRUE_CORO(result_val_copy);                                     \
+        GTEST_ASSERT_GT_CORO(result_val_copy.assume_value(), exp_naked_value); \
+    } while (0);
+#define ASSERT_RESULT_GE_CORO(result_val, exp_naked_value)                     \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        auto result_val_copy = (result_val);                                   \
+        ASSERT_TRUE_CORO(result_val_copy);                                     \
+        GTEST_ASSERT_GE_CORO(result_val_copy.assume_value(), exp_naked_value); \
+    } while (0);
+#define ASSERT_RESULT_LT_CORO(result_val, exp_naked_value)                     \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        auto result_val_copy = (result_val);                                   \
+        ASSERT_TRUE_CORO(result_val_copy);                                     \
+        GTEST_ASSERT_LT_CORO(result_val_copy.assume_value(), exp_naked_value); \
+    } while (0);
+#define ASSERT_RESULT_LE_CORO(result_val, exp_naked_value)                     \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        auto result_val_copy = (result_val);                                   \
+        ASSERT_TRUE_CORO(result_val_copy);                                     \
+        GTEST_ASSERT_LE_CORO(result_val_copy.assume_value(), exp_naked_value); \
+    } while (0);
+#define ASSERT_RESULT_NE_CORO(result_val, exp_naked_value)                     \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        auto result_val_copy = (result_val);                                   \
+        ASSERT_TRUE_CORO(result_val_copy);                                     \
+        GTEST_ASSERT_NE_CORO(result_val_copy.assume_value(), exp_naked_value); \
+    } while (0);
+
 #define ASSERT_THROW_CORO(statement, expected_exception)                       \
     GTEST_TEST_THROW_CORO(statement, expected_exception)
 

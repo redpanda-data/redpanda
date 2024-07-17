@@ -2247,6 +2247,7 @@ ss::future<> consensus::hydrate_snapshot() {
         co_await truncate_to_latest_snapshot(truncate_cfg.value());
     }
     _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
+    update_follower_stats(_configuration_manager.get_latest());
 }
 
 std::optional<storage::truncate_prefix_config>
@@ -2331,7 +2332,6 @@ void consensus::update_offset_from_snapshot(
     _last_snapshot_index = metadata.last_included_index;
     _last_snapshot_term = metadata.last_included_term;
 
-    // TODO: add applying snapshot content to state machine
     auto prev_commit_index = _commit_index;
     _commit_index = std::max(_last_snapshot_index, _commit_index);
     maybe_update_last_visible_index(_commit_index);
@@ -2340,8 +2340,6 @@ void consensus::update_offset_from_snapshot(
         _replication_monitor.notify_committed();
         _event_manager.notify_commit_index();
     }
-
-    update_follower_stats(metadata.latest_configuration);
 }
 
 ss::future<install_snapshot_reply>
@@ -2366,10 +2364,10 @@ consensus::do_install_snapshot(install_snapshot_request r) {
     _hbeat = clock_type::now();
 
     // request received from new leader
+    do_step_down("install_snapshot_received");
     if (r.term > _term) {
         _term = r.term;
         _voted_for = {};
-        do_step_down("install_snapshot_term_greater");
         maybe_update_leader(r.source_node());
         co_return co_await do_install_snapshot(std::move(r));
     }

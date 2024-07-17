@@ -14,6 +14,7 @@
 #include <system_error> // bring in std::error_code et al
 
 // use the standard ones instead
+#include <boost/outcome/basic_result.hpp>
 #include <boost/outcome/std_outcome.hpp>
 #include <boost/outcome/std_result.hpp>
 
@@ -39,3 +40,6 @@ using unchecked = outcome::std_result<R, S, outcome::policy::all_narrow>;
 template<class R, class S = std::error_code>
 using checked
   = outcome::result<R, S, outcome::policy::throw_bad_result_access<S, void>>;
+
+template<class T>
+constexpr bool is_result_v = outcome::is_basic_result_v<T>;
