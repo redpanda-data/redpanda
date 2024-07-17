@@ -2799,6 +2799,46 @@ ss::sstring group_state_to_kafka_name(group_state gs) {
     }
 }
 
+group_state parse_group_state(const ss::sstring& state_str) {
+    if (state_str == "Empty") {
+        return group_state::empty;
+    }
+    if (state_str == "PreparingRebalance") {
+        return group_state::preparing_rebalance;
+    }
+    if (state_str == "CompletingRebalance") {
+        return group_state::completing_rebalance;
+    }
+    if (state_str == "Stable") {
+        return group_state::stable;
+    }
+    if (state_str == "Dead") {
+        return group_state::dead;
+    }
+
+    throw std::invalid_argument(
+      fmt::format("invalid group state: {}", state_str));
+}
+
+group_state_filter
+group_state_filter::from_strings(const chunked_vector<ss::sstring>& strings) {
+    if (strings.size() > group_state_count) {
+        throw std::invalid_argument("max size of group state filter exceeded");
+    }
+    group_state_filter filter;
+    for (const auto& state_str : strings) {
+        filter._requested_states.set(
+          static_cast<size_t>(parse_group_state(state_str)));
+    }
+
+    filter._is_empty = !filter._requested_states.any();
+    return filter;
+}
+
+bool group_state_filter::matches(group_state state) const {
+    return _is_empty || _requested_states.test(static_cast<size_t>(state));
+}
+
 void group::add_pending_member(
   const kafka::member_id& member_id, duration_type timeout) {
     auto res = _pending_members.try_emplace(member_id, [this, member_id] {

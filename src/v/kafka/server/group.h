@@ -107,10 +107,27 @@ using enable_group_metrics = ss::bool_class<struct enable_gr_metrics_tag>;
 std::ostream& operator<<(std::ostream&, group_state gs);
 
 ss::sstring group_state_to_kafka_name(group_state);
+group_state parse_group_state(const ss::sstring&);
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx::errc);
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx::errc);
 cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx::errc);
 kafka::error_code map_store_offset_error_code(std::error_code);
+/**
+ * Helper class allowing to express a set of group state and efficiently match
+ * state against the requested set.
+ */
+class group_state_filter {
+public:
+    bool matches(group_state) const;
+    static group_state_filter from_strings(const chunked_vector<ss::sstring>&);
+    group_state_filter() = default;
+
+private:
+    static constexpr size_t group_state_count = 5;
+
+    bool _is_empty = true;
+    std::bitset<group_state_count> _requested_states;
+};
 
 /// \brief A Kafka group.
 ///
