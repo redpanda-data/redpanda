@@ -10,6 +10,7 @@
 #include "json/json.h"
 
 #include "json/chunked_buffer.h"
+#include "json/chunked_input_stream.h"
 #include "json/stringbuffer.h"
 
 namespace json {
@@ -126,6 +127,15 @@ ss::sstring minify(std::string_view json) {
     json::Writer<json::StringBuffer> w{out};
     r.Parse(in, w);
     return ss::sstring(out.GetString(), out.GetSize());
+}
+
+iobuf minify(iobuf json) {
+    json::Reader r;
+    json::chunked_input_stream in(std::move(json));
+    json::chunked_buffer out;
+    json::Writer<json::chunked_buffer> w{out};
+    r.Parse(in, w);
+    return std::move(out).as_iobuf();
 }
 
 ss::sstring prettify(std::string_view json) {

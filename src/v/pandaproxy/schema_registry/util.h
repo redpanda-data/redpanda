@@ -12,8 +12,9 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "bytes/iobuf_parser.h"
+#include "json/chunked_buffer.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -31,7 +32,7 @@ namespace pandaproxy::schema_registry {
 ///
 /// Returns error_code::schema_invalid on failure
 template<typename Encoding>
-result<unparsed_schema_definition::raw_string>
+result<canonical_schema_definition::raw_string>
 make_schema_definition(std::string_view sv) {
     // Validate and minify
     // TODO (Ben): Minify. e.g.:
@@ -46,12 +47,16 @@ make_schema_definition(std::string_view sv) {
             rapidjson::GetParseError_En(doc.GetParseError()),
             doc.GetErrorOffset())};
     }
-    ::json::GenericStringBuffer<Encoding> str_buf;
-    str_buf.Reserve(sv.size());
-    ::json::Writer<::json::GenericStringBuffer<Encoding>> w{str_buf};
+    ::json::chunked_buffer buf;
+    ::json::Writer<::json::chunked_buffer> w{buf};
     doc.Accept(w);
-    return unparsed_schema_definition::raw_string{
-      ss::sstring{str_buf.GetString(), str_buf.GetSize()}};
+    return canonical_schema_definition::raw_string{std::move(buf).as_iobuf()};
+}
+
+template<typename Tag>
+ss::sstring to_string(named_type<iobuf, Tag> def) {
+    iobuf_parser p{std::move(def)};
+    return p.read_string(p.bytes_left());
 }
 
 } // namespace pandaproxy::schema_registry

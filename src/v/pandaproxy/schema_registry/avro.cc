@@ -11,15 +11,16 @@
 
 #include "pandaproxy/schema_registry/avro.h"
 
+#include "bytes/streambuf.h"
 #include "json/allocator.h"
+#include "json/chunked_input_stream.h"
 #include "json/document.h"
-#include "json/encodings.h"
-#include "json/stringbuffer.h"
+#include "json/json.h"
 #include "json/types.h"
-#include "json/writer.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/coroutine.hh>
@@ -30,6 +31,7 @@
 #include <avro/Compiler.hh>
 #include <avro/Exception.hh>
 #include <avro/GenericDatum.hh>
+#include <avro/Stream.hh>
 #include <avro/Types.hh>
 #include <avro/ValidSchema.hh>
 #include <boost/outcome/std_result.hpp>
@@ -42,6 +44,10 @@
 #include <exception>
 #include <stack>
 #include <string_view>
+
+namespace pandaproxy::json {
+using namespace ::json;
+}
 
 namespace pandaproxy::schema_registry {
 
@@ -421,7 +427,10 @@ std::ostream& operator<<(std::ostream& os, const avro_schema_definition& def) {
 }
 
 canonical_schema_definition::raw_string avro_schema_definition::raw() const {
-    return canonical_schema_definition::raw_string{_impl.toJson(false)};
+    iobuf_ostream os;
+    _impl.toJson(os.ostream());
+    return canonical_schema_definition::raw_string{
+      json::minify(std::move(os).buf())};
 }
 
 ss::sstring avro_schema_definition::name() const {
@@ -436,17 +445,22 @@ public:
     bool insert(ss::sstring name, canonical_schema_definition def) {
         bool inserted = _names.insert(std::move(name)).second;
         if (inserted) {
-            _schemas.push_back(std::move(def).raw()());
+            _schemas.push_back(std::move(def).raw());
         }
         return inserted;
     }
-    ss::sstring flatten() {
-        return fmt::format("{}", fmt::join(_schemas, "\n"));
+    canonical_schema_definition::raw_string flatten() && {
+        iobuf out;
+        for (auto& s : _schemas) {
+            out.append(std::move(s));
+            out.append("\n", 1);
+        }
+        return canonical_schema_definition::raw_string{std::move(out)};
     }
 
 private:
     absl::flat_hash_set<ss::sstring> _names;
-    std::vector<ss::sstring> _schemas;
+    std::vector<canonical_schema_definition::raw_string> _schemas;
 };
 
 ss::future<collected_schema> collect_schema(
@@ -454,18 +468,14 @@ ss::future<collected_schema> collect_schema(
   collected_schema collected,
   ss::sstring name,
   canonical_schema schema) {
-    for (auto& ref : schema.def().refs()) {
+    for (auto const& ref : schema.def().refs()) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
-              std::move(ref.sub), ref.version, include_deleted::no);
+              ref.sub, ref.version, include_deleted::no);
             collected = co_await collect_schema(
-              store,
-              std::move(collected),
-              std::move(ref.name),
-              std::move(ss.schema));
+              store, std::move(collected), ref.name, std::move(ss.schema));
         }
     }
-    // NOLINTNEXTLINE(bugprone-use-after-move)
     collected.insert(std::move(name), std::move(schema).def());
     co_return std::move(collected);
 }
@@ -477,11 +487,10 @@ make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
         auto name = schema.sub()();
         auto schema_refs = schema.def().refs();
         auto refs = co_await collect_schema(store, {}, name, std::move(schema));
-        auto def = refs.flatten();
+        iobuf_istream sis{std::move(refs).flatten()()};
+        auto is = avro::istreamInputStream(sis.istream());
         co_return avro_schema_definition{
-          avro::compileJsonSchemaFromMemory(
-            reinterpret_cast<const uint8_t*>(def.data()), def.length()),
-          std::move(schema_refs)};
+          avro::compileJsonSchemaFromStream(*is), std::move(schema_refs)};
     } catch (const avro::Exception& e) {
         ex = e;
     }
@@ -496,12 +505,12 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
     json::Document doc;
     constexpr auto flags = rapidjson::kParseDefaultFlags
                            | rapidjson::kParseStopWhenDoneFlag;
-    const auto& raw = def.raw()();
-    if (raw.empty()) {
+    if (def.raw()().empty()) {
         auto ec = error_code::schema_empty;
         return error_info{ec, make_error_code(ec).message()};
     }
-    doc.Parse<flags>(raw.data(), raw.size());
+    json::chunked_input_stream is{def.shared_raw()()};
+    doc.ParseStream<flags>(is);
     if (doc.HasParseError()) {
         return error_info{
           error_code::schema_invalid,
@@ -513,21 +522,25 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
     sanitize_context ctx{.alloc = doc.GetAllocator()};
     auto res = sanitize(doc, ctx);
     if (res.has_error()) {
+        // TODO BP: Prevent this linearizaton
+        iobuf_parser p(std::move(def).raw()());
         return error_info{
           res.assume_error().code(),
-          fmt::format("{} {}", res.assume_error().message(), raw)};
+          fmt::format(
+            "{} {}",
+            res.assume_error().message(),
+            p.read_string(p.bytes_left()))};
     }
 
-    json::StringBuffer str_buf;
-    str_buf.Reserve(raw.size());
-    json::Writer<json::StringBuffer> w{str_buf};
+    json::chunked_buffer buf;
+    json::Writer<json::chunked_buffer> w{buf};
 
     if (!doc.Accept(w)) {
         return error_info{error_code::schema_invalid, "Invalid schema"};
     }
 
     return canonical_schema_definition{
-      std::string_view{str_buf.GetString(), str_buf.GetSize()},
+      canonical_schema_definition::raw_string{std::move(buf).as_iobuf()},
       schema_type::avro,
       def.refs()};
 }

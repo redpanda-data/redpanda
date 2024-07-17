@@ -110,3 +110,22 @@ ss::sstring iobuf_to_base64(const iobuf& input) {
     output.resize(written);
     return output;
 }
+
+iobuf base64_to_iobuf(const iobuf& buf) {
+    base64_state state{};
+    base64_stream_decode_init(&state, 0);
+    iobuf out;
+    for (const details::io_fragment& frag : buf) {
+        iobuf::fragment out_frag{frag.size()};
+        size_t written{};
+        if (
+          1
+          != base64_stream_decode(
+            &state, frag.get(), frag.size(), out_frag.get_write(), &written)) {
+            throw base64_decoder_exception{};
+        }
+        out_frag.reserve(written);
+        out.append(std::move(out_frag).release());
+    }
+    return out;
+}

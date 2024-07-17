@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/iobuf_writer.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -22,7 +23,7 @@ struct get_schemas_ids_id_response {
 
 template<typename Buffer>
 void rjson_serialize(
-  ::json::Writer<Buffer>& w, const get_schemas_ids_id_response& res) {
+  ::json::iobuf_writer<Buffer>& w, const get_schemas_ids_id_response& res) {
     w.StartObject();
     if (res.definition.type() != schema_type::avro) {
         w.Key("schemaType");

@@ -76,9 +76,9 @@ public:
     ///
     /// return the schema_version and schema_id, and whether it's new.
     insert_result insert(canonical_schema schema) {
-        auto id = insert_schema(std::move(schema).def()).id;
-        // NOLINTNEXTLINE(bugprone-use-after-move)
-        auto [version, inserted] = insert_subject(std::move(schema).sub(), id);
+        auto [sub, def] = std::move(schema).destructure();
+        auto id = insert_schema(std::move(def)).id;
+        auto [version, inserted] = insert_subject(std::move(sub), id);
         return {version, id, inserted};
     }
 
@@ -89,7 +89,7 @@ public:
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->second.definition};
+        return {it->second.definition.share()};
     }
 
     ///\brief Return the id of the schema, if it already exists.

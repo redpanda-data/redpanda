@@ -12,9 +12,8 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_parser.h"
+#include "json/iobuf_writer.h"
 #include "json/reader.h"
-#include "json/stream.h"
 #include "json/writer.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "utils/base64.h"
@@ -65,7 +64,7 @@ public:
       : _fmt(fmt) {}
 
     template<typename Buffer>
-    bool operator()(::json::Writer<Buffer>& w, iobuf buf) {
+    bool operator()(::json::iobuf_writer<Buffer>& w, iobuf buf) {
         switch (_fmt) {
         case serialization_format::none:
             [[fallthrough]];
@@ -81,7 +80,7 @@ public:
     }
 
     template<typename Buffer>
-    bool encode_base64(::json::Writer<Buffer>& w, iobuf buf) {
+    bool encode_base64(::json::iobuf_writer<Buffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }
@@ -94,11 +93,8 @@ public:
         if (buf.empty()) {
             return w.Null();
         }
-        iobuf_parser p{std::move(buf)};
-        auto str = p.read_string(p.bytes_left());
-        static_assert(str.padding(), "StringStream requires null termination");
+        ::json::chunked_input_stream ss{std::move(buf)};
         ::json::Reader reader;
-        ::json::StringStream ss{str.c_str()};
         return reader.Parse(ss, w);
     };
 

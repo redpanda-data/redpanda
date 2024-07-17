@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "json/_include_first.h"
 #include "json/prettywriter.h"
 #include "json/reader.h"
@@ -132,6 +133,7 @@ void rjson_serialize(
 }
 
 ss::sstring minify(std::string_view json);
+iobuf minify(iobuf json);
 
 ss::sstring prettify(std::string_view json);
 

@@ -145,7 +145,7 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
             .fetch_partition(std::move(tp), offset, max_bytes, timeout)
             .then([res_fmt](kafka::fetch_response res) {
                 ::json::chunked_buffer buf;
-                ::json::Writer<::json::chunked_buffer> w(buf);
+                ::json::iobuf_writer<::json::chunked_buffer> w(buf);
 
                 ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
                 return buf;
@@ -391,7 +391,7 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
           return client.consumer_fetch(group_id, name, timeout, max_bytes)
             .then([res_fmt, rp{std::move(rp)}](auto res) mutable {
                 ::json::chunked_buffer buf;
-                ::json::Writer<::json::chunked_buffer> w(buf);
+                ::json::iobuf_writer<::json::chunked_buffer> w(buf);
 
                 ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
