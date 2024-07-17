@@ -26,7 +26,15 @@ endforeach()
 
 v_cc_library(
   NAME iceberg
-  SRCS ${avro_hdrs}
+  SRCS
+    ${avro_hdrs}
+    datatypes.cc
+    datatypes_json.cc
+    json_utils.cc
+  DEPS
+    v::container
+    v::json
+    v::strings
 )
 
 add_subdirectory(tests)
