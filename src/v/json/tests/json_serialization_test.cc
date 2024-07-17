@@ -41,8 +41,8 @@ struct personne_t {
 
 } // namespace
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const personne_t::nested& obj) {
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, const personne_t::nested& obj) {
     w.StartObject();
 
     w.Key("x");
@@ -57,11 +57,12 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, const personne_t& p) {
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, const personne_t& p) {
     w.StartObject();
 
     w.Key("full_name");
-    json::rjson_serialize<std::string_view>(w, p.full_name);
+    json::rjson_serialize(w, std::string_view{p.full_name});
 
     w.Key("nic");
     json::rjson_serialize(w, p.nic);

@@ -28,50 +28,62 @@
 
 namespace json {
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, short v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, short v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, bool v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, bool v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, long long v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, long long v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, int v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, int v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, unsigned int v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, unsigned int v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, long v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, long v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, unsigned long v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, unsigned long v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, double v);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, double v);
 
-void rjson_serialize(json::Writer<json::StringBuffer>& w, std::string_view s);
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, std::string_view s);
 
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, const net::unresolved_address& v);
+
+template<typename Buffer>
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const net::unresolved_address& v);
+  json::Writer<Buffer>& w, const std::chrono::milliseconds& v);
 
+template<typename Buffer>
+void rjson_serialize(json::Writer<Buffer>& w, const std::chrono::seconds& v);
+
+template<typename Buffer>
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const std::chrono::milliseconds& v);
+  json::Writer<Buffer>& w, const std::filesystem::path& path);
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const std::chrono::seconds& v);
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const std::filesystem::path& path);
-
-template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
-void rjson_serialize(json::Writer<json::StringBuffer>& w, T v) {
+template<
+  typename Buffer,
+  typename T,
+  typename = std::enable_if_t<std::is_enum_v<T>>>
+void rjson_serialize(json::Writer<Buffer>& w, T v) {
     rjson_serialize(w, static_cast<std::underlying_type_t<T>>(v));
 }
 
-template<typename T, typename Tag>
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const named_type<T, Tag>& v) {
+template<typename Buffer, typename T, typename Tag>
+void rjson_serialize(json::Writer<Buffer>& w, const named_type<T, Tag>& v) {
     rjson_serialize(w, v());
 }
 
-template<typename T>
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const std::optional<T>& v) {
+template<typename Buffer, typename T>
+void rjson_serialize(json::Writer<Buffer>& w, const std::optional<T>& v) {
     if (v) {
         rjson_serialize(w, *v);
         return;
@@ -79,9 +91,8 @@ void rjson_serialize(
     w.Null();
 }
 
-template<typename T, typename A>
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const std::vector<T, A>& v) {
+template<typename Buffer, typename T, typename A>
+void rjson_serialize(json::Writer<Buffer>& w, const std::vector<T, A>& v) {
     w.StartArray();
     for (const auto& e : v) {
         rjson_serialize(w, e);
@@ -89,10 +100,9 @@ void rjson_serialize(
     w.EndArray();
 }
 
-template<typename T, size_t chunk_size>
+template<typename Buffer, typename T, size_t chunk_size>
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const ss::chunked_fifo<T, chunk_size>& v) {
+  json::Writer<Buffer>& w, const ss::chunked_fifo<T, chunk_size>& v) {
     w.StartArray();
     for (const auto& e : v) {
         rjson_serialize(w, e);
@@ -100,9 +110,9 @@ void rjson_serialize(
     w.EndArray();
 }
 
-template<typename T>
+template<typename Buffer, typename T>
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
+  json::Writer<Buffer>& w,
   const std::unordered_map<typename T::key_type, T>& v) {
     w.StartArray();
     for (const auto& e : v) {
@@ -111,9 +121,9 @@ void rjson_serialize(
     w.EndArray();
 }
 
-template<typename T, typename A>
+template<typename Buffer, typename T, typename A>
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const ss::circular_buffer<T, A>& v) {
+  json::Writer<Buffer>& w, const ss::circular_buffer<T, A>& v) {
     w.StartArray();
     for (const auto& e : v) {
         rjson_serialize(w, e);

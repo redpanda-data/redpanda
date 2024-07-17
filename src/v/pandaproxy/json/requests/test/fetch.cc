@@ -15,12 +15,9 @@
 #include "json/writer.h"
 #include "kafka/client/test/utils.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
-#include "model/record.h"
 #include "model/timestamp.h"
-#include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 
@@ -28,8 +25,6 @@
 
 #include <boost/test/tools/interface.hpp>
 #include <boost/test/tools/old/interface.hpp>
-
-#include <type_traits>
 
 namespace ppj = pandaproxy::json;
 
