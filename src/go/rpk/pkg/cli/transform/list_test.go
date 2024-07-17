@@ -16,7 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 
@@ -24,17 +25,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupTestData() []adminapi.TransformMetadata {
-	return []adminapi.TransformMetadata{
+func setupTestData() []rpadmin.TransformMetadata {
+	return []rpadmin.TransformMetadata{
 		{
 			Name:         "foo2bar",
 			InputTopic:   "foo",
 			OutputTopics: []string{"bar"},
-			Environment: []adminapi.EnvironmentVariable{
+			Environment: []rpadmin.EnvironmentVariable{
 				{Key: "FLUBBER", Value: "enabled"},
 			},
 			CompressionMode: "none",
-			Status: []adminapi.PartitionTransformStatus{
+			Status: []rpadmin.PartitionTransformStatus{
 				{
 					NodeID:    0,
 					Partition: 1,
@@ -59,11 +60,11 @@ func setupTestData() []adminapi.TransformMetadata {
 			Name:         "scrubber",
 			InputTopic:   "pii",
 			OutputTopics: []string{"cleaned", "munged"},
-			Environment: []adminapi.EnvironmentVariable{
+			Environment: []rpadmin.EnvironmentVariable{
 				{Key: "FLUX_CAPACITOR", Value: "disabled"},
 			},
 			CompressionMode: "gzip",
-			Status: []adminapi.PartitionTransformStatus{
+			Status: []rpadmin.PartitionTransformStatus{
 				{
 					NodeID:    0,
 					Partition: 1,
@@ -98,9 +99,9 @@ func Text(s string) testCase {
 }
 
 func TestHandleEmptyInput(t *testing.T) {
-	s := summarizedView([]adminapi.TransformMetadata{})
+	s := summarizedView([]rpadmin.TransformMetadata{})
 	assert.NotNil(t, s)
-	d := detailView([]adminapi.TransformMetadata{})
+	d := detailView([]rpadmin.TransformMetadata{})
 	assert.NotNil(t, d)
 }
 

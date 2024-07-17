@@ -12,6 +12,8 @@ package partitions
 import (
 	"fmt"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -44,7 +46,7 @@ using the '--dry' flag.
 			if f.Kind != "text" && f.Kind != "help" && !dry {
 				out.Die("Format type %q is only valid for dry runs (--dry)", f.Kind)
 			}
-			if h, ok := f.Help([]adminapi.MajorityLostPartitions{}); ok {
+			if h, ok := f.Help([]rpadmin.MajorityLostPartitions{}); ok {
 				out.Exit(h)
 			}
 			p, err := p.LoadVirtualProfile(fs)
@@ -89,7 +91,7 @@ using the '--dry' flag.
 	return cmd
 }
 
-func printPlan(f config.OutFormatter, plan []adminapi.MajorityLostPartitions) error {
+func printPlan(f config.OutFormatter, plan []rpadmin.MajorityLostPartitions) error {
 	if isText, _, s, err := f.Format(plan); !isText {
 		if err != nil {
 			return fmt.Errorf("unable to print in the required format %q: %v", f.Kind, err)

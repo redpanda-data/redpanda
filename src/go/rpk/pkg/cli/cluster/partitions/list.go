@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -84,7 +86,7 @@ List all in json format.
 `,
 		Run: func(cmd *cobra.Command, topics []string) {
 			f := p.Formatter
-			if h, ok := f.Help([]adminapi.ClusterPartition{}); ok {
+			if h, ok := f.Help([]rpadmin.ClusterPartition{}); ok {
 				out.Exit(h)
 			}
 			if len(topics) == 0 && !all {
@@ -101,13 +103,13 @@ List all in json format.
 			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			var clusterPartitions []adminapi.ClusterPartition
+			var clusterPartitions []rpadmin.ClusterPartition
 			var mu sync.Mutex
 			if len(topics) == 0 && all {
 				clusterPartitions, err = cl.AllClusterPartitions(cmd.Context(), true, disabledOnly)
 				// If the admin API returns a 404, most likely rpk is talking
 				// with an old cluster.
-				if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+				if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
 					if he.Response.StatusCode == http.StatusNotFound {
 						out.Die("unable to query all partitions in the cluster: %vYou may need to upgrade the cluster to access this feature or try listing per-topic with: 'rpk cluster partition list [TOPICS...]'", err)
 					}
@@ -125,7 +127,7 @@ List all in json format.
 						if err != nil {
 							// If the admin API returns a 404, most likely rpk
 							// is talking with an old cluster.
-							var he *adminapi.HTTPResponseError
+							var he *rpadmin.HTTPResponseError
 							isNotFoundErr := errors.As(err, &he) && he.Response.StatusCode == http.StatusNotFound
 							if !isNotFoundErr {
 								return fmt.Errorf("unable to query cluster partition metadata of topic %q: %v", topicName, err)
@@ -169,7 +171,7 @@ List all in json format.
 	return cmd
 }
 
-func printClusterPartitions(f config.OutFormatter, clusterPartitions []adminapi.ClusterPartition) {
+func printClusterPartitions(f config.OutFormatter, clusterPartitions []rpadmin.ClusterPartition) {
 	types.Sort(clusterPartitions)
 	if isText, _, formatted, err := f.Format(clusterPartitions); !isText {
 		out.MaybeDie(err, "unable to print partitions in the required format %q: %v", f.Kind, err)
@@ -222,15 +224,15 @@ func nsTopic(nst string) (namespace string, topic string) {
 
 // topicPartitions query the old v1/partitions/ endpoint and parse the result to
 // the newer /v1/cluster/partitions format.
-func topicPartitions(ctx context.Context, cl *adminapi.AdminAPI, ns, topicName string) ([]adminapi.ClusterPartition, error) {
-	var ret []adminapi.ClusterPartition
+func topicPartitions(ctx context.Context, cl *rpadmin.AdminAPI, ns, topicName string) ([]rpadmin.ClusterPartition, error) {
+	var ret []rpadmin.ClusterPartition
 	tPartitions, err := cl.GetTopic(ctx, ns, topicName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to query partition metadata of topic %q: %v", topicName, err)
 	}
 	for _, tp := range tPartitions {
 		tp := tp
-		ret = append(ret, adminapi.ClusterPartition{
+		ret = append(ret, rpadmin.ClusterPartition{
 			Ns:          tp.Namespace,
 			Topic:       tp.Topic,
 			PartitionID: tp.PartitionID,
@@ -244,7 +246,7 @@ func topicPartitions(ctx context.Context, cl *adminapi.AdminAPI, ns, topicName s
 
 // filterPartition filters cPartitions and returns a slice with only the
 // clusterPartitions with ID present in the partitions slice.
-func filterPartition(cPartitions []adminapi.ClusterPartition, partitions []int) (ret []adminapi.ClusterPartition) {
+func filterPartition(cPartitions []rpadmin.ClusterPartition, partitions []int) (ret []rpadmin.ClusterPartition) {
 	pm := make(map[int]bool, 0)
 	for _, p := range partitions {
 		pm[p] = true
@@ -259,7 +261,7 @@ func filterPartition(cPartitions []adminapi.ClusterPartition, partitions []int) 
 
 // filterBroker filters cPartition and returns a slice with only the
 // clusterPartitions with the same brokers present in the Replicas slice.
-func filterBroker(cPartitions []adminapi.ClusterPartition, nodeIDs []int) (ret []adminapi.ClusterPartition) {
+func filterBroker(cPartitions []rpadmin.ClusterPartition, nodeIDs []int) (ret []rpadmin.ClusterPartition) {
 	for _, p := range cPartitions {
 		rob := replicaOnBroker(p.Replicas, nodeIDs)
 		if rob {
@@ -271,7 +273,7 @@ func filterBroker(cPartitions []adminapi.ClusterPartition, nodeIDs []int) (ret [
 
 // replicaOnBroker returns true when all nodes in the brokers slice
 // exist in the Replicas slice. Otherwise, this function returns false.
-func replicaOnBroker(replicas adminapi.Replicas, nodeIDs []int) bool {
+func replicaOnBroker(replicas rpadmin.Replicas, nodeIDs []int) bool {
 	foundCount := 0
 	for _, r := range replicas {
 		for _, b := range nodeIDs {

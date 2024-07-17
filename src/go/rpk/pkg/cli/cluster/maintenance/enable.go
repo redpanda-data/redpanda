@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -60,7 +61,7 @@ node exists that is already in maintenance mode then an error will be returned.
 			}
 
 			err = client.EnableMaintenanceMode(cmd.Context(), nodeID)
-			var he *adminapi.HTTPResponseError
+			var he *rpadmin.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()

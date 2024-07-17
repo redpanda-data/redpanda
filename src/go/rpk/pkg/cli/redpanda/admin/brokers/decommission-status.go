@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/docker/go-units"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -73,7 +75,7 @@ kafka/test/0
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			dbs, err := cl.DecommissionBrokerStatus(cmd.Context(), broker)
-			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+			if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
 				// about the node is not decommissioning
 				if he.Response.StatusCode == 400 {
@@ -115,7 +117,7 @@ kafka/test/0
 				return strconv.Itoa(size)
 			}
 
-			f := func(p *adminapi.DecommissionPartitions) interface{} {
+			f := func(p *rpadmin.DecommissionPartitions) interface{} {
 				nt := p.Ns + "/" + p.Topic
 				if p.PartitionSize > 0 {
 					completion = p.BytesMoved * 100 / p.PartitionSize

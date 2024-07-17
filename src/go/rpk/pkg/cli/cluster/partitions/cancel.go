@@ -12,6 +12,8 @@ package partitions
 import (
 	"fmt"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -65,7 +67,7 @@ func (m *movementCancelHandler) runMovementCancel(cmd *cobra.Command, _ []string
 	cl, err := adminapi.NewClient(m.fs, p)
 	out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-	var movements []adminapi.PartitionsMovementResult
+	var movements []rpadmin.PartitionsMovementResult
 	if m.node >= 0 {
 		if !m.noConfirm {
 			confirmed, err := out.Confirm("Confirm cancellation of partition movements in node %v?", m.node)
@@ -95,7 +97,7 @@ func (m *movementCancelHandler) runMovementCancel(cmd *cobra.Command, _ []string
 	printMovementsResult(movements)
 }
 
-func printMovementsResult(movements []adminapi.PartitionsMovementResult) {
+func printMovementsResult(movements []rpadmin.PartitionsMovementResult) {
 	headers := []string{
 		"NAMESPACE",
 		"TOPIC",

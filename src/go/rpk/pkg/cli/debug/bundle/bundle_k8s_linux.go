@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	authorizationv1 "k8s.io/api/authorization/v1"
 
 	"github.com/hashicorp/go-multierror"
@@ -298,17 +300,17 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 			},
 			func() error {
 				// Need to wrap this function because cl.Config receives an additional 'includeDefaults' param.
-				f := func(ctx context.Context) (adminapi.Config, error) {
+				f := func(ctx context.Context) (rpadmin.Config, error) {
 					return cl.Config(ctx, true)
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_config.json", f)
 			}, func() error {
-				f := func(ctx context.Context) (adminapi.ConfigStatusResponse, error) {
+				f := func(ctx context.Context) (rpadmin.ConfigStatusResponse, error) {
 					return cl.ClusterConfigStatus(ctx, true)
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_config_status.json", f)
 			}, func() error {
-				f := func(ctx context.Context) ([]adminapi.ClusterPartition, error) {
+				f := func(ctx context.Context) ([]rpadmin.ClusterPartition, error) {
 					return cl.AllClusterPartitions(ctx, true, false) // include defaults, and include disabled.
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_partitions.json", f)
@@ -343,7 +345,7 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 					TLS:       p.AdminAPI.TLS,
 				},
 			}
-			cl, err := adminapi.NewClient(fs, p, adminapi.ClientTimeout(profilerWait+2*time.Second))
+			cl, err := adminapi.NewClient(fs, p, rpadmin.ClientTimeout(profilerWait+2*time.Second))
 			if err != nil {
 				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
 				continue
@@ -608,38 +610,38 @@ func sanitizeName(name string) string {
 	return r
 }
 
-func saveExtraFuncs(ctx context.Context, ps *stepParams, cl *adminapi.AdminAPI, partitionFilters []topicPartitionFilter) (funcs []func() error) {
+func saveExtraFuncs(ctx context.Context, ps *stepParams, cl *rpadmin.AdminAPI, partitionFilters []topicPartitionFilter) (funcs []func() error) {
 	for _, tpf := range partitionFilters {
 		tpf := tpf
 		for _, p := range tpf.partitionsID {
 			p := p
 			funcs = append(funcs, []func() error{
 				func() error {
-					f := func(ctx context.Context) (adminapi.Partition, error) {
+					f := func(ctx context.Context) (rpadmin.Partition, error) {
 						return cl.GetPartition(ctx, tpf.namespace, tpf.topic, p)
 					}
 					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/info_%v_%v_%v.json", tpf.namespace, tpf.topic, p), f)
 				},
 				func() error {
-					f := func(ctx context.Context) (adminapi.DebugPartition, error) {
+					f := func(ctx context.Context) (rpadmin.DebugPartition, error) {
 						return cl.DebugPartition(ctx, tpf.namespace, tpf.topic, p)
 					}
 					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/debug_%v_%v_%v.json", tpf.namespace, tpf.topic, p), f)
 				},
 				func() error {
-					f := func(ctx context.Context) (adminapi.CloudStorageStatus, error) {
+					f := func(ctx context.Context) (rpadmin.CloudStorageStatus, error) {
 						return cl.CloudStorageStatus(ctx, tpf.topic, strconv.Itoa(p))
 					}
 					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/cloud_status_%v_%v.json", tpf.topic, p), f)
 				},
 				func() error {
-					f := func(ctx context.Context) (adminapi.CloudStorageManifest, error) {
+					f := func(ctx context.Context) (rpadmin.CloudStorageManifest, error) {
 						return cl.CloudStorageManifest(ctx, tpf.topic, p)
 					}
 					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/cloud_manifest_%v_%v.json", tpf.topic, p), f)
 				},
 				func() error {
-					f := func(ctx context.Context) (adminapi.CloudStorageAnomalies, error) {
+					f := func(ctx context.Context) (rpadmin.CloudStorageAnomalies, error) {
 						return cl.CloudStorageAnomalies(ctx, tpf.namespace, tpf.topic, p)
 					}
 					return requestAndSave(ctx, ps, fmt.Sprintf("partitions/cloud_anomalies_%v_%v_%v.json", tpf.namespace, tpf.topic, p), f)

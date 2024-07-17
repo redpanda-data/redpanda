@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -122,7 +123,7 @@ If an empty string is given as the value, the property is reset to its default.`
 			}
 
 			result, err := client.PatchClusterConfig(cmd.Context(), upsert, remove)
-			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+			if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
 				// about which configuration properties were invalid.
 				if he.Response.StatusCode == 400 {

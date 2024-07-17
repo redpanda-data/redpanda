@@ -12,6 +12,8 @@ package selftest
 import (
 	"fmt"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -120,7 +122,7 @@ command.`,
 func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk uint, durationNet uint, timeoutCloud uint, backoffCloud uint) []any {
 	diskcheck := []any{
 		// One test weighted for better throughput results
-		adminapi.DiskcheckParameters{
+		rpadmin.DiskcheckParameters{
 			Name:        "512KB sequential r/w throughput disk test",
 			DSync:       true,
 			SkipWrite:   false,
@@ -129,10 +131,10 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk
 			RequestSize: 512 * units.KiB,
 			DurationMs:  durationDisk,
 			Parallelism: 4,
-			Type:        adminapi.DiskcheckTagIdentifier,
+			Type:        rpadmin.DiskcheckTagIdentifier,
 		},
 		// .. and another for better latency/iops results
-		adminapi.DiskcheckParameters{
+		rpadmin.DiskcheckParameters{
 			Name:        "4KB sequential r/w latency/iops disk test",
 			DSync:       true,
 			SkipWrite:   false,
@@ -141,24 +143,24 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk
 			RequestSize: 4 * units.KiB,
 			DurationMs:  durationDisk,
 			Parallelism: 2,
-			Type:        adminapi.DiskcheckTagIdentifier,
+			Type:        rpadmin.DiskcheckTagIdentifier,
 		},
 	}
 	netcheck := []any{
-		adminapi.NetcheckParameters{
+		rpadmin.NetcheckParameters{
 			Name:        "8Kb Network Throughput Test",
 			RequestSize: 8192,
 			DurationMs:  durationNet,
 			Parallelism: 10,
-			Type:        adminapi.NetcheckTagIdentifier,
+			Type:        rpadmin.NetcheckTagIdentifier,
 		},
 	}
 	cloudcheck := []any{
-		adminapi.CloudcheckParameters{
+		rpadmin.CloudcheckParameters{
 			Name:      "Cloud Storage Test",
 			TimeoutMs: timeoutCloud,
 			BackoffMs: backoffCloud,
-			Type:      adminapi.CloudcheckTagIdentifier,
+			Type:      rpadmin.CloudcheckTagIdentifier,
 		},
 	}
 	switch {

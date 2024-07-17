@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -50,7 +52,7 @@ cluster is unreachable), use the hidden --force flag.
 				out.MaybeDie(err, "unable to get broker list: %v; to bypass the node version check re-run this with --force; see this command's help text for more details", err)
 
 				var (
-					b             adminapi.Broker
+					b             rpadmin.Broker
 					found, anyOld bool
 				)
 				for _, br := range brokers {

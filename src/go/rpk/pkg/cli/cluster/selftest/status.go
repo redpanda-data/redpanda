@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -122,7 +124,7 @@ func rowDataAsInterface(row []string) []interface{} {
 	return iarr
 }
 
-func runningNodes(reports []adminapi.SelfTestNodeReport) map[int]string {
+func runningNodes(reports []rpadmin.SelfTestNodeReport) map[int]string {
 	running := map[int]string{}
 	for _, report := range reports {
 		if report.Status == statusRunning {
@@ -132,7 +134,7 @@ func runningNodes(reports []adminapi.SelfTestNodeReport) map[int]string {
 	return running
 }
 
-func isUninitialized(reports []adminapi.SelfTestNodeReport) bool {
+func isUninitialized(reports []rpadmin.SelfTestNodeReport) bool {
 	noResults := 0
 	for _, report := range reports {
 		if report.Status == statusIdle && len(report.Results) == 0 {
@@ -142,11 +144,11 @@ func isUninitialized(reports []adminapi.SelfTestNodeReport) bool {
 	return noResults == len(reports)
 }
 
-func makeReportHeader(report adminapi.SelfTestNodeReport) string {
+func makeReportHeader(report rpadmin.SelfTestNodeReport) string {
 	return fmt.Sprintf("NODE ID: %d | STATUS: %s", report.NodeID, report.Status)
 }
 
-func makeReportTable(report adminapi.SelfTestNodeReport) [][]string {
+func makeReportTable(report rpadmin.SelfTestNodeReport) [][]string {
 	var table [][]string
 	for _, sr := range report.Results {
 		table = append(table, []string{"NAME", sr.TestName})
@@ -167,14 +169,14 @@ func makeReportTable(report adminapi.SelfTestNodeReport) [][]string {
 			table = append(table, []string{""})
 			continue
 		}
-		if sr.TestType == adminapi.CloudcheckTagIdentifier {
+		if sr.TestType == rpadmin.CloudcheckTagIdentifier {
 			// Cloudcheck does not have any IOPS, THROUGHPUT, or LATENCY results.
 			table = append(table, []string{""})
 			continue
 		}
 		table = append(table, []string{"IOPS", fmt.Sprintf("%d req/sec", *sr.RequestsPerSec)})
 		var throughput string
-		if sr.TestType == adminapi.NetcheckTagIdentifier {
+		if sr.TestType == rpadmin.NetcheckTagIdentifier {
 			throughput = system.BitsToHuman(float64(*sr.BytesPerSec))
 		} else {
 			throughput = units.BytesSize(float64(*sr.BytesPerSec))

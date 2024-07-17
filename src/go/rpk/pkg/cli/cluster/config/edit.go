@@ -16,6 +16,7 @@ import (
 	"os/exec"
 
 	"github.com/kballard/go-shellquote"
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -69,9 +70,9 @@ to edit all properties including these tunables.
 
 func executeEdit(
 	ctx context.Context,
-	client *adminapi.AdminAPI,
-	schema adminapi.ConfigSchema,
-	currentConfig adminapi.Config,
+	client *rpadmin.AdminAPI,
+	schema rpadmin.ConfigSchema,
+	currentConfig rpadmin.Config,
 	all *bool,
 ) error {
 	// Generate a yaml template for editing

@@ -10,10 +10,13 @@
 package partitions
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/redpanda-data/common-go/rpadmin"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -74,7 +77,7 @@ brokers automatically.
 
 				source := partDetails.LeaderID
 
-				err = cl.TransferLeadership(cmd.Context(), fs, p, source, ns, topic, partition, target)
+				err = transferLeadership(cmd.Context(), fs, p, cl, source, ns, topic, partition, target)
 				if err != nil {
 					fmt.Printf("failed to transfer the partition leadership: %v\n", err)
 				} else {
@@ -89,7 +92,7 @@ brokers automatically.
 
 				source := partDetails.LeaderID
 
-				err = cl.TransferLeadership(cmd.Context(), fs, p, source, ns, topic, partition, target)
+				err = transferLeadership(cmd.Context(), fs, p, cl, source, ns, topic, partition, target)
 				if err != nil {
 					fmt.Printf("failed to transfer the partition leader: %v\n", err)
 				} else {
@@ -151,4 +154,28 @@ func formatNT(t string) (ns string, topic string) {
 		topic = nt[1]
 	}
 	return
+}
+
+// transferLeadership creates a host client that talks to the broker with the
+// given ID and calls the TransferLeadership endpoint.
+func transferLeadership(ctx context.Context, fs afero.Fs, p *config.RpkProfile, admCl *rpadmin.AdminAPI, id int, ns, topic string, partition int, target string) error {
+	brokerURL, err := admCl.BrokerIDToURL(ctx, id)
+	if err != nil {
+		return fmt.Errorf("unable to get broker URL: %v", err)
+	}
+	a := &p.AdminAPI
+	addrs := a.Addresses
+	tc, err := a.TLS.Config(fs)
+	if err != nil {
+		return fmt.Errorf("unable to create admin api tls config: %v", err)
+	}
+	auth, err := adminapi.GetAuth(p)
+	if err != nil {
+		return fmt.Errorf("unable to get auth mechanism from loaded rpk profile: %v", err)
+	}
+	cl, err := rpadmin.NewHostClient(addrs, tc, auth, false, brokerURL)
+	if err != nil {
+		return fmt.Errorf("unable to create Admin API client for node with ID %v: %v", id, err)
+	}
+	return cl.TransferLeadership(ctx, ns, topic, partition, target)
 }

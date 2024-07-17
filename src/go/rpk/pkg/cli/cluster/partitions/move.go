@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpadmin"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -35,12 +37,12 @@ func newMovePartitionReplicasCommand(fs afero.Fs, p *config.Params) *cobra.Comma
 		partitions []string
 	)
 	type newAssignment struct {
-		Namespace   string            `json:"ns"`
-		Topic       string            `json:"topic"`
-		Partition   int               `json:"partition_id"`
-		OldReplicas adminapi.Replicas `json:"old_replicas"`
-		NewReplicas adminapi.Replicas `json:"new_replicas"`
-		Error       string            `json:"error,omitempty"`
+		Namespace   string           `json:"ns"`
+		Topic       string           `json:"topic"`
+		Partition   int              `json:"partition_id"`
+		OldReplicas rpadmin.Replicas `json:"old_replicas"`
+		NewReplicas rpadmin.Replicas `json:"new_replicas"`
+		Error       string           `json:"error,omitempty"`
 	}
 	cmd := &cobra.Command{
 		Use:   "move",
@@ -168,7 +170,7 @@ func newMovePartitionReplicasCommand(fs afero.Fs, p *config.Params) *cobra.Comma
 					err := cl.MoveReplicas(cmd.Context(), newa.Namespace, newa.Topic, newa.Partition, newa.NewReplicas)
 					mu.Lock()
 					defer mu.Unlock()
-					if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+					if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
 						body, bodyErr := he.DecodeGenericErrorBody()
 						if bodyErr == nil {
 							newAssignmentList[i].Error = body.Message
@@ -256,7 +258,7 @@ var (
 
 // configureReplicas parses the partition flag with format; foo/0:1-0,2-1,3-2 or 0:1,2,3
 // It extracts letters after the colon and return as adminapi.Replicas.
-func configureReplicas(partition string, currentReplicas adminapi.Replicas) (adminapi.Replicas, error) {
+func configureReplicas(partition string, currentReplicas rpadmin.Replicas) (rpadmin.Replicas, error) {
 	replicaReOnce.Do(func() {
 		replicaRe = regexp.MustCompile(`^[^:]+:(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)$`)
 	})
@@ -264,19 +266,19 @@ func configureReplicas(partition string, currentReplicas adminapi.Replicas) (adm
 	if len(m) == 0 {
 		return nil, fmt.Errorf("invalid format for %s", partition)
 	}
-	var newReplicas adminapi.Replicas
+	var newReplicas rpadmin.Replicas
 	for _, nodeCore := range strings.Split(m[1], ",") {
 		if split := strings.Split(nodeCore, "-"); len(split) == 1 {
 			node, _ := strconv.Atoi(split[0])
 			core := findCore(node, currentReplicas)
-			newReplicas = append(newReplicas, adminapi.Replica{
+			newReplicas = append(newReplicas, rpadmin.Replica{
 				NodeID: node,
 				Core:   core,
 			})
 		} else {
 			node, _ := strconv.Atoi(split[0])
 			core, _ := strconv.Atoi(split[1])
-			newReplicas = append(newReplicas, adminapi.Replica{
+			newReplicas = append(newReplicas, rpadmin.Replica{
 				NodeID: node,
 				Core:   core,
 			})
@@ -287,7 +289,7 @@ func configureReplicas(partition string, currentReplicas adminapi.Replicas) (adm
 
 // findCore finds a shard (CPU core) where an existing replica is
 // assigned on. Returns '-1' for a new node.
-func findCore(nodeID int, currentReplicas adminapi.Replicas) int {
+func findCore(nodeID int, currentReplicas rpadmin.Replicas) int {
 	for _, i := range currentReplicas {
 		if nodeID == i.NodeID {
 			return i.Core
