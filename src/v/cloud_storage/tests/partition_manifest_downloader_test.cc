@@ -34,6 +34,7 @@ constexpr model::cloud_credentials_source config_file{
 const ss::sstring test_uuid_str = "deadbeef-0000-0000-0000-000000000000";
 const model::cluster_uuid test_uuid{uuid_t::from_string(test_uuid_str)};
 const remote_label test_label{test_uuid};
+const std::optional<model::topic_namespace> test_tp_ns_override = std::nullopt;
 const model::ntp test_ntp{
   model::ns{"test-ns"}, model::topic{"test-topic"}, model::partition_id{42}};
 const model::initial_revision_id test_rev{0};
@@ -133,7 +134,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadLabeledManifest) {
     ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(pm));
     retry_chain_node retry(never_abort, 1s, 10ms);
     {
-        remote_path_provider path_provider(test_label);
+        remote_path_provider path_provider(test_label, test_tp_ns_override);
         partition_manifest_downloader dl(
           bucket_name, path_provider, test_ntp, test_rev, remote_.local());
         partition_manifest dl_pm;
@@ -145,7 +146,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadLabeledManifest) {
     {
         // The downloader can only look for what has been allowed by the path
         // provider, i.e. only those without any label.
-        remote_path_provider path_provider(std::nullopt);
+        remote_path_provider path_provider(std::nullopt, std::nullopt);
         partition_manifest_downloader dl(
           bucket_name, path_provider, test_ntp, test_rev, remote_.local());
         partition_manifest dl_pm;
@@ -162,7 +163,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadPrefixedManifest) {
     ASSERT_NO_FATAL_FAILURE(upload_prefixed_bin_manifest(pm));
     retry_chain_node retry(never_abort, 1s, 10ms);
     {
-        remote_path_provider path_provider(std::nullopt);
+        remote_path_provider path_provider(std::nullopt, std::nullopt);
         partition_manifest_downloader dl(
           bucket_name, path_provider, test_ntp, test_rev, remote_.local());
         partition_manifest dl_pm;
@@ -174,7 +175,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadPrefixedManifest) {
     {
         // The downloader can only look for what has been allowed by the path
         // provider, i.e. only those with the supplied remote label.
-        remote_path_provider path_provider(test_label);
+        remote_path_provider path_provider(test_label, test_tp_ns_override);
         partition_manifest_downloader dl(
           bucket_name, path_provider, test_ntp, test_rev, remote_.local());
         partition_manifest dl_pm;
@@ -191,7 +192,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadJsonManifest) {
     ASSERT_NO_FATAL_FAILURE(upload_prefixed_json_manifest(pm));
     retry_chain_node retry(never_abort, 1s, 10ms);
 
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     partition_manifest_downloader dl(
       bucket_name, path_provider, test_ntp, test_rev, remote_.local());
     partition_manifest dl_pm;
@@ -230,7 +231,7 @@ TEST_F(PartitionManifestDownloaderTest, TestDownloadJsonManifest) {
 }
 
 TEST_F(PartitionManifestDownloaderTest, TestLabeledManifestExists) {
-    remote_path_provider path_provider(test_label);
+    remote_path_provider path_provider(test_label, test_tp_ns_override);
     partition_manifest_downloader dl(
       bucket_name, path_provider, test_ntp, test_rev, remote_.local());
 
@@ -256,7 +257,7 @@ TEST_F(PartitionManifestDownloaderTest, TestLabeledManifestExists) {
 }
 
 TEST_F(PartitionManifestDownloaderTest, TestPrefixedJSONManifestExists) {
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     partition_manifest_downloader dl(
       bucket_name, path_provider, test_ntp, test_rev, remote_.local());
     auto pm = dummy_partition_manifest();
@@ -278,7 +279,7 @@ TEST_F(PartitionManifestDownloaderTest, TestPrefixedJSONManifestExists) {
 }
 
 TEST_F(PartitionManifestDownloaderTest, TestPrefixedBinaryManifestExists) {
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     partition_manifest_downloader dl(
       bucket_name, path_provider, test_ntp, test_rev, remote_.local());
     auto pm = dummy_partition_manifest();

@@ -28,7 +28,8 @@
 using namespace archival;
 
 namespace {
-static const cloud_storage::remote_path_provider path_provider(std::nullopt);
+static const cloud_storage::remote_path_provider
+  path_provider(std::nullopt, std::nullopt);
 } // anonymous namespace
 
 inline ss::logger test_log("test");

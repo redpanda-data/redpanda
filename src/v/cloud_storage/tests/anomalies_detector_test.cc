@@ -44,7 +44,7 @@ bool operator==(const anomalies& lhs, const anomalies& rhs) {
 
 namespace {
 
-cloud_storage::remote_path_provider path_provider(std::nullopt);
+cloud_storage::remote_path_provider path_provider(std::nullopt, std::nullopt);
 
 ss::logger test_logger{"anomaly_detection_test"};
 

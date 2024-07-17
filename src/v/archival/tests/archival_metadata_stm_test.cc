@@ -144,6 +144,7 @@ struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
           cloud_api.local(),
           feature_table.local(),
           logger,
+          std::nullopt,
           std::nullopt);
 
         _raft->start(std::move(builder)).get();
@@ -359,6 +360,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
       cloud_api.local(),
       feature_table.local(),
       logger,
+      std::nullopt,
       std::nullopt);
     _raft->start(std::move(builder)).get();
     _started = true;
@@ -458,6 +460,7 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
       cloud_api.local(),
       feature_table.local(),
       logger,
+      std::nullopt,
       std::nullopt);
 
     _raft->start(std::move(builder)).get();
@@ -671,7 +674,9 @@ FIXTURE_TEST(
       cloud_api.local(),
       feature_table.local(),
       logger,
+      std::nullopt,
       std::nullopt);
+
     _raft->start(std::move(builder)).get();
     _started = true;
     wait_for_confirmed_leader();

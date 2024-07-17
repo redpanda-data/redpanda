@@ -4239,7 +4239,7 @@ admin_server::get_cloud_storage_anomalies(
     }
 
     cloud_storage::remote_path_provider path_provider(
-      tp->properties.remote_label);
+      tp->properties.remote_label, std::nullopt);
     auto status = co_await _partition_manager.invoke_on(
       *shard,
       [&ntp](const auto& pm) -> std::optional<cloud_storage::anomalies> {

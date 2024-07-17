@@ -24,6 +24,7 @@ namespace {
 const ss::sstring test_uuid_str = "deadbeef-0000-0000-0000-000000000000";
 const model::cluster_uuid test_uuid{uuid_t::from_string(test_uuid_str)};
 const remote_label test_label{test_uuid};
+const std::optional<model::topic_namespace> test_tp_ns_override = std::nullopt;
 const model::topic_namespace test_tp_ns{model::ns{"kafka"}, model::topic{"tp"}};
 const model::initial_revision_id test_rev{21};
 const model::partition_id test_pid{5};
@@ -52,7 +53,7 @@ const segment_meta test_smeta{
 } // namespace
 
 TEST(TopicFromPathTest, TestTopicFromLabeledTopicManifestPath) {
-    remote_path_provider path_provider(test_label);
+    remote_path_provider path_provider(test_label, test_tp_ns_override);
     auto bin_path = path_provider.topic_manifest_path(test_tp_ns, test_rev);
 
     auto parsed_labeled_tp_ns = tp_ns_from_labeled_path(bin_path);
@@ -65,7 +66,7 @@ TEST(TopicFromPathTest, TestTopicFromLabeledTopicManifestPath) {
 }
 
 TEST(TopicFromPathTest, TestTopicFromPrefixedTopicManifestPath) {
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     auto bin_path = path_provider.topic_manifest_path(test_tp_ns, test_rev);
     auto json_path = *path_provider.topic_manifest_path_json(test_tp_ns);
 
@@ -85,7 +86,7 @@ TEST(TopicFromPathTest, TestTopicFromPrefixedTopicManifestPath) {
 }
 
 TEST(RemotePathProviderTest, TestPrefixedTopicManifestPaths) {
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     EXPECT_STREQ(
       path_provider.topic_manifest_path(test_tp_ns, test_rev).c_str(),
       "e0000000/meta/kafka/tp/topic_manifest.bin");
@@ -99,7 +100,7 @@ TEST(RemotePathProviderTest, TestPrefixedTopicManifestPaths) {
 }
 
 TEST(RemotePathProviderTest, TestLabeledTopicManifestPaths) {
-    remote_path_provider path_provider(test_label);
+    remote_path_provider path_provider(test_label, test_tp_ns_override);
     EXPECT_STREQ(
       path_provider.topic_manifest_path(test_tp_ns, test_rev).c_str(),
       "meta/kafka/tp/deadbeef-0000-0000-0000-000000000000/21/"
@@ -115,7 +116,7 @@ TEST(RemotePathProviderTest, TestLabeledTopicManifestPaths) {
 }
 
 TEST(RemotePathProviderTest, TestPrefixedPartitionManifestPaths) {
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     EXPECT_STREQ(
       path_provider.partition_manifest_path(test_ntp, test_rev).c_str(),
       "e0000000/meta/kafka/tp/5_21/manifest.bin");
@@ -155,7 +156,7 @@ TEST(RemotePathProviderTest, TestPrefixedPartitionManifestPaths) {
 }
 
 TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
-    remote_path_provider path_provider(test_label);
+    remote_path_provider path_provider(test_label, test_tp_ns_override);
     EXPECT_STREQ(
       path_provider.partition_manifest_path(test_ntp, test_rev).c_str(),
       "deadbeef-0000-0000-0000-000000000000/meta/kafka/tp/5_21/manifest.bin");
@@ -197,7 +198,7 @@ TEST(RemotePathProviderTest, TestLabeledPartitionManifestPaths) {
 }
 
 TEST(RemotePathProviderTest, TestPrefixedSegmentPaths) {
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     partition_manifest pm(test_ntp, test_rev);
     EXPECT_STREQ(
       path_provider.segment_path(pm, test_smeta).c_str(),
@@ -215,7 +216,7 @@ TEST(RemotePathProviderTest, TestPrefixedSegmentPaths) {
 }
 
 TEST(RemotePathProviderTest, TestLabeledSegmentPaths) {
-    remote_path_provider path_provider(test_label);
+    remote_path_provider path_provider(test_label, test_tp_ns_override);
     partition_manifest pm(test_ntp, test_rev);
     EXPECT_STREQ(
       path_provider.segment_path(pm, test_smeta).c_str(),
@@ -241,7 +242,8 @@ public:
       : path_provider(
         GetParam() ? std::make_optional<remote_label>(
           model::cluster_uuid{uuid_t::create()})
-                   : std::nullopt) {}
+                   : std::nullopt,
+        std::nullopt) {}
 
 protected:
     const remote_path_provider path_provider;

@@ -24,7 +24,7 @@
 
 using namespace cloud_storage;
 
-static const remote_path_provider path_provider(std::nullopt);
+static const remote_path_provider path_provider(std::nullopt, std::nullopt);
 
 inline ss::logger test_log("test"); // NOLINT
 

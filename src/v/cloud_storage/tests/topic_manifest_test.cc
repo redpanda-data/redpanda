@@ -41,7 +41,7 @@
 using namespace cloud_storage;
 
 namespace {
-const remote_path_provider path_provider(std::nullopt);
+const remote_path_provider path_provider(std::nullopt, std::nullopt);
 } // anonymous namespace
 
 // update manifest, serialize, compare jsons

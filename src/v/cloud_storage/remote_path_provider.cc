@@ -19,11 +19,14 @@
 
 namespace cloud_storage {
 
-remote_path_provider::remote_path_provider(std::optional<remote_label> label)
-  : label_(label) {}
+remote_path_provider::remote_path_provider(
+  std::optional<remote_label> label,
+  std::optional<model::topic_namespace> topic_namespace_override)
+  : label_(label)
+  , _topic_namespace_override(topic_namespace_override) {}
 
 remote_path_provider remote_path_provider::copy() const {
-    remote_path_provider ret(label_);
+    remote_path_provider ret(label_, _topic_namespace_override);
     return ret;
 }
 

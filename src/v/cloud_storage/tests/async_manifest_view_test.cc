@@ -43,7 +43,7 @@ using eof = async_manifest_view_cursor::eof;
 
 static ss::logger test_log("async_manifest_view_log");
 static const model::initial_revision_id manifest_rev(111);
-static const remote_path_provider path_provider(std::nullopt);
+static const remote_path_provider path_provider(std::nullopt, std::nullopt);
 
 class set_config_mixin {
 public:

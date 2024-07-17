@@ -127,7 +127,8 @@ ss::future<consensus_ptr> partition_manager::manage(
     // be used at runtime by the partition. The latter is owned by the archival
     // metadata STM and its lifecycle is therefore tied to the partition, which
     // hasn't been constructed yet.
-    cloud_storage::remote_path_provider path_provider(remote_label);
+    cloud_storage::remote_path_provider path_provider(
+      remote_label, std::nullopt);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp, path_provider);
     auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
       = dl_result;
