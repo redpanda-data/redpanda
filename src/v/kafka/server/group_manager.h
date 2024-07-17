@@ -171,7 +171,8 @@ public:
 
     // returns the set of registered groups, and an error if one occurred while
     // retrieving the group list (e.g. coordinator_load_in_progress).
-    std::pair<error_code, std::vector<listed_group>> list_groups() const;
+    std::pair<error_code, std::vector<listed_group>>
+    list_groups(const group_state_filter& = group_state_filter{}) const;
 
     described_group describe_group(const model::ntp&, const kafka::group_id&);
 

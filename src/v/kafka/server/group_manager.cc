@@ -1558,7 +1558,7 @@ group_manager::offset_delete(offset_delete_request&& r) {
 }
 
 std::pair<error_code, std::vector<listed_group>>
-group_manager::list_groups() const {
+group_manager::list_groups(const group_state_filter& state_filter) const {
     auto loading = std::any_of(
       _partitions.cbegin(),
       _partitions.cend(),
@@ -1570,8 +1570,14 @@ group_manager::list_groups() const {
     std::vector<listed_group> groups;
     for (const auto& it : _groups) {
         const auto& g = it.second;
-        groups.push_back(
-          {g->id(), g->protocol_type().value_or(protocol_type())});
+        if (!state_filter.matches(g->state())) {
+            continue;
+        }
+        groups.push_back({
+          .group_id = g->id(),
+          .protocol_type = g->protocol_type().value_or(protocol_type()),
+          .group_state = group_state_to_kafka_name(g->state()),
+        });
     }
 
     auto error = loading ? error_code::coordinator_load_in_progress
