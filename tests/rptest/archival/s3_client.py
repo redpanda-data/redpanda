@@ -195,13 +195,14 @@ class S3Client:
         def bucket_is_listable():
             try:
                 self._cli.list_objects_v2(Bucket=name)
-            except:
-                self.logger.warning(f"Listing {name} failed after creation")
+            except Exception as e:
+                self.logger.warning(
+                    f"Listing {name} failed after creation: {e}")
 
                 return False
             else:
                 self.logger.info(
-                    "Listing bucket {name} succeeded after creation")
+                    f"Listing bucket {name} succeeded after creation")
                 return True
 
         # Wait until ListObjectsv2 requests start working on the newly created
