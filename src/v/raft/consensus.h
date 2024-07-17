@@ -841,15 +841,22 @@ private:
     /// used to wait for background ops before shutting down
     ss::gate _bg;
 
+    /**
+     * Locks listed in the order of nestedness, election being the outermost
+     * and snapshot the innermost. I.e. if any of these locks are used at the
+     * same time, they should be acquired in the listed order and released in
+     * reverse order.
+     */
+    /// guards from concurrent election where this instance is a candidate
+    mutex _election_lock{"consensus::election_lock"};
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
     mutex _op_lock{"consensus::op_lock"};
     /// since snapshot state is orthogonal to raft state when writing snapshot
     /// it is enough to grab the snapshot mutex, there is no need to keep
-    /// oplock, if the two locks are expected to be acquired at the same time
-    /// the snapshot lock should always be an internal (taken after the
-    /// _op_lock)
+    /// oplock
     mutex _snapshot_lock{"consensus::snapshot_lock"};
+
     /// used for notifying when commits happened to log
     event_manager _event_manager;
     std::unique_ptr<probe> _probe;

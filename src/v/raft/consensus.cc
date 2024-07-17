@@ -285,6 +285,7 @@ ss::future<> consensus::stop() {
     co_await _append_requests_buffer.stop();
     co_await _batcher.stop();
 
+    _election_lock.broken();
     _op_lock.broken();
     _deferred_flusher.cancel();
     co_await _bg.close();
