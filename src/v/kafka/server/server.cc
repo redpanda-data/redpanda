@@ -604,11 +604,22 @@ ss::future<response_ptr> list_groups_handler::handle(
     list_groups_request request{};
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
-    auto&& [error, groups] = co_await ctx.groups().list_groups();
 
     list_groups_response resp;
-    resp.data.error_code = error;
-    resp.data.groups = std::move(groups);
+
+    try {
+        auto&& [error, groups] = co_await ctx.groups().list_groups(
+          group_state_filter::from_strings(request.data.states_filter));
+        resp.data.error_code = error;
+        resp.data.groups = std::move(groups);
+    } catch (const std::invalid_argument& e) {
+        vlog(klog.warn, "error parsing group state filter - {}", e);
+        resp.data.error_code = kafka::error_code::invalid_request;
+    }
+
+    if (resp.data.error_code != error_code::none) {
+        co_return co_await ctx.respond(std::move(resp));
+    }
 
     auto additional_resources_func = [&resp]() {
         std::vector<kafka::group_id> groups;
