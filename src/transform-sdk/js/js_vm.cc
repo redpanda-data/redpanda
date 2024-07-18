@@ -470,7 +470,11 @@ std::expected<std::monostate, exception> runtime::create_builtins() {
     if (!result.has_value()) {
         return result;
     }
-    return global_this.set_property("process", process);
+    result = global_this.set_property("process", process);
+    if (!result.has_value()) {
+        return result;
+    }
+    return global_this.set_property("self", value::global(_ctx.get()));
 }
 
 std::expected<compiled_bytecode, exception>
