@@ -77,3 +77,17 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "async_clear",
+    hdrs = [
+        "include/ssx/async-clear.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
+    ],
+)
