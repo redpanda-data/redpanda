@@ -36,3 +36,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "io_priority",
+    hdrs = [
+        "io_priority.h",
+    ],
+    include_prefix = "resource_mgmt",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
