@@ -634,8 +634,10 @@ make_schema_registry_client_class(qjs::runtime* runtime) {
     return builder.build();
 }
 
-std::expected<std::monostate, qjs::exception>
-initial_native_modules(qjs::runtime* runtime, qjs::value* user_callback) {
+std::expected<std::monostate, qjs::exception> initial_native_modules(
+  qjs::runtime* runtime,
+  qjs::value* user_callback,
+  qjs::class_factory<schema_registry_client>* sr_client_factory) {
     auto mod = qjs::module_builder("@redpanda-data/transform-sdk");
     mod.add_function(
       "onRecordWritten",
@@ -650,7 +652,24 @@ initial_native_modules(qjs::runtime* runtime, qjs::value* user_callback) {
           }
           return {std::exchange(*user_callback, std::move(args.front()))};
       });
-    return runtime->add_module(std::move(mod));
+    auto sr_mod = qjs::module_builder("@redpanda-data/transform-sdk-sr");
+    sr_mod.add_function(
+      "newClient",
+      [&sr_client_factory](
+        JSContext* ctx, const qjs::value&, std::span<qjs::value> args)
+        -> std::expected<qjs::value, qjs::exception> {
+          if (!args.empty()) [[unlikely]] {
+              return std::unexpected(
+                qjs::exception::make(ctx, "Unexpected arguments to newClient"));
+          }
+          return sr_client_factory->create(
+            std::make_unique<schema_registry_client>(
+              redpanda::sr::new_client()));
+      });
+    return runtime->add_module(std::move(mod))
+      .and_then([runtime, &sr_mod](std::monostate) {
+          return runtime->add_module(std::move(sr_mod));
+      });
 }
 
 std::expected<std::monostate, qjs::exception>
@@ -695,7 +714,9 @@ int run() {
     auto writer_factory = make_record_writer_class(&runtime);
     auto data_factory = make_record_data_class(&runtime);
     qjs::value record_callback = qjs::value::undefined(runtime.context());
-    result = initial_native_modules(&runtime, &record_callback);
+    auto sr_client_factory = make_schema_registry_client_class(&runtime);
+    result = initial_native_modules(
+      &runtime, &record_callback, &sr_client_factory);
     if (!result) [[unlikely]] {
         std::println(
           stderr,
