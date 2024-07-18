@@ -12,7 +12,6 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "serde/serde.h"
 
 #include <absl/container/btree_map.h>
 

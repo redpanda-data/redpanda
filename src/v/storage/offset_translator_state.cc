@@ -15,6 +15,10 @@
 #include "base/vlog.h"
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/vector.h"
 #include "storage/logger.h"
 
 #include <iterator>
