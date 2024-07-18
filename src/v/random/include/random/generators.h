@@ -13,8 +13,11 @@
 
 #include "base/seastarx.h"
 #include "crypto/crypto.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/sstring.hh>
+
+#include <boost/uuid/random_generator.hpp>
 
 #include <random>
 
@@ -128,5 +131,7 @@ T get_real(T max) {
     std::uniform_real_distribution<T> dist(0, max);
     return dist(internal::gen);
 }
+
+uuid_t get_uuid();
 
 } // namespace random_generators

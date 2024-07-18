@@ -41,6 +41,9 @@
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/jumbo_log.h"
+#include "cluster/jumbo_log_frontend.h"
+#include "cluster/jumbo_log_stm_factory.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
@@ -81,6 +84,7 @@
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
+#include "jumbo_log_stm.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -1899,6 +1903,19 @@ void application::wire_up_redpanda_services(
       std::ref(controller))
       .get();
 
+    syschecks::systemd_message("Creating jumbo log frontend").get();
+    construct_service(
+      jumbo_log_frontend,
+      smp_service_groups.raft_smp_sg(),
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      node_id,
+      std::ref(controller))
+      .get();
+
     producer_id_recovery_manager
       = ss::make_shared<cluster::cloud_metadata::producer_id_recovery_manager>(
         std::ref(controller->get_members_table()),
@@ -2681,6 +2698,8 @@ void application::start_runtime_services(
             feature_table,
             controller->get_topics_state());
           pm.register_factory<kafka::group_tx_tracker_stm_factory>();
+          // TODO(nv): Feature flag.
+          pm.register_factory<cluster::jumbo_log_stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
@@ -2770,6 +2789,12 @@ void application::start_runtime_services(
             std::ref(tx_gateway_frontend),
             _rm_group_proxy.get(),
             std::ref(rm_partition_frontend)));
+
+          runtime_services.push_back(
+            std::make_unique<cluster::jumbo_log_service>(
+              sched_groups.raft_sg(),
+              smp_service_groups.raft_smp_sg(),
+              std::ref(jumbo_log_frontend)));
 
           if (!start_raft_rpc_early) {
               runtime_services.push_back(std::make_unique<raft::service<

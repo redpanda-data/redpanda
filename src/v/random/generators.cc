@@ -52,4 +52,10 @@ ss::sstring gen_alphanum_max_distinct(size_t cardinality) {
     return s;
 }
 
+uuid_t get_uuid() {
+    uuid_t uuid{};
+    uuid.mutable_uuid() = boost::uuids::random_generator()();
+    return uuid;
+}
+
 } // namespace random_generators

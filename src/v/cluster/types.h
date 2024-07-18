@@ -3223,6 +3223,7 @@ static const ss::sstring rm_stm_snapshot = "tx.snapshot";
 static const ss::sstring tm_stm_snapshot = "tx.coordinator.snapshot";
 static const ss::sstring id_allocator_snapshot = "id.snapshot";
 static const ss::sstring tx_registry_snapshot = "tx_registry.snapshot";
+static const ss::sstring jumbo_log_snapshot = "jumbo_log.snapshot";
 
 /**
  * Create/update a (Wasm) plugin.

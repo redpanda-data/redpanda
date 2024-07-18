@@ -17,6 +17,7 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "cluster/jumbo_log_frontend.h"
 #include "cluster/migrations/tx_manager_migrator.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/node_status_backend.h"
@@ -121,6 +122,7 @@ public:
 
     ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
+    ss::sharded<cluster::jumbo_log_frontend> jumbo_log_frontend;
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;

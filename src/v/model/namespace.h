@@ -66,6 +66,12 @@ inline const model::ntp id_allocator_ntp(
   model::id_allocator_topic,
   model::partition_id(0));
 
+inline const model::topic jumbo_log_topic("jumbo_log");
+inline const model::topic_namespace
+  jumbo_log_nt(model::redpanda_ns, jumbo_log_topic);
+inline const model::ntp jumbo_log_ntp(
+  jumbo_log_nt.ns, model::jumbo_log_topic, model::partition_id(0));
+
 inline const model::topic_partition schema_registry_internal_tp{
   model::topic{"_schemas"}, model::partition_id{0}};
 

@@ -90,6 +90,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET jumbo_log_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/jumbo_log.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/jumbo_log_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster_topic_properties
   SRCS
@@ -247,6 +254,10 @@ v_cc_library(
     data_migration_irpc_frontend.cc
     data_migration_service_handler.cc
     data_migration_backend.cc
+    jumbo_log_frontend.cc
+    jumbo_log_stm_factory.cc
+    jumbo_log_stm.cc
+    jumbo_log.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
@@ -262,6 +273,7 @@ v_cc_library(
     topic_recovery_status_rpc
     tx_manager_migrator_rpc
     data_migrations_rpc
+    jumbo_log_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map

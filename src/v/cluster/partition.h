@@ -29,6 +29,7 @@
 
 namespace cluster {
 class partition_manager;
+class jumbo_log_stm;
 
 /// holds cluster logic that is not raft related
 /// all raft logic is proxied transparently

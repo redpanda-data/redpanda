@@ -54,6 +54,7 @@ set(srcs
     id_allocator_stm_test.cc
     tm_stm_tests.cc
     data_migration_table_test.cc
+    jumbo_log_stm_test.cc
     )
 
 foreach(cluster_test_src ${srcs})
@@ -70,6 +71,7 @@ rp_test(
     v::http_test_utils
     v::raft
     v::raft_fixture
+    v::random
   LABELS cluster
 )
 endforeach()
@@ -88,7 +90,8 @@ set(srcs
         health_monitor_test.cc
         metadata_dissemination_test.cc
         replicas_rebalancing_tests.cc
-        security_frontend_test.cc)
+        security_frontend_test.cc
+        jumbo_log_frontend_test.cc)
 
 foreach(cluster_test_src ${srcs})
     get_filename_component(test_name ${cluster_test_src} NAME_WE)
@@ -96,7 +99,7 @@ foreach(cluster_test_src ${srcs})
             FIXTURE_TEST
             BINARY_NAME cluster_${test_name}
             SOURCES ${cluster_test_src}
-            LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::cluster
+            LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::cluster v::random
             LABELS cluster
     )
 endforeach()

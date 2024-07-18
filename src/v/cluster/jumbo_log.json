@@ -1,0 +1,19 @@
+{
+    "namespace": "jumbo_log::rpc",
+    "service_name": "jumbo_log",
+    "includes": [
+        "jumbo_log/rpc.h"
+    ],
+    "methods": [
+        {
+            "name": "create_write_intent",
+            "input_type": "jumbo_log::rpc::create_write_intent_request",
+            "output_type": "jumbo_log::rpc::create_write_intent_reply"
+        },
+        {
+            "name": "get_write_intents",
+            "input_type": "jumbo_log::rpc::get_write_intents_request",
+            "output_type": "jumbo_log::rpc::get_write_intents_reply"
+        }
+    ]
+}

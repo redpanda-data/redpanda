@@ -382,6 +382,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::data_migration_cmd";
     case record_batch_type::group_fence_tx:
         return o << "batch_type::group_fence_tx";
+    case record_batch_type::jumbo_log_cmd:
+        return o << "batch_type::jumbo_log_cmd";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";
