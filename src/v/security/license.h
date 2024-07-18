@@ -11,11 +11,14 @@
 
 #pragma once
 #include "base/seastarx.h"
-#include "serde/serde.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
 
 #include <seastar/core/sstring.hh>
 
-#include <boost/date_time/gregorian/gregorian_types.hpp>
 #include <fmt/core.h>
 
 #include <exception>
