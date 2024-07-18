@@ -37,32 +37,32 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Starts a new self-test run",
-		Long: `Starts one or more benchmark tests on one or more nodes
-of the cluster. Available tests to run:
+		Long: `Starts one or more benchmark tests on one or more nodes of the cluster.
+
+NOTE: Redpanda self-test runs benchmarks that consume significant system resources. Do not start self-test if large workloads are already running on the system.
+
+Available tests to run:
 
 * Disk tests:
-  * Throughput test: 512 KB messages, sequential read/write
-    * Uses a larger request message sizes and deeper I/O queue depth to write/read more bytes in a shorter amount of time, at the cost of IOPS/latency.
-  * Latency test: 4 KB messages, sequential read/write
-    * Uses smaller request message sizes and lower levels of parallelism to achieve higher IOPS and lower latency.
-
+  ** Throughput test: 512 KB messages, sequential read/write
+     *** Uses a larger request message sizes and deeper I/O queue depth to write/read more bytes in a shorter amount of time, at the cost of IOPS/latency.
+  ** Latency test: 4 KB messages, sequential read/write
+     *** Uses smaller request message sizes and lower levels of parallelism to achieve higher IOPS and lower latency.
 * Network tests:
-  * Throughput test: 8192-bit messages
-    * Unique pairs of Redpanda nodes each act as a client and a server.
-    * The test pushes as much data over the wire, within the test parameters.
+  ** Throughput test: 8192-bit messages
+     *** Unique pairs of Redpanda nodes each act as a client and a server.
+     *** The test pushes as much data over the wire, within the test parameters.
+* Cloud storage tests
+  ** Latency test: 1024-bit object.
+  ** Depending on cluster read/write permissions ('cloud_storage_enable_remote_read', 'cloud_storage_enable_remote_write'), a series of cloud storage operations are performed:
+     *** Upload an object to an object storage.
+     *** List objects in the object storage.
+     *** Download an object from the object storage.
+     *** Delete the original object from the object storage, if it was uploaded.
 
-* Cloud tests:
-  * Latency test: 1024-bit object.
-    * Depending on cluster read/write permissions (cloud_storage_enable_remote_read, cloud_storage_enable_remote_write), a series of cloud storage operations are performed:
-      * 1. Upload an object to an S3 bucket.
-      * 2. List objects in the bucket.
-      * 3. Download an object from the bucket.
-      * 4. Delete the original object from the bucket, if it was uploaded.
+This command prompts users for confirmation (unless the flag '--no-confirm' is specified), then returns a test identifier ID, and runs the tests.
 
-
-This command immediately returns on success, and the tests run asynchronously. The
-user polls for results with the 'self-test status'
-command.`,
+To view the test status, poll 'rpk cluster self-test status'. Once the tests end, the cached results will be available with 'rpk cluster self-test status'.`,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
@@ -104,7 +104,7 @@ command.`,
 	cmd.Flags().UintVar(&cloudBackoffMs, "cloud-backoff-ms", 100,
 		"The backoff in milliseconds for a cloud storage request")
 	cmd.Flags().IntSliceVar(&onNodes, "participant-node-ids", nil,
-		"IDs of nodes that the tests will run on. If not set, tests will run for all node IDs.")
+		"Comma-separated list of broker IDs that the tests will run on. If not set, tests will run for all node IDs.")
 	cmd.Flags().BoolVar(&onlyDisk, "only-disk-test", false, "Runs only the disk benchmarks")
 	cmd.Flags().BoolVar(&onlyNetwork, "only-network-test", false, "Runs only network benchmarks")
 	cmd.Flags().BoolVar(&onlyCloud, "only-cloud-test", false, "Runs only cloud storage benchmarks")

@@ -35,17 +35,32 @@ func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Queries the status of the currently running or last completed self-test run",
-		Long: `Returns the status of the currently running or last completed self-test run.
+		Short: "Returns the status of the current running tests or the cached results of the last completed run.",
+		Long: `Returns the status of the current running tests or the cached results of the last completed run.
 
 Use this command after invoking 'self-test start' to determine the status of
 the jobs launched. Possible results are:
 
 * One or more jobs still running
-  * Returns the IDs of Redpanda nodes still running self-tests.
+  * Returns the IDs of Redpanda brokers (nodes) still running self-tests.
 
 * No jobs running:
-  * Returns cached results for all nodes of the last completed test.
+  * Returns the cached results for all brokers of the last completed test.
+
+Test results are grouped by broker ID. Each test returns the following:
+
+* Name: Description of the test.
+* Info: Details about the test run attached by Redpanda.
+* Type: Either 'disk', 'network', or 'cloud' test.
+* Test Id: Unique identifier given to jobs of a run. All IDs in a test should match. If they don't match, then newer and/or older test results have been included erroneously.
+* Timeouts: Number of timeouts incurred during the test.
+* Start time: Time that the test started, in UTC.
+* End time: Time that the test ended, in UTC.
+* Avg Duration: Duration of the test.
+* IOPS: Number of operations per second. For disk, it's 'seastar::dma_read' and 'seastar::dma_write'. For network, it's 'rpc.send()'.
+* Throughput: For disk, throughput rate is in bytes per second. For network, throughput rate is in bits per second. Note that GiB vs. Gib is the correct notation displayed by the UI.
+* Latency: 50th, 90th, etc. percentiles of operation latency, reported in microseconds (μs). Represented as P50, P90, P99, P999, and MAX respectively.
+If Tiered Storage is not enabled, the cloud storage tests won't run and a warning will be displayed showing "Cloud storage is not enabled.". All results will be shown as 0.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
