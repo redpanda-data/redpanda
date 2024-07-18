@@ -1,6 +1,85 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//src/v/cloud_roles:__subpackages__"])
+
+redpanda_cc_library(
+    name = "logger",
+    hdrs = [
+        "include/cloud_roles/logger.h",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "types",
+    srcs = [
+        "types.cc",
+    ],
+    hdrs = [
+        "include/cloud_roles/types.h",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/utils:named_type",
+        "@boost//:beast",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "request_response_helpers",
+    srcs = [
+        "request_response_helpers.cc",
+    ],
+    hdrs = [
+        "request_response_helpers.h",
+    ],
+    include_prefix = "cloud_roles",
+    deps = [
+        ":logger",
+        ":types",
+        "//src/v/bytes:iostream",
+        "//src/v/bytes:streambuf",
+        "//src/v/config",
+        "//src/v/http",
+        "//src/v/json",
+        "@rapidjson",
+    ],
+)
+
+redpanda_cc_library(
+    name = "signature",
+    srcs = [
+        "signature.cc",
+    ],
+    hdrs = [
+        "signature.h",
+    ],
+    include_prefix = "cloud_roles",
+    deps = [
+        ":logger",
+        ":request_response_helpers",
+        ":types",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/config",
+        "//src/v/hashing:secure",
+        "//src/v/http",
+        "//src/v/ssx:sformat",
+        "//src/v/utils:base64",
+        "//src/v/utils:named_type",
+        "@abseil-cpp//absl/strings",
+        "@boost//:algorithm",
+        "@fmt",
+        "@seastar",
+    ],
+)
 
 redpanda_cc_library(
     name = "cloud_roles",
@@ -26,23 +105,21 @@ redpanda_cc_library(
         "gcp_refresh_impl.h",
         "probe.cc",
         "refresh_credentials.cc",
-        "request_response_helpers.cc",
-        "request_response_helpers.h",
-        "signature.cc",
-        "signature.h",
-        "types.cc",
     ],
     hdrs = [
         "include/cloud_roles/apply_credentials.h",
-        "include/cloud_roles/logger.h",
         "include/cloud_roles/probe.h",
         "include/cloud_roles/refresh_credentials.h",
-        "include/cloud_roles/types.h",
     ],
     # for ada
     exclude_layering_check = True,
     strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
     deps = [
+        ":logger",
+        ":request_response_helpers",
+        ":signature",
+        ":types",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
