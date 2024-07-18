@@ -11,6 +11,7 @@
 
 #include "feature_table.h"
 
+#include "cluster/feature_update_action.h"
 #include "cluster/version.h"
 #include "config/configuration.h"
 #include "features/logger.h"
