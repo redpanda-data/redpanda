@@ -332,7 +332,7 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
       make_ts(1653000009),
     };
 
-    std::vector<std::string_view> names = {
+    std::vector<ss::sstring> names = {
       "key0",
       "key1",
       "key2",
@@ -346,20 +346,23 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
     };
 
     for (int i = 0; i < 10; i++) {
-        cm.add_timestamp(names[i], timestamps[i]);
+        cm.add(names[i], timestamps[i], i);
     }
 
     for (int i = 0; i < 10; i++) {
-        auto ts = cm.estimate_timestamp(names[i]);
-        BOOST_REQUIRE(ts.value() >= timestamps[i]);
+        auto ts = cm.get(names[i]);
+        BOOST_REQUIRE(ts.has_value());
+        BOOST_REQUIRE(ts->time_point() == timestamps[i]);
+        BOOST_REQUIRE(ts->size == i);
     }
 }
 
-static access_time_tracker serde_roundtrip(access_time_tracker& t) {
+static access_time_tracker serde_roundtrip(
+  access_time_tracker& t, tracker_version version = tracker_version::v2) {
     // Round trip
     iobuf serialized;
     auto out_stream = make_iobuf_ref_output_stream(serialized);
-    t.write(out_stream).get();
+    t.write(out_stream, version).get();
     out_stream.flush().get();
 
     access_time_tracker out;
@@ -393,7 +396,7 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
       make_ts(0xbeefed09),
     };
 
-    std::vector<std::string_view> names = {
+    std::vector<ss::sstring> names = {
       "key0",
       "key1",
       "key2",
@@ -407,15 +410,16 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
     };
 
     for (int i = 0; i < 10; i++) {
-        in.add_timestamp(names[i], timestamps[i]);
+        in.add(names[i], timestamps[i], i);
     }
 
     auto out = serde_roundtrip(in);
 
     for (int i = 0; i < timestamps.size(); i++) {
-        auto ts = out.estimate_timestamp(names[i]);
+        auto ts = out.get(names[i]);
         BOOST_REQUIRE(ts.has_value());
-        BOOST_REQUIRE(ts.value() >= timestamps[i]);
+        BOOST_REQUIRE(ts->time_point() == timestamps[i]);
+        BOOST_REQUIRE(ts->size == i);
     }
 }
 
@@ -426,11 +430,24 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer_large) {
     // to verify the chunking code works properly;
     uint32_t item_count = 7777;
     for (uint32_t i = 0; i < item_count; i++) {
-        in.add_timestamp(fmt::format("key{:08x}", i), make_ts(i));
+        in.add(fmt::format("key{:08x}", i), make_ts(i), i);
     }
 
     auto out = serde_roundtrip(in);
     BOOST_REQUIRE_EQUAL(out.size(), item_count);
+    for (size_t i = 0; i < item_count; ++i) {
+        const auto entry = in.get(fmt::format("key{:08x}", i));
+        BOOST_REQUIRE(entry.has_value());
+        BOOST_REQUIRE_EQUAL(entry->size, i);
+        BOOST_REQUIRE_EQUAL(entry->atime_sec, i);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_read_skipped_on_old_version) {
+    access_time_tracker in;
+    in.add("key", make_ts(0), 0);
+    auto out = serde_roundtrip(in, tracker_version::v1);
+    BOOST_REQUIRE_EQUAL(out.size(), 0);
 }
 
 /**
@@ -701,4 +718,53 @@ FIXTURE_TEST(test_background_maybe_trim, cache_test_fixture) {
     // 50%, but the low water mark adjusts this by an additional 80%, 50% * 80%
     // = 40%. +1 for the object we just added.
     BOOST_REQUIRE_EQUAL(get_object_count(), 41);
+}
+
+FIXTURE_TEST(test_tracker_sync_only_remove, cache_test_fixture) {
+    put_into_cache(create_data_string('a', 1_KiB), KEY);
+    auto& cache = sharded_cache.local();
+    cache.get(KEY).get();
+
+    const auto full_key_path = CACHE_DIR / KEY;
+
+    const auto& t = tracker();
+    BOOST_REQUIRE_EQUAL(t.size(), 1);
+
+    {
+        const auto entry = t.get(full_key_path.native());
+        BOOST_REQUIRE(entry.has_value());
+        BOOST_REQUIRE_EQUAL(entry->size, 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
+    }
+
+    ss::remove_file(full_key_path.native()).get();
+
+    {
+        const auto entry = t.get(full_key_path.native());
+        BOOST_REQUIRE(entry.has_value());
+        BOOST_REQUIRE_EQUAL(entry->size, 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1_KiB);
+        BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
+    }
+
+    sync_tracker();
+
+    BOOST_REQUIRE_EQUAL(t.size(), 0);
+    BOOST_REQUIRE(!t.get(full_key_path.native()).has_value());
+    BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 0);
+    BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 0);
+}
+
+FIXTURE_TEST(test_tracker_sync_add_remove, cache_test_fixture) {
+    put_into_cache(create_data_string('a', 1_KiB), KEY);
+    auto& cache = sharded_cache.local();
+    const auto full_key_path = CACHE_DIR / KEY;
+    const auto& t = tracker();
+    BOOST_REQUIRE_EQUAL(t.size(), 0);
+    sync_tracker(access_time_tracker::add_entries_t::yes);
+    BOOST_REQUIRE_EQUAL(t.size(), 1);
+    BOOST_REQUIRE(t.get(full_key_path.native()).has_value());
+    BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1024);
+    BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
 }

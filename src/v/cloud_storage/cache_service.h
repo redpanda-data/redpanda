@@ -235,6 +235,11 @@ private:
       uint64_t delete_bytes,
       size_t delete_objects);
 
+    ss::future<trim_result> do_trim(
+      const fragmented_vector<file_list_item>& candidates,
+      uint64_t delete_bytes,
+      size_t delete_objects);
+
     /// Exhaustive trim: walk all files including indices, remove whatever is
     /// least recently accessed.
     ss::future<trim_result>
@@ -307,6 +312,9 @@ private:
     ss::future<cache::trim_result>
     remove_segment_full(const file_list_item& file_stat);
 
+    ss::future<> sync_access_time_tracker(
+      access_time_tracker::add_entries_t add_entries
+      = access_time_tracker::add_entries_t::no);
     std::filesystem::path _cache_dir;
     size_t _disk_size;
     config::binding<double> _disk_reservation;
@@ -377,6 +385,10 @@ private:
 
     // List of probable deletion candidates from the last trim.
     std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
+
+    ss::timer<ss::lowres_clock> _tracker_sync_timer;
+    ssx::semaphore _tracker_sync_timer_sem{
+      1, "cloud/cache/access_tracker_sync"};
 };
 
 } // namespace cloud_storage
