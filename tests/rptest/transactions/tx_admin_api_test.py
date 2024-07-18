@@ -93,12 +93,12 @@ class TxAdminTest(RedpandaTest):
         producer1 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 3600000,  # avoid auto timeout
+            'transaction.timeout.ms': 900000,  # avoid auto timeout
         })
         producer2 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '1',
-            'transaction.timeout.ms': 3600000,  # avoid auto timeout
+            'transaction.timeout.ms': 900000,  # avoid auto timeout
         })
         producer1.init_transactions()
         producer2.init_transactions()

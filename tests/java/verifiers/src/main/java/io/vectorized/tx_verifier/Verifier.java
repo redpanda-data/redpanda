@@ -15,6 +15,7 @@ class Verifier {
   }
 
   final static int RETRY_TIMEOUT_SEC = 5;
+  final static int MAX_TRANSACTION_TIMEOUT_MS = 900000;
   final static String txId1 = "tx1";
   final static String txId2 = "tx2";
   final static String topic1 = "topic1";
@@ -407,7 +408,7 @@ class Verifier {
     TxProducer producer = null;
     TxConsumer consumer = null;
     try {
-      producer = new TxProducer(connection, txId1, Integer.MAX_VALUE);
+      producer = new TxProducer(connection, txId1, MAX_TRANSACTION_TIMEOUT_MS);
       producer.initTransactions();
       producer.beginTransaction();
       long offset = producer.send(topic1, "key1", "value1");

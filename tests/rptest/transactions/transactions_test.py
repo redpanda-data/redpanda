@@ -391,7 +391,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 3600000,  # to avoid timing out
+            'transaction.timeout.ms': 900000,  # to avoid timing out
         })
         producer.init_transactions()
         producer.begin_transaction()
@@ -574,7 +574,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': str(i),
-                'transaction.timeout.ms': 1000000,
+                'transaction.timeout.ms': 900000,
             }) for i in range(0, p_count)
         ]
 
