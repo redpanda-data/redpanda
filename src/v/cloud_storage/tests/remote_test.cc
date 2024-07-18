@@ -1319,7 +1319,7 @@ TEST_P(all_types_remote_fixture, test_notification_retry_meta) {
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto filter = remote::event_filter{};
 
-    remote_path_provider path_provider(std::nullopt);
+    remote_path_provider path_provider(std::nullopt, std::nullopt);
     partition_manifest_downloader dl(
       bucket_name,
       path_provider,

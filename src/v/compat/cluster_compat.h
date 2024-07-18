@@ -357,6 +357,7 @@ struct compat_check<cluster::topic_properties> {
           wr, "write_caching", obj.write_caching);
         json_write(flush_ms);
         json_write(flush_bytes);
+        json_write(remote_topic_namespace_override);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -392,6 +393,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(write_caching);
         json_read(flush_ms);
         json_read(flush_bytes);
+        json_read(remote_topic_namespace_override);
         return obj;
     }
 
@@ -422,6 +424,7 @@ struct compat_check<cluster::topic_properties> {
         obj.write_caching = std::nullopt;
         obj.flush_bytes = std::nullopt;
         obj.flush_ms = std::nullopt;
+        obj.remote_topic_namespace_override = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -481,6 +484,7 @@ struct compat_check<cluster::topic_configuration> {
         auto cfg = reflection::adl<cluster::topic_configuration>{}.from(iobp);
         obj.properties.read_replica = std::nullopt;
         obj.properties.read_replica_bucket = std::nullopt;
+        obj.properties.remote_topic_namespace_override = std::nullopt;
         obj.properties.remote_topic_properties = std::nullopt;
         obj.properties.batch_max_bytes = std::nullopt;
         obj.properties.retention_local_target_bytes = tristate<size_t>{

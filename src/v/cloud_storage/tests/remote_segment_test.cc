@@ -48,7 +48,7 @@ inline ss::logger test_log("test"); // NOLINT
 static ss::abort_source never_abort;
 
 namespace {
-remote_path_provider path_provider(std::nullopt);
+remote_path_provider path_provider(std::nullopt, std::nullopt);
 } // namespace
 
 static cloud_storage::lazy_abort_source always_continue([]() {

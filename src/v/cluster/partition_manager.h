@@ -96,7 +96,8 @@ public:
       raft::with_learner_recovery_throttle
       = raft::with_learner_recovery_throttle::yes,
       raft::keep_snapshotted_log = raft::keep_snapshotted_log::no,
-      std::optional<cloud_storage::remote_label> = std::nullopt);
+      std::optional<cloud_storage::remote_label> = std::nullopt,
+      std::optional<model::topic_namespace> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
 

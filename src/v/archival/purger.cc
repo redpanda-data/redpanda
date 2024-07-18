@@ -399,7 +399,8 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
         uint32_t hash = static_cast<uint32_t>(inc_hash.digest() & 0xffffffff);
 
         cloud_storage::remote_path_provider path_provider(
-          marker.config.properties.remote_label);
+          marker.config.properties.remote_label,
+          marker.config.properties.remote_topic_namespace_override);
         if (my_global_position.self == hash % my_global_position.total) {
             vlog(
               archival_log.info,

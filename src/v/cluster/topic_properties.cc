@@ -20,7 +20,10 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
+      "read_replica: {}, read_replica_bucket: {}, "
+      "remote_topic_namespace_override: "
+      "{}, "
+      "remote_topic_properties: {}, "
       "batch_max_bytes: {}, retention_local_target_bytes: {}, "
       "retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}, "
       "record_key_schema_id_validation: {}, "
@@ -49,6 +52,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.shadow_indexing,
       properties.read_replica,
       properties.read_replica_bucket,
+      properties.remote_topic_namespace_override,
       properties.remote_topic_properties,
       properties.batch_max_bytes,
       properties.retention_local_target_bytes,
@@ -87,7 +91,9 @@ bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
            || retention_bytes.is_engaged() || retention_duration.is_engaged()
            || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value() || batch_max_bytes.has_value()
+           || read_replica.has_value()
+           || remote_topic_namespace_override.has_value()
+           || batch_max_bytes.has_value()
            || retention_local_target_bytes.is_engaged()
            || retention_local_target_ms.is_engaged()
            || remote_delete != storage::ntp_config::default_remote_delete
@@ -201,6 +207,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       shadow_indexing,
       read_replica,
       read_replica_bucket,
+      std::nullopt,
       remote_topic_properties,
       std::nullopt,
       tristate<size_t>{std::nullopt},

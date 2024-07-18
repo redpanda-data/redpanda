@@ -53,7 +53,6 @@ rp_test(
     remote_segment_test.cc
     remote_partition_test.cc
     topic_recovery_service_test.cc
-    cloud_storage_e2e_test.cc
     delete_records_e2e_test.cc
     async_manifest_view_test.cc
     read_replica_test.cc
@@ -79,11 +78,13 @@ rp_test(
   TIMEOUT 1000
   BINARY_NAME gtest_cloud_storage
   SOURCES
+    cloud_storage_e2e_test.cc
     partition_manifest_downloader_test.cc
     remote_path_provider_test.cc
     remote_test.cc
     s3_imposter.cc
     topic_manifest_downloader_test.cc
+    topic_namespace_override_recovery_test.cc
     util.cc
   LIBRARIES
     v::gtest_main

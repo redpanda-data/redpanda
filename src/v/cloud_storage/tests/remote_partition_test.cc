@@ -74,7 +74,7 @@ static void print_segments(const std::vector<in_memory_segment>& segments) {
     }
 }
 
-static const remote_path_provider path_provider(std::nullopt);
+static const remote_path_provider path_provider(std::nullopt, std::nullopt);
 
 /// Return vector<bool> which have a value for every recrod_batch_header in
 /// 'segments' If i'th value is true then the value are present in both

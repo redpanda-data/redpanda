@@ -48,6 +48,16 @@ struct topic_configuration
     bool is_recovery_enabled() const {
         return properties.recovery && properties.recovery.value();
     }
+    bool has_remote_topic_namespace_override() const {
+        return properties.remote_topic_namespace_override.has_value();
+    }
+
+    const model::topic_namespace& remote_tp_ns() const {
+        if (has_remote_topic_namespace_override()) {
+            return properties.remote_topic_namespace_override.value();
+        }
+        return tp_ns;
+    }
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int

@@ -29,7 +29,9 @@ public:
     remote_path_provider& operator=(remote_path_provider&&) = delete;
     ~remote_path_provider() = default;
 
-    explicit remote_path_provider(std::optional<remote_label> label);
+    explicit remote_path_provider(
+      std::optional<remote_label> label,
+      std::optional<model::topic_namespace> topic_namespace_override);
 
     // An explicit copy method. Callers should think twice about using this and
     // instead consider if there is an existing path provider that makes sense
@@ -95,6 +97,7 @@ public:
 
 private:
     std::optional<remote_label> label_;
+    std::optional<model::topic_namespace> _topic_namespace_override;
 };
 
 } // namespace cloud_storage

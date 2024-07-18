@@ -49,7 +49,7 @@
 namespace archival {
 
 namespace {
-cloud_storage::remote_path_provider path_provider(std::nullopt);
+cloud_storage::remote_path_provider path_provider(std::nullopt, std::nullopt);
 } // namespace
 
 using namespace std::chrono_literals;

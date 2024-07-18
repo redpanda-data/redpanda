@@ -57,7 +57,8 @@
 inline ss::logger test_log("arch_op_impl_test");
 
 namespace {
-cloud_storage::remote_path_provider null_path_provider(std::nullopt);
+cloud_storage::remote_path_provider
+  null_path_provider(std::nullopt, std::nullopt);
 const model::ktp
   expected_ntp(model::topic("panda-topic"), model::partition_id(137));
 const model::initial_revision_id expected_revision_id(42);

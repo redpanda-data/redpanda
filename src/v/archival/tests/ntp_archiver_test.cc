@@ -52,7 +52,7 @@ using namespace archival;
 inline ss::logger test_log("test"); // NOLINT
 
 namespace {
-cloud_storage::remote_path_provider path_provider(std::nullopt);
+cloud_storage::remote_path_provider path_provider(std::nullopt, std::nullopt);
 } // anonymous namespace
 
 static ss::abort_source never_abort;
