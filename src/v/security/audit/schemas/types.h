@@ -14,7 +14,7 @@
 #include "json/json.h"
 #include "json/stringbuffer.h"
 #include "utils/named_type.h"
-#include "version.h"
+#include "version/version.h"
 
 #include <seastar/core/sstring.hh>
 

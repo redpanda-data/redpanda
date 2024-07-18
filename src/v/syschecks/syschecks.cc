@@ -11,7 +11,7 @@
 
 #include "base/likely.h"
 #include "base/seastarx.h"
-#include "version.h"
+#include "version/version.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/memory.hh>

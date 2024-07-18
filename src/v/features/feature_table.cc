@@ -14,7 +14,7 @@
 #include "cluster/version.h"
 #include "config/configuration.h"
 #include "features/logger.h"
-#include "version.h"
+#include "version/version.h"
 
 #include <seastar/core/abort_source.hh>
 

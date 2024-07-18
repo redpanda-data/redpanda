@@ -22,7 +22,7 @@
 #include "storage/node.h"
 #include "storage/types.h"
 #include "utils/human.h"
-#include "version.h"
+#include "version/version.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>

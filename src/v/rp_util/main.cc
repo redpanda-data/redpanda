@@ -14,7 +14,7 @@
 #include "compat/run.h"
 #include "redpanda/cluster_config_schema_util.h"
 #include "seastar/core/app-template.hh"
-#include "version.h"
+#include "version/version.h"
 
 #include <filesystem>
 #include <iostream>
