@@ -73,3 +73,16 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
     ],
 )
+
+redpanda_cc_library(
+    name = "features",
+    hdrs = [
+        "feature_update_action.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/serde",
+        "@seastar",
+    ],
+)
