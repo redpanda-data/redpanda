@@ -125,78 +125,44 @@ public:
                   arg.ntp);
                 co_return error_outcome::unexpected_failure;
             }
-            reconciled_upload_candidates_list result(
-              arg.ntp, {}, partition->get_applied_offset());
-            auto base_offset = partition->get_next_uploaded_offset();
 
-            // If not limit is specified (quota is set to nullopt) we don't want
-            // to upload unlimited amount of data in one iteration. The defaults
-            // in this case are configured to allow only three segments to be
-            // uploaded.
-            auto size_quota = arg.upload_size_quota.value_or(
-              arg.target_size * 3);
             // By default we will be uploading up to 4 segments
             // with up to 3 requests to upload one segment.
             constexpr size_t default_req_quota = 12;
 
-            auto req_quota = arg.upload_requests_quota.value_or(
-              default_req_quota);
+            candidate_collection_ctx ctx{
+              .type = upload_candidate_type::initial,
+              .read_write_fence = partition->get_applied_offset(),
+              .base_offset = partition->get_next_uploaded_offset(),
+              .workflow_rtc = std::ref(workflow_rtc),
+              .partition = partition,
+              // If not limit is specified (quota is set to nullopt) we don't
+              // want to upload unlimited amount of data in one iteration. The
+              // defaults in this case are configured to allow only three
+              // segments to be uploaded.
+              .size_quota = arg.upload_size_quota.value_or(arg.target_size * 3),
+              .req_quota = arg.upload_requests_quota.value_or(
+                default_req_quota),
+            };
 
-            size_limited_offset_range range(
-              base_offset, arg.target_size, arg.min_size);
+            auto res = co_await collect_upload_candidates(std::move(ctx), arg);
+            if (res.has_error()) {
+                co_return res.error();
+            }
+            ctx = std::move(res.value());
 
-            retry_chain_node op_rtc(&workflow_rtc);
-
-            vlog(
-              _rtclog.debug,
-              "start collecting segments, base_offset {}, size quota {}, "
-              "requests "
-              "quota {}",
-              base_offset,
-              size_quota,
-              req_quota);
-
-            while (size_quota > 0 && req_quota > 0) {
-                auto upload = co_await make_upload_candidate(
-                  base_offset,
-                  upload_candidate_type::initial,
-                  partition,
-                  arg,
-                  _sg,
-                  op_rtc.get_deadline());
-
-                if (
-                  upload.has_error()
-                  && upload.error() == error_outcome::not_enough_data) {
-                    vlog(
-                      _rtclog.debug,
-                      "make_non_compacted_upload failed {}",
-                      upload.error());
-                    break;
+            // Do compacted uploads only if the quota is not exceeded
+            // and compacted reupload is enabled in the config.
+            if (arg.compacted_reupload) {
+                ctx.base_offset
+                  = partition->get_next_uploaded_compacted_offset();
+                ctx.type = upload_candidate_type::compacted_reupload;
+                auto res = co_await collect_upload_candidates(
+                  std::move(ctx), arg);
+                if (res.has_error()) {
+                    co_return res.error();
                 }
-                if (upload.has_error()) {
-                    if (upload.error() != error_outcome::not_enough_data) {
-                        vlog(
-                          _rtclog.error,
-                          "make_non_compacted_upload failed {}",
-                          upload.error());
-                    }
-                    co_return upload.error();
-                }
-                vlog(
-                  _rtclog.debug,
-                  "make_non_compacted_upload success {}",
-                  upload.value());
-                base_offset = model::next_offset(
-                  upload.value()->metadata.committed_offset);
-                size_quota -= upload.value()->size_bytes;
-                // 2 PUT requests for segment upload + index upload
-                req_quota -= 2;
-                if (upload.value()->metadata.metadata_size_hint > 0) {
-                    // another PUT request if tx-manifest is not empty
-                    req_quota -= 1;
-                }
-                result.results.push_back(std::move(upload.value()));
+                ctx = std::move(res.value());
             }
 
             vlog(
@@ -204,8 +170,11 @@ public:
               "find_upload_candidates completed with {} results, read-write "
               "fence "
               "{}",
-              result.results.size(),
-              result.read_write_fence);
+              ctx.results.size(),
+              ctx.read_write_fence);
+
+            reconciled_upload_candidates_list result(
+              arg.ntp, std::move(ctx.results), ctx.read_write_fence);
 
             co_return std::move(result);
         } catch (...) {
@@ -549,6 +518,88 @@ public:
     }
 
 private:
+    struct candidate_collection_ctx {
+        upload_candidate_type type;
+        model::offset read_write_fence;
+        model::offset base_offset;
+        std::reference_wrapper<retry_chain_node> workflow_rtc;
+        ss::shared_ptr<cluster_partition_api> partition;
+        size_t size_quota{0};
+        size_t req_quota{0};
+        std::deque<reconciled_upload_candidate_ptr> results;
+    };
+
+    ss::future<result<candidate_collection_ctx>> collect_upload_candidates(
+      candidate_collection_ctx ctx,
+      upload_candidate_search_parameters arg) noexcept {
+        retry_chain_node op_rtc(&ctx.workflow_rtc.get());
+        try {
+            vlog(
+              _rtclog.debug,
+              "start collecting segments, base_offset {}, size quota {}, "
+              "requests "
+              "quota {}, type {}",
+              ctx.base_offset,
+              ctx.size_quota,
+              ctx.req_quota,
+              ctx.type);
+
+            while (ctx.size_quota > 0 && ctx.req_quota > 0) {
+                auto upload = co_await make_upload_candidate(
+                  ctx.base_offset,
+                  upload_candidate_type::initial,
+                  ctx.partition,
+                  arg,
+                  _sg,
+                  op_rtc.get_deadline());
+
+                if (
+                  upload.has_error()
+                  && upload.error() == error_outcome::not_enough_data) {
+                    vlog(
+                      _rtclog.debug,
+                      "make_upload_candidate {} failed {}",
+                      ctx.type,
+                      upload.error());
+                    break;
+                }
+                if (upload.has_error()) {
+                    if (upload.error() != error_outcome::not_enough_data) {
+                        vlog(
+                          _rtclog.error,
+                          "make_upload_candidate {} failed {}",
+                          ctx.type,
+                          upload.error());
+                    }
+                    co_return upload.error();
+                }
+                vlog(
+                  _rtclog.debug,
+                  "make_upload_candidate {} success {}",
+                  ctx.type,
+                  upload.value());
+                ctx.base_offset = model::next_offset(
+                  upload.value()->metadata.committed_offset);
+                ctx.size_quota -= upload.value()->size_bytes;
+                // 2 PUT requests for segment upload + index upload
+                ctx.req_quota -= 2;
+                if (upload.value()->metadata.metadata_size_hint > 0) {
+                    // another PUT request if tx-manifest is not empty
+                    ctx.req_quota -= 1;
+                }
+                ctx.results.push_back(std::move(upload.value()));
+            }
+            co_return std::move(ctx);
+        } catch (...) {
+            vlog(
+              _rtclog.error,
+              "Unexpected error during upload candidate collection: {}",
+              std::current_exception());
+            co_return error_outcome::unexpected_failure;
+        }
+        __builtin_unreachable();
+    }
+
     ss::future<result<ss::lw_shared_ptr<reconciled_upload_candidate>>>
     make_upload_candidate(
       model::offset base_offset,
@@ -559,7 +610,8 @@ private:
       ss::lowres_clock::time_point deadline) noexcept {
         vlog(
           _rtclog.debug,
-          "make_non_compacted_upload base_offset {}, arg {}",
+          "make_upload_candidate({}) base_offset {}, arg {}",
+          type,
           base_offset,
           arg);
         try {
@@ -572,7 +624,8 @@ private:
             if (upload.has_error()) {
                 vlog(
                   _rtclog.warn,
-                  "prepare_segment_upload failed {}",
+                  "prepare_segment_upload {} failed {}",
+                  type,
                   upload.error());
                 co_return upload.error();
             }
@@ -580,11 +633,11 @@ private:
             vlog(
               _rtclog.debug,
               "prepare_segment_upload returned meta {}, offsets {}, payload "
-              "size "
-              "{}",
+              "size {}, type {}",
               res->meta,
               res->offsets,
-              res->size_bytes);
+              res->size_bytes,
+              type);
 
             // Convert metadata
             auto delta_offset = part->offset_delta(res->offsets.base);
@@ -597,8 +650,9 @@ private:
             if (!segment_term.has_value()) {
                 vlog(
                   _rtclog.error,
-                  "Can't find term for offset {}",
-                  res->offsets.base);
+                  "Can't find term for offset {}, type {}",
+                  res->offsets.base,
+                  type);
                 co_return error_outcome::offset_not_found;
             }
 
@@ -644,7 +698,8 @@ private:
         } catch (...) {
             vlog(
               _rtclog.error,
-              "Failed to create non-compacted upload candidate {}",
+              "Failed to create {} upload candidate {}",
+              type,
               std::current_exception());
         }
         co_return error_outcome::unexpected_failure;
