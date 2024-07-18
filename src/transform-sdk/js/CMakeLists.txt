@@ -24,6 +24,20 @@ endif()
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
 
+if(CMAKE_BUILD_TYPE MATCHES Release)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ltosupported OUTPUT error)
+  # NOTE(oren): rather a blunt instrument. CMake doesn't currently
+  # offer the ability to customize the LTO setting, and thin LTO is not
+  # sufficient for our use case, so we blanket enable full LTO for all
+  # targets. Predicated on compiler ID becuase these options are specific
+  # to clang.
+  if(ltosupported AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+    add_compile_options(-flto=full)
+    add_link_options(-flto=full)
+  endif()
+endif()
+
 FetchContent_Declare(
   quickjs
   GIT_REPOSITORY https://github.com/quickjs-ng/quickjs.git
@@ -65,12 +79,10 @@ target_link_libraries(
   qjs Redpanda::transform_sdk Redpanda::js_vm
 )
 
-if(CMAKE_BUILD_TYPE MATCHES Release)
-  include(CheckIPOSupported)
-  check_ipo_supported(RESULT ltosupported OUTPUT error)
-  if(ltosupported)
-    set_property(TARGET redpanda_js_transform PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
-  endif()
+# NOTE(oren): Fall back to standard property if we decided LTO was needed 
+# and happen to be building non-clang for some reason.
+if (ltosupported AND NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+  set_property(TARGET redpanda_js_transform PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
 # Tests
