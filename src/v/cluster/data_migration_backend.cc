@@ -205,10 +205,18 @@ void backend::mark_migration_step_done_for_ntp(
                 }
             }
             rs_parts.erase(rs_part_it);
-            if (rs_parts.empty()) {
-                rs_topics.erase(rs_topic_it);
-            }
+            rs.erase_tstate_if_done(rs_topic_it);
         }
+    }
+}
+
+void backend::migration_reconciliation_state::erase_tstate_if_done(
+  topic_map_t::iterator it) {
+    auto& tstate = it->second;
+    if (
+      tstate.outstanding_partitions.empty()
+      && (!tstate.topic_scoped_work_needed || tstate.topic_scoped_work_done)) {
+        outstanding_topics.erase(it);
     }
 }
 
