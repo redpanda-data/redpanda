@@ -637,12 +637,6 @@ TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
       std::move(l_transfer_fiber));
 
     logger().info("Validating log consistency");
-    /**
-     * In the last step of the test we validate consistency of offset
-     * translation.
-     */
-    using offset_map_t
-      = absl::btree_map<model::offset, std::vector<model::offset>>;
 
     auto dirty_offset = co_await retry_with_leader(
       model::timeout_clock::now() + 30s, [](raft_node_instance& leader_node) {
@@ -661,16 +655,17 @@ TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
     auto ec = co_await wait_for_offset(dirty_offset.value(), node_ids, *this);
     ASSERT_EQ_CORO(ec, errc::success);
 
-    offset_map_t mapped_offsets;
-    for (auto& vn : current_replicas) {
-        auto& node = this->node(vn.id());
-
-        for (auto o = model::offset(0); o < dirty_offset.value(); ++o) {
-            mapped_offsets[o].push_back(node.raft()->log()->from_log_offset(o));
-        }
-    }
     using namespace testing;
-    for (auto& [log_offset, kafka_offsets] : mapped_offsets) {
-        EXPECT_THAT(kafka_offsets, Each(Eq(kafka_offsets[0])));
+    for (auto o = model::offset(0); o < dirty_offset.value(); ++o) {
+        std::vector<model::offset> kafka_offsets;
+        kafka_offsets.reserve(node_ids.size());
+        for (auto& id : node_ids) {
+            auto& node = this->node(id);
+            kafka_offsets.push_back(node.raft()->log()->from_log_offset(o));
+        }
+        EXPECT_THAT(kafka_offsets, Each(Eq(kafka_offsets[0]))) << fmt::format(
+          "Offset translation failure at offset {}, kafka_offets: {}",
+          o,
+          kafka_offsets);
     }
 }
