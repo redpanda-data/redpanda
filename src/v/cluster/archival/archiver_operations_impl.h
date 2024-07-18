@@ -41,6 +41,11 @@ struct cluster_partition_api {
     virtual ~cluster_partition_api() = default;
     virtual const cloud_storage::partition_manifest& manifest() const = 0;
     virtual model::offset get_next_uploaded_offset() const = 0;
+    /// Return next uploaded compacted offset
+    ///
+    /// \return next uploaded compacted offset or <default> value if
+    /// compacted reupload is disabled
+    virtual model::offset get_next_uploaded_compacted_offset() const = 0;
     virtual model::offset get_applied_offset() const = 0;
     virtual model::producer_id get_highest_producer_id() const = 0;
 
@@ -162,6 +167,35 @@ struct prepared_segment_upload {
     ss::input_stream<char> payload;
 };
 
+enum class upload_candidate_type {
+    /// Upload based on offset and desired size. No alignment
+    /// checks.
+    initial,
+    /// Normal re-upload. The candidate has to be aligned with the
+    /// manifest. It can be compacted or not.
+    reupload,
+    /// Re-upload after compaction is completed. The requirements
+    /// for the segment are:
+    /// - it's fully compacted
+    /// - it's aligned with the manifest
+    compacted_reupload,
+};
+
+inline std::ostream& operator<<(std::ostream& o, upload_candidate_type t) {
+    switch (t) {
+    case upload_candidate_type::initial:
+        o << "upload";
+        break;
+    case upload_candidate_type::reupload:
+        o << "reupload";
+        break;
+    case upload_candidate_type::compacted_reupload:
+        o << "compacted_reupload";
+        break;
+    }
+    return o;
+}
+
 /// Wrapper for the archival::segment_upload
 struct segment_upload_builder_api {
     segment_upload_builder_api() = default;
@@ -173,10 +207,17 @@ struct segment_upload_builder_api {
       = default;
     virtual ~segment_upload_builder_api() = default;
 
+    /// Prepare segment upload
+    ///
+    /// Create an upload candidate. If the type is 'normal' the candidate upload
+    /// has to start at 'range.base' and strictly respect the size boundaries.
+    /// The base offset can't move anywhere in this case.
+    ///
     virtual ss::future<result<std::unique_ptr<prepared_segment_upload>>>
     prepare_segment_upload(
       ss::shared_ptr<cluster_partition_api> part,
       size_limited_offset_range range,
+      upload_candidate_type type,
       size_t read_buffer_size,
       ss::scheduling_group sg,
       model::timeout_clock::time_point deadline)

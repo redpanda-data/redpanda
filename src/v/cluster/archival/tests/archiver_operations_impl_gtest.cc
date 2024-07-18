@@ -93,6 +93,8 @@ struct partition_mock : public detail::cluster_partition_api {
 
     MOCK_METHOD(model::initial_revision_id, get_initial_revision, (), (const));
 
+    MOCK_METHOD(model::offset, get_next_uploaded_compacted_offset, (), (const));
+
     MOCK_METHOD(
       ss::future<fragmented_vector<model::tx_range>>,
       aborted_transactions,
@@ -459,6 +461,7 @@ struct upload_builder_mock : public detail::segment_upload_builder_api {
       prepare_segment_upload,
       (ss::shared_ptr<detail::cluster_partition_api> part,
        size_limited_offset_range range,
+       detail::upload_candidate_type type,
        size_t read_buffer_size,
        ss::scheduling_group sg,
        model::timeout_clock::time_point deadline),
@@ -474,7 +477,12 @@ struct upload_builder_mock : public detail::segment_upload_builder_api {
         EXPECT_CALL(
           *this,
           prepare_segment_upload(
-            testing::_, range, read_buffer_size, testing::_, testing::_))
+            testing::_,
+            range,
+            detail::upload_candidate_type::initial,
+            read_buffer_size,
+            testing::_,
+            testing::_))
           .Times(1)
           .WillOnce(testing::Return(std::move(fut)));
     }
@@ -486,7 +494,12 @@ struct upload_builder_mock : public detail::segment_upload_builder_api {
         EXPECT_CALL(
           *this,
           prepare_segment_upload(
-            testing::_, testing::_, testing::_, testing::_, testing::_))
+            testing::_,
+            testing::_,
+            testing::_,
+            testing::_,
+            testing::_,
+            testing::_))
           .Times(1)
           .WillOnce(testing::Return(std::move(fut)));
     }

@@ -157,8 +157,13 @@ public:
               req_quota);
 
             while (size_quota > 0 && req_quota > 0) {
-                auto upload = co_await make_non_compacted_upload(
-                  base_offset, partition, arg, _sg, op_rtc.get_deadline());
+                auto upload = co_await make_upload_candidate(
+                  base_offset,
+                  upload_candidate_type::initial,
+                  partition,
+                  arg,
+                  _sg,
+                  op_rtc.get_deadline());
 
                 if (
                   upload.has_error()
@@ -201,8 +206,7 @@ public:
               "{}",
               result.results.size(),
               result.read_write_fence);
-            // TODO: compacted upload (if possible)
-            // TODO: merge adjacent segments
+
             co_return std::move(result);
         } catch (...) {
             vlog(
@@ -546,8 +550,9 @@ public:
 
 private:
     ss::future<result<ss::lw_shared_ptr<reconciled_upload_candidate>>>
-    make_non_compacted_upload(
+    make_upload_candidate(
       model::offset base_offset,
+      upload_candidate_type type,
       ss::shared_ptr<cluster_partition_api> part,
       upload_candidate_search_parameters arg,
       ss::scheduling_group sg,
@@ -563,7 +568,7 @@ private:
             size_limited_offset_range range(
               base_offset, arg.target_size, arg.min_size);
             auto upload = co_await _upl_builder->prepare_segment_upload(
-              part, range, _read_buffer_size(), sg, deadline);
+              part, range, type, _read_buffer_size(), sg, deadline);
             if (upload.has_error()) {
                 vlog(
                   _rtclog.warn,
@@ -1084,6 +1089,16 @@ public:
         return base_offset;
     }
 
+    model::offset get_next_uploaded_compacted_offset() const override {
+        if (!config::shard_local_cfg()
+               .cloud_storage_enable_compacted_topic_reupload.value()) {
+            return model::offset{};
+        }
+        return model::next_offset(_part->archival_meta_stm()
+                                    ->manifest()
+                                    .get_last_uploaded_compacted_offset());
+    }
+
     model::offset get_applied_offset() const override {
         return _part->archival_meta_stm()->manifest().get_applied_offset();
     }
@@ -1207,9 +1222,14 @@ class upload_builder : public detail::segment_upload_builder_api {
     prepare_segment_upload(
       ss::shared_ptr<detail::cluster_partition_api> part,
       size_limited_offset_range range,
+      detail::upload_candidate_type type,
       size_t read_buffer_size,
       ss::scheduling_group sg,
       model::timeout_clock::time_point deadline) override {
+        if (type != detail::upload_candidate_type::initial) {
+            // TODO: fixme
+            throw std::runtime_error("not implemented");
+        }
         // This is supposed to work only with cluster_partition implementation
         // defined above.
         auto pp = part.get();
