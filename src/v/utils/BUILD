@@ -525,3 +525,11 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "notification_list",
+    hdrs = [
+        "notification_list.h",
+    ],
+    include_prefix = "utils",
+)
