@@ -293,6 +293,9 @@ class Admin:
                                                   backoff_s=backoff_s)
             if check(info.leader):
                 return True, info.leader
+
+            self.redpanda.logger.debug(
+                f"check failed (leader id: {info.leader})")
             return False
 
         return wait_until_result(
