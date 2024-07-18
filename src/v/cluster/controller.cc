@@ -308,7 +308,10 @@ ss::future<> controller::start(
       std::ref(_as));
 
     co_await _data_migration_worker.start(
-      _raft0->self().id(), std::ref(_partition_leaders), std::ref(_as));
+      _raft0->self().id(),
+      ss::sharded_parameter(
+        [this] { return std::ref(_partition_leaders.local()); }),
+      ss::sharded_parameter([this] { return std::ref(_as.local()); }));
     {
         limiter_configuration limiter_conf{
           config::shard_local_cfg().enable_controller_log_rate_limiting.bind(),

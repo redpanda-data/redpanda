@@ -229,6 +229,7 @@ struct outbound_migration
 
     auto topic_nts() const { return std::as_const(topics) | std::views::all; }
 };
+
 /**
  * Variant representing a migration. It can be either inbound or outbound data
  * migration.
@@ -236,6 +237,22 @@ struct outbound_migration
 using data_migration = serde::variant<inbound_migration, outbound_migration>;
 
 data_migration copy_migration(const data_migration& migration);
+
+/* Additional info worker needs from backend to work on a partition */
+struct inbound_partition_work_info {
+    std::optional<model::topic_namespace> alias;
+    std::optional<cloud_storage_location> cloud_storage_location;
+};
+struct outbound_partition_work_info {
+    std::optional<copy_target> copy_to;
+};
+using partition_work_info
+  = std::variant<inbound_partition_work_info, outbound_partition_work_info>;
+struct partition_work {
+    id migration_id;
+    state sought_state;
+    partition_work_info info;
+};
 
 /**
  * Data migration metadata containing a migration definition, its id and current

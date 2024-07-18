@@ -42,6 +42,7 @@ public:
 
 private:
     struct topic_reconciliation_state {
+        size_t idx_in_migration;
         chunked_hash_map<model::partition_id, std::vector<model::node_id>>
           outstanding_partitions;
     };
@@ -125,12 +126,21 @@ private:
     get_replica_work_state(const model::ntp& ntp);
     bool has_local_replica(const model::ntp& ntp);
 
+    inbound_partition_work_info get_partition_work_info(
+      const model::ntp& ntp, const inbound_migration& im, id migration_id);
+    outbound_partition_work_info get_partition_work_info(
+      const model::ntp& ntp, const outbound_migration& om, id migration_id);
+    partition_work_info get_partition_work_info(
+      const model::ntp& ntp, const migration_metadata& metadata);
     /*
      * Reconciliation-related data.
      *
      * When we are not the coordinator, _mrstates stores sought states and
      * topics only, but no partititons, _nstates and _nodes_to_retry are
      * empty
+     *
+     * The following invariants can only be violated between tasks by a fiber
+     * that has the lock.
      *
      * When we are the coordinator:
      * - _mrstates and _nstates store the same set of migration-ntp
@@ -139,10 +149,10 @@ private:
      * - Nodes in _nstates = nodes in _nodes_to_retry ⊔ nodes of in-flight
      * RPCs.
      *
-     * - _advance_requests is only modified by the synchronous part of
-     * work_cycle
-     * - _mrstates, _nstates and _nodes_to_retry are only modified by the
-     * synchronous part of work_cycle and by handle_migration_update
+     * - _advance_requests is only modified by the work cycle
+     * - _mrstates, _nstates and _nodes_to_retry are only modified under lock
+     *
+     * - _work_states only contains topics present in _mrstates
      */
     migration_reconciliation_states_t _migration_states;
     // reverse map for topics in mrstates
