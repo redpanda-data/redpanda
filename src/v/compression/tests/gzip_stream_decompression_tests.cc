@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "compression/gzip_stream_decompression.h"
 #include "compression/internal/gzip_compressor.h"
+#include "test_utils/randoms.h"
 #include "utils/base64.h"
 
 #include <seastar/core/iostream.hh>
@@ -45,7 +46,7 @@ ss::sstring consume(gzip_stream_decompressor& gsd) {
 } // namespace
 
 TEST(GzStrm, SmallChunkSize) {
-    ss::sstring test_string(100000, 'a');
+    auto test_string = tests::random_named_string<ss::sstring>(100000);
     gzip_stream_decompressor gsd{make_compressed_stream(test_string), 5};
     gsd.reset();
     auto output = consume(gsd);
