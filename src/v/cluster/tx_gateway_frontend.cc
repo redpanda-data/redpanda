@@ -1341,13 +1341,13 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
 
     std::vector<tx_metadata::tx_partition> partitions;
-    std::vector<begin_tx_reply> brs;
+    std::vector<begin_tx_reply> data_partition_begin_replies;
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
 
     while (0 < retries--) {
         partitions.clear();
-        brs.clear();
+        data_partition_begin_replies.clear();
         bool should_retry = false;
         bool should_abort = false;
         std::vector<ss::future<begin_tx_reply>> bfs;
@@ -1361,8 +1361,9 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               timeout,
               stm->get_partition()));
         }
-        brs = co_await when_all_succeed(bfs.begin(), bfs.end());
-        for (auto& br : brs) {
+        data_partition_begin_replies = co_await when_all_succeed(
+          bfs.begin(), bfs.end());
+        for (auto& br : data_partition_begin_replies) {
             auto topic_it = std::find_if(
               response.results.begin(),
               response.results.end(),
@@ -1411,38 +1412,41 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
     auto status = co_await stm->add_partitions(
       term, tx.id, tx.tx_seq, partitions);
-    auto has_added = status == tm_stm::op_status::success;
-    if (!has_added) {
+    /**
+     * If we failed to update the transaction state return error, client will
+     * retry if needed and advance transaction state as data/group partition
+     * operations are idempotent and can easily be retried.
+     */
+    if (status != tm_stm::op_status::success) {
         vlog(
           txlog.warn,
           "[tx_id={}] adding partitions failed pid: {} - {}",
           request.transactional_id,
           pid,
           status);
+        co_return make_add_partitions_error_response(
+          request, map_state_update_outcome(status));
     }
-    for (auto& br : brs) {
+
+    for (auto& reply : data_partition_begin_replies) {
         auto topic_it = std::find_if(
           response.results.begin(),
           response.results.end(),
-          [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
+          [&reply](const auto& r) { return r.name == reply.ntp.tp.topic(); });
 
         add_partitions_tx_reply::partition_result res_partition;
-        res_partition.partition_index = br.ntp.tp.partition;
-        if (has_added && br.ec == tx::errc::none) {
-            res_partition.error_code = tx::errc::none;
-        } else {
-            if (br.ec != tx::errc::none) {
-                vlog(
-                  txlog.warn,
-                  "[tx_id={}] begin_tx request for pid: {} at ntp: {} failed - "
-                  "{}",
-                  request.transactional_id,
-                  pid,
-                  br.ntp,
-                  br.ec);
-            }
-            res_partition.error_code = tx::errc::invalid_txn_state;
-        }
+        res_partition.partition_index = reply.ntp.tp.partition;
+        res_partition.error_code = reply.ec;
+        vlogl(
+          txlog,
+          reply.ec == tx::errc::none ? ss::log_level::trace
+                                     : ss::log_level::error,
+          "[tx_id={}] begin_tx request for pid: {} at ntp: {} result: {}",
+          request.transactional_id,
+          pid,
+          reply.ntp,
+          reply.ec);
+
         topic_it->results.push_back(res_partition);
     }
     co_return response;
