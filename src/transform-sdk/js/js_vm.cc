@@ -182,6 +182,7 @@ value value::current_exception(JSContext* ctx) {
 }
 bool value::is_number() const { return JS_IsNumber(_underlying) != 0; }
 bool value::is_exception() const { return JS_IsException(_underlying) != 0; }
+bool value::is_error() const { return JS_IsError(_ctx, _underlying) != 0; }
 bool value::is_function() const {
     return JS_IsFunction(_ctx, _underlying) != 0;
 }
@@ -275,6 +276,7 @@ size_t value::array_length() const {
     return JS_VALUE_GET_INT(prop.raw());
 }
 
+// NOLINTNEXTLINE(*-no-recursion)
 std::string value::debug_string() const {
     if (is_null()) {
         return "null";
@@ -284,12 +286,18 @@ std::string value::debug_string() const {
     }
     size_t size = 0;
     const char* str = JS_ToCStringLen(_ctx, &size, _underlying);
+    std::string result;
     if (str != nullptr) {
-        auto result = std::string(str, size);
+        result = std::string(str, size);
         JS_FreeCString(_ctx, str);
-        return result;
+    } else {
+        result = "[exception]";
     }
-    return "[exception]";
+    if (is_exception() || is_error()) {
+        auto stack = get_property("stack");
+        result += std::format("\n Stack: \n{}", stack.debug_string());
+    }
+    return result;
 }
 
 bool operator==(const value& lhs, const value& rhs) {

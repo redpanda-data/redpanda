@@ -196,6 +196,8 @@ public:
     [[nodiscard]] bool is_number() const;
     /** Is this value an exception? */
     [[nodiscard]] bool is_exception() const;
+    /** Is this value an error? */
+    [[nodiscard]] bool is_error() const;
     /** Is this value a function? */
     [[nodiscard]] bool is_function() const;
     /** Is this value a string? */
