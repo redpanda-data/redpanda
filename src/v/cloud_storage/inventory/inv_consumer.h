@@ -68,7 +68,8 @@ private:
     ss::future<> process_paths(fragmented_vector<ss::sstring> paths);
 
     // Checks if the path belongs to one of the NTPs whose leadership belongs to
-    // this node. If so, the path is hashed and added to the `_path_hashes` map.
+    // this node. If so, the path is hashed and added to current NTP flush
+    // states, and will be written to disk on the next flush operation.
     void process_path(ss::sstring path);
 
     // Writes the largest hash vectors to disk. The vectors are written in files
@@ -111,7 +112,7 @@ private:
     // performed to free up memory.
     size_t _max_hash_size_in_memory;
 
-    // Total size of path hashes held in memory
+    // Total size in bytes of path hashes held in memory
     size_t _total_size{};
 
     size_t _num_flushes{};
