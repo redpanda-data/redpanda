@@ -72,7 +72,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         kgo_group_re = re.compile(r'^kgo-verifier-[0-9]+-[0-9]+-0$')
 
         def do_list_groups():
-            res = self.rpk.group_list()
+            res = self.rpk.group_list_names()
 
             if res is None or len(res) == 0:
                 return False

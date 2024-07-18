@@ -12,12 +12,16 @@ package group
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 )
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -81,7 +85,9 @@ members and their lag), and manage offsets.
 }
 
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return &cobra.Command{
+	var filterStates []string
+	validStates := []string{"PreparingRebalance", "CompletingRebalance", "Stable", "Dead", "Empty"}
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List all groups",
@@ -91,6 +97,13 @@ This command lists all groups currently known to Redpanda, including empty
 groups that have not yet expired. The BROKER column is which broker node is the
 coordinator for the group. This command can be used to track down unknown
 groups, or to list groups that need to be cleaned up.
+
+The STATE columns shows which state the group is in:
+  - PreparingRebalance: The group is preparing to rebalance.
+  - CompletingRebalance: The group is waiting on the leader to provide assignments.
+  - Stable: The group is not empty and has no group membership changes in process.
+  - Dead: Transient state as the group is being removed.
+  - Empty: The group currently has no members.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -101,19 +114,58 @@ groups, or to list groups that need to be cleaned up.
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			listed, err := adm.ListGroups(context.Background())
+			normalizedFilterStates := make([]string, len(filterStates))
+			for i, state := range filterStates {
+				vsi := slices.IndexFunc(validStates, func(elem string) bool {
+					return strings.ToLower(elem) == strings.ToLower(state)
+				})
+
+				if vsi == -1 {
+					out.Die("Invalid group state argument: %s", state)
+				}
+
+				normalizedFilterStates[i] = validStates[vsi]
+			}
+
+			// The broker-side implementation assumes that the state strings are in CamelCase,
+			// so use the normalized form in the request
+			listed, err := adm.ListGroups(context.Background(), normalizedFilterStates...)
 			out.HandleShardError("ListGroups", err)
 
-			tw := out.NewTable("BROKER", "GROUP")
-			defer tw.Flush()
-			for _, g := range listed.Sorted() {
-				tw.PrintStructFields(struct {
-					Broker int32
-					Group  string
-				}{g.Coordinator, g.Group})
+			groups := listed.Sorted()
+			isV4Response := slices.ContainsFunc(groups, func(g kadm.ListedGroup) bool { return g.State != "" })
+
+			// Conditionally hide the STATE column for older brokers that
+			// do not return the state of the consumer group
+			if !isV4Response {
+				tw := out.NewTable("BROKER", "GROUP")
+				defer tw.Flush()
+				for _, g := range groups {
+					tw.PrintStructFields(struct {
+						Broker int32
+						Group  string
+					}{g.Coordinator, g.Group})
+				}
+			} else {
+				tw := out.NewTable("BROKER", "GROUP", "STATE")
+				defer tw.Flush()
+				for _, g := range groups {
+					tw.PrintStructFields(struct {
+						Broker int32
+						Group  string
+						State  string
+					}{g.Coordinator, g.Group, g.State})
+				}
 			}
 		},
 	}
+
+	allValidStates := strings.Join(validStates, ", ")
+	cmd.Flags().StringSliceVarP(&filterStates, "states", "s", []string{}, fmt.Sprintf("Comma-separated list of group states to filter for. Possible states: [%s]", allValidStates))
+	cmd.RegisterFlagCompletionFunc("states", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return validStates, cobra.ShellCompDirectiveDefault
+	})
+	return cmd
 }
 
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {

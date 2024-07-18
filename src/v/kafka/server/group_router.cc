@@ -16,6 +16,9 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/core/with_scheduling_group.hh>
 
+#include <algorithm>
+#include <iterator>
+
 namespace kafka {
 
 template<typename Request, typename FwdFunc>
@@ -293,18 +296,23 @@ group_router::abort_tx(cluster::abort_group_tx_request request) {
     return route_tx(std::move(request), &group_manager::abort_tx);
 }
 
-ss::future<std::pair<error_code, std::vector<listed_group>>>
-group_router::list_groups() {
-    using type = std::pair<error_code, std::vector<listed_group>>;
+ss::future<std::pair<error_code, chunked_vector<listed_group>>>
+group_router::list_groups(group_manager::list_groups_filter_data filter_data) {
+    using type = std::pair<error_code, chunked_vector<listed_group>>;
     return get_group_manager().map_reduce0(
-      [](group_manager& mgr) { return mgr.list_groups(); },
+      [filter_data = std::move(filter_data)](group_manager& mgr) {
+          return mgr.list_groups(filter_data);
+      },
       type{},
       [](type a, type b) {
           // reduce errors into `a` and retain the first
           if (a.first == error_code::none) {
               a.first = b.first;
           }
-          a.second.insert(a.second.end(), b.second.begin(), b.second.end());
+          auto& av = a.second;
+          auto& bv = b.second;
+          av.reserve(av.size() + bv.size());
+          std::copy(bv.begin(), bv.end(), std::back_inserter(av));
           return a;
       });
 }

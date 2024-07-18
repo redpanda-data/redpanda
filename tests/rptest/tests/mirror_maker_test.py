@@ -191,7 +191,7 @@ class TestMirrorMakerService(MirrorMakerService):
 
         src_rpk = RpkTool(self.source_broker)
 
-        groups = src_rpk.group_list()
+        groups = src_rpk.group_list_names()
         consumer_group = ""
         for g in groups:
             if g.startswith("kgo-verifier"):

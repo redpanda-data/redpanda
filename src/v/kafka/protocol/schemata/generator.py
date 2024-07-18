@@ -503,7 +503,6 @@ override_member_container = {
     'offset_fetch_request_topic': 'std::vector',
     'partition_produce_response': 'std::vector',
     'creatable_acl_result': 'std::vector',
-    'listed_group': 'std::vector',
     'offset_delete_request_partition': 'std::vector',
     'deletable_group_result': 'std::vector',
     'delete_acls_matching_acl': 'std::vector',

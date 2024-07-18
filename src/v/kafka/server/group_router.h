@@ -13,6 +13,7 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -83,7 +84,8 @@ public:
     abort_tx(cluster::abort_group_tx_request request);
 
     // return groups from across all shards, and if any core was still loading
-    ss::future<std::pair<error_code, std::vector<listed_group>>> list_groups();
+    ss::future<std::pair<error_code, chunked_vector<listed_group>>>
+    list_groups(group_manager::list_groups_filter_data filter_data);
 
     ss::future<described_group> describe_group(kafka::group_id g);
 

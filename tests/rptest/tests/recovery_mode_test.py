@@ -87,7 +87,7 @@ class RecoveryModeTest(RedpandaTest):
         # consume and create some consumer groups
 
         rpk.consume('mytopic1', n=500, group='mygroup1', quiet=True)
-        assert rpk.group_list() == ['mygroup1']
+        assert rpk.group_list_names() == ['mygroup1']
         group1 = rpk.group_describe('mygroup1')
         assert group1.total_lag == 500
         rpk.consume('mytopic1', n=1000, group='mygroup2', quiet=True)
@@ -123,7 +123,7 @@ class RecoveryModeTest(RedpandaTest):
 
         # check consumer group ops
 
-        assert rpk.group_list() == ['mygroup1', 'mygroup2']
+        assert rpk.group_list_names() == ['mygroup1', 'mygroup2']
 
         with tempfile.NamedTemporaryFile() as tf:
             # seek to the beginning of all partitions
@@ -139,7 +139,7 @@ class RecoveryModeTest(RedpandaTest):
         assert sum(p.current_offset for p in group2.partitions) == 1000
 
         rpk.group_delete('mygroup2')
-        assert rpk.group_list() == ['mygroup1']
+        assert rpk.group_list_names() == ['mygroup1']
 
         # check topic ops
 
@@ -193,7 +193,7 @@ class RecoveryModeTest(RedpandaTest):
             err_msg="failed to wait until partitions become ready")
         assert sum(p.high_watermark for p in partitions) == 2000
 
-        assert rpk.group_list() == ['mygroup1']
+        assert rpk.group_list_names() == ['mygroup1']
 
         consumed = rpk.consume('mytopic1',
                                n=2000,
@@ -219,7 +219,7 @@ class RecoveryModeTest(RedpandaTest):
         # consume and create some consumer groups
 
         rpk.consume('mytopic1', n=500, group='mygroup1', quiet=True)
-        assert rpk.group_list() == ['mygroup1']
+        assert rpk.group_list_names() == ['mygroup1']
         group1 = rpk.group_describe('mygroup1')
         assert group1.total_lag == 500
         rpk.consume('mytopic1', n=1000, group='mygroup2', quiet=True)

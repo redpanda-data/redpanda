@@ -18,10 +18,13 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/group.h"
+#include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/handlers/add_offsets_to_txn.h"
 #include "kafka/server/handlers/add_partitions_to_txn.h"
@@ -604,11 +607,31 @@ ss::future<response_ptr> list_groups_handler::handle(
     list_groups_request request{};
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
-    auto&& [error, groups] = co_await ctx.groups().list_groups();
-
     list_groups_response resp;
-    resp.data.error_code = error;
-    resp.data.groups = std::move(groups);
+
+    auto [invalid_req, filter] = [&request]() {
+        using list_groups_filter_data = group_manager::list_groups_filter_data;
+        list_groups_filter_data filter;
+        filter.states_filter.reserve(request.data.states_filter.size());
+        for (auto& state : request.data.states_filter) {
+            auto parsed = group_state_from_kafka_name(state);
+            if (!parsed) {
+                return std::make_pair(true, list_groups_filter_data{});
+            } else {
+                filter.states_filter.insert(*parsed);
+            }
+        }
+        return std::make_pair(false, std::move(filter));
+    }();
+
+    if (invalid_req) {
+        resp.data.error_code = kafka::error_code::invalid_request;
+    } else {
+        auto [error, groups] = co_await ctx.groups().list_groups(
+          std::move(filter));
+        resp.data.error_code = error;
+        resp.data.groups = std::move(groups);
+    }
 
     auto additional_resources_func = [&resp]() {
         std::vector<kafka::group_id> groups;
@@ -637,7 +660,7 @@ ss::future<response_ptr> list_groups_handler::handle(
                 security::acl_operation::describe, group.group_id);
           });
 
-        resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+        resp.data.groups.erase_to_end(non_visible_it);
     }
 
     if (!ctx.audit()) {

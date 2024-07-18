@@ -37,6 +37,7 @@
 #include "raft/errc.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "strings/string_switch.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/coroutine.hh>
@@ -2797,6 +2798,21 @@ ss::sstring group_state_to_kafka_name(group_state gs) {
     default:
         std::terminate(); // make gcc happy
     }
+}
+
+std::optional<group_state> group_state_from_kafka_name(std::string_view name) {
+    return string_switch<std::optional<group_state>>(name)
+      .match(group_state_to_kafka_name(group_state::empty), group_state::empty)
+      .match(
+        group_state_to_kafka_name(group_state::preparing_rebalance),
+        group_state::preparing_rebalance)
+      .match(
+        group_state_to_kafka_name(group_state::completing_rebalance),
+        group_state::completing_rebalance)
+      .match(
+        group_state_to_kafka_name(group_state::stable), group_state::stable)
+      .match(group_state_to_kafka_name(group_state::dead), group_state::dead)
+      .default_match(std::nullopt);
 }
 
 void group::add_pending_member(
