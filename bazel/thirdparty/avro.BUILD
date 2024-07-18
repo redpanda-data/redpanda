@@ -144,3 +144,18 @@ cc_library(
         "@snappy",
     ],
 )
+
+cc_binary(
+    name = "avrogen",
+    srcs = [
+        "lang/c++/impl/avrogencpp.cc",
+    ],
+    local_defines = ["AVRO_VERSION=1"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":avro",
+        "@boost//:program_options",
+    ],
+)
