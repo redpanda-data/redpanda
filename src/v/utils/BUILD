@@ -533,3 +533,15 @@ redpanda_cc_library(
     ],
     include_prefix = "utils",
 )
+
+redpanda_cc_library(
+    name = "adjustable_semaphore",
+    hdrs = [
+        "adjustable_semaphore.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        ":named_type",
+        "//src/v/base",
+    ],
+)
