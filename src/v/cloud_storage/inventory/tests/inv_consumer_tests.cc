@@ -103,7 +103,7 @@ constexpr auto compressed
 
 } // namespace
 
-TEST(ParseNTPFromPath, Consumer) {
+TEST(Consumer, ParseNTPFromPath) {
     using p = std::pair<std::string_view, std::optional<model::ntp>>;
     std::vector<p> test_data{
       {"a0a6eeb8/kafka/topic-x/999_24/178-188-1574137-1-v1.log.1",
@@ -130,7 +130,7 @@ TEST(ParseNTPFromPath, Consumer) {
     }
 }
 
-TEST(ParseCSV, Consumer) {
+TEST(Consumer, ParseCSV) {
     inventory_consumer c{"", {}, 0};
     using p = std::pair<const char*, std::vector<ss::sstring>>;
     std::vector<p> test_data{
@@ -152,7 +152,7 @@ TEST(ParseCSV, Consumer) {
     }
 }
 
-TEST(LargeNumberOfPaths, Consumer) {
+TEST(Consumer, LargeNumberOfPaths) {
     temporary_dir t{"test_inv_consumer"};
     const auto p0 = make_ntp("kafka", "topic-A", 110);
 
@@ -183,7 +183,7 @@ TEST(LargeNumberOfPaths, Consumer) {
     }
 }
 
-TEST(WriteThenReadHashes, Consumer) {
+TEST(Consumer, WriteThenReadHashes) {
     temporary_dir t{"test_inv_consumer"};
 
     const auto p0 = make_ntp("kafka", "partagas", 0);
@@ -224,7 +224,7 @@ TEST(WriteThenReadHashes, Consumer) {
     }
 }
 
-TEST(CollisionDetection, Consumer) {
+TEST(Consumer, CollisionDetection) {
     temporary_dir t{"test_inv_consumer"};
     const auto p0 = make_ntp("kafka", "topic-A", 110);
 
@@ -247,7 +247,7 @@ TEST(CollisionDetection, Consumer) {
     h.stop().get();
 }
 
-TEST(ConsumeMultipleStreams, Consumer) {
+TEST(Consumer, ConsumeMultipleStreams) {
     temporary_dir t{"test_inv_consumer"};
     const auto p0 = make_ntp("kafka", "partagas", 0);
 
