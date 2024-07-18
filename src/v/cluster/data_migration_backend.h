@@ -54,12 +54,14 @@ private:
         bool topic_scoped_work_done;
         void clear();
     };
+    using topic_map_t
+      = chunked_hash_map<model::topic_namespace, topic_reconciliation_state>;
     struct migration_reconciliation_state {
         explicit migration_reconciliation_state(work_scope scope)
           : scope(scope){};
         work_scope scope;
-        chunked_hash_map<model::topic_namespace, topic_reconciliation_state>
-          outstanding_topics;
+        topic_map_t outstanding_topics;
+        void erase_tstate_if_done(topic_map_t::iterator it);
     };
     using migration_reconciliation_states_t
       = absl::flat_hash_map<id, migration_reconciliation_state>;
