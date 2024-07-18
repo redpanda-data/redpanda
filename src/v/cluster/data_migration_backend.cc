@@ -126,29 +126,19 @@ ss::future<> backend::work_once() {
     for (const auto& [node_id, response] : rpc_responses) {
         co_await ssx::async_for_each(
           response.actual_states, [this](const auto& ntp_resp) {
-              auto rs_it = _migration_states.find(ntp_resp.migration);
-              if (rs_it == _migration_states.end()) {
-                  // migration gone, ignore
-                  return;
-              }
-              migration_reconciliation_state& rs = rs_it->second;
-              if (rs.scope.sought_state > ntp_resp.state) {
-                  // migration advanced since then, ignore
-                  return;
-              }
-              mark_migration_step_done_for_ntp(rs, ntp_resp.ntp);
-              if (rs.outstanding_topics.empty()) {
-                  to_advance(ntp_resp.migration, *rs.scope.sought_state);
-                  _migration_states.erase(rs_it);
+              if (auto rs_it = get_rstate(ntp_resp.migration, ntp_resp.state)) {
+                  mark_migration_step_done_for_ntp(
+                    (*rs_it)->second, ntp_resp.ntp);
+                  to_advance_if_done(*rs_it);
               }
           });
     }
 
     auto next_tick = model::timeout_clock::time_point::max();
 
-    // prepare RPC requests
-    chunked_vector<model::node_id> to_send_rpc;
+    // prepare RPC and topic work requests
     auto now = model::timeout_clock::now();
+    chunked_vector<model::node_id> to_send_rpc;
     for (const auto& [node_id, deadline] : _nodes_to_retry) {
         if (deadline <= now) {
             to_send_rpc.push_back(node_id);
@@ -182,12 +172,28 @@ ss::future<> backend::work_once() {
 
 void backend::wakeup() { _sem.signal(1 - _sem.available_units()); }
 
+std::optional<backend::migration_reconciliation_states_t::iterator>
+backend::get_rstate(id migration, state expected_sought_state) {
+    auto rs_it = _migration_states.find(migration);
+    if (rs_it == _migration_states.end()) {
+        // migration gone, ignore
+        return std::nullopt;
+    }
+    migration_reconciliation_state& rs = rs_it->second;
+    if (rs.scope.sought_state > expected_sought_state) {
+        // migration advanced since then, ignore
+        return std::nullopt;
+    }
+    return rs_it;
+}
+
 void backend::mark_migration_step_done_for_ntp(
   migration_reconciliation_state& rs, const model::ntp& ntp) {
     auto& rs_topics = rs.outstanding_topics;
     auto rs_topic_it = rs_topics.find({ntp.ns, ntp.tp.topic});
     if (rs_topic_it != rs_topics.end()) {
-        auto& rs_parts = rs_topic_it->second.outstanding_partitions;
+        auto& tstate = rs_topic_it->second;
+        auto& rs_parts = tstate.outstanding_partitions;
         auto rs_part_it = rs_parts.find(ntp.tp.partition);
         if (rs_part_it != rs_parts.end()) {
             for (const auto& affected_node_id : rs_part_it->second) {
@@ -234,10 +240,17 @@ ss::future<> backend::send_rpc(model::node_id node_id) {
       });
 }
 
-void backend::to_advance(id migration_id, state sought_state) {
-    auto [it, ins] = _advance_requests.try_emplace(migration_id, sought_state);
-    if (!ins && it->second.sought_state < sought_state) {
-        it->second = advance_info(sought_state);
+void backend::to_advance_if_done(
+  migration_reconciliation_states_t::const_iterator it) {
+    auto& rs = it->second;
+    if (rs.outstanding_topics.empty()) {
+        auto sought_state = *rs.scope.sought_state;
+        auto [ar_it, ins] = _advance_requests.try_emplace(
+          it->first, sought_state);
+        if (!ins && ar_it->second.sought_state < sought_state) {
+            ar_it->second = advance_info(sought_state);
+        }
+        _migration_states.erase(it);
     }
 }
 
