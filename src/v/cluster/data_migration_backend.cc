@@ -720,6 +720,33 @@ partition_work_info backend::get_partition_work_info(
       metadata.migration);
 }
 
+inbound_topic_work_info backend::get_topic_work_info(
+  const model::topic_namespace& nt,
+  const inbound_migration& im,
+  id migration_id) {
+    auto idx = _migration_states.find(migration_id)
+                 ->second.outstanding_topics[nt]
+                 .idx_in_migration;
+    auto& inbound_topic = im.topics[idx];
+    return {
+      .alias = inbound_topic.alias,
+      .cloud_storage_location = inbound_topic.cloud_storage_location};
+}
+
+outbound_topic_work_info backend::get_topic_work_info(
+  const model::topic_namespace&, const outbound_migration& om, id) {
+    return {om.copy_to};
+}
+
+topic_work_info backend::get_topic_work_info(
+  const model::topic_namespace& nt, const migration_metadata& metadata) {
+    return std::visit(
+      [this, &nt, &metadata](auto& migration) -> topic_work_info {
+          return get_topic_work_info(nt, migration, metadata.id);
+      },
+      metadata.migration);
+}
+
 void backend::start_partition_work(
   const model::ntp& ntp, const backend::replica_work_state& rwstate) {
     vlog(

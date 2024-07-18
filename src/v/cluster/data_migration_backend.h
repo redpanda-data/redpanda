@@ -144,6 +144,17 @@ private:
     partition_work_info get_partition_work_info(
       const model::ntp& ntp, const migration_metadata& metadata);
 
+    inbound_topic_work_info get_topic_work_info(
+      const model::topic_namespace& nt,
+      const inbound_migration& im,
+      id migration_id);
+    outbound_topic_work_info get_topic_work_info(
+      const model::topic_namespace& nt,
+      const outbound_migration& om,
+      id migration_id);
+    topic_work_info get_topic_work_info(
+      const model::topic_namespace& nt, const migration_metadata& metadata);
+
     template<class M>
     struct migration_direction_tag {};
     static work_scope get_work_scope(const migration_metadata& metadata);

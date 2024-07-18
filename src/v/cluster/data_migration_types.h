@@ -257,6 +257,22 @@ struct partition_work {
     partition_work_info info;
 };
 
+/* Additional info worker needs from backend to work on a topic */
+struct inbound_topic_work_info {
+    std::optional<model::topic_namespace> alias;
+    std::optional<cloud_storage_location> cloud_storage_location;
+};
+struct outbound_topic_work_info {
+    std::optional<copy_target> copy_to;
+};
+using topic_work_info
+  = std::variant<inbound_topic_work_info, outbound_topic_work_info>;
+struct topic_work {
+    id migration_id;
+    state sought_state;
+    topic_work_info info;
+};
+
 /**
  * Data migration metadata containing a migration definition, its id and current
  * state.
