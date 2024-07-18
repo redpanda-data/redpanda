@@ -1,0 +1,79 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel/thirdparty:avro.bzl", "avro_cc_library")
+
+package(default_visibility = ["//src/v/iceberg:__subpackages__"])
+
+avro_cc_library(
+    name = "manifest_file",
+    include_prefix = "iceberg",
+    namespace = "iceberg",
+    schema = "avroschemas/manifest_file.schema.json",
+)
+
+avro_cc_library(
+    name = "manifest_entry",
+    include_prefix = "iceberg",
+    namespace = "iceberg",
+    schema = "avroschemas/manifest_entry.schema.json",
+)
+
+redpanda_cc_library(
+    name = "avro_utils",
+    hdrs = [
+        "avro_utils.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/bytes:iobuf",
+        "@avro",
+    ],
+)
+
+redpanda_cc_library(
+    name = "json_utils",
+    srcs = [
+        "json_utils.cc",
+    ],
+    hdrs = [
+        "json_utils.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/json",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
+    name = "datatypes",
+    srcs = [
+        "datatypes.cc",
+    ],
+    hdrs = [
+        "datatypes.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "datatypes_json",
+    srcs = [
+        "datatypes_json.cc",
+    ],
+    hdrs = [
+        "datatypes_json.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":json_utils",
+        "//src/v/json",
+        "//src/v/strings:string_switch",
+    ],
+)
