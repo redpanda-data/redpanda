@@ -119,4 +119,7 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const config::fips_mode_flag& f);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, const config::tls_version& v);
+
 } // namespace json

@@ -374,6 +374,8 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     if (_address.protocol == "https") {
         ss::tls::credentials_builder builder;
         builder.set_client_auth(ss::tls::client_auth::NONE);
+        builder.set_minimum_tls_version(
+          config::from_config(config::shard_local_cfg().tls_min_version()));
         auto ca_file = co_await net::find_ca_file();
         if (ca_file) {
             vlog(

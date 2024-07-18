@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "config/types.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
@@ -22,6 +23,19 @@
 #include <optional>
 
 namespace config {
+
+inline ss::tls::tls_version from_config(tls_version v) {
+    switch (v) {
+    case tls_version::v1_0:
+        return ss::tls::tls_version::tlsv1_0;
+    case tls_version::v1_1:
+        return ss::tls::tls_version::tlsv1_1;
+    case tls_version::v1_2:
+        return ss::tls::tls_version::tlsv1_2;
+    case tls_version::v1_3:
+        return ss::tls::tls_version::tlsv1_3;
+    }
+}
 
 struct key_cert {
     ss::sstring key_file;

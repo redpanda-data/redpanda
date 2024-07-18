@@ -33,6 +33,8 @@ build_tls_credentials(
     cred_builder.set_ciphersuites(
       {config::tlsv1_3_ciphersuites.data(),
        config::tlsv1_3_ciphersuites.size()});
+    cred_builder.set_minimum_tls_version(
+      from_config(config::shard_local_cfg().tls_min_version()));
     if (trust_file.has_value()) {
         auto file = trust_file.value();
         vlog(log.info, "Use non-default trust file {}", file());

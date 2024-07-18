@@ -651,6 +651,8 @@ consteval std::string_view property_type_name() {
         return "recovery_validation_mode";
     } else if constexpr (std::is_same_v<type, config::fips_mode_flag>) {
         return "string";
+    } else if constexpr (std::is_same_v<type, config::tls_version>) {
+        return "string";
     } else {
         static_assert(
           base::unsupported_type<T>::value, "Type name not defined");

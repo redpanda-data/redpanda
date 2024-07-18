@@ -217,4 +217,9 @@ void rjson_serialize(
     stringize(w, f);
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::tls_version& v) {
+    stringize(w, v);
+}
+
 } // namespace json

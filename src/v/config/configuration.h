@@ -608,6 +608,8 @@ struct configuration final : public config_store {
     // temporary - to be deprecated
     property<bool> unsafe_enable_consumer_offsets_delete_retention;
 
+    enum_property<tls_version> tls_min_version;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

@@ -17,6 +17,7 @@
 #include "base/vlog.h"
 #include "cloud_roles/logger.h"
 #include "config/configuration.h"
+#include "config/tls_config.h"
 #include "gcp_refresh_impl.h"
 #include "model/metadata.h"
 #include "net/tls.h"
@@ -346,6 +347,8 @@ ss::future<http::client> refresh_credentials::impl::make_api_client(
 ss::future<> refresh_credentials::impl::init_tls_certs(ss::sstring name) {
     ss::tls::credentials_builder b;
     b.set_client_auth(ss::tls::client_auth::NONE);
+    b.set_minimum_tls_version(
+      config::from_config(config::shard_local_cfg().tls_min_version()));
 
     if (auto trust_file_path
         = config::shard_local_cfg().cloud_storage_trust_file.value();
