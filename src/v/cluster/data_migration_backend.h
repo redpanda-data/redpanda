@@ -92,7 +92,8 @@ private:
     ss::future<> send_rpc(model::node_id node_id);
     ss::future<check_ntp_states_reply>
     check_ntp_states_locally(check_ntp_states_request&& req);
-    void to_advance(id migration_id, state sought_state);
+    void
+    to_advance_if_done(migration_reconciliation_states_t::const_iterator it);
     void spawn_advances();
 
     /* communication with workers */
@@ -108,6 +109,9 @@ private:
     ss::future<> process_delta(cluster::topic_table_delta&& delta);
 
     /* helpers */
+    std::optional<backend::migration_reconciliation_states_t::iterator>
+    get_rstate(id migration, state expected_sought_state);
+
     void update_partition_shard(
       const model::ntp& ntp,
       replica_work_state& rwstate,
