@@ -8,6 +8,7 @@ redpanda_cc_library(
         "envelope.h",
         "envelope_for_each_field.h",
         "logger.h",
+        "peek.h",
         "read_header.h",
         "rw/envelope.h",
         "rw/reservable.h",
