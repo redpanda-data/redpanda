@@ -923,6 +923,15 @@ configuration::configuration()
       "How often look for the inactive transactions and abort them",
       {.visibility = visibility::tunable},
       10s)
+  , transaction_max_timeout_ms(
+      *this,
+      "transaction_max_timeout_ms",
+      "The maximum allowed timeout for transactions. If a client requested "
+      "transaction timeout exceeds this configuration, the broker will return "
+      "an error during transactional producer initialization. This guardrail "
+      "prevents hanging transactions from blocking consumer progress.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      15min)
   , tx_log_stats_interval_s(
       *this,
       "tx_log_stats_interval_s",
