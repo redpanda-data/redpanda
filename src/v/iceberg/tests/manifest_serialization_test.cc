@@ -10,10 +10,16 @@
 #include "base/units.h"
 #include "bytes/iobuf.h"
 #include "iceberg/avro_utils.h"
+#include "iceberg/manifest.h"
+#include "iceberg/manifest_avro.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/manifest_file.h"
+#include "iceberg/schema_json.h"
+#include "iceberg/tests/test_schemas.h"
+#include "utils/file_io.h"
 
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/util/file.hh>
 
 #include <avro/DataFile.hh>
 #include <avro/Stream.hh>
@@ -207,4 +213,26 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     EXPECT_EQ(manifest.added_rows_count, dmanifest.added_rows_count);
     EXPECT_EQ(manifest.existing_rows_count, dmanifest.existing_rows_count);
     EXPECT_EQ(manifest.deleted_rows_count, dmanifest.deleted_rows_count);
+}
+
+TEST(ManifestSerializationTest, TestSerializeManifestData) {
+    auto orig_buf = iobuf{
+      ss::util::read_entire_file("nested_manifest.avro").get0()};
+    auto m = parse_manifest(orig_buf.copy());
+    ASSERT_EQ(100, m.entries.size());
+    ASSERT_EQ(m.metadata.manifest_content_type, manifest_content_type::data);
+    ASSERT_EQ(m.metadata.format_version, format_version::v2);
+    ASSERT_EQ(m.metadata.partition_spec.spec_id, 0);
+    ASSERT_EQ(m.metadata.partition_spec.fields.size(), 0);
+    ASSERT_EQ(
+      m.metadata.schema.schema_struct,
+      std::get<struct_type>(test_nested_schema_type()));
+
+    auto serialized_buf = serialize_avro(m);
+    auto m_roundtrip = parse_manifest(serialized_buf.copy());
+    ASSERT_EQ(m.metadata, m_roundtrip.metadata);
+    ASSERT_EQ(100, m_roundtrip.entries.size());
+
+    auto roundtrip_buf = serialize_avro(m_roundtrip);
+    ASSERT_EQ(serialized_buf, roundtrip_buf);
 }

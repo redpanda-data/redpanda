@@ -31,9 +31,12 @@ v_cc_library(
     datatypes.cc
     datatypes_json.cc
     json_utils.cc
+    manifest_avro.cc
     partition.cc
     schema_json.cc
   DEPS
+    Avro::avro
+    v::bytes
     v::container
     v::json
     v::strings
