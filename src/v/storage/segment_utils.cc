@@ -428,7 +428,10 @@ ss::future<storage::index_state> do_copy_segment_data(
       appender.get(),
       seg->path().is_internal_topic(),
       apply_offset,
-      segment_last_offset);
+      segment_last_offset,
+      /*cidx=*/nullptr,
+      /*inject_failure=*/false,
+      cfg.asrc);
 
     // create the segment, get the in-memory index for the new segment
     auto new_index = co_await create_segment_full_reader(
@@ -534,6 +537,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
       resources,
       apply_offset,
       feature_table);
+    vlog(
+      gclog.trace, "finished copying segment data for {}", s->reader().path());
 
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
