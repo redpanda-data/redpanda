@@ -10,6 +10,7 @@ import random
 from time import sleep, time
 
 import requests
+import os
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
@@ -359,6 +360,7 @@ class LocalDiskReportTimeTest(RedpandaTest):
 
         # there is definitely going to be some fuzz factor needed here and may
         # need updated, but after many runs 50mb was a good amount of slack.
+        assert os.getenv("EXPLICIT_FAIL") != 'true'
         assert diff <= (
             100 * 2**20
         ), f"diff {diff} reported {reported} expected {expected} default seg size {default_segment_size}"

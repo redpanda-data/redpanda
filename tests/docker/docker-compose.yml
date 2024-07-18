@@ -61,6 +61,8 @@ services:
         hard: 131072
     sysctls:
       net.ipv4.ip_local_port_range: 34000 60999
+    environment:
+      - EXPLICIT_FAIL
     depends_on: 
     - minio
     volumes:
