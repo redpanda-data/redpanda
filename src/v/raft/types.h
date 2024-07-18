@@ -17,7 +17,9 @@
 #include "raft/group_configuration.h"
 #include "raft/replicate.h"
 #include "reflection/adl.h"
-#include "serde/envelope.h"
+#include "serde/rw/bool_class.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/scalar.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/condition-variable.hh>

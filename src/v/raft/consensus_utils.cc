@@ -23,6 +23,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
+#include "serde/peek.h"
 #include "serde/rw/rw.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"

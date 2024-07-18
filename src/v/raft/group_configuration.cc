@@ -15,6 +15,7 @@
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
+#include "serde/rw/rw.h"
 
 #include <absl/container/flat_hash_set.h>
 #include <bits/stdint-uintn.h>

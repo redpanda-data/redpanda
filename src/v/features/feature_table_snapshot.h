@@ -11,11 +11,15 @@
 
 #pragma once
 
-#include "cluster/types.h"
+#include "cluster/version.h"
 #include "feature_state.h"
 #include "model/fundamental.h"
 #include "security/license.h"
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/vector.h"
 
 namespace features {
 
