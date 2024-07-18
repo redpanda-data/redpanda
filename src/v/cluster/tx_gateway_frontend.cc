@@ -1291,8 +1291,18 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
     auto tx = std::move(r.value());
 
+    /**
+     * First validate if we can add partitions to this transaction
+     */
+    if (!is_state_transition_valid(tx, tx_status::ongoing)) {
+        vlog(
+          txlog.warn,
+          "unable to add partitions tp transaction in {} state",
+          tx.status);
+        co_return make_add_partitions_error_response(
+          request, tx::errc::invalid_txn_state);
+    }
     add_partitions_tx_reply response;
-
     std::vector<model::ntp> new_partitions;
 
     for (auto& req_topic : request.topics) {
