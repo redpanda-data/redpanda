@@ -134,6 +134,35 @@ ss::future<> backend::work_once() {
           });
     }
 
+    // process topic work results
+    auto topic_work_results = std::move(_topic_work_results);
+    chunked_vector<model::topic_namespace> retriable_topic_work;
+    co_await ssx::async_for_each(
+      topic_work_results, [this, &retriable_topic_work](auto& result) {
+          if (auto rs_it = get_rstate(result.migration, result.sought_state)) {
+              switch (result.ec) {
+              case errc::success:
+                  mark_migration_step_done_for_nt((*rs_it)->second, result.nt);
+                  to_advance_if_done(*rs_it);
+                  break;
+              case errc::shutting_down:
+                  break;
+              default:
+                  // any other errors deemed retryable
+                  vlog(
+                    dm_log.info,
+                    "as part of migration {}, topic work for moving nt {} to "
+                    "state "
+                    "{} returned {}, retrying",
+                    result.migration,
+                    result.nt,
+                    result.sought_state,
+                    result.ec);
+                  retriable_topic_work.push_back(std::move(result.nt));
+              }
+          }
+      });
+
     auto next_tick = model::timeout_clock::time_point::max();
 
     // prepare RPC and topic work requests
@@ -146,8 +175,19 @@ ss::future<> backend::work_once() {
             next_tick = std::min(deadline, next_tick);
         }
     }
+    chunked_vector<model::topic_namespace> to_schedule_topic_work;
+    co_await ssx::async_for_each(
+      _topic_work_to_retry,
+      [&to_schedule_topic_work, &next_tick, now](const auto& entry) {
+          const auto& [nt, deadline] = entry;
+          if (deadline <= now) {
+              to_schedule_topic_work.push_back(nt);
+          } else {
+              next_tick = std::min(deadline, next_tick);
+          }
+      });
 
-    // defer RPC retries
+    // defer RPC retries and topic work
     // todo: configure timeout
     auto new_deadline = now + 5s;
     for (const auto& node_id : rpc_responses | std::views::keys) {
@@ -156,12 +196,33 @@ ss::future<> backend::work_once() {
             next_tick = std::min(next_tick, new_deadline);
         }
     }
+    co_await ssx::async_for_each(
+      retriable_topic_work, [this, &next_tick, new_deadline](const auto& nt) {
+          auto it = _topic_migration_map.find(nt);
+          if (it == _topic_migration_map.end()) {
+              return;
+          }
+          auto migration_id = it->second;
+
+          auto& mrstate = _migration_states.find(migration_id)->second;
+          auto& tstate = mrstate.outstanding_topics[nt];
+          if (
+            tstate.topic_scoped_work_needed && !tstate.topic_scoped_work_done) {
+              _topic_work_to_retry.try_emplace(std::move(nt), new_deadline);
+              next_tick = std::min(next_tick, new_deadline);
+          }
+      });
 
     // schedule fibers
     for (auto node_id : to_send_rpc) {
         _nodes_to_retry.erase(node_id);
         co_await send_rpc(node_id);
     }
+    co_await ssx::async_for_each(
+      to_schedule_topic_work, [this](const auto& nt) {
+          _topic_work_to_retry.erase(nt);
+          return schedule_topic_work(nt);
+      });
     spawn_advances();
     if (next_tick == model::timeout_clock::time_point::max()) {
         _timer.cancel();
@@ -210,6 +271,17 @@ void backend::mark_migration_step_done_for_ntp(
     }
 }
 
+void backend::mark_migration_step_done_for_nt(
+  migration_reconciliation_state& rs, const model::topic_namespace& nt) {
+    auto& rs_topics = rs.outstanding_topics;
+    auto rs_topic_it = rs_topics.find(nt);
+    if (rs_topic_it != rs_topics.end()) {
+        auto& tstate = rs_topic_it->second;
+        tstate.topic_scoped_work_done = true;
+        rs.erase_tstate_if_done(rs_topic_it);
+    }
+}
+
 void backend::migration_reconciliation_state::erase_tstate_if_done(
   topic_map_t::iterator it) {
     auto& tstate = it->second;
@@ -246,6 +318,100 @@ ss::future<> backend::send_rpc(model::node_id node_id) {
               return wakeup();
           });
       });
+}
+
+ss::future<> backend::schedule_topic_work(model::topic_namespace nt) {
+    auto it = _topic_migration_map.find(nt);
+    if (it == _topic_migration_map.end()) {
+        co_return;
+    }
+    auto migration_id = it->second;
+
+    auto& mrstate = _migration_states.find(migration_id)->second;
+    auto& tstate = mrstate.outstanding_topics[nt];
+    if (!tstate.topic_scoped_work_needed || tstate.topic_scoped_work_done) {
+        co_return;
+    }
+    const auto maybe_migration = _table.get_migration(migration_id);
+    if (!maybe_migration) {
+        vlog(dm_log.trace, "migration {} gone, ignoring", migration_id);
+        co_return;
+    }
+    topic_work tw{
+      .migration_id = migration_id,
+      .sought_state = *mrstate.scope.sought_state,
+      .info = get_topic_work_info(nt, maybe_migration->get())};
+
+    ssx::spawn_with_gate(
+      _gate, [this, nt = std::move(nt), tw = std::move(tw)]() {
+          return do_topic_work(nt, tw).then([this](topic_work_result&& twr) {
+              _topic_work_results.push_back(std::move(twr));
+              return wakeup();
+          });
+      });
+}
+
+ss::future<backend::topic_work_result>
+backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
+    errc ec;
+    try {
+        vlog(
+          dm_log.debug,
+          "doing topic work on migration {} nt {} towards state: {}",
+          tw.migration_id,
+          nt,
+          tw.sought_state);
+        ec = co_await std::visit(
+          [this, &nt, &tw](auto& info) {
+              return do_topic_work(nt, tw.sought_state, info);
+          },
+          tw.info);
+        vlog(
+          dm_log.debug,
+          "completed topic work on migration {} nt {} towards state: {}",
+          tw.migration_id,
+          nt,
+          tw.sought_state);
+    } catch (...) {
+        vlog(
+          dm_log.warn,
+          "exception occured during topic work on migration {} nt {} "
+          "towards state: {}",
+          tw.migration_id,
+          nt,
+          tw.sought_state,
+          std::current_exception());
+        ec = errc::topic_operation_error;
+    }
+    co_return topic_work_result{
+      .nt = std::move(nt),
+      .migration = tw.migration_id,
+      .sought_state = tw.sought_state,
+      .ec = ec,
+    };
+}
+
+ss::future<errc> backend::do_topic_work(
+  model::topic_namespace nt, state sought_state, inbound_topic_work_info itwi) {
+    // this assert is in accordance to the logic in get_work_scope
+    vassert(false, "no state transition needs inbound topic work");
+    std::ignore = nt;
+    std::ignore = sought_state;
+    std::ignore = itwi;
+}
+
+ss::future<errc> backend::do_topic_work(
+  model::topic_namespace nt,
+  state sought_state,
+  outbound_topic_work_info otwi) {
+    // this assert is in accordance to the logic in get_work_scope
+    vassert(
+      sought_state == state::finished,
+      "only ->finished state transition requires topic work");
+    std::ignore = nt;
+    std::ignore = otwi;
+    co_await ss::sleep(5s);
+    co_return errc::success;
 }
 
 void backend::to_advance_if_done(
@@ -316,6 +482,7 @@ ss::future<> backend::handle_raft0_leadership_update() {
         }
         _nodes_to_retry.clear();
         _node_states.clear();
+        _topic_work_to_retry.clear();
     }
 }
 
@@ -397,7 +564,7 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
     // The first RPC reply will clear it.
     co_await reconcile_topic(nt, tstate, migration_id, mrstate.scope, false);
 
-    // local work
+    // local partition work
     if (has_local_replica(delta.ntp)) {
         _work_states[nt].try_emplace(
           delta.ntp.tp.partition,
@@ -562,6 +729,7 @@ void backend::clear_tstate_belongings(
             }
         }
     }
+    _topic_work_to_retry.erase(nt);
 }
 
 void backend::drop_migration_reconciliation_rstate(
@@ -600,74 +768,74 @@ ss::future<> backend::reconcile_topic(
       migration,
       schedule_local_work,
       _is_coordinator);
+    auto now = model::timeout_clock::now();
     if (scope.partition_work_needed) {
-        auto maybe_assignments = _topic_table.get_topic_assignments(nt);
-        if (!maybe_assignments) {
-            co_return;
-        }
-        auto now = model::timeout_clock::now();
-        co_await ssx::async_for_each(
-          *maybe_assignments | std::views::values,
-          [this, nt, &tstate, scope, migration, now, schedule_local_work](
-            const auto& assignment) {
-              model::ntp ntp{nt.ns, nt.tp, assignment.id};
-              auto nodes = assignment.replicas
-                           | std::views::transform(
-                             &model::broker_shard::node_id);
-              if (_is_coordinator) {
-                  auto [it, ins] = tstate.outstanding_partitions.emplace(
-                    std::piecewise_construct,
-                    std::tuple{assignment.id},
-                    std::tuple{nodes.begin(), nodes.end()});
-                  vassert(
-                    ins,
-                    "tried to repeatedly track partition {} "
-                    "as part of migration {}",
-                    ntp,
-                    migration);
-              }
-              for (const auto& node_id : nodes) {
+        if (auto maybe_assignments = _topic_table.get_topic_assignments(nt)) {
+            co_await ssx::async_for_each(
+              *maybe_assignments | std::views::values,
+              [this, nt, &tstate, scope, migration, now, schedule_local_work](
+                const auto& assignment) {
+                  model::ntp ntp{nt.ns, nt.tp, assignment.id};
+                  auto nodes = assignment.replicas
+                               | std::views::transform(
+                                 &model::broker_shard::node_id);
                   if (_is_coordinator) {
-                      auto [it, ins] = _node_states[node_id].emplace(
-                        ntp, migration);
+                      auto [it, ins] = tstate.outstanding_partitions.emplace(
+                        std::piecewise_construct,
+                        std::tuple{assignment.id},
+                        std::tuple{nodes.begin(), nodes.end()});
                       vassert(
                         ins,
-                        "tried to track partition {} on node {} as part of "
-                        "migration {}, while it is already tracked as part "
-                        "of migration {}",
+                        "tried to repeatedly track partition {} "
+                        "as part of migration {}",
                         ntp,
-                        node_id,
-                        migration,
-                        it->second);
-                      _nodes_to_retry.insert_or_assign(node_id, now);
-                  }
-                  if (schedule_local_work && _self == node_id) {
-                      vlog(
-                        dm_log.debug,
-                        "tracking ntp {} transition towards state {} as part "
-                        "of "
-                        "migration {}",
-                        ntp,
-                        scope.sought_state,
                         migration);
-                      auto& topic_work_state = _work_states[nt];
-                      auto [it, _] = topic_work_state.try_emplace(
-                        assignment.id, migration, *scope.sought_state);
-                      auto& rwstate = it->second;
-                      if (
-                        rwstate.sought_state != scope.sought_state
-                        || rwstate.migration_id != migration) {
-                          if (it->second.shard) {
-                              stop_partition_work(ntp, rwstate);
+                  }
+                  for (const auto& node_id : nodes) {
+                      if (_is_coordinator) {
+                          auto [it, ins] = _node_states[node_id].emplace(
+                            ntp, migration);
+                          vassert(
+                            ins,
+                            "tried to track partition {} on node {} as part of "
+                            "migration {}, while it is already tracked as part "
+                            "of migration {}",
+                            ntp,
+                            node_id,
+                            migration,
+                            it->second);
+                          _nodes_to_retry.insert_or_assign(node_id, now);
+                      }
+                      if (schedule_local_work && _self == node_id) {
+                          vlog(
+                            dm_log.debug,
+                            "tracking ntp {} transition towards state {} as "
+                            "part "
+                            "of "
+                            "migration {}",
+                            ntp,
+                            scope.sought_state,
+                            migration);
+                          auto& topic_work_state = _work_states[nt];
+                          auto [it, _] = topic_work_state.try_emplace(
+                            assignment.id, migration, *scope.sought_state);
+                          auto& rwstate = it->second;
+                          if (
+                            rwstate.sought_state != scope.sought_state
+                            || rwstate.migration_id != migration) {
+                              if (it->second.shard) {
+                                  stop_partition_work(ntp, rwstate);
+                              }
+                              rwstate = {migration, *scope.sought_state};
                           }
-                          rwstate = {migration, *scope.sought_state};
                       }
                   }
-              }
-          });
+              });
+        }
     }
-    if (scope.topic_work_needed) {
+    if (_is_coordinator && scope.topic_work_needed) {
         tstate.topic_scoped_work_needed = true;
+        _topic_work_to_retry.insert_or_assign(nt, now);
     }
 }
 

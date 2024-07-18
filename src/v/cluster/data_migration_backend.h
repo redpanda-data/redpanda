@@ -77,6 +77,12 @@ private:
           : migration_id(migration_id)
           , sought_state(sought_state) {}
     };
+    struct topic_work_result {
+        model::topic_namespace nt;
+        id migration;
+        state sought_state;
+        errc ec;
+    };
 
 private:
     /* loop management */
@@ -98,7 +104,21 @@ private:
     to_advance_if_done(migration_reconciliation_states_t::const_iterator it);
     void spawn_advances();
 
-    /* communication with workers */
+    /* topic work */
+    ss::future<> schedule_topic_work(model::topic_namespace nt);
+    ss::future<topic_work_result>
+    // also resulting future cannot throw when co_awaited
+    do_topic_work(model::topic_namespace nt, topic_work tw) noexcept;
+    ss::future<errc> do_topic_work(
+      model::topic_namespace nt,
+      state sought_state,
+      inbound_topic_work_info itwi);
+    ss::future<errc> do_topic_work(
+      model::topic_namespace nt,
+      state sought_state,
+      outbound_topic_work_info otwi);
+
+    /* communication with partition workers */
     void start_partition_work(
       const model::ntp& ntp, const replica_work_state& rwstate);
     void stop_partition_work(
@@ -120,6 +140,8 @@ private:
       std::optional<ss::shard_id> new_shard);
     void mark_migration_step_done_for_ntp(
       migration_reconciliation_state& rs, const model::ntp& ntp);
+    void mark_migration_step_done_for_nt(
+      migration_reconciliation_state& rs, const model::topic_namespace& nt);
     void drop_migration_reconciliation_rstate(
       migration_reconciliation_states_t::const_iterator rs_it);
     void clear_tstate_belongings(
@@ -173,23 +195,29 @@ private:
     /*
      * Reconciliation-related data.
      *
-     * When we are not the coordinator, _mrstates stores sought states and
-     * topics only, but no partititons, _nstates and _nodes_to_retry are
-     * empty. The same applies to the migration states with topic scoped work
-     * only needed.
+     * When we are not the coordinator, _migration_states stores sought states
+     * and topics only, but no partititons, _node_states, _nodes_to_retry and
+     * _topic_work_to_retry are empty. The same applies to the migration states
+     * with topic scoped work only needed.
      *
      * The following invariants can only be violated between tasks by a fiber
      * that has the lock.
      *
      * When we are the coordinator and need partition scoped work:
-     * - _mrstates and _nstates store the same set of migration-ntp
+     * - _migration_states and _node_states store the same set of migration-ntp
      * combinations.
+     * - _migration_states and _topic_migration_map store the same set of
+     * migration-nt combinations.
      * - For each node there is no more than one RPC in flight at a time.
-     * - Nodes in _nstates = nodes in _nodes_to_retry ⊔ nodes of in-flight
+     * - For each topic there is no more than one topic work in flight.
+     * - Nodes in _node_states = nodes in _nodes_to_retry ⊔ nodes of in-flight
      * RPCs.
+     * - topics in _mrstates = topics in _topic_work_to_retry ⊔ topic work
+     * in-flight
      *
      * - _advance_requests is only modified by the work cycle
-     * - _mrstates, _nstates and _nodes_to_retry are only modified under lock
+     * - _migration_states, _node_states, _nodes_to_retry, _topic_migration_map
+     * and _topic_work_to_retry are only modified under lock
      *
      * - _work_states only contains topics present in _mrstates
      */
@@ -201,6 +229,7 @@ private:
     chunked_hash_map<model::node_id, node_state> _node_states;
     using deadline_t = model::timeout_clock::time_point;
     chunked_hash_map<model::node_id, deadline_t> _nodes_to_retry;
+    chunked_hash_map<model::topic_namespace, deadline_t> _topic_work_to_retry;
     struct advance_info {
         state sought_state;
         bool sent = false;
@@ -216,6 +245,7 @@ private:
     chunked_hash_map<model::topic_namespace, topic_work_state_t> _work_states;
 
     chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
+    chunked_vector<topic_work_result> _topic_work_results;
 
     model::node_id _self;
     migrations_table& _table;
