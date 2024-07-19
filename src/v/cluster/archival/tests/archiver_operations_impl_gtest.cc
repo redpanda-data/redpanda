@@ -2005,4 +2005,169 @@ TEST_CORO(archiver_operations_impl_test, admit_uploads_randomized) {
     }
 }
 
+TEST_CORO(
+  archiver_operations_impl_test,
+  find_upload_candidates_success_compacted_reupload) {
+    // Model situation when the segment is uploaded in
+    // parallel with compacted segment reupload.
+    // We don't have to test all possible combinations
+    // of outcomes here because compacted reupload
+    // uses the same code path as regular upload.
+    scoped_config cfg;
+    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
+    cfg.get("cloud_storage_segment_size_target")
+      .set_value(std::make_optional<size_t>(expected_target_size));
+    cfg.get("cloud_storage_segment_size_min")
+      .set_value(std::make_optional<size_t>(expected_min_size));
+
+    // Find single upload candidate
+    auto remote = ss::make_shared<remote_mock>();
+    auto pm = ss::make_shared<partition_manager_mock>();
+    auto builder = ss::make_shared<upload_builder_mock>();
+    auto partition = ss::make_shared<partition_mock>();
+    partition->expect_get_applied_offset(expected_applied_offset);
+    partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
+    pm->expect_get_partition(partition);
+
+    segment_meta expected_meta;
+    segment_meta expected_reupload_meta;
+
+    // Make normal segment upload
+    {
+        model::offset expected_base(101);
+        model::offset expected_last(200);
+
+        auto [upload_stream, upload_size, content, batches]
+          = expected_data_payload(expected_base, expected_last);
+
+        auto upload = make_upload(
+          {
+            .base = expected_base,
+            .last = expected_last,
+            .base_delta = model::offset_delta(1),
+            .last_delta = model::offset_delta(2),
+            .base_ts = model::timestamp(1000000),
+            .last_ts = model::timestamp(1000100),
+          },
+          upload_size,
+          std::move(upload_stream));
+
+        expected_meta = upload->meta;
+        // these fields are set to proper values later
+        expected_meta.base_timestamp = {};
+        expected_meta.max_timestamp = {};
+
+        testing::InSequence s;
+        // First call find upload candidate
+        builder->expect_prepare_segment_upload(
+          archival::size_limited_offset_range(
+            expected_base, expected_target_size, expected_min_size),
+          expected_read_buffer_size,
+          std::move(upload));
+
+        // Second call finds that there is not enough data to start a new
+        // upload
+        builder->expect_prepare_segment_upload(
+          archival::size_limited_offset_range(
+            model::next_offset(expected_last),
+            expected_target_size,
+            expected_min_size),
+          expected_read_buffer_size,
+          error_outcome::not_enough_data);
+
+        partition->expect_offset_delta(expected_base, model::offset_delta(1));
+        // The offset_delta is called for the committed_offset+1
+        partition->expect_offset_delta(
+          model::next_offset(expected_last), model::offset_delta(2));
+        partition->expect_get_offset_term(expected_base, expected_segment_term);
+        partition->expect_get_initial_revision(expected_revision_id);
+        partition->expect_aborted_transactions(
+          expected_base, expected_last, fragmented_vector<model::tx_range>{});
+    }
+
+    // Make compacted segment reupload
+    {
+        model::offset expected_base
+          = expected_manifest.last_segment()->base_offset;
+        model::offset expected_last
+          = expected_manifest.last_segment()->committed_offset;
+
+        auto [upload_stream, upload_size, content, batches]
+          = expected_data_payload(expected_base, expected_last);
+
+        auto upload = make_upload(
+          {
+            .base = expected_base,
+            .last = expected_last,
+            .base_delta = model::offset_delta(1),
+            .last_delta = model::offset_delta(2),
+            .base_ts = model::timestamp(1000000),
+            .last_ts = model::timestamp(1000100),
+          },
+          upload_size,
+          std::move(upload_stream));
+
+        // make it compacted
+        upload->meta.is_compacted = true;
+        expected_reupload_meta = upload->meta;
+
+        // these fields are set to proper values later
+        expected_reupload_meta.base_timestamp = {};
+        expected_reupload_meta.max_timestamp = {};
+
+        testing::InSequence s;
+        // First call find upload candidate
+        builder->expect_prepare_segment_upload(
+          archival::size_limited_offset_range(
+            expected_base, expected_target_size, expected_min_size),
+          expected_read_buffer_size,
+          std::move(upload));
+
+        // Second call finds that there is not enough data to start a new
+        // upload
+        builder->expect_prepare_segment_upload(
+          archival::size_limited_offset_range(
+            model::next_offset(expected_last),
+            expected_target_size,
+            expected_min_size),
+          expected_read_buffer_size,
+          error_outcome::not_enough_data);
+
+        partition->expect_offset_delta(expected_base, model::offset_delta(1));
+        // The offset_delta is called for the committed_offset+1
+        partition->expect_offset_delta(
+          model::next_offset(expected_last), model::offset_delta(2));
+        partition->expect_get_offset_term(expected_base, expected_segment_term);
+        partition->expect_get_initial_revision(expected_revision_id);
+        partition->expect_aborted_transactions(
+          expected_base, expected_last, fragmented_vector<model::tx_range>{});
+    }
+
+    auto ops = detail::make_archiver_operations_api(
+      remote, pm, builder, c_expected_bucket);
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 1ms);
+    auto arg = upload_candidate_search_parameters(
+      expected_ntp.to_ntp(),
+      expected_archiver_term,
+      expected_target_size,
+      expected_min_size,
+      expected_upload_size_quota,
+      expected_upload_requests_quota,
+      false,
+      false);
+
+    auto res = co_await ops->find_upload_candidates(rtc, arg);
+    ASSERT_TRUE_CORO(!res.has_error());
+    ASSERT_EQ_CORO(res.value().ntp, expected_ntp);
+    // We don't have to check a lot here because from the perspective of the
+    // 'find_upload_candidates' the reupload is not different from appending
+    // of the segment. Metadata of both segments should be present in the
+    // results list.
+    ASSERT_EQ_CORO(res.value().results.size(), 2);
+    ASSERT_EQ_CORO(res.value().results.front()->metadata, expected_meta);
+    ASSERT_EQ_CORO(
+      res.value().results.back()->metadata, expected_reupload_meta);
+}
+
 } // namespace archival
