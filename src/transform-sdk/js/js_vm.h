@@ -218,6 +218,9 @@ public:
     /** Get the number from the object. */
     [[nodiscard]] double as_number() const;
 
+    /** Get an integer from the object. Rounding. */
+    [[nodiscard]] int32_t as_integer() const;
+
     /**
      * Return a reference to the raw JSValue without incrementing the ref
      * count.

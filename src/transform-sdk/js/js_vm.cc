@@ -19,6 +19,7 @@
 #include <sys/types.h>
 
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <expected>
@@ -204,6 +205,11 @@ double value::as_number() const {
         return JS_VALUE_GET_FLOAT64(_underlying);
     }
     return JS_VALUE_GET_INT(_underlying);
+}
+
+int32_t value::as_integer() const {
+    auto num = as_number();
+    return static_cast<int32_t>(std::lround(num));
 }
 
 std::expected<value, exception> value::call(std::span<value> values) {
