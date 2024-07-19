@@ -7,11 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-quick:
+test:
   included:
-  - tests/
-  - transactions/
-
-  excluded:
-  - tests/rpk_tuner_test.py
-  - tests/rpk_cloud_test.py
+    - 'tests/tiered_storage_model_test.py::TieredStorageTest.test_tiered_storage@{"cloud_storage_type_and_url_style":[1,"virtual_host"],"test_case":{"name":"(TS_Read
+      == True, SegmentRolledByTimeout == True)"}}'
