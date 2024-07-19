@@ -46,7 +46,7 @@ struct diskcheck_opts
   : serde::
       envelope<diskcheck_opts, serde::version<0>, serde::compat_version<0>> {
     /// Descriptive name given to test run
-    ss::sstring name{"512K sequential r/w disk test"};
+    ss::sstring name{"unspecified"};
     /// Where files this benchmark will read/write to exist
     std::filesystem::path dir{config::node().disk_benchmark_path()};
     /// Open the file with O_DSYNC flag option
@@ -56,7 +56,7 @@ struct diskcheck_opts
     /// Set to true to disable the read portion of the benchmark
     bool skip_read{false};
     /// Total size of all benchmark files to exist on disk
-    uint64_t data_size{10ULL << 30}; // 1GiB
+    uint64_t data_size{10ULL << 30}; // 10GiB
     /// Size of individual read and/or write requests
     size_t request_size{512 << 10}; // 512KiB
     /// Total duration of the benchmark

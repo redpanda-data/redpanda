@@ -144,7 +144,8 @@ diskcheck::run_configured_benchmarks(ss::file& file) {
     auto write_metrics = co_await do_run_benchmark<read_or_write::write>(file);
     auto result = write_metrics.to_st_result();
     result.name = _opts.name;
-    result.info = "write run";
+    result.info = fmt::format(
+      "write run (iodepth: {}, dsync: {})", _opts.parallelism, _opts.dsync);
     result.test_type = "disk";
     if (_cancelled) {
         result.warning = "Run was manually cancelled";

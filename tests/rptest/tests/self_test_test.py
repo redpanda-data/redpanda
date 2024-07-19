@@ -43,7 +43,7 @@ class SelfTestTest(EndToEndTest):
             return not any([x['status'] == 'running'
                             for x in node_reports]), node_reports
 
-        return wait_until_result(all_idle, timeout_sec=30, backoff_sec=1)
+        return wait_until_result(all_idle, timeout_sec=90, backoff_sec=1)
 
     @cluster(num_nodes=3)
     @matrix(remote_read=[True, False], remote_write=[True, False])
@@ -101,9 +101,9 @@ class SelfTestTest(EndToEndTest):
         # on specific results, but rather what tests are oberved to have run
         reports = flat_map(lambda node: node['results'], node_reports)
 
-        # Ensure 4 disk tests per node, read/write & latency/throughput
+        # Ensure 10 disk tests per node (see the RPK code for the full list)
         disk_results = [r for r in reports if r['test_type'] == 'disk']
-        expected_disk_results = num_nodes * 4
+        expected_disk_results = num_nodes * 10
         assert len(
             disk_results
         ) == expected_disk_results, f"Expected {expected_disk_results} disk reports observed {len(disk_results)}"
