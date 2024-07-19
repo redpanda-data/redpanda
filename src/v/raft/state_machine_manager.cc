@@ -19,6 +19,8 @@
 #include "raft/logger.h"
 #include "raft/state_machine_base.h"
 #include "raft/types.h"
+#include "serde/async.h"
+#include "serde/rw/rw.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "storage/snapshot.h"

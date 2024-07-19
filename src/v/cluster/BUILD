@@ -1,3 +1,4 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
 load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 
 redpanda_cc_rpc_library(
@@ -59,4 +60,29 @@ redpanda_cc_rpc_library(
     name = "tx_manager_migrator_rpc",
     src = "migrations/tx_manager_migrator.json",
     out = "tx_manager_migrator_service.h",
+)
+
+redpanda_cc_library(
+    name = "version",
+    hdrs = [
+        "version.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/utils:named_type",
+    ],
+)
+
+redpanda_cc_library(
+    name = "features",
+    hdrs = [
+        "feature_update_action.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/serde",
+        "@seastar",
+    ],
 )

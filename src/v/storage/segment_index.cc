@@ -12,7 +12,6 @@
 #include "base/vassert.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "serde/serde.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
 #include "storage/segment_utils.h"

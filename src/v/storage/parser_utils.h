@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "bytes/iobuf_parser.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 

@@ -167,11 +167,11 @@ else()
   set(GIT_CLEAN_DIRTY "-dev")
 endif()
 
-configure_file(version.cc.in version.cc @ONLY)
+configure_file(version/version.cc.in version/version.cc @ONLY)
 v_cc_library(
   NAME version
-  HDRS version.h
-  SRCS "${CMAKE_CURRENT_BINARY_DIR}/version.cc"
+  HDRS version/version.h
+  SRCS "${CMAKE_CURRENT_BINARY_DIR}/version/version.cc"
 )
 
 # main executables

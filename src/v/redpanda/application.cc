@@ -128,7 +128,7 @@
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
-#include "version.h"
+#include "version/version.h"
 #include "wasm/api.h"
 #include "wasm/cache.h"
 

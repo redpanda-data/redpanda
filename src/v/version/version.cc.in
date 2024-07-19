@@ -1,4 +1,4 @@
-#include "version.h"
+#include "version/version.h"
 
 std::string_view redpanda_git_version() noexcept {
     return std::string_view("@GIT_VER@");

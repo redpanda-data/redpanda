@@ -453,6 +453,8 @@ cc_library(
         "include/seastar/coroutine/exception.hh",
         "include/seastar/coroutine/generator.hh",
         "include/seastar/coroutine/maybe_yield.hh",
+        "include/seastar/coroutine/parallel_for_each.hh",
+        "include/seastar/coroutine/switch_to.hh",
         "include/seastar/http/api_docs.hh",
         "include/seastar/http/chunk_parsers.hh",
         "include/seastar/http/client.hh",

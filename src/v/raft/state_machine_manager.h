@@ -17,6 +17,8 @@
 #include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "serde/envelope.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/map.h"
 #include "storage/snapshot.h"
 #include "utils/absl_sstring_hash.h"
 #include "utils/mutex.h"

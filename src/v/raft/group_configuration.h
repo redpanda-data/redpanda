@@ -12,7 +12,8 @@
 #pragma once
 #include "model/metadata.h"
 #include "reflection/adl.h"
-#include "serde/envelope.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/vector.h"
 
 #include <boost/range/join.hpp>
 
