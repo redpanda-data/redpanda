@@ -634,6 +634,68 @@ make_schema_registry_client_class(qjs::runtime* runtime) {
     return builder.build();
 }
 
+redpanda::bytes_view value_as_bytes_view(const qjs::value& val) {
+    if (val.is_string()) {
+        auto data = val.string_data();
+        return redpanda::bytes_view{data.view()};
+    }
+    if (val.is_array_buffer()) {
+        auto data = val.array_buffer_data();
+        return redpanda::bytes_view{data.data(), data.size()};
+    }
+    if (val.is_uint8_array()) {
+        auto data = val.uint8_array_data();
+        return redpanda::bytes_view{data.data(), data.size()};
+    }
+    return redpanda::bytes_view{};
+}
+
+std::expected<qjs::value, qjs::exception>
+decode_schema_id_impl(JSContext* ctx, qjs::value& arg) {
+    auto data = value_as_bytes_view(arg);
+    auto obj = qjs::value::object(ctx);
+    return redpanda::sr::decode_schema_id(data)
+      .transform_error([ctx](std::error_code err) {
+          return qjs::exception::make(
+            ctx, std::format("Failed to decode schema ID: {}", err.message()));
+      })
+      .and_then(
+        [ctx,
+         &obj](std::pair<redpanda::sr::schema_id, redpanda::bytes_view> sid) {
+            return obj.set_property("id", qjs::value::integer(ctx, sid.first));
+        })
+      .and_then(
+        [ctx,
+         &arg](std::monostate) -> std::expected<qjs::value, qjs::exception> {
+            constexpr size_t HEADER_SIZE = 5;
+            // TODO(perf): Each of these takes a full copy of the input buffer
+            // to avoid any memory ownership issues in client code.
+            // This is a pessimization - with a bit of effort, we should be
+            // able to return subviews that keep the input buffer alive without
+            // requiring the runtime to allocate us a whole new buffer.
+            if (arg.is_string()) {
+                return qjs::value::string(
+                  ctx, arg.string_data().view().substr(HEADER_SIZE));
+            }
+            if (arg.is_array_buffer()) {
+                return qjs::value::array_buffer_copy(
+                  ctx, arg.array_buffer_data().subspan(HEADER_SIZE));
+            }
+            if (arg.is_uint8_array()) {
+                return qjs::value::uint8_array_copy(
+                  ctx, arg.uint8_array_data().subspan(HEADER_SIZE));
+            }
+            // NOTE(oren): we should never reach here (covered by earlier
+            // checks)
+            return std::unexpected(qjs::exception::make(
+              ctx, "Unexpected type for schema ID decode"));
+        })
+      .and_then([&obj](const qjs::value& rest) {
+          return obj.set_property("rest", rest);
+      })
+      .transform([&obj](std::monostate) { return std::move(obj); });
+}
+
 std::expected<std::monostate, qjs::exception> initial_native_modules(
   qjs::runtime* runtime,
   qjs::value* user_callback,
@@ -665,6 +727,27 @@ std::expected<std::monostate, qjs::exception> initial_native_modules(
           return sr_client_factory->create(
             std::make_unique<schema_registry_client>(
               redpanda::sr::new_client()));
+      });
+    sr_mod.add_function(
+      "decodeSchemaID",
+      [](JSContext* ctx, const qjs::value&, std::span<qjs::value> args)
+        -> std::expected<qjs::value, qjs::exception> {
+          if (args.size() != 1) [[unlikely]] {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                std::format(
+                  "wrong number of arguments to decodeSchemaID: expected 1 got "
+                  "{}",
+                  args.size())));
+          }
+          if (!(args.front().is_string() || args.front().is_array_buffer()
+                || args.front().is_uint8_array())) [[unlikely]] {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                "Illegal argument to decodeSchemaID: Expected one of "
+                "string, ArrayBuffer, or Uint8Array"));
+          }
+          return decode_schema_id_impl(ctx, args.front());
       });
     return runtime->add_module(std::move(mod))
       .and_then([runtime, &sr_mod](std::monostate) {
