@@ -50,7 +50,7 @@ report_parser make_parser(
 }
 } // namespace
 
-TEST(ParseReport, Parser) {
+TEST(Parser, ParseReport) {
     auto input = std::vector<ss::sstring>{"foo", "bar", "x"};
     for (const auto compression :
          {is_gzip_compressed::no, is_gzip_compressed::yes}) {
@@ -59,7 +59,7 @@ TEST(ParseReport, Parser) {
     }
 }
 
-TEST(ParseEmptyString, Parser) {
+TEST(Parser, ParseEmptyString) {
     std::string input{};
     for (const auto compression :
          {is_gzip_compressed::no, is_gzip_compressed::yes}) {
@@ -68,7 +68,7 @@ TEST(ParseEmptyString, Parser) {
     }
 }
 
-TEST(ParseTrailingNewLine, Parser) {
+TEST(Parser, ParseTrailingNewLine) {
     std::string input{"foobar\n"};
     std::vector<ss::sstring> expected{"foobar"};
     for (const auto compression :
@@ -78,7 +78,7 @@ TEST(ParseTrailingNewLine, Parser) {
     }
 }
 
-TEST(ParseLargePayloadWithSmallChunkSize, Parser) {
+TEST(Parser, ParseLargePayloadWithSmallChunkSize) {
     std::vector<ss::sstring> input;
     input.reserve(1024);
     for (auto i = 0; i < 1024; ++i) {
@@ -91,7 +91,7 @@ TEST(ParseLargePayloadWithSmallChunkSize, Parser) {
     }
 }
 
-TEST(ParseGzippedFile, Parser) {
+TEST(Parser, ParseGzippedFile) {
     // This is the base64 encoding of a gzipped file containing the strings 1, 2
     // and 3, one per line.
     constexpr auto gzipped_data
@@ -102,7 +102,7 @@ TEST(ParseGzippedFile, Parser) {
     EXPECT_EQ(collect(p), (std::vector<ss::sstring>{"1", "2", "3"}));
 }
 
-TEST(BatchSizeControlledByChunkSize, Parser) {
+TEST(Parser, BatchSizeControlledByChunkSize) {
     size_t chunk_size{4096};
 
     std::vector<ss::sstring> input;

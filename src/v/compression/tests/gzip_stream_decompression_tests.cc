@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "compression/gzip_stream_decompression.h"
 #include "compression/internal/gzip_compressor.h"
+#include "test_utils/randoms.h"
 #include "utils/base64.h"
 
 #include <seastar/core/iostream.hh>
@@ -24,9 +25,8 @@ using namespace compression;
 namespace {
 
 ss::input_stream<char> make_compressed_stream(ss::sstring s) {
-    iobuf b;
-    b.append(s.data(), s.size());
-    return make_iobuf_input_stream(internal::gzip_compressor::compress(b));
+    return make_iobuf_input_stream(
+      internal::gzip_compressor::compress(iobuf::from(s)));
 }
 
 ss::sstring consume(gzip_stream_decompressor& gsd) {
@@ -45,8 +45,8 @@ ss::sstring consume(gzip_stream_decompressor& gsd) {
 
 } // namespace
 
-TEST(SmallChunkSize, GzStrm) {
-    ss::sstring test_string(100000, 'a');
+TEST(GzStrm, SmallChunkSize) {
+    auto test_string = tests::random_named_string<ss::sstring>(100000);
     gzip_stream_decompressor gsd{make_compressed_stream(test_string), 5};
     gsd.reset();
     auto output = consume(gsd);
@@ -55,7 +55,7 @@ TEST(SmallChunkSize, GzStrm) {
     gsd.stop().get();
 }
 
-TEST(SmallPayloadLargeChunkSize, GzStrm) {
+TEST(GzStrm, SmallPayloadLargeChunkSize) {
     ss::sstring test_string("xyz");
     gzip_stream_decompressor gsd{make_compressed_stream(test_string), 4096};
     gsd.reset();
@@ -65,7 +65,7 @@ TEST(SmallPayloadLargeChunkSize, GzStrm) {
     gsd.stop().get();
 }
 
-TEST(EmptyString, GzStrm) {
+TEST(GzStrm, EmptyString) {
     ss::sstring test_string;
     gzip_stream_decompressor gsd{make_compressed_stream(test_string), 4096};
     gsd.reset();
@@ -75,7 +75,7 @@ TEST(EmptyString, GzStrm) {
     gsd.stop().get();
 }
 
-TEST(NonStandardCompressionMethod, GzStrm) {
+TEST(GzStrm, NonStandardCompressionMethod) {
     // Tests payload compressed with gzip -9
     const auto payload
       = "H4sICG5pgmYCA21vYnktZGlja2FoAFVXwY7kthG9N9D/"
