@@ -373,6 +373,7 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
           "manager",
           ntp));
     }
+    vlog(clusterlog.debug, "removing partition {}", ntp);
     partition_shutdown_state shutdown_state(partition);
     _partitions_shutting_down.push_back(shutdown_state);
     auto group_id = partition->group();
