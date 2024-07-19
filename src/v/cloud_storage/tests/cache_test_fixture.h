@@ -62,9 +62,9 @@ public:
             CACHE_DIR,
             30_GiB, // disk size
             config::mock_binding<double>(0.0),
-            config::mock_binding<uint64_t>(1_MiB + 500_KiB),
+            config::mock_binding<uint64_t>(30_MiB), //(1_MiB + 500_KiB),
             config::mock_binding<std::optional<double>>(std::nullopt),
-            config::mock_binding<uint32_t>(100000),
+            config::mock_binding<uint32_t>(500000),
             config::mock_binding<uint16_t>(3))
           .get();
         sharded_cache
@@ -107,6 +107,17 @@ public:
               : sharded_cache.local().reserve_space(buf.size_bytes(), 1).get();
         auto input = make_iobuf_input_stream(std::move(buf));
         sharded_cache.local().put(key, input, reservation).get();
+    }
+
+    ss::future<> put_into_cache_coro(auto data_string, auto key) {
+        iobuf buf;
+        buf.append(data_string.data(), data_string.length());
+
+        auto reservation
+          = co_await sharded_cache.local().reserve_space(buf.size_bytes(), 1);
+        auto input = make_iobuf_input_stream(std::move(buf));
+        co_await sharded_cache.local().put(key, input, reservation);
+        co_return;
     }
 
     ss::future<> clean_up_at_start() {
