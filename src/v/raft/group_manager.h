@@ -74,7 +74,8 @@ public:
       with_learner_recovery_throttle enable_learner_recovery_throttle,
       keep_snapshotted_log = keep_snapshotted_log::no);
 
-    ss::future<> shutdown(ss::lw_shared_ptr<raft::consensus>);
+    ss::future<xshard_transfer_state>
+      shutdown(ss::lw_shared_ptr<raft::consensus>);
 
     ss::future<> remove(ss::lw_shared_ptr<raft::consensus>);
 

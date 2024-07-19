@@ -96,8 +96,9 @@ ss::future<> group_manager::stop() {
 
     return f.then([this] {
         return ss::parallel_for_each(
-          _groups,
-          [](ss::lw_shared_ptr<consensus> raft) { return raft->stop(); });
+          _groups, [](ss::lw_shared_ptr<consensus> raft) {
+              return raft->stop().discard_result();
+          });
     });
 }
 void group_manager::set_ready() {
@@ -191,6 +192,7 @@ raft::group_configuration group_manager::create_initial_configuration(
 ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
     return _groups_mutex.with([this, c = std::move(c)] {
         return c->stop()
+          .discard_result()
           .then([c] { return c->remove_persistent_state(); })
           .then([this, id = c->group()] {
               return _heartbeats.deregister_group(id);
@@ -202,17 +204,16 @@ ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
     });
 }
 
-ss::future<> group_manager::shutdown(ss::lw_shared_ptr<raft::consensus> c) {
-    return _groups_mutex.with([this, c = std::move(c)] {
-        return c->stop()
-          .then([this, id = c->group()] {
-              return _heartbeats.deregister_group(id);
-          })
-          .finally([this, c] {
-              _groups.erase(
-                std::remove(_groups.begin(), _groups.end(), c), _groups.end());
-          });
-    });
+ss::future<xshard_transfer_state>
+group_manager::shutdown(ss::lw_shared_ptr<raft::consensus> c) {
+    auto units = co_await _groups_mutex.get_units();
+
+    auto xst_state = co_await c->stop();
+    co_await _heartbeats.deregister_group(c->group());
+    _groups.erase(
+      std::remove(_groups.begin(), _groups.end(), c), _groups.end());
+
+    co_return xst_state;
 }
 
 void group_manager::trigger_leadership_notification(

@@ -320,7 +320,10 @@ void archiver_fixture::initialize_shard(
             storage::ntp_config(
               ntp.first, data_dir.string(), std::move(defaults)),
             raft::group_id(1),
-            {nm->broker})
+            {nm->broker},
+            raft::with_learner_recovery_throttle::yes,
+            raft::keep_snapshotted_log::no,
+            std::nullopt)
           .get();
         BOOST_CHECK_EQUAL(
           api.log_mgr().get(ntp.first)->segment_count(), ntp.second);

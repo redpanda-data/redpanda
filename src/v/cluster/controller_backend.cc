@@ -46,6 +46,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/switch_to.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -834,6 +835,10 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
     }
     auto gate_holder = _gate.hold();
 
+    // If we don't switch here, reconciliation will inherit the scheduling group
+    // of whoever triggered it (could be e.g. the admin SG).
+    co_await ss::coroutine::switch_to(ss::default_scheduling_group());
+
     while (true) {
         co_await rs->wakeup_event.wait(_housekeeping_jitter.next_duration());
         if (_as.local().abort_requested()) {
@@ -1392,6 +1397,12 @@ ss::future<std::error_code> controller_backend::create_partition(
             read_replica_bucket = cloud_storage_clients::bucket_name(
               cfg->properties.read_replica_bucket.value());
         }
+
+        std::optional<xshard_transfer_state> xst_state;
+        if (auto it = _xst_states.find(ntp); it != _xst_states.end()) {
+            xst_state = it->second;
+        }
+
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again
         try {
@@ -1403,12 +1414,15 @@ ss::future<std::error_code> controller_backend::create_partition(
                 initial_rev.value()),
               group_id,
               std::move(initial_brokers),
-              cfg->properties.remote_topic_properties,
-              read_replica_bucket,
               raft::with_learner_recovery_throttle::yes,
               raft::keep_snapshotted_log::no,
+              std::move(xst_state),
+              cfg->properties.remote_topic_properties,
+              read_replica_bucket,
               cfg->properties.remote_label,
               cfg->properties.remote_topic_namespace_override);
+
+            _xst_states.erase(ntp);
 
             co_await add_to_shard_table(
               ntp, group_id, ss::this_shard_id(), log_revision);
@@ -1752,9 +1766,22 @@ ss::future<std::error_code> controller_backend::transfer_partition(
     }
     ss::shard_id destination = transfer_info.destination.value();
 
+    std::optional<xshard_transfer_state> xst_state;
+
     auto partition = _partition_manager.local().get(ntp);
     if (partition) {
-        co_await shutdown_partition(std::move(partition));
+        xst_state = co_await shutdown_partition(std::move(partition));
+    } else if (auto it = _xst_states.find(ntp); it != _xst_states.end()) {
+        // We didn't get to start the partition before it was transferred again.
+        xst_state = std::move(it->second);
+        _xst_states.erase(it);
+    }
+
+    if (xst_state) {
+        co_await container().invoke_on(
+          destination, [&ntp, &xst_state](controller_backend& dest) {
+              dest._xst_states[ntp] = *xst_state;
+          });
     }
 
     co_await copy_persistent_state(
@@ -1878,7 +1905,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
       ntp, log_rev, _shard_placement.container(), [](const model::ntp&) {});
 }
 
-ss::future<>
+ss::future<xshard_transfer_state>
 controller_backend::shutdown_partition(ss::lw_shared_ptr<partition> partition) {
     vlog(
       clusterlog.debug,
@@ -1894,7 +1921,7 @@ controller_backend::shutdown_partition(ss::lw_shared_ptr<partition> partition) {
         co_await remove_from_shard_table(
           ntp, gr, partition->get_log_revision_id());
         // shutdown partition
-        co_await _partition_manager.local().shutdown(ntp);
+        co_return co_await _partition_manager.local().shutdown(ntp);
     } catch (...) {
         /**
          * If partition shutdown failed we should crash, this error is
@@ -1951,7 +1978,7 @@ ss::future<std::error_code> controller_backend::delete_partition(
         co_await _partition_manager.local().remove(ntp, mode);
     } else {
         // TODO: delete log directory even when there is no partition object
-
+        _xst_states.erase(ntp);
         co_await remove_persistent_state(
           ntp, placement->current->group, _storage.local().kvs());
     }
@@ -1968,6 +1995,7 @@ ss::future<> controller_backend::remove_partition_kvstore_state(
       ntp,
       log_revision);
 
+    _xst_states.erase(ntp);
     co_await remove_persistent_state(ntp, group, _storage.local().kvs());
     co_await _shard_placement.finish_delete(ntp, log_revision);
 }

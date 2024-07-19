@@ -765,35 +765,6 @@ ss::future<> shard_placement_table::set_target(
 
     entry.target = target;
 
-    if (
-      prev_target && prev_target->shard < ss::smp::count
-      && (!target || target->shard != prev_target->shard)) {
-        co_await container().invoke_on(
-          prev_target->shard,
-          [&ntp, shard_callback](shard_placement_table& other) {
-              auto it = other._states.find(ntp);
-              if (it == other._states.end() || !it->second.assigned) {
-                  return;
-              }
-
-              vlog(
-                clusterlog.trace,
-                "[{}] removing assigned on this shard (was: {})",
-                ntp,
-                it->second.assigned);
-
-              it->second.assigned = std::nullopt;
-              if (it->second.is_empty()) {
-                  // We are on a shard that was previously a target, but didn't
-                  // get to starting the transfer.
-                  other._states.erase(it);
-              }
-
-              // Notify the caller that something has changed on this shard.
-              shard_callback(ntp);
-          });
-    }
-
     if (target) {
         const bool is_initial
           = (!prev_target || prev_target->log_revision != target->log_revision);
@@ -819,6 +790,35 @@ ss::future<> shard_placement_table::set_target(
               state.assigned = as;
               if (is_initial) {
                   state._is_initial_for = as.log_revision;
+              }
+
+              // Notify the caller that something has changed on this shard.
+              shard_callback(ntp);
+          });
+    }
+
+    if (
+      prev_target && prev_target->shard < ss::smp::count
+      && (!target || target->shard != prev_target->shard)) {
+        co_await container().invoke_on(
+          prev_target->shard,
+          [&ntp, shard_callback](shard_placement_table& other) {
+              auto it = other._states.find(ntp);
+              if (it == other._states.end() || !it->second.assigned) {
+                  return;
+              }
+
+              vlog(
+                clusterlog.trace,
+                "[{}] removing assigned on this shard (was: {})",
+                ntp,
+                it->second.assigned);
+
+              it->second.assigned = std::nullopt;
+              if (it->second.is_empty()) {
+                  // We are on a shard that was previously a target, but didn't
+                  // get to starting the transfer.
+                  other._states.erase(it);
               }
 
               // Notify the caller that something has changed on this shard.

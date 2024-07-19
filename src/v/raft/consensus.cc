@@ -272,7 +272,7 @@ void consensus::shutdown_input() {
     }
 }
 
-ss::future<> consensus::stop() {
+ss::future<xshard_transfer_state> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     shutdown_input();
     for (auto& idx : _fstats) {
@@ -300,6 +300,12 @@ ss::future<> consensus::stop() {
      */
     _metrics.clear();
     _probe->clear();
+
+    std::optional<model::term_id> leader_term;
+    if (is_elected_leader()) {
+        leader_term = _term;
+    }
+    co_return xshard_transfer_state{.leader_term = leader_term};
 }
 
 consensus::success_reply consensus::update_follower_index(
@@ -1370,14 +1376,19 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
 }
 
 ss::future<> consensus::start(
-  std::optional<state_machine_manager_builder> stm_manager_builder) {
+  std::optional<state_machine_manager_builder> stm_manager_builder,
+  std::optional<xshard_transfer_state> xst_state) {
     if (stm_manager_builder) {
         _stm_manager = std::move(stm_manager_builder.value()).build(this);
     }
-    return ss::try_with_gate(_bg, [this] { return do_start(); });
+    return ss::try_with_gate(
+      _bg, [this, xst_state = std::move(xst_state)]() mutable {
+          return do_start(std::move(xst_state));
+      });
 }
 
-ss::future<> consensus::do_start() {
+ss::future<>
+consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
     try {
         auto u = co_await _op_lock.get_units();
 
@@ -1498,28 +1509,36 @@ ss::future<> consensus::do_start() {
             co_await _configuration_manager.adjust_configuration_idx(new_idx);
         }
 
-        auto next_election = clock_type::now();
         // set last heartbeat timestamp to prevent skipping first
         // election
         _hbeat = clock_type::time_point::min();
-        auto conf = _configuration_manager.get_latest().current_config();
-        if (!conf.voters.empty() && _self == conf.voters.front()) {
-            // Arm immediate election for single node scenarios
-            // or for the very first start of the preferred leader
-            // in a multi-node group.  Otherwise use standard election
-            // timeout.
-            if (conf.voters.size() > 1 && _term > model::term_id{0}) {
-                next_election += _jit.next_duration();
-            }
+
+        if (xst_state && xst_state->leader_term == _term) {
+            // we were the leader before the x-shard transfer, try re-electing
+            // immediately.
+            dispatch_vote(true);
         } else {
-            // current node is not a preselected leader, add 2x jitter
-            // to give opportunity to the preselected leader to win
-            // the first round
-            next_election += _jit.base_duration()
-                             + 2 * _jit.next_jitter_duration();
-        }
-        if (!_bg.is_closed()) {
-            _vote_timeout.rearm(next_election);
+            auto next_election = clock_type::now();
+            auto conf = _configuration_manager.get_latest().current_config();
+            if (!conf.voters.empty() && _self == conf.voters.front()) {
+                // Arm immediate election for single node scenarios
+                // or for the very first start of the preferred leader
+                // in a multi-node group.  Otherwise use standard election
+                // timeout.
+                if (conf.voters.size() > 1 && _term > model::term_id{0}) {
+                    next_election += _jit.next_duration();
+                }
+            } else {
+                // current node is not a preselected leader, add 2x jitter
+                // to give opportunity to the preselected leader to win
+                // the first round
+                next_election += _jit.base_duration()
+                                 + 2 * _jit.next_jitter_duration();
+            }
+
+            if (!_bg.is_closed()) {
+                _vote_timeout.rearm(next_election);
+            }
         }
 
         auto const last_applied = read_last_applied();

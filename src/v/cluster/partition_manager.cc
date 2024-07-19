@@ -116,10 +116,11 @@ ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
-  std::optional<remote_topic_properties> rtp,
-  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
   raft::keep_snapshotted_log keep_snapshotted_log,
+  std::optional<xshard_transfer_state> xst_state,
+  std::optional<remote_topic_properties> rtp,
+  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   std::optional<cloud_storage::remote_label> remote_label,
   std::optional<model::topic_namespace> topic_namespace_override) {
     auto guard = _gate.hold();
@@ -284,7 +285,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     _manage_watchers.notify(p->ntp(), p);
 
-    co_await p->start(_stm_registry);
+    co_await p->start(_stm_registry, xst_state);
 
     co_return c;
 }
@@ -324,21 +325,24 @@ ss::future<> partition_manager::stop_partitions() {
     co_await ssx::async_clear(_raft_table)();
 
     // shutdown all partitions
-    co_await ss::max_concurrent_for_each(
-      partitions, 1024, [this](auto& e) { return do_shutdown(e.second); });
+    co_await ss::max_concurrent_for_each(partitions, 1024, [this](auto& e) {
+        return do_shutdown(e.second).discard_result();
+    });
 
     co_await ssx::async_clear(partitions)();
 }
 
-ss::future<>
+ss::future<xshard_transfer_state>
 partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
     partition_shutdown_state shutdown_state(partition);
     _partitions_shutting_down.push_back(shutdown_state);
 
+    xshard_transfer_state xst_state;
     try {
         auto ntp = partition->ntp();
         shutdown_state.update(partition_shutdown_stage::stopping_raft);
-        co_await _raft_manager.local().shutdown(partition->raft());
+        xst_state.raft = co_await _raft_manager.local().shutdown(
+          partition->raft());
         _unmanage_watchers.notify(ntp, model::topic_partition_view(ntp.tp));
         shutdown_state.update(partition_shutdown_stage::stopping_partition);
         co_await partition->stop();
@@ -353,6 +357,8 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
           *this,
           std::current_exception());
     }
+
+    co_return xst_state;
 }
 
 ss::future<>
@@ -392,16 +398,18 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
     }
 }
 
-ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
+ss::future<xshard_transfer_state>
+partition_manager::shutdown(const model::ntp& ntp) {
     auto guard = _gate.hold();
 
     auto partition = get(ntp);
     if (!partition) {
-        return ss::make_exception_future<>(std::invalid_argument(fmt::format(
-          "Can not shutdown partition. NTP {} is not present in "
-          "partition "
-          "manager",
-          ntp)));
+        return ss::make_exception_future<xshard_transfer_state>(
+          std::invalid_argument(fmt::format(
+            "Can not shutdown partition. NTP {} is not present in "
+            "partition "
+            "manager",
+            ntp)));
     }
     // remove partition from ntp & raft tables
     _ntp_table.erase(ntp);
