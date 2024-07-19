@@ -1317,6 +1317,20 @@ private:
             co_return error_outcome::not_enough_data;
         }
 
+        // We don't want upload candidates to cross term boundary.
+        // The easiest way to do this is to determine the term of the
+        // base offset and adjust LSO to the last offset of the term
+        // (only if it's smaller).
+        auto term_start = cp->get_term(range.base);
+        auto last_offset_in_term = cp->get_term_last_offset(term_start);
+        if (!last_offset_in_term.has_value()) {
+            // This could happen if the term is evicted from the local storage
+            vlog(
+              archival_log.debug, "Can't get term for offset {}", term_start);
+            co_return error_outcome::out_of_range;
+        }
+        lso = std::min(lso, last_offset_in_term.value());
+
         // Try to upload base-lso offset range. If it's too large
         // then fallback to size-based upload.
         auto create_upl_res = co_await segment_upload::make_segment_upload(
