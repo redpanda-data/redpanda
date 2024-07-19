@@ -1285,6 +1285,18 @@ class upload_builder : public detail::segment_upload_builder_api {
             // TODO: fixme
             throw std::runtime_error("not implemented");
         }
+        co_return co_await do_prepare_segment_upload(
+          part, range, read_buffer_size, sg, deadline);
+    }
+
+private:
+    ss::future<result<std::unique_ptr<detail::prepared_segment_upload>>>
+    do_prepare_segment_upload(
+      ss::shared_ptr<detail::cluster_partition_api> part,
+      size_limited_offset_range range,
+      size_t read_buffer_size,
+      ss::scheduling_group sg,
+      model::timeout_clock::time_point deadline) {
         // This is supposed to work only with cluster_partition implementation
         // defined above.
         auto pp = part.get();
