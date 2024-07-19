@@ -30,7 +30,7 @@ enum class error_code {
     subject_version_not_deleted,
     compatibility_not_found,
     mode_not_found,
-    subject_version_operaton_not_permitted,
+    subject_version_operation_not_permitted,
     subject_version_has_references,
     subject_version_schema_id_already_exists,
     subject_schema_invalid,
