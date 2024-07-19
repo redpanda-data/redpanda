@@ -94,7 +94,9 @@ class MetricCheck(object):
                     samples[sample.name] = sample.value
 
         for k, v in samples.items():
-            self.logger.info(f"  Captured {k}={v}")
+            self.logger.info(
+                f"  Captured {k}={v} from {self.node.account.hostname}(node_id = {self.redpanda.node_id(self.node)})"
+            )
 
         if len(samples) == 0:
             # Announce

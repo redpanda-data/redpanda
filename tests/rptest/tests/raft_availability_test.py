@@ -386,26 +386,40 @@ class RaftAvailabilityTest(RedpandaTest):
                                      partition=0,
                                      target_id=None,
                                      leader_id=initial_leader_id)
-        new_leader_id, _ = self._wait_for_leader(
-            lambda l: l is not None and l != initial_leader_id)
+        hosts = [n.account.hostname for n in self.redpanda.nodes]
+        new_leader_id = admin.await_stable_leader(
+            topic=self.topic,
+            partition=0,
+            hosts=hosts,
+            check=lambda l: l is not None and l != initial_leader_id)
         new_leader_node = self.redpanda.get_node_by_id(new_leader_id)
         assert new_leader_node is not None
         self.logger.info(
             f"New leader is {new_leader_id} {new_leader_node.account.hostname}"
         )
 
-        for [id, metric_check] in metric_checks.items():
-            # the metric should be updated only on the node that was elected as a leader
-            if id == new_leader_id:
-                metric_check.expect([
-                    ("vectorized_raft_leadership_changes_total",
-                     lambda initial, current: current == initial + 1),
-                ])
-            else:
-                metric_check.expect([
-                    ("vectorized_raft_leadership_changes_total",
-                     lambda initial, current: current == initial),
-                ])
+        def metrics_updated():
+            results = []
+            for [id, metric_check] in metric_checks.items():
+                # the metric should be updated only on the node that was elected as a leader
+                if id == new_leader_id:
+                    results.append(
+                        metric_check.evaluate([
+                            ("vectorized_raft_leadership_changes_total",
+                             lambda initial, current: current == initial + 1),
+                        ]))
+                else:
+                    results.append(
+                        metric_check.evaluate([
+                            ("vectorized_raft_leadership_changes_total",
+                             lambda initial, current: current == initial),
+                        ]))
+
+            return all(results)
+
+        wait_until(
+            metrics_updated, 30, 1,
+            "Leadership changes metric should be updated only on the leader")
 
     @cluster(num_nodes=4)
     @parametrize(acks=1)
