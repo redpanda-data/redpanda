@@ -726,8 +726,7 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
                    .append_entries(
                      target.id(),
                      std::move(req),
-                     rpc::client_opts(_replicate_append_timeout),
-                     use_all_serde_append_entries())
+                     rpc::client_opts(_replicate_append_timeout))
                    .then([this, id = target.id(), seq, dirty_offset](
                            result<append_entries_reply> reply) {
                        process_append_entries_reply(

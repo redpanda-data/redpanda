@@ -301,7 +301,7 @@ ss::future<result<vote_reply>> in_memory_test_protocol::vote(
 
 ss::future<result<append_entries_reply>>
 in_memory_test_protocol::append_entries(
-  model::node_id id, append_entries_request&& req, rpc::client_opts, bool) {
+  model::node_id id, append_entries_request&& req, rpc::client_opts) {
     return dispatch<append_entries_request, append_entries_reply>(
       id, std::move(req));
 };
