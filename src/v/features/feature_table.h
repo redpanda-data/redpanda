@@ -45,7 +45,6 @@ enum class feature : std::uint64_t {
     controller_snapshots = 1ULL << 23U,
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
     force_partition_reconfiguration = 1ULL << 26U,
-    raft_append_entries_serde = 1ULL << 28U,
     delete_records = 1ULL << 29U,
     raft_coordinated_recovery = 1ULL << 31U,
     cloud_storage_scrubbing = 1ULL << 32U,
@@ -108,6 +107,7 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "kafka_gssapi",
   "partition_move_revert_cancel",
   "rpc_transport_unknown_errc",
+  "raft_append_entries_serde",
 };
 
 // The latest_version associated with past releases. Increment this
@@ -259,12 +259,6 @@ inline constexpr std::array feature_schema{
     release_version::v23_2_1,
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v23_2_1,
-    "raft_append_entries_serde",
-    feature::raft_append_entries_serde,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
