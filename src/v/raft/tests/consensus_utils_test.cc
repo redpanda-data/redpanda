@@ -7,12 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "random/generators.h"
-
 #include <iterator>
 #include <limits>
 #define BOOST_TEST_MODULE raft
-#include "model/tests/random_batch.h"
 #include "raft/consensus_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 
