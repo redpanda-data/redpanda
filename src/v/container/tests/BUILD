@@ -55,6 +55,7 @@ redpanda_cc_gtest(
         "//src/v/container:zip",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
         "@abseil-cpp//absl/container:btree",
         "@fmt",
         "@googletest//:gtest",
