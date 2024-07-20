@@ -1,4 +1,18 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_btest_no_seastar", "redpanda_cc_gtest")
+
+redpanda_cc_library(
+    name = "random",
+    hdrs = [
+        "randoms.h",
+    ],
+    include_prefix = "utils/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/random:generators",
+        "//src/v/utils:unresolved_address",
+    ],
+)
 
 redpanda_cc_btest_no_seastar(
     name = "tristate_test",
