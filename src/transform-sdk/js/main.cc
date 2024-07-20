@@ -696,6 +696,22 @@ decode_schema_id_impl(JSContext* ctx, qjs::value& arg) {
       .transform([&obj](std::monostate) { return std::move(obj); });
 }
 
+std::expected<qjs::value, qjs::exception> encode_schema_id_impl(
+  JSContext* ctx,
+  const qjs::value& sid, // NOLINT(*-swappable-parameters)
+  const qjs::value& buf  // NOLINT(*-swappable-parameters)
+) {
+    auto orig = value_as_bytes_view(buf);
+    redpanda::bytes encoded = redpanda::sr::encode_schema_id(
+      redpanda::sr::schema_id{sid.as_integer()}, orig);
+    // TODO(perf): This  takes a full copy of the input buffer to avoid
+    // any memory ownership issues in client code.
+    // This is a pessimization - with a bit of effort, we should be
+    // able to return subviews that keep the input buffer alive without
+    // requiring the runtime to allocate us a whole new buffer.
+    return qjs::value::uint8_array_copy(ctx, encoded);
+}
+
 std::expected<std::monostate, qjs::exception> initial_native_modules(
   qjs::runtime* runtime,
   qjs::value* user_callback,
@@ -748,6 +764,33 @@ std::expected<std::monostate, qjs::exception> initial_native_modules(
                 "string, ArrayBuffer, or Uint8Array"));
           }
           return decode_schema_id_impl(ctx, args.front());
+      });
+    sr_mod.add_function(
+      "encodeSchemaID",
+      [](JSContext* ctx, const qjs::value&, std::span<qjs::value> args)
+        -> std::expected<qjs::value, qjs::exception> {
+          if (args.size() != 2) [[unlikely]] {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                std::format(
+                  "wrong number of arguments to encodeSchemaID: expected 2 got "
+                  "{}",
+                  args.size())));
+          }
+          if (!args[0].is_number()) {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                "expected a numeric SchemaID for 'id' param in "
+                "encodeSchemaID"));
+          }
+          if (!(args[1].is_string() || args[1].is_array_buffer()
+                || args[1].is_uint8_array())) {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                "expected one of string, ArrayBuffer, or Uint8Array for 'buf' "
+                "param in encodeSchemaID"));
+          }
+          return encode_schema_id_impl(ctx, args[0], args[1]);
       });
     return runtime->add_module(std::move(mod))
       .and_then([runtime, &sr_mod](std::monostate) {
