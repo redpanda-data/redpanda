@@ -142,7 +142,7 @@ FIXTURE_TEST(mixed_config_versions, bootstrap_fixture) {
     // 10 configuration batches
     BOOST_REQUIRE_EQUAL(state.config_batches_seen(), 10);
 
-    for (auto i = 0; i < state.configurations().size(); ++i) {
+    for (size_t i = 0; i < state.configurations().size(); ++i) {
         auto& current_cfg = state.configurations()[i];
         info("i: {}, cfg_version: {}", i, current_cfg.cfg.version());
         if (i < 3) {
