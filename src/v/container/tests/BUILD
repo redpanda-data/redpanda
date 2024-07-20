@@ -1,7 +1,6 @@
-load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
-redpanda_cc_library(
+redpanda_test_cc_library(
     name = "bench_utils",
     hdrs = [
         "bench_utils.h",

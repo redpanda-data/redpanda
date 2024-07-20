@@ -166,3 +166,25 @@ def redpanda_cc_btest_no_seastar(
         defines = defines,
         deps = ["@boost//:test.so"] + deps,
     )
+
+def redpanda_test_cc_library(
+        name,
+        srcs = [],
+        hdrs = [],
+        defines = [],
+        local_defines = [],
+        visibility = None,
+        include_prefix = None,
+        deps = []):
+    native.cc_library(
+        name = name,
+        srcs = srcs,
+        hdrs = hdrs,
+        defines = defines,
+        local_defines = local_defines,
+        visibility = visibility,
+        include_prefix = include_prefix,
+        deps = deps,
+        copts = redpanda_copts(),
+        testonly = True,
+    )

@@ -1,7 +1,6 @@
-load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
 
-redpanda_cc_library(
+redpanda_test_cc_library(
     name = "simple_raft_fixture",
     hdrs = [
         "simple_raft_fixture.h",
@@ -21,7 +20,7 @@ redpanda_cc_library(
     ],
 )
 
-redpanda_cc_library(
+redpanda_test_cc_library(
     name = "simple_record_fixture",
     hdrs = [
         "simple_record_fixture.h",

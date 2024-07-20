@@ -1,7 +1,6 @@
-load("//bazel:build.bzl", "redpanda_cc_library")
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
 
-redpanda_cc_library(
+redpanda_test_cc_library(
     name = "random",
     srcs = [
         "random_batch.cc",
