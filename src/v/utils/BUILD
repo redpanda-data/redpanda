@@ -15,6 +15,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "absl_sstring_hash",
+    hdrs = [
+        "absl_sstring_hash.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@abseil-cpp//absl/hash",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "moving_average",
     hdrs = [
         "moving_average.h",
