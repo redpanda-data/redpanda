@@ -127,16 +127,40 @@ value value::array_buffer(JSContext* ctx, std::span<uint8_t> data) {
         ctx, data.data(), data.size(), func, opaque, /*is_shared=*/0)};
 }
 
+std::expected<value, exception>
+value::array_buffer_copy(JSContext* ctx, std::span<uint8_t> data) {
+    value val{ctx, JS_NewArrayBufferCopy(ctx, data.data(), data.size())};
+    if (val.is_exception()) {
+        return std::unexpected(exception::current(ctx));
+    }
+    return val;
+}
+
 value value::uint8_array(JSContext* ctx, std::span<uint8_t> data) {
     void* opaque = nullptr;
     // NOLINTNEXTLINE(*easily-swappable-parameters)
     JSFreeArrayBufferDataFunc* func = [](JSRuntime*, void* opaque, void* ptr) {
         // Nothing to do
     };
+
     return {
       ctx,
       JS_NewUint8Array(
         ctx, data.data(), data.size(), func, opaque, /*is_shared=*/0)};
+}
+
+// see quickjs source for detailed buffer ownership semantics
+// https://github.com/quickjs-ng/quickjs/blob/da5b95dcaf372dcc206019e171a0b08983683bf5/quickjs.c#L49379-L49436
+// TL;DR - With copying enabled, the array constructor registers a baked-in
+// free_func to be called by the object destructor. The copy of data is made
+// and mangaged internally to the quickjs runtime.
+std::expected<value, exception>
+value::uint8_array_copy(JSContext* ctx, std::span<uint8_t> data) {
+    value val{ctx, JS_NewUint8ArrayCopy(ctx, data.data(), data.size())};
+    if (val.is_exception()) {
+        return std::unexpected(exception::current(ctx));
+    }
+    return val;
 }
 
 void value::detach_buffer() {

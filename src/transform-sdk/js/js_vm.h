@@ -140,6 +140,10 @@ public:
      */
     static value array_buffer(JSContext* ctx, std::span<uint8_t> data);
 
+    /** Create a typed array buffer value (copy) */
+    static std::expected<value, exception>
+    array_buffer_copy(JSContext* ctx, std::span<uint8_t> data);
+
     /**
      * Create an array buffer value (view - no copies).
      *
@@ -149,6 +153,10 @@ public:
      *
      */
     static value uint8_array(JSContext* ctx, std::span<uint8_t> data);
+
+    /** Create a typed uint8 array value (copy) */
+    static std::expected<value, exception>
+    uint8_array_copy(JSContext* ctx, std::span<uint8_t> data);
 
     /**
      * Free the underlying memory to an array buffer.
