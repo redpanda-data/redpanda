@@ -98,3 +98,12 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
     ],
 )
+
+redpanda_cc_library(
+    name = "snapshot",
+    hdrs = [
+        "snapshot.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+)
