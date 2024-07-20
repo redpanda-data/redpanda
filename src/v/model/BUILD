@@ -63,6 +63,7 @@ redpanda_cc_library(
         "//src/v/utils:xid",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:node_hash_map",
         "@abseil-cpp//absl/hash",
         "@boost//:container_hash",
         "@boost//:iterator",
