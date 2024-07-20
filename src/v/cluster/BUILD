@@ -86,3 +86,15 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "notification",
+    hdrs = [
+        "notification.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/utils:named_type",
+    ],
+)
