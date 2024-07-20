@@ -11,7 +11,6 @@
 #include <limits>
 #define BOOST_TEST_MODULE raft
 #include "raft/consensus_utils.h"
-#include "storage/tests/utils/disk_log_builder.h"
 
 #include <seastar/core/circular_buffer.hh>
 
