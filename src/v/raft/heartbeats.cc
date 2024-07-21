@@ -12,7 +12,6 @@
 #include "raft/heartbeats.h"
 
 #include "raft/types.h"
-#include "serde/serde.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 

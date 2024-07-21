@@ -25,6 +25,7 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/test/random.h"
 #include "raft/fundamental.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
@@ -2030,9 +2031,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         // Test schema ID validation topic_create
         auto key_validation = tests::random_bool();
-        auto key_strategy = model::random_subject_name_strategy();
+        auto key_strategy = tests::random_subject_name_strategy();
         auto val_validation = tests::random_bool();
-        auto val_strategy = model::random_subject_name_strategy();
+        auto val_strategy = tests::random_subject_name_strategy();
 
         cluster::topic_properties props{};
 
@@ -2058,9 +2059,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         // Test schema ID validation incremental_topic_updates
         auto key_validation = tests::random_bool();
-        auto key_strategy = model::random_subject_name_strategy();
+        auto key_strategy = tests::random_subject_name_strategy();
         auto val_validation = tests::random_bool();
-        auto val_strategy = model::random_subject_name_strategy();
+        auto val_strategy = tests::random_subject_name_strategy();
 
         cluster::incremental_topic_updates updates{
           .record_key_schema_id_validation = random_property_update(

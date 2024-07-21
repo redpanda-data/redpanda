@@ -16,6 +16,7 @@
 #include "cluster/feature_update_action.h"
 #include "cluster/fwd.h"
 #include "cluster/remote_topic_properties.h"
+#include "cluster/snapshot.h"
 #include "cluster/topic_configuration.h"
 #include "cluster/topic_properties.h"
 #include "cluster/tx_errc.h"
@@ -3186,13 +3187,6 @@ std::ostream& operator<<(
       with_assignment.assignments);
     return o;
 }
-
-/// Names of snapshot files used by stm's
-static const ss::sstring archival_stm_snapshot = "archival_metadata.snapshot";
-static const ss::sstring rm_stm_snapshot = "tx.snapshot";
-static const ss::sstring tm_stm_snapshot = "tx.coordinator.snapshot";
-static const ss::sstring id_allocator_snapshot = "id.snapshot";
-static const ss::sstring tx_registry_snapshot = "tx_registry.snapshot";
 
 /**
  * Create/update a (Wasm) plugin.
