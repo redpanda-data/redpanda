@@ -31,6 +31,7 @@ v_cc_library(
     datatypes.cc
     datatypes_json.cc
     json_utils.cc
+    schema_json.cc
   DEPS
     v::container
     v::json

@@ -61,3 +61,19 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "schema_json_test",
+    timeout = "short",
+    srcs = [
+        "schema_json_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:schema",
+        "//src/v/iceberg:schema_json",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)

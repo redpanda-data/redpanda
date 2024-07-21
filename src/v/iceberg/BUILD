@@ -90,3 +90,21 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
     ],
 )
+
+redpanda_cc_library(
+    name = "schema_json",
+    srcs = [
+        "schema_json.cc",
+    ],
+    hdrs = [
+        "schema_json.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":datatypes_json",
+        ":json_utils",
+        ":schema",
+        "//src/v/json",
+    ],
+)

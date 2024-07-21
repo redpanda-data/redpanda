@@ -6,9 +6,10 @@ rp_test(
   USE_CWD
   BINARY_NAME iceberg
   SOURCES
+    datatypes_json_test.cc
     datatypes_test.cc
     manifest_serialization_test.cc
-    datatypes_json_test.cc
+    schema_json_test.cc
     test_schemas.cc
   LIBRARIES
     Avro::avro
