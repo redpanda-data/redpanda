@@ -91,3 +91,17 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "watchdog",
+    hdrs = [
+        "include/ssx/watchdog.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":future_util",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
