@@ -37,6 +37,9 @@ class OfflineLogViewer:
             self._redpanda.logger.error(f"Invalid JSON output: {json_out}")
             raise
 
+    def read_kafka_records(self, node, topic):
+        return self._json_cmd(node, f"--type kafka_records --topic {topic}")
+
     def read_controller(self, node):
         return self._json_cmd(node, "--type controller")
 

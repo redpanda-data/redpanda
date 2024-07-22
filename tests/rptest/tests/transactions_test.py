@@ -23,6 +23,7 @@ import random
 from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService, SecurityConfig, SaslCredentials
@@ -243,6 +244,12 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                 ) == consumed_from_input_topic[index_from_input].value(
                 ), f'Records value does not match from input {consumed_from_input_topic[index_from_input].value()}, from output {record.value()}'
                 index_from_input += 1
+
+        log_viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.started_nodes():
+            records = log_viewer.read_kafka_records(node=node,
+                                                    topic=self.input_t.name)
+            self.logger.info(f"Read {len(records)} from node {node.name}")
 
     @cluster(num_nodes=3)
     def rejoin_member_test(self):
