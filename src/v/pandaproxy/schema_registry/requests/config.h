@@ -82,18 +82,18 @@ public:
     }
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::get_config_req_rep& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::get_config_req_rep& res) {
     w.StartObject();
     w.Key(get_config_req_rep::field_name.data());
     ::json::rjson_serialize(w, to_string_view(res.compat));
     w.EndObject();
 }
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::put_config_req_rep& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::put_config_req_rep& res) {
     w.StartObject();
     w.Key(put_config_req_rep::field_name.data());
     ::json::rjson_serialize(w, to_string_view(res.compat));

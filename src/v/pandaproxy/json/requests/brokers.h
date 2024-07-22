@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "json/stringbuffer.h"
+#include "json/json.h"
 #include "json/writer.h"
-#include "model/metadata.h"
+#include "model/fundamental.h"
 
 namespace pandaproxy::json {
 
@@ -21,8 +21,9 @@ struct get_brokers_res {
     std::vector<model::node_id> ids;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w, const get_brokers_res& brokers) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const get_brokers_res& brokers) {
     w.StartObject();
     w.Key("brokers");
     ::json::rjson_serialize(w, brokers.ids);

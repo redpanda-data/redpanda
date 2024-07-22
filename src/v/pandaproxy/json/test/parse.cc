@@ -43,7 +43,8 @@ inline void parse_test(size_t data_size) {
     auto input = gen(data_size);
 
     perf_tests::start_measuring_time();
-    auto records = ppj::rjson_parse(input.c_str(), make_binary_v2_handler());
+    auto records = ppj::impl::rjson_parse(
+      input.c_str(), make_binary_v2_handler());
     perf_tests::stop_measuring_time();
 }
 
