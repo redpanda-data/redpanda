@@ -79,6 +79,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partition",
+    srcs = [
+        "partition.cc",
+    ],
+    hdrs = [
+        "partition.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema",
     hdrs = [
         "schema.h",

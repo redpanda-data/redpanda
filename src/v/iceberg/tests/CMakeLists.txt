@@ -9,6 +9,7 @@ rp_test(
     datatypes_json_test.cc
     datatypes_test.cc
     manifest_serialization_test.cc
+    partition_test.cc
     schema_json_test.cc
     test_schemas.cc
   LIBRARIES

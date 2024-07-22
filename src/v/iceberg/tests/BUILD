@@ -63,6 +63,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "partition_test",
+    timeout = "short",
+    srcs = [
+        "partition_test.cc",
+    ],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:partition",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "schema_json_test",
     timeout = "short",
     srcs = [
