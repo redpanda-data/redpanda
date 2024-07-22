@@ -229,7 +229,7 @@ ss::future<> cache::clean_up_at_start() {
             try {
                 co_await delete_file_and_empty_parents(filepath_to_remove);
                 deleted_bytes += file_item.size;
-                deleted_bytes++;
+                deleted_count++;
             } catch (std::exception& e) {
                 vlog(
                   cst_log.error,
