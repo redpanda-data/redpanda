@@ -678,21 +678,36 @@ auto make_upload(
     return prep_upl;
 }
 
-TEST_CORO(
-  archiver_operations_impl_test,
-  find_upload_candidates_success_1_segment_no_tx) {
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
+class archiver_operations_impl_fixture : public seastar_test {
+public:
+    archiver_operations_impl_fixture() {
+        cfg.get("storage_read_buffer_size")
+          .set_value(expected_read_buffer_size);
+        cfg.get("cloud_storage_segment_size_target")
+          .set_value(std::make_optional<size_t>(expected_target_size));
+        cfg.get("cloud_storage_segment_size_min")
+          .set_value(std::make_optional<size_t>(expected_min_size));
+        auto remote = ss::make_shared<remote_mock>();
+        auto pm = ss::make_shared<partition_manager_mock>();
+        auto builder = ss::make_shared<upload_builder_mock>();
+        auto partition = ss::make_shared<partition_mock>();
+        auto ops = detail::make_archiver_operations_api(
+          remote, pm, builder, c_expected_bucket);
+    }
 
+    scoped_config cfg;
+    ss::shared_ptr<remote_mock> remote;
+    ss::shared_ptr<partition_manager_mock> pm;
+    ss::shared_ptr<upload_builder_mock> builder;
+    ss::shared_ptr<partition_mock> partition;
+    ss::shared_ptr<archiver_operations_api> ops;
+};
+
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  find_upload_candidates_success_1_segment_no_tx) {
     // Find single upload candidate
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
+
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
     pm->expect_get_partition(partition);
@@ -748,8 +763,6 @@ TEST_CORO(
     partition->expect_aborted_transactions(
       expected_base, expected_last, fragmented_vector<model::tx_range>{});
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -768,21 +781,9 @@ TEST_CORO(
     ASSERT_EQ_CORO(res.value().results.back()->metadata, expected_meta);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test,
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
   find_upload_candidates_success_2_segment_no_tx) {
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-
-    // Find single upload candidate
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
     pm->expect_get_partition(partition);
@@ -850,8 +851,6 @@ TEST_CORO(
         }
     }
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -877,22 +876,11 @@ TEST_CORO(
     }
 }
 
-TEST_CORO(
-  archiver_operations_impl_test,
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
   find_upload_candidates_success_1_segment_plus_tx) {
     // find_upload_candidates finds one segment that has transactions
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
 
-    // Find single upload candidate
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
     pm->expect_get_partition(partition);
@@ -954,8 +942,6 @@ TEST_CORO(
         expected_tx,
       }});
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -981,18 +967,13 @@ TEST_CORO(
     ASSERT_EQ_CORO(candidate->metadata, expected_meta);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test,
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
   find_upload_candidates_success_get_partition_failed) {
     // Check situation when partition_manager can't find
     // the partition by ntp
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
     pm->expect_get_partition(nullptr);
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -1009,22 +990,10 @@ TEST_CORO(
     ASSERT_TRUE_CORO(res.error() == error_outcome::unexpected_failure);
 }
 
-TEST_CORO(archiver_operations_impl_test, not_enough_data_to_start_upload) {
+TEST_F_CORO(archiver_operations_impl_fixture, not_enough_data_to_start_upload) {
     // Check situation when 'segment_upload' fails to create an upload candidate
     // because there is no data to upload yet. This is not an exceptional
     // situation and expected to happen as part of normal operation.
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-
-    // Find single upload candidate
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
 
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
@@ -1038,8 +1007,6 @@ TEST_CORO(archiver_operations_impl_test, not_enough_data_to_start_upload) {
       expected_read_buffer_size,
       error_outcome::not_enough_data);
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -1056,14 +1023,9 @@ TEST_CORO(archiver_operations_impl_test, not_enough_data_to_start_upload) {
     ASSERT_TRUE_CORO(res.value().results.empty());
 }
 
-TEST_CORO(archiver_operations_impl_test, segment_builder_throws) {
+TEST_F_CORO(archiver_operations_impl_fixture, segment_builder_throws) {
     // Check situation when 'segment_upload' fails to create an upload candidate
     // by throwing an exception.
-
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
 
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
@@ -1072,8 +1034,6 @@ TEST_CORO(archiver_operations_impl_test, segment_builder_throws) {
     builder->expect_prepare_segment_upload(
       std::make_exception_ptr(std::runtime_error("failure")));
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -1089,21 +1049,9 @@ TEST_CORO(archiver_operations_impl_test, segment_builder_throws) {
     ASSERT_TRUE_CORO(res.has_error());
 }
 
-TEST_CORO(archiver_operations_impl_test, segment_builder_errors) {
+TEST_F_CORO(archiver_operations_impl_fixture, segment_builder_errors) {
     // Check situation when 'segment_upload' fails to create an upload candidate
     // and returns unexpected error.
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-
-    // Find single upload candidate
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
 
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
@@ -1117,8 +1065,6 @@ TEST_CORO(archiver_operations_impl_test, segment_builder_errors) {
       expected_read_buffer_size,
       error_outcome::unexpected_failure);
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -1134,19 +1080,8 @@ TEST_CORO(archiver_operations_impl_test, segment_builder_errors) {
     ASSERT_TRUE_CORO(res.has_error());
 }
 
-TEST_CORO(archiver_operations_impl_test, aborted_tx_throw) {
+TEST_F_CORO(archiver_operations_impl_fixture, aborted_tx_throw) {
     // If the list of aborted transactions can't be acquired we should abort
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
 
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
@@ -1194,8 +1129,6 @@ TEST_CORO(archiver_operations_impl_test, aborted_tx_throw) {
       expected_last,
       std::make_exception_ptr(std::runtime_error("failure")));
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -1212,19 +1145,8 @@ TEST_CORO(archiver_operations_impl_test, aborted_tx_throw) {
     ASSERT_TRUE_CORO(res.error() == error_outcome::unexpected_failure);
 }
 
-TEST_CORO(archiver_operations_impl_test, no_term_for_offset) {
+TEST_F_CORO(archiver_operations_impl_fixture, no_term_for_offset) {
     // We can't find term for the offset
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
 
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
@@ -1265,8 +1187,6 @@ TEST_CORO(archiver_operations_impl_test, no_term_for_offset) {
 
     partition->expect_get_offset_term(expected_base, std::nullopt);
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
@@ -1285,27 +1205,15 @@ TEST_CORO(archiver_operations_impl_test, no_term_for_offset) {
 
 // Uploads set of segments with one failed upload
 ss::future<> test_archiver_schedule_upload_full_cycle(
+  archiver_operations_impl_fixture* fx,
   std::vector<upload_result> segment_upload_results,
   std::vector<upload_result> tx_upload_results,
   std::vector<upload_result> ix_upload_results,
   bool tx_manifest,
   bool inline_manifest,
   upload_result inline_manifest_result = upload_result::success) {
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-    cfg.get("cloud_storage_bucket")
-      .set_value(std::make_optional(expected_bucket));
-
     size_t expected_total_bytes = 0;
     size_t expected_put_requests = 0;
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
 
     // Make uploads
     std::deque<archival::reconciled_upload_candidate_ptr> segments;
@@ -1367,7 +1275,7 @@ ss::future<> test_archiver_schedule_upload_full_cycle(
             expected_total_bytes += tx_manifest.estimate_serialized_size();
             expected_put_requests++;
 
-            remote->expect_upload_manifest(
+            fx->remote->expect_upload_manifest(
               expected_bucket,
               key().native() + ".tx",
               std::move(tx_payload),
@@ -1379,7 +1287,7 @@ ss::future<> test_archiver_schedule_upload_full_cycle(
         // Expect index upload
         expected_total_bytes += index_payload.content.size();
         expected_put_requests++;
-        remote->expect_upload_stream(
+        fx->remote->expect_upload_stream(
           expected_bucket,
           key().native() + ".index",
           index_payload.content.size(),
@@ -1390,7 +1298,7 @@ ss::future<> test_archiver_schedule_upload_full_cycle(
         // Expect segment upload
         expected_total_bytes += payload.content.size();
         expected_put_requests++;
-        remote->expect_upload_stream(
+        fx->remote->expect_upload_stream(
           expected_bucket,
           key().native(),
           payload.size,
@@ -1412,30 +1320,28 @@ ss::future<> test_archiver_schedule_upload_full_cycle(
         auto size_estimate = expected_manifest.estimate_serialized_size();
         expected_total_bytes += size_estimate;
         expected_put_requests++;
-        remote->expect_upload_manifest(
+        fx->remote->expect_upload_manifest(
           expected_bucket,
           m_key().native(),
           expected_manifest_upload,
           inline_manifest_result);
     }
 
-    partition->expect_manifest(
+    fx->partition->expect_manifest(
       expected_manifest,
       // One to kickoff the upload, one per segment + one call to upload
       // the manifest
       1 + static_cast<int>(inline_manifest));
 
-    pm->expect_get_partition(partition);
+    fx->pm->expect_get_partition(fx->partition);
 
     reconciled_upload_candidates_list inp(
       expected_ntp.to_ntp(), std::move(segments), expected_read_write_fence);
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
 
-    auto res = co_await ops->schedule_uploads(
+    auto res = co_await fx->ops->schedule_uploads(
       rtc, std::move(inp), inline_manifest);
 
     ASSERT_TRUE_CORO(res.has_value());
@@ -1457,130 +1363,133 @@ ss::future<> test_archiver_schedule_upload_full_cycle(
     }
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_1_segment_no_tx_no_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  schedule_uploads_1_segment_no_tx_no_manifest) {
     std::vector<upload_result> success = {upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, false, false);
+      this, success, success, success, false, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_2_segment_no_tx_no_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  schedule_uploads_2_segment_no_tx_no_manifest) {
     std::vector<upload_result> success = {
       upload_result::success, upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, false, false);
+      this, success, success, success, false, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_4_segment_no_tx_no_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  schedule_uploads_4_segment_no_tx_no_manifest) {
     std::vector<upload_result> success = {
       upload_result::success,
       upload_result::success,
       upload_result::success,
       upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, false, false);
+      this, success, success, success, false, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_1_segment_tx_no_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_1_segment_tx_no_manifest) {
     std::vector<upload_result> success = {upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, false);
+      this, success, success, success, true, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_2_segment_tx_no_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_2_segment_tx_no_manifest) {
     std::vector<upload_result> success = {
       upload_result::success, upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, false);
+      this, success, success, success, true, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_4_segment_tx_no_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_4_segment_tx_no_manifest) {
     std::vector<upload_result> success = {
       upload_result::success,
       upload_result::success,
       upload_result::success,
       upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, false);
+      this, success, success, success, true, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_1_segment_no_tx_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_1_segment_no_tx_manifest) {
     std::vector<upload_result> success = {upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, false, true);
+      this, success, success, success, false, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_2_segment_no_tx_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_2_segment_no_tx_manifest) {
     std::vector<upload_result> success = {
       upload_result::success, upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, false, true);
+      this, success, success, success, false, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_4_segment_no_tx_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_4_segment_no_tx_manifest) {
     std::vector<upload_result> success = {
       upload_result::success,
       upload_result::success,
       upload_result::success,
       upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, false, true);
+      this, success, success, success, false, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_1_segment_tx_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_1_segment_tx_manifest) {
     std::vector<upload_result> success = {upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, true);
+      this, success, success, success, true, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_2_segment_tx_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_2_segment_tx_manifest) {
     std::vector<upload_result> success = {
       upload_result::success, upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, true);
+      this, success, success, success, true, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_4_segment_tx_manifest) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_4_segment_tx_manifest) {
     std::vector<upload_result> success = {
       upload_result::success,
       upload_result::success,
       upload_result::success,
       upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, true);
+      this, success, success, success, true, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_1_segment_segment_failed) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_1_segment_segment_failed) {
     std::vector<upload_result> success = {upload_result::success};
     std::vector<upload_result> failure = {upload_result::failed};
     co_await test_archiver_schedule_upload_full_cycle(
-      failure, success, success, true, true);
+      this, failure, success, success, true, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_2_segment_segment_failed) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_2_segment_segment_failed) {
     std::vector<upload_result> success = {
       upload_result::success, upload_result::success};
     std::vector<upload_result> failure = {
       upload_result::success, upload_result::failed};
     co_await test_archiver_schedule_upload_full_cycle(
-      failure, success, success, true, true);
+      this, failure, success, success, true, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_4_segment_segment_failed) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_4_segment_segment_failed) {
     std::vector<upload_result> success = {
       upload_result::success,
       upload_result::success,
@@ -1592,26 +1501,29 @@ TEST_CORO(
       upload_result::failed,
       upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      failure, success, success, true, true);
+      this, failure, success, success, true, true);
 }
 
-TEST_CORO(archiver_operations_impl_test, schedule_uploads_1_segment_tx_failed) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_1_segment_tx_failed) {
     std::vector<upload_result> success = {upload_result::success};
     std::vector<upload_result> failure = {upload_result::failed};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, failure, success, true, true);
+      this, success, failure, success, true, true);
 }
 
-TEST_CORO(archiver_operations_impl_test, schedule_uploads_2_segment_tx_failed) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_2_segment_tx_failed) {
     std::vector<upload_result> success = {
       upload_result::success, upload_result::success};
     std::vector<upload_result> failure = {
       upload_result::success, upload_result::failed};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, failure, success, true, true);
+      this, success, failure, success, true, true);
 }
 
-TEST_CORO(archiver_operations_impl_test, schedule_uploads_4_segment_tx_failed) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_4_segment_tx_failed) {
     std::vector<upload_result> success = {
       upload_result::success,
       upload_result::success,
@@ -1623,19 +1535,19 @@ TEST_CORO(archiver_operations_impl_test, schedule_uploads_4_segment_tx_failed) {
       upload_result::failed,
       upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, failure, success, true, true);
+      this, success, failure, success, true, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test,
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
   schedule_uploads_1_segment_inline_manifest_failed) {
     std::vector<upload_result> success = {upload_result::success};
     co_await test_archiver_schedule_upload_full_cycle(
-      success, success, success, true, true, upload_result::failed);
+      this, success, success, success, true, true, upload_result::failed);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, schedule_uploads_randomized_failure_test) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture, schedule_uploads_randomized_failure_test) {
     auto get_random_upload_result = []() {
         auto result = upload_result::success;
         auto r = random_generators::get_int(3);
@@ -1659,7 +1571,7 @@ TEST_CORO(
             ix.push_back(get_random_upload_result());
         }
         co_await test_archiver_schedule_upload_full_cycle(
-          segm, tx, ix, true, true, get_random_upload_result());
+          this, segm, tx, ix, true, true, get_random_upload_result());
     }
 }
 
@@ -1674,25 +1586,12 @@ enum class metadata_anomaly_type {
 };
 
 ss::future<> test_admit_uploads_full_cycle(
+  archiver_operations_impl_fixture* fx,
   std::deque<upload_result> results,
   std::deque<metadata_anomaly_type> anomalies,
   bool inline_manifest) {
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
-    cfg.get("cloud_storage_bucket")
-      .set_value(std::make_optional(expected_bucket));
-
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
-
     // set expectations
-    partition->expect_manifest(expected_manifest);
+    fx->partition->expect_manifest(expected_manifest);
 
     // Generate segment metadata and segments record stats
     // which are mutually consistent if the 'add_anomaly' parameter is set to
@@ -1780,8 +1679,8 @@ ss::future<> test_admit_uploads_full_cycle(
       = expected_metadata.empty() ? model::offset{}
                                   : expected_metadata.back().committed_offset;
     if (!expected_metadata.empty()) {
-        partition->expect_get_highest_producer_id(expected_producer_id);
-        partition->expect_add_segments(
+        fx->partition->expect_get_highest_producer_id(expected_producer_id);
+        fx->partition->expect_add_segments(
           expected_metadata,
           clean_offset,
           expected_read_write_fence,
@@ -1790,11 +1689,7 @@ ss::future<> test_admit_uploads_full_cycle(
           expected_dirty_offset);
     }
 
-    pm->expect_get_partition(partition);
-
-    // create the ops api
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
+    fx->pm->expect_get_partition(fx->partition);
 
     // invoke admit uploads
     ss::abort_source as;
@@ -1812,7 +1707,7 @@ ss::future<> test_admit_uploads_full_cycle(
     input.results = results;
     input.metadata = metadata;
     input.stats = stats;
-    auto result = co_await ops->admit_uploads(rtc, std::move(input));
+    auto result = co_await fx->ops->admit_uploads(rtc, std::move(input));
 
     if (!expected_metadata.empty()) {
         ASSERT_TRUE_CORO(result.has_value());
@@ -1826,49 +1721,39 @@ ss::future<> test_admit_uploads_full_cycle(
     }
 }
 
-TEST_CORO(archiver_operations_impl_test, admit_uploads_empty) {
+TEST_F_CORO(archiver_operations_impl_fixture, admit_uploads_empty) {
     std::deque<upload_result> results = {};
     std::deque<metadata_anomaly_type> anomalies = {};
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_1_segment_1_manifest_0_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_1_segment_1_manifest_0_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
     };
     std::deque<metadata_anomaly_type> anomalies = {
       metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_1_segment_0_manifest_0_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_1_segment_0_manifest_0_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
     };
     std::deque<metadata_anomaly_type> anomalies = {
       metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_2_segment_1_manifest_0_anomaly) {
-    std::deque<upload_result> results = {
-      upload_result::success,
-      upload_result::success,
-    };
-    std::deque<metadata_anomaly_type> anomalies = {
-      metadata_anomaly_type::none,
-      metadata_anomaly_type::none,
-    };
-    co_await test_admit_uploads_full_cycle(results, anomalies, true);
-}
-
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_2_segment_0_manifest_0_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_2_segment_1_manifest_0_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
       upload_result::success,
@@ -1877,26 +1762,26 @@ TEST_CORO(
       metadata_anomaly_type::none,
       metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_3_segment_1_manifest_0_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_2_segment_0_manifest_0_anomaly) {
     std::deque<upload_result> results = {
-      upload_result::success,
       upload_result::success,
       upload_result::success,
     };
     std::deque<metadata_anomaly_type> anomalies = {
       metadata_anomaly_type::none,
       metadata_anomaly_type::none,
-      metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_3_segment_0_manifest_0_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_3_segment_1_manifest_0_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
       upload_result::success,
@@ -1907,33 +1792,52 @@ TEST_CORO(
       metadata_anomaly_type::none,
       metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, true);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_1_segment_0_manifest_1_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_3_segment_0_manifest_0_anomaly) {
+    std::deque<upload_result> results = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+    };
+    std::deque<metadata_anomaly_type> anomalies = {
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+      metadata_anomaly_type::none,
+    };
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
+}
+
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_1_segment_0_manifest_1_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
     };
     std::deque<metadata_anomaly_type> anomalies = {
       metadata_anomaly_type::gap,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_0_segment_0_manifest_0_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_0_segment_0_manifest_0_anomaly) {
     std::deque<upload_result> results = {
       upload_result::failed,
     };
     std::deque<metadata_anomaly_type> anomalies = {
       metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_3_segment_0_manifest_1_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_3_segment_0_manifest_1_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
       upload_result::success,
@@ -1944,11 +1848,12 @@ TEST_CORO(
       metadata_anomaly_type::none,
       metadata_anomaly_type::none,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, false);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, false);
 }
 
-TEST_CORO(
-  archiver_operations_impl_test, admit_uploads_3_segment_1_manifest_1_anomaly) {
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
+  admit_uploads_3_segment_1_manifest_1_anomaly) {
     std::deque<upload_result> results = {
       upload_result::success,
       upload_result::success,
@@ -1959,10 +1864,10 @@ TEST_CORO(
       metadata_anomaly_type::none,
       metadata_anomaly_type::record_stats_mismatch,
     };
-    co_await test_admit_uploads_full_cycle(results, anomalies, true);
+    co_await test_admit_uploads_full_cycle(this, results, anomalies, true);
 }
 
-TEST_CORO(archiver_operations_impl_test, admit_uploads_randomized) {
+TEST_F_CORO(archiver_operations_impl_fixture, admit_uploads_randomized) {
     for (int i = 0; i < 1000; i++) {
         std::deque<upload_result> results;
         std::deque<metadata_anomaly_type> anomalies;
@@ -2001,30 +1906,19 @@ TEST_CORO(archiver_operations_impl_test, admit_uploads_randomized) {
             }
         }
         co_await test_admit_uploads_full_cycle(
-          results, anomalies, inline_manifest);
+          this, results, anomalies, inline_manifest);
     }
 }
 
-TEST_CORO(
-  archiver_operations_impl_test,
+TEST_F_CORO(
+  archiver_operations_impl_fixture,
   find_upload_candidates_success_compacted_reupload) {
     // Model situation when the segment is uploaded in
     // parallel with compacted segment reupload.
     // We don't have to test all possible combinations
     // of outcomes here because compacted reupload
     // uses the same code path as regular upload.
-    scoped_config cfg;
-    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
-    cfg.get("cloud_storage_segment_size_target")
-      .set_value(std::make_optional<size_t>(expected_target_size));
-    cfg.get("cloud_storage_segment_size_min")
-      .set_value(std::make_optional<size_t>(expected_min_size));
 
-    // Find single upload candidate
-    auto remote = ss::make_shared<remote_mock>();
-    auto pm = ss::make_shared<partition_manager_mock>();
-    auto builder = ss::make_shared<upload_builder_mock>();
-    auto partition = ss::make_shared<partition_mock>();
     partition->expect_get_applied_offset(expected_applied_offset);
     partition->expect_get_next_uploaded_offset(expected_next_uploaded_offset);
     pm->expect_get_partition(partition);
@@ -2143,8 +2037,6 @@ TEST_CORO(
           expected_base, expected_last, fragmented_vector<model::tx_range>{});
     }
 
-    auto ops = detail::make_archiver_operations_api(
-      remote, pm, builder, c_expected_bucket);
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 1ms);
     auto arg = upload_candidate_search_parameters(
