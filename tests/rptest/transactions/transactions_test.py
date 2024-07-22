@@ -191,6 +191,33 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                 assert node.account.isdir(path)
 
     @cluster(num_nodes=3)
+    def test_max_timeout(self):
+        rpk = RpkTool(self.redpanda)
+        max_timeout_ms = int(
+            rpk.cluster_config_get("transaction_max_timeout_ms"))
+        test_timeout_ms = max_timeout_ms + 100
+
+        def init_producer(timeout_ms: int):
+            producer = ck.Producer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'transactional.id': '0',
+                'transaction.timeout.ms': test_timeout_ms,
+            })
+            producer.init_transactions()
+
+        try:
+            init_producer(test_timeout_ms)
+            assert False, "producer session established with a timeout larger than allowed limit"
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code(
+            ) == ck.KafkaError.INVALID_TRANSACTION_TIMEOUT, f"Unexpected error {kafka_error.code()}"
+
+        # Bump timeout and check again.
+        rpk.cluster_config_set("transaction_max_timeout_ms", test_timeout_ms)
+        init_producer(test_timeout_ms)
+
+    @cluster(num_nodes=3)
     def simple_test(self):
         self.generate_data(self.input_t, self.max_records)
 
@@ -391,7 +418,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 3600000,  # to avoid timing out
+            'transaction.timeout.ms': 900000,  # to avoid timing out
         })
         producer.init_transactions()
         producer.begin_transaction()
@@ -574,7 +601,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': str(i),
-                'transaction.timeout.ms': 1000000,
+                'transaction.timeout.ms': 900000,
             }) for i in range(0, p_count)
         ]
 

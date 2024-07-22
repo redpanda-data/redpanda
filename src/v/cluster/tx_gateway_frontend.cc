@@ -708,6 +708,19 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
       tx_id,
       transaction_timeout_ms);
 
+    if (unlikely(
+          transaction_timeout_ms
+          > config::shard_local_cfg().transaction_max_timeout_ms())) {
+        vlog(
+          txlog.warn,
+          "[tx_id={}] Transactional timeout requested {}ms exceeds configured "
+          "maximum timeout {}ms",
+          tx_id,
+          transaction_timeout_ms,
+          config::shard_local_cfg().transaction_max_timeout_ms());
+        co_return init_tm_tx_reply{tx::errc::invalid_timeout};
+    }
+
     model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
     auto shard = _shard_table.local().shard_for(tx_ntp);
 
