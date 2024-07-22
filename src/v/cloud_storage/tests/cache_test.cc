@@ -31,6 +31,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <optional>
 #include <stdexcept>
@@ -565,6 +566,10 @@ FIXTURE_TEST(test_log_segment_cleanup, cache_test_fixture) {
 }
 
 FIXTURE_TEST(test_cache_carryover_trim, cache_test_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_cache_trim_carryover_bytes")
+      .set_value(uint32_t{256_KiB});
+
     std::string write_buf(1_MiB, ' ');
     random_generators::fill_buffer_randomchars(
       write_buf.data(), write_buf.size());
