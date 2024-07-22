@@ -21,6 +21,7 @@
 #include "test_utils/scoped_config.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
+#include "finjector/stress_fiber.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
@@ -31,6 +32,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <format>
 #include <fstream>
 #include <optional>
 #include <stdexcept>
@@ -449,6 +451,122 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_read_skipped_on_old_version) {
     auto out = serde_roundtrip(in, tracker_version::v1);
     BOOST_REQUIRE_EQUAL(out.size(), 0);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_sleep) {
+  ss::logger l("testlog");
+    std::vector<uint32_t> start_items;
+    for (uint32_t i = 0; i < 30; i++) {
+        start_items.emplace_back(i);
+    }
+    size_t concurrency = 10;
+    auto res = seastar::max_concurrent_for_each(start_items, concurrency,
+    [&l](uint32_t) {
+      auto start_time = std::chrono::steady_clock::now();
+      return seastar::sleep(std::chrono::milliseconds(1000)).then([&l, start_time] {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        vlog(l.info, "*** ELAPSED: {}", elapsed.count());
+        return seastar::make_ready_future<>();
+      });
+    });
+    res.get();
+}
+
+ss::future<> test_put_into_cache(cloud_storage::cache_test_fixture& cache_fixture, uint32_t items_per_iter, uint32_t start_item) {
+  auto start_time = std::chrono::steady_clock::now();
+  for (uint32_t item = start_item; item < start_item + items_per_iter; item++) {
+        std::string key = fmt::format("key-{}", item);
+        std::string val = fmt::format("value-{}", item);
+        co_await cache_fixture.put_into_cache_coro(val, key);
+        auto res = co_await cache_fixture.sharded_cache.local().get(key);
+        BOOST_REQUIRE(res.has_value());
+        co_await res->body.close();
+  }
+  auto elapsed = std::chrono::steady_clock::now() - start_time;
+  std::cerr << "result:: Added " << items_per_iter << " items in " << elapsed << " ms, starting with " << start_item << std::endl;
+  co_return;
+}
+
+SEASTAR_THREAD_TEST_CASE(cache_many_items) {
+    cloud_storage::cache_test_fixture cache_fixture;
+
+    uint32_t items_per_iter = 1'000;
+    uint32_t total_items = 1'000'000;
+    uint32_t concurrency = 25;
+    std::vector<uint32_t> start_items;
+    for(uint32_t next_item = 1; next_item <= total_items; next_item += items_per_iter) {
+      start_items.push_back(next_item);
+    }
+
+    stress_config cfg;
+    cfg.min_spins_per_scheduling_point = 100;
+    cfg.max_spins_per_scheduling_point = 10000;
+    cfg.num_fibers = 4;
+    std::cerr << "*** starting " << cfg.num_fibers << " stress fibers\n";
+    auto mgr = stress_fiber_manager{};
+    BOOST_REQUIRE(mgr.start(cfg));
+
+    std::cerr << "*** Starting many items stress test\n";
+    auto res = seastar::max_concurrent_for_each(start_items, concurrency, 
+    [&cache_fixture,  &items_per_iter](uint32_t start_item) {
+        return test_put_into_cache(cache_fixture, items_per_iter, start_item);
+    });
+    res.get();
+}
+
+      // uint32_t item = start_item;
+      // uint32_t end_item = item + items_per_iter;
+      // for (; item < end_item; item++) {
+      //   std::string key = fmt::format("key-{}", item);
+      //   std::string val = fmt::format("value-{}", item);
+      //   cache_fixture.put_into_cache(val, key);
+      //   auto res = cache_fixture.sharded_cache.local().get(key).get();
+      //   BOOST_REQUIRE(res.has_value());
+      //   res->body.close().get();
+      // }
+    // return; ///////////////////
+
+//     auto last_time = std::chrono::steady_clock::now();
+//     uint32_t item_number = 1;
+//     uint32_t print_freq = 100;
+//     for (; item_number <= 1000; item_number++) {
+//       std::string key = fmt::format("key-{}", item_number);
+//       std::string val = fmt::format("value-{}", item_number);
+//       cache_fixture.put_into_cache(val, key);
+//       auto res = cache_fixture.sharded_cache.local().get(key).get();
+//       BOOST_REQUIRE(res.has_value());
+//       res->body.close().get();
+//       if (item_number % print_freq == 0) {
+//         auto time = std::chrono::steady_clock::now();
+//         auto elapsed = time - last_time;
+//         last_time = time;
+//         std::cerr << "*** Adding " << print_freq << " items took " << elapsed << " ms, " << (elapsed / print_freq) << " ms/item. Total items: " << item_number << std::endl;
+//       }
+//     }
+
+//     std::cerr << "*** starting stress fibers\n";
+//     stress_config cfg;
+//     cfg.min_spins_per_scheduling_point = 100;
+//     cfg.max_spins_per_scheduling_point = 10000;
+//     cfg.num_fibers = 1;
+//     auto mgr = stress_fiber_manager{};
+//     BOOST_REQUIRE(mgr.start(cfg));
+//     std::cerr << "*** started stress fibers\n";
+//     last_time = std::chrono::steady_clock::now();
+//     for (; item_number <= 2000; item_number++) {
+//       std::string key = fmt::format("key-{}", item_number);
+//       std::string val = fmt::format("value-{}", item_number);
+//       cache_fixture.put_into_cache(val, key);
+//       auto res = cache_fixture.sharded_cache.local().get(key).get();
+//       BOOST_REQUIRE(res.has_value());
+//       res->body.close().get();
+//       if (item_number % print_freq == 0) {
+//         auto time = std::chrono::steady_clock::now();
+//         auto elapsed = time - last_time;
+//         last_time = time;
+//         std::cerr << "*** Adding " << print_freq << " items took " << elapsed << " ms, " << (elapsed / print_freq) << " ms/item. Total items: " << item_number << std::endl;
+//       }
+//     }
+// }
 
 /**
  * Validate that .part files and empty directories are deleted if found during

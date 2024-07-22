@@ -386,9 +386,11 @@ ss::future<> cache::trim(
         - std::min(
           target_objects, _current_cache_objects + _reserved_cache_objects);
 
+    auto start_time = std::chrono::steady_clock::now();
+    vlog(cst_log.info,"trim: starting in-memory trim");
     auto tracker_lru_entries = _access_time_tracker.lru_entries();
     vlog(
-      cst_log.debug,
+      cst_log.info,
       "in-memory trim: set target_size {}/{}, size {}/{}, reserved {}/{}, "
       "pending {}/{}), candidates for deletion: {}, size to delete: {}, "
       "objects to delete: {}",
@@ -403,9 +405,12 @@ ss::future<> cache::trim(
       tracker_lru_entries.size(),
       size_to_delete,
       objects_to_delete);
+    
 
     auto trim_result = co_await do_trim(
       tracker_lru_entries, size_to_delete, objects_to_delete);
+    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    vlog(cst_log.info,"trim: finished in-memory trim in {} ms", elapsed);
 
     probe.in_mem_trim();
     vlog(
@@ -439,6 +444,8 @@ ss::future<> cache::trim(
     // to run soon.
     _tracker_sync_timer.rearm(ss::lowres_clock::now() + tracker_sync_period);
 
+    start_time = std::chrono::steady_clock::now();
+    vlog(cst_log.info,"trim: starting directory walk");
     auto
       [walked_cache_size,
        filtered_out_files,
@@ -454,6 +461,8 @@ ss::future<> cache::trim(
               std::string_view(path).ends_with(".tx")
               || std::string_view(path).ends_with(".index"));
         });
+    elapsed = std::chrono::steady_clock::now() - start_time;
+    vlog(cst_log.info,"trim: finished directory walk in {} ms", elapsed);
 
     // Updating the access time tracker in case if some files were removed
     // from cache directory by the user manually.
@@ -1624,7 +1633,7 @@ void cache::maybe_background_trim() {
     if (bytes_over_limit || objects_over_limit) {
         auto units = ss::try_get_units(_cleanup_sm, 1);
         if (units.has_value()) {
-            vlog(cst_log.debug, "Spawning background trim");
+            vlog(cst_log.info, "Spawning background trim");
             ssx::spawn_with_gate(
               _gate,
               [this,
