@@ -1464,6 +1464,20 @@ private:
     }
 };
 
+namespace detail {
+
+ss::shared_ptr<cluster_partition_api>
+make_cluster_partition_wrapper(ss::lw_shared_ptr<cluster::partition> p) {
+    return ss::make_shared<cluster_partition>(std::move(p));
+}
+
+ss::shared_ptr<segment_upload_builder_api>
+make_segment_upload_builder_wrapper() {
+    return ss::make_shared<upload_builder>();
+}
+
+} // namespace detail
+
 ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
   ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<cluster::partition_manager>& pm,

@@ -247,6 +247,19 @@ ss::shared_ptr<archiver_operations_api> make_archiver_operations_api(
   ss::shared_ptr<segment_upload_builder_api>,
   cloud_storage_clients::bucket_name);
 
+/// Create a wrapper for cluster::partition
+///
+/// This function is intended for testing only
+ss::shared_ptr<cluster_partition_api>
+  make_cluster_partition_wrapper(ss::lw_shared_ptr<cluster::partition>);
+
+/// Create a wrapper for upload_builder
+///
+/// This is needed for testing because the wrapper is relatively
+/// complex and requires some additional testing (without mocking)
+ss::shared_ptr<segment_upload_builder_api>
+make_segment_upload_builder_wrapper();
+
 } // namespace detail
 
 /// Create archiver_operations_api instance
