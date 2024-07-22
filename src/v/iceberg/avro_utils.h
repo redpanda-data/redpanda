@@ -10,6 +10,8 @@
 
 #include "bytes/iobuf.h"
 
+#include <seastar/core/temporary_buffer.hh>
+
 #include <avro/DataFile.hh>
 #include <avro/Stream.hh>
 
@@ -31,7 +33,12 @@ public:
     // space.
     bool next(uint8_t** data, size_t* len) final {
         if (available_ == 0) {
-            buf_->append(ss::temporary_buffer<char>{chunk_size_});
+            // NOTE: it is critical to add the buffer to a separate iobuf first
+            // and then add that iobuf's fragments, as adding a buffer directly
+            // to `buf_` may end up packing the fragments together.
+            iobuf new_frag;
+            new_frag.append(ss::temporary_buffer<char>{chunk_size_});
+            buf_->append_fragments(std::move(new_frag));
             available_ = chunk_size_;
         }
         auto back_frag = buf_->rbegin();

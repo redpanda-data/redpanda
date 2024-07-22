@@ -21,6 +21,24 @@
 
 using namespace iceberg;
 
+namespace {
+
+// Returns true if the trivial, non-union type fields match between the two
+// manifest entries.
+// TODO: define a manifest_entry struct that isn't tied to Avro codegen, that
+// has a trivial operator==.
+bool trivial_fields_eq(const manifest_entry& lhs, const manifest_entry& rhs) {
+    return lhs.status == rhs.status
+           && lhs.data_file.content == rhs.data_file.content
+           && lhs.data_file.file_format == rhs.data_file.file_format
+           && lhs.data_file.file_path == rhs.data_file.file_path
+           && lhs.data_file.record_count == rhs.data_file.record_count
+           && lhs.data_file.file_size_in_bytes
+                == rhs.data_file.file_size_in_bytes;
+}
+
+} // anonymous namespace
+
 TEST(ManifestSerializationTest, TestManifestEntry) {
     manifest_entry entry;
     entry.status = 1;
@@ -47,13 +65,41 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     manifest_entry dentry;
     avro::decode(*decoder, dentry);
 
-    EXPECT_EQ(entry.status, dentry.status);
-    EXPECT_EQ(entry.data_file.content, dentry.data_file.content);
-    EXPECT_EQ(entry.data_file.file_path, dentry.data_file.file_path);
-    EXPECT_EQ(entry.data_file.file_format, dentry.data_file.file_format);
-    EXPECT_EQ(entry.data_file.record_count, dentry.data_file.record_count);
-    EXPECT_EQ(
-      entry.data_file.file_size_in_bytes, dentry.data_file.file_size_in_bytes);
+    EXPECT_TRUE(trivial_fields_eq(entry, dentry));
+}
+
+TEST(ManifestSerializationTest, TestManyManifestEntries) {
+    manifest_entry entry;
+    entry.status = 1;
+    entry.data_file.content = 2;
+    entry.data_file.file_path = "path/to/file";
+    entry.data_file.file_format = "PARQUET";
+    entry.data_file.partition = {};
+    entry.data_file.record_count = 3;
+    entry.data_file.file_size_in_bytes = 1024;
+
+    iobuf buf;
+    auto out = std::make_unique<avro_iobuf_ostream>(4096, &buf);
+
+    // Encode many entries. This is a regression test for a bug where
+    // serializing large Avro files would handle iobuf fragments improperly,
+    // leading to incorrect serialization.
+    avro::EncoderPtr encoder = avro::binaryEncoder();
+    encoder->init(*out);
+    for (int i = 0; i < 1024; i++) {
+        avro::encode(*encoder, entry);
+        encoder->flush();
+    }
+
+    // Decode the iobuf from the input stream.
+    auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
+    avro::DecoderPtr decoder = avro::binaryDecoder();
+    decoder->init(*in);
+    for (int i = 0; i < 1024; i++) {
+        manifest_entry dentry;
+        avro::decode(*decoder, dentry);
+        EXPECT_TRUE(trivial_fields_eq(entry, dentry));
+    }
 }
 
 TEST(ManifestSerializationTest, TestManifestFile) {
