@@ -10,6 +10,7 @@
  */
 
 #include "bytes/bytes.h"
+#include "bytes/streambuf.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "test_utils/fixture.h"
 #include "test_utils/test.h"
@@ -67,7 +68,9 @@ std::string generate_example_avro_record(
   const pandaproxy::schema_registry::canonical_schema_definition& def) {
     // Generate a simple avro record that looks like this (as json):
     // {"a":5,"b":"foo"}
-    auto schema = avro::compileJsonSchemaFromString(def.raw()().c_str());
+    iobuf_istream bis{def.shared_raw()};
+    auto is = avro::istreamInputStream(bis.istream());
+    auto schema = avro::compileJsonSchemaFromStream(*is);
     avro::GenericRecord r(schema.root());
     r.setFieldAt(r.fieldIndex("a"), int64_t(4));
     r.setFieldAt(r.fieldIndex("b"), std::string("foo"));
@@ -85,7 +88,7 @@ std::string generate_example_avro_record(
 TEST_F(WasmTestFixture, SchemaRegistry) {
     // Test an example schema registry encoded avro value -> JSON transform
     load_wasm("schema-registry.wasm");
-    auto schemas = registered_schemas();
+    const auto& schemas = registered_schemas();
     ASSERT_EQ(schemas.size(), 1);
     ASSERT_EQ(schemas[0].id, 1);
     iobuf record_value;

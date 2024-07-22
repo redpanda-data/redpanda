@@ -14,11 +14,11 @@
 #include "bytes/iostream.h"
 #include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
+#include "json/iobuf_writer.h"
 #include "json/json.h"
 #include "json/reader.h"
 #include "json/stream.h"
 #include "json/stringbuffer.h"
-#include "json/writer.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 
@@ -28,6 +28,7 @@
 #include <seastar/http/request.hh>
 
 #include <concepts>
+#include <memory>
 
 namespace pandaproxy::json {
 
@@ -40,7 +41,7 @@ class rjson_serialize_impl;
 template<typename Buffer, typename T>
 Buffer rjson_serialize_buf(T&& v) {
     Buffer buf;
-    ::json::Writer<Buffer> wrt{buf};
+    ::json::iobuf_writer<Buffer> wrt{buf};
 
     using ::json::rjson_serialize;
     using ::pandaproxy::json::rjson_serialize;
@@ -90,7 +91,7 @@ struct rjson_serialize_fmt_impl {
           std::forward<T>(t));
     }
     template<typename Buffer, typename T>
-    bool operator()(::json::Writer<Buffer>& w, T&& t) {
+    bool operator()(::json::iobuf_writer<Buffer>& w, T&& t) {
         return rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
           w, std::forward<T>(t));
     }
@@ -155,7 +156,7 @@ rjson_parse(std::unique_ptr<ss::http::request> req, Handler handler) {
                 return ss::make_ready_future<ss::stop_iteration>(
                   ss::stop_iteration::yes);
             }
-            buf.append(std::move(tmp_buf));
+            buf.append(std::make_unique<iobuf::fragment>(std::move(tmp_buf)));
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
         });

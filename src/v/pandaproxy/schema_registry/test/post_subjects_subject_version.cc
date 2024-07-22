@@ -24,7 +24,7 @@ struct request {
 };
 
 template<typename Buffer>
-void rjson_serialize(::json::Writer<Buffer>& w, const request& r) {
+void rjson_serialize(::json::iobuf_writer<Buffer>& w, const request& r) {
     w.StartObject();
     w.Key("schema");
     ::json::rjson_serialize(w, r.schema.def().raw());

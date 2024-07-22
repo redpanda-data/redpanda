@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/iobuf_writer.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
 #include "outcome.h"
@@ -117,18 +118,33 @@ template<typename Tag>
 class typed_schema_definition {
 public:
     using tag = Tag;
-    using raw_string = named_type<ss::sstring, tag>;
+    struct raw_string : named_type<iobuf, tag> {
+        raw_string() = default;
+        explicit raw_string(iobuf&& buf) noexcept
+          : named_type<iobuf, tag>{std::move(buf)} {}
+        explicit raw_string(std::string_view sv)
+          : named_type<iobuf, tag>{iobuf::from(sv)} {}
+    };
     using references = std::vector<schema_reference>;
+
+    typed_schema_definition() = default;
+    typed_schema_definition(typed_schema_definition&&) noexcept = default;
+    typed_schema_definition(const typed_schema_definition&) = delete;
+    typed_schema_definition& operator=(typed_schema_definition&&) noexcept
+      = default;
+    typed_schema_definition& operator=(const typed_schema_definition& other)
+      = delete;
+    ~typed_schema_definition() noexcept = default;
 
     template<typename T>
     typed_schema_definition(T&& def, schema_type type)
-      : _def{ss::sstring{std::forward<T>(def)}}
+      : _def{std::forward<T>(def)}
       , _type{type}
       , _refs{} {}
 
     template<typename T>
     typed_schema_definition(T&& def, schema_type type, references refs)
-      : _def{ss::sstring{std::forward<T>(def)}}
+      : _def{std::forward<T>(def)}
       , _type{type}
       , _refs{std::move(refs)} {}
 
@@ -143,9 +159,25 @@ public:
 
     const raw_string& raw() const& { return _def; }
     raw_string raw() && { return std::move(_def); }
+    raw_string shared_raw() const {
+        auto& buf = const_cast<iobuf&>(_def());
+        return raw_string{buf.share(0, buf.size_bytes())};
+    }
 
     const references& refs() const& { return _refs; }
     references refs() && { return std::move(_refs); }
+
+    typed_schema_definition share() const {
+        return {shared_raw(), type(), refs()};
+    }
+
+    typed_schema_definition copy() const {
+        return {raw_string{_def().copy()}, type(), refs()};
+    }
+
+    auto destructure() && {
+        return make_tuple(std::move(_def), _type, std::move(_refs));
+    }
 
 private:
     raw_string _def;
@@ -379,6 +411,13 @@ public:
     const schema_definition& def() const& { return _def; }
     schema_definition def() && { return std::move(_def); }
 
+    typed_schema share() const { return {sub(), def().share()}; }
+    typed_schema copy() const { return {sub(), def().copy()}; }
+
+    auto destructure() && {
+        return make_tuple(std::move(_sub), std::move(_def));
+    }
+
 private:
     subject _sub{invalid_subject};
     schema_definition _def{"", schema_type::avro};
@@ -393,6 +432,9 @@ struct subject_schema {
     schema_version version{invalid_schema_version};
     schema_id id{invalid_schema_id};
     is_deleted deleted{false};
+    subject_schema share() const {
+        return {schema.share(), version, id, deleted};
+    }
 };
 
 enum class compatibility_level {
@@ -451,3 +493,15 @@ from_string_view<compatibility_level>(std::string_view sv) {
 }
 
 } // namespace pandaproxy::schema_registry
+
+namespace json {
+
+template<typename Buffer>
+void rjson_serialize(
+  json::iobuf_writer<Buffer>& w,
+  const pandaproxy::schema_registry::canonical_schema_definition::raw_string&
+    def) {
+    w.String(def());
+}
+
+} // namespace json
