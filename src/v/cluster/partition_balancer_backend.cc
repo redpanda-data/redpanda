@@ -589,4 +589,4 @@ size_t partition_balancer_backend::get_min_partition_size_threshold() const {
     return min_rate * 10;
 }
 
-} // namespace cluster
+} //namespace cluster

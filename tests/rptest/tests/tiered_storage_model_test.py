@@ -32,7 +32,7 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.redpanda import SISettings, CloudStorageTypeAndUrlStyle, get_cloud_storage_type, get_cloud_storage_type_and_url_style, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
-from rptest.tests.tiered_storage_model import TestCase, TieredStorageEndToEndTest, get_tiered_storage_test_cases, TestRunStage, CONFIDENCE_THRESHOLD
+from rptest.tests.tiered_storage_model import TestCase, TieredStorageEndToEndTest, get_tiered_storage_test_cases, TestRunStage, CONFIDENCE_THRESHOLD, get_test_case_from_name
 
 MAX_RETRIES = 20
 
@@ -563,6 +563,10 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             - Consuming the data (use timequery)
             - Shutting down
         """
+        if not isinstance(test_case, TestCase):
+            test_case_name = "fail"
+            test_case = get_test_case_from_name(test_case_name)
+            assert test_case is not None, f"no test case found with name {test_case_name}"
         # Configuration phase
         self.start_inputs(test_case)
         self.start_validators(test_case)

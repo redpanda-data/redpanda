@@ -324,7 +324,7 @@ def get_cloud_storage_type_and_url_style(
     """
     return [
         tus for tus_list in map(
-            lambda t: [(t, us) for us in get_cloud_storage_url_style(t)],
+            lambda t: [[t, us] for us in get_cloud_storage_url_style(t)],
             get_cloud_storage_type()) for tus in tus_list
     ]
 

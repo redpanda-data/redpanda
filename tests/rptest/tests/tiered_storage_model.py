@@ -1432,7 +1432,7 @@ class TestCase(dict):
         dict.__init__(self, name=name)
 
     def __str__(self):
-        return self.__name
+        return self.name
 
     def validators(self) -> List[EffectValidator]:
         """All validators which are needed to be checked by the test case"""
@@ -1457,6 +1457,18 @@ class TestCase(dict):
             else:
                 test.get_logger().info(f"Result of {v.name()} is None")
         assert num_failed == 0, f"{num_failed} validators failed"
+
+    @property
+    def name(self):
+        return self.__name
+
+
+def get_test_case_from_name(name):
+    tc_list = get_tiered_storage_test_cases(False)
+    for tc in tc_list:
+        if tc.name == name:
+            return tc
+    return None
 
 
 def get_tiered_storage_test_cases(fast_run=False):
