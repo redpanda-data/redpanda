@@ -13,7 +13,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
-#include "cluster/types.h"
+#include "cluster/topic_configuration.h"
 
 #include <optional>
 

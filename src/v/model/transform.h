@@ -17,7 +17,14 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "serde/envelope.h"
+#include "serde/rw/bool_class.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/map.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/set.h"
 #include "serde/rw/variant.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>

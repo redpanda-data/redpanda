@@ -22,7 +22,6 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/testing/test_case.hh>

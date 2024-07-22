@@ -13,8 +13,9 @@
 #include "cloud_storage/logger.h"
 #include "model/record_batch_types.h"
 #include "raft/consensus.h"
-#include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/vector.h"
 
 namespace cloud_storage {
 

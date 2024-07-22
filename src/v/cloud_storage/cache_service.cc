@@ -18,7 +18,6 @@
 #include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
-#include "storage/segment.h"
 #include "utils/human.h"
 
 #include <seastar/core/coroutine.hh>

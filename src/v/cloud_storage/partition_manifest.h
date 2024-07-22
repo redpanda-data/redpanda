@@ -19,8 +19,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "segment_meta_cstore.h"
-#include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/core/iostream.hh>

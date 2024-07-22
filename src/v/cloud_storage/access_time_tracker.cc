@@ -11,8 +11,14 @@
 #include "cloud_storage/access_time_tracker.h"
 
 #include "base/units.h"
+#include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
-#include "serde/serde.h"
+#include "serde/peek.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
