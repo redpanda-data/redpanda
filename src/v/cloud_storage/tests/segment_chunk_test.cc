@@ -73,7 +73,7 @@ SEASTAR_THREAD_TEST_CASE(test_chunk_ordering) {
 auto make_chunks(size_t n = 10) {
     segment_chunks::chunk_map_t chunks;
     auto handle = ss::make_lw_shared(ss::file{});
-    for (auto i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         chunks.insert({i, segment_chunk{.handle = handle}});
     }
     return chunks;

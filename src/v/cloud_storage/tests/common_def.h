@@ -21,6 +21,7 @@
 #include "storage/record_batch_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 
+#include <boost/numeric/conversion/cast.hpp>
 #include <boost/test/tools/interface.hpp>
 
 namespace cloud_storage {
@@ -92,7 +93,8 @@ make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
           batch.num_records,
           false,
           batch.type,
-          batch.record_sizes.size() != batch.num_records
+          batch.record_sizes.size()
+              != boost::numeric_cast<size_t>(batch.num_records)
             ? std::nullopt
             : std::make_optional(batch.record_sizes),
           batch.timestamp);

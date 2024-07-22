@@ -312,7 +312,7 @@ manifest_for(std::vector<std::pair<model::offset, kafka::offset>> o) {
         cloud_storage::manifest_format::json,
         make_manifest_stream(empty_manifest_json))
       .get();
-    for (int i = 0; i < o.size() - 1; i++) {
+    for (size_t i = 0; i < o.size() - 1; i++) {
         segment_meta seg{
           .is_compacted = false,
           .size_bytes = 1024,
