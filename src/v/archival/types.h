@@ -11,6 +11,7 @@
 #pragma once
 
 #include "archival/adjacent_segment_run.h"
+#include "archival/run_quota.h"
 #include "base/seastarx.h"
 #include "cloud_storage/types.h"
 #include "seastar/core/lowres_clock.hh"
@@ -78,11 +79,6 @@ struct configuration {
 archival::configuration get_archival_service_config(
   ss::scheduling_group sg = ss::default_scheduling_group(),
   ss::io_priority_class p = ss::default_priority_class());
-
-/// Housekeeping job quota. One share is one segment reupload
-/// or one deletion operation. The value can be negative if the
-/// job overcommitted.
-using run_quota_t = named_type<int32_t, struct _job_quota_tag>;
 
 /// The housekeeping job that performs the long
 /// task incrementally. It can be paused and resumed.
