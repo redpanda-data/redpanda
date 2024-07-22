@@ -21,6 +21,8 @@
 #include <rapidjson/error/en.h>
 #include <re2/re2.h>
 
+#include <ranges>
+
 using boost::property_tree::ptree;
 
 namespace {
@@ -207,13 +209,23 @@ ss::future<op_result<report_metadata>> aws_ops::do_fetch_latest_report_metadata(
     // https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-inventory-location.html
     const auto full_prefix = cloud_storage_clients::object_key{
       fmt::format("{}/{}/{}/", _prefix, _bucket, _inventory_config_id)};
+
+    vlog(cst_log.trace, "Listing inventory report prefix {}", full_prefix());
     const auto list_result = co_await remote.list_objects(
       _bucket, parent_rtc, full_prefix, '/');
 
     if (list_result.has_error()) {
+        vlog(
+          cst_log.error,
+          "Failed to list report prefix: {}",
+          list_result.error());
         co_return error_outcome::failed;
     }
 
+    vlog(
+      cst_log.trace,
+      "Found common prefixes: {}",
+      list_result.value().common_prefixes);
     auto transform_to_checksum = [&full_prefix](auto datetime) {
         return checksum_path(full_prefix().native(), datetime);
     };
@@ -232,9 +244,13 @@ ss::future<op_result<report_metadata>> aws_ops::do_fetch_latest_report_metadata(
     // The datetime strings (YYYY-MM-DDTHH-MMZ) can be sorted by lexical
     // comparison
     std::ranges::sort(
-      checksum_paths, [](const auto& first, const auto& second) {
-          return first.datetime > second.datetime;
-      });
+      checksum_paths, std::ranges::greater{}, &path_with_datetime::datetime);
+
+    auto projected = checksum_paths
+                     | std::views::transform(&path_with_datetime::path);
+    std::vector<cloud_storage_clients::object_key> paths{
+      projected.begin(), projected.end()};
+    vlog(cst_log.trace, "Possible checksum paths: {}", paths);
 
     // A checksum appears in the bucket at the designated location only once the
     // inventory is ready, so we probe the checksum files from latest to

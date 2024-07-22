@@ -33,8 +33,15 @@ public:
     ss::future<op_result<report_metadata>>
     fetch_latest_report_metadata(cloud_storage_api&, retry_chain_node&);
 
+    cloud_storage_clients::bucket_name bucket() const;
+
 private:
     ops_t _inv_ops;
 };
+
+ss::future<inv_ops> make_inv_ops(
+  cloud_storage_clients::bucket_name bucket,
+  inventory_config_id inv_cfg_id,
+  ss::sstring inv_reports_prefix);
 
 } // namespace cloud_storage::inventory

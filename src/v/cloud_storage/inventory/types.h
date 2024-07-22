@@ -12,6 +12,7 @@
 
 #include "base/outcome.h"
 #include "cloud_storage_clients/types.h"
+#include "model/fundamental.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sharded.hh>
@@ -138,6 +139,8 @@ public:
     virtual ss::future<op_result<report_metadata>> fetch_latest_report_metadata(
       cloud_storage::cloud_storage_api&, retry_chain_node&) const noexcept
       = 0;
+
+    virtual cloud_storage_clients::bucket_name bucket() const = 0;
 };
 
 template<typename T>
