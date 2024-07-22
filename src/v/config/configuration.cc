@@ -2445,10 +2445,11 @@ configuration::configuration()
       "over to the next trim operation. This parameter sets a limit on the "
       "memory occupied by objects that can be carried over from one trim to "
       "next, and allows cache to quickly unblock readers before starting the "
-      "directory inspection.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "directory inspection (deprecated)",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       // This roughly translates to around 1000 carryover file names
-      256_KiB)
+      0_KiB)
   , cloud_storage_cache_check_interval_ms(
       *this,
       "cloud_storage_cache_check_interval",
