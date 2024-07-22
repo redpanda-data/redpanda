@@ -1012,7 +1012,7 @@ namespace cloud_storage {
 struct partition_manifest_accessor {
     static void add_replaced_segment(
       partition_manifest* m,
-      const segment_name& key,
+      const segment_name&,
       const partition_manifest::segment_meta& meta) {
         m->_replaced.push_back(
           partition_manifest::lw_segment_meta::convert(meta));
