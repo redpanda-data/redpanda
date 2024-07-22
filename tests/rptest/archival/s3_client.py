@@ -1,4 +1,5 @@
 import threading
+import logging
 
 from rptest.archival.shared_client_utils import key_to_topic
 
@@ -75,9 +76,43 @@ class S3Client:
         else:
             self._signature_version = signature_version
         self._before_call_headers = before_call_headers
+        self.logger = logger
+        self.update_boto3_loggers()
         self._cli = self.make_client()
         self.register_custom_events()
-        self.logger = logger
+
+    def update_boto3_loggers(self):
+        """Configure loggers related to boto3 to emit messages
+           with FileHandlers similar to ones from ducktape
+           using same filenames for corresponding log levels
+           
+           loggers updated: boto3, botocore
+           
+           loggers list that can be included can be found in ticket: PESDLC-876         
+           
+        """
+        def populate_handler(filename, level):
+            # If something really need debugging, add 'urllib3'
+            loggers_list = ['boto3', 'botocore']
+            # get logger, configure it and set handlers
+            for logger_name in loggers_list:
+                l = logging.getLogger(logger_name)
+                l.setLevel(level)
+                handler = logging.FileHandler(filename)
+                fmt = logging.Formatter('[%(levelname)-5s - %(asctime)s - '
+                                        f'{logger_name} - %(module)s - '
+                                        '%(funcName)s - lineno:%(lineno)s]: '
+                                        '%(message)s')
+                handler.setFormatter(fmt)
+                l.addHandler(handler)
+
+        # Extract info from ducktape loggers
+        # Assume that there is only one DEBUG and one INFO handler
+        #
+        for h in self.logger.handlers:
+            if isinstance(h, logging.FileHandler):
+                if h.level == logging.INFO or h.level == logging.DEBUG:
+                    populate_handler(h.baseFilename, h.level)
 
     def make_client(self):
         cfg = Config(region_name=self._region,
