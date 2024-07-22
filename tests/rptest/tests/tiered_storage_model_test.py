@@ -564,7 +564,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             - Shutting down
         """
         if isinstance(test_case, str):
-            test_case_name = json.loads(test_case)["name"]
+            test_case_name = "fail"
             test_case = get_test_case_from_name(test_case_name)
             assert test_case is not None, f"no test case found with name {test_case_name}"
         # Configuration phase
