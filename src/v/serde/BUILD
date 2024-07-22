@@ -189,3 +189,16 @@ redpanda_cc_library(
         ":serde",
     ],
 )
+
+redpanda_cc_library(
+    name = "tristate",
+    hdrs = [
+        "rw/tristate_rw.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+        "//src/v/utils:tristate",
+    ],
+)
