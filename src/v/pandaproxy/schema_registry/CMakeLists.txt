@@ -7,6 +7,7 @@ seastar_generate_swagger(
 
 find_package(Protobuf REQUIRED)
 find_package(Avro)
+find_package(jsoncons REQUIRED)
 
 v_cc_library(
   NAME pandaproxy_schema_registry
@@ -39,6 +40,7 @@ v_cc_library(
     Boost::iostreams
     protobuf::libprotobuf
     protobuf::libprotoc
+    jsoncons
   )
 
 add_subdirectory(test)
