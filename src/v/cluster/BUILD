@@ -107,3 +107,17 @@ redpanda_cc_library(
     include_prefix = "cluster",
     visibility = ["//visibility:public"],
 )
+
+redpanda_cc_library(
+    name = "nt_revision",
+    hdrs = [
+        "nt_revision.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/model",
+        "//src/v/serde",
+        "@abseil-cpp//absl/hash",
+    ],
+)
