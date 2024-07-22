@@ -550,7 +550,7 @@ static void fill_fetch_responses(
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
   const replica_selector& replica_selector,
-  std::vector<ntp_fetch_config> ntp_fetch_configs,
+  std::vector<ntp_fetch_config>& ntp_fetch_configs,
   read_distribution_probe& read_probe,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
@@ -582,7 +582,8 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
 
     const auto first_p_id = ntp_fetch_configs.front().ktp().get_partition();
     auto results = co_await ssx::parallel_transform(
-      std::move(ntp_fetch_configs),
+      ntp_fetch_configs.cbegin(),
+      ntp_fetch_configs.cend(),
       [&cluster_pm,
        &replica_selector,
        deadline,
@@ -664,16 +665,19 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
             // &octx is captured only to immediately use its accessors here so
             // that there is a list of all objects accessed next to `invoke_on`.
             // This is meant to help avoiding unintended cross shard access
-            return fetch_ntps_in_parallel(
-              mgr,
-              octx.rctx.server().local().get_replica_selector(),
-              std::move(configs),
-              octx.rctx.server().local().read_probe(),
-              foreign_read,
-              octx.deadline,
-              octx.bytes_left,
-              octx.rctx.server().local().memory(),
-              octx.rctx.server().local().memory_fetch_sem());
+            return ss::do_with(
+              std::move(configs), [foreign_read, &octx, &mgr](auto& configs) {
+                  return fetch_ntps_in_parallel(
+                    mgr,
+                    octx.rctx.server().local().get_replica_selector(),
+                    configs,
+                    octx.rctx.server().local().read_probe(),
+                    foreign_read,
+                    octx.deadline,
+                    octx.bytes_left,
+                    octx.rctx.server().local().memory(),
+                    octx.rctx.server().local().memory_fetch_sem());
+              });
         })
       .then([responses = std::move(fetch.responses),
              start_time = fetch.start_time,
@@ -824,7 +828,7 @@ private:
         std::vector<read_result> results = co_await fetch_ntps_in_parallel(
           _ctx.mgr,
           _ctx.srv.get_replica_selector(),
-          std::move(requests),
+          requests,
           _ctx.srv.read_probe(),
           _ctx.foreign_read,
           _ctx.deadline,
