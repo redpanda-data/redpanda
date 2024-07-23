@@ -838,6 +838,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
 }
 
 ss::future<> partition::remove_persistent_state() {
+    _cloud_storage_probe->clear_metrics();
     co_await _raft->stm_manager()->remove_local_state();
 }
 
