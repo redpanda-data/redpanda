@@ -106,6 +106,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "set",
+    hdrs = [
+        "rw/set.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "named_type",
     hdrs = [
         "rw/named_type.h",
