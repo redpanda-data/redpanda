@@ -17,6 +17,7 @@ v_cc_library(
     access_time_tracker.cc
     cache_probe.cc
     download_exception.cc
+    topic_mount_manifest.cc
     partition_manifest.cc
     partition_manifest_downloader.cc
     partition_path_utils.cc
