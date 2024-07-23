@@ -1,0 +1,144 @@
+/*
+ * Copyright 2024 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#include "cloud_storage/topic_mount_handler.h"
+
+#include "cloud_storage/logger.h"
+#include "cloud_storage/remote.h"
+#include "cloud_storage/remote_path_provider.h"
+#include "cloud_storage/topic_mount_manifest.h"
+#include "model/metadata.h"
+
+namespace cloud_storage {
+
+std::ostream& operator<<(std::ostream& o, const topic_mount_result& r) {
+    switch (r) {
+    case topic_mount_result::mount_manifest_does_not_exist:
+        return o << "{mount_manifest_does_not_exist}";
+    case topic_mount_result::mount_manifest_not_deleted:
+        return o << "{mount_manifest_not_deleted}";
+    case topic_mount_result::success:
+        return o << "{success}";
+    }
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_unmount_result& r) {
+    switch (r) {
+    case topic_unmount_result::mount_manifest_not_created:
+        return o << "{mount_manifest_not_created}";
+    case topic_unmount_result::success:
+        return o << "{success}";
+    }
+    return o;
+}
+
+topic_mount_handler::topic_mount_handler(
+  const cloud_storage_clients::bucket_name& bucket, remote& remote)
+  : _bucket(bucket)
+  , _remote(remote) {}
+
+ss::future<topic_mount_result> topic_mount_handler::check_mount(
+  const topic_mount_manifest& manifest,
+  const remote_path_provider& path_provider,
+  retry_chain_node& parent) {
+    const auto manifest_path = cloud_storage_clients::object_key{
+      manifest.get_manifest_path(path_provider)};
+
+    const auto exists_result = co_await _remote.object_exists(
+      _bucket, manifest_path, parent, existence_check_type::manifest);
+
+    // If the manifest exists, it is possible to mount the topic.
+    co_return (exists_result == download_result::success)
+      ? topic_mount_result::success
+      : topic_mount_result::mount_manifest_does_not_exist;
+}
+
+ss::future<topic_mount_result> topic_mount_handler::commit_mount(
+  const topic_mount_manifest& manifest,
+  const remote_path_provider& path_provider,
+  retry_chain_node& parent) {
+    const auto manifest_path = cloud_storage_clients::object_key(
+      manifest.get_manifest_path(path_provider));
+
+    const auto delete_result = co_await _remote.delete_object(
+      _bucket, manifest_path, parent);
+
+    co_return (delete_result == upload_result::success)
+      ? topic_mount_result::success
+      : topic_mount_result::mount_manifest_not_deleted;
+}
+
+ss::future<topic_mount_result> topic_mount_handler::mount_topic(
+  const cluster::topic_configuration& topic_cfg, retry_chain_node& parent) {
+    const auto remote_tp_ns = topic_cfg.remote_tp_ns();
+    const auto path_provider = remote_path_provider(
+      topic_cfg.properties.remote_label, remote_tp_ns);
+    // The default UUID (all zeros) in the case that the topic to be
+    // mounted doesn't have a remote label.
+    const auto manifest = topic_mount_manifest(
+      topic_cfg.properties.remote_label.value_or(
+        remote_label{model::default_cluster_uuid}),
+      remote_tp_ns);
+
+    const auto check_result = co_await check_mount(
+      manifest, path_provider, parent);
+    if (check_result != topic_mount_result::success) {
+        vlog(
+          cst_log.error,
+          "Couldn't mount topic {}, check result was {}.",
+          topic_cfg.tp_ns,
+          check_result);
+        co_return check_result;
+    }
+
+    const auto commit_result = co_await commit_mount(
+      manifest, path_provider, parent);
+
+    if (commit_result != topic_mount_result::success) {
+        vlog(
+          cst_log.error,
+          "Couldn't mount topic {}, commit result was {}.",
+          topic_cfg.tp_ns,
+          commit_result);
+    }
+
+    co_return commit_result;
+}
+
+ss::future<topic_unmount_result> topic_mount_handler::unmount_topic(
+  const cluster::topic_configuration& topic_cfg, retry_chain_node& parent) {
+    const auto remote_tp_ns = topic_cfg.remote_tp_ns();
+    const auto path_provider = remote_path_provider(
+      topic_cfg.properties.remote_label, remote_tp_ns);
+    // The default UUID (all zeros) in the case that the topic to be
+    // unmounted doesn't have a remote label.
+    const auto manifest = topic_mount_manifest(
+      topic_cfg.properties.remote_label.value_or(
+        remote_label{model::default_cluster_uuid}),
+      remote_tp_ns);
+
+    // Upload manifest to cloud storage to mark it as mountable.
+    const auto upload_result = co_await _remote.upload_manifest(
+      _bucket, manifest, manifest.get_manifest_path(path_provider), parent);
+
+    if (upload_result != upload_result::success) {
+        vlog(
+          cst_log.error,
+          "Failed to unmount topic {} due to failed manifest upload",
+          topic_cfg.tp_ns);
+        co_return topic_unmount_result::mount_manifest_not_created;
+    }
+
+    co_return topic_unmount_result::success;
+}
+
+} // namespace cloud_storage

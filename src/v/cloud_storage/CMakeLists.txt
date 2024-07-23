@@ -45,6 +45,7 @@ v_cc_library(
     segment_path_utils.cc
     topic_manifest.cc
     topic_manifest_downloader.cc
+    topic_mount_handler.cc
     topic_path_utils.cc
     async_manifest_view.cc
     materialized_manifest_cache.cc
