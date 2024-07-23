@@ -9,6 +9,7 @@
 
 #include "base/units.h"
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 #include "iceberg/avro_utils.h"
 #include "iceberg/manifest.h"
 #include "iceberg/manifest_avro.h"
@@ -55,10 +56,10 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     entry.data_file.record_count = 3;
     entry.data_file.file_size_in_bytes = 1024;
 
-    iobuf buf;
     size_t bytes_streamed{0};
+    avro_iobuf_ostream::buf_container_t bufs;
     auto out = std::make_unique<avro_iobuf_ostream>(
-      4096, &buf, &bytes_streamed);
+      4096, &bufs, &bytes_streamed);
 
     // Encode to the output stream.
     avro::EncoderPtr encoder = avro::binaryEncoder();
@@ -66,6 +67,10 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     avro::encode(*encoder, entry);
     encoder->flush();
 
+    iobuf buf;
+    for (auto& b : bufs) {
+        buf.append(std::move(b));
+    }
     // Decode the iobuf from the input stream.
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
@@ -86,10 +91,10 @@ TEST(ManifestSerializationTest, TestManyManifestEntries) {
     entry.data_file.record_count = 3;
     entry.data_file.file_size_in_bytes = 1024;
 
-    iobuf buf;
     size_t bytes_streamed{0};
+    avro_iobuf_ostream::buf_container_t bufs;
     auto out = std::make_unique<avro_iobuf_ostream>(
-      4096, &buf, &bytes_streamed);
+      4096, &bufs, &bytes_streamed);
 
     // Encode many entries. This is a regression test for a bug where
     // serializing large Avro files would handle iobuf fragments improperly,
@@ -101,6 +106,10 @@ TEST(ManifestSerializationTest, TestManyManifestEntries) {
         encoder->flush();
     }
 
+    iobuf buf;
+    for (auto& b : bufs) {
+        buf.append(std::move(b));
+    }
     // Decode the iobuf from the input stream.
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
@@ -127,10 +136,10 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     manifest.existing_rows_count = 10;
     manifest.deleted_rows_count = 11;
 
-    iobuf buf;
     size_t bytes_streamed{0};
+    avro_iobuf_ostream::buf_container_t bufs;
     auto out = std::make_unique<avro_iobuf_ostream>(
-      4096, &buf, &bytes_streamed);
+      4096, &bufs, &bytes_streamed);
 
     // Encode to the output stream.
     avro::EncoderPtr encoder = avro::binaryEncoder();
@@ -138,6 +147,10 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     avro::encode(*encoder, manifest);
     encoder->flush();
 
+    iobuf buf;
+    for (auto& b : bufs) {
+        buf.append(std::move(b));
+    }
     // Decode the iobuf from the input stream.
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
@@ -183,14 +196,27 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     metadata["f1"] = f1;
     metadata["f2"] = f2;
 
-    iobuf buf;
     size_t bytes_streamed{0};
+    avro_iobuf_ostream::buf_container_t bufs;
     auto out = std::make_unique<avro_iobuf_ostream>(
-      4_KiB, &buf, &bytes_streamed);
-    avro::DataFileWriter<manifest_file> writer(
-      std::move(out), manifest_file_schema, 16_KiB, avro::NULL_CODEC, metadata);
-    writer.write(manifest);
-    writer.flush();
+      4_KiB, &bufs, &bytes_streamed);
+    {
+        avro::DataFileWriter<manifest_file> writer(
+          std::move(out),
+          manifest_file_schema,
+          16_KiB,
+          avro::NULL_CODEC,
+          metadata);
+        writer.write(manifest);
+        writer.flush();
+
+        // NOTE: ~DataFileWriter does a final sync which may write to the
+        // chunks. Destruct the writer before moving ownership of the chunks.
+    }
+    iobuf buf;
+    for (auto& b : bufs) {
+        buf.append(std::move(b));
+    }
     auto in = std::make_unique<avro_iobuf_istream>(buf.copy());
     avro::DataFileReader<manifest_file> reader(
       std::move(in), manifest_file_schema);

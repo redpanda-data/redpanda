@@ -53,6 +53,7 @@ redpanda_cc_gtest(
         ":test_schemas",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
         "//src/v/iceberg:avro_utils",
         "//src/v/iceberg:manifest",
         "//src/v/iceberg:manifest_avro",

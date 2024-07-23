@@ -118,6 +118,7 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "//src/v/utils:named_type",
         "@avro",
+        "@seastar",
     ],
 )
 

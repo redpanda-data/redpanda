@@ -18,6 +18,8 @@
 #include "iceberg/schema_json.h"
 #include "strings/string_switch.h"
 
+#include <seastar/core/temporary_buffer.hh>
+
 #include <avro/DataFile.hh>
 
 namespace iceberg {
@@ -136,27 +138,36 @@ metadata_from_reader(avro::DataFileReader<manifest_entry>& rdr) {
 } // anonymous namespace
 
 iobuf serialize_avro(const manifest& m) {
-    iobuf buf;
     size_t bytes_streamed = 0;
-    auto out = std::make_unique<avro_iobuf_ostream>(
-      4_KiB, &buf, &bytes_streamed);
+    avro_iobuf_ostream::buf_container_t bufs;
     static constexpr size_t avro_default_sync_bytes = 16_KiB;
     auto meta = metadata_to_map(m.metadata);
-    avro::DataFileWriter<manifest_entry> writer(
-      std::move(out),
-      manifest_entry::valid_schema(),
-      avro_default_sync_bytes,
-      avro::NULL_CODEC,
-      meta);
+    {
+        auto out = std::make_unique<avro_iobuf_ostream>(
+          4_KiB, &bufs, &bytes_streamed);
+        avro::DataFileWriter<manifest_entry> writer(
+          std::move(out),
+          manifest_entry::valid_schema(),
+          avro_default_sync_bytes,
+          avro::NULL_CODEC,
+          meta);
 
-    // TODO: the Avro code-generated manifest_entry doesn't have the r102
-    // partition field defined, as it relies on runtime information of the
-    // partition spec!
-    for (const auto& e : m.entries) {
-        writer.write(e);
+        // TODO: the Avro code-generated manifest_entry doesn't have the r102
+        // partition field defined, as it relies on runtime information of the
+        // partition spec!
+        for (const auto& e : m.entries) {
+            writer.write(e);
+        }
+        writer.flush();
+        writer.close();
+
+        // NOTE: ~DataFileWriter does a final sync which may write to the
+        // chunks. Destruct the writer before moving ownership of the chunks.
     }
-    writer.flush();
-    writer.close();
+    iobuf buf;
+    for (auto& b : bufs) {
+        buf.append(std::move(b));
+    }
     buf.trim_back(buf.size_bytes() - bytes_streamed);
     return buf;
 }

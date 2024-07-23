@@ -9,6 +9,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -17,14 +18,15 @@
 
 namespace iceberg {
 
-// Near-identical implementation of avro::MemoryOutputStream, but backed by an
-// iobuf that can be released.
+// Near-identical implementation of avro::MemoryOutputStream, but backed by
+// temporary buffers that callers can use to construct an iobuf.
 class avro_iobuf_ostream : public avro::OutputStream {
 public:
+    using buf_container_t = chunked_vector<ss::temporary_buffer<char>>;
     explicit avro_iobuf_ostream(
-      size_t chunk_size, iobuf* buf, size_t* byte_count)
+      size_t chunk_size, buf_container_t* bufs, size_t* byte_count)
       : chunk_size_(chunk_size)
-      , buf_(buf)
+      , bufs_(bufs)
       , available_(0)
       , byte_count_(byte_count) {}
     ~avro_iobuf_ostream() override = default;
@@ -36,17 +38,12 @@ public:
     // space.
     bool next(uint8_t** data, size_t* len) final {
         if (available_ == 0) {
-            // NOTE: it is critical to add the buffer to a separate iobuf first
-            // and then add that iobuf's fragments, as adding a buffer directly
-            // to `buf_` may end up packing the fragments together.
-            iobuf new_frag;
-            new_frag.append(ss::temporary_buffer<char>{chunk_size_});
-            buf_->append_fragments(std::move(new_frag));
+            bufs_->emplace_back(chunk_size_);
             available_ = chunk_size_;
         }
-        auto back_frag = buf_->rbegin();
+        auto& back_frag = bufs_->back();
         *data = reinterpret_cast<uint8_t*>(
-          back_frag->share(chunk_size_ - available_, available_).get_write());
+          back_frag.share(chunk_size_ - available_, available_).get_write());
         *len = available_;
         *byte_count_ += available_;
         available_ = 0;
@@ -66,7 +63,7 @@ private:
     // Size in bytes with which to allocate new fragments.
     const size_t chunk_size_;
 
-    iobuf* buf_;
+    buf_container_t* bufs_;
     size_t available_;
 
     // Total number of bytes.
