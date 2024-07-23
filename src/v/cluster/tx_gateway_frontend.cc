@@ -1781,7 +1781,7 @@ ss::future<tx_gateway_frontend::op_result_t> tx_gateway_frontend::do_end_txn(
           request.transactional_id,
           pid,
           sync_result.error());
-
+        outcome->set_value(sync_result.error());
         co_return sync_result.error();
     }
     auto term = sync_result.value();
