@@ -30,6 +30,7 @@ redpanda_test_cc_library(
         "async.h",
         "fixture.h",
         "test_macros.h",
+        "tmp_dir.h",
     ],
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
