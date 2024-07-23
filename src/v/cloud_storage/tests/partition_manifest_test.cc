@@ -22,7 +22,6 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/testing/test_case.hh>
@@ -313,7 +312,7 @@ manifest_for(std::vector<std::pair<model::offset, kafka::offset>> o) {
         cloud_storage::manifest_format::json,
         make_manifest_stream(empty_manifest_json))
       .get();
-    for (int i = 0; i < o.size() - 1; i++) {
+    for (size_t i = 0; i < o.size() - 1; i++) {
         segment_meta seg{
           .is_compacted = false,
           .size_bytes = 1024,
@@ -1013,7 +1012,7 @@ namespace cloud_storage {
 struct partition_manifest_accessor {
     static void add_replaced_segment(
       partition_manifest* m,
-      const segment_name& key,
+      const segment_name&,
       const partition_manifest::segment_meta& meta) {
         m->_replaced.push_back(
           partition_manifest::lw_segment_meta::convert(meta));

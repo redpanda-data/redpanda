@@ -15,7 +15,8 @@
 #include "cloud_storage/logger.h"
 #include "container/fragmented_vector.h"
 #include "hashing/xx.h"
-#include "serde/serde.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/vector.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/core/fstream.hh>

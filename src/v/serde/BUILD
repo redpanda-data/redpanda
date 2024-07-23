@@ -106,6 +106,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "set",
+    hdrs = [
+        "rw/set.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "named_type",
     hdrs = [
         "rw/named_type.h",
@@ -175,5 +187,18 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "tristate",
+    hdrs = [
+        "rw/tristate_rw.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+        "//src/v/utils:tristate",
     ],
 )

@@ -9,6 +9,8 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/uuid.h"
 
 namespace cloud_storage {
 

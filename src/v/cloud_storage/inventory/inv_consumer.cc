@@ -15,7 +15,9 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/logger.h"
 #include "hashing/xx.h"
-#include "serde/serde.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/vector.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>

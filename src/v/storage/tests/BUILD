@@ -1,4 +1,22 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+
+redpanda_test_cc_library(
+    name = "disk_log_builder",
+    srcs = [
+        "utils/disk_log_builder.cc",
+    ],
+    hdrs = [
+        "utils/disk_log_builder.h",
+    ],
+    include_prefix = "storage/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/features",
+        "//src/v/model/tests:random",
+        "//src/v/storage",
+    ],
+)
 
 redpanda_cc_gtest(
     name = "segment_offset_tracker_test",

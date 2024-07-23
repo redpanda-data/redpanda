@@ -12,7 +12,7 @@
 
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage_clients/types.h"
-#include "cluster/types.h"
+#include "cluster/nt_revision.h"
 #include "hashing/xx.h"
 
 namespace cloud_storage {

@@ -107,3 +107,46 @@ redpanda_cc_library(
     include_prefix = "cluster",
     visibility = ["//visibility:public"],
 )
+
+redpanda_cc_library(
+    name = "nt_revision",
+    hdrs = [
+        "nt_revision.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/model",
+        "//src/v/serde",
+        "@abseil-cpp//absl/hash",
+    ],
+)
+
+redpanda_cc_library(
+    name = "topic_configuration",
+    srcs = [
+        "remote_topic_properties.cc",
+        "topic_configuration.cc",
+        "topic_properties.cc",
+    ],
+    hdrs = [
+        "remote_topic_properties.h",
+        "topic_configuration.h",
+        "topic_properties.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_storage:remote_label",
+        "//src/v/model",
+        "//src/v/pandaproxy/schema_registry:subject_name_strategy",
+        "//src/v/reflection:adl",
+        "//src/v/serde",
+        "//src/v/serde:chrono",
+        "//src/v/serde:optional",
+        "//src/v/serde:tristate",
+        "//src/v/storage",
+        "//src/v/utils:tristate",
+        "@seastar",
+    ],
+)

@@ -17,7 +17,11 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/adl.h"
-#include "serde/serde.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/tristate_rw.h"
 #include "storage/ntp_config.h"
 #include "utils/tristate.h"
 

@@ -10,6 +10,9 @@
 
 #include "cluster/topic_properties.h"
 #include "model/metadata.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
 #include "storage/ntp_config.h"
 
 namespace cluster {

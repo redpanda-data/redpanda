@@ -17,8 +17,8 @@
 #include "cloud_storage/recursive_directory_walker.h"
 #include "config/property.h"
 #include "resource_mgmt/io_priority.h"
-#include "resource_mgmt/storage.h"
 #include "ssx/semaphore.h"
+#include "storage/types.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

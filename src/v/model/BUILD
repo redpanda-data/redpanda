@@ -48,6 +48,7 @@ redpanda_cc_library(
         "//src/v/serde:iobuf",
         "//src/v/serde:map",
         "//src/v/serde:named_type",
+        "//src/v/serde:set",
         "//src/v/serde:sstring",
         "//src/v/serde:uuid",
         "//src/v/serde:variant",

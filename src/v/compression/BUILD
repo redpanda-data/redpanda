@@ -5,6 +5,7 @@ redpanda_cc_library(
     srcs = [
         "async_stream_zstd.cc",
         "compression.cc",
+        "gzip_stream_decompression.cc",
         "internal/gzip_compressor.cc",
         "internal/lz4_frame_compressor.cc",
         "internal/snappy_java_compressor.cc",
@@ -15,6 +16,7 @@ redpanda_cc_library(
     hdrs = [
         "include/compression/async_stream_zstd.h",
         "include/compression/compression.h",
+        "include/compression/gzip_stream_decompression.h",
         "include/compression/internal/gzip_compressor.h",
         "include/compression/internal/lz4_frame_compressor.h",
         "include/compression/internal/snappy_java_compressor.h",

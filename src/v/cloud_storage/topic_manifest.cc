@@ -16,7 +16,6 @@
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
-#include "cluster/types.h"
 #include "hashing/xx.h"
 #include "json/encodings.h"
 #include "json/istreamwrapper.h"

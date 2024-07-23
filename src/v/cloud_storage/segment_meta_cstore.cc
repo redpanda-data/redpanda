@@ -15,7 +15,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "serde/serde.h"
 #include "utils/delta_for.h"
 
 #include <bitset>
