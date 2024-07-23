@@ -169,6 +169,10 @@ ss::sstring ntp::path() const {
     return ssx::sformat("{}/{}/{}", ns(), tp.topic(), tp.partition());
 }
 
+ss::sstring topic_namespace::path() const {
+    return ssx::sformat("{}/{}", ns(), tp());
+}
+
 std::filesystem::path ntp::topic_path() const {
     return fmt::format("{}/{}", ns(), tp.topic());
 }
