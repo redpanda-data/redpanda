@@ -204,7 +204,8 @@ class CertificateRevocationTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=[
-                 "certificate revoked", "The certificate is NOT trusted"
+                 "certificate revoked", "The certificate is NOT trusted",
+                 "certificate verify failed"
              ])
     def test_rpc(self):
         node = self.redpanda.nodes[0]
