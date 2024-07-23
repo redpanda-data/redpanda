@@ -49,15 +49,17 @@ func (lc *stdoutLogConsumer) Accept(l testcontainers.Log) {
 
 // startRedpanda runs the Redpanda binary with a data transforms enabled.
 func startRedpanda(ctx context.Context) (*redpanda.Container, context.CancelFunc) {
-	redpandaContainer, err := redpanda.RunContainer(ctx,
+	redpandaContainer, err := redpanda.Run(
+		ctx,
+		"redpandadata/redpanda-nightly:latest",
 		testcontainers.WithLogger(log.Default()),
-		testcontainers.WithImage("redpandadata/redpanda-nightly:latest"),
-		testcontainers.CustomizeRequestOption(func(req *testcontainers.GenericContainerRequest) {
+		testcontainers.CustomizeRequestOption(func(req *testcontainers.GenericContainerRequest) error {
 			if req.LogConsumerCfg == nil {
 				req.LogConsumerCfg = &testcontainers.LogConsumerConfig{}
 			}
 			// Uncomment this to get broker logs
-			// req.LogConsumerCfg.Consumers = append(req.LogConsumerCfg.Consumers, &stdoutLogConsumer{})
+			req.LogConsumerCfg.Consumers = append(req.LogConsumerCfg.Consumers, &stdoutLogConsumer{})
+			return nil
 		}),
 		redpanda.WithEnableWasmTransform(),
 	)
