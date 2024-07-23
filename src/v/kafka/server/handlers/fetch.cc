@@ -584,9 +584,9 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
     }
 
     const auto first_p_id = ntp_fetch_configs.front().ktp().get_partition();
-    auto results = co_await ssx::parallel_transform(
-      ntp_fetch_configs.cbegin(),
-      ntp_fetch_configs.cend(),
+    auto results = co_await ssx::unsafe_parallel_transform(
+      ntp_fetch_configs.begin(),
+      ntp_fetch_configs.end(),
       [&cluster_pm,
        &replica_selector,
        deadline,
@@ -725,7 +725,7 @@ public:
         std::optional<model::timeout_clock::time_point> deadline;
         // The fetch sub-requests of partitions local to the shard this worker
         // is running on.
-        std::vector<ntp_fetch_config> requests;
+        std::vector<ntp_fetch_config>& requests;
 
         // References to services local to the shard this worker is running on.
         // They are protected from deletion by the coordinator.
@@ -793,7 +793,7 @@ private:
     };
 
     ss::future<query_results>
-    query_requests(std::vector<ntp_fetch_config> requests) {
+    query_requests(const range_of<size_t> auto& request_indexes) {
         // The last visible indexes need to be populated before partitions
         // are read. If they are populated afterwards then the
         // last_visible_index could be updated after the partition is read,
@@ -805,13 +805,13 @@ private:
         // `commit_offset` as the commit offset won't change when partitions
         // are produced to without acks=all. The `last_visible_index` more
         // closely corresponds to the Kafka high watermark as well.
-        std::vector<model::offset> last_visible_indexes(requests.size());
+        std::vector<model::offset> last_visible_indexes(request_indexes.size());
         std::vector<std::tuple<size_t, model::partition_id>> errored_partitions;
         size_t total_size{0};
         bool has_error{false};
 
-        for (size_t i = 0; i < requests.size(); i++) {
-            const auto& req = requests[i];
+        for (size_t i = 0; i < request_indexes.size(); i++) {
+            const auto& req = _ctx.requests[request_indexes[i]];
             auto part = _ctx.mgr.get(req.ktp());
             if (!part) {
                 errored_partitions.emplace_back(i, req.ktp().get_partition());
@@ -824,6 +824,12 @@ private:
             }
             last_visible_indexes[i] = consensus->last_visible_index();
         }
+
+        auto requests = request_indexes
+                        | std::views::transform(
+                          [this](size_t i) -> ntp_fetch_config& {
+                              return _ctx.requests[i];
+                          });
 
         // A read_result needs to be returned for every partition. Hence,
         // the function can't return before calling
@@ -870,7 +876,8 @@ private:
     // If a registration fails for a given index then the function immediately
     // returns with that index without registering any further waiters.
     // Otherwise the function returns std::nullopt to indicate success.
-    std::optional<size_t> register_waiters(const auto& request_indexes) {
+    std::optional<size_t>
+    register_waiters(const range_of<size_t> auto& request_indexes) {
         for (size_t i : request_indexes) {
             auto part = _ctx.mgr.get(_ctx.requests[i].ktp());
             // If the partition can't be found then it's since been moved
@@ -908,37 +915,28 @@ private:
         std::chrono::microseconds first_run_latency_result{0};
         // A map of indexes in `requests` to their corresponding index in
         // `_ctx.requests`.
-        std::vector<size_t> requests_map;
+        std::vector<size_t> request_indexes;
 
         std::vector<read_result> results;
         size_t total_size{0};
 
         for (;;) {
-            std::vector<ntp_fetch_config> requests;
-
-            if (first_run) {
-                requests = _ctx.requests;
-            } else {
-                requests_map.clear();
-
-                for (auto i : _request_indexes) {
-                    requests.push_back(_ctx.requests[i]);
-                    requests_map.push_back(i);
-                }
-
+            if (!first_run) {
+                request_indexes = std::move(_request_indexes);
                 _request_indexes.clear();
+
                 // All `_request_indexes` have been read. Reset counter
                 _completed_waiter_count.consume(
                   _completed_waiter_count.current());
             }
 
-            std::optional<op_context::latency_point> start_time;
+            query_results q_results;
             if (first_run) {
-                start_time = op_context::latency_clock::now();
-            }
+                auto start_time = op_context::latency_clock::now();
 
-            auto q_results = co_await query_requests(std::move(requests));
-            if (first_run) {
+                q_results = co_await query_requests(
+                  std::ranges::iota_view{0ul, _ctx.requests.size()});
+
                 results = std::move(q_results.results);
                 total_size = q_results.total_size;
 
@@ -946,12 +944,14 @@ private:
                   q_results.last_visible_indexes);
                 first_run_latency_result
                   = std::chrono::duration_cast<std::chrono::microseconds>(
-                    op_context::latency_clock::now() - *start_time);
+                    op_context::latency_clock::now() - start_time);
             } else {
+                q_results = co_await query_requests(request_indexes);
+
                 // Override the older results of the partitions with the newly
                 // queried results.
-                for (size_t i = 0; i < requests_map.size(); i++) {
-                    auto r_i = requests_map[i];
+                for (size_t i = 0; i < request_indexes.size(); i++) {
+                    auto r_i = request_indexes[i];
                     auto& r = results[r_i];
                     total_size -= r.data_size_bytes();
                     r = std::move(q_results.results[i]);
@@ -975,9 +975,9 @@ private:
             std::optional<size_t> has_errored_request;
             if (first_run) {
                 has_errored_request = register_waiters(
-                  std::ranges::iota_view{0ull, _ctx.requests.size()});
+                  std::ranges::iota_view{0ul, _ctx.requests.size()});
             } else {
-                has_errored_request = register_waiters(requests_map);
+                has_errored_request = register_waiters(request_indexes);
             }
 
             if (has_errored_request) {
@@ -1177,7 +1177,7 @@ private:
              shard = fetch.shard,
              min_fetch_bytes,
              foreign_read,
-             configs = fetch.requests,
+             &configs = fetch.requests,
              &octx](cluster::partition_manager& mgr) mutable
             -> ss::future<fetch_worker::worker_result> {
                 // Although this and octx are captured by reference across
@@ -1193,7 +1193,7 @@ private:
                     .bytes_left = octx.bytes_left,
                     .min_bytes = min_fetch_bytes,
                     .deadline = octx.deadline,
-                    .requests = std::move(configs),
+                    .requests = configs,
                     .srv = octx.rctx.server().local(),
                     .mgr = mgr,
                     .as = _worker_aborts[shard],
