@@ -136,13 +136,15 @@ inventory_service::inventory_service(
   std::shared_ptr<leaders_provider> leaders,
   std::shared_ptr<remote_provider> remote,
   csi::inv_ops inv_ops,
-  ss::lowres_clock::duration inventory_report_check_interval)
+  ss::lowres_clock::duration inventory_report_check_interval,
+  bool should_create_report_config)
   : _hash_store_path{std::move(hash_store_path)}
   , _leaders{std::move(leaders)}
   , _remote{std::move(remote)}
   , _ops{std::move(inv_ops)}
   , _rtc{_as}
-  , _inventory_report_check_interval{inventory_report_check_interval} {}
+  , _inventory_report_check_interval{inventory_report_check_interval}
+  , _should_create_report_config{should_create_report_config} {}
 
 ss::future<> inventory_service::start() {
     if (ss::this_shard_id() != 0) {
@@ -152,22 +154,25 @@ ss::future<> inventory_service::start() {
     auto rtc = retry_chain_node{_as, 60s, 1s};
 
     vlog(cst_log.info, "Attempting to create inventory configuration");
-    if (const auto res = co_await _ops.maybe_create_inventory_configuration(
-          _remote->ref(), rtc);
-        res.has_error()) {
-        vlog(
-          cst_log.warn,
-          "Inventory configuration creation failed, will retry later",
-          res.error());
-        // If we failed creating inventory, try again later (on next expiry
-        // of _inventory_report_check_interval). If another node succeeded in
-        // creating the inventory, this is not counted as a failure.
-        _try_creating_inv_config = true;
-    } else {
-        vlog(
-          cst_log.info,
-          "Inventory configuration creation result: {}",
-          res.value());
+
+    if (_should_create_report_config) {
+        if (const auto res = co_await _ops.maybe_create_inventory_configuration(
+              _remote->ref(), rtc);
+            res.has_error()) {
+            vlog(
+              cst_log.warn,
+              "Inventory configuration creation failed, will retry later",
+              res.error());
+            // If we failed creating inventory, try again later (on next expiry
+            // of _inventory_report_check_interval). If another node succeeded
+            // in creating the inventory, this is not counted as a failure.
+            _try_creating_inv_config = true;
+        } else {
+            vlog(
+              cst_log.info,
+              "Inventory configuration creation result: {}",
+              res.value());
+        }
     }
 
     _report_check_timer.set_callback([this] {
@@ -187,7 +192,7 @@ ss::future<> inventory_service::start() {
 
 ss::future<> inventory_service::check_for_current_inventory() {
     auto h = _gate.hold();
-    if (_try_creating_inv_config) {
+    if (_should_create_report_config && _try_creating_inv_config) {
         auto rtc = retry_chain_node{_as, 60s, 1s};
         auto res = co_await _ops.maybe_create_inventory_configuration(
           _remote->ref(), rtc);
