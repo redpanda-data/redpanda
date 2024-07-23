@@ -104,9 +104,6 @@ public:
         response_stream& operator=(response_stream const&) = delete;
         response_stream operator=(response_stream&&) = delete;
 
-        /// \brief Shutdown connection gracefully
-        ss::future<> shutdown();
-
         /// Return true if the whole http payload is received and parsed
         bool is_done() const;
 

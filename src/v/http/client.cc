@@ -270,8 +270,6 @@ iobuf_to_constbufseq(const iobuf& iobuf) {
     return seq;
 }
 
-ss::future<> client::response_stream::shutdown() { return _client->stop(); }
-
 /// Return failed future if ec is set, otherwise return future in ready state
 static ss::future<iobuf>
 fail_on_error(prefix_logger& ctxlog, const boost::beast::error_code& ec) {
