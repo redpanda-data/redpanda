@@ -378,6 +378,8 @@ struct topic_namespace {
     model::ns ns;
     model::topic tp;
 
+    ss::sstring path() const;
+
     friend std::ostream& operator<<(std::ostream&, const topic_namespace&);
 };
 
