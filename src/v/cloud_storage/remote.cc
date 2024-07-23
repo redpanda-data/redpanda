@@ -18,10 +18,12 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/types.h"
 #include "cloud_storage_clients/util.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/retry_chain_node.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/fstream.hh>
@@ -36,6 +38,7 @@
 #include <boost/beast/http/error.hpp>
 #include <boost/beast/http/field.hpp>
 #include <boost/range/irange.hpp>
+#include <boost/uuid/random_generator.hpp>
 #include <fmt/chrono.h>
 
 #include <exception>
@@ -483,6 +486,71 @@ ss::future<upload_result> remote::upload_controller_snapshot(
       [this] { _probe.controller_snapshot_successful_upload(); },
       [this] { _probe.controller_snapshot_upload_backoff(); },
       std::nullopt);
+}
+
+ss::future<remote::jl_write_intent_upload_result>
+remote::jl_write_intent_upload(
+  const cloud_storage_clients::bucket_name& bucket,
+  uint64_t content_length,
+  const reset_input_stream& reset_str,
+  retry_chain_node& parent,
+  lazy_abort_source& lazy_abort_source,
+  std::optional<size_t> max_retries) {
+    uuid_t object_id{};
+    object_id.mutable_uuid() = boost::uuids::random_generator()();
+
+    // TODO(nv): https://en.wikipedia.org/wiki/Year_2038_problem
+    // Divide by 2**6 to get 64 second epochs. The maximum epoch
+    // that can be represented is 2**32 * 2**6 = 2**38 seconds which overflows
+    // around year 10686.
+    auto epoch = static_cast<uint64_t>(
+                   std::chrono::duration_cast<std::chrono::seconds>(
+                     ss::lowres_clock::now().time_since_epoch())
+                     .count())
+                 >> 6;
+
+    object_id.mutable_uuid().data[0] = (epoch >> 24) & 0xFF;
+    object_id.mutable_uuid().data[1] = (epoch >> 16) & 0xFF;
+    object_id.mutable_uuid().data[2] = (epoch >> 8) & 0xFF;
+    object_id.mutable_uuid().data[3] = epoch & 0xFF;
+
+    // We can use alphanumeric listing for garbage collection.
+    // To make sure bad clocks don't mess up, before accepting the write intent
+    // object in the jumbo log we'll have to verify that the epoch is not below
+    // an epoch we have already garbage collected. Consequently, jumbo log must
+    // record GC epochs for this verification to work.
+
+    // TODO(nv): These objects must be namespaced per jumbo log "partition" so
+    // they can garbage collect independently.
+
+    auto path = remote_segment_path(
+      fmt::format("jumbo_log/write_intents/{}", object_id));
+
+    auto res = co_await upload_stream(
+      bucket,
+      path,
+      content_length,
+      reset_str,
+      parent,
+      lazy_abort_source,
+      "jumbo_log_write_intent_object",
+      api_activity_type::segment_upload,
+      [this] { _probe.failed_upload(); },
+      [this] { _probe.successful_upload(); },
+      [this] { _probe.upload_backoff(); },
+      max_retries);
+
+    if (res != upload_result::success) {
+        co_return jl_write_intent_upload_result{
+          .result = res,
+        };
+    } else {
+        co_return jl_write_intent_upload_result{
+          .result = res,
+          .object_id = object_id,
+          .size_bytes = content_length,
+        };
+    }
 }
 
 template<

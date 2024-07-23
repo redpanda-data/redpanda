@@ -25,6 +25,7 @@
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "utils/retry_chain_node.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -517,6 +518,24 @@ public:
     // this object staying alive, spawn it with this gate.
     seastar::gate& gate() { return _gate; };
     ss::abort_source& as() { return _as; }
+
+    /////////////////////////////
+    // Jumbo Log related methods
+    // Note: We'd likely want separate class for this in the future. This
+    // already has a lot of responsibilities.
+    /////////////////////////////
+    struct jl_write_intent_upload_result {
+        upload_result result;
+        uuid_t object_id;
+        uint64_t size_bytes;
+    };
+    ss::future<jl_write_intent_upload_result> jl_write_intent_upload(
+      const cloud_storage_clients::bucket_name& bucket,
+      uint64_t content_length,
+      const reset_input_stream& reset_str,
+      retry_chain_node& parent,
+      lazy_abort_source& lazy_abort_source,
+      std::optional<size_t> max_retries = std::nullopt);
 
 private:
     template<
