@@ -219,6 +219,31 @@ inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
     });
 }
 
+template<typename Iterator, typename Func>
+requires requires(Func f, Iterator i) {
+    *(++i);
+    { i != i } -> std::convertible_to<bool>;
+}
+inline auto unsafe_parallel_transform(Iterator begin, Iterator end, Func func) {
+    using value_type = typename std::iterator_traits<Iterator>::value_type;
+    using future = decltype(seastar::futurize_invoke(
+      std::move(func), std::move(*begin)));
+    std::vector<future> res;
+    res.reserve(std::distance(begin, end));
+    std::transform(
+      begin,
+      end,
+      std::back_inserter(res),
+      [func{std::move(func)}](value_type& val) mutable {
+          return seastar::futurize_invoke(std::move(func), val);
+      });
+    return seastar::do_with(std::move(res), [](std::vector<future>& res) {
+        return seastar::when_all_succeed(
+          std::make_move_iterator(res.begin()),
+          std::make_move_iterator(res.end()));
+    });
+}
+
 /// \brief Run tasks in parallel and wait for completion, capturing possible
 /// errors (range version).
 ///
