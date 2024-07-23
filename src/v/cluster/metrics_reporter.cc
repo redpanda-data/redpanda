@@ -404,6 +404,23 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     co_return http::client(client_configuration, _as.local());
 }
 
+ss::future<> metrics_reporter::do_send_metrics(
+  http::client& client,
+  http::client::request_header header,
+  ss::input_stream<char>& body) {
+    auto timeout = config::shard_local_cfg().metrics_reporter_tick_interval();
+    auto res = co_await client.get_connected(timeout, _logger);
+    // skip sending metrics, unable to connect
+    if (res != http::reconnect_result_t::connected) {
+        vlog(
+          _logger.trace, "unable to send metrics report, connection timeout");
+        co_return;
+    }
+    auto resp_stream = co_await client.request(
+      std::move(header), body, timeout);
+    co_await resp_stream->prefetch_headers();
+}
+
 ss::future<> metrics_reporter::do_report_metrics() {
     // try initializing cluster info, if it is already present this operation
     // does nothing.
@@ -461,22 +478,11 @@ ss::future<> metrics_reporter::do_report_metrics() {
     auto header = make_header(out);
     auto body = make_iobuf_input_stream(std::move(out));
     try {
-        // prepare http client
-        auto client = co_await make_http_client();
-        auto timeout
-          = config::shard_local_cfg().metrics_reporter_tick_interval();
-        auto res = co_await client.get_connected(timeout, _logger);
-        // skip sending metrics, unable to connect
-        if (res != http::reconnect_result_t::connected) {
-            vlog(
-              _logger.trace,
-              "unable to send metrics report, connection timeout");
-            co_return;
-        }
-        auto resp_stream = co_await client.request(
-          std::move(header), body, timeout);
-        co_await resp_stream->prefetch_headers();
-        co_await resp_stream->shutdown();
+        co_await http::with_client(
+          co_await make_http_client(),
+          [this, &header, &body](http::client& client) {
+              return do_send_metrics(client, std::move(header), body);
+          });
         _last_success = ss::lowres_clock::now();
     } catch (...) {
         vlog(
