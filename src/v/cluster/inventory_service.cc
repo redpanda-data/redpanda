@@ -80,6 +80,13 @@ ss::future<> remove_entry(std::filesystem::path parent, ss::directory_entry e) {
     co_return co_await ss::recursive_remove_directory(path);
 }
 
+retry_chain_node make_rtc(ss::abort_source& as) {
+    return retry_chain_node{
+      as,
+      config::shard_local_cfg().cloud_storage_hydration_timeout_ms(),
+      config::shard_local_cfg().cloud_storage_initial_backoff_ms()};
+}
+
 } // namespace
 
 namespace cluster {
@@ -151,7 +158,7 @@ ss::future<> inventory_service::start() {
         co_return;
     }
 
-    auto rtc = retry_chain_node{_as, 60s, 1s};
+    auto rtc = make_rtc(_as);
 
     vlog(cst_log.info, "Attempting to create inventory configuration");
 
@@ -206,8 +213,7 @@ ss::future<> inventory_service::check_for_current_inventory() {
         co_return;
     }
 
-    // TODO use config values from cloud_storage
-    auto rtc = retry_chain_node{_as, 60s, 1s};
+    auto rtc = make_rtc(_as);
     auto res = co_await _ops.fetch_latest_report_metadata(_remote->ref(), rtc);
     if (res.has_error()) {
         vlog(cst_log.info, "failed to fetch report metadata: ", res.error());
@@ -261,8 +267,7 @@ inventory_service::download_and_process_reports(csi::report_paths paths) {
           path(),
           is_path_compressed);
 
-        // TODO use config values from cloud_storage
-        auto rtc = retry_chain_node{_as, 60s, 1s};
+        auto rtc = make_rtc(_as);
         if (auto res = co_await _remote->ref().download_stream(
               _ops.bucket(),
               cloud_storage::remote_segment_path{path},
