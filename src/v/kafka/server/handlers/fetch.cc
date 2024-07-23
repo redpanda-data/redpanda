@@ -547,10 +547,14 @@ static void fill_fetch_responses(
     }
 }
 
+template<typename r, typename v>
+concept range_of = std::ranges::range<r>
+                   && std::same_as<std::ranges::range_value_t<r>, v>;
+
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
   const replica_selector& replica_selector,
-  std::vector<ntp_fetch_config>& ntp_fetch_configs,
+  range_of<ntp_fetch_config> auto& ntp_fetch_configs,
   read_distribution_probe& read_probe,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
