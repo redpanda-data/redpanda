@@ -140,6 +140,10 @@ public:
      */
     static value array_buffer(JSContext* ctx, std::span<uint8_t> data);
 
+    /** Create a typed array buffer value (copy) */
+    static std::expected<value, exception>
+    array_buffer_copy(JSContext* ctx, std::span<uint8_t> data);
+
     /**
      * Create an array buffer value (view - no copies).
      *
@@ -149,6 +153,10 @@ public:
      *
      */
     static value uint8_array(JSContext* ctx, std::span<uint8_t> data);
+
+    /** Create a typed uint8 array value (copy) */
+    static std::expected<value, exception>
+    uint8_array_copy(JSContext* ctx, std::span<uint8_t> data);
 
     /**
      * Free the underlying memory to an array buffer.
@@ -196,6 +204,8 @@ public:
     [[nodiscard]] bool is_number() const;
     /** Is this value an exception? */
     [[nodiscard]] bool is_exception() const;
+    /** Is this value an error? */
+    [[nodiscard]] bool is_error() const;
     /** Is this value a function? */
     [[nodiscard]] bool is_function() const;
     /** Is this value a string? */
@@ -215,6 +225,9 @@ public:
 
     /** Get the number from the object. */
     [[nodiscard]] double as_number() const;
+
+    /** Get an integer from the object. Rounding. */
+    [[nodiscard]] int32_t as_integer() const;
 
     /**
      * Return a reference to the raw JSValue without incrementing the ref

@@ -1,0 +1,20 @@
+{
+  "name": "@redpanda-data/transform-sdk-sr",
+  "version": "0.1.0",
+  "description": "A JavaScript/TypeScript library for querying Redpanda Schema Registry from within a Redpanda Data Transform",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "typings": "index.d.ts",
+  "module": "index.js",
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "repository": "github:redpanda-data/redpanda"
+}

@@ -315,8 +315,407 @@ std::expected<qjs::value, qjs::exception> make_write_event(
     return write_event;
 }
 
-std::expected<std::monostate, qjs::exception>
-initial_native_modules(qjs::runtime* runtime, qjs::value* user_callback) {
+class schema_registry_client {
+public:
+    explicit schema_registry_client(
+      std::unique_ptr<redpanda::sr::schema_registry_client> client)
+      : _client(std::move(client)) {}
+    schema_registry_client(const schema_registry_client&) = delete;
+    schema_registry_client& operator=(const schema_registry_client&) = delete;
+    schema_registry_client(schema_registry_client&&) = default;
+    schema_registry_client& operator=(schema_registry_client&&) = default;
+    ~schema_registry_client() = default;
+
+    std::expected<qjs::value, qjs::exception>
+    lookup_schema_by_id(JSContext* ctx, std::span<qjs::value> params) {
+        if (params.size() != 1) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              std::format(
+                "invalid number of parameters to "
+                "SchemaRegistryClient.lookupSchemaById, got: {}, "
+                "expected: 1",
+                params.size())));
+        }
+        auto& param = params.front();
+        if (!param.is_number()) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              "expected integer for 'id' param to "
+              "SchemaRegistryClient.lookupSchemaById"));
+        }
+
+        return _client
+          ->lookup_schema_by_id(redpanda::sr::schema_id{
+            static_cast<redpanda::sr::schema_id::type>(param.as_integer())})
+          .transform_error([ctx](std::error_code err) {
+              return qjs::exception::make(
+                ctx, std::format("schema lookup failed: {}", err.message()));
+          })
+          .and_then([ctx](const redpanda::sr::schema& schema) {
+              return make_schema(ctx, schema);
+          });
+    }
+
+    std::expected<qjs::value, qjs::exception>
+    lookup_schema_by_version(JSContext* ctx, std::span<qjs::value> params) {
+        if (params.size() != 2) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              std::format(
+                "invalid number of parameters to "
+                "SchemaRegistryClient.lookupSchemaByVersion, got: "
+                "{}, expected: 2",
+                params.size())));
+        }
+        const auto& subject_param = params[0];
+        const auto& version_param = params[1];
+
+        if (!subject_param.is_string()) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              "expected string for 'subject' param in "
+              "SchemaRegistryClient.lookupSchemaByVersion"));
+        }
+
+        if (!version_param.is_number()) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              "expected integer for 'version' param in "
+              "SchemaRegistryClient.lookupSchemaByVersion"));
+        }
+
+        return _client
+          ->lookup_schema_by_version(
+            subject_param.string_data().view(),
+            redpanda::sr::schema_version{
+              static_cast<redpanda::sr::schema_version::type>(
+                version_param.as_integer())})
+          .transform_error([ctx](std::error_code err) {
+              return qjs::exception::make(
+                ctx, std::format("error looking up schema: {}", err.message()));
+          })
+          .and_then([ctx](const redpanda::sr::subject_schema& subj_schema) {
+              return make_subject_schema(ctx, subj_schema);
+          });
+    }
+
+    std::expected<qjs::value, qjs::exception>
+    lookup_latest_schema(JSContext* ctx, std::span<qjs::value> params) {
+        if (params.size() != 1) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              std::format(
+                "invalid number of parameters to "
+                "SchemaRegistryClient.lookupLatestSchema, got: {}, "
+                "expected: 1",
+                params.size())));
+        }
+        const auto& subject_param = params[0];
+        if (!subject_param.is_string()) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              "expected string for 'subject' param in "
+              "SchemaRegistryClient.lookupLatestSchema"));
+        }
+
+        return _client->lookup_latest_schema(subject_param.string_data().view())
+          .transform_error([ctx](std::error_code err) {
+              return qjs::exception::make(
+                ctx, std::format("error looking up schema: {}", err.message()));
+          })
+          .and_then([ctx](const redpanda::sr::subject_schema& subj_schema) {
+              return make_subject_schema(ctx, subj_schema);
+          });
+    }
+
+    std::expected<qjs::value, qjs::exception>
+    create_schema(JSContext* ctx, std::span<qjs::value> params) {
+        if (params.size() != 2) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              std::format(
+                "invalid number of parameters to "
+                "SchemaRegistryClient.createSchema, got: {}, expected: 2",
+                params.size())));
+        }
+        const auto& subject_param = params[0];
+        const auto& schema_param = params[1];
+
+        if (!subject_param.is_string()) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              "expected string for 'subject' param in "
+              "SchemaRegistryClient.createSchema"));
+        }
+        if (!schema_param.is_object()) [[unlikely]] {
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              "expected an object for 'schema' param in "
+              "SchemaRegistryClient.createSchema"));
+        }
+
+        return extract_schema(ctx, schema_param)
+          .and_then([this, ctx, &subject_param](redpanda::sr::schema schema) {
+              // NOTE(oren): sort of annoying that the unexpected<error_code>
+              // can't be transformed at the top level of the pipeline
+              return _client
+                ->create_schema(
+                  subject_param.string_data().view(), std::move(schema))
+                .transform_error([ctx](std::error_code err) {
+                    return qjs::exception::make(
+                      ctx,
+                      std::format("error creating schema: {}", err.message()));
+                });
+          })
+          .and_then([ctx](const redpanda::sr::subject_schema& subj_schema) {
+              return make_subject_schema(ctx, subj_schema);
+          });
+    }
+
+private:
+    std::unique_ptr<redpanda::sr::schema_registry_client> _client;
+
+    static std::expected<redpanda::sr::schema, qjs::exception>
+    extract_schema(JSContext* ctx, const qjs::value& val) {
+        auto raw_schema = val.get_property("schema");
+        if (!raw_schema.is_string()) {
+            return std::unexpected(qjs::exception::make(
+              ctx, "malformed schema def: expected string for 'schema'"));
+        }
+        auto format = val.get_property("format");
+        if (!format.is_number()) {
+            return std::unexpected(qjs::exception::make(
+              ctx, "malformed schema def: expected int for 'format'"));
+        }
+        std::vector<redpanda::sr::reference> native_refs;
+        auto refs = val.get_property("references");
+        if (!refs.is_null() && !refs.is_undefined()) {
+            if (!refs.is_array()) {
+                return std::unexpected(qjs::exception::make(
+                  ctx,
+                  "malformed schema def: expected array for 'references'"));
+            }
+
+            native_refs.reserve(refs.array_length());
+            for (size_t i = 0; i < refs.array_length(); ++i) {
+                auto ref = refs.get_element(i);
+                if (!ref.is_object()) {
+                    return std::unexpected(qjs::exception::make(
+                      ctx,
+                      "malformed schema def: expected array "
+                      "of objects for 'references'"));
+                }
+                auto name = ref.get_property("name");
+                if (!name.is_string()) {
+                    return std::unexpected(qjs::exception::make(
+                      ctx,
+                      "malformed schema def: bad reference: "
+                      "'name' should be a string"));
+                }
+                auto subj = ref.get_property("subject");
+                if (!subj.is_string()) {
+                    return std::unexpected(qjs::exception::make(
+                      ctx,
+                      "malformed schema def: bad reference: "
+                      "'subject' should be a string"));
+                }
+                auto vers = ref.get_property("version");
+                if (!vers.is_number()) {
+                    return std::unexpected(qjs::exception::make(
+                      ctx,
+                      "malformed schema def: bad reference: "
+                      "'version' should be a number"));
+                }
+                native_refs.emplace_back(
+                  std::string{name.string_data().view()},
+                  std::string{subj.string_data().view()},
+                  redpanda::sr::schema_version{
+                    static_cast<redpanda::sr::schema_version::type>(
+                      vers.as_integer())});
+            }
+        }
+
+        return redpanda::sr::schema{
+          std::string{raw_schema.string_data().view()},
+          static_cast<redpanda::sr::schema_format>(format.as_integer()),
+          std::move(native_refs)};
+    }
+
+    static std::expected<qjs::value, qjs::exception> make_subject_schema(
+      JSContext* ctx, const redpanda::sr::subject_schema& subj_schema) {
+        qjs::value obj = qjs::value::object(ctx);
+        return make_schema(ctx, subj_schema.schema)
+          .and_then([&obj](const qjs::value& schema) {
+              return obj.set_property("schema", schema);
+          })
+          .and_then([ctx, &subj_schema](std::monostate) {
+              return qjs::value::string(ctx, subj_schema.subject);
+          })
+          .and_then([&obj](const qjs::value& subject) {
+              return obj.set_property("subject", subject);
+          })
+          .and_then([ctx, &subj_schema, &obj](std::monostate) {
+              return obj.set_property(
+                "version", qjs::value::integer(ctx, subj_schema.version));
+          })
+          .and_then([ctx, &subj_schema, &obj](std::monostate) {
+              return obj.set_property(
+                "id", qjs::value::integer(ctx, subj_schema.id));
+          })
+          .transform([&obj](std::monostate) { return std::move(obj); });
+    }
+
+    static std::expected<qjs::value, qjs::exception>
+    make_schema(JSContext* ctx, const redpanda::sr::schema& the_schema) {
+        qjs::value obj = qjs::value::object(ctx);
+        return qjs::value::string(ctx, the_schema.raw_schema)
+          .and_then([&obj](const qjs::value& schema) {
+              return obj.set_property("schema", schema);
+          })
+          .and_then([ctx, &obj, &the_schema](std::monostate) {
+              return obj.set_property(
+                "format",
+                qjs::value::integer(ctx, static_cast<int>(the_schema.format)));
+          })
+          .and_then(
+            [ctx, &the_schema](
+              std::monostate) -> std::expected<qjs::value, qjs::exception> {
+                auto refs = qjs::value::array(ctx);
+                for (const auto& ref : the_schema.references) {
+                    auto result = make_reference(ctx, ref).and_then(
+                      [&refs](const qjs::value& ref) {
+                          return refs.push_back(ref);
+                      });
+                    if (!result.has_value()) {
+                        return std::unexpected(result.error());
+                    }
+                }
+                return std::move(refs);
+            })
+          .and_then([&obj](const qjs::value& refs) {
+              return obj.set_property("references", refs);
+          })
+          .transform([&obj](std::monostate) { return std::move(obj); });
+    }
+
+    static std::expected<qjs::value, qjs::exception>
+    make_reference(JSContext* ctx, const redpanda::sr::reference& ref) {
+        auto obj = qjs::value::object(ctx);
+        return qjs::value::string(ctx, ref.name)
+          .and_then([&obj](const qjs::value& name) {
+              return obj.set_property("name", name);
+          })
+          .and_then([ctx, &ref](std::monostate) {
+              return qjs::value::string(ctx, ref.subject);
+          })
+          .and_then([&obj](const qjs::value& subj) {
+              return obj.set_property("subject", subj);
+          })
+          .and_then([ctx, &obj, &ref](std::monostate) {
+              return obj.set_property(
+                "version", qjs::value::integer(ctx, ref.version));
+          })
+          .transform([&obj](std::monostate) { return std::move(obj); });
+    }
+};
+
+qjs::class_factory<schema_registry_client>
+make_schema_registry_client_class(qjs::runtime* runtime) {
+    qjs::class_builder<schema_registry_client> builder(
+      runtime->context(), "SchemaRegistryClient");
+    builder.method<&schema_registry_client::lookup_schema_by_id>(
+      "lookupSchemaById");
+    builder.method<&schema_registry_client::lookup_schema_by_version>(
+      "lookupSchemaByVersion");
+    builder.method<&schema_registry_client::lookup_latest_schema>(
+      "lookupLatestSchema");
+    builder.method<&schema_registry_client::create_schema>("createSchema");
+    return builder.build();
+}
+
+redpanda::bytes_view value_as_bytes_view(const qjs::value& val) {
+    if (val.is_string()) {
+        auto data = val.string_data();
+        return redpanda::bytes_view{data.view()};
+    }
+    if (val.is_array_buffer()) {
+        auto data = val.array_buffer_data();
+        return redpanda::bytes_view{data.data(), data.size()};
+    }
+    if (val.is_uint8_array()) {
+        auto data = val.uint8_array_data();
+        return redpanda::bytes_view{data.data(), data.size()};
+    }
+    return redpanda::bytes_view{};
+}
+
+std::expected<qjs::value, qjs::exception>
+decode_schema_id_impl(JSContext* ctx, qjs::value& arg) {
+    auto data = value_as_bytes_view(arg);
+    auto obj = qjs::value::object(ctx);
+    return redpanda::sr::decode_schema_id(data)
+      .transform_error([ctx](std::error_code err) {
+          return qjs::exception::make(
+            ctx, std::format("Failed to decode schema ID: {}", err.message()));
+      })
+      .and_then(
+        [ctx,
+         &obj](std::pair<redpanda::sr::schema_id, redpanda::bytes_view> sid) {
+            return obj.set_property("id", qjs::value::integer(ctx, sid.first));
+        })
+      .and_then(
+        [ctx,
+         &arg](std::monostate) -> std::expected<qjs::value, qjs::exception> {
+            constexpr size_t HEADER_SIZE = 5;
+            // TODO(perf): Each of these takes a full copy of the input buffer
+            // to avoid any memory ownership issues in client code.
+            // This is a pessimization - with a bit of effort, we should be
+            // able to return subviews that keep the input buffer alive without
+            // requiring the runtime to allocate us a whole new buffer.
+            if (arg.is_string()) {
+                return qjs::value::string(
+                  ctx, arg.string_data().view().substr(HEADER_SIZE));
+            }
+            if (arg.is_array_buffer()) {
+                return qjs::value::array_buffer_copy(
+                  ctx, arg.array_buffer_data().subspan(HEADER_SIZE));
+            }
+            if (arg.is_uint8_array()) {
+                return qjs::value::uint8_array_copy(
+                  ctx, arg.uint8_array_data().subspan(HEADER_SIZE));
+            }
+            // NOTE(oren): we should never reach here (covered by earlier
+            // checks)
+            return std::unexpected(qjs::exception::make(
+              ctx, "Unexpected type for schema ID decode"));
+        })
+      .and_then([&obj](const qjs::value& rest) {
+          return obj.set_property("rest", rest);
+      })
+      .transform([&obj](std::monostate) { return std::move(obj); });
+}
+
+std::expected<qjs::value, qjs::exception> encode_schema_id_impl(
+  JSContext* ctx,
+  const qjs::value& sid, // NOLINT(*-swappable-parameters)
+  const qjs::value& buf  // NOLINT(*-swappable-parameters)
+) {
+    auto orig = value_as_bytes_view(buf);
+    redpanda::bytes encoded = redpanda::sr::encode_schema_id(
+      redpanda::sr::schema_id{sid.as_integer()}, orig);
+    // TODO(perf): This  takes a full copy of the input buffer to avoid
+    // any memory ownership issues in client code.
+    // This is a pessimization - with a bit of effort, we should be
+    // able to return subviews that keep the input buffer alive without
+    // requiring the runtime to allocate us a whole new buffer.
+    return qjs::value::uint8_array_copy(ctx, encoded);
+}
+
+std::expected<std::monostate, qjs::exception> initial_native_modules(
+  qjs::runtime* runtime,
+  qjs::value* user_callback,
+  qjs::class_factory<schema_registry_client>* sr_client_factory) {
     auto mod = qjs::module_builder("@redpanda-data/transform-sdk");
     mod.add_function(
       "onRecordWritten",
@@ -331,7 +730,72 @@ initial_native_modules(qjs::runtime* runtime, qjs::value* user_callback) {
           }
           return {std::exchange(*user_callback, std::move(args.front()))};
       });
-    return runtime->add_module(std::move(mod));
+    auto sr_mod = qjs::module_builder("@redpanda-data/transform-sdk-sr");
+    sr_mod.add_function(
+      "newClient",
+      [&sr_client_factory](
+        JSContext* ctx, const qjs::value&, std::span<qjs::value> args)
+        -> std::expected<qjs::value, qjs::exception> {
+          if (!args.empty()) [[unlikely]] {
+              return std::unexpected(
+                qjs::exception::make(ctx, "Unexpected arguments to newClient"));
+          }
+          return sr_client_factory->create(
+            std::make_unique<schema_registry_client>(
+              redpanda::sr::new_client()));
+      });
+    sr_mod.add_function(
+      "decodeSchemaID",
+      [](JSContext* ctx, const qjs::value&, std::span<qjs::value> args)
+        -> std::expected<qjs::value, qjs::exception> {
+          if (args.size() != 1) [[unlikely]] {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                std::format(
+                  "wrong number of arguments to decodeSchemaID: expected 1 got "
+                  "{}",
+                  args.size())));
+          }
+          if (!(args.front().is_string() || args.front().is_array_buffer()
+                || args.front().is_uint8_array())) [[unlikely]] {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                "Illegal argument to decodeSchemaID: Expected one of "
+                "string, ArrayBuffer, or Uint8Array"));
+          }
+          return decode_schema_id_impl(ctx, args.front());
+      });
+    sr_mod.add_function(
+      "encodeSchemaID",
+      [](JSContext* ctx, const qjs::value&, std::span<qjs::value> args)
+        -> std::expected<qjs::value, qjs::exception> {
+          if (args.size() != 2) [[unlikely]] {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                std::format(
+                  "wrong number of arguments to encodeSchemaID: expected 2 got "
+                  "{}",
+                  args.size())));
+          }
+          if (!args[0].is_number()) {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                "expected a numeric SchemaID for 'id' param in "
+                "encodeSchemaID"));
+          }
+          if (!(args[1].is_string() || args[1].is_array_buffer()
+                || args[1].is_uint8_array())) {
+              return std::unexpected(qjs::exception::make(
+                ctx,
+                "expected one of string, ArrayBuffer, or Uint8Array for 'buf' "
+                "param in encodeSchemaID"));
+          }
+          return encode_schema_id_impl(ctx, args[0], args[1]);
+      });
+    return runtime->add_module(std::move(mod))
+      .and_then([runtime, &sr_mod](std::monostate) {
+          return runtime->add_module(std::move(sr_mod));
+      });
 }
 
 std::expected<std::monostate, qjs::exception>
@@ -376,7 +840,9 @@ int run() {
     auto writer_factory = make_record_writer_class(&runtime);
     auto data_factory = make_record_data_class(&runtime);
     qjs::value record_callback = qjs::value::undefined(runtime.context());
-    result = initial_native_modules(&runtime, &record_callback);
+    auto sr_client_factory = make_schema_registry_client_class(&runtime);
+    result = initial_native_modules(
+      &runtime, &record_callback, &sr_client_factory);
     if (!result) [[unlikely]] {
         std::println(
           stderr,
