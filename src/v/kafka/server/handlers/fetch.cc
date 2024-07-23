@@ -1295,10 +1295,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
         plan.reserve_from_partition_count(octx.fetch_partition_count());
 
-        const auto client_address = fmt::format(
-          "{}:{}",
-          octx.rctx.connection()->client_host(),
-          octx.rctx.connection()->client_port());
+        const auto client_address = octx.rctx.connection()->local_address();
 
         /**
          * group fetch requests by shard
