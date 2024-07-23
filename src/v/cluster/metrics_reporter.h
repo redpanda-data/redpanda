@@ -103,6 +103,7 @@ private:
     ss::future<result<metrics_snapshot>> build_metrics_snapshot();
 
     ss::future<http::client> make_http_client();
+    ss::future<> do_send_metrics(http::client&, iobuf body);
     ss::future<> try_initialize_cluster_info();
     ss::future<> propagate_cluster_id();
 
