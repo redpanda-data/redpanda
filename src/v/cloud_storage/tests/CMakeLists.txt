@@ -104,6 +104,7 @@ rp_test(
     s3_imposter.cc
     topic_manifest_downloader_test.cc
     topic_namespace_override_recovery_test.cc
+    topic_mount_handler_test.cc
     util.cc
   LIBRARIES
     v::gtest_main
