@@ -70,11 +70,9 @@ ss::future<serialized_data_stream> topic_mount_manifest::serialize() const {
 }
 
 /// Manifest object name in S3
-remote_manifest_path
-topic_mount_manifest::get_manifest_path(const remote_path_provider&) const {
-    // TODO: edit in future commit after adding remote_path_provider
-    // implementation.
-    return remote_manifest_path{};
+remote_manifest_path topic_mount_manifest::get_manifest_path(
+  const remote_path_provider& path_provider) const {
+    return remote_manifest_path{path_provider.topic_mount_manifest_path(*this)};
 }
 
 manifest_type topic_mount_manifest::get_manifest_type() const {

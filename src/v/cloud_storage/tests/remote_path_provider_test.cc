@@ -10,6 +10,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
+#include "cloud_storage/topic_mount_manifest.h"
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "gtest/gtest.h"
@@ -377,6 +378,14 @@ TEST_P(
       test_ntp, test_rev);
     ASSERT_FALSE(path_provider.segment_path(test_ntp, test_rev, test_smeta)
                    .starts_with(partition_prefix));
+}
+
+TEST(RemotePathProviderTest, TestTopicMountManifestPath) {
+    remote_path_provider path_provider(test_label, std::nullopt);
+    topic_mount_manifest manifest(test_label, test_tp_ns);
+    EXPECT_STREQ(
+      path_provider.topic_mount_manifest_path(manifest).c_str(),
+      "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp");
 }
 
 INSTANTIATE_TEST_SUITE_P(
