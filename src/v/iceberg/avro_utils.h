@@ -15,15 +15,18 @@
 #include <avro/DataFile.hh>
 #include <avro/Stream.hh>
 
+namespace iceberg {
+
 // Near-identical implementation of avro::MemoryOutputStream, but backed by an
 // iobuf that can be released.
 class avro_iobuf_ostream : public avro::OutputStream {
 public:
-    explicit avro_iobuf_ostream(size_t chunk_size, iobuf* buf)
+    explicit avro_iobuf_ostream(
+      size_t chunk_size, iobuf* buf, size_t* byte_count)
       : chunk_size_(chunk_size)
       , buf_(buf)
       , available_(0)
-      , byte_count_(0) {}
+      , byte_count_(byte_count) {}
     ~avro_iobuf_ostream() override = default;
 
     // If there's no available space in the buffer, allocates `chunk_size_`
@@ -45,17 +48,17 @@ public:
         *data = reinterpret_cast<uint8_t*>(
           back_frag->share(chunk_size_ - available_, available_).get_write());
         *len = available_;
-        byte_count_ += available_;
+        *byte_count_ += available_;
         available_ = 0;
         return true;
     }
 
     void backup(size_t len) final {
         available_ += len;
-        byte_count_ -= len;
+        *byte_count_ -= len;
     }
 
-    uint64_t byteCount() const final { return byte_count_; }
+    uint64_t byteCount() const final { return *byte_count_; }
 
     void flush() final {}
 
@@ -64,12 +67,10 @@ private:
     const size_t chunk_size_;
 
     iobuf* buf_;
-
-    // Bytes remaining in the last fragment in the buffer.
     size_t available_;
 
     // Total number of bytes.
-    size_t byte_count_;
+    size_t* byte_count_;
 };
 
 // InputStream implementation that takes an iobuf as input.
@@ -145,3 +146,5 @@ private:
     size_t cur_frag_pos_;
     size_t cur_pos_;
 };
+
+} // namespace iceberg

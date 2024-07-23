@@ -50,7 +50,9 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     entry.data_file.file_size_in_bytes = 1024;
 
     iobuf buf;
-    auto out = std::make_unique<avro_iobuf_ostream>(4096, &buf);
+    size_t bytes_streamed{0};
+    auto out = std::make_unique<avro_iobuf_ostream>(
+      4096, &buf, &bytes_streamed);
 
     // Encode to the output stream.
     avro::EncoderPtr encoder = avro::binaryEncoder();
@@ -79,7 +81,9 @@ TEST(ManifestSerializationTest, TestManyManifestEntries) {
     entry.data_file.file_size_in_bytes = 1024;
 
     iobuf buf;
-    auto out = std::make_unique<avro_iobuf_ostream>(4096, &buf);
+    size_t bytes_streamed{0};
+    auto out = std::make_unique<avro_iobuf_ostream>(
+      4096, &buf, &bytes_streamed);
 
     // Encode many entries. This is a regression test for a bug where
     // serializing large Avro files would handle iobuf fragments improperly,
@@ -118,7 +122,9 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     manifest.deleted_rows_count = 11;
 
     iobuf buf;
-    auto out = std::make_unique<avro_iobuf_ostream>(4096, &buf);
+    size_t bytes_streamed{0};
+    auto out = std::make_unique<avro_iobuf_ostream>(
+      4096, &buf, &bytes_streamed);
 
     // Encode to the output stream.
     avro::EncoderPtr encoder = avro::binaryEncoder();
@@ -172,7 +178,9 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     metadata["f2"] = f2;
 
     iobuf buf;
-    auto out = std::make_unique<avro_iobuf_ostream>(4_KiB, &buf);
+    size_t bytes_streamed{0};
+    auto out = std::make_unique<avro_iobuf_ostream>(
+      4_KiB, &buf, &bytes_streamed);
     avro::DataFileWriter<manifest_file> writer(
       std::move(out), manifest_file_schema, 16_KiB, avro::NULL_CODEC, metadata);
     writer.write(manifest);
