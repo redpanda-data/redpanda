@@ -84,6 +84,7 @@ public:
       ss::shared_ptr<client_probe> probe,
       ss::lowres_clock::duration max_idle_time = {});
 
+    /// Stop must be called before destroying the client object.
     ss::future<> stop();
     using net::base_transport::shutdown;
     using net::base_transport::wait_input_shutdown;
