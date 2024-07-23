@@ -82,6 +82,9 @@ public:
       const partition_manifest& stm_manifest,
       const spillover_manifest_path_components& c) const;
 
+    ss::sstring
+    topic_mount_manifest_path(const topic_mount_manifest& manifest) const;
+
     // Segment paths.
     ss::sstring segment_path(
       const partition_manifest& manifest, const segment_meta& segment) const;
