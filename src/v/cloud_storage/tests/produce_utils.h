@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/remote_segment.h"
+#include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"

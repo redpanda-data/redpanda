@@ -113,7 +113,6 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":remote_label",
-        "//src/v/archival:run_quota",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -123,6 +122,7 @@ redpanda_cc_library(
         "//src/v/cloud_storage_clients",
         "//src/v/cluster:nt_revision",
         "//src/v/cluster:topic_configuration",
+        "//src/v/cluster/archival:run_quota",
         "//src/v/compression",
         "//src/v/config",
         "//src/v/container:fragmented_vector",

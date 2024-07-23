@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "archival/archival_metadata_stm.h"
-#include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
+#include "cluster/archival/archival_metadata_stm.h"
+#include "cluster/archival/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"

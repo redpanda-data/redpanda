@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_path_provider.h"
+#include "cluster/archival/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"

@@ -11,12 +11,12 @@
 
 #include "redpanda/admin/server.h"
 
-#include "archival/ntp_archiver_service.h"
 #include "base/vlog.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
+#include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/cluster_recovery_manager.h"
 #include "cluster/cluster_recovery_table.h"
 #include "cluster/cluster_utils.h"

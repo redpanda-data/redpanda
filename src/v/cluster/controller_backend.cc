@@ -9,10 +9,10 @@
 
 #include "cluster/controller_backend.h"
 
-#include "archival/archival_metadata_stm.h"
 #include "base/outcome.h"
 #include "base/vassert.h"
 #include "cloud_storage/remote_path_provider.h"
+#include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
