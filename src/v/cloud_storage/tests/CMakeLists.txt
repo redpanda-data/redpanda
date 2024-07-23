@@ -35,6 +35,25 @@ rp_test(
 
 rp_test(
   UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_cloud_storage
+  SOURCES
+    topic_mount_manifest_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::seastar_testing_main
+    v::cloud_storage
+    v::storage_test_utils
+    v::cloud_roles
+    v::application
+    v::kafka_test_utils
+    v::http_test_utils
+  ARGS "-- -c 1"
+  LABELS cloud_storage
+)
+
+rp_test(
+  UNIT_TEST
   BINARY_NAME topic_manifest
   SOURCES topic_manifest_test.cc
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cluster
