@@ -926,7 +926,7 @@ inbound_partition_work_info backend::get_partition_work_info(
                  .idx_in_migration;
     auto& inbound_topic = im.topics[idx];
     return {
-      .alias = inbound_topic.alias,
+      .source = inbound_topic.source_topic_name,
       .cloud_storage_location = inbound_topic.cloud_storage_location};
 }
 
@@ -953,7 +953,7 @@ inbound_topic_work_info backend::get_topic_work_info(
                  .idx_in_migration;
     auto& inbound_topic = im.topics[idx];
     return {
-      .alias = inbound_topic.alias,
+      .source = inbound_topic.source_topic_name,
       .cloud_storage_location = inbound_topic.cloud_storage_location};
 }
 

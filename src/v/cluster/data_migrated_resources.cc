@@ -144,30 +144,14 @@ void migrated_resources::remove_migration(
     ss::visit(
       migration_meta.migration,
       [this, id = migration_meta.id](auto& migration) {
-          remove_migration(id, migration);
+          for (const auto& topic : migration.topic_nts()) {
+              remove_from_resources(id, topic, _topics);
+          }
+
+          for (const auto& cg : migration.groups) {
+              remove_from_resources(id, cg, _groups);
+          }
       });
-}
-
-void migrated_resources::remove_migration(id id, const inbound_migration& idm) {
-    for (auto& inbound_topic : idm.topics) {
-        remove_from_resources(
-          id, inbound_topic.effective_topic_name(), _topics);
-    }
-
-    for (auto& cg : idm.groups) {
-        remove_from_resources(id, cg, _groups);
-    }
-}
-
-void migrated_resources::remove_migration(
-  id id, const outbound_migration& odm) {
-    for (const auto& topic : odm.topics) {
-        remove_from_resources(id, topic, _topics);
-    }
-
-    for (const auto& cg : odm.groups) {
-        remove_from_resources(id, cg, _groups);
-    }
 }
 
 } // namespace cluster::data_migrations
