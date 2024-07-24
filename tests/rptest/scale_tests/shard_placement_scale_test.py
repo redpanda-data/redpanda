@@ -38,6 +38,8 @@ class ShardPlacementScaleTest(RedpandaTest):
         pass
 
     def start_omb(self):
+        producer_rate_mbps = 100
+
         workload = {
             "name": "CommonWorkload",
             "topics": 1,
@@ -45,7 +47,7 @@ class ShardPlacementScaleTest(RedpandaTest):
             "subscriptions_per_topic": 1,
             "consumer_per_subscription": 25,
             "producers_per_topic": 5,
-            "producer_rate": 100 * 1024,
+            "producer_rate": producer_rate_mbps * 1024,
             "message_size": 1024,
             "payload_file": "payload/payload-1Kb.data",
             "key_distributor": "KEY_ROUND_ROBIN",
@@ -68,6 +70,7 @@ class ShardPlacementScaleTest(RedpandaTest):
                 # which leads to unreasonably high reactor util)
                 "max.request.size": 5 * 2**20,
                 "linger.ms": 500,
+                "max.in.flight.requests.per.connection": 1,
             },
             "consumer_config": {
                 "auto.offset.reset": "earliest",
@@ -77,7 +80,7 @@ class ShardPlacementScaleTest(RedpandaTest):
         }
         validator = {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(100)]
+            [OMBSampleConfigurations.gte(producer_rate_mbps)]
         }
 
         self._benchmark = OpenMessagingBenchmark(ctx=self.test_context,
