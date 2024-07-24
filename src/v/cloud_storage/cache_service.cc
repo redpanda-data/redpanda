@@ -429,8 +429,8 @@ ss::future<> cache::trim(
     auto undeletable_bytes = (co_await access_time_tracker_size()).value_or(0);
 
     if (
-      size_to_delete < undeletable_bytes
-      && objects_to_delete < undeletable_objects) {
+      size_to_delete <= undeletable_bytes
+      && objects_to_delete <= undeletable_objects) {
         _last_clean_up = ss::lowres_clock::now();
         _last_trim_failed = false;
         co_return;
