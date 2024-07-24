@@ -50,15 +50,35 @@ redpanda_cc_gtest(
         "manifest_serialization_test.cc",
     ],
     deps = [
+        ":test_schemas",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
         "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:manifest",
+        "//src/v/iceberg:manifest_avro",
         "//src/v/iceberg:manifest_entry",
         "//src/v/iceberg:manifest_file",
+        "//src/v/iceberg:schema_json",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:file_io",
         "@avro",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partition_test",
+    timeout = "short",
+    srcs = [
+        "partition_test.cc",
+    ],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:partition",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
 

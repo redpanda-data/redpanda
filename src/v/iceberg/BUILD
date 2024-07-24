@@ -79,6 +79,67 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest",
+    hdrs = [
+        "manifest.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":manifest_entry",
+        ":partition",
+        ":schema",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:named_type",
+    ],
+)
+
+redpanda_cc_library(
+    name = "manifest_avro",
+    srcs = [
+        "manifest_avro.cc",
+    ],
+    hdrs = [
+        "manifest_avro.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":avro_utils",
+        ":datatypes_json",
+        ":json_utils",
+        ":manifest",
+        ":manifest_entry",
+        ":partition",
+        ":schema",
+        ":schema_json",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/strings:string_switch",
+        "//src/v/utils:named_type",
+        "@avro",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition",
+    srcs = [
+        "partition.cc",
+    ],
+    hdrs = [
+        "partition.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema",
     hdrs = [
         "schema.h",
