@@ -391,7 +391,7 @@ ss::future<> cache::trim(
     vlog(
       cst_log.debug,
       "in-memory trim: set target_size {}/{}, size {}/{}, reserved {}/{}, "
-      "pending {}/{}), candidates for deletion: {}, size to delete: {}, "
+      "pending {}/{}, candidates for deletion: {}, size to delete: {}, "
       "objects to delete: {}",
       target_size,
       target_objects,
@@ -431,6 +431,14 @@ ss::future<> cache::trim(
     if (
       size_to_delete <= undeletable_bytes
       && objects_to_delete <= undeletable_objects) {
+        vlog(
+          cst_log.debug,
+          "in-memory trim finished: size/objects to delete: {}/{}, undeletable "
+          "size/objects: {}/{}",
+          size_to_delete,
+          objects_to_delete,
+          undeletable_bytes,
+          undeletable_objects);
         _last_clean_up = ss::lowres_clock::now();
         _last_trim_failed = false;
         co_return;
@@ -466,7 +474,7 @@ ss::future<> cache::trim(
     vlog(
       cst_log.debug,
       "trim: set target_size {}/{}, size {}/{}, walked size {} (max {}/{}), "
-      " reserved {}/{}, pending {}/{}), candidates for deletion: {}, filtered "
+      " reserved {}/{}, pending {}/{}, candidates for deletion: {}, filtered "
       "out: {}",
       target_size,
       target_objects,
@@ -483,10 +491,8 @@ ss::future<> cache::trim(
       filtered_out_files);
 
     // Sort by atime for the subsequent LRU trimming loop
-    std::sort(
-      candidates_for_deletion.begin(),
-      candidates_for_deletion.end(),
-      [](auto& a, auto& b) { return a.access_time < b.access_time; });
+    std::ranges::sort(
+      candidates_for_deletion, {}, &file_list_item::access_time);
 
     vlog(
       cst_log.debug,
@@ -1759,6 +1765,12 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // do the trim.
                 co_await trim_throttled_unlocked();
                 did_trim = true;
+            } else {
+                vlog(
+                  cst_log.debug,
+                  "Did not trim, may_trim_now: {}, may_exceed: {}",
+                  may_trim_now,
+                  may_exceed);
             }
 
             if (!may_reserve_space(bytes, objects)) {
@@ -1769,6 +1781,10 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                     if (may_exceed) {
                         // Tip off the next caller that they may proactively
                         // exceed the cache size without waiting for a trim.
+                        vlog(
+                          cst_log.debug,
+                          "Last trim failed to free up space, will exceed max "
+                          "bytes");
                         _last_trim_failed = true;
                     }
                 }
