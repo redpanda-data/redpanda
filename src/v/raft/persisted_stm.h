@@ -23,8 +23,6 @@
 
 #include <seastar/core/sharded.hh>
 
-#include <absl/container/flat_hash_map.h>
-
 namespace raft {
 
 static constexpr const int8_t stm_snapshot_version_v0 = 0;

@@ -11,14 +11,10 @@
 
 #include "bytes/iostream.h"
 #include "raft/consensus.h"
-#include "raft/errc.h"
-#include "raft/offset_monitor.h"
 #include "raft/state_machine_base.h"
-#include "raft/types.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
-#include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
 
 #include <seastar/core/abort_source.hh>
