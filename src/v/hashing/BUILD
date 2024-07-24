@@ -41,3 +41,18 @@ redpanda_cc_library(
         "@xxhash",
     ],
 )
+
+redpanda_cc_library(
+    name = "murmur",
+    srcs = [
+        "murmur.cc",
+    ],
+    hdrs = [
+        "include/hashing/murmur.h",
+    ],
+    copts = [
+        "-Wno-implicit-fallthrough",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
