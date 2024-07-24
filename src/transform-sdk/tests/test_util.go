@@ -62,6 +62,8 @@ func startRedpanda(ctx context.Context) (*redpanda.Container, context.CancelFunc
 			return nil
 		}),
 		redpanda.WithEnableWasmTransform(),
+		redpanda.WithBootstrapConfig("data_transforms_per_core_memory_reservation", 135000000),
+		redpanda.WithBootstrapConfig("data_transforms_per_function_memory_limit", 16777216),
 	)
 	if err != nil {
 		log.Fatalf("failed to start container: %s", err)
