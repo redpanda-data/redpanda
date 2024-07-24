@@ -191,8 +191,7 @@ struct inbound_migration
 
     auto topic_nts() const {
         return std::as_const(topics)
-               | std::views::transform(
-                 [](const inbound_topic& it) { return it.source_topic_name; });
+               | std::views::transform(&inbound_topic::effective_topic_name);
     }
 };
 
@@ -249,7 +248,7 @@ data_migration copy_migration(const data_migration& migration);
 
 /* Additional info worker needs from backend to work on a partition */
 struct inbound_partition_work_info {
-    std::optional<model::topic_namespace> alias;
+    std::optional<model::topic_namespace> source;
     std::optional<cloud_storage_location> cloud_storage_location;
 };
 struct outbound_partition_work_info {
@@ -265,7 +264,7 @@ struct partition_work {
 
 /* Additional info worker needs from backend to work on a topic */
 struct inbound_topic_work_info {
-    std::optional<model::topic_namespace> alias;
+    model::topic_namespace source;
     std::optional<cloud_storage_location> cloud_storage_location;
 };
 struct outbound_topic_work_info {
