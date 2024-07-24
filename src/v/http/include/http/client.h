@@ -84,6 +84,7 @@ public:
       ss::shared_ptr<client_probe> probe,
       ss::lowres_clock::duration max_idle_time = {});
 
+    /// Stop must be called before destroying the client object.
     ss::future<> stop();
     using net::base_transport::shutdown;
     using net::base_transport::wait_input_shutdown;
@@ -107,9 +108,6 @@ public:
         response_stream(response_stream const&) = delete;
         response_stream& operator=(response_stream const&) = delete;
         response_stream operator=(response_stream&&) = delete;
-
-        /// \brief Shutdown connection gracefully
-        ss::future<> shutdown();
 
         /// Return true if the whole http payload is received and parsed
         bool is_done() const;
