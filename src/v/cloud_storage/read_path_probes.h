@@ -34,6 +34,8 @@ public:
     uint64_t get_records_read() const noexcept { return _records_read; }
     uint64_t get_chunk_size() const noexcept { return _chunk_size; }
 
+    void clear_metrics() { _metrics.clear(); }
+
 private:
     // Number of bytes that partition reader have received
     uint64_t _bytes_read = 0;
