@@ -1006,7 +1006,8 @@ public:
     std::map<model::ntp, ss::shared_ptr<managed_partition>> _managed;
     std::optional<cluster::notification_id_type> _manage_notifications;
     std::optional<cluster::notification_id_type> _unmanage_notifications;
-    std::optional<cluster::notification_id_type> _leadership_notifications;
+    std::optional<raft::group_manager_notification_id>
+      _leadership_notifications;
 
     ss::abort_source _as;
     retry_chain_node _rtc;

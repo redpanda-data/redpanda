@@ -10,14 +10,13 @@
  */
 
 #pragma once
-#include "cluster/notification.h"
 #include "config/property.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/notification.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
-#include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
 #include "storage/fwd.h"
@@ -79,7 +78,7 @@ public:
 
     ss::future<> remove(ss::lw_shared_ptr<raft::consensus>);
 
-    cluster::notification_id_type
+    group_manager_notification_id
     register_leadership_notification(leader_cb_t cb) {
         for (auto& gr : _groups) {
             cb(gr->group(), gr->term(), gr->get_leader_id());
@@ -88,7 +87,7 @@ public:
         return id;
     }
 
-    void unregister_leadership_notification(cluster::notification_id_type id) {
+    void unregister_leadership_notification(group_manager_notification_id id) {
         _notifications.unregister_cb(id);
     }
 
@@ -115,7 +114,7 @@ private:
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;
-    notification_list<leader_cb_t, cluster::notification_id_type>
+    notification_list<leader_cb_t, group_manager_notification_id>
       _notifications;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;

@@ -18,6 +18,7 @@
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "raft/fwd.h"
+#include "raft/notification.h"
 #include "security/fwd.h"
 #include "ssx/semaphore.h"
 
@@ -88,7 +89,8 @@ private:
     ss::gate _gate;
 
     ss::condition_variable _leader_cond;
-    cluster::notification_id_type _leader_cb_id{notification_id_type_invalid};
+    raft::group_manager_notification_id _leader_cb_id{
+      notification_id_type_invalid};
 
     // Abort source to stop waiting if there is a term change.
     std::optional<std::reference_wrapper<ss::abort_source>> _term_as;

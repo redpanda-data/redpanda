@@ -35,6 +35,7 @@
 #include "kafka/server/member.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
+#include "raft/notification.h"
 #include "ssx/semaphore.h"
 #include "utils/rwlock.h"
 
@@ -236,7 +237,7 @@ private:
         ~attached_partition() noexcept;
     };
 
-    cluster::notification_id_type _leader_notify_handle;
+    raft::group_manager_notification_id _leader_notify_handle;
     cluster::notification_id_type _topic_table_notify_handle;
 
     void handle_leader_change(

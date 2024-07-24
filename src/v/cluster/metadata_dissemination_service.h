@@ -14,12 +14,12 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
-#include "cluster/notification.h"
 #include "config/tls_config.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
+#include "raft/notification.h"
 #include "rpc/fwd.h"
 #include "utils/mutex.h"
 #include "utils/retry.h"
@@ -160,7 +160,7 @@ private:
     ss::timer<> _dispatch_timer;
     ss::abort_source _as;
     ss::gate _bg;
-    cluster::notification_id_type _notification_handle;
+    raft::group_manager_notification_id _notification_handle;
 };
 
 } // namespace cluster
