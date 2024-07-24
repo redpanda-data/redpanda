@@ -308,6 +308,25 @@ static ss::future<std::optional<std::error_code>> get_file_range(
             co_return seek_result.error();
         }
         auto seek = seek_result.value();
+        vlog(
+          archival_log.debug,
+          "Found offset {} when looking for target {}",
+          seek.offset,
+          begin_inclusive);
+        if (seek.offset < begin_inclusive) {
+            // `convert_begin_offset_to_file_pos` may return a lower value than
+            // the target, e.g. if the target was compacted away.
+            //
+            // [...][10, 20][40, 50][...]
+            // Target offset: 30
+            // Seek result offset: 21
+            //
+            // If so, the upload will still logically contain offset 30 if we
+            // return bytes starting at offset 21, but we need to lie about the
+            // offsets because the caller expects the returned metadata to
+            // align with the target.
+            seek.offset = begin_inclusive;
+        }
         upl->starting_offset = seek.offset;
         upl->file_offset = seek.bytes;
         upl->base_timestamp = seek.ts;
