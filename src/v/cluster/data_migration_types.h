@@ -22,6 +22,8 @@
 #include "serde/rw/vector.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <absl/container/flat_hash_set.h>
 
 #include <ranges>
@@ -122,9 +124,13 @@ struct cloud_storage_location
     friend std::ostream&
     operator<<(std::ostream&, const cloud_storage_location&);
 
+    ss::sstring hint;
+
     friend bool
     operator==(const cloud_storage_location&, const cloud_storage_location&)
       = default;
+
+    auto serde_fields() { return std::tie(hint); }
 };
 
 /**
