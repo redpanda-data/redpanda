@@ -10,7 +10,6 @@
 #include "raft/persisted_stm.h"
 
 #include "bytes/iostream.h"
-#include "cluster/snapshot.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
@@ -55,46 +54,6 @@ std::optional<raft::stm_snapshot_header> read_snapshot_header(
 ss::sstring
 stm_snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp) {
     return ssx::sformat("{}/{}", snapshot_name, ntp);
-}
-
-const std::vector<ss::sstring>& stm_snapshot_names() {
-    static const std::vector<ss::sstring> names{
-      cluster::archival_stm_snapshot,
-      cluster::tm_stm_snapshot,
-      cluster::id_allocator_snapshot,
-      cluster::rm_stm_snapshot};
-
-    return names;
-}
-
-ss::future<> do_copy_persistent_stm_state(
-  ss::sstring snapshot_name,
-  model::ntp ntp,
-  storage::kvstore& source_kvs,
-  ss::shard_id target_shard,
-  ss::sharded<storage::api>& api) {
-    const auto key_as_str = stm_snapshot_key(snapshot_name, ntp);
-    bytes key;
-    key.append(
-      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
-
-    auto snapshot = source_kvs.get(storage::kvstore::key_space::stms, key);
-    if (snapshot) {
-        co_await api.invoke_on(
-          target_shard, [key, &snapshot](storage::api& api) {
-              return api.kvs().put(
-                storage::kvstore::key_space::stms, key, snapshot->copy());
-          });
-    }
-}
-
-ss::future<> do_remove_persistent_stm_state(
-  ss::sstring snapshot_name, model::ntp ntp, storage::kvstore& kvs) {
-    const auto key_as_str = stm_snapshot_key(snapshot_name, ntp);
-    bytes key;
-    key.append(
-      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
-    co_await kvs.remove(storage::kvstore::key_space::stms, key);
 }
 
 } // namespace
@@ -626,27 +585,40 @@ template persisted_stm<file_backed_stm_snapshot>::persisted_stm(
 template persisted_stm<kvstore_backed_stm_snapshot>::persisted_stm(
   ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
 
-ss::future<> copy_persistent_stm_state(
+ss::sstring kvstore_backed_stm_snapshot::snapshot_key(
+  const ss::sstring& snapshot_name, const model::ntp& ntp) {
+    return stm_snapshot_key(snapshot_name, ntp);
+}
+
+ss::future<> do_copy_persistent_stm_state(
+  ss::sstring snapshot_name,
   model::ntp ntp,
   storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>& api) {
-    return ss::parallel_for_each(
-      stm_snapshot_names(),
-      [ntp = std::move(ntp), &source_kvs, target_shard, &api](
-        const ss::sstring& snapshot_name) {
-          return do_copy_persistent_stm_state(
-            snapshot_name, ntp, source_kvs, target_shard, api);
-      });
+    const auto key_as_str = raft::kvstore_backed_stm_snapshot::snapshot_key(
+      snapshot_name, ntp);
+    bytes key;
+    key.append(
+      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
+
+    auto snapshot = source_kvs.get(storage::kvstore::key_space::stms, key);
+    if (snapshot) {
+        co_await api.invoke_on(
+          target_shard, [key, &snapshot](storage::api& api) {
+              return api.kvs().put(
+                storage::kvstore::key_space::stms, key, snapshot->copy());
+          });
+    }
 }
 
-ss::future<>
-remove_persistent_stm_state(model::ntp ntp, storage::kvstore& kvs) {
-    return ss::parallel_for_each(
-      stm_snapshot_names(),
-      [ntp = std::move(ntp), &kvs](const ss::sstring& snapshot_name) {
-          return do_remove_persistent_stm_state(snapshot_name, ntp, kvs);
-      });
+ss::future<> do_remove_persistent_stm_state(
+  ss::sstring snapshot_name, model::ntp ntp, storage::kvstore& kvs) {
+    const auto key_as_str = raft::kvstore_backed_stm_snapshot::snapshot_key(
+      snapshot_name, ntp);
+    bytes key;
+    key.append(
+      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
+    co_await kvs.remove(storage::kvstore::key_space::stms, key);
 }
-
 } // namespace raft

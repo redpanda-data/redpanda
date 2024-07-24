@@ -468,6 +468,41 @@ std::optional<ss::sstring> check_result_configuration(
     }
     return {};
 }
+namespace {
+const std::vector<ss::sstring>& stm_snapshot_names() {
+    static const std::vector<ss::sstring> names{
+      cluster::archival_stm_snapshot,
+      cluster::tm_stm_snapshot,
+      cluster::id_allocator_snapshot,
+      cluster::rm_stm_snapshot};
+
+    return names;
+}
+
+} // namespace
+
+ss::future<> copy_persistent_stm_state(
+  model::ntp ntp,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& api) {
+    return ss::parallel_for_each(
+      stm_snapshot_names(),
+      [ntp = std::move(ntp), &source_kvs, target_shard, &api](
+        const ss::sstring& snapshot_name) {
+          return raft::do_copy_persistent_stm_state(
+            snapshot_name, ntp, source_kvs, target_shard, api);
+      });
+}
+
+ss::future<>
+remove_persistent_stm_state(model::ntp ntp, storage::kvstore& kvs) {
+    return ss::parallel_for_each(
+      stm_snapshot_names(),
+      [ntp = std::move(ntp), &kvs](const ss::sstring& snapshot_name) {
+          return raft::do_remove_persistent_stm_state(snapshot_name, ntp, kvs);
+      });
+}
 
 ss::future<> copy_persistent_state(
   const model::ntp& ntp,
@@ -482,8 +517,7 @@ ss::future<> copy_persistent_state(
                group, source_kvs, target_shard, storage),
              storage::offset_translator::copy_persistent_state(
                group, source_kvs, target_shard, storage),
-             raft::copy_persistent_stm_state(
-               ntp, source_kvs, target_shard, storage))
+             copy_persistent_stm_state(ntp, source_kvs, target_shard, storage))
       .discard_result();
 }
 
@@ -494,7 +528,7 @@ ss::future<> remove_persistent_state(
              raft::details::remove_persistent_state(group, source_kvs),
              storage::offset_translator::remove_persistent_state(
                group, source_kvs),
-             raft::remove_persistent_stm_state(ntp, source_kvs))
+             remove_persistent_stm_state(ntp, source_kvs))
       .discard_result();
 }
 
