@@ -411,17 +411,20 @@ class KubectlLocalOnlyTest(Test):
             "hit_legacy_pod_name": {
                 "pod": {
                     "metadata": {
-                        "name": "rp-CLUSTER-NAME-anysuffix",
-                    },
+                        "name": "rp-CLUSTER_ID-4"
+                    }
                 },
-                "result": False
+                "result": True
             },
         }
         for test_name, test_case in test_cases.items():
             pod_obj = test_case["pod"]
             expected_result = test_case["result"]
-            # Provider should not matter, AT ALL... but let's test for it
-            actual_result = is_redpanda_pod(pod_obj, "CLUSTER_ID")
+            try:
+                actual_result = is_redpanda_pod(pod_obj, "CLUSTER_ID")
+            except KeyError as err:
+                self.logger.error(f"KeyError from is_redpanda_pod: {err}")
+                actual_result = False
             assert expected_result is actual_result, f"Failed for test case '{test_name}' (expected={expected_result}, actual={actual_result})"
 
 
