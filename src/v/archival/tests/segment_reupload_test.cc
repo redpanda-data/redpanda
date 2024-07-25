@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "storage/log_manager.h"
+#include "storage/offset_to_filepos.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/archival.h"
 #include "test_utils/tmp_dir.h"
@@ -1419,4 +1420,102 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
     BOOST_REQUIRE_EQUAL(run.num_segments, 2);
     BOOST_REQUIRE_EQUAL(run.meta.base_offset(), 0);
     BOOST_REQUIRE_EQUAL(run.meta.committed_offset(), 400);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_collector_from_inside_first_segment) {
+    /*
+     * Test that the segment collector does correct size accounting when the
+  start
+     * of the range is inside a local segment.
+
+          +--------------------------------+------------------+---------------+
+  Local   |0                            999|1000          1099|1100       1199|
+          +--------------------------------+-----------+------+---------------+
+          +-----------------------+--------+------------------+---------------+
+  Cloud   |0                   989|990  999|1000          1099|1100       1199|
+          +-----------------------+--------+------------------+---------------+
+    */
+
+    auto ntp = model::ntp{"test_ns", "test_tpc", 0};
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    auto o = std::make_unique<ntp_config::default_overrides>();
+    b | start(ntp_config{ntp, {data_path}, std::move(o)});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    b | storage::add_segment(0) | storage::add_random_batch(0, 990)
+      | storage::add_random_batch(990, 10) | storage::add_segment(1000)
+      | storage::add_random_batch(1000, 100) | storage::add_segment(1100)
+      | storage::add_random_batch(1100, 100);
+
+    const auto& seg_set = b.get_disk_log_impl().segments();
+    BOOST_REQUIRE_EQUAL(seg_set.size(), 3);
+
+    const auto& first_seg = seg_set.front();
+    const auto split_at = model::offset{990};
+    auto res
+      = convert_begin_offset_to_file_pos(
+          split_at, first_seg, model::timestamp{}, ss::default_priority_class())
+          .get();
+    BOOST_REQUIRE(res.has_value());
+
+    cloud_storage::partition_manifest m;
+    m.add(cloud_storage::segment_meta{
+      .is_compacted = false,
+      .size_bytes = res.value().bytes,
+      .base_offset = first_seg->offsets().base_offset,
+      .committed_offset = split_at - model::offset{1},
+      .delta_offset = model::offset_delta(0),
+      .delta_offset_end = model::offset_delta(0)});
+
+    m.add(cloud_storage::segment_meta{
+      .is_compacted = false,
+      .size_bytes = first_seg->size_bytes() - res.value().bytes,
+      .base_offset = split_at,
+      .committed_offset = first_seg->offsets().committed_offset,
+      .delta_offset = model::offset_delta(0),
+      .delta_offset_end = model::offset_delta(0)});
+
+    for (auto i = 1; i < seg_set.size(); ++i) {
+        const auto& seg = seg_set[i];
+        auto meta = cloud_storage::segment_meta{
+          .is_compacted = false,
+          .size_bytes = seg->size_bytes(),
+          .base_offset = seg->offsets().base_offset,
+          .committed_offset = seg->offsets().committed_offset,
+          .delta_offset = model::offset_delta(0),
+          .delta_offset_end = model::offset_delta(0)};
+        m.add(meta);
+    }
+
+    auto run_size = m.cloud_log_size() - m.begin()->size_bytes;
+    vlog(
+      test_log.info,
+      "[{}, {} ...]",
+      m.begin()->size_bytes,
+      (++m.begin())->size_bytes);
+
+    archival::segment_collector collector{
+      split_at,
+      m,
+      b.get_disk_log_impl(),
+      run_size,
+      m.last_segment()->committed_offset};
+
+    collector.collect_segments(segment_collector_mode::collect_non_compacted);
+    auto candidate = collector
+                       .make_upload_candidate(ss::default_priority_class(), 10s)
+                       .get();
+
+    BOOST_REQUIRE_EQUAL(
+      std::get<upload_candidate_with_locks>(candidate)
+        .candidate.starting_offset,
+      split_at);
+    BOOST_REQUIRE_EQUAL(
+      std::get<upload_candidate_with_locks>(candidate).candidate.final_offset,
+      m.last_segment()->committed_offset);
 }

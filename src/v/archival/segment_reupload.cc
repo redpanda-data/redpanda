@@ -140,6 +140,16 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         }
 
         auto segment_size = result.segment->size_bytes();
+
+        // This is a hack! If the start offset of the range lies inside
+        // the first segment, we treat this segment as free for the purpose
+        // of size accounting. Otherwise, we could use too much of the size
+        // allocation for offests that are not in the range and fall through the
+        // second if statement below before reaching the end of the range.
+        if (result.segment->offsets().base_offset < _begin_inclusive) {
+            segment_size = 0;
+        }
+
         if (
           _target_end_inclusive.has_value()
           && result.segment->offsets().get_committed_offset()
