@@ -119,21 +119,21 @@ log_config = LoggingConfig('info',
                            })
 
 
-class TestDataset(NamedTuple):
+class TestCompatDataset(NamedTuple):
     type: SchemaType
     schema_base: str
     schema_backward_compatible: str
     schema_not_backward_compatible: str
 
 
-def get_dataset(type: SchemaType) -> TestDataset:
+def get_compat_dataset(type: SchemaType) -> TestCompatDataset:
     if type == SchemaType.AVRO:
-        return TestDataset(type=SchemaType.AVRO,
-                           schema_base=schema1_def,
-                           schema_backward_compatible=schema2_def,
-                           schema_not_backward_compatible=schema3_def)
+        return TestCompatDataset(type=SchemaType.AVRO,
+                                 schema_base=schema1_def,
+                                 schema_backward_compatible=schema2_def,
+                                 schema_not_backward_compatible=schema3_def)
     if type == SchemaType.JSON:
-        return TestDataset(
+        return TestCompatDataset(
             type=SchemaType.JSON,
             schema_base="""
 {
@@ -476,12 +476,15 @@ class SchemaRegistryEndpoints(RedpandaTest):
                                deleted=False,
                                headers=HTTP_POST_HEADERS,
                                **kwargs):
-        return self._request(
-            "POST",
-            f"subjects/{subject}{'?deleted=true' if deleted else ''}",
-            headers=headers,
-            data=data,
-            **kwargs)
+        params = {}
+        if (deleted):
+            params['deleted'] = 'true'
+        return self._request("POST",
+                             f"subjects/{subject}",
+                             headers=headers,
+                             data=data,
+                             params=params,
+                             **kwargs)
 
     def _post_subjects_subject_versions(self,
                                         subject,
@@ -1111,7 +1114,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         """
         Verify compatibility
         """
-        dataset = get_dataset(dataset_type)
+        dataset = get_compat_dataset(dataset_type)
         self.logger.debug(f"testing with {dataset=}")
 
         topic = create_topic_names(1)[0]
