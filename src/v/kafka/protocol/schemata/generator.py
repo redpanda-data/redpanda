@@ -671,17 +671,17 @@ class VersionRange:
         self.min, self.max = self._parse(spec)
 
     def _parse(self, spec):
-        match = re.match("^(?P<min>\d+)$", spec)
+        match = re.match(r"^(?P<min>\d+)$", spec)
         if match:
             min = int(match.group("min"))
             return min, min
 
-        match = re.match("^(?P<min>\d+)\+$", spec)
+        match = re.match(r"^(?P<min>\d+)\+$", spec)
         if match:
             min = int(match.group("min"))
             return min, None
 
-        match = re.match("^(?P<min>\d+)\-(?P<max>\d+)$", spec)
+        match = re.match(r"^(?P<min>\d+)\-(?P<max>\d+)$", spec)
         if match:
             min = int(match.group("min"))
             max = int(match.group("max"))
@@ -742,7 +742,7 @@ def snake_case(name):
 
 
 class FieldType:
-    ARRAY_RE = re.compile("^\[\](?P<type>.+)$")
+    ARRAY_RE = re.compile(r"^\[\](?P<type>.+)$")
 
     def __init__(self, name):
         self._name = name
@@ -1809,15 +1809,15 @@ SCHEMA = {
             "oneOf": [
                 {
                     "type": "string",
-                    "pattern": "^\d+$"
+                    "pattern": r"^\d+$"
                 },
                 {
                     "type": "string",
-                    "pattern": "^\d+\-\d+$"
+                    "pattern": r"^\d+\-\d+$"
                 },
                 {
                     "type": "string",
-                    "pattern": "^\d+\+$"
+                    "pattern": r"^\d+\+$"
                 },
             ],
         },
@@ -1946,7 +1946,7 @@ def codegen(schema_path):
     schema = io.StringIO()
     with open(schema_path, "r") as f:
         for line in f.readlines():
-            line = re.sub("\/\/.*", "", line)
+            line = re.sub(r"//.*", "", line)
             if line.strip():
                 schema.write(line)
 
