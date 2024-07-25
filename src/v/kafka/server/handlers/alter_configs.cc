@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/alter_configs.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -42,6 +43,7 @@ static void parse_and_set_shadow_indexing_mode(
     property_update,
   const std::optional<ss::sstring>& value,
   model::shadow_indexing_mode enabled_value) {
+    property_update.op = cluster::incremental_update_operation::set;
     if (!value) {
         property_update.value = model::shadow_indexing_mode::disabled;
     }
@@ -56,6 +58,8 @@ static void parse_and_set_shadow_indexing_mode(
 
 checked<cluster::topic_properties_update, alter_configs_resource_response>
 create_topic_properties_update(alter_configs_resource& resource) {
+    using op_t = cluster::incremental_update_operation;
+
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
@@ -67,41 +71,34 @@ create_topic_properties_update(alter_configs_resource& resource) {
      * configuration in topic table, the only difference is the replication
      * factor, if not set in the request explicitly it will not be overriden.
      */
-    update.properties.compaction_strategy.op
-      = cluster::incremental_update_operation::set;
-    update.properties.compression.op
-      = cluster::incremental_update_operation::set;
-    update.properties.segment_size.op
-      = cluster::incremental_update_operation::set;
-    update.properties.timestamp_type.op
-      = cluster::incremental_update_operation::set;
-    update.properties.retention_bytes.op
-      = cluster::incremental_update_operation::set;
-    update.properties.retention_duration.op
-      = cluster::incremental_update_operation::set;
-    update.properties.shadow_indexing.op
-      = cluster::incremental_update_operation::set;
-    update.custom_properties.replication_factor.op
-      = cluster::incremental_update_operation::none;
-    update.custom_properties.data_policy.op
-      = cluster::incremental_update_operation::none;
+    constexpr auto apply_op = [](op_t op) {
+        return [op](auto&&... prop) { ((prop.op = op), ...); };
+    };
+    std::apply(apply_op(op_t::remove), update.properties.serde_fields());
+    std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
-    update.properties.record_key_schema_id_validation.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_key_schema_id_validation_compat.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_key_subject_name_strategy.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_key_subject_name_strategy_compat.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_schema_id_validation.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_schema_id_validation_compat.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_subject_name_strategy.op
-      = cluster::incremental_update_operation::set;
-    update.properties.record_value_subject_name_strategy_compat.op
-      = cluster::incremental_update_operation::set;
+    static_assert(
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 26,
+      "If you added a property, please decide on it's default alter config "
+      "policy, and handle the update in the loop below");
+    static_assert(
+      std::tuple_size_v<decltype(update.custom_properties.serde_fields())> == 2,
+      "If you added a property, please decide on it's default alter config "
+      "policy, and handle the update in the loop below");
+
+    /**
+     * The shadow_indexing properties ('redpanda.remote.(read|write|delete)')
+     * are special "sticky" topic properties that are always set as a
+     * topic-level override. We should prevent changing them unless explicitly
+     * requested.
+     *
+     * See: https://github.com/redpanda-data/redpanda/issues/7451
+     */
+    update.properties.shadow_indexing.op = op_t::none;
+    update.properties.remote_delete.op = op_t::none;
+
+    // Now that the defaults are set, continue to set properties from the
+    // request
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       update.properties};
