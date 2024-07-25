@@ -256,10 +256,11 @@ class FailureInjector(FailureInjectorBase):
             if spec.type != FailureSpec.FAILURE_ISOLATE
         }
 
-    def _contunue_all(self):
+    def _continue_all(self):
         self.redpanda.logger.info(f"continuing execution on all nodes")
         for n in self.redpanda.nodes:
-            self._continue(n)
+            if self.redpanda.check_node(n):
+                self._continue(n)
         self._in_flight = {
             spec
             for spec in self._in_flight
