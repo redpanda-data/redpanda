@@ -18,6 +18,8 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <boost/algorithm/string.hpp>
+
 #include <cctype>
 #include <charconv>
 #include <chrono>
@@ -79,7 +81,7 @@ public:
             using value_type = typename type::rep;
             return wrap(from_chars<value_type>{}(in));
         } else if constexpr (is_ss_bool) {
-            return type(in == "true" || in == "TRUE" || in == "1");
+            return type(boost::iequals(in, "true") || in == "1");
         } else if constexpr (is_arithmetic) {
             return do_from_chars(in);
         }
