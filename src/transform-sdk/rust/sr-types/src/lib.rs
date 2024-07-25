@@ -31,11 +31,11 @@ pub enum SchemaFormat {
 }
 
 /// SchemaId is a type for the registered ID of a schema.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SchemaId(pub i32);
 
 /// SchemaVersion is the version of a schema for a subject within the Schema Registry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SchemaVersion(pub i32);
 
 /// Reference is a way for one schema to reference another.

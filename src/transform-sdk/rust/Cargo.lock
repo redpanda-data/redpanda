@@ -459,6 +459,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
+name = "lru"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
+dependencies = [
+ "hashbrown",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -588,6 +597,7 @@ dependencies = [
  "anyhow",
  "apache-avro",
  "csv",
+ "lru",
  "quickcheck",
  "rand",
  "redpanda-transform-sdk-sr",
@@ -601,6 +611,8 @@ dependencies = [
 name = "redpanda-transform-sdk-sr"
 version = "0.0.0-dev"
 dependencies = [
+ "lru",
+ "quickcheck",
  "redpanda-transform-sdk-sr-sys",
  "redpanda-transform-sdk-sr-types",
 ]

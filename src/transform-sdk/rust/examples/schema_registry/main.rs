@@ -19,7 +19,7 @@ use avro::example::Example;
 use anyhow::Result;
 use apache_avro::{from_avro_datum, from_value, AvroSchema};
 use redpanda_transform_sdk::*;
-use redpanda_transform_sdk_sr::{extract_id, Schema, SchemaRegistryClient};
+use redpanda_transform_sdk_sr::{decode_schema_id, Schema, SchemaRegistryClient};
 use serde_json::to_vec;
 
 // This example shows usage of the schema registry integration:
@@ -46,8 +46,7 @@ fn avro_to_json_transform(
     client: &SchemaRegistryClient,
 ) -> Result<()> {
     let rec_bytes = event.record.value().unwrap();
-    let id = extract_id(rec_bytes)?;
-    let mut rest = &rec_bytes[5..];
+    let (id, mut rest) = decode_schema_id(rec_bytes)?;
     let raw_schema = client.lookup_schema_by_id(id)?;
     let s = apache_avro::Schema::parse_str(raw_schema.schema())?;
     let value = from_avro_datum(&s, &mut rest, None)?;

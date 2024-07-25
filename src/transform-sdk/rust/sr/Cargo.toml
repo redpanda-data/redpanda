@@ -14,3 +14,5 @@ categories.workspace = true
 [dependencies]
 redpanda-transform-sdk-sr-types = { path = "../sr-types", version = "=0.0.0-dev" }
 redpanda-transform-sdk-sr-sys = { path = "../sr-sys", version = "=0.0.0-dev" }
+quickcheck = { workspace = true }
+lru = { workspace = true }
