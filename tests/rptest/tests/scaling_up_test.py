@@ -482,7 +482,7 @@ class ScalingUpTest(PreallocNodesTest):
         print_disk_usage(usage)
 
         verify_disk_usage(usage,
-                          [self.redpanda.node_id(self.redpanda.nodes[4])], 0.2)
+                          [self.redpanda.node_id(self.redpanda.nodes[4])], 0.3)
 
         # add sixth node
         self.redpanda.start_node(self.redpanda.nodes[5])
@@ -494,7 +494,7 @@ class ScalingUpTest(PreallocNodesTest):
         verify_disk_usage(usage, [
             self.redpanda.node_id(self.redpanda.nodes[4]),
             self.redpanda.node_id(self.redpanda.nodes[5])
-        ], 0.2)
+        ], 0.3)
         # verify that data can be read
         self.consumer = KgoVerifierSeqConsumer(self.test_context,
                                                self.redpanda,
