@@ -13,10 +13,9 @@ import (
 	"context"
 	"io"
 
-	"github.com/docker/docker/api/types/image"
-
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -28,12 +27,12 @@ type MockClient struct {
 	MockImagePull func(
 		ctx context.Context,
 		ref string,
-		options types.ImagePullOptions,
+		options image.PullOptions,
 	) (io.ReadCloser, error)
 
 	MockImageList func(
 		ctx context.Context,
-		options types.ImageListOptions,
+		options image.ListOptions,
 	) ([]image.Summary, error)
 
 	MockContainerCreate func(
@@ -129,7 +128,7 @@ func (c *MockClient) ContainerCreate(
 }
 
 func (c *MockClient) ImagePull(
-	ctx context.Context, ref string, options types.ImagePullOptions,
+	ctx context.Context, ref string, options image.PullOptions,
 ) (io.ReadCloser, error) {
 	if c.MockImagePull != nil {
 		return c.MockImagePull(ctx, ref, options)
@@ -138,7 +137,7 @@ func (c *MockClient) ImagePull(
 }
 
 func (c *MockClient) ImageList(
-	ctx context.Context, options types.ImageListOptions,
+	ctx context.Context, options image.ListOptions,
 ) ([]image.Summary, error) {
 	if c.MockImageList != nil {
 		return c.MockImageList(ctx, options)
