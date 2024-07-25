@@ -158,6 +158,34 @@ static constexpr std::string_view abs_payload_with_continuation = R"XML(
 </EnumerationResults>
 )XML";
 
+static constexpr std::string_view abs_payload_with_blob_prefix = R"XML(
+<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">
+  <Prefix>prefix</Prefix>
+  <Marker>string-value</Marker>
+  <MaxResults>int-value</MaxResults>
+  <Delimiter>string-value</Delimiter>
+  <Blobs>
+    <BlobPrefix>
+      <Name>cluster_metadata/bb7527f1-3227-4d55-86da-c133ec955ea9/manifests/2/</Name>
+      <Properties>
+	<Creation-Time>Thu, 25 Jul 2024 14:07:26 GMT</Creation-Time>
+	<Last-Modified>Thu, 25 Jul 2024 14:07:26 GMT</Last-Modified>
+	<Etag>0x8DCACB31CE7DB5C</Etag>
+	<ResourceType>directory</ResourceType>
+	<Content-Length>0</Content-Length>
+	<BlobType>BlockBlob</BlobType>
+        <AccessTier>Hot</AccessTier>
+	<AccessTierInferred>true</AccessTierInferred>
+	<LeaseStatus>unlocked</LeaseStatus>
+	<LeaseState>available</LeaseState>
+	<ServerEncrypted>true</ServerEncrypted>
+      </Properties>
+    </BlobPrefix>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>
+)XML";
+
 inline ss::logger test_log("test");
 
 BOOST_AUTO_TEST_CASE(test_parse_payload) {
@@ -246,4 +274,21 @@ BOOST_AUTO_TEST_CASE(test_parse_abs_with_continuation) {
     auto result = p.result();
     BOOST_REQUIRE_EQUAL(result.is_truncated, true);
     BOOST_REQUIRE_EQUAL(result.next_continuation_token, "nnn");
+}
+
+BOOST_AUTO_TEST_CASE(test_parse_abs_with_blob_prefix) {
+    cloud_storage_clients::xml_sax_parser p{};
+    ss::temporary_buffer<char> buffer(
+      abs_payload_with_blob_prefix.data(), abs_payload_with_blob_prefix.size());
+
+    p.start_parse(std::make_unique<cloud_storage_clients::abs_parse_impl>());
+    p.parse_chunk(std::move(buffer));
+    p.end_parse();
+
+    auto result = p.result();
+    BOOST_REQUIRE(result.contents.empty());
+    BOOST_REQUIRE_EQUAL(result.common_prefixes.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      result.common_prefixes[0],
+      "cluster_metadata/bb7527f1-3227-4d55-86da-c133ec955ea9/manifests/2/");
 }
