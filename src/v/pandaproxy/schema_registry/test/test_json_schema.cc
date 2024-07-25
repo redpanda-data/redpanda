@@ -301,11 +301,18 @@ struct compatibility_test_case {
     std::string_view reader_schema;
     std::string_view writer_schema;
     bool reader_is_compatible_with_writer;
+    bool expected_exception = false;
 };
 
 static constexpr auto compatibility_test_cases = std::to_array<
   compatibility_test_case>({
   //***** not compatible section *****
+  // atoms
+  {
+    .reader_schema = "false",
+    .writer_schema = "true",
+    .reader_is_compatible_with_writer = false,
+  },
   // not allowed promotion
   {
     .reader_schema = R"({"type": "integer"})",
@@ -342,6 +349,11 @@ static constexpr auto compatibility_test_cases = std::to_array<
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10})",
     .writer_schema = R"({"type": "number", "multipleOf": 21})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 20})",
+    .writer_schema = R"({"type": "number", "multipleOf": 10})",
     .reader_is_compatible_with_writer = false,
   },
   {
@@ -482,7 +494,58 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": ["integer", "number"], "not": {"type": "integer"}})",
     .reader_is_compatible_with_writer = false,
   },
+  // positive combinators: multiple combs
+  {
+    .reader_schema = R"({"type": "integer", "oneOf": [true], "anyOf": [true]})",
+    .writer_schema = R"({"type": "integer"})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
+  // positive combinators: mismatch of type
+  {
+    .reader_schema = R"({"type": "integer"})",
+    .writer_schema = R"({"type": "integer", "anyOf": [true]})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
+  {
+    .reader_schema = R"({"allOf": [true]})",
+    .writer_schema = R"({"anyOf": [true]})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
+  // positive combinators: mismatch of size
+  {
+    .reader_schema = R"({"allOf": [true, false]})",
+    .writer_schema = R"({"allOf": [true]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"anyOf": [true]})",
+    .writer_schema = R"({"anyOf": [true, false]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"oneOf": [true]})",
+    .writer_schema = R"({"oneOf": [true, false]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // positive combinators: subschema mismatch
+  {
+    // note: this fails because for writer, there isn't s distinct matching
+    // schema in reader
+    .reader_schema = R"({"oneOf": [{"type":"number"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type":"number", "multipleOf": 10}, {"type": "number", "multipleOf": 1.1}]})",
+    .reader_is_compatible_with_writer = false,
+  },
   //***** compatible section *****
+  // atoms
+  {
+    .reader_schema = "true",
+    .writer_schema = "false",
+    .reader_is_compatible_with_writer = true,
+  },
   // same type
   {
     .reader_schema = R"({"type": "boolean"})",
@@ -530,6 +593,11 @@ static constexpr auto compatibility_test_cases = std::to_array<
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
     .writer_schema = R"({"type": "number", "multipleOf": 20.2})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 1.1})",
+    .writer_schema = R"({"type": "number", "multipleOf": 3.3})",
     .reader_is_compatible_with_writer = true,
   },
   // string checks
@@ -673,6 +741,14 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "integer", "not": {"type": "integer", "minimum": 5}})",
     .reader_is_compatible_with_writer = true,
   },
+  // positive combinators
+  {
+    .reader_schema
+    = R"({"oneOf": [{"type":"number", "multipleOf": 3}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type":"boolean"}, {"type": "number", "multipleOf": 9}]})",
+    .reader_is_compatible_with_writer = true,
+  },
 });
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;
@@ -692,6 +768,23 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
           data.writer_schema,
           data.reader_is_compatible_with_writer)) {
             try {
+                // sanity check that each schema is compatible with itself
+                BOOST_CHECK_MESSAGE(
+                  pps::check_compatible(
+                    make_json_schema(data.reader_schema),
+                    make_json_schema(data.reader_schema)),
+                  fmt::format(
+                    "reader '{}' should be compatible with itself",
+                    data.reader_schema));
+                BOOST_CHECK_MESSAGE(
+                  pps::check_compatible(
+                    make_json_schema(data.writer_schema),
+                    make_json_schema(data.writer_schema)),
+                  fmt::format(
+                    "writer '{}' should be compatible with itself",
+                    data.writer_schema));
+
+                // check compatibility (or not) reader->writer
                 BOOST_CHECK_EQUAL(
                   data.reader_is_compatible_with_writer,
                   pps::check_compatible(
@@ -699,10 +792,12 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
                     make_json_schema(data.writer_schema)));
             } catch (...) {
                 BOOST_CHECK_MESSAGE(
-                  false,
+                  data.expected_exception,
                   fmt::format(
                     "terminated with exception {}", std::current_exception()));
+                continue;
             }
+            BOOST_CHECK_MESSAGE(!data.expected_exception, "no exception");
         }
     };
 }
