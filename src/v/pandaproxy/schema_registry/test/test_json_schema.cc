@@ -64,8 +64,7 @@ static const auto error_test_cases = std::to_array({
     R"({"type": "thisisnotapropertype"})",
     pps::error_info{
       pps::error_code::schema_invalid,
-      "Invalid json schema: '#/type', invalid metaschema: '#/properties/type', "
-      "invalid keyword: 'anyOf'"}},
+      R"(Invalid json schema: '{"type":"thisisnotapropertype"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
   error_test_case{
     R"({"$schema": "unsupported_dialect"})",
     pps::error_info{
@@ -76,6 +75,18 @@ static const auto error_test_cases = std::to_array({
     pps::error_info{
       pps::error_code::schema_invalid,
       "Unsupported json schema dialect: '42'"}},
+  // exclusiveMinimum is a bool in draft 4 but it is a double in draft 6
+  error_test_case{
+    R"(
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "type": "number",
+  "minimum": 0,
+  "exclusiveMinimum": false
+})",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"$schema":"http://json-schema.org/draft-06/schema#","exclusiveMinimum":false,"minimum":0,"type":"number"}'. Error: '/exclusiveMinimum: Expected number, found boolean')"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
@@ -86,6 +97,8 @@ SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
                   f.store,
                   {pps::subject{"test"}, {data.def, pps::schema_type::json}})
                   .get();
+                BOOST_CHECK_MESSAGE(
+                  false, "terminated without an exception for invalid schema");
             } catch (pps::exception const& e) {
                 BOOST_CHECK_EQUAL(e.code(), data.err.code());
                 BOOST_WARN_MESSAGE(
@@ -123,13 +136,6 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
   "minimum": 0,
   "exclusiveMinimum": false
 })",
-  R"(
-{
-  "$schema": "http://json-schema.org/draft-05/schema#",
-  "type": "number",
-  "minimum": 0,
-  "exclusiveMinimum": false
-})",
   R"json(
 {
   "$schema": "http://json-schema.org/draft-06/schema#",
@@ -162,8 +168,9 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
   )json",
   R"json({"$schema": "http://json-schema.org/draft-07/schema"})json",
   R"json({"$schema": "http://json-schema.org/draft-06/schema"})json",
-  R"json({"$schema": "http://json-schema.org/draft-05/schema"})json",
   R"json({"$schema": "http://json-schema.org/draft-04/schema"})json",
+  R"json({"$schema": "https://json-schema.org/draft/2019-09/schema"})json",
+  R"json({"$schema": "https://json-schema.org/draft/2020-12/schema"})json",
 });
 SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
