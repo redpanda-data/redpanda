@@ -327,6 +327,8 @@ ss::future<download_result> remote::do_download_manifest(
               retry_permit.delay, fib.root_abort_source());
             retry_permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             vlog(
@@ -425,6 +427,8 @@ ss::future<upload_result> remote::upload_manifest(
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::key_not_found:
             // not expected during upload
             [[fallthrough]];
@@ -593,6 +597,8 @@ ss::future<upload_result> remote::upload_stream(
             }
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::key_not_found:
             // not expected during upload
             [[fallthrough]];
@@ -773,6 +779,8 @@ ss::future<download_result> remote::download_stream(
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             break;
@@ -851,6 +859,8 @@ ss::future<download_result> remote::download_index(
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             break;
@@ -918,6 +928,8 @@ ss::future<download_result> remote::segment_exists(
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             break;
@@ -987,6 +999,8 @@ ss::future<upload_result> remote::delete_object(
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
@@ -1146,6 +1160,8 @@ ss::future<upload_result> remote::delete_object_batch(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
@@ -1359,6 +1375,8 @@ ss::future<remote::list_result> remote::list_objects(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = cloud_storage_clients::error_outcome::fail;
             break;
@@ -1436,6 +1454,8 @@ ss::future<upload_result> remote::upload_object(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::key_not_found:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
