@@ -58,10 +58,9 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.start_producer(1, throughput=10000)
         self.start_consumer(1)
         self.await_startup()
-        # start failure injector with default parameters
-        self.start_finjector()
-
-        self.validate_records()
+        # run failure injector loop with default parameters
+        with self.finj_thread():
+            self.validate_records()
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
@@ -90,17 +89,14 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.start_consumer(1)
         self.await_startup()
 
-        # inject permanent random failure
-        f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
-                             random.choice(self.redpanda.nodes[0:1]))
-
-        self.inject_failure(f_spec)
-
-        # inject transient failure on other node
-        f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
-                             self.redpanda.nodes[2],
-                             length=2.0 if self.scale.local else 15.0)
-
-        self.inject_failure(f_spec)
-
-        self.validate_records()
+        with self.finj_manual() as finj:
+            # inject permanent random failure
+            f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
+                                 random.choice(self.redpanda.nodes[0:1]))
+            finj(f_spec)
+            # inject transient failure on other node
+            f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
+                                 self.redpanda.nodes[2],
+                                 length=2.0 if self.scale.local else 15.0)
+            finj(f_spec)
+            self.validate_records()
