@@ -108,6 +108,9 @@ struct schema_reference {
     friend std::ostream&
     operator<<(std::ostream& os, const schema_reference& ref);
 
+    friend bool
+    operator<(const schema_reference& lhs, const schema_reference& rhs);
+
     ss::sstring name;
     subject sub{invalid_subject};
     schema_version version{invalid_schema_version};
