@@ -88,7 +88,8 @@ sharded_store::make_canonical_schema(unparsed_schema schema, normalize norm) {
         co_return co_await make_canonical_protobuf_schema(
           *this, std::move(schema));
     case schema_type::json:
-        co_return co_await make_canonical_json_schema(*this, std::move(schema));
+        co_return co_await make_canonical_json_schema(
+          *this, std::move(schema), norm);
     }
     __builtin_unreachable();
 }
