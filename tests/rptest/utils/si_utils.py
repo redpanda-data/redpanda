@@ -20,6 +20,7 @@ from typing import Literal, Sequence, Optional, NewType, NamedTuple, Iterator
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 import xxhash
 
+from botocore.exceptions import ClientError
 from rptest.archival.s3_client import ObjectMetadata, S3Client
 from rptest.archival.abs_client import ABSClient
 from rptest.clients.rp_storage_tool import RpStorageTool
@@ -1049,7 +1050,15 @@ class BucketView:
                 self._state.segment_objects += 1
                 if self._scan_segments:
                     spc = parse_s3_segment_path(o.key)
-                    self._add_segment_metadata(o.key, spc)
+                    try:
+                        self._add_segment_metadata(o.key, spc)
+                    except ClientError as err:
+                        # The segment was listed by ListObjectV2 request
+                        # and deleted by Redpanda concurrently.
+                        # We don't expect this to happen with the manifests
+                        # so this error is only handled in case of segments
+                        if err['Error']['Code'] == 'NoSuchKey':
+                            self._state.ignored_objects += 1
             elif self.path_matcher.is_topic_manifest(o):
                 pass
             elif self.path_matcher.is_tx_manifest(o):

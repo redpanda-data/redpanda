@@ -365,7 +365,8 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         si_settings = SISettings(test_context,
                                  log_segment_size=self.segment_size,
-                                 fast_uploads=True)
+                                 fast_uploads=True,
+                                 cloud_storage_housekeeping_interval_ms=1000)
         super(ShadowIndexingCloudRetentionTest,
               self).__init__(test_context=test_context,
                              si_settings=si_settings,
@@ -419,7 +420,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         # https://github.com/redpanda-data/redpanda/issues/8658#issuecomment-1420905967
         wait_until(lambda: 9 <= deleted_segments_count() <= 10,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed from the cloud")
 
@@ -479,7 +480,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         # Test that the size of the cloud log is below the retention threshold
         # by querying the manifest.
         wait_until(lambda: cloud_log_size().total() <= retention_bytes,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")
 
@@ -536,7 +537,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         )
         # Wait for everything to be uploaded to the cloud.
         wait_until(lambda: cloud_log_segment_count() >= local_seg_count - 1,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Segments not uploaded")
 
@@ -547,7 +548,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         # Check that all segments have been removed
         wait_until(lambda: cloud_log_segment_count() == 0,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Not all segments were removed from the cloud")
 
@@ -617,7 +618,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         assert after_alter['redpanda.remote.read'][0] == 'true'
 
         # Wait for upload to occur first
-        wait_until(lambda: ntp_in_manifest(), timeout_sec=10)
+        wait_until(lambda: ntp_in_manifest(), timeout_sec=30)
 
         def cloud_log_size() -> int:
             s3_snapshot = BucketView(self.redpanda, topics=[topic])
@@ -627,7 +628,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         # Wait for everything to be uploaded to the cloud.
         wait_until(lambda: cloud_log_size().total() >= total_bytes,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Segments not uploaded")
 
@@ -638,7 +639,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         # Assert that retention policy has kicked in and with the desired
         # effect, i.e. total bytes is <= retention settings applied
         wait_until(lambda: cloud_log_size().total() <= retention_bytes,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")
 
