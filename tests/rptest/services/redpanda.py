@@ -3239,7 +3239,7 @@ class RedpandaService(RedpandaServiceBase):
 
     @property
     def cloud_storage_client(self):
-        assert self._cloud_storage_client, 'cloud storage client not available - did you call si_start()?'
+        assert self._cloud_storage_client, 'cloud storage client not available - did you call start_si()?'
         return self._cloud_storage_client
 
     def delete_bucket_from_si(self):

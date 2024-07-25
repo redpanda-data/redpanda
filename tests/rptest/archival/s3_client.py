@@ -405,12 +405,14 @@ class S3Client:
                 raise
 
     @retry_on_slowdown()
-    def _put_object(self, bucket, key, content):
+    def _put_object(self, bucket, key, content, is_bytes=False):
         """Put object to S3"""
         try:
-            return self._cli.put_object(Bucket=bucket,
-                                        Key=key,
-                                        Body=bytes(content, encoding='utf-8'))
+            if not is_bytes:
+                payload = bytes(content, encoding='utf-8')
+            else:
+                payload = content
+            return self._cli.put_object(Bucket=bucket, Key=key, Body=payload)
         except ClientError as err:
             self.logger.debug(f"error response putting {bucket}/{key} {err}")
             if err.response['Error']['Code'] == 'SlowDown':
@@ -439,8 +441,8 @@ class S3Client:
         resp = self._get_object(bucket, key)
         return resp['Body'].read()
 
-    def put_object(self, bucket, key, data):
-        self._put_object(bucket, key, data)
+    def put_object(self, bucket, key, data, is_bytes=False):
+        self._put_object(bucket, key, data, is_bytes)
 
     def copy_object(self,
                     bucket,
