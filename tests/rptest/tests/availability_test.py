@@ -104,3 +104,5 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.inject_failure(f_spec)
 
         self.validate_records()
+
+        self._continue_all()
