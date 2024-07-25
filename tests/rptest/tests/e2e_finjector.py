@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from contextlib import contextmanager
 import random
 import time
 import threading
@@ -33,7 +34,8 @@ def const_delay(delay_seconds=10):
 class EndToEndFinjectorTest(EndToEndTest):
     def __init__(self, test_context):
         super(EndToEndFinjectorTest, self).__init__(test_context=test_context)
-        self.enable_failures = True
+        self.enable_manual = False
+        self.enable_loop = False
         self.scale = Scale(test_context)
         self.finjector_thread = None
         self.failure_length_provider = scale_dependent_length(self.scale)
@@ -56,11 +58,49 @@ class EndToEndFinjectorTest(EndToEndTest):
         if delay_provider:
             self.failure_delay_provier = delay_provider
 
-    def start_finjector(self):
-        self.finjector_thread = threading.Thread(
-            target=self._failure_injector_loop, args=())
-        self.finjector_thread.daemon = True
-        self.finjector_thread.start()
+    @contextmanager
+    def finj_thread(self):
+        """
+        Get a context manager that holds the test in manual failure injection
+        mode. Recoverable failures such as suspended process or network issues
+        will be repaired on exit.
+
+        :return: void
+        """
+        try:
+            assert not self.enable_manual and not self.enable_loop
+            self.enable_loop = True
+            self.finjector_thread = threading.Thread(
+                target=self._failure_injector_loop, args=())
+            self.finjector_thread.start()
+            yield
+        finally:
+            self.enable_loop = False
+            if self.finjector_thread:
+                self.finjector_thread.join()
+            self._cleanup()
+
+    @contextmanager
+    def finj_manual(self):
+        """
+        Get a context manager that holds the test in manual failure injection
+        mode. Recoverable failures such as suspended process or network issues
+        will be repaired on exit. Caller is supposed to make inject_failure()
+        calls inside the `with` statement.
+
+        :return: a callable with a single failure spec argument
+        """
+        try:
+            assert not self.enable_manual and not self.enable_loop
+            self.enable_manual = True
+
+            def callable(spec):
+                return self.inject_failure(spec)
+
+            yield callable
+        finally:
+            self.enable_manual = False
+            self._cleanup()
 
     def random_failure_spec(self):
         f_type = random.choice(self.allowed_failures)
@@ -70,6 +110,7 @@ class EndToEndFinjectorTest(EndToEndTest):
         return FailureSpec(node=node, type=f_type, length=length)
 
     def inject_failure(self, spec):
+        assert self.enable_manual or self.enable_loop
         f_injector = make_failure_injector(self.redpanda)
         f_injector.inject_failure(spec)
 
@@ -80,8 +121,7 @@ class EndToEndFinjectorTest(EndToEndTest):
             return self.random_failure_spec()
 
     def _failure_injector_loop(self):
-
-        while self.enable_failures:
+        while self.enable_loop:
             f_injector = make_failure_injector(self.redpanda)
             f_injector.inject_failure(self._next_failure())
 
@@ -90,9 +130,6 @@ class EndToEndFinjectorTest(EndToEndTest):
                 f"waiting {delay} seconds before next failure")
             time.sleep(delay)
 
-    def teardown(self):
-        self.enable_failures = False
-        if self.finjector_thread:
-            self.finjector_thread.join()
+    def _cleanup(self):
         make_failure_injector(self.redpanda)._heal_all()
         make_failure_injector(self.redpanda)._continue_all()
