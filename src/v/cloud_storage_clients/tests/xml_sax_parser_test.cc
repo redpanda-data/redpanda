@@ -44,21 +44,21 @@ static constexpr std::string_view payload = R"XML(
 )XML";
 
 static constexpr std::string_view abs_payload = R"XML(
-<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">  
-  <Prefix>prefix</Prefix>  
-  <Marker>string-value</Marker>  
-  <MaxResults>int-value</MaxResults>  
-  <Delimiter>string-value</Delimiter>  
-  <Blobs>  
-    <Blob>  
-      <Name>blob-name</Name>  
-      <Snapshot>date-time-value</Snapshot>  
+<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">
+  <Prefix>prefix</Prefix>
+  <Marker>string-value</Marker>
+  <MaxResults>int-value</MaxResults>
+  <Delimiter>string-value</Delimiter>
+  <Blobs>
+    <Blob>
+      <Name>blob-name</Name>
+      <Snapshot>date-time-value</Snapshot>
       <VersionId>date-time-vlue</VersionId>
       <IsCurrentVersion>true</IsCurrentVersion>
       <Deleted>true</Deleted>
-      <Properties> 
+      <Properties>
         <Creation-Time>date-time-value</Creation-Time>
-        <Last-Modified>2021-01-10T02:00:00.000Z</Last-Modified>  
+        <Last-Modified>2021-01-10T02:00:00.000Z</Last-Modified>
         <Etag>etag</Etag>
         <Owner>owner user id</Owner>
         <Group>owning group id</Group>
@@ -66,25 +66,25 @@ static constexpr std::string_view abs_payload = R"XML(
         <Acl>access control list</Acl>
         <ResourceType>file | directory</ResourceType>
         <Placeholder>true</Placeholder>
-        <Content-Length>1112</Content-Length>  
-        <Content-Type>blob-content-type</Content-Type>  
-        <Content-Encoding />  
-        <Content-Language />  
-        <Content-MD5 />  
-        <Cache-Control />  
-        <x-ms-blob-sequence-number>sequence-number</x-ms-blob-sequence-number>  
-        <BlobType>BlockBlob|PageBlob|AppendBlob</BlobType>  
-        <AccessTier>tier</AccessTier>  
-        <LeaseStatus>locked|unlocked</LeaseStatus>  
-        <LeaseState>available | leased | expired | breaking | broken</LeaseState>  
-        <LeaseDuration>infinite | fixed</LeaseDuration>  
-        <CopyId>id</CopyId>  
-        <CopyStatus>pending | success | aborted | failed </CopyStatus>  
-        <CopySource>source url</CopySource>  
-        <CopyProgress>bytes copied/bytes total</CopyProgress>  
-        <CopyCompletionTime>datetime</CopyCompletionTime>  
-        <CopyStatusDescription>error string</CopyStatusDescription>  
-        <ServerEncrypted>true</ServerEncrypted> 
+        <Content-Length>1112</Content-Length>
+        <Content-Type>blob-content-type</Content-Type>
+        <Content-Encoding />
+        <Content-Language />
+        <Content-MD5 />
+        <Cache-Control />
+        <x-ms-blob-sequence-number>sequence-number</x-ms-blob-sequence-number>
+        <BlobType>BlockBlob|PageBlob|AppendBlob</BlobType>
+        <AccessTier>tier</AccessTier>
+        <LeaseStatus>locked|unlocked</LeaseStatus>
+        <LeaseState>available | leased | expired | breaking | broken</LeaseState>
+        <LeaseDuration>infinite | fixed</LeaseDuration>
+        <CopyId>id</CopyId>
+        <CopyStatus>pending | success | aborted | failed </CopyStatus>
+        <CopySource>source url</CopySource>
+        <CopyProgress>bytes copied/bytes total</CopyProgress>
+        <CopyCompletionTime>datetime</CopyCompletionTime>
+        <CopyStatusDescription>error string</CopyStatusDescription>
+        <ServerEncrypted>true</ServerEncrypted>
         <CustomerProvidedKeySha256>encryption-key-sha256</CustomerProvidedKeySha256>
         <EncryptionScope>encryption-scope-name</EncryptionScope>
         <IncrementalCopy>true</IncrementalCopy>
@@ -95,10 +95,10 @@ static constexpr std::string_view abs_payload = R"XML(
         <TagCount>number of tags between 1 to 10</TagCount>
         <RehydratePriority>rehydrate priority</RehydratePriority>
         <Expiry-Time>date-time-value</Expiry-Time>
-      </Properties>  
-      <Metadata>     
-        <Name>value</Name>  
-      </Metadata>  
+      </Properties>
+      <Metadata>
+        <Name>value</Name>
+      </Metadata>
       <Tags>
           <TagSet>
               <Tag>
@@ -108,53 +108,53 @@ static constexpr std::string_view abs_payload = R"XML(
           </TagSet>
       </Tags>
       <OrMetadata />
-    </Blob>  
-    <BlobPrefix>  
-      <Name>blob-prefix</Name>  
-    </BlobPrefix>  
-  </Blobs>  
-  <NextMarker />  
+    </Blob>
+    <BlobPrefix>
+      <Name>blob-prefix</Name>
+    </BlobPrefix>
+  </Blobs>
+  <NextMarker />
 </EnumerationResults>
 )XML";
 
 static constexpr std::string_view abs_payload_with_continuation = R"XML(
-<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">  
-  <Prefix>prefix</Prefix>  
-  <Marker>string-value</Marker>  
-  <MaxResults>int-value</MaxResults>  
-  <Delimiter>string-value</Delimiter>  
-  <Blobs>  
-    <Blob>  
-      <Name>blob-name</Name>  
-      <Snapshot>date-time-value</Snapshot>  
+<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">
+  <Prefix>prefix</Prefix>
+  <Marker>string-value</Marker>
+  <MaxResults>int-value</MaxResults>
+  <Delimiter>string-value</Delimiter>
+  <Blobs>
+    <Blob>
+      <Name>blob-name</Name>
+      <Snapshot>date-time-value</Snapshot>
       <VersionId>date-time-vlue</VersionId>
       <IsCurrentVersion>true</IsCurrentVersion>
       <Deleted>true</Deleted>
-      <Properties> 
+      <Properties>
         <Creation-Time>date-time-value</Creation-Time>
-        <Last-Modified>2021-01-10T02:00:00.000Z</Last-Modified>  
+        <Last-Modified>2021-01-10T02:00:00.000Z</Last-Modified>
         <Etag>etag</Etag>
         <Acl>access control list</Acl>
         <ResourceType>file | directory</ResourceType>
         <Placeholder>true</Placeholder>
-        <Content-Length>1112</Content-Length>  
-        <Content-Type>blob-content-type</Content-Type>  
-        <Content-Encoding />  
-        <Content-Language />  
-        <Content-MD5 />  
-        <Cache-Control />  
-        <x-ms-blob-sequence-number>sequence-number</x-ms-blob-sequence-number>  
-        <BlobType>BlockBlob|PageBlob|AppendBlob</BlobType>  
+        <Content-Length>1112</Content-Length>
+        <Content-Type>blob-content-type</Content-Type>
+        <Content-Encoding />
+        <Content-Language />
+        <Content-MD5 />
+        <Cache-Control />
+        <x-ms-blob-sequence-number>sequence-number</x-ms-blob-sequence-number>
+        <BlobType>BlockBlob|PageBlob|AppendBlob</BlobType>
         <RemainingRetentionDays>no-of-days</RemainingRetentionDays>
         <TagCount>number of tags between 1 to 10</TagCount>
         <Expiry-Time>date-time-value</Expiry-Time>
-      </Properties>  
-    </Blob>  
-    <BlobPrefix>  
-      <Name>blob-prefix</Name>  
-    </BlobPrefix>  
-  </Blobs>  
-  <NextMarker>nnn</NextMarker>  
+      </Properties>
+    </Blob>
+    <BlobPrefix>
+      <Name>blob-prefix</Name>
+    </BlobPrefix>
+  </Blobs>
+  <NextMarker>nnn</NextMarker>
 </EnumerationResults>
 )XML";
 
