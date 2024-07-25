@@ -19,6 +19,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
+#include "cloud_topics/dl_stm.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
 #include "cluster/archival/ntp_archiver_service.h"
@@ -1620,6 +1621,33 @@ void application::wire_up_redpanda_services(
     producer_manager.invoke_on_all(&cluster::tx::producer_state_manager::start)
       .get();
 
+    if (archival_storage_enabled()) {
+        // POC
+        syschecks::systemd_message("Adding aggregated uploader").get();
+        construct_service(
+          aggregated_uploader,
+          // bucket
+          ss::sharded_parameter(
+            [sg = sched_groups.archival_upload(),
+             p = archival_priority(),
+             enabled = archival_storage_enabled()]()
+              -> cloud_storage_clients::bucket_name {
+                if (enabled) {
+                    return archival::get_archival_service_config(sg, p)
+                      .bucket_name;
+                } else {
+                    return {};
+                }
+            }),
+          // remote api
+          std::ref(cloud_io))
+          .get();
+        aggregated_uploader
+          .invoke_on_all(
+            &cloud_topics::aggregated_uploader<ss::lowres_clock>::start)
+          .get();
+    }
+
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -1628,6 +1656,7 @@ void application::wire_up_redpanda_services(
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
+      std::ref(aggregated_uploader),
       ss::sharded_parameter(
         [sg = sched_groups.archival_upload(),
          p = archival_priority(),
@@ -2843,6 +2872,7 @@ void application::start_runtime_services(
             feature_table,
             controller->get_topics_state());
           pm.register_factory<kafka::group_tx_tracker_stm_factory>();
+          pm.register_factory<cloud_topics::dl_stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

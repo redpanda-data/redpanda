@@ -476,10 +476,10 @@ public:
     seastar::gate& gate() { return io().gate(); };
     ss::abort_source& as() { return io().as(); }
 
-private:
     cloud_io::remote& io() { return _io.local(); }
     const cloud_io::remote& io() const { return _io.local(); }
 
+private:
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);

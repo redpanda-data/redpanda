@@ -52,7 +52,13 @@ enum class record_batch_type : int8_t {
     client_quota = 31,        // client quota command
     data_migration_cmd = 32,  // data migration manipulation command
     group_fence_tx = 33,      // fence batch in group transactions
-    MAX = group_fence_tx,
+    // dl_stm batch types
+    dl_placeholder = 40, // dl_placeholder batch
+    dl_delimiter = 41,   // delimiter placed between different NTP's data
+    dl_stm_cmd = 42,     // overlay, truncate, advance_*_offset etc
+    dl_header = 43,      // L1 object's header (contains composition info)
+    // dl_stm end
+    MAX = dl_header,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

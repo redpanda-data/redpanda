@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cloud_topics/aggregated_uploader.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/fwd.h"
 #include "cluster/fwd.h"
@@ -25,6 +26,7 @@
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
 namespace cluster {
@@ -49,6 +51,7 @@ public:
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
+      ss::sharded<cloud_topics::aggregated_uploader<ss::lowres_clock>>&,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
 
@@ -74,6 +77,13 @@ public:
     /// after a configuration change.
     void maybe_construct_archiver();
 
+    // POC stuff
+
+    /// Returns true if the partition belongs to a 'shadow topic'
+    bool is_shadow_topic() const;
+
+    // end POC
+
     ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
@@ -81,6 +91,14 @@ public:
     /// Can only be performed on logs that are deletable and non internal
     ss::future<std::error_code> prefix_truncate(
       model::offset o, kafka::offset ko, ss::lowres_clock::time_point deadline);
+
+    /// Shadow topics PoC
+    /// This method accumulates and uploads data to S3 and then replicates
+    /// placeholder record batches to the NTP.
+    kafka_stages debounce_and_replicate_in_stages(
+      model::batch_identity,
+      model::record_batch_reader&&,
+      raft::replicate_options);
 
     kafka_stages replicate_in_stages(
       model::batch_identity,
@@ -372,6 +390,9 @@ private:
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
+    // POC
+    ss::sharded<cloud_topics::aggregated_uploader<ss::lowres_clock>>&
+      _agg_uploader;
     ss::shared_ptr<cloud_storage::partition_probe> _cloud_storage_probe;
     ss::shared_ptr<cloud_storage::async_manifest_view>
       _cloud_storage_manifest_view;

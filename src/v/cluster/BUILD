@@ -584,6 +584,8 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
+        "//src/v/cloud_topics:aggregated_log_reader",
+        "//src/v/cloud_topics:aggregated_uploader",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_storage_clients",

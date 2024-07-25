@@ -264,6 +264,7 @@ v_cc_library(
     topic_recovery_status_rpc
     tx_manager_migrator_rpc
     data_migrations_rpc
+    v::cloud_topics
     v::raft
     Roaring::roaring
     absl::flat_hash_map
