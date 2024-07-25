@@ -419,12 +419,15 @@ class SchemaRegistryEndpoints(RedpandaTest):
                                deleted=False,
                                headers=HTTP_POST_HEADERS,
                                **kwargs):
-        return self._request(
-            "POST",
-            f"subjects/{subject}{'?deleted=true' if deleted else ''}",
-            headers=headers,
-            data=data,
-            **kwargs)
+        params = {}
+        if (deleted):
+            params['deleted'] = 'true'
+        return self._request("POST",
+                             f"subjects/{subject}",
+                             headers=headers,
+                             data=data,
+                             params=params,
+                             **kwargs)
 
     def _post_subjects_subject_versions(self,
                                         subject,
