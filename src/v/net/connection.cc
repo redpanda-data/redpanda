@@ -19,6 +19,8 @@
 
 #include <gnutls/gnutls.h>
 
+#include <system_error>
+
 namespace net {
 
 /**
@@ -43,7 +45,9 @@ bool is_reconnect_error(const std::system_error& e) {
         default:
             return false;
         }
-    } else {
+    } else if (
+      e.code().category() == std::system_category()
+      || e.code().category() == std::generic_category()) {
         switch (v) {
         case ECONNREFUSED:
         case ENETUNREACH:
@@ -61,6 +65,9 @@ bool is_reconnect_error(const std::system_error& e) {
         default:
             return false;
         }
+    } else {
+        // We don't know what the error category is at this point
+        return false;
     }
     __builtin_unreachable();
 }
