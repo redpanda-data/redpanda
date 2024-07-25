@@ -4,7 +4,7 @@ A small script that will download wasm-merge and create a tarball with wasm-merg
 
 This script assumes it's run from the JS SDK root directory (src/transform-sdk/js) and you must have already built the Wasm binary via:
 
-docker run -v `pwd`/..:/src -w /src/js ghcr.io/webassembly/wasi-sdk:wasi-sdk-21 \
+docker run -v `pwd`/..:/src -w /src/js ghcr.io/webassembly/wasi-sdk \
   /bin/bash -c 'apt update && apt install -y git && cmake --preset release-static && cmake --build --preset release-static -- redpanda_js_transform'
 """
 
