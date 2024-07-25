@@ -109,7 +109,7 @@ message Test3 {
   google.protobuf.Timestamp timestamp = 1;
 }"""
 
-json_number_schema_def = '{"type": "number"}'
+json_number_schema_def = '{"type":"number"}'
 
 log_config = LoggingConfig('info',
                            logger_levels={
@@ -248,6 +248,37 @@ def get_normalize_dataset(type: SchemaType) -> TestNormalizeDataset:
     }
   ]
 }"""))
+    if type == SchemaType.JSON:
+        return TestNormalizeDataset(
+            type=SchemaType.JSON,
+            schema_base="""{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "number"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+}
+""",
+            schema_canonical=re.sub(
+                r"[\n\t\s]*", "", """{
+  "type": "object",
+  "properties": {
+    "aaaa": {"type": "number"}
+  },
+  "additionalProperties": {"type": "boolean"},
+  "required": ["aaaa"]
+}"""),
+            schema_normalized=re.sub(
+                r"[\n\t\s]*", "", """{
+  "additionalProperties": {"type": "boolean"},
+  "properties": {
+    "aaaa": {"type": "number"}
+  },
+  "required": ["aaaa"],
+  "type": "object"
+}"""),
+        )
     assert False, f"Unsupported schema {type=}"
 
 
@@ -1197,6 +1228,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
     @cluster(num_nodes=3)
     @parametrize(dataset_type=SchemaType.AVRO)
+    @parametrize(dataset_type=SchemaType.JSON)
     def test_normalize(self, dataset_type: SchemaType):
         dataset = get_normalize_dataset(dataset_type)
         self.logger.debug(f"testing with {dataset=}")
