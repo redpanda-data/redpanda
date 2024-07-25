@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/sharded_store.h"
 
 #include "base/vlog.h"
+#include "config/configuration.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "pandaproxy/logger.h"
@@ -238,9 +239,11 @@ ss::future<bool> sharded_store::upsert(
   schema_id id,
   schema_version version,
   is_deleted deleted) {
+    auto norm = normalize{
+      config::shard_local_cfg().schema_registry_normalize_on_startup()};
     co_return co_await upsert(
       marker,
-      co_await make_canonical_schema(std::move(schema)),
+      co_await make_canonical_schema(std::move(schema), norm),
       id,
       version,
       deleted);

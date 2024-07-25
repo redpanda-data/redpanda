@@ -3071,6 +3071,12 @@ configuration::configuration()
       "Per-shard capacity of the cache for validating schema IDs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       128)
+  , schema_registry_normalize_on_startup(
+      *this,
+      "schema_registry_normalize_on_startup",
+      "Normalize schemas as they are read from the topic on startup.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false)
   , pp_sr_smp_max_non_local_requests(
       *this,
       "pp_sr_smp_max_non_local_requests",
