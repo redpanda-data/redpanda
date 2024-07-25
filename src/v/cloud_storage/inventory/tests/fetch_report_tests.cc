@@ -73,7 +73,7 @@ TEST(FindLatestReport, NoReportsExist) {
     const auto result = ops.fetch_latest_report_metadata(remote, parent).get();
 
     EXPECT_TRUE(result.has_error());
-    EXPECT_EQ(result.error(), csi::error_outcome::failed);
+    EXPECT_EQ(result.error(), csi::error_outcome::no_reports_found);
 }
 
 TEST(FindLatestReport, NonDatePathsIgnored) {
@@ -90,7 +90,7 @@ TEST(FindLatestReport, NonDatePathsIgnored) {
     const auto result = ops.fetch_latest_report_metadata(remote, parent).get();
 
     EXPECT_TRUE(result.has_error());
-    EXPECT_EQ(result.error(), csi::error_outcome::failed);
+    EXPECT_EQ(result.error(), csi::error_outcome::no_reports_found);
 }
 
 ss::future<cst::download_result>
@@ -113,12 +113,16 @@ void run_test(csi::MockRemote& remote, retry_chain_node& parent, T... ts) {
     // We expect the following prefixes to be checked, in order from latest to
     // earliest.
     // The scanning will stop once the first manifest checksum is found
+    auto common_prefixes = std::vector<ss::sstring>{
+      "1215-06-15T01-02Z/",
+      latest_date_which_has_report,
+      latest_date,
+      "1337-05-24T02-01Z/"};
+    for (auto& p : common_prefixes) {
+        p = fmt::format("{}{}", list_prefix, p);
+    }
     const auto dates = cl::client::list_bucket_result{
-      .common_prefixes = {
-        "1215-06-15T01-02Z/",
-        latest_date_which_has_report,
-        latest_date,
-        "1337-05-24T02-01Z/"}};
+      .common_prefixes = common_prefixes};
 
     setup_and_validate_list_call(remote, parent, dates);
 
@@ -195,7 +199,8 @@ test_manifest_parse(std::string_view manifest) {
       remote,
       parent,
       cl::client::list_bucket_result{
-        .common_prefixes = {latest_date_which_has_report}});
+        .common_prefixes = {
+          fmt::format("{}{}", list_prefix, latest_date_which_has_report)}});
 
     EXPECT_CALL(remote, object_exists(t::_, t::_, t::_, t::_))
       .Times(1)

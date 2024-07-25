@@ -37,6 +37,7 @@ enum class error_outcome {
     manifest_download_failed,
     manifest_files_parse_failed,
     manifest_deserialization_failed,
+    no_reports_found,
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -45,21 +46,24 @@ struct error_outcome_category final : public std::error_category {
     }
 
     std::string message(int c) const final {
+        using enum error_outcome;
         switch (static_cast<error_outcome>(c)) {
-        case error_outcome::success:
+        case success:
             return "Success";
-        case error_outcome::failed:
+        case failed:
             return "Failed";
-        case error_outcome::create_inv_cfg_failed:
+        case create_inv_cfg_failed:
             return "Failed to create inventory configuration";
-        case error_outcome::failed_to_check_inv_status:
+        case failed_to_check_inv_status:
             return "Failed to check inventory configuration status";
-        case error_outcome::manifest_download_failed:
+        case manifest_download_failed:
             return "Failed to download manifest";
-        case error_outcome::manifest_files_parse_failed:
+        case manifest_files_parse_failed:
             return "Failed to extract files object from manifest";
-        case error_outcome::manifest_deserialization_failed:
+        case manifest_deserialization_failed:
             return "Failed to parse manifest to JSON";
+        case no_reports_found:
+            return "No reports found";
         default:
             return fmt::format("Unknown outcome ({})", c);
         }
