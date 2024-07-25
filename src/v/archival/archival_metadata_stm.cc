@@ -1325,6 +1325,7 @@ model::offset archival_metadata_stm::max_collectible_offset() {
     // archival is enabled is authoritative.
     bool collect_all = !_raft->log_config().is_archival_enabled();
     bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
+    bool is_user_topic = model::is_user_topic(_raft->ntp());
 
     // In earlier versions, we should assume every topic is archival enabled
     // if the global cloud_storage_enable_remote_write is true.
@@ -1334,12 +1335,15 @@ model::offset archival_metadata_stm::max_collectible_offset() {
         collect_all = false;
     }
 
-    if (collect_all || is_read_replica) {
+    if (collect_all || is_read_replica || !is_user_topic) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
         // In read-replicas the state machine exists and stores segments
         // from the remote manifest. Since nothing is uploaded there is no
         // need to interact with local retention.
+        // In case if topic is not the user topic we also don't want eviction
+        // to stop. This is because we don't use TS with non-user topics but
+        // we might have archival STM created for such topic.
         return model::offset::max();
     }
     auto lo = get_last_offset();

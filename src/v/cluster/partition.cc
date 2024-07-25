@@ -717,10 +717,10 @@ bool partition::should_construct_archiver() {
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
     const auto& ntp_config = _raft->log()->config();
+    const auto is_user_topic = model::is_user_topic(_raft->ntp());
     return config::shard_local_cfg().cloud_storage_enabled()
            && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
-           && _cloud_storage_api.local_is_initialized()
-           && _raft->ntp().ns == model::kafka_namespace
+           && _cloud_storage_api.local_is_initialized() && is_user_topic
            && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
 }
 

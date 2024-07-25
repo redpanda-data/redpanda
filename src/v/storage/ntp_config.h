@@ -202,13 +202,17 @@ public:
     }
 
     bool is_archival_enabled() const {
-        return _overrides != nullptr && _overrides->shadow_indexing_mode
+        const bool is_user_topic = model::is_user_topic(_ntp);
+        return is_user_topic && _overrides != nullptr
+               && _overrides->shadow_indexing_mode
                && model::is_archival_enabled(
                  _overrides->shadow_indexing_mode.value());
     }
 
     bool is_remote_fetch_enabled() const {
-        return _overrides != nullptr && _overrides->shadow_indexing_mode
+        const bool is_user_topic = model::is_user_topic(_ntp);
+        return is_user_topic && _overrides != nullptr
+               && _overrides->shadow_indexing_mode
                && model::is_fetch_enabled(
                  _overrides->shadow_indexing_mode.value());
     }
@@ -223,7 +227,8 @@ public:
      * both reads and writes to S3, and is not a read replica.
      */
     bool is_tiered_storage() const {
-        return _overrides != nullptr
+        const bool is_user_topic = model::is_user_topic(_ntp);
+        return is_user_topic && _overrides != nullptr
                && !_overrides->read_replica.value_or(false)
                && _overrides->shadow_indexing_mode
                     == model::shadow_indexing_mode::full;
