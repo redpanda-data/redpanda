@@ -10,12 +10,12 @@
 
 #pragma once
 
-#include "archival/run_quota.h"
 #include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/archival/run_quota.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/retry_chain_node.h"

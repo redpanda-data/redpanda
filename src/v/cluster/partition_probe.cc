@@ -9,7 +9,7 @@
 
 #include "cluster/partition_probe.h"
 
-#include "archival/archival_metadata_stm.h"
+#include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "metrics/metrics.h"
