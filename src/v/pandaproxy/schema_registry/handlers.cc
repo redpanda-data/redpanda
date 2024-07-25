@@ -407,7 +407,14 @@ post_subject(server::request_t rq, server::reply_t rp) {
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
         .value_or(include_deleted::no)};
-    vlog(plog.debug, "post_subject subject='{}', deleted='{}'", sub, inc_del);
+    auto norm{parse::query_param<std::optional<normalize>>(*rq.req, "normalize")
+                .value_or(normalize::no)};
+    vlog(
+      plog.debug,
+      "post_subject subject='{}', normalize='{}', deleted='{}'",
+      sub,
+      norm,
+      inc_del);
     // We must sync
     co_await rq.service().writer().read_sync();
 
@@ -419,7 +426,7 @@ post_subject(server::request_t rq, server::reply_t rp) {
         auto unparsed = co_await ppj::rjson_parse(
           std::move(rq.req), post_subject_versions_request_handler<>{sub});
         schema = co_await rq.service().schema_store().make_canonical_schema(
-          std::move(unparsed.def));
+          std::move(unparsed.def), norm);
     } catch (const exception& e) {
         if (e.code() == error_code::schema_empty) {
             throw as_exception(invalid_subject_schema(sub));
@@ -446,7 +453,13 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
-    vlog(plog.debug, "post_subject_versions subject='{}'", sub);
+    auto norm{parse::query_param<std::optional<normalize>>(*rq.req, "normalize")
+                .value_or(normalize::no)};
+    vlog(
+      plog.debug,
+      "post_subject_versions subject='{}', normalize='{}'",
+      sub,
+      norm);
 
     co_await rq.service().writer().read_sync();
 
@@ -455,7 +468,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
 
     subject_schema schema{
       co_await rq.service().schema_store().make_canonical_schema(
-        std::move(unparsed.def)),
+        std::move(unparsed.def), norm),
       unparsed.version.value_or(invalid_schema_version),
       unparsed.id.value_or(invalid_schema_id),
       is_deleted::no};
