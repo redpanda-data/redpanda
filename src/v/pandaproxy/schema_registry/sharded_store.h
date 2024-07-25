@@ -28,7 +28,8 @@ public:
     ss::future<> stop();
 
     ///\brief Make the canonical form of the schema
-    ss::future<canonical_schema> make_canonical_schema(unparsed_schema schema);
+    ss::future<canonical_schema> make_canonical_schema(
+      unparsed_schema schema, normalize norm = normalize::no);
 
     ///\brief Check the schema parses with the native format
     ss::future<void> validate_schema(canonical_schema schema);

@@ -75,7 +75,7 @@ ss::future<> sharded_store::start(is_mutable mut, ss::smp_service_group sg) {
 ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<canonical_schema>
-sharded_store::make_canonical_schema(unparsed_schema schema) {
+sharded_store::make_canonical_schema(unparsed_schema schema, normalize norm) {
     switch (schema.type()) {
     case schema_type::avro: {
         auto [sub, unparsed] = std::move(schema).destructure();
