@@ -44,6 +44,17 @@ concept ReferenceBatchReaderConsumer = requires(
     c.end_of_stream();
 };
 
+// Describes the layout of the data returned by the reader.
+// The reader operates on batches/records so in some cases
+// we may know the layout in advance or are able to calculate
+// it.
+struct reader_data_layout {
+    // sum of all record batch payloads
+    size_t total_payload_size;
+    // number of record batch headers
+    size_t num_headers;
+};
+
 class record_batch_reader final {
 public:
     using data_t = ss::circular_buffer<model::record_batch>;
@@ -53,6 +64,9 @@ public:
     };
     using storage_t = std::variant<data_t, foreign_data_t>;
 
+    friend std::optional<reader_data_layout>
+    maybe_get_data_layout(const model::record_batch_reader& reader);
+
     class impl {
     public:
         impl() noexcept = default;
@@ -61,6 +75,12 @@ public:
         impl(const impl& o) = delete;
         impl& operator=(const impl& o) = delete;
         virtual ~impl() noexcept = default;
+
+        /// Get data layout object that can be used to calculate serialized size
+        virtual std::optional<reader_data_layout>
+        maybe_get_data_layout() const {
+            return std::nullopt;
+        }
 
         virtual bool is_end_of_stream() const = 0;
 
@@ -302,6 +322,9 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const record_batch_reader& r);
 };
+
+std::optional<reader_data_layout>
+maybe_get_data_layout(const model::record_batch_reader& reader);
 
 template<typename Impl, typename... Args>
 record_batch_reader make_record_batch_reader(Args&&... args) {

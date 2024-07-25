@@ -57,6 +57,7 @@ partition_manager::partition_manager(
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::sharded<cloud_data::aggregated_uploader<ss::lowres_clock>>& agg_upl,
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
@@ -65,6 +66,7 @@ partition_manager::partition_manager(
   , _raft_manager(raft)
   , _partition_recovery_mgr(recovery_mgr)
   , _cloud_storage_api(cloud_storage_api)
+  , _aggregated_uploader(agg_upl)
   , _cloud_storage_cache(cloud_storage_cache)
   , _archival_conf(std::move(archival_conf))
   , _feature_table(feature_table)
@@ -266,6 +268,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _archival_conf,
       _feature_table,
       _upload_hks,
+      _aggregated_uploader,
       read_replica_bucket);
 
     _ntp_table.emplace(log->config().ntp(), p);

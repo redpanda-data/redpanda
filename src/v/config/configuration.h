@@ -344,6 +344,8 @@ struct configuration final : public config_store {
     property<std::optional<std::chrono::seconds>>
       cloud_storage_manifest_max_upload_interval_sec;
     property<std::chrono::milliseconds>
+      cloud_storage_aggregated_log_upload_interval_ms;
+    property<std::chrono::milliseconds>
       cloud_storage_readreplica_manifest_sync_timeout_ms;
     property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;
     property<std::chrono::milliseconds> cloud_storage_housekeeping_interval_ms;

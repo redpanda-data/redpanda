@@ -29,6 +29,11 @@ using data_t = record_batch_reader::data_t;
 using foreign_data_t = record_batch_reader::foreign_data_t;
 using storage_t = record_batch_reader::storage_t;
 
+std::optional<reader_data_layout>
+maybe_get_data_layout(const model::record_batch_reader& reader) {
+    return reader._impl->maybe_get_data_layout();
+}
+
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     class foreign_reader final : public record_batch_reader::impl {
@@ -74,11 +79,42 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
             });
         }
 
+        std::optional<reader_data_layout>
+        maybe_get_data_layout() const override {
+            return _ptr->maybe_get_data_layout();
+        }
+
     private:
         ss::foreign_ptr<std::unique_ptr<record_batch_reader::impl>> _ptr;
     };
     auto frn = std::make_unique<foreign_reader>(std::move(r).release());
     return record_batch_reader(std::move(frn));
+}
+
+inline reader_data_layout make_data_layout(const storage_t& data) {
+    auto layout = ss::visit(
+      data,
+      [](const data_t& d) {
+          reader_data_layout layout{
+            .total_payload_size = 0,
+            .num_headers = d.size(),
+          };
+          for (const auto& b : d) {
+              layout.total_payload_size += b.data().size_bytes();
+          }
+          return layout;
+      },
+      [](const foreign_data_t& d) {
+          reader_data_layout layout{
+            .total_payload_size = 0,
+            .num_headers = d.buffer->size(),
+          };
+          for (const auto& b : *d.buffer) {
+              layout.total_payload_size += b.data().size_bytes();
+          }
+          return layout;
+      });
+    return layout;
 }
 
 record_batch_reader make_memory_record_batch_reader(storage_t batches) {
@@ -102,6 +138,11 @@ record_batch_reader make_memory_record_batch_reader(storage_t batches) {
               [](const data_t& d) { return d.size(); },
               [](const foreign_data_t& d) { return d.buffer->size(); });
             fmt::print(os, "memory reader {} batches", size);
+        }
+
+        std::optional<reader_data_layout>
+        maybe_get_data_layout() const override {
+            return make_data_layout(_batches);
         }
 
     protected:
@@ -202,6 +243,17 @@ record_batch_reader make_fragmented_memory_record_batch_reader(
               os,
               "fragmented memory reader {} batches of batches",
               _data.size());
+        }
+
+        std::optional<reader_data_layout>
+        maybe_get_data_layout() const override {
+            reader_data_layout layout{};
+            for (const auto& d : _data) {
+                auto l = make_data_layout(d);
+                layout.num_headers += l.num_headers;
+                layout.total_payload_size += l.total_payload_size;
+            }
+            return layout;
         }
 
     protected:

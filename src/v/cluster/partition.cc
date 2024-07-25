@@ -9,6 +9,7 @@
 
 #include "cluster/partition.h"
 
+#include "cloud_data/aggregated_log_reader.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/read_path_probes.h"
@@ -27,10 +28,13 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "storage/ntp_config.h"
+#include "storage/types.h"
 
 #include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -47,6 +51,7 @@ partition::partition(
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
+  ss::sharded<cloud_data::aggregated_uploader<ss::lowres_clock>>& agg_upl,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(std::move(r))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
@@ -54,6 +59,7 @@ partition::partition(
   , _archival_conf(std::move(archival_conf))
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
+  , _agg_uploader(agg_upl)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
   , _upload_housekeeping(upload_hks)
@@ -355,6 +361,89 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     return _rm_stm;
 }
 
+bool partition::is_shadow_topic() const {
+    // all topics with names ending with '_st' are considered 'shadow topics'
+    return this->raft()->ntp().tp.topic().ends_with("_st");
+}
+
+kafka_stages partition::debounce_and_replicate_in_stages(
+  model::batch_identity bid,
+  model::record_batch_reader&& r,
+  raft::replicate_options opts) {
+    using ret_t = result<kafka_result>;
+    if (bid.is_transactional) {
+        if (!_rm_stm) {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support transactional processing.",
+              _raft->ntp());
+            return kafka_stages(raft::errc::timeout);
+        }
+    }
+
+    if (bid.is_idempotent()) {
+        if (!_rm_stm) {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support idempotent requests.",
+              _raft->ntp());
+            return kafka_stages(raft::errc::timeout);
+        }
+    }
+
+    auto reader = std::move(r);
+    if (!is_shadow_topic()) {
+        // Fast path for normal topics
+
+        if (_rm_stm) {
+            return _rm_stm->replicate_in_stages(bid, std::move(reader), opts);
+        }
+
+        auto res = _raft->replicate_in_stages(std::move(r), opts);
+        auto replicate_finished = res.replicate_finished.then(
+          [this](result<raft::replicate_result> r) {
+              if (!r) {
+                  return ret_t(r.error());
+              }
+              auto old_offset = r.value().last_offset;
+              auto new_offset = kafka::offset(
+                log()->from_log_offset(old_offset)());
+              return ret_t(kafka_result{new_offset});
+          });
+
+        return {std::move(res.request_enqueued), std::move(replicate_finished)};
+    }
+
+    // NOTE: this code is part of the PoC
+    if (!_rm_stm) {
+        // Shadow topics are not working when transactions are disabled
+        return kafka_stages(raft::errc::timeout);
+    }
+
+    auto enqueue_promise = ss::make_lw_shared<ss::promise<>>();
+
+    auto result_future
+      = _agg_uploader.local()
+          .write_and_debounce(_raft->ntp(), std::move(reader), 1s)
+          .then([this, opts, bid, enqueue_promise](
+                  result<model::record_batch_reader> upl_res) mutable {
+              if (upl_res.has_error()) {
+                  enqueue_promise->set_value();
+                  return ss::make_ready_future<result<kafka_result>>(
+                    raft::errc::timeout);
+              }
+              // Propagate reader to the rm_stm
+              auto stages = _rm_stm->replicate_in_stages(
+                bid, std::move(upl_res.value()), opts);
+              ssx::background = stages.request_enqueued.then(
+                [enqueue_promise] { enqueue_promise->set_value(); });
+
+              return std::move(stages.replicate_finished);
+          });
+
+    return {enqueue_promise->get_future(), std::move(result_future)};
+}
+
 kafka_stages partition::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch_reader&& r,
@@ -531,6 +620,11 @@ partition::timequery(storage::timequery_config cfg) {
     // Read replicas never consider local raft data
     if (_raft->log_config().is_read_replica_mode_enabled()) {
         co_return co_await cloud_storage_timequery(cfg);
+    }
+
+    if (is_shadow_topic()) {
+        // TODO: implement this
+        co_return std::nullopt;
     }
 
     const bool may_answer_from_cloud
@@ -1456,7 +1550,50 @@ partition::remote_partition() const {
 ss::future<model::record_batch_reader> partition::make_reader(
   storage::log_reader_config config,
   std::optional<model::timeout_clock::time_point> debounce_deadline) {
-    return _raft->make_reader(std::move(config), debounce_deadline);
+    if (is_shadow_topic()) {
+        // No centralized resource management for shadow topics yet so
+        // the client can potentially create too many readers and crash
+        // the system.
+
+        // TODO: the read path can only do one batch type at a time (if the
+        // filter is set) or no filtering at all. For this project we need to
+        // consume both raft_data and dl_placeholder batches.
+        auto bucket = config::shard_local_cfg().cloud_storage_bucket();
+
+        auto ot_state = _raft->log()->get_offset_translator_state();
+
+        auto underlying_config = config;
+        underlying_config.translate_offsets = storage::translate_offsets::yes;
+        underlying_config.start_offset = ot_state->to_log_offset(
+          underlying_config.start_offset);
+        underlying_config.max_offset = ot_state->to_log_offset(
+          underlying_config.max_offset);
+        underlying_config.type_filter = {
+          model::record_batch_type::dl_placeholder};
+        underlying_config.translate_offsets = storage::translate_offsets::yes;
+
+        /*TODO: remove*/ vlog(
+          clusterlog.info,
+          "NEEDLER {}, start offset: {} make_reader: {} bucket: {}, underlying "
+          "config: {}",
+          _raft->ntp(),
+          raft_start_offset(),
+          config,
+          bucket,
+          underlying_config);
+
+        auto reader = co_await _raft->make_reader(
+          std::move(underlying_config), debounce_deadline);
+
+        // TODO: handle misconfigured cloud storage (nullopt)
+        co_return cloud_data::make_aggregated_log_reader(
+          config,
+          cloud_storage_clients::bucket_name(bucket.value()),
+          std::move(reader),
+          _cloud_storage_api.local().io(),
+          _cloud_storage_cache.local());
+    }
+    co_return co_await _raft->make_reader(std::move(config), debounce_deadline);
 }
 
 model::term_id partition::term() const { return _raft->term(); }

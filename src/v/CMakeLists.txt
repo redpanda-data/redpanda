@@ -130,6 +130,7 @@ add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
 add_subdirectory(datalake)
 add_subdirectory(cloud_io)
+add_subdirectory(cloud_data)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 
