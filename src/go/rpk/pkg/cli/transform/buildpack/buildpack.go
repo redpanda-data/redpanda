@@ -53,15 +53,15 @@ var Tinygo = Buildpack{
 var JavaScript = Buildpack{
 	Name: "javascript",
 	// TODO: Find a better place to host these binaries than the tinygo repo
-	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/js-sdk-v1",
+	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/js-sdk-v1.1",
 	shaSums: map[string]map[string]string{
 		"darwin": {
-			"amd64": "03ae0af869ccdea74c5d80f187b01c797e7327abdf33e8df693836d471105dad",
-			"arm64": "fa0374389d580eb731f6274b152c4229acb15335e100800c947cf25066c76e2a",
+			"amd64": "56eb59ddb320c9f8fb4f79910eaeebd68e1d6499d9827b9120ffc6135a8ada03",
+			"arm64": "deb5ab186aa3da654b04e9613856f83abacd89dc8b99a1d03449697fe135fd6f",
 		},
 		"linux": {
-			"amd64": "8c879b804e7b5d749220e5021663bc3a710a4ff36a8a2ea93bbcaa0a311d7160",
-			"arm64": "c53dc96c5ca18cd788fb0bbff5983b7e909777928dcad3bfd8a20c0c61d654ea",
+			"amd64": "8480c6f1274cdd8d8410b2b54561dd64911945fa0b4d9d46a1e0acb5a8dc1015",
+			"arm64": "3426bd8b4fafc085f070b89487bb2198df5bfd9b4efc50c75a05947e3edcb127",
 		},
 	},
 }
