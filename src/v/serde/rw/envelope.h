@@ -31,6 +31,35 @@ concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
 
 template<typename T>
 requires is_envelope<std::decay_t<T>>
+void read_envelope_fields(
+  iobuf_parser& in,
+  const header& h,
+  T& t,
+  std::size_t const bytes_left_limit = 0) {
+    using Type = std::decay_t<T>;
+
+    envelope_for_each_field(t, [&](auto& f) {
+        using FieldType = std::decay_t<decltype(f)>;
+        if (h._bytes_left_limit == in.bytes_left()) {
+            return false;
+        }
+        if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "field spill over in {}, field type {}: envelope_end={}, "
+              "in.bytes_left()={}",
+              type_str<Type>(),
+              type_str<FieldType>(),
+              h._bytes_left_limit,
+              in.bytes_left()));
+        }
+        f = read_nested<FieldType>(in, bytes_left_limit);
+        return true;
+    });
+}
+
+template<typename T>
+requires is_envelope<std::decay_t<T>>
 void tag_invoke(
   tag_t<read_tag>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -63,24 +92,7 @@ void tag_invoke(
     if constexpr (has_serde_read<Type>) {
         t.serde_read(in, h);
     } else {
-        envelope_for_each_field(t, [&](auto& f) {
-            using FieldType = std::decay_t<decltype(f)>;
-            if (h._bytes_left_limit == in.bytes_left()) {
-                return false;
-            }
-            if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
-                throw serde_exception(fmt_with_ctx(
-                  ssx::sformat,
-                  "field spill over in {}, field type {}: envelope_end={}, "
-                  "in.bytes_left()={}",
-                  type_str<Type>(),
-                  type_str<FieldType>(),
-                  h._bytes_left_limit,
-                  in.bytes_left()));
-            }
-            f = read_nested<FieldType>(in, bytes_left_limit);
-            return true;
-        });
+        read_envelope_fields(in, t, bytes_left_limit);
     }
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);
