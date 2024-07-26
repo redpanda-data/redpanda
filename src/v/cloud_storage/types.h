@@ -428,6 +428,7 @@ struct download_request {
     transfer_details transfer_details;
     download_type type;
     iobuf& payload;
+    bool expect_missing{false};
 };
 
 } // namespace cloud_storage
