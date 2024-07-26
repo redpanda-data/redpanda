@@ -55,6 +55,7 @@ v_cc_library(
     server/group_recovery_consumer.cc
     server/group_metadata.cc
     server/group_tx_tracker_stm.cc
+    server/logger.cc
  DEPS
     Seastar::seastar
     v::bytes
