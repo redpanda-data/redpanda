@@ -483,7 +483,9 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
     try {
         co_return co_await std::move(request_future);
     } catch (const rest_error_response& err) {
-        if (err.code() == s3_error_code::no_such_key) {
+        if (
+          err.code() == s3_error_code::no_such_key
+          || err.code() == s3_error_code::no_such_configuration) {
             // Unexpected 404s are logged by 'request_future' at warn
             // level, so only log at debug level here.
             vlog(s3_log.debug, "NoSuchKey response received {}", key);

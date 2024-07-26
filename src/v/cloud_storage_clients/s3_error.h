@@ -115,6 +115,7 @@ enum class s3_error_code {
     no_such_access_point,
     invalid_tag,
     malformed_policy,
+    no_such_configuration,
     _unknown
 };
 
