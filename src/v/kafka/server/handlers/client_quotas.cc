@@ -425,7 +425,7 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
     }
 
     if (!ctx.authorized(
-          security::acl_operation::describe_configs,
+          security::acl_operation::alter_configs,
           security::default_cluster_name)) {
         for (auto& entry : response.data.entries) {
             entry.error_code = error_code::cluster_authorization_failed;
