@@ -10,10 +10,15 @@
  */
 #include "kafka/server/logger.h"
 
+#include "base/units.h"
+
 #include <seastar/util/log.hh>
 
 namespace kafka {
 
 seastar::logger client_quota_log("kafka_quotas");
+
+static constexpr size_t max_log_line_bytes = 128_KiB;
+truncating_logger kwire(klog, max_log_line_bytes);
 
 } // namespace kafka
