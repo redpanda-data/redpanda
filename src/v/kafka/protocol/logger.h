@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Redpanda Data, Inc.
+ * Copyright 2024 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -8,17 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
 
 #include "base/seastarx.h"
-#include "kafka/protocol/logger.h"
 
 #include <seastar/util/log.hh>
 
-#include <utils/truncating_logger.h>
-
 namespace kafka {
-extern truncating_logger kwire;
-extern ss::logger client_quota_log;
+
+extern ss::logger klog;
+
 } // namespace kafka
