@@ -583,6 +583,7 @@ struct configuration final : public config_store {
       enable_schema_id_validation;
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
+    property<bool> schema_registry_normalize_on_startup;
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;
     bounded_property<size_t> max_in_flight_schema_registry_requests_per_shard;
     bounded_property<size_t> max_in_flight_pandaproxy_requests_per_shard;
