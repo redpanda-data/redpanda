@@ -34,6 +34,9 @@ enum class error_outcome {
     fail,
     /// Missing key API error (only suitable for downloads and deletions)
     key_not_found,
+    /// Currently used for directory deletion errors in ABS, typically treated
+    /// as regular failure outcomes.
+    operation_not_supported
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -49,6 +52,8 @@ struct error_outcome_category final : public std::error_category {
             return "Non retriable error";
         case error_outcome::key_not_found:
             return "Key not found error";
+        case error_outcome::operation_not_supported:
+            return "Operation not supported error";
         default:
             return "Undefined error_outcome encountered";
         }

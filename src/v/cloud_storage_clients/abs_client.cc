@@ -541,6 +541,14 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
             vlog(abs_log.debug, "BlobNotFound response received {}", key);
             outcome = error_outcome::key_not_found;
             _probe->register_failure(err.code());
+        } else if (
+          err.code() == abs_error_code::operation_not_supported_on_directory) {
+            vlog(
+              abs_log.debug,
+              "OperationNotSupportedOnDirectory response received {}",
+              key);
+            outcome = error_outcome::operation_not_supported;
+            _probe->register_failure(err.code());
         } else {
             vlog(
               abs_log.error,
@@ -731,20 +739,34 @@ abs_client::delete_object(
                  }),
                  key)
           .then([&name, &key](const ret_t& result) {
-              // ABS returns a 404 for attempts to delete a blob that doesn't
-              // exist. The remote doesn't expect this, so we map 404s to a
-              // successful response.
-              if (!result && result.error() == error_outcome::key_not_found) {
-                  vlog(
-                    abs_log.debug,
-                    "Object to be deleted was not found in cloud storage: "
-                    "object={}, bucket={}. Ignoring ...",
-                    name,
-                    key);
-                  return ss::make_ready_future<ret_t>(no_response{});
-              } else {
-                  return ss::make_ready_future<ret_t>(result);
+              if (!result) {
+                  if (result.error() == error_outcome::key_not_found) {
+                      // ABS returns a 404 for attempts to delete a blob that
+                      // doesn't exist. The remote doesn't expect this, so we
+                      // map 404s to a successful response.
+                      vlog(
+                        abs_log.debug,
+                        "Object to be deleted was not found in cloud storage: "
+                        "object={}, bucket={}. Ignoring ...",
+                        name,
+                        key);
+                      return ss::make_ready_future<ret_t>(no_response{});
+                  } else if (
+                    result.error() == error_outcome::operation_not_supported) {
+                      // ABS does not allow for deletion of directories when HNS
+                      // is disabled. The "folder" is "removed" when all blobs
+                      // inside of it are deleted. Map this to a successful
+                      // response.
+                      vlog(
+                        abs_log.warn,
+                        "Cannot delete a directory in ABS cloud storage: "
+                        "object={}, bucket={}. Ignoring ...",
+                        name,
+                        key);
+                      return ss::make_ready_future<ret_t>(no_response{});
+                  }
               }
+              return ss::make_ready_future<ret_t>(result);
           });
     } else {
         return delete_path(name, key, timeout);
