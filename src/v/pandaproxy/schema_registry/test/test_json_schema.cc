@@ -539,6 +539,20 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"oneOf": [{"type":"number", "multipleOf": 10}, {"type": "number", "multipleOf": 1.1}]})",
     .reader_is_compatible_with_writer = false,
   },
+  // different dialects
+  {
+    .reader_schema = R"({"$schema": "http://json-schema.org/draft-04/schema"})",
+    .writer_schema
+    = R"({"$schema": "http://json-schema.org/draft-06/schema#"})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
+  {
+    .reader_schema = R"({"$schema": "http://json-schema.org/draft-04/schema"})",
+    .writer_schema = "true",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
   //***** compatible section *****
   // atoms
   {
@@ -747,6 +761,13 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"oneOf": [{"type":"number", "multipleOf": 3}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"oneOf": [{"type":"boolean"}, {"type": "number", "multipleOf": 9}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // dialects
+  {
+    .reader_schema = R"({"$schema": "http://json-schema.org/draft-06/schema"})",
+    .writer_schema
+    = R"({"$schema": "http://json-schema.org/draft-06/schema#"})",
     .reader_is_compatible_with_writer = true,
   },
 });
