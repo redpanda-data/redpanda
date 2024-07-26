@@ -406,8 +406,13 @@ class CloudCluster():
     def _get_cluster_console_url(self):
         cluster = self.cloudv2._http_get(
             endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
-        return cluster['status']['listeners']['redpandaConsole']['default'][
-            'urls'][0]
+        try:
+            return cluster['status']['listeners']['redpandaConsole'][
+                'default']['urls'][0]
+        except KeyError as e:
+            error_message = f"KeyError: {e} not found in API response"
+            self._logger.info(error_message)
+            raise RuntimeError(f"Failed to get cluster console URL: {e}")
 
     def _get_network_id(self):
         """
@@ -416,7 +421,12 @@ class CloudCluster():
         """
         _cluster = self.cloudv2._http_get(
             endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
-        return _cluster['spec']['networkId']
+        try:
+            return _cluster['spec']['networkId']
+        except KeyError as e:
+            error_message = f"KeyError: {e} not found in API response"
+            self._logger.info(error_message)
+            raise RuntimeError(f"Failed to get network ID: {e}")
 
     def _get_network(self):
         return self.cloudv2._http_get(
