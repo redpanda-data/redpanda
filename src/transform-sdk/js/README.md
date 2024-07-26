@@ -7,7 +7,7 @@ To use this SDK manually here are the steps:
 
 ```shell
 # Compile the C++
-docker run -v `pwd`/..:/src -w /src/js ghcr.io/webassembly/wasi-sdk:wasi-sdk-21 \
+docker run -v `pwd`/..:/src -w /src/js ghcr.io/webassembly/wasi-sdk \
   /bin/bash -c 'apt update && apt install -y git && cmake --preset release-static && cmake --build --preset release-static -- redpanda_js_transform -j32'
 # Convert the JavaScript file into a WebAssembly text file
 cat user_code.js | ./generate_js_provider.py > js_user_code.wat
