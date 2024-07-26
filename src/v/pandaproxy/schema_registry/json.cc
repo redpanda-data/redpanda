@@ -1388,24 +1388,9 @@ bool is_superset(
            "dependencies",
            // draft 6 unhandled keywords:
            "$ref",
-           "const",
-           "contains",
-           "propertyNames",
-           // draft 7 unhandled keywords
-           "contentEncoding",
-           "contentMediaType",
            // draft 2019-09 unhandled keywords:
-           "$anchor",
-           "$recursiveRef",
-           "$recursiveAnchor",
-           "unevaluatedItems",
-           "unevaluatedProperties",
            "dependentRequired",
-           "maxContains",
-           "minContains",
            // draft 2020-12 unhandled keywords:
-           "$dynamicRef",
-           "$dynamicAnchor",
            "prefixItems",
          }) {
         if (
