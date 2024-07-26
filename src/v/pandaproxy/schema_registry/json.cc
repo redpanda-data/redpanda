@@ -1388,17 +1388,13 @@ bool is_superset(
            "definitions",
            "dependencies",
            // draft 6 unhandled keywords:
-           "$comment",
            "$ref",
            "const",
            "contains",
-           "examples",
            "propertyNames",
            // draft 7 unhandled keywords
            "contentEncoding",
            "contentMediaType",
-           "readOnly",
-           "writeOnly",
            // draft 2019-09 unhandled keywords:
            "$anchor",
            "$recursiveRef",
@@ -1408,7 +1404,6 @@ bool is_superset(
            "dependentRequired",
            "maxContains",
            "minContains",
-           "deprecated",
            // draft 2020-12 unhandled keywords:
            "$dynamicRef",
            "$dynamicAnchor",
