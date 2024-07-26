@@ -180,4 +180,15 @@ enum class describe_client_quotas_match_type : int8_t {
 
 std::ostream& operator<<(std::ostream&, describe_client_quotas_match_type t);
 
+/*
+ * The names of group states.
+ */
+inline constexpr std::string_view group_state_name_empty = "Empty";
+inline constexpr std::string_view group_state_name_preparing_rebalance
+  = "PreparingRebalance";
+inline constexpr std::string_view group_state_name_completing_rebalance
+  = "CompletingRebalance";
+inline constexpr std::string_view group_state_name_stable = "Stable";
+inline constexpr std::string_view group_state_name_dead = "Dead";
+
 } // namespace kafka

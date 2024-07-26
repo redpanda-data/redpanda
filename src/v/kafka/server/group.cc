@@ -2786,15 +2786,15 @@ ss::sstring group_state_to_kafka_name(group_state gs) {
     // since these states are returned through the kafka describe groups api.
     switch (gs) {
     case group_state::empty:
-        return "Empty";
+        return ss::sstring(group_state_name_empty);
     case group_state::preparing_rebalance:
-        return "PreparingRebalance";
+        return ss::sstring(group_state_name_preparing_rebalance);
     case group_state::completing_rebalance:
-        return "CompletingRebalance";
+        return ss::sstring(group_state_name_completing_rebalance);
     case group_state::stable:
-        return "Stable";
+        return ss::sstring(group_state_name_stable);
     case group_state::dead:
-        return "Dead";
+        return ss::sstring(group_state_name_dead);
     default:
         std::terminate(); // make gcc happy
     }
