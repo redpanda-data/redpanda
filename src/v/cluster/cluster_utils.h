@@ -354,6 +354,15 @@ std::optional<ss::sstring> check_result_configuration(
   const members_table::cache_t& current_brokers,
   const model::broker& to_update);
 
+/// Copies the state of all persisted stms from source kvs
+ss::future<> copy_persistent_stm_state(
+  model::ntp ntp,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>&);
+
+ss::future<> remove_persistent_stm_state(model::ntp ntp, storage::kvstore&);
+
 /// Copies all bits of partition kvstore state from source kvstore to kvstore on
 /// target shard.
 ss::future<> copy_persistent_state(

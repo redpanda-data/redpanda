@@ -15,6 +15,7 @@
 #include "cluster/feature_barrier.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "raft/notification.h"
 #include "security/fwd.h"
 
 #include <seastar/core/abort_source.hh>
@@ -178,7 +179,7 @@ private:
     version_map _updates;
     ss::condition_variable _update_wait;
 
-    cluster::notification_id_type _leader_notify_handle{
+    raft::group_manager_notification_id _leader_notify_handle{
       notification_id_type_invalid};
     cluster::notification_id_type _health_notify_handle{
       notification_id_type_invalid};

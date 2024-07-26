@@ -23,8 +23,6 @@
 
 #include <seastar/core/sharded.hh>
 
-#include <absl/container/flat_hash_map.h>
-
 namespace raft {
 
 static constexpr const int8_t stm_snapshot_version_v0 = 0;
@@ -108,6 +106,9 @@ public:
     ss::sstring store_path() const;
     ss::future<> remove_persistent_state();
     size_t get_snapshot_size() const;
+    /// Returns a string used as a key for a snapshot with given name and ntp
+    static ss::sstring
+    snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp);
 
 private:
     bytes snapshot_key() const;
@@ -118,14 +119,6 @@ private:
     prefix_logger& _log;
     storage::kvstore& _kvstore;
 };
-
-ss::future<> copy_persistent_stm_state(
-  model::ntp ntp,
-  storage::kvstore& source_kvs,
-  ss::shard_id target_shard,
-  ss::sharded<storage::api>&);
-
-ss::future<> remove_persistent_stm_state(model::ntp ntp, storage::kvstore&);
 
 template<typename T>
 concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
@@ -261,5 +254,20 @@ private:
     T _snapshot_backend;
     model::offset _last_snapshot_offset;
 };
+/**
+ * Helper to copy persisted_stm kvstore snapshot from the source kvstore to
+ * target shard
+ */
+ss::future<> do_copy_persistent_stm_state(
+  ss::sstring snapshot_name,
+  model::ntp ntp,
+  storage::kvstore& source_kvs,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& api);
+/**
+ * Helper to remove the persisted stm kvstore state
+ */
+ss::future<> do_remove_persistent_stm_state(
+  ss::sstring snapshot_name, model::ntp ntp, storage::kvstore& kvs);
 
 } // namespace raft

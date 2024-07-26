@@ -17,6 +17,7 @@
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/types.h"
+#include "raft/notification.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>

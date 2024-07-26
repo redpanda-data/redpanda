@@ -291,7 +291,7 @@ private:
     bool _block_new_leadership{false};
 
     // Our handle from registering for leadership notifications on group_manager
-    std::optional<cluster::notification_id_type> _leader_notify_handle;
+    std::optional<raft::group_manager_notification_id> _leader_notify_handle;
 
     state_machine_registry _stm_registry;
 
