@@ -73,6 +73,11 @@ std::ostream& operator<<(std::ostream& os, const schema_reference& ref) {
     return os;
 }
 
+bool operator<(const schema_reference& lhs, const schema_reference& rhs) {
+    return std::tie(lhs.name, lhs.sub, lhs.version)
+           < std::tie(rhs.name, rhs.sub, rhs.version);
+}
+
 std::ostream& operator<<(std::ostream& os, const unparsed_schema& ref) {
     fmt::print(os, "subject: {}, {}", ref.sub(), ref.def());
     return os;

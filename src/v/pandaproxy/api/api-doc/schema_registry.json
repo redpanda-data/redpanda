@@ -623,6 +623,12 @@
             "type": "string"
           },
           {
+            "name": "normalize",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
             "name": "deleted",
             "in": "query",
             "required": false,
@@ -782,6 +788,12 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "normalize",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           },
           {
             "name": "schema_def",
