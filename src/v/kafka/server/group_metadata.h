@@ -13,7 +13,6 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/wire.h"
-#include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/record.h"

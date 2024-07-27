@@ -17,7 +17,6 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "kafka/protocol/schemata/produce_response.h"
-#include "kafka/types.h"
 #include "model/timestamp.h"
 
 #include <seastar/core/future.hh>

@@ -23,7 +23,6 @@
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/list_offsets.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"

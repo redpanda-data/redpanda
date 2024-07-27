@@ -13,7 +13,6 @@
 
 #include "kafka/protocol/schemata/delete_records_request.h"
 #include "kafka/protocol/schemata/delete_records_response.h"
-#include "kafka/types.h"
 
 namespace kafka {
 

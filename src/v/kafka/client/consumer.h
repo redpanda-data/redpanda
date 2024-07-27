@@ -22,7 +22,6 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "kafka/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 

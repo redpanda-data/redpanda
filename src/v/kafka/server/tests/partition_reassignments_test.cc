@@ -15,7 +15,6 @@
 #include "kafka/protocol/schemata/alter_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/list_partition_reassignments_request.h"
 #include "kafka/server/handlers/topics/types.h"
-#include "kafka/types.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
 

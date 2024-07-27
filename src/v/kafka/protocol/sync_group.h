@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/sync_group_request.h"
 #include "kafka/protocol/schemata/sync_group_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/future.hh>

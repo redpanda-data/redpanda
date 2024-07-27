@@ -21,7 +21,6 @@
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/server/protocol_utils.h"
-#include "kafka/types.h"
 #include "net/transport.h"
 
 #include <seastar/core/future.hh>

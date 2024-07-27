@@ -13,7 +13,6 @@
 
 #include "kafka/protocol/schemata/offset_delete_request.h"
 #include "kafka/protocol/schemata/offset_delete_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 namespace kafka {

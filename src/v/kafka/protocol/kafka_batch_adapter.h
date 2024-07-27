@@ -13,7 +13,6 @@
 
 #include "bytes/iobuf_parser.h"
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"

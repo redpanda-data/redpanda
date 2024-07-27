@@ -2,7 +2,6 @@
 
 #include "cluster/logger.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/types.h"
 #include "model/record.h"
 
 namespace kafka {

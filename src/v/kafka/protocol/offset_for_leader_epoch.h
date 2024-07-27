@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_request.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 namespace kafka {

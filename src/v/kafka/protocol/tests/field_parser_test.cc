@@ -13,7 +13,6 @@
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/types.h"
 #include "kafka/protocol/wire.h"
-#include "kafka/types.h"
 #include "random/generators.h"
 #include "utils/base64.h"
 

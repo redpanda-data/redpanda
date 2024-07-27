@@ -16,7 +16,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/init_producer_id_request.h"
 #include "kafka/protocol/schemata/init_producer_id_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 

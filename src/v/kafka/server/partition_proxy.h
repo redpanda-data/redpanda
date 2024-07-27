@@ -13,7 +13,7 @@
 #include "base/outcome.h"
 #include "cluster/fwd.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/types.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/record_batch_reader.h"

@@ -14,7 +14,6 @@
 #include "config/configuration.h"
 #include "container/chunked_hash_map.h"
 #include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"

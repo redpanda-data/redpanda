@@ -11,7 +11,6 @@
 #include "kafka/protocol/wire.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>

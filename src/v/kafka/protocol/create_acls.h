@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/create_acls_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"

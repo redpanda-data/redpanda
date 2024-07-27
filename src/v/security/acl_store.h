@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "container/fragmented_vector.h"
 #include "security/acl.h"
 #include "security/acl_entry_set.h"
 

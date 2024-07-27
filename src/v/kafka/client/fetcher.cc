@@ -16,7 +16,6 @@
 #include "kafka/client/logger.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastar/core/gate.hh"
 

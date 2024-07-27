@@ -17,7 +17,6 @@
 #include "kafka/server/handlers/sasl_authenticate.h"
 #include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/request_context.h"
-#include "kafka/types.h"
 #include "net/types.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"

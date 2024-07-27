@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/describe_log_dirs_request.h"
 #include "kafka/protocol/schemata/describe_log_dirs_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"

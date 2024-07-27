@@ -10,6 +10,7 @@
 #pragma once
 
 #include "config/node_config.h"
+#include "reflection/type_traits.h"
 #include "security/audit/schemas/types.h"
 #include "utils/functional.h"
 

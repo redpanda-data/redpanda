@@ -17,7 +17,6 @@
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/types.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>

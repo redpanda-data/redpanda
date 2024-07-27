@@ -14,7 +14,6 @@
 #include "kafka/protocol/schemata/produce_request.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/produce.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "random/generators.h"

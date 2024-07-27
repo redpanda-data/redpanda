@@ -12,7 +12,6 @@
 #pragma once
 
 #include "kafka/protocol/schemata/offset_commit_request.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <absl/container/node_hash_map.h>

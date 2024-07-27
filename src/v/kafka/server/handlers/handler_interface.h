@@ -11,7 +11,6 @@
 #pragma once
 #include "kafka/server/fwd.h"
 #include "kafka/server/response.h"
-#include "kafka/types.h"
 
 namespace kafka {
 /**

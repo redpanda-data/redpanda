@@ -10,7 +10,6 @@
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/fetch.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"

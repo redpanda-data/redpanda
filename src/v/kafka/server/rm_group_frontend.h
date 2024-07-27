@@ -16,7 +16,6 @@
 #include "cluster/rm_group_proxy.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/fwd.h"
-#include "kafka/types.h"
 #include "rpc/fwd.h"
 
 #include <seastar/core/sharded.hh>

@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/describe_groups_request.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
-#include "kafka/types.h"
 
 #include <seastar/core/future.hh>
 

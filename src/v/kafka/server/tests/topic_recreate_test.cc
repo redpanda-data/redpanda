@@ -15,7 +15,6 @@
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/server/handlers/topics/types.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"

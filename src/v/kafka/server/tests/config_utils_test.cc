@@ -10,7 +10,6 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/handlers/configs/config_utils.h"
-#include "kafka/types.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 

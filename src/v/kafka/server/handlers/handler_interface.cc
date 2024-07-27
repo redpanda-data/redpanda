@@ -13,7 +13,6 @@
 #include "kafka/server/handlers/handlers.h"
 #include "kafka/server/handlers/produce.h"
 #include "kafka/server/response.h"
-#include "kafka/types.h"
 
 #include <optional>
 

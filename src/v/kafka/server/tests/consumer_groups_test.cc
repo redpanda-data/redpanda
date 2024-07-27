@@ -17,7 +17,6 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/schemata/join_group_request.h"
 #include "kafka/server/group.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"

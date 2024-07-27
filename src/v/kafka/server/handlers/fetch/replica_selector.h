@@ -12,7 +12,6 @@
 
 #include "cluster/fwd.h"
 #include "kafka/server/partition_proxy.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 

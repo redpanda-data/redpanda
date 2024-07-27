@@ -17,7 +17,6 @@
 #include "bytes/iobuf_parser.h"
 #include "kafka/protocol/wire.h"
 #include "kafka/server/logger.h"
-#include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"

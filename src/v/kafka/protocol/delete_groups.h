@@ -12,7 +12,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/delete_groups_request.h"
 #include "kafka/protocol/schemata/delete_groups_response.h"
-#include "kafka/types.h"
 
 namespace kafka {
 

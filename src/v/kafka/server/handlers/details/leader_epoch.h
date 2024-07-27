@@ -12,7 +12,6 @@
 
 #include "kafka/protocol/errors.h"
 #include "kafka/server/partition_proxy.h"
-#include "kafka/types.h"
 
 #include <compare>
 

@@ -9,7 +9,6 @@
 
 #pragma once
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
 
 namespace seastar {
 template<typename T>

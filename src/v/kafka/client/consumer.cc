@@ -25,7 +25,6 @@
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/sync_group.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_utils.h"
