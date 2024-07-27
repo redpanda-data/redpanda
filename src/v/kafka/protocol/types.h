@@ -9,9 +9,12 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "absl/container/btree_map.h"
+
 #include "bytes/bytes.h"
+#include "model/fundamental.h"
 #include "utils/named_type.h"
+
+#include <absl/container/btree_map.h>
 
 #include <concepts>
 
@@ -190,5 +193,28 @@ inline constexpr std::string_view group_state_name_completing_rebalance
   = "CompletingRebalance";
 inline constexpr std::string_view group_state_name_stable = "Stable";
 inline constexpr std::string_view group_state_name_dead = "Dead";
+
+/// An unknown / missing generation id (Kafka protocol specific)
+inline constexpr generation_id unknown_generation_id(-1);
+
+std::ostream& operator<<(std::ostream& os, coordinator_type t);
+
+std::ostream& operator<<(std::ostream& os, config_resource_type t);
+
+std::ostream& operator<<(std::ostream& os, describe_configs_source s);
+
+/*
+ * TODO this can be moved out of the protocol library and into the server if the
+ * batch encoding utility in protocol/wire.h can remove the dependency on this,
+ * for example by having the caller in the server perform this conversion.
+ */
+inline kafka::leader_epoch leader_epoch_from_term(model::term_id term) {
+    try {
+        return kafka::leader_epoch(
+          boost::numeric_cast<kafka::leader_epoch::type>(term()));
+    } catch (boost::bad_numeric_cast&) {
+        return kafka::invalid_leader_epoch;
+    }
+}
 
 } // namespace kafka

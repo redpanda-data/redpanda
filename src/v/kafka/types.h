@@ -30,9 +30,6 @@ using correlation_id = named_type<int32_t, struct kafka_correlation_type>;
 using client_id = named_type<ss::sstring, struct kafka_client_id_type>;
 using client_host = named_type<ss::sstring, struct kafka_client_host_type>;
 
-/// An unknown / missing generation id (Kafka protocol specific)
-static inline const generation_id unknown_generation_id(-1);
-
 using fetch_session_id = named_type<int32_t, struct session_id_tag>;
 using fetch_session_epoch = named_type<int32_t, struct session_epoch_tag>;
 
@@ -47,30 +44,6 @@ static constexpr fetch_session_epoch initial_fetch_session_epoch(0);
  */
 static constexpr fetch_session_epoch final_fetch_session_epoch(-1);
 
-// TODO Ben: Why is this an undefined reference for pandaproxy when defined in
-// kafka/requests.cc
-inline std::ostream& operator<<(std::ostream& os, coordinator_type t) {
-    switch (t) {
-    case coordinator_type::group:
-        return os << "{group}";
-    case coordinator_type::transaction:
-        return os << "{transaction}";
-    };
-    return os << "{unknown type}";
-}
-
-inline std::ostream& operator<<(std::ostream& os, config_resource_type t) {
-    switch (t) {
-    case config_resource_type::topic:
-        return os << "{topic}";
-    case config_resource_type::broker:
-        [[fallthrough]];
-    case config_resource_type::broker_logger:
-        break;
-    }
-    return os << "{unknown type}";
-}
-
 enum class config_resource_operation : int8_t {
     set = 0,
     remove = 1,
@@ -79,18 +52,6 @@ enum class config_resource_operation : int8_t {
 };
 
 std::ostream& operator<<(std::ostream& os, config_resource_operation);
-
-inline std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
-    switch (s) {
-    case describe_configs_source::topic:
-        return os << "{topic}";
-    case describe_configs_source::static_broker_config:
-        return os << "{static_broker_config}";
-    case describe_configs_source::default_config:
-        return os << "{default_config}";
-    }
-    return os << "{unknown type}";
-}
 
 /// \brief A protocol configuration supported by a group member.
 ///
@@ -113,14 +74,6 @@ struct member_protocol {
 
 using assignments_type = std::unordered_map<member_id, bytes>;
 
-inline kafka::leader_epoch leader_epoch_from_term(model::term_id term) {
-    try {
-        return kafka::leader_epoch(
-          boost::numeric_cast<kafka::leader_epoch::type>(term()));
-    } catch (boost::bad_numeric_cast&) {
-        return kafka::invalid_leader_epoch;
-    }
-}
 /**
  * Describes single partition replica. Used by replica selector
  */
