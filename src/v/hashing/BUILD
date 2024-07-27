@@ -1,6 +1,18 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "crc32",
+    hdrs = [
+        "include/hashing/crc32.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@zlib",
+    ],
+)
+
+redpanda_cc_library(
     name = "crc32c",
     hdrs = [
         "include/hashing/crc32c.h",
