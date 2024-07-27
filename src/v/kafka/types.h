@@ -21,22 +21,3 @@
 #include <seastar/core/sstring.hh>
 
 #include <unordered_map>
-
-namespace kafka {
-
-/**
- * Describes single partition replica. Used by replica selector
- */
-struct replica_info {
-    model::node_id id;
-    model::offset high_watermark;
-    model::offset log_end_offset;
-    bool is_alive;
-};
-
-struct partition_info {
-    std::vector<replica_info> replicas;
-    std::optional<model::node_id> leader;
-};
-
-} // namespace kafka
