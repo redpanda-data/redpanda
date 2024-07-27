@@ -225,7 +225,23 @@ purger::collect_manifest_paths(
             continue;
         }
 
-        collected.spillover.push_back(std::move(item.key));
+        // The spillover manifest path is of the form
+        // "{prefix}/{manifest.bin().x.x.x.x.x.x}" Find the index of the last
+        // '/' in the path, so we can check just the filename (starting from the
+        // first character after '/').
+        const size_t filename_idx = path.rfind('/');
+        if (filename_idx == std::string_view::npos) {
+            continue;
+        }
+
+        // File should start with "manifest.bin()", but it should have
+        // additional spillover components as well.
+        std::string_view file = path.substr(filename_idx + 1);
+        if (
+          file.starts_with(cloud_storage::partition_manifest::filename())
+          && !file.ends_with(cloud_storage::partition_manifest::filename())) {
+            collected.spillover.push_back(std::move(item.key));
+        }
     }
 
     co_return collected;
