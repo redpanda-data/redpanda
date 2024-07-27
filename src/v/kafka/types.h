@@ -24,26 +24,6 @@
 
 namespace kafka {
 
-/// Kafka API request correlation.
-using correlation_id = named_type<int32_t, struct kafka_correlation_type>;
-
-using client_id = named_type<ss::sstring, struct kafka_client_id_type>;
-using client_host = named_type<ss::sstring, struct kafka_client_host_type>;
-
-using fetch_session_id = named_type<int32_t, struct session_id_tag>;
-using fetch_session_epoch = named_type<int32_t, struct session_epoch_tag>;
-
-// Unknown/missing/not initialized session (Kafka protocol specific)
-static constexpr fetch_session_id invalid_fetch_session_id(0);
-/**
- * Used by the client to start new fetch session. (Kafka protocol specific)
- */
-static constexpr fetch_session_epoch initial_fetch_session_epoch(0);
-/**
- * Used by the client to close existing fetch session. (Kafka protocol specific)
- */
-static constexpr fetch_session_epoch final_fetch_session_epoch(-1);
-
 enum class config_resource_operation : int8_t {
     set = 0,
     remove = 1,
