@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-enum class config_resource_operation : int8_t {
-    set = 0,
-    remove = 1,
-    append = 2,
-    subtract = 3,
-};
-
-std::ostream& operator<<(std::ostream& os, config_resource_operation);
-
 using assignments_type = std::unordered_map<member_id, bytes>;
 
 /**

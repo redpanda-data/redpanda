@@ -357,18 +357,4 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
-    switch (t) {
-    case config_resource_operation::set:
-        return os << "set";
-    case config_resource_operation::append:
-        return os << "append";
-    case config_resource_operation::remove:
-        return os << "remove";
-    case config_resource_operation::subtract:
-        return os << "subtract";
-    }
-    return os << "unknown type";
-}
-
 } // namespace kafka

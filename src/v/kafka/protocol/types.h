@@ -239,4 +239,13 @@ inline constexpr fetch_session_epoch initial_fetch_session_epoch(0);
  */
 inline constexpr fetch_session_epoch final_fetch_session_epoch(-1);
 
+enum class config_resource_operation : int8_t {
+    set = 0,
+    remove = 1,
+    append = 2,
+    subtract = 3,
+};
+
+std::ostream& operator<<(std::ostream& os, config_resource_operation);
+
 } // namespace kafka
