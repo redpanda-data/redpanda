@@ -49,6 +49,9 @@ struct configuration;
 }
 
 namespace kafka {
+
+using assignments_type = std::unordered_map<member_id, bytes>;
+
 struct group_log_group_metadata;
 
 /**

@@ -39,18 +39,6 @@ struct sync_group_request final {
         data.decode(reader, version);
     }
 
-    assignments_type member_assignments() && {
-        assignments_type res;
-        res.reserve(data.assignments.size());
-        std::for_each(
-          std::begin(data.assignments),
-          std::end(data.assignments),
-          [&res](sync_group_request_assignment& a) mutable {
-              res.emplace(std::move(a.member_id), std::move(a.assignment));
-          });
-        return res;
-    }
-
     friend std::ostream&
     operator<<(std::ostream& os, const sync_group_request& r) {
         return os << r.data;

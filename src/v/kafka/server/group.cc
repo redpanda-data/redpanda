@@ -88,6 +88,18 @@ bool operator==(
       });
 }
 
+assignments_type member_assignments(sync_group_request request) {
+    assignments_type res;
+    res.reserve(request.data.assignments.size());
+    std::for_each(
+      std::begin(request.data.assignments),
+      std::end(request.data.assignments),
+      [&res](sync_group_request_assignment& a) mutable {
+          res.emplace(std::move(a.member_id), std::move(a.assignment));
+      });
+    return res;
+}
+
 } // namespace
 
 using member_config = join_group_response_member;
@@ -1510,7 +1522,7 @@ group::sync_group_stages group::sync_group_completing_rebalance(
     // underlying metadata topic for group recovery. the mapping is the
     // assignments in the request plus any missing assignments for group
     // members.
-    auto assignments = std::move(r).member_assignments();
+    auto assignments = member_assignments(std::move(r));
     add_missing_assignments(assignments);
 
     // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error when

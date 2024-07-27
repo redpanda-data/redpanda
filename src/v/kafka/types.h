@@ -24,8 +24,6 @@
 
 namespace kafka {
 
-using assignments_type = std::unordered_map<member_id, bytes>;
-
 /**
  * Describes single partition replica. Used by replica selector
  */
