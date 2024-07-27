@@ -285,6 +285,9 @@ std::ostream& operator<<(std::ostream& o, s3_error_code code) {
     case s3_error_code::malformed_policy:
         o << "MalformedPolicy";
         break;
+    case s3_error_code::no_such_configuration:
+        o << "NoSuchConfiguration";
+        break;
     case s3_error_code::_unknown:
         o << "_unknown_error_code_";
         break;
@@ -397,7 +400,8 @@ static const std::map<ss::sstring, s3_error_code> known_aws_error_codes = {
   {"UserKeyMustBeSpecified", s3_error_code::user_key_must_be_specified},
   {"NoSuchAccessPoint", s3_error_code::no_such_access_point},
   {"InvalidTag", s3_error_code::invalid_tag},
-  {"MalformedPolicy", s3_error_code::malformed_policy}};
+  {"MalformedPolicy", s3_error_code::malformed_policy},
+  {"NoSuchConfiguration", s3_error_code::no_such_configuration}};
 
 std::istream& operator>>(std::istream& i, s3_error_code& code) {
     ss::sstring c;

@@ -170,7 +170,8 @@ ss::future<op_result<bool>> aws_ops::inventory_configuration_exists(
     auto dl_res = co_await remote.download_object(
       {.transfer_details
        = {.bucket = _bucket, .key = _inventory_key, .parent_rtc = parent_rtc},
-       .payload = buf});
+       .payload = buf,
+       .expect_missing = true});
 
     if (dl_res == download_result::success) {
         co_return true;

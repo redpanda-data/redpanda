@@ -841,7 +841,7 @@ remote::download_object(cloud_storage::download_request download_request) {
             .is_retry = fib.retry_count() > 1},
           transfer_details.parent_rtc);
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout());
+          bucket, path, fib.get_timeout(), download_request.expect_missing);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
