@@ -115,40 +115,4 @@ make_join_error(kafka::member_id member_id, error_code error) {
       error, no_generation, no_protocol, no_leader, std::move(member_id));
 }
 
-// group membership helper to compare a protocol set from the wire with our
-// internal type without doing a full type conversion.
-inline bool operator==(
-  const chunked_vector<join_group_request_protocol>& a,
-  const chunked_vector<member_protocol>& b) {
-    return std::equal(
-      a.cbegin(),
-      a.cend(),
-      b.cbegin(),
-      b.cend(),
-      [](const join_group_request_protocol& a, const member_protocol& b) {
-          return a.name == b.name && a.metadata == b.metadata;
-      });
-}
-
-inline bool operator==(
-  const std::vector<join_group_request_protocol>& a,
-  const std::vector<member_protocol>& b) {
-    return std::equal(
-      a.cbegin(),
-      a.cend(),
-      b.cbegin(),
-      b.cend(),
-      [](const join_group_request_protocol& a, const member_protocol& b) {
-          return a.name == b.name && a.metadata == b.metadata;
-      });
-}
-
-// group membership helper to compare a protocol set from the wire with our
-// internal type without doing a full type conversion.
-inline bool operator!=(
-  const std::vector<join_group_request_protocol>& a,
-  const std::vector<member_protocol>& b) {
-    return !(a == b);
-}
-
 } // namespace kafka

@@ -53,25 +53,6 @@ enum class config_resource_operation : int8_t {
 
 std::ostream& operator<<(std::ostream& os, config_resource_operation);
 
-/// \brief A protocol configuration supported by a group member.
-///
-/// NOTE: for efficiency this structure is shared between kafka request
-/// processing and the rest of group membership. if it changes, make sure that
-/// request processing is still correct.
-struct member_protocol {
-    protocol_name name;
-    bytes metadata;
-
-    bool operator==(const member_protocol& o) const {
-        return name == o.name && metadata == o.metadata;
-    }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const member_protocol& p) {
-        return os << p.name << ":" << p.metadata.size();
-    }
-};
-
 using assignments_type = std::unordered_map<member_id, bytes>;
 
 /**
@@ -90,26 +71,3 @@ struct partition_info {
 };
 
 } // namespace kafka
-
-/*
- * TODO: bytes is on its way out in favor of iobuf. however its still lingering
- * around in some types that we'd like to checkpoint to disk. therefore, this
- * temporary hack serializes bytes as an iobuf so that we can avoid dealing with
- * on-disk data compatibility when finally removing the last bit of bytes.
- */
-namespace reflection {
-template<>
-struct adl<kafka::member_protocol> {
-    void to(iobuf& out, kafka::member_protocol p) {
-        iobuf md = bytes_to_iobuf(p.metadata);
-        reflection::serialize(out, p.name, md);
-    }
-
-    kafka::member_protocol from(iobuf_parser& in) {
-        return kafka::member_protocol{
-          .name = adl<kafka::protocol_name>{}.from(in),
-          .metadata = iobuf_to_bytes(adl<iobuf>{}.from(in)),
-        };
-    }
-};
-} // namespace reflection

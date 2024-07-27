@@ -51,6 +51,8 @@
 
 namespace kafka {
 
+namespace {
+
 /**
  * Convert the request member protocol list into the type used internally to
  * group membership. We maintain two different types because the internal
@@ -70,6 +72,23 @@ native_member_protocols(const join_group_request& request) {
       });
     return res;
 }
+
+// group membership helper to compare a protocol set from the wire with our
+// internal type without doing a full type conversion.
+bool operator==(
+  const chunked_vector<join_group_request_protocol>& a,
+  const chunked_vector<member_protocol>& b) {
+    return std::equal(
+      a.cbegin(),
+      a.cend(),
+      b.cbegin(),
+      b.cend(),
+      [](const join_group_request_protocol& a, const member_protocol& b) {
+          return a.name == b.name && a.metadata == b.metadata;
+      });
+}
+
+} // namespace
 
 using member_config = join_group_response_member;
 
