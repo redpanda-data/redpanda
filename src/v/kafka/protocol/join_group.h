@@ -43,25 +43,6 @@ struct join_group_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    /**
-     * Convert the request member protocol list into the type used internally to
-     * group membership. We maintain two different types because the internal
-     * type is also the type stored on disk and we do not want it to be tied to
-     * the type produced by code generation.
-     */
-    chunked_vector<member_protocol> native_member_protocols() const {
-        chunked_vector<member_protocol> res;
-        res.reserve(data.protocols.size());
-        std::transform(
-          data.protocols.cbegin(),
-          data.protocols.cend(),
-          std::back_inserter(res),
-          [](const join_group_request_protocol& p) {
-              return member_protocol{p.name, p.metadata};
-          });
-        return res;
-    }
-
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }

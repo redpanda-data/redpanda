@@ -51,6 +51,26 @@
 
 namespace kafka {
 
+/**
+ * Convert the request member protocol list into the type used internally to
+ * group membership. We maintain two different types because the internal
+ * type is also the type stored on disk and we do not want it to be tied to
+ * the type produced by code generation.
+ */
+chunked_vector<member_protocol>
+native_member_protocols(const join_group_request& request) {
+    chunked_vector<member_protocol> res;
+    res.reserve(request.data.protocols.size());
+    std::transform(
+      request.data.protocols.cbegin(),
+      request.data.protocols.cend(),
+      std::back_inserter(res),
+      [](const join_group_request_protocol& p) {
+          return member_protocol{p.name, p.metadata};
+      });
+    return res;
+}
+
 using member_config = join_group_response_member;
 
 group::group(
@@ -639,7 +659,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
      * with new member id.</kafka>
      */
     schedule_next_heartbeat_expiration(member);
-    auto f = update_member(member, r.native_member_protocols());
+    auto f = update_member(member, native_member_protocols(r));
     auto old_protocols = _members.at(new_member_id)->protocols().copy();
     switch (state()) {
     case group_state::stable: {
@@ -925,7 +945,7 @@ group::join_group_stages group::add_member_and_rebalance(
       r.data.session_timeout_ms,
       r.data.rebalance_timeout_ms,
       std::move(r.data.protocol_type),
-      r.native_member_protocols());
+      native_member_protocols(r));
 
     // mark member as new. this is used in heartbeat expiration heuristics.
     member->set_new(true);
@@ -979,7 +999,7 @@ group::join_group_stages group::add_member_and_rebalance(
 group::join_group_stages
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
     auto response = update_member(
-      std::move(member), r.native_member_protocols());
+      std::move(member), native_member_protocols(r));
     try_prepare_rebalance();
     return join_group_stages(std::move(response));
 }
