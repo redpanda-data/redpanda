@@ -109,8 +109,10 @@ using request_types = make_request_types<
   alter_client_quotas_api,
   describe_client_quotas_api>;
 
+namespace {
+
 template<typename... RequestTypes>
-static constexpr size_t max_api_key(type_list<RequestTypes...>) {
+constexpr size_t max_api_key(type_list<RequestTypes...>) {
     /// Black magic here is an overload of std::max() that takes an
     /// std::initializer_list
     return std::max({RequestTypes::key()...});
@@ -121,7 +123,7 @@ static constexpr size_t max_api_key(type_list<RequestTypes...>) {
 static constexpr api_version invalid_api = api_version(-2);
 
 template<typename... RequestTypes>
-static constexpr auto
+constexpr auto
 get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     /// An std::array where the indicies map to api_keys and values at an index
     /// map to the first flex version for a given api. If an api doesn't exist
@@ -131,6 +133,8 @@ get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     ((versions[RequestTypes::key()] = RequestTypes::min_flexible), ...);
     return versions;
 }
+
+} // namespace
 
 static constexpr auto g_flex_mapping = get_flexible_request_min_versions_list(
   request_types());
@@ -152,9 +156,11 @@ bool flex_versions::is_api_in_schema(api_key key) noexcept {
 }
 
 ss::future<std::pair<std::optional<tagged_fields>, size_t>>
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
 parse_tags(ss::input_stream<char>& src) {
     size_t total_bytes_read = 0;
     auto read_unsigned_vint =
+      // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
       [](size_t& total_bytes_read, ss::input_stream<char>& src) {
           return unsigned_vint::stream_deserialize(src).then(
             [&total_bytes_read](std::pair<uint32_t, size_t> pair) {
@@ -203,6 +209,7 @@ size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
 } // namespace
 
 namespace protocol {
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
 ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
     auto buf = co_await src.read_exactly(sizeof(int32_t));
     if (!buf) {
