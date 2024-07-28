@@ -15,12 +15,12 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "model/fundamental.h"
 #include "model/tests/random_batch.h"
-#include "redpanda/tests/fixture.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/testing/thread_test_case.hh>
 
-#include <boost/test/tools/old/interface.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include <iterator>
 #include <type_traits>
