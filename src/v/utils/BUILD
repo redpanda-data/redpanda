@@ -558,3 +558,16 @@ redpanda_cc_library(
         "//src/v/base",
     ],
 )
+
+redpanda_cc_library(
+    name = "truncating_logger",
+    hdrs = [
+        "truncating_logger.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "@seastar",
+    ],
+)
