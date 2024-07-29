@@ -70,7 +70,7 @@ class PartitionMovementMixin():
         return selected, replacements
 
     @staticmethod
-    def _get_assignments(admin, topic, partition, with_cores=False):
+    def _get_assignments(admin, topic, partition, with_cores=True):
         def try_get_partitions():
             try:
                 res = admin.get_partitions(topic, partition)
@@ -200,7 +200,7 @@ class PartitionMovementMixin():
                             topic,
                             partition,
                             timeout_sec,
-                            node_local_core_assignment=True):
+                            node_local_core_assignment=False):
         _, new_assignment = self._dispatch_random_partition_move(
             topic=topic,
             partition=partition,
@@ -262,7 +262,7 @@ class PartitionMovementMixin():
                                    partition,
                                    assignments,
                                    admin=None,
-                                   node_local_core_assignment=True):
+                                   node_local_core_assignment=False):
         self.logger.info(
             f"setting assignments for {topic}/{partition}: {assignments}")
 
@@ -289,7 +289,7 @@ class PartitionMovementMixin():
                                         partition,
                                         x_core_only=False,
                                         allow_no_op=True,
-                                        node_local_core_assignment=True):
+                                        node_local_core_assignment=False):
         """
         Request partition replicas to be randomly moved
 
