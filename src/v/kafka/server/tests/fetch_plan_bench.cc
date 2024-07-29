@@ -16,7 +16,6 @@
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/fetch/fetch_planner.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "random/generators.h"

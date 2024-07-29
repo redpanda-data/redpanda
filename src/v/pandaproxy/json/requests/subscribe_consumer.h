@@ -16,7 +16,6 @@
 #include "json/encodings.h"
 #include "json/types.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/types.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "strings/string_switch.h"

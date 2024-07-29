@@ -16,7 +16,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/logger.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"

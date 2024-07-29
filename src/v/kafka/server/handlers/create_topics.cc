@@ -21,7 +21,6 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/handlers/topics/validators.h"
 #include "kafka/server/quota_manager.h"
-#include "kafka/types.h"
 #include "model/metadata.h"
 #include "security/acl.h"
 #include "utils/to_string.h"

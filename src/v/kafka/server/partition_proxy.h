@@ -13,7 +13,7 @@
 #include "base/outcome.h"
 #include "cluster/fwd.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/types.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/record_batch_reader.h"
@@ -25,6 +25,21 @@
 #include <system_error>
 
 namespace kafka {
+
+/**
+ * Describes single partition replica. Used by replica selector
+ */
+struct replica_info {
+    model::node_id id;
+    model::offset high_watermark;
+    model::offset log_end_offset;
+    bool is_alive;
+};
+
+struct partition_info {
+    std::vector<replica_info> replicas;
+    std::optional<model::node_id> leader;
+};
 
 /**
  * Kafka layer wrapper for partition, this wrapper performs offsets translation

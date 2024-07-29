@@ -13,7 +13,6 @@
 #include "cloud_storage/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/partition_proxy.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/replicate.h"

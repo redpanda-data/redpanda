@@ -14,7 +14,6 @@
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/server/handlers/topics/types.h"
-#include "kafka/types.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/async.h"

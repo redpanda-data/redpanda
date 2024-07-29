@@ -31,7 +31,6 @@
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "raft/errc.h"
@@ -50,6 +49,57 @@
 #include <fmt/ranges.h>
 
 namespace kafka {
+
+namespace {
+
+/**
+ * Convert the request member protocol list into the type used internally to
+ * group membership. We maintain two different types because the internal
+ * type is also the type stored on disk and we do not want it to be tied to
+ * the type produced by code generation.
+ */
+chunked_vector<member_protocol>
+native_member_protocols(const join_group_request& request) {
+    chunked_vector<member_protocol> res;
+    res.reserve(request.data.protocols.size());
+    std::transform(
+      request.data.protocols.cbegin(),
+      request.data.protocols.cend(),
+      std::back_inserter(res),
+      [](const join_group_request_protocol& p) {
+          return member_protocol{p.name, p.metadata};
+      });
+    return res;
+}
+
+// group membership helper to compare a protocol set from the wire with our
+// internal type without doing a full type conversion.
+bool operator==(
+  const chunked_vector<join_group_request_protocol>& a,
+  const chunked_vector<member_protocol>& b) {
+    return std::equal(
+      a.cbegin(),
+      a.cend(),
+      b.cbegin(),
+      b.cend(),
+      [](const join_group_request_protocol& a, const member_protocol& b) {
+          return a.name == b.name && a.metadata == b.metadata;
+      });
+}
+
+assignments_type member_assignments(sync_group_request request) {
+    assignments_type res;
+    res.reserve(request.data.assignments.size());
+    std::for_each(
+      std::begin(request.data.assignments),
+      std::end(request.data.assignments),
+      [&res](sync_group_request_assignment& a) mutable {
+          res.emplace(std::move(a.member_id), std::move(a.assignment));
+      });
+    return res;
+}
+
+} // namespace
 
 using member_config = join_group_response_member;
 
@@ -639,7 +689,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
      * with new member id.</kafka>
      */
     schedule_next_heartbeat_expiration(member);
-    auto f = update_member(member, r.native_member_protocols());
+    auto f = update_member(member, native_member_protocols(r));
     auto old_protocols = _members.at(new_member_id)->protocols().copy();
     switch (state()) {
     case group_state::stable: {
@@ -925,7 +975,7 @@ group::join_group_stages group::add_member_and_rebalance(
       r.data.session_timeout_ms,
       r.data.rebalance_timeout_ms,
       std::move(r.data.protocol_type),
-      r.native_member_protocols());
+      native_member_protocols(r));
 
     // mark member as new. this is used in heartbeat expiration heuristics.
     member->set_new(true);
@@ -979,7 +1029,7 @@ group::join_group_stages group::add_member_and_rebalance(
 group::join_group_stages
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
     auto response = update_member(
-      std::move(member), r.native_member_protocols());
+      std::move(member), native_member_protocols(r));
     try_prepare_rebalance();
     return join_group_stages(std::move(response));
 }
@@ -1471,7 +1521,7 @@ group::sync_group_stages group::sync_group_completing_rebalance(
     // underlying metadata topic for group recovery. the mapping is the
     // assignments in the request plus any missing assignments for group
     // members.
-    auto assignments = std::move(r).member_assignments();
+    auto assignments = member_assignments(std::move(r));
     add_missing_assignments(assignments);
 
     // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error when
@@ -2786,15 +2836,15 @@ ss::sstring group_state_to_kafka_name(group_state gs) {
     // since these states are returned through the kafka describe groups api.
     switch (gs) {
     case group_state::empty:
-        return "Empty";
+        return ss::sstring(group_state_name_empty);
     case group_state::preparing_rebalance:
-        return "PreparingRebalance";
+        return ss::sstring(group_state_name_preparing_rebalance);
     case group_state::completing_rebalance:
-        return "CompletingRebalance";
+        return ss::sstring(group_state_name_completing_rebalance);
     case group_state::stable:
-        return "Stable";
+        return ss::sstring(group_state_name_stable);
     case group_state::dead:
-        return "Dead";
+        return ss::sstring(group_state_name_dead);
     default:
         std::terminate(); // make gcc happy
     }

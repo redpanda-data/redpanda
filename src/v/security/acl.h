@@ -10,7 +10,8 @@
  */
 #pragma once
 #include "base/seastarx.h"
-#include "kafka/types.h"
+#include "base/type_traits.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 #include "serde/rw/enum.h"

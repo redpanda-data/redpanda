@@ -14,7 +14,6 @@
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/sasl_handshake_request.h"
 #include "kafka/protocol/schemata/sasl_handshake_response.h"
-#include "kafka/types.h"
 
 #include <seastar/core/future.hh>
 

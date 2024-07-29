@@ -12,13 +12,13 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "kafka/protocol/logger.h"
 
 #include <seastar/util/log.hh>
 
 #include <utils/truncating_logger.h>
 
 namespace kafka {
-extern ss::logger klog;
 extern truncating_logger kwire;
 extern ss::logger client_quota_log;
 } // namespace kafka

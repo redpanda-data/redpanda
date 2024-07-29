@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/server/handlers/api_versions.h"
-#include "kafka/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 

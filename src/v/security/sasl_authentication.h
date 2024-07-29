@@ -13,6 +13,7 @@
 #include "security/acl.h"
 #include "security/audit/schemas/types.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 
 #include <chrono>

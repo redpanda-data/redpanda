@@ -15,7 +15,6 @@
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/sync_group.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <absl/container/flat_hash_map.h>

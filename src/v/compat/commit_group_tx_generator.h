@@ -12,7 +12,6 @@
 
 #include "cluster/types.h"
 #include "compat/generator.h"
-#include "kafka/types.h"
 #include "model/timeout_clock.h"
 #include "test_utils/randoms.h"
 

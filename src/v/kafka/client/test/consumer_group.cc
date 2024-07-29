@@ -33,7 +33,6 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/wire.h"
 #include "kafka/server/group.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"

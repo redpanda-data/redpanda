@@ -16,7 +16,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/add_offsets_to_txn_request.h"
 #include "kafka/protocol/schemata/add_offsets_to_txn_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 

@@ -15,7 +15,6 @@
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/logger.h"
-#include "kafka/types.h"
 #include "net/connection.h"
 #include "net/server_probe.h"
 #include "security/acl.h"

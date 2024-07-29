@@ -24,7 +24,6 @@
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
 #include "kafka/server/usage_manager.h"
-#include "kafka/types.h"
 #include "model/namespace.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "security/acl.h"

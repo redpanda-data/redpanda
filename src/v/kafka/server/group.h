@@ -23,7 +23,6 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -49,6 +48,9 @@ struct configuration;
 }
 
 namespace kafka {
+
+using assignments_type = std::unordered_map<member_id, bytes>;
+
 struct group_log_group_metadata;
 
 /**

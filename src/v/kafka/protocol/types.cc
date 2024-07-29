@@ -79,4 +79,52 @@ operator<<(std::ostream& os, describe_client_quotas_match_type t) {
     return os << "{unsupported type}";
 }
 
+std::ostream& operator<<(std::ostream& os, coordinator_type t) {
+    switch (t) {
+    case coordinator_type::group:
+        return os << "{group}";
+    case coordinator_type::transaction:
+        return os << "{transaction}";
+    };
+    return os << "{unknown type}";
+}
+
+std::ostream& operator<<(std::ostream& os, config_resource_type t) {
+    switch (t) {
+    case config_resource_type::topic:
+        return os << "{topic}";
+    case config_resource_type::broker:
+        [[fallthrough]];
+    case config_resource_type::broker_logger:
+        break;
+    }
+    return os << "{unknown type}";
+}
+
+std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
+    switch (s) {
+    case describe_configs_source::topic:
+        return os << "{topic}";
+    case describe_configs_source::static_broker_config:
+        return os << "{static_broker_config}";
+    case describe_configs_source::default_config:
+        return os << "{default_config}";
+    }
+    return os << "{unknown type}";
+}
+
+std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
+    switch (t) {
+    case config_resource_operation::set:
+        return os << "set";
+    case config_resource_operation::append:
+        return os << "append";
+    case config_resource_operation::remove:
+        return os << "remove";
+    case config_resource_operation::subtract:
+        return os << "subtract";
+    }
+    return os << "unknown type";
+}
+
 } // namespace kafka

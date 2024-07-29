@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/sync_group_request.h"
 #include "kafka/protocol/schemata/sync_group_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
@@ -37,18 +36,6 @@ struct sync_group_request final {
 
     void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
-    }
-
-    assignments_type member_assignments() && {
-        assignments_type res;
-        res.reserve(data.assignments.size());
-        std::for_each(
-          std::begin(data.assignments),
-          std::end(data.assignments),
-          [&res](sync_group_request_assignment& a) mutable {
-              res.emplace(std::move(a.member_id), std::move(a.assignment));
-          });
-        return res;
     }
 
     friend std::ostream&

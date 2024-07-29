@@ -14,7 +14,6 @@
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <seastar/testing/thread_test_case.hh>

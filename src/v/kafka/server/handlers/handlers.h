@@ -61,6 +61,12 @@ template<typename... Requests>
 requires(KafkaApiHandler<Requests>, ...)
 using make_request_types = type_list<Requests...>;
 
+/*
+ * This set of handlers defines what the kafka server supports. If you are
+ * adding to this list, then you'll want to also update the list in
+ * kafka/protocol/flex_versions.cc which define properties about the protocol
+ * itself as shared between our client and server.
+ */
 using request_types = make_request_types<
   produce_handler,
   fetch_handler,

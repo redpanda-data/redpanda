@@ -4,7 +4,6 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/logger.h"
-#include "kafka/types.h"
 #include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"

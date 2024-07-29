@@ -11,7 +11,6 @@
 #pragma once
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/timeout_clock.h"

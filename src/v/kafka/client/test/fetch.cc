@@ -18,7 +18,6 @@
 #include "kafka/client/test/utils.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"

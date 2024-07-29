@@ -12,7 +12,6 @@
 
 #include "base/units.h"
 #include "kafka/server/fetch_session.h"
-#include "kafka/types.h"
 #include "metrics/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>

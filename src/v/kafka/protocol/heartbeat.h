@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/heartbeat_request.h"
 #include "kafka/protocol/schemata/heartbeat_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/future.hh>

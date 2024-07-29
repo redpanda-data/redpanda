@@ -9,7 +9,6 @@
 
 #include "http/client.h"
 #include "kafka/protocol/join_group.h"
-#include "kafka/types.h"
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/rest/configuration.h"

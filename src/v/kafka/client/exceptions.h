@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/protocol/exceptions.h"
-#include "kafka/types.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 

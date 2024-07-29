@@ -10,7 +10,6 @@
 
 #include "cluster/types.h"
 #include "kafka/client/test/fixture.h"
-#include "kafka/types.h"
 #include "redpanda/tests/fixture.h"
 #include "security/audit/audit_log_manager.h"
 #include "security/audit/schemas/application_activity.h"

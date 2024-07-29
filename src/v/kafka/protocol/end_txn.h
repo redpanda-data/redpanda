@@ -16,7 +16,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/end_txn_request.h"
 #include "kafka/protocol/schemata/end_txn_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 
