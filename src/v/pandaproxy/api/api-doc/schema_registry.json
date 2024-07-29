@@ -1146,12 +1146,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "integer"
-                }
-              }
+              "$ref": "#/definitions/is_compatibile"
             }
           },
           "409": {
