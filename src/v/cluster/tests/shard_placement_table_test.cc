@@ -895,15 +895,15 @@ public:
                       placement.current->status,
                       shard_placement_table::hosted_status::hosted)
                       << "ntp: " << ntp << ", shard: " << s;
-                    ASSERT_TRUE_CORO(placement.assigned)
+                    ASSERT_TRUE_CORO(placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.assigned->log_revision, meta.log_revision)
+                      placement.assigned()->log_revision, meta.log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                 } else {
                     ASSERT_TRUE_CORO(!placement.current)
                       << "ntp: " << ntp << ", shard: " << s;
-                    ASSERT_TRUE_CORO(!placement.assigned)
+                    ASSERT_TRUE_CORO(!placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
                 }
             }
@@ -958,14 +958,14 @@ public:
             }
             for (const auto& [s, placement] : shard2state) {
                 if (expected.target && s == expected.target->shard) {
-                    ASSERT_TRUE_CORO(placement.assigned)
+                    ASSERT_TRUE_CORO(placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.assigned->log_revision,
+                      placement.assigned()->log_revision,
                       expected.target->log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                 } else {
-                    ASSERT_TRUE_CORO(!placement.assigned)
+                    ASSERT_TRUE_CORO(!placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
                 }
             }
