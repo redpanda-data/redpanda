@@ -117,25 +117,31 @@ public:
 
         placement_state() = default;
 
+        const std::optional<shard_local_assignment>& assigned() const {
+            return _assigned;
+        }
+
         /// Current shard-local state for this ntp. Will be non-null if
         /// some kvstore state for this ntp exists on this shard.
         std::optional<shard_local_state> current;
-        /// If non-null, the ntp is expected to exist on this shard.
-        std::optional<shard_local_assignment> assigned;
 
     private:
         friend class shard_placement_table;
 
         /// If placement_state is in the _states map, then is_empty() is false.
         bool is_empty() const {
-            return !current && !_is_initial_for && !assigned;
+            return !current && !_is_initial_for && !_assigned;
         }
+
+        void set_assigned(std::optional<shard_local_assignment>);
 
         struct versioned_shard {
             ss::shard_id shard;
             model::shard_revision_id revision;
         };
 
+        /// If non-null, the ntp is expected to exist on this shard.
+        std::optional<shard_local_assignment> _assigned;
         /// If this shard is the initial shard for some incarnation of this
         /// partition on this node, this field will contain the corresponding
         /// log revision. Invariant: if both _is_initial_for and current
