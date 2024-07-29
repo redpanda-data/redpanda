@@ -2488,12 +2488,6 @@ ss::future<> disk_log_impl::remove_segment_permanently(
     _probe->delete_segment(*s);
     // background close
     s->tombstone();
-    if (s->has_outstanding_locks()) {
-        vlog(
-          stlog.info,
-          "Segment has outstanding locks. Might take a while to close:{}",
-          s->reader().filename());
-    }
 
     return _readers_cache->evict_segment_readers(s)
       .then([s](readers_cache::range_lock_holder cache_lock) {
