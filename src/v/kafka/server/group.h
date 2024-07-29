@@ -896,6 +896,8 @@ private:
           features::feature::group_tx_fence_dedicated_batch_type);
     }
 
+    cluster::tx::errc map_tx_replication_error(std::error_code ec);
+
     kafka::group_id _id;
     group_state _state;
     std::optional<model::timestamp> _state_timestamp;
