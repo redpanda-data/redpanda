@@ -15,7 +15,9 @@
 #include "cloud_storage/remote.h"
 #include "json/istreamwrapper.h"
 
+#include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <rapidjson/error/en.h>
@@ -70,26 +72,38 @@ iobuf to_xml(const aws_report_configuration& cfg) {
     return b;
 }
 
-// YYYY-MM-DDTHH-MMZ/
-const re2::RE2 trailing_date_expression{R"(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z/)"};
+// Ends with YYYY-MM-DDTHH-MMZ/
+const re2::RE2 trailing_date_expression{
+  R"(.*/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}Z/$)"};
 
 struct path_with_datetime {
     cloud_storage::inventory::report_datetime datetime;
     cloud_storage_clients::object_key path;
 };
 
-bool is_datetime(std::string_view path) {
+bool ends_with_datetime(std::string_view path) {
     return RE2::FullMatch(path, trailing_date_expression);
 }
 
-path_with_datetime
-checksum_path(std::string_view prefix, std::string_view date_string) {
-    date_string.remove_suffix(1);
+path_with_datetime checksum_path(std::string_view datetime_path) {
+    // We should have previously checked with a regex that the path ends with
+    // a /date/ pattern. Throw an error here if that invariant is broken.
+    if (!ends_with_datetime(datetime_path)) {
+        throw std::invalid_argument{fmt::format(
+          "unexpected path ending with datetime: {}", datetime_path)};
+    }
+
+    std::vector<std::string> parts;
+    // prefix/bucket/inv-id/datetime
+    parts.reserve(4);
+    boost::split(parts, datetime_path, boost::is_any_of("/"));
+
+    const auto& date_string = *(parts.end() - 2);
     return {
       .datetime = cloud_storage::inventory::
         report_datetime{date_string.data(), date_string.size()},
       .path = cloud_storage_clients::object_key{
-        fmt::format("{}{}/manifest.checksum", prefix, date_string)}};
+        fmt::format("{}manifest.checksum", datetime_path)}};
 }
 
 constexpr auto max_logged_json_size = 128;
@@ -227,17 +241,14 @@ ss::future<op_result<report_metadata>> aws_ops::do_fetch_latest_report_metadata(
       cst_log.trace,
       "Found common prefixes: {}",
       list_result.value().common_prefixes);
-    auto transform_to_checksum = [&full_prefix](auto datetime) {
-        return checksum_path(full_prefix().native(), datetime);
-    };
 
     // The prefix may contain non-datetime folders such as hive data, which we
     // ignore. The datetime folders are normalized with the prefix, and then the
     // checksum file path is appended to them. The final result is a series of
     // paths to checksums which we need to probe.
     auto filtered = list_result.value().common_prefixes
-                    | std::views::filter(is_datetime)
-                    | std::views::transform(transform_to_checksum);
+                    | std::views::filter(ends_with_datetime)
+                    | std::views::transform(checksum_path);
 
     std::vector<path_with_datetime> checksum_paths{
       filtered.begin(), filtered.end()};
@@ -307,7 +318,7 @@ ss::future<op_result<report_metadata>> aws_ops::do_fetch_latest_report_metadata(
           .datetime = path_with_datetime.datetime};
     }
 
-    co_return error_outcome::failed;
+    co_return error_outcome::no_reports_found;
 }
 
 ss::future<op_result<report_paths>> aws_ops::fetch_and_parse_metadata(

@@ -146,7 +146,8 @@ ss::future<cst::cloud_storage_api::list_result> validate_list_objs(
     EXPECT_FALSE(continuation_token.has_value());
 
     co_return cloud_storage_clients::client::list_bucket_result{
-      .common_prefixes = {fmt::format("{}/", expected_date)}};
+      .common_prefixes = {fmt::format(
+        "{}/{}/{}/{}/", prefix, bucket(), inv_id(), expected_date)}};
 }
 
 constexpr auto manifest_json = R"(
@@ -370,10 +371,14 @@ TEST(Service, OlderReportIsSkipped) {
       []() -> ss::future<csi::MockRemote::list_result> {
         co_return cloud_storage_clients::client::list_bucket_result{
           .common_prefixes = {
-            "1111-11-11T11-19Z/",
-            "1111-11-11T11-22Z/",
-            "1111-11-11T11-83Z/",
-            "1111-00-11T11-15Z/"}};
+            fmt::format(
+              "{}/{}/{}/1111-11-11T11-19Z/", prefix, bucket(), inv_id()),
+            fmt::format(
+              "{}/{}/{}/1111-11-11T11-22Z/", prefix, bucket(), inv_id()),
+            fmt::format(
+              "{}/{}/{}/1111-11-11T11-83Z/", prefix, bucket(), inv_id()),
+            fmt::format(
+              "{}/{}/{}/1111-00-11T11-15Z/", prefix, bucket(), inv_id())}};
     };
     EXPECT_CALL(
       remote, list_objects(bucket, t::_, t::_, t::_, t::_, t::_, t::_))
