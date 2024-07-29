@@ -47,7 +47,7 @@ ptree destination_node(const aws_report_configuration& cfg) {
     ptree destination;
     destination.add("Format", cfg.format);
     destination.add("Prefix", cfg.prefix);
-    destination.add("Bucket", fmt::format("arn::aws::s3:::{}", cfg.bucket()));
+    destination.add("Bucket", fmt::format("arn:aws:s3:::{}", cfg.bucket()));
     return destination;
 }
 
@@ -58,6 +58,7 @@ iobuf to_xml(const aws_report_configuration& cfg) {
 
     inv_cfg.add("IsEnabled", "true");
     inv_cfg.add("Id", cfg.inventory_id());
+    inv_cfg.add("IncludedObjectVersions", "Current");
 
     inv_cfg.add(cfg.frequency_path, cfg.frequency);
 
