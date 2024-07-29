@@ -21,7 +21,7 @@ cmake(
     },
     lib_source = ":srcs",
     out_static_libs = ["libwasmtime.a"],
-    tags = ["requires-network"],
+    tags = ["no-sandbox"],
     visibility = [
         "//visibility:public",
     ],
