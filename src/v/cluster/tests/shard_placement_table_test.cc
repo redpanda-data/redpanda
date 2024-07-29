@@ -269,7 +269,7 @@ private:
         }
         case shard_placement_table::reconciliation_action::remove_kvstore_state:
             co_await remove_partition_kvstore_state(
-              ntp, placement.current.value().log_revision);
+              ntp, placement.current().value().log_revision);
             co_return ss::stop_iteration::no;
         case shard_placement_table::reconciliation_action::
           wait_for_target_update:
@@ -278,7 +278,7 @@ private:
             auto ec = co_await transfer_partition(
               ntp,
               expected_log_revision.value(),
-              placement.current.has_value());
+              placement.current().has_value());
             if (ec) {
                 co_return ec;
             }
@@ -289,7 +289,7 @@ private:
                 auto ec = co_await create_partition(
                   ntp,
                   expected_log_revision.value(),
-                  placement.current.has_value());
+                  placement.current().has_value());
                 if (ec) {
                     co_return ec;
                 }
@@ -378,7 +378,7 @@ private:
             co_return ec;
         }
 
-        if (!placement.current) {
+        if (!placement.current()) {
             // nothing to delete
             co_return errc::success;
         }
@@ -389,10 +389,10 @@ private:
               _logger.trace,
               "[{}] stopped partition log_revision: {}",
               ntp,
-              placement.current->log_revision);
+              placement.current()->log_revision);
         }
         if (
-          placement.current->status
+          placement.current()->status
           != shard_placement_table::hosted_status::hosted) {
             vassert(!was_launched, "[{}] unexpected launched", ntp);
         }
@@ -402,7 +402,7 @@ private:
         co_await _ntp2shards.invoke_on(
           0,
           [ntp,
-           current = placement.current.value(),
+           current = placement.current().value(),
            shard = ss::this_shard_id(),
            was_launched](ntp2shards_t& ntp2shards) {
               auto& shards = ntp2shards[ntp];
@@ -460,7 +460,7 @@ private:
           });
 
         co_await _shard_placement.finish_delete(
-          ntp, placement.current->log_revision);
+          ntp, placement.current()->log_revision);
         co_return ec;
     }
 
@@ -886,13 +886,13 @@ public:
               << "ntp: " << ntp << ", target shard: " << target.shard;
             for (const auto& [s, placement] : shard2state) {
                 if (s == target.shard) {
-                    ASSERT_TRUE_CORO(placement.current)
+                    ASSERT_TRUE_CORO(placement.current())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.current->log_revision, meta.log_revision)
+                      placement.current()->log_revision, meta.log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.current->status,
+                      placement.current()->status,
                       shard_placement_table::hosted_status::hosted)
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_TRUE_CORO(placement.assigned())
@@ -901,7 +901,7 @@ public:
                       placement.assigned()->log_revision, meta.log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                 } else {
-                    ASSERT_TRUE_CORO(!placement.current)
+                    ASSERT_TRUE_CORO(!placement.current())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_TRUE_CORO(!placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
@@ -975,7 +975,7 @@ public:
                 auto state_it = shard2state.find(s);
                 ASSERT_TRUE_CORO(state_it != shard2state.end())
                   << "ntp: " << ntp << ", shard: " << s;
-                ASSERT_TRUE_CORO(state_it->second.current)
+                ASSERT_TRUE_CORO(state_it->second.current())
                   << "ntp: " << ntp << ", shard: " << s;
             }
         }

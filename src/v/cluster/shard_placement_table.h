@@ -121,19 +121,21 @@ public:
             return _assigned;
         }
 
-        /// Current shard-local state for this ntp. Will be non-null if
-        /// some kvstore state for this ntp exists on this shard.
-        std::optional<shard_local_state> current;
+        const std::optional<shard_local_state>& current() const {
+            return _current;
+        }
 
     private:
         friend class shard_placement_table;
 
         /// If placement_state is in the _states map, then is_empty() is false.
         bool is_empty() const {
-            return !current && !_is_initial_for && !_assigned;
+            return !_current && !_is_initial_for && !_assigned;
         }
 
         void set_assigned(std::optional<shard_local_assignment>);
+        void set_current(std::optional<shard_local_state>);
+        void set_hosted_status(hosted_status);
 
         struct versioned_shard {
             ss::shard_id shard;
@@ -147,6 +149,9 @@ public:
         /// log revision. Invariant: if both _is_initial_for and current
         /// are present, _is_initial_for > current.log_revision
         std::optional<model::revision_id> _is_initial_for;
+        /// Current shard-local state for this ntp. Will be non-null if
+        /// some kvstore state for this ntp exists on this shard.
+        std::optional<shard_local_state> _current;
         /// If x-shard transfer is in progress, will hold the destination. Note
         /// that it is initialized from target but in contrast to target, it
         /// can't change mid-transfer.
