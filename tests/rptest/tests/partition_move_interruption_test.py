@@ -550,7 +550,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             id = self.redpanda.node_id(n)
             if id not in replica_ids:
                 previous = assignments.pop()
-                assignments.append({"node_id": id})
+                assignments.append({"node_id": id, "core": 0})
                 # stop a node that is going to be removed from current partition assignment
                 to_stop = self.get_node_by_id(previous['node_id'])
                 self.redpanda.stop_node(to_stop)
@@ -640,7 +640,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             for id in available_ids:
                 if id not in replica_ids:
                     assignments.pop()
-                    assignments.append({"node_id": id})
+                    assignments.append({"node_id": id, "core": 0})
 
             self.logger.info(
                 f"[{i}] moving {topic}/{partition}: {prev_assignments} -> {assignments}"

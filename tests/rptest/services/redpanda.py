@@ -3323,11 +3323,32 @@ class RedpandaService(RedpandaServiceBase):
             raise AssertionError(
                 "Nodes report restart required but expect_restart is False")
 
-    def set_feature_active(self, feature_name: str, active: bool, *,
-                           timeout_sec: int):
-        state = 'active' if active else 'disabled'
-        self._admin.put_feature(feature_name, {"state": state})
-        self.await_feature(feature_name, state, timeout_sec=timeout_sec)
+    def set_feature_active(self,
+                           feature_name: str,
+                           active: bool,
+                           *,
+                           timeout_sec: int = 15):
+        target_state = 'active' if active else 'disabled'
+        cur_state = self.get_feature_state(feature_name)
+        if active and cur_state == 'unavailable':
+            # If we have just restarted after an upgrade, wait for cluster version
+            # to progress and for the feature to become available.
+            self.await_feature(feature_name,
+                               'available',
+                               timeout_sec=timeout_sec)
+        self._admin.put_feature(feature_name, {"state": target_state})
+        self.await_feature(feature_name, target_state, timeout_sec=timeout_sec)
+
+    def get_feature_state(self,
+                          feature_name: str,
+                          node: ClusterNode | None = None):
+        f = self._admin.get_features(node=node)
+        by_name = dict((f['name'], f) for f in f['features'])
+        try:
+            state = by_name[feature_name]['state']
+        except KeyError:
+            state = None
+        return state
 
     def await_feature(self,
                       feature_name: str,
@@ -3344,13 +3365,7 @@ class RedpandaService(RedpandaServiceBase):
 
         def is_awaited_state():
             for n in nodes:
-                f = self._admin.get_features(node=n)
-                by_name = dict((f['name'], f) for f in f['features'])
-                try:
-                    state = by_name[feature_name]['state']
-                except KeyError:
-                    state = None
-
+                state = self.get_feature_state(feature_name)
                 if state != await_state:
                     self.logger.info(
                         f"Feature {feature_name} not yet {await_state} on {n.name} (state {state})"

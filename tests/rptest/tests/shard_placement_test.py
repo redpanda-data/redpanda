@@ -27,6 +27,10 @@ class ShardPlacementTest(PreallocNodesTest):
         # start the nodes manually
         pass
 
+    def enable_feature(self):
+        self.redpanda.set_feature_active("node_local_core_assignment",
+                                         active=True)
+
     def start_client_load(self, topic_name):
         msg_size = 4096
 
@@ -187,15 +191,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.redpanda.restart_nodes(seed_nodes)
         self.redpanda.wait_for_membership(first_start=False)
 
-        self.redpanda.await_feature("node_local_core_assignment",
-                                    "available",
-                                    timeout_sec=15,
-                                    nodes=seed_nodes)
-        admin.put_feature("node_local_core_assignment", {"state": "active"})
-        self.redpanda.await_feature("node_local_core_assignment",
-                                    "active",
-                                    timeout_sec=15,
-                                    nodes=seed_nodes)
+        self.enable_feature()
 
         self.logger.info(
             "feature enabled, checking that shard map is stable...")
@@ -291,6 +287,7 @@ class ShardPlacementTest(PreallocNodesTest):
     @cluster(num_nodes=6)
     def test_manual_rebalance(self):
         self.redpanda.start()
+        self.enable_feature()
 
         admin = Admin(self.redpanda)
         rpk = RpkTool(self.redpanda)
@@ -350,6 +347,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.redpanda.set_resource_settings(
             ResourceSettings(num_cpus=initial_core_count - 1))
         self.redpanda.start()
+        self.enable_feature()
 
         admin = Admin(self.redpanda)
         rpk = RpkTool(self.redpanda)
@@ -460,6 +458,7 @@ class ShardPlacementTest(PreallocNodesTest):
         seed_nodes = self.redpanda.nodes[0:3]
         joiner_nodes = self.redpanda.nodes[3:]
         self.redpanda.start(nodes=seed_nodes)
+        self.enable_feature()
 
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
         rpk = RpkTool(self.redpanda)
