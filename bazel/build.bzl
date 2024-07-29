@@ -18,6 +18,7 @@ def redpanda_cc_library(
         visibility = None,
         include_prefix = None,
         exclude_layering_check = False,
+        copts = [],
         deps = []):
     """
     Define a Redpanda C++ library.
@@ -41,6 +42,6 @@ def redpanda_cc_library(
         include_prefix = include_prefix,
         strip_include_prefix = strip_include_prefix,
         deps = deps,
-        copts = redpanda_copts(),
+        copts = redpanda_copts() + copts,
         features = features,
     )
