@@ -144,6 +144,7 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <google/protobuf/stubs/logging.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
 
@@ -521,6 +522,12 @@ void application::initialize(
       }))
       .get();
     _cpu_profiler.invoke_on_all(&resources::cpu_profiler::start).get();
+
+    /*
+     * Disable the logger for protobuf; some interfaces don't allow a pluggable
+     * error collector.
+     */
+    google::protobuf::SetLogHandler(nullptr);
 
     /*
      * allocate per-core zstd decompression workspace and per-core
