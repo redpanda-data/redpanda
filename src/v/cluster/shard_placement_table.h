@@ -41,6 +41,9 @@ namespace cluster {
 /// reconciliation process.
 class shard_placement_table
   : public ss::peering_sharded_service<shard_placement_table> {
+private:
+    class probe;
+
 public:
     // assignment modification methods must be called on this shard
     static constexpr ss::shard_id assignment_shard_id = 0;
@@ -133,9 +136,14 @@ public:
             return !_current && !_is_initial_for && !_assigned;
         }
 
-        void set_assigned(std::optional<shard_local_assignment>);
-        void set_current(std::optional<shard_local_state>);
-        void set_hosted_status(hosted_status);
+        /// True if shard-local state for the partition is reconciled.
+        bool is_reconciled() const;
+
+        void set_assigned(
+          std::optional<shard_local_assignment>, shard_placement_table::probe&);
+        void set_current(
+          std::optional<shard_local_state>, shard_placement_table::probe&);
+        void set_hosted_status(hosted_status, shard_placement_table::probe&);
 
         struct versioned_shard {
             ss::shard_id shard;
@@ -161,6 +169,7 @@ public:
     using ntp2state_t = absl::node_hash_map<model::ntp, placement_state>;
 
     explicit shard_placement_table(ss::shard_id, storage::kvstore&);
+    ~shard_placement_table();
 
     /// Must be called on assignment_shard_id.
     bool is_persistence_enabled() const;
@@ -284,6 +293,8 @@ private:
 
     chunked_hash_map<model::ntp, std::unique_ptr<entry_t>> _ntp2entry;
     model::shard_revision_id _cur_shard_revision{0};
+
+    std::unique_ptr<probe> _probe;
 };
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);
