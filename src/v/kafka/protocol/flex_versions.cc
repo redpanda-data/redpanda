@@ -112,7 +112,7 @@ using request_types = make_request_types<
 namespace {
 
 template<typename... RequestTypes>
-constexpr size_t max_api_key(type_list<RequestTypes...>) {
+consteval size_t max_api_key(type_list<RequestTypes...>) {
     /// Black magic here is an overload of std::max() that takes an
     /// std::initializer_list
     return std::max({RequestTypes::key()...});
@@ -120,10 +120,10 @@ constexpr size_t max_api_key(type_list<RequestTypes...>) {
 
 /// Not every value from 0 -> max_api_key is a valid request, non-supported
 /// requests will map to a value of api_key(-2)
-static constexpr api_version invalid_api = api_version(-2);
+constexpr api_version invalid_api = api_version(-2);
 
 template<typename... RequestTypes>
-constexpr auto
+consteval auto
 get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     /// An std::array where the indicies map to api_keys and values at an index
     /// map to the first flex version for a given api. If an api doesn't exist
@@ -134,10 +134,10 @@ get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     return versions;
 }
 
-} // namespace
-
-static constexpr auto g_flex_mapping = get_flexible_request_min_versions_list(
+constexpr auto g_flex_mapping = get_flexible_request_min_versions_list(
   request_types());
+
+} // namespace
 
 bool flex_versions::is_flexible_request(api_key key, api_version version) {
     /// If bounds checking is desired call is_api_in_schema(key) beforehand
