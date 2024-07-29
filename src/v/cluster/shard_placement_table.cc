@@ -66,12 +66,12 @@ shard_placement_table::placement_state::get_reconciliation_action(
         }
         return reconciliation_action::remove_partition;
     }
-    if (current) {
-        if (current->log_revision < expected_log_revision) {
+    if (_current) {
+        if (_current->log_revision < expected_log_revision) {
             return reconciliation_action::remove_partition;
-        } else if (current->log_revision > expected_log_revision) {
+        } else if (_current->log_revision > expected_log_revision) {
             return reconciliation_action::wait_for_target_update;
-        } else if (current->status == hosted_status::obsolete) {
+        } else if (_current->status == hosted_status::obsolete) {
             return reconciliation_action::remove_kvstore_state;
         }
     } else if (_is_initial_for) {
@@ -97,14 +97,26 @@ shard_placement_table::placement_state::get_reconciliation_action(
 void shard_placement_table::placement_state::set_assigned(
   std::optional<shard_local_assignment> new_assigned) {
     _assigned = std::move(new_assigned);
-  }
+}
+
+void shard_placement_table::placement_state::set_current(
+  std::optional<shard_local_state> new_current) {
+    _current = std::move(new_current);
+}
+
+void shard_placement_table::placement_state::set_hosted_status(
+  hosted_status new_status) {
+    auto new_current = _current;
+    new_current.value().status = new_status;
+    set_current(std::move(new_current));
+}
 
 std::ostream&
 operator<<(std::ostream& o, const shard_placement_table::placement_state& ps) {
     fmt::print(
       o,
       "{{current: {}, assigned: {}, is_initial_for: {}, next: ",
-      ps.current,
+      ps._current,
       ps._assigned,
       ps._is_initial_for);
     if (ps._next) {
@@ -250,16 +262,17 @@ ss::future<> shard_placement_table::persist_shard_local_state() {
           }
 
           auto f2 = ss::now();
-          if (pstate.current) {
+          if (pstate.current()) {
               auto marker = current_state_marker{
                 .ntp = ntp,
-                .log_revision = pstate.current->log_revision,
-                .shard_revision = pstate.current->shard_revision,
-                .is_complete = pstate.current->status == hosted_status::hosted,
+                .log_revision = pstate.current()->log_revision,
+                .shard_revision = pstate.current()->shard_revision,
+                .is_complete = pstate.current()->status
+                               == hosted_status::hosted,
               };
               f2 = _kvstore.put(
                 kvstore_key_space,
-                current_state_kvstore_key(pstate.current->group),
+                current_state_kvstore_key(pstate.current()->group),
                 serde::to_iobuf(marker));
           }
 
@@ -372,10 +385,10 @@ shard_placement_table::initialize_from_kvstore(
                     max_shard_revision, state.assigned()->shard_revision);
               }
 
-              if (state.current) {
-                  init_data.update(s, state.current.value());
+              if (state.current()) {
+                  init_data.update(s, state.current().value());
                   max_shard_revision = std::max(
-                    max_shard_revision, state.current->shard_revision);
+                    max_shard_revision, state.current()->shard_revision);
               }
           });
     }
@@ -478,19 +491,19 @@ shard_placement_table::gather_init_states(
                 marker.is_complete);
 
               auto& state = _states[marker.ntp];
-              if (state.current) {
+              if (state.current()) {
                   throw std::runtime_error(fmt_with_ctx(
                     ssx::sformat,
                     "duplicate ntp {} in kvstore map on shard {}",
                     marker.ntp,
                     _shard));
               }
-              state.current = shard_local_state(
+              state.set_current(shard_local_state(
                 group,
                 marker.log_revision,
                 marker.is_complete ? hosted_status::hosted
                                    : hosted_status::receiving,
-                marker.shard_revision);
+                marker.shard_revision));
               break;
           }
           }
@@ -523,7 +536,7 @@ ss::future<> shard_placement_table::scatter_init_data(
           }
           auto& state = it->second;
 
-          if (state.current) {
+          if (state.current()) {
               if (_shard == init_data.hosted.shard) {
                   if (
                     init_data.receiving.shard
@@ -535,7 +548,7 @@ ss::future<> shard_placement_table::scatter_init_data(
               } else if (
                 _shard != init_data.receiving.shard || !init_data.hosted.shard
                 || _shard >= ss::smp::count) {
-                  state.current->status = hosted_status::obsolete;
+                  state.set_hosted_status(hosted_status::obsolete);
               }
           }
 
@@ -660,8 +673,8 @@ ss::future<> shard_placement_table::do_initialize_from_topic_table(
               if (orig_shard && target->shard != orig_shard) {
                   // cross-shard transfer, orig_shard gets the hosted marker
                   if (ss::this_shard_id() == orig_shard) {
-                      placement.current = shard_local_state(
-                        assigned, hosted_status::hosted);
+                      placement.set_current(
+                        shard_local_state(assigned, hosted_status::hosted));
                       _states.emplace(ntp, placement);
                   } else if (ss::this_shard_id() == target->shard) {
                       placement.set_assigned(assigned);
@@ -669,8 +682,8 @@ ss::future<> shard_placement_table::do_initialize_from_topic_table(
                   }
               } else if (ss::this_shard_id() == target->shard) {
                   // in other cases target shard gets the hosted marker
-                  placement.current = shard_local_state(
-                    assigned, hosted_status::hosted);
+                  placement.set_current(
+                    shard_local_state(assigned, hosted_status::hosted));
                   placement.set_assigned(assigned);
                   _states.emplace(ntp, placement);
               }
@@ -910,7 +923,7 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
         co_return errc::waiting_for_shard_placement_update;
     }
 
-    if (state.current && state.current->log_revision != expected_log_rev) {
+    if (state.current() && state.current()->log_revision != expected_log_rev) {
         // wait until partition with obsolete log revision is removed
         co_return errc::waiting_for_reconfiguration_finish;
     }
@@ -918,7 +931,7 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
     // copy assigned as it may change while we are updating kvstore
     auto assigned = *state.assigned();
 
-    if (!state.current) {
+    if (!state.current()) {
         if (state._is_initial_for == expected_log_rev) {
             if (_persistence_enabled) {
                 auto marker_buf = serde::to_iobuf(current_state_marker{
@@ -939,7 +952,8 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
                   std::move(marker_buf));
             }
 
-            state.current = shard_local_state(assigned, hosted_status::hosted);
+            state.set_current(
+              shard_local_state(assigned, hosted_status::hosted));
             if (state._is_initial_for == expected_log_rev) {
                 // could have changed while we were updating kvstore.
                 state._is_initial_for = std::nullopt;
@@ -950,7 +964,7 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
         }
     }
 
-    if (state.current->status != hosted_status::hosted) {
+    if (state.current()->status != hosted_status::hosted) {
         // x-shard transfer is in progress, wait for it to end.
         co_return errc::waiting_for_partition_shutdown;
     }
@@ -973,22 +987,22 @@ shard_placement_table::prepare_transfer(
 
     prepare_transfer_info ret;
 
-    if (state.current) {
+    if (state.current()) {
         vassert(
-          state.current->log_revision >= expected_log_rev,
+          state.current()->log_revision >= expected_log_rev,
           "[{}] unexpected current: {} (expected log revision: {})",
           ntp,
-          state.current,
+          state.current(),
           expected_log_rev);
 
-        if (state.current->log_revision > expected_log_rev) {
+        if (state.current()->log_revision > expected_log_rev) {
             // New log revision transferred from another shard, but we don't
             // know about it yet. Wait for the assignment update.
             ret.source_error = errc::waiting_for_shard_placement_update;
             co_return ret;
         }
 
-        if (state.current->status == hosted_status::receiving) {
+        if (state.current()->status == hosted_status::receiving) {
             // This shard needs to transfer partition state somewhere else, but
             // haven't yet received it itself. Wait for it.
             ret.source_error = errc::waiting_for_partition_shutdown;
@@ -996,10 +1010,10 @@ shard_placement_table::prepare_transfer(
         }
 
         vassert(
-          state.current->status == hosted_status::hosted,
+          state.current()->status == hosted_status::hosted,
           "[{}] unexpected current: {} (expected hosted status)",
           ntp,
-          state.current);
+          state.current());
     } else {
         vassert(
           state._is_initial_for >= expected_log_rev,
@@ -1014,7 +1028,7 @@ shard_placement_table::prepare_transfer(
         }
     }
 
-    const bool is_initial = !state.current;
+    const bool is_initial = !state.current();
 
     if (state._next) {
         ret.destination = state._next->shard;
@@ -1065,7 +1079,7 @@ shard_placement_table::prepare_transfer(
               }
               auto& dest_state = dest_it->second;
 
-              if (dest_state.current || dest_state._is_initial_for) {
+              if (dest_state.current() || dest_state._is_initial_for) {
                   // Wait for the destination to clear obsolete data
                   ret.dest_error = errc::waiting_for_partition_shutdown;
                   return ss::now();
@@ -1079,14 +1093,14 @@ shard_placement_table::prepare_transfer(
               // at this point we commit to the transfer on the
               // destination shard
               shard_rev = dest_state.assigned().value().shard_revision;
-              dest_state.current = shard_local_state(
-                dest_state.assigned().value(), hosted_status::receiving);
+              dest_state.set_current(shard_local_state(
+                dest_state.assigned().value(), hosted_status::receiving));
 
               if (dest._persistence_enabled) {
                   auto marker_buf = serde::to_iobuf(current_state_marker{
                     .ntp = ntp,
                     .log_revision = expected_log_rev,
-                    .shard_revision = dest_state.current.value().shard_revision,
+                    .shard_revision = dest_state.current()->shard_revision,
                     .is_complete = false,
                   });
                   vlog(
@@ -1094,16 +1108,16 @@ shard_placement_table::prepare_transfer(
                     "[{}] put receiving cur state marker, lr: {} sr: {}",
                     ntp,
                     expected_log_rev,
-                    dest_state.current->shard_revision);
+                    dest_state.current()->shard_revision);
                   return dest._kvstore
                     .put(
                       kvstore_key_space,
-                      current_state_kvstore_key(dest_state.current->group),
+                      current_state_kvstore_key(dest_state.current()->group),
                       std::move(marker_buf))
                     .handle_exception([&dest_state](std::exception_ptr ex) {
                         // "unlock" destination in case of kvstore errors so
                         // that we can retry later.
-                        dest_state.current = std::nullopt;
+                        dest_state.set_current(std::nullopt);
                         return ss::make_exception_future(std::move(ex));
                     });
               } else {
@@ -1156,36 +1170,36 @@ ss::future<> shard_placement_table::finish_transfer(
           auto& dest_state = dest_it->second;
 
           vassert(
-            dest_state.current
-              && dest_state.current->shard_revision == expected_shard_rev
-              && dest_state.current->status == hosted_status::receiving,
+            dest_state.current()
+              && dest_state.current()->shard_revision == expected_shard_rev
+              && dest_state.current()->status == hosted_status::receiving,
             "[{}] unexpected current: {} (expected shard revision: {})",
             ntp,
-            dest_state.current,
+            dest_state.current(),
             expected_shard_rev);
 
           ss::future<> fut = ss::now();
           if (dest._persistence_enabled) {
               auto marker_buf = serde::to_iobuf(current_state_marker{
                 .ntp = ntp,
-                .log_revision = dest_state.current->log_revision,
-                .shard_revision = dest_state.current->shard_revision,
+                .log_revision = dest_state.current()->log_revision,
+                .shard_revision = dest_state.current()->shard_revision,
                 .is_complete = true,
               });
               vlog(
                 clusterlog.trace,
                 "[{}] put transferred cur state marker, lr: {} sr: {}",
                 ntp,
-                dest_state.current->log_revision,
-                dest_state.current->shard_revision);
+                dest_state.current()->log_revision,
+                dest_state.current()->shard_revision);
               fut = dest._kvstore.put(
                 kvstore_key_space,
-                current_state_kvstore_key(dest_state.current->group),
+                current_state_kvstore_key(dest_state.current()->group),
                 std::move(marker_buf));
           }
 
           return std::move(fut).then([&ntp, &dest_state, shard_callback] {
-              dest_state.current->status = hosted_status::hosted;
+              dest_state.set_hosted_status(hosted_status::hosted);
               vlog(
                 clusterlog.trace,
                 "[{}] finished transfer on destination, placement: {}",
@@ -1196,8 +1210,8 @@ ss::future<> shard_placement_table::finish_transfer(
       });
     state._next = std::nullopt;
 
-    if (state.current && state.current->log_revision == expected_log_rev) {
-        state.current->status = hosted_status::obsolete;
+    if (state.current() && state.current()->log_revision == expected_log_rev) {
+        state.set_hosted_status(hosted_status::obsolete);
     }
 
     if (state._is_initial_for == expected_log_rev) {
@@ -1218,20 +1232,20 @@ ss::future<std::error_code> shard_placement_table::prepare_delete(
     vassert(it != _states.end(), "[{}] expected state", ntp);
     auto& state = it->second;
 
-    if (state.current) {
-        if (state.current->log_revision >= cmd_revision) {
+    if (state.current()) {
+        if (state.current()->log_revision >= cmd_revision) {
             // New log revision transferred from another shard, but we didn't
             // expect it. Wait for the update.
             co_return errc::waiting_for_shard_placement_update;
         }
 
-        if (state.current->status == hosted_status::receiving) {
+        if (state.current()->status == hosted_status::receiving) {
             // If transfer to this shard is still in progress, we'll wait for
             // the source shard to finish or cancel it before deleting.
             co_return errc::waiting_for_partition_shutdown;
         }
 
-        state.current->status = hosted_status::obsolete;
+        state.set_hosted_status(hosted_status::obsolete);
     }
 
     if (state._next) {
@@ -1242,10 +1256,10 @@ ss::future<std::error_code> shard_placement_table::prepare_delete(
             shard_placement_table& dest) {
               auto it = dest._states.find(ntp);
               if (
-                it != dest._states.end() && it->second.current
-                && it->second.current->shard_revision == expected_shard_rev
-                && it->second.current->status == hosted_status::receiving) {
-                  it->second.current->status = hosted_status::obsolete;
+                it != dest._states.end() && it->second.current()
+                && it->second.current()->shard_revision == expected_shard_rev
+                && it->second.current()->status == hosted_status::receiving) {
+                  it->second.set_hosted_status(hosted_status::obsolete);
               }
 
               // TODO: notify reconciliation fiber
@@ -1273,10 +1287,10 @@ ss::future<> shard_placement_table::finish_delete(
     vassert(it != _states.end(), "[{}] expected state", ntp);
     auto& state = it->second;
     vassert(
-      state.current && state.current->log_revision == expected_log_rev,
+      state.current() && state.current()->log_revision == expected_log_rev,
       "[{}] unexpected current: {} (expected log revision: {})",
       ntp,
-      state.current,
+      state.current(),
       expected_log_rev);
 
     co_await do_delete(ntp, state, persistence_lock_holder);
@@ -1288,14 +1302,14 @@ ss::future<> shard_placement_table::do_delete(
   ss::rwlock::holder& /*persistence_lock_holder*/) {
     state._next = std::nullopt;
 
-    if (state.current) {
+    if (state.current()) {
         if (_persistence_enabled) {
             vlog(clusterlog.trace, "[{}] remove cur state marker", ntp);
             co_await _kvstore.remove(
               kvstore_key_space,
-              current_state_kvstore_key(state.current->group));
+              current_state_kvstore_key(state.current()->group));
         }
-        state.current = std::nullopt;
+        state.set_current(std::nullopt);
     }
 
     if (state.is_empty()) {
