@@ -335,7 +335,7 @@ struct compat_check<cluster::topic_properties> {
         json_write(recovery);
         json_write(shadow_indexing);
         json_write(read_replica);
-        json_write(read_replica_bucket);
+        json_write(bucket_override);
         json_write(remote_topic_properties);
         json_write(batch_max_bytes);
         json_write(retention_local_target_bytes);
@@ -372,7 +372,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(recovery);
         json_read(shadow_indexing);
         json_read(read_replica);
-        json_read(read_replica_bucket);
+        json_read(bucket_override);
         json_read(remote_topic_properties);
         json_read(batch_max_bytes);
         json_read(retention_local_target_bytes);
@@ -483,7 +483,7 @@ struct compat_check<cluster::topic_configuration> {
         iobuf_parser iobp(std::move(test.data));
         auto cfg = reflection::adl<cluster::topic_configuration>{}.from(iobp);
         obj.properties.read_replica = std::nullopt;
-        obj.properties.read_replica_bucket = std::nullopt;
+        obj.properties.bucket_override = std::nullopt;
         obj.properties.remote_topic_namespace_override = std::nullopt;
         obj.properties.remote_topic_properties = std::nullopt;
         obj.properties.batch_max_bytes = std::nullopt;

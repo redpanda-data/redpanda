@@ -120,7 +120,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::keep_snapshotted_log keep_snapshotted_log,
   std::optional<xshard_transfer_state> xst_state,
   std::optional<remote_topic_properties> rtp,
-  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
+  std::optional<cloud_storage_clients::bucket_name> bucket_override,
   std::optional<cloud_storage::remote_label> remote_label,
   std::optional<model::topic_namespace> topic_namespace_override) {
     auto guard = _gate.hold();
@@ -266,7 +266,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _archival_conf,
       _feature_table,
       _upload_hks,
-      read_replica_bucket);
+      bucket_override);
 
     _ntp_table.emplace(log->config().ntp(), p);
     _raft_table.emplace(group, p);

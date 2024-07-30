@@ -572,7 +572,7 @@ inline void rjson_serialize(
     write_member(w, "recovery", tps.recovery);
     write_member(w, "shadow_indexing", tps.shadow_indexing);
     write_member(w, "read_replica", tps.read_replica);
-    write_member(w, "read_replica_bucket", tps.read_replica_bucket);
+    write_member(w, "read_replica_bucket", tps.bucket_override);
     write_member(
       w,
       "remote_topic_namespace_override",
@@ -642,7 +642,7 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "recovery", obj.recovery);
     read_member(rd, "shadow_indexing", obj.shadow_indexing);
     read_member(rd, "read_replica", obj.read_replica);
-    read_member(rd, "read_replica_bucket", obj.read_replica_bucket);
+    read_member(rd, "read_replica_bucket", obj.bucket_override);
     read_member(
       rd,
       "remote_topic_namespace_override",

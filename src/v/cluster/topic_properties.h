@@ -46,7 +46,7 @@ struct topic_properties
       std::optional<bool> recovery,
       std::optional<model::shadow_indexing_mode> shadow_indexing,
       std::optional<bool> read_replica,
-      std::optional<ss::sstring> read_replica_bucket,
+      std::optional<ss::sstring> bucket_override,
       std::optional<model::topic_namespace> remote_topic_namespace_override,
       std::optional<remote_topic_properties> remote_topic_properties,
       std::optional<uint32_t> batch_max_bytes,
@@ -82,7 +82,7 @@ struct topic_properties
       , recovery(recovery)
       , shadow_indexing(shadow_indexing)
       , read_replica(read_replica)
-      , read_replica_bucket(std::move(read_replica_bucket))
+      , bucket_override(std::move(bucket_override))
       , remote_topic_namespace_override(remote_topic_namespace_override)
       , remote_topic_properties(remote_topic_properties)
       , batch_max_bytes(batch_max_bytes)
@@ -120,7 +120,7 @@ struct topic_properties
     std::optional<bool> recovery;
     std::optional<model::shadow_indexing_mode> shadow_indexing;
     std::optional<bool> read_replica;
-    std::optional<ss::sstring> read_replica_bucket;
+    std::optional<ss::sstring> bucket_override;
     // The ntp override used for tiered storage. In case of a
     // cross-cluster migration, the ntp used for archival subsystems may differ
     // from the ntp used for local storage.
@@ -195,7 +195,7 @@ struct topic_properties
           recovery,
           shadow_indexing,
           read_replica,
-          read_replica_bucket,
+          bucket_override,
           remote_topic_properties,
           batch_max_bytes,
           retention_local_target_bytes,

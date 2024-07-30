@@ -448,7 +448,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     }
 
     if (assignable_config.is_read_replica()) {
-        if (!assignable_config.cfg.properties.read_replica_bucket) {
+        if (!assignable_config.cfg.properties.bucket_override) {
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_invalid_config);
         }
@@ -458,7 +458,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         errc download_res = co_await rr_manager.set_remote_properties_in_config(
           assignable_config,
           cloud_storage_clients::bucket_name(
-            assignable_config.cfg.properties.read_replica_bucket.value()),
+            assignable_config.cfg.properties.bucket_override.value()),
           _as.local());
 
         if (download_res != errc::success) {
@@ -480,6 +480,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     if (assignable_config.is_recovery_enabled()) {
         // Before running the recovery we need to download topic_manifest.
 
+        // TODO: plug in an non-default buckets here.
         const auto& bucket_config
           = cloud_storage::configuration::get_bucket_config();
         if (!bucket_config.value().has_value()) {

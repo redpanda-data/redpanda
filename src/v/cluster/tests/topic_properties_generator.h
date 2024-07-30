@@ -54,7 +54,7 @@ inline cluster::topic_properties random_topic_properties() {
 
     properties.read_replica = tests::random_optional(
       [] { return tests::random_bool(); });
-    properties.read_replica_bucket = tests::random_optional([] {
+    properties.bucket_override = tests::random_optional([] {
         return random_generators::gen_alphanum_string(
           random_generators::get_int(1, 64));
     });

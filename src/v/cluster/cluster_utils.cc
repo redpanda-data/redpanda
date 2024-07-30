@@ -286,7 +286,7 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     state.is_remote_fetch_enabled = partition->is_remote_fetch_enabled();
     state.is_cloud_data_available = partition->cloud_data_available();
     state.read_replica_bucket = partition->is_read_replica_mode_enabled()
-                                  ? partition->get_read_replica_bucket()()
+                                  ? partition->get_bucket_override()()
                                   : "";
     if (state.is_cloud_data_available) {
         state.start_cloud_offset = partition->start_cloud_offset();

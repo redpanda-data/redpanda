@@ -137,7 +137,8 @@ public:
       features::feature_table&,
       ss::logger& logger,
       std::optional<cloud_storage::remote_label>,
-      std::optional<model::topic_namespace>);
+      std::optional<model::topic_namespace>,
+      std::optional<cloud_storage_clients::bucket_name>);
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
@@ -383,6 +384,7 @@ private:
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
     const cloud_storage::remote_path_provider _remote_path_provider;
+    const std::optional<cloud_storage_clients::bucket_name> _bucket_override;
     ss::abort_source _download_as;
 
     // for observability: keep track of the number of cloud bytes "removed" by

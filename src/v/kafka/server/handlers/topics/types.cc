@@ -210,14 +210,15 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.recovery = get_bool_value(
       config_entries, topic_property_recovery);
     cfg.properties.shadow_indexing = get_shadow_indexing_mode(config_entries);
-    cfg.properties.read_replica_bucket = get_string_value(
-      config_entries, topic_property_read_replica);
-    cfg.properties.batch_max_bytes = get_config_value<uint32_t>(
-      config_entries, topic_property_max_message_bytes);
-    if (cfg.properties.read_replica_bucket.has_value()) {
+
+    if (auto read_replica_bucket = get_string_value(
+          config_entries, topic_property_read_replica);
+        read_replica_bucket.has_value()) {
+        cfg.properties.bucket_override = read_replica_bucket;
         cfg.properties.read_replica = true;
     }
-
+    cfg.properties.batch_max_bytes = get_config_value<uint32_t>(
+      config_entries, topic_property_max_message_bytes);
     cfg.properties.retention_local_target_bytes = get_tristate_value<size_t>(
       config_entries, topic_property_retention_local_target_bytes);
     cfg.properties.retention_local_target_ms

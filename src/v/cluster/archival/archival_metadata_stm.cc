@@ -662,7 +662,8 @@ archival_metadata_stm::archival_metadata_stm(
   features::feature_table& ft,
   ss::logger& logger,
   std::optional<cloud_storage::remote_label> remote_label,
-  std::optional<model::topic_namespace> remote_topic_namespace_override)
+  std::optional<model::topic_namespace> remote_topic_namespace_override,
+  std::optional<cloud_storage_clients::bucket_name> bucket_override)
   : raft::persisted_stm<>(archival_stm_snapshot, logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _mem_tracker(ss::make_shared<util::mem_tracker>(raft->ntp().path()))
@@ -670,7 +671,8 @@ archival_metadata_stm::archival_metadata_stm(
       raft->ntp(), raft->log_config().get_initial_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft)
-  , _remote_path_provider(remote_label, remote_topic_namespace_override) {}
+  , _remote_path_provider(remote_label, remote_topic_namespace_override)
+  , _bucket_override(std::move(bucket_override)) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
@@ -1157,11 +1159,18 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
     cloud_storage::partition_manifest new_manifest{
       _manifest->get_ntp(), _manifest->get_revision_id()};
 
-    const auto& bucket_config
-      = cloud_storage::configuration::get_bucket_config();
-    auto bucket = bucket_config.value();
-    vassert(
-      bucket, "configuration property {} must be set", bucket_config.name());
+    cloud_storage_clients::bucket_name bucket;
+    if (_bucket_override.has_value()) {
+        bucket = _bucket_override.value();
+    } else {
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        vassert(
+          bucket_config.value(),
+          "configuration property {} must be set",
+          bucket_config.name());
+        bucket = cloud_storage_clients::bucket_name{*bucket_config.value()};
+    }
 
     auto timeout
       = config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms();
@@ -1169,7 +1178,7 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
 
     retry_chain_node rc_node(_download_as, timeout, backoff);
     cloud_storage::partition_manifest_downloader dl(
-      cloud_storage_clients::bucket_name{*bucket},
+      bucket,
       _remote_path_provider,
       _manifest->get_ntp(),
       _manifest->get_revision_id(),
@@ -1740,13 +1749,25 @@ void archival_metadata_stm_factory::create(
                                  .get_configuration()
                                  .properties.remote_topic_namespace_override
                              : std::nullopt;
+    std::optional<cloud_storage_clients::bucket_name> bucket_override;
+    if (
+      topic_md.has_value()
+      && topic_md->get()
+           .get_configuration()
+           .properties.bucket_override.has_value()) {
+        bucket_override = cloud_storage_clients::bucket_name{
+          topic_md->get()
+            .get_configuration()
+            .properties.bucket_override.value()};
+    }
     auto stm = builder.create_stm<cluster::archival_metadata_stm>(
       raft,
       _cloud_storage_api.local(),
       _feature_table.local(),
       clusterlog,
       remote_label,
-      remote_topic_namespace_override);
+      remote_topic_namespace_override,
+      bucket_override);
     raft->log()->stm_manager()->add_stm(stm);
 }
 

@@ -49,7 +49,7 @@ public:
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
-      std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
+      std::optional<cloud_storage_clients::bucket_name> bucket_override
       = std::nullopt);
 
     ~partition() = default;
@@ -221,10 +221,11 @@ public:
     const ss::shared_ptr<cluster::archival_metadata_stm>&
     archival_meta_stm() const;
 
+    bool has_bucket_override() const;
     bool is_read_replica_mode_enabled() const;
 
-    cloud_storage_clients::bucket_name get_read_replica_bucket() const {
-        return _read_replica_bucket.value();
+    cloud_storage_clients::bucket_name get_bucket_override() const {
+        return _bucket_override.value();
     }
 
     cloud_storage_mode get_cloud_storage_mode() const;
@@ -382,7 +383,8 @@ private:
     ssx::semaphore _archiver_reset_mutex{1, "archiver_reset"};
     std::unique_ptr<archival::ntp_archiver> _archiver;
 
-    std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
+    // XXX: this is duplicated with the override in archival_metadata_stm.
+    std::optional<cloud_storage_clients::bucket_name> _bucket_override{
       std::nullopt};
     bool _remote_delete_enabled{storage::ntp_config::default_remote_delete};
 

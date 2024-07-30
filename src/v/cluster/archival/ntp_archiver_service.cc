@@ -250,8 +250,8 @@ ntp_archiver::ntp_archiver(
 
     _start_term = _parent.term();
     // Override bucket for read-replica
-    if (_parent.is_read_replica_mode_enabled()) {
-        _bucket_override = _parent.get_read_replica_bucket();
+    if (_parent.has_bucket_override()) {
+        _bucket_override = _parent.get_bucket_override();
     }
 
     vlog(

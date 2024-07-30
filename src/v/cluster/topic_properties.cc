@@ -51,7 +51,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.recovery,
       properties.shadow_indexing,
       properties.read_replica,
-      properties.read_replica_bucket,
+      properties.bucket_override,
       properties.remote_topic_namespace_override,
       properties.remote_topic_properties,
       properties.batch_max_bytes,
@@ -164,7 +164,7 @@ void adl<cluster::topic_properties>::to(
       p.recovery,
       p.shadow_indexing,
       p.read_replica,
-      p.read_replica_bucket,
+      p.bucket_override,
       p.remote_topic_properties);
 }
 

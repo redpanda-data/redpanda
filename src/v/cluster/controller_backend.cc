@@ -1392,10 +1392,10 @@ ss::future<std::error_code> controller_backend::create_partition(
         std::vector<model::broker> initial_brokers = create_brokers_set(
           initial_replicas, _members_table.local());
 
-        std::optional<cloud_storage_clients::bucket_name> read_replica_bucket;
-        if (cfg->is_read_replica()) {
-            read_replica_bucket = cloud_storage_clients::bucket_name(
-              cfg->properties.read_replica_bucket.value());
+        std::optional<cloud_storage_clients::bucket_name> bucket_override;
+        if (cfg->properties.bucket_override.has_value()) {
+            bucket_override = cloud_storage_clients::bucket_name(
+              cfg->properties.bucket_override.value());
         }
 
         std::optional<xshard_transfer_state> xst_state;
@@ -1418,7 +1418,7 @@ ss::future<std::error_code> controller_backend::create_partition(
               raft::keep_snapshotted_log::no,
               std::move(xst_state),
               cfg->properties.remote_topic_properties,
-              read_replica_bucket,
+              bucket_override,
               cfg->properties.remote_label,
               cfg->properties.remote_topic_namespace_override);
 
