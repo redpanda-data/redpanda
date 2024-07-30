@@ -27,7 +27,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.services.redpanda import LoggingConfig, RedpandaService, SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import produce_total_bytes, search_logs_with_timeout
+from rptest.util import produce_total_bytes, produce_until_segments, search_logs_with_timeout
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.utils.full_disk import FullDiskHelper
 from rptest.utils.partition_metrics import PartitionMetrics
@@ -259,9 +259,10 @@ class FullDiskReclaimTest(RedpandaTest):
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_ctx):
+        self.log_segment_size = 1048576
         extra_rp_conf = dict(
             log_compaction_interval_ms=24 * 60 * 60 * 1000,
-            log_segment_size=1048576,
+            log_segment_size=self.log_segment_size,
         )
         super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
 
@@ -287,24 +288,38 @@ class FullDiskReclaimTest(RedpandaTest):
                                  if path.parts[0] == 'kafka')
             return pred(observed_total)
 
-        # write around 30 megabytes into the topic
-        produce_total_bytes(self.redpanda, self.topic, nbytes(30))
+        partition_count = 10
 
-        # wait until all that data shows up. add some fuzz factor to avoid
-        # timeouts due to placement skew or other such issues.
-        wait_until(lambda: observed_data_size(lambda s: s > nbytes(25)),
-                   timeout_sec=30,
-                   backoff_sec=2)
+        # We need at least 2 segments to be produced in order for the log eviction manager
+        # to be triggered.
+        num_segments = 2
+        for i in range(0, partition_count):
+            produce_until_segments(self.redpanda,
+                                   self.topic,
+                                   i,
+                                   num_segments,
+                                   acks=-1,
+                                   record_size=1024,
+                                   batch_size=1000)
+
+        # Calculate expected number of bytes based on partition count, number of segments, and segment size.
+        expected_data_size = partition_count * num_segments * self.log_segment_size
+
+        # wait until all that data shows up.
+        wait_until(
+            lambda: observed_data_size(lambda s: s > expected_data_size),
+            timeout_sec=30,
+            backoff_sec=2)
 
         # reclaim shouldn't be running. we can't wait indefinitely to prove that
         # it isn't, but wait a little bit of time for stabilization.
         sleep(30)
 
-        # wait until all that data shows up. add some fuzz factor to avoid
-        # timeouts due to placement skew or other such issues.
-        wait_until(lambda: observed_data_size(lambda s: s > nbytes(25)),
-                   timeout_sec=30,
-                   backoff_sec=2)
+        # wait until all that data shows up.
+        wait_until(
+            lambda: observed_data_size(lambda s: s > expected_data_size),
+            timeout_sec=30,
+            backoff_sec=2)
 
         # now trigger the disk space alert on the same node. unlike the 30
         # second delay above, we should almost immediately observe the data
