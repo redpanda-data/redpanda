@@ -550,6 +550,8 @@ struct configuration final : public config_store {
       enable_schema_id_validation;
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
+    property<bool> schema_registry_normalize_on_startup;
+
     bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
     property<size_t> kafka_memory_batch_size_estimate_for_fetch;
     // debug controls

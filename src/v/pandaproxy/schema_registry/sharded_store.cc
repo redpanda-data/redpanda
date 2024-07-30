@@ -11,6 +11,7 @@
 
 #include "pandaproxy/schema_registry/sharded_store.h"
 
+#include "config/configuration.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "kafka/protocol/errors.h"
@@ -75,7 +76,7 @@ ss::future<> sharded_store::start(is_mutable mut, ss::smp_service_group sg) {
 ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<canonical_schema>
-sharded_store::make_canonical_schema(unparsed_schema schema) {
+sharded_store::make_canonical_schema(unparsed_schema schema, normalize norm) {
     switch (schema.type()) {
     case schema_type::avro: {
         auto [sub, unparsed] = std::move(schema).destructure();
@@ -239,9 +240,11 @@ ss::future<bool> sharded_store::upsert(
   schema_id id,
   schema_version version,
   is_deleted deleted) {
+    auto norm = normalize{
+      config::shard_local_cfg().schema_registry_normalize_on_startup()};
     co_return co_await upsert(
       marker,
-      co_await make_canonical_schema(std::move(schema)),
+      co_await make_canonical_schema(std::move(schema), norm),
       id,
       version,
       deleted);
