@@ -64,7 +64,7 @@ static const auto error_test_cases = std::to_array({
     R"({"type": "thisisnotapropertype"})",
     pps::error_info{
       pps::error_code::schema_invalid,
-      R"(Invalid json schema: '{"type":"thisisnotapropertype"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
+      R"(Invalid json schema: '{"type":"thisisnotapropertype"}'. Error: ': Must be valid against all schemas, but found unmatched schemas')"}},
   error_test_case{
     R"({"$schema": "unsupported_dialect"})",
     pps::error_info{
