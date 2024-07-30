@@ -177,6 +177,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> raft_flush_timer_interval_ms;
     property<std::chrono::milliseconds> raft_replica_max_flush_delay_ms;
     property<bool> raft_enable_longest_log_detection;
+    bounded_property<size_t>
+      raft_max_inflight_follower_append_entries_requests_per_shard;
+    bounded_property<size_t>
+      raft_max_buffered_follower_append_entries_bytes_per_shard;
     // Kafka
     property<bool> enable_usage;
     bounded_property<size_t> usage_num_windows;

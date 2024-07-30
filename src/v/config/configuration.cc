@@ -459,6 +459,27 @@ configuration::configuration()
       "the majority.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , raft_max_inflight_follower_append_entries_requests_per_shard(
+      *this,
+      "raft_max_inflight_follower_append_entries_requests_per_shard",
+      "The maximum number of append entry requests that may be sent from raft "
+      "groups on a Seastar shard to the current node and are awaiting a reply. "
+      "This property replaces "
+      "raft_max_concurrent_append_requests_per_follower.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1024,
+      {.min = 1, .max = 50000})
+  , raft_max_buffered_follower_append_entries_bytes_per_shard(
+      *this,
+      "raft_max_buffered_follower_append_entries_bytes_per_shard",
+      "The total size of append entry requests that may be cached per shard, "
+      "using Raft buffered protocol. When an entry is cached the leader can "
+      "continue serving requests because the ordering of the cached requests "
+      "cannot change. When the total size of cached requests reaches the set "
+      "limit, back pressure is applied to throttle producers.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5_MiB,
+      {.min = 0, .max = 100_MiB})
   , enable_usage(
       *this,
       "enable_usage",
