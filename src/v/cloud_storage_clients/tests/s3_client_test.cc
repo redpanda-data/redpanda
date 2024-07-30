@@ -114,6 +114,14 @@ constexpr auto delete_objects_payload_error = R"xml(
     </Error>
 )xml";
 
+static constexpr auto no_such_config_payload = R"xml(
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchConfiguration</Code>
+    <Message>Configuration not found</Message>
+</Error>
+)xml";
+
 void set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
     using reply = ss::http::reply;
@@ -274,6 +282,12 @@ void set_routes(ss::httpd::routes& r) {
           return "";
       },
       "txt");
+    auto no_such_config = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::not_found);
+          return no_such_config_payload;
+      },
+      "txt");
     r.add(operation_type::PUT, url("/test"), empty_put_response);
     r.add(operation_type::PUT, url("/test-error"), erroneous_put_response);
     r.add(operation_type::GET, url("/test"), get_response);
@@ -297,6 +311,7 @@ void set_routes(ss::httpd::routes& r) {
       operation_type::PUT,
       url("/test-put-no-content"),
       put_response_no_content);
+    r.add(operation_type::GET, url("/no-config"), no_such_config);
 }
 
 /// Http server and client
@@ -756,6 +771,37 @@ SEASTAR_TEST_CASE(test_put_object_no_response_acceptable) {
 
 SEASTAR_TEST_CASE(test_put_object_no_response_not_acceptable) {
     return do_test_put_object_no_response(false);
+}
+
+ss::future<> do_test_no_such_configuration(bool acceptable) {
+    return ss::async([acceptable] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        const auto result = client
+                              ->get_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("no-config"),
+                                100ms,
+                                acceptable)
+                              .get0();
+        // acceptable only affects the log level, the end response is always 404
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::key_not_found);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::key_not_found);
+        client->shutdown();
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_no_configuration_mapped_to_404) {
+    return do_test_no_such_configuration(true);
+}
+
+SEASTAR_TEST_CASE(test_no_configuration_not_mapped_404) {
+    return do_test_no_such_configuration(false);
 }
 
 class client_pool_fixture {
