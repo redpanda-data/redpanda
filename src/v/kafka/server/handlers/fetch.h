@@ -427,5 +427,7 @@ read_result::memory_units_t reserve_memory_units(
   const size_t max_bytes,
   const bool obligatory_batch_read);
 
+ss::future<> do_fetch(op_context& octx);
+
 } // namespace testing
 } // namespace kafka
