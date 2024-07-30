@@ -260,6 +260,7 @@ ss::future<> replicate_batcher::flush(
           _ptr->_self,
           meta,
           model::make_memory_record_batch_reader(std::move(data)),
+          item_memory_units.count(),
           needs_flush);
 
         std::vector<ssx::semaphore_units> units;

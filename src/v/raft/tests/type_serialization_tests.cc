@@ -85,7 +85,8 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       raft::vnode(model::node_id(1), model::revision_id(10)),
       raft::vnode(model::node_id(10), model::revision_id(101)),
       meta,
-      std::move(readers.back()));
+      std::move(readers.back()),
+      0);
 
     readers.pop_back();
     const auto target_node_id = req.target_node();
@@ -581,7 +582,8 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
       raft::vnode(model::node_id(1), model::revision_id(10)),
       raft::vnode(model::node_id(10), model::revision_id(101)),
       meta,
-      std::move(readers.back()));
+      std::move(readers.back()),
+      0);
 
     readers.pop_back();
 

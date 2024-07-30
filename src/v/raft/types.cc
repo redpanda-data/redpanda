@@ -627,6 +627,31 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
           m.target_node_id.id(), decode_signed(m.target_node_id.revision()));
     }
 }
+append_entries_request::append_entries_request(
+  vnode src,
+  protocol_metadata m,
+  model::record_batch_reader r,
+  size_t size,
+  flush_after_append f) noexcept
+  : append_entries_request(src, vnode{}, m, std::move(r), size, f) {}
+
+append_entries_request::append_entries_request(
+  vnode src,
+  vnode target,
+  protocol_metadata m,
+  model::record_batch_reader r,
+  size_t size,
+  flush_after_append f) noexcept
+  : _source_node(src)
+  , _target_node_id(target)
+  , _meta(m)
+  , _flush(f)
+  , _batches(std::move(r))
+  , _total_size(size + sizeof(append_entries_request)) {}
+
+size_t append_entries_request::batches_size() const {
+    return total_size() - sizeof(append_entries_request);
+}
 
 ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
     using serde::write;
@@ -674,9 +699,10 @@ append_entries_request::serde_async_direct_read(
     auto batch_count = read_nested<uint32_t>(in, 0U);
     // use chunked fifo as usually batches size is small
     fragmented_vector<model::record_batch> batches{};
-
+    size_t batches_size{0};
     for (uint32_t i = 0; i < batch_count; ++i) {
         auto b = co_await reflection::async_adl<model::record_batch>{}.from(in);
+        batches_size += b.size_bytes();
         batches.push_back(std::move(b));
         co_await ss::coroutine::maybe_yield();
     }
@@ -692,6 +718,7 @@ append_entries_request::serde_async_direct_read(
       meta,
       model::make_foreign_fragmented_memory_record_batch_reader(
         std::move(batches)),
+      batches_size,
       flush);
 }
 
@@ -701,11 +728,13 @@ append_entries_request::make_foreign(append_entries_request&& req) {
     auto target_node = req._target_node_id;
     auto metadata = req._meta;
     auto flush = req._flush;
+    auto raw_size = req.batches_size();
     return {
       src_node,
       target_node,
       metadata,
       model::make_foreign_record_batch_reader(std::move(req).release_batches()),
+      raw_size,
       flush};
 }
 
@@ -754,10 +783,11 @@ append_entries_request_serde_wrapper::serde_async_direct_read(
     auto batch_count = read_nested<uint32_t>(src, 0U);
 
     fragmented_vector<model::record_batch> batches{};
-
+    size_t batches_size{0};
     for (uint32_t i = 0; i < batch_count; ++i) {
         auto b = co_await serde::read_async_nested<model::record_batch>(
           src, h._bytes_left_limit);
+        batches_size += b.size_bytes();
         batches.push_back(std::move(b));
         co_await ss::coroutine::maybe_yield();
     }
@@ -768,6 +798,7 @@ append_entries_request_serde_wrapper::serde_async_direct_read(
       meta,
       model::make_foreign_fragmented_memory_record_batch_reader(
         std::move(batches)),
+      batches_size,
       flush);
 }
 

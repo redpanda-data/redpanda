@@ -715,6 +715,7 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
+          0,
           flush_after_append::yes);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
@@ -2631,14 +2632,17 @@ ss::future<std::error_code> consensus::replicate_configuration(
 
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
+          size_t batches_size{0};
           for (auto& b : batches) {
+              batches_size += b.size_bytes();
               b.set_term(model::term_id(_term));
           }
           auto seqs = next_followers_request_seq();
           append_entries_request req(
             _self,
             meta(),
-            model::make_memory_record_batch_reader(std::move(batches)));
+            model::make_memory_record_batch_reader(std::move(batches)),
+            batches_size);
           /**
            * We use dispatch_replicate directly as we already hold the
            * _op_lock mutex when replicating configuration
@@ -4031,6 +4035,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
       },
       model::make_memory_record_batch_reader(
         ss::circular_buffer<model::record_batch>{}),
+      0,
       flush_after_append::no));
 
     reply.result = r.result;

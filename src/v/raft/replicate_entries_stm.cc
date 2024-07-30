@@ -93,7 +93,12 @@ replicate_entries_stm::send_append_entries_request(
             .append_entries(
               n.id(),
               append_entries_request(
-                _ptr->self(), n, _meta, std::move(batches), _is_flush_required),
+                _ptr->self(),
+                n,
+                _meta,
+                std::move(batches),
+                _batches_size,
+                _is_flush_required),
               std::move(opts))
             .then([this, target_node_id = n.id()](
                     result<append_entries_reply> reply) {
@@ -380,6 +385,7 @@ replicate_entries_stm::replicate_entries_stm(
   : _ptr(p)
   , _meta(r.metadata())
   , _is_flush_required(r.is_flush_required())
+  , _batches_size(r.batches_size())
   , _batches(std::move(r).release_batches())
   , _followers_seq(std::move(seqs))
   , _ctxlog(_ptr->_ctxlog) {}

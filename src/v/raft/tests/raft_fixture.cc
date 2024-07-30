@@ -131,6 +131,7 @@ ss::future<> channel::dispatch_loop() {
                         hb.meta,
                         model::make_memory_record_batch_reader(
                           ss::circular_buffer<model::record_batch>{}),
+                        0,
                         flush_after_append::no));
                     reply.meta.push_back(resp);
                 }
