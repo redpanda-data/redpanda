@@ -6,13 +6,13 @@ pull_request_rules:
     actions:
       queue:
         name: dev
-        merge_bot_account: vbotbuildovich
-        update_bot_account: vbotbuildovich
 queue_rules:
   - name: dev
     speculative_checks: 2
     batch_size: 4
     draft_bot_account: vbotbuildovich
-    conditions:
+    merge_bot_account: vbotbuildovich
+    update_bot_account: vbotbuildovich
+    merge_conditions:
       - base=dev
       - label=merge-queue
