@@ -761,9 +761,10 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
     auto exclusive_limit_check = [](
                                    json::Value const& older,
                                    json::Value const& newer,
-                                   std::string_view prop_name) {
+                                   std::string_view prop_name,
+                                   std::invocable<double, double> auto pred) {
         auto get_value = [=](json::Value const& v)
-          -> std::variant<std::monostate, bool> {
+          -> std::variant<std::monostate, bool, double> {
             auto it = v.FindMember(json::Value{
               prop_name.data(), rapidjson::SizeType(prop_name.size())});
             if (it == v.MemberEnd()) {
@@ -772,8 +773,12 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
             if (it->value.IsBool()) {
                 return it->value.GetBool();
             }
+            if (it->value.IsLosslessDouble()) {
+                return it->value.GetDouble();
+            }
+            // v could not be decodes as a double, likely a malformed json
             throw as_exception(invalid_schema(fmt::format(
-              R"(is_numeric_superset-{} not implemented for types other than "boolean". input: '{}')",
+              R"(is_numeric_superset-{} not implemented for types other than "boolean" and "number". input: '{}')",
               prop_name,
               pj{v})));
         };
@@ -788,13 +793,21 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
                 // monostate defaults to false, compatible if older is false
                 return older == false;
             },
-            [](std::monostate, bool) {
+            [&](double older, double newer) {
+                // delegate to pred
+                return std::invoke(pred, older, newer);
+            },
+            [](double, std::monostate) {
+                // newer is less strict than older
+                return false;
+            },
+            [](std::monostate, auto) {
                 // older has no rules, compatible with everything
                 return true;
             },
             [&](auto, auto) -> bool {
                 throw as_exception(invalid_schema(fmt::format(
-                  R"(is_numeric_superset-{} not implemented for older: '{}', newer: '{}')",
+                  R"(is_numeric_superset-{} not implemented for mixed types: older: '{}', newer: '{}')",
                   prop_name,
                   pj{older},
                   pj{newer})));
@@ -803,11 +816,13 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
           get_value(newer));
     };
 
-    if (!exclusive_limit_check(older, newer, "exclusiveMinimum")) {
+    if (!exclusive_limit_check(
+          older, newer, "exclusiveMinimum", std::less_equal<>{})) {
         return false;
     }
 
-    if (!exclusive_limit_check(older, newer, "exclusiveMaximum")) {
+    if (!exclusive_limit_check(
+          older, newer, "exclusiveMaximum", std::greater_equal<>{})) {
         return false;
     }
 
