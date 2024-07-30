@@ -231,10 +231,14 @@ public:
 
         // Attempt parse a .proto file
         if (!_parser.Parse(&t, &_fdp)) {
-            // base64 decode the schema
-            iobuf_istream is{base64_to_iobuf(schema.def().raw()())};
-            // Attempt parse as an encoded FileDescriptorProto.pb
-            if (!_fdp.ParseFromIstream(&is.istream())) {
+            try {
+                // base64 decode the schema
+                iobuf_istream is{base64_to_iobuf(schema.def().raw()())};
+                // Attempt parse as an encoded FileDescriptorProto.pb
+                if (!_fdp.ParseFromIstream(&is.istream())) {
+                    throw as_exception(error_collector.error());
+                }
+            } catch (const base64_decoder_exception&) {
                 throw as_exception(error_collector.error());
             }
         }
