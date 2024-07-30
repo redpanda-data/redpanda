@@ -245,6 +245,11 @@ result<void> sanitize_avro_type(
     case avro::AVRO_FIXED:
     case avro::AVRO_MAP:
         std::sort(o.begin(), o.end(), member_sorter<object_type::complex>{});
+        for (auto& i : o) {
+            if (auto res = sanitize(i.value, ctx); !res.has_value()) {
+                return res;
+            }
+        }
         break;
     case avro::AVRO_RECORD: {
         auto res = sanitize_record(o, ctx);
