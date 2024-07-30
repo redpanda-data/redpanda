@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "base/vlog.h"
 #include "cluster/logger.h"
+#include "json/document.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -51,6 +52,25 @@ ss::future<> self_test_backend::stop() {
     co_await std::move(f);
 }
 
+void self_test_backend::parse_unknown_checks(
+  std::vector<cloudcheck_opts>& ctos,
+  std::vector<unknown_check>& unknown_checks) {
+    for (auto it = unknown_checks.begin(); it != unknown_checks.end();) {
+        if (it->test_type == "cloud") {
+            json::Document doc;
+            if (doc.Parse(it->test_json.c_str()).HasParseError()) {
+                ++it;
+                continue;
+            }
+            const auto& obj = doc.GetObject();
+            ctos.push_back(cluster::cloudcheck_opts::from_json(obj));
+            it = unknown_checks.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
   std::vector<diskcheck_opts> dtos,
   std::vector<netcheck_opts> ntos,
@@ -58,6 +78,8 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
   std::vector<unknown_check> unknown_checks) {
     auto gate_holder = _gate.hold();
     std::vector<self_test_result> results;
+
+    parse_unknown_checks(ctos, unknown_checks);
 
     _stage = self_test_stage::disk;
     for (auto& dto : dtos) {
