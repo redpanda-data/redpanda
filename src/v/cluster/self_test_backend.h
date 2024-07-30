@@ -76,6 +76,17 @@ public:
     ss::future<netcheck_response> netcheck(model::node_id, iobuf&&);
 
 private:
+    // In the case that the controller node is of a redpanda version lower than
+    // the current node, some self-test checks may have been pushed back into
+    // the "unknown_checks" vector in the request. We will attempt to parse the
+    // test json on this node instead, if we recognize it. As of versions >=
+    // v24.2.x, this will only affect the cloudcheck options. This function
+    // modifies the in/out parameters: [ctos, unknown_checks]. This function
+    // will need amending in the event that a new self-test is added.
+    void parse_unknown_checks(
+      std::vector<cloudcheck_opts>& ctos,
+      std::vector<unknown_check>& unknown_checks);
+
     ss::future<std::vector<self_test_result>> do_start_test(
       std::vector<diskcheck_opts> dtos,
       std::vector<netcheck_opts> ntos,
