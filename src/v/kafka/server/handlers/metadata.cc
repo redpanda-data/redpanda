@@ -250,18 +250,17 @@ static metadata_response::topic make_topic_response(
   metadata_request& rq,
   const cluster::topic_metadata& md,
   const is_node_isolated_or_decommissioned is_node_isolated) {
-    int32_t auth_operations = 0;
+    auto res = make_topic_response_from_topic_metadata(
+      ctx.metadata_cache(), md, is_node_isolated, ctx.recovery_mode_enabled());
+
     /**
      * if requested include topic authorized operations
      */
     if (rq.data.include_topic_authorized_operations) {
-        auth_operations = details::to_bit_field(
+        res.topic_authorized_operations = details::to_bit_field(
           details::authorized_operations(ctx, md.get_configuration().tp_ns.tp));
     }
 
-    auto res = make_topic_response_from_topic_metadata(
-      ctx.metadata_cache(), md, is_node_isolated, ctx.recovery_mode_enabled());
-    res.topic_authorized_operations = auth_operations;
     return res;
 }
 
