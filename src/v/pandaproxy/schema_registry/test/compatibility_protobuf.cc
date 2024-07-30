@@ -189,6 +189,41 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
                                   .get();
 }
 
+SEASTAR_THREAD_TEST_CASE(test_binary_protobuf) {
+    simple_sharded_store store;
+
+    BOOST_REQUIRE_NO_THROW(store.store
+                             .make_valid_schema(pps::canonical_schema{
+                               pps::subject{"com.redpanda.Payload.proto"},
+                               pps::canonical_schema_definition{
+                                 base64_raw_proto, pps::schema_type::protobuf}})
+                             .get());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_invalid_binary_protobuf) {
+    simple_sharded_store store;
+
+    auto broken_base64_raw_proto = base64_raw_proto.substr(1);
+
+    auto schema = pps::canonical_schema{
+      pps::subject{"com.redpanda.Payload.proto"},
+      pps::canonical_schema_definition{
+        broken_base64_raw_proto, pps::schema_type::protobuf}};
+
+    BOOST_REQUIRE_EXCEPTION(
+      store.store
+        .make_valid_schema(pps::canonical_schema{
+          pps::subject{"com.redpanda.Payload.proto"},
+          pps::canonical_schema_definition{
+            broken_base64_raw_proto, pps::schema_type::protobuf}})
+        .get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          std::cout << e.what();
+          return e.code() == pps::error_code::schema_invalid;
+      });
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
     simple_sharded_store store;
 
