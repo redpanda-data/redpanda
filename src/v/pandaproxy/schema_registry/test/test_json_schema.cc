@@ -361,6 +361,20 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
     .reader_is_compatible_with_writer = false,
   },
+  {
+    .reader_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
+    .writer_schema = R"({"type": "number", "maximum": 10})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
+    .writer_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
   // string checks
   {
     .reader_schema = R"({"type": "string", "minLength": 2})",
@@ -587,6 +601,12 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_schema = R"({"type": "number"})",
     .writer_schema
     = R"({"type": "number", "minimum": 11, "exclusiveMinimum": true})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": false})",
+    .writer_schema = R"({"type": "number", "maximum": 10})",
     .reader_is_compatible_with_writer = true,
   },
   {

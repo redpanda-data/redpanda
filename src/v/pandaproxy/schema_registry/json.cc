@@ -762,36 +762,45 @@ bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
                                    json::Value const& older,
                                    json::Value const& newer,
                                    std::string_view prop_name) {
-        auto [maybe_gate_value, older_it, newer_it]
-          = extract_property_and_gate_check(older, newer, prop_name);
-        if (maybe_gate_value.has_value()) {
-            return maybe_gate_value.value();
-        }
-        // need to perform checks on actual values
-        if (older_it->IsBool() && newer_it->IsBool()) {
-            // both have value and can be decoded as bool
-            if (older_it->GetBool() == true && newer_it->GetBool() == false) {
-                // newer represent a larger range
-                return false;
-            } else {
-                // either equal value or newer represent a smaller range
-                return true;
+        auto get_value = [=](json::Value const& v)
+          -> std::variant<std::monostate, bool> {
+            auto it = v.FindMember(json::Value{
+              prop_name.data(), rapidjson::SizeType(prop_name.size())});
+            if (it == v.MemberEnd()) {
+                return std::monostate{};
             }
-        }
-
-        if (older_it->IsDouble() && newer_it->IsDouble()) {
-            // TODO extend this for double
+            if (it->value.IsBool()) {
+                return it->value.GetBool();
+            }
             throw as_exception(invalid_schema(fmt::format(
-              R"({}-{} not implemented for types other than "boolean". input: older: '{}', newer: '{}')",
-              __FUNCTION__,
+              R"(is_numeric_superset-{} not implemented for types other than "boolean". input: '{}')",
               prop_name,
-              pj{older},
-              pj{newer})));
-        } else {
-            // types changes are always not compatible (one is boolean and the
-            // other is double)
-            return false;
-        }
+              pj{v})));
+        };
+
+        return std::visit(
+          ss::make_visitor(
+            [](bool older, bool newer) {
+                // compatible if no change or if older was not "exclusive"
+                return older == newer || older == false;
+            },
+            [](bool older, std::monostate) {
+                // monostate defaults to false, compatible if older is false
+                return older == false;
+            },
+            [](std::monostate, bool) {
+                // older has no rules, compatible with everything
+                return true;
+            },
+            [&](auto, auto) -> bool {
+                throw as_exception(invalid_schema(fmt::format(
+                  R"(is_numeric_superset-{} not implemented for older: '{}', newer: '{}')",
+                  prop_name,
+                  pj{older},
+                  pj{newer})));
+            }),
+          get_value(older),
+          get_value(newer));
     };
 
     if (!exclusive_limit_check(older, newer, "exclusiveMinimum")) {
@@ -809,7 +818,7 @@ bool is_array_superset(json::Value const& older, json::Value const& newer) {
     // "type": "array" is used to model an array or a tuple.
     // for array, "items" is a schema that validates all the elements.
     // for tuple in Draft4, "items" is an array of schemas to validate the
-    // tuple, and "additionaItems" a schema to validate extra elements.
+    // tuple, and "additionalItems" a schema to validate extra elements.
     // TODO in later drafts, tuple validation has "prefixItems" as array of
     // schemas, "items" is for validation of extra elements, "additionalItems"
     // is not used.
