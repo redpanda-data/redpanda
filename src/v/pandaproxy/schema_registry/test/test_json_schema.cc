@@ -368,12 +368,27 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
   },
   {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .writer_schema = R"({"type": "number"})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
     .reader_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
     .writer_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": 10})",
     .reader_is_compatible_with_writer = false,
     .expected_exception = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMinimum": 9})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 9})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = false,
   },
   // string checks
   {
@@ -604,9 +619,34 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = true,
   },
   {
+    .reader_schema = R"({"type": "number"})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
     .reader_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": false})",
     .writer_schema = R"({"type": "number", "maximum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMinimum": 11})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 8})",
     .reader_is_compatible_with_writer = true,
   },
   {
