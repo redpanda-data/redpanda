@@ -3895,6 +3895,16 @@ class RedpandaService(RedpandaServiceBase):
         hostname = node.account.ssh_output(
             cmd=f"dig -x {ip} +short",
             timeout_sec=10).decode('utf-8').split('\n')[0].removesuffix(".")
+
+        # PRINT STATEMENTS
+        t = time.time()
+        fqdn = node.account.ssh_output(
+            cmd=f"host {hostname}",
+            combine_stderr=True,
+            allow_fail=True,
+            timeout_sec=100).decode('utf-8').split(' ')[0]
+        print(f"get_node_fqdn host command took {time.time() - t} seconds. Combined out/err is {fqdn}")
+
         fqdn = node.account.ssh_output(
             cmd=f"host {hostname}",
             timeout_sec=10).decode('utf-8').split(' ')[0]
