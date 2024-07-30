@@ -79,6 +79,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveNTPDrift(ps),
 		saveResourceUsageData(ps, bp.y),
 		saveSlabInfo(ps),
+		saveUname(ctx, ps),
 	}
 
 	// We use the K8S to discover the cluster's admin API addresses and collect
