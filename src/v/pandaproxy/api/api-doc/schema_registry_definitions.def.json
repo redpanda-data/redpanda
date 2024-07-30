@@ -102,4 +102,12 @@
           ]
         },
       }
+    },
+    "is_compatibile": {
+      "type": "object",
+      "properties": {
+        "is_compatible": {
+          "type": "boolean"
+        }
+      }
     }
