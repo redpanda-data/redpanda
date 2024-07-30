@@ -96,6 +96,9 @@ enum class errc : int16_t {
     data_migration_invalid_resources,
     resource_is_being_migrated,
 };
+
+std::ostream& operator<<(std::ostream& o, errc err);
+
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
 
