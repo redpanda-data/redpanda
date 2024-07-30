@@ -64,7 +64,7 @@ static const auto error_test_cases = std::to_array({
     R"({"type": "thisisnotapropertype"})",
     pps::error_info{
       pps::error_code::schema_invalid,
-      R"(Invalid json schema: '{"type":"thisisnotapropertype"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
+      R"(Invalid json schema: '{"type":"thisisnotapropertype"}'. Error: ': Must be valid against all schemas, but found unmatched schemas')"}},
   error_test_case{
     R"({"$schema": "unsupported_dialect"})",
     pps::error_info{
@@ -361,6 +361,35 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
     .reader_is_compatible_with_writer = false,
   },
+  {
+    .reader_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
+    .writer_schema = R"({"type": "number", "maximum": 10})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .writer_schema = R"({"type": "number"})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
+    .writer_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = false,
+    .expected_exception = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMinimum": 9})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 9})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = false,
+  },
   // string checks
   {
     .reader_schema = R"({"type": "string", "minLength": 2})",
@@ -587,6 +616,37 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_schema = R"({"type": "number"})",
     .writer_schema
     = R"({"type": "number", "minimum": 11, "exclusiveMinimum": true})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number"})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema
+    = R"({"type": "number", "maximum": 10, "exclusiveMaximum": false})",
+    .writer_schema = R"({"type": "number", "maximum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMinimum": 11})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
+    .writer_schema = R"({"type": "number", "exclusiveMaximum": 8})",
     .reader_is_compatible_with_writer = true,
   },
   {
