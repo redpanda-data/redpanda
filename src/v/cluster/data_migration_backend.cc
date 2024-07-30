@@ -47,7 +47,8 @@ backend::backend(
   topics_frontend& topics_frontend,
   topic_table& topic_table,
   shard_table& shard_table,
-  cloud_storage::remote& cloud_storage_api,
+  std::optional<std::reference_wrapper<cloud_storage::remote>>
+    cloud_storage_api,
   ss::abort_source& as)
   : _self(*config::node().node_id())
   , _table(table)

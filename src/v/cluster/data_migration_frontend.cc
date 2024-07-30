@@ -32,6 +32,7 @@ namespace cluster::data_migrations {
 
 frontend::frontend(
   model::node_id self,
+  bool cloud_storage_api_initialized,
   migrations_table& table,
   ss::sharded<features::feature_table>& features,
   ss::sharded<controller_stm>& stm,
@@ -39,6 +40,7 @@ frontend::frontend(
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
+  , _cloud_storage_api_initialized(cloud_storage_api_initialized)
   , _table(table)
   , _features(features)
   , _controller(stm)
@@ -109,7 +111,8 @@ auto frontend::process_or_dispatch(
 }
 
 bool frontend::data_migrations_active() const {
-    return _features.local().is_active(features::feature::data_migrations);
+    return _features.local().is_active(features::feature::data_migrations)
+           && _cloud_storage_api_initialized;
 }
 
 ss::future<result<id>> frontend::create_migration(

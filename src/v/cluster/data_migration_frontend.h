@@ -26,6 +26,7 @@ public:
 
     frontend(
       model::node_id,
+      bool,
       migrations_table&,
       ss::sharded<features::feature_table>&,
       ss::sharded<controller_stm>&,
@@ -80,6 +81,7 @@ private:
 
 private:
     model::node_id _self;
+    bool _cloud_storage_api_initialized;
     migrations_table& _table;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<controller_stm>& _controller;

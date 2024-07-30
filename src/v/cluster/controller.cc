@@ -90,6 +90,7 @@
 #include <seastar/util/later.hh>
 
 #include <chrono>
+#include <optional>
 namespace cluster {
 
 const bytes controller::invariants_key{"configuration_invariants"};
@@ -300,6 +301,7 @@ ss::future<> controller::start(
 
     co_await _data_migration_frontend.start(
       _raft0->self().id(),
+      _cloud_storage_api.local_is_initialized(),
       std::ref(*_data_migration_table),
       std::ref(_feature_table),
       std::ref(_stm),
@@ -770,7 +772,9 @@ ss::future<> controller::start(
       std::ref(_tp_frontend.local()),
       std::ref(_tp_state.local()),
       std::ref(_shard_table.local()),
-      std::ref(_cloud_storage_api.local()),
+      _cloud_storage_api.local_is_initialized()
+        ? std::make_optional(std::ref(_cloud_storage_api.local()))
+        : std::nullopt,
       std::ref(_as.local()));
     co_await _data_migration_backend.invoke_on_instance(
       &data_migrations::backend::start);

@@ -38,7 +38,8 @@ public:
       topics_frontend& topics_frontend,
       topic_table& topic_table,
       shard_table& shard_table,
-      cloud_storage::remote& _cloud_storage_api,
+      std::optional<std::reference_wrapper<cloud_storage::remote>>
+        _cloud_storage_api,
       ss::abort_source& as);
 
     void start();
@@ -259,7 +260,8 @@ private:
     topics_frontend& _topics_frontend;
     topic_table& _topic_table;
     shard_table& _shard_table;
-    cloud_storage::remote& _cloud_storage_api;
+    std::optional<std::reference_wrapper<cloud_storage::remote>>
+      _cloud_storage_api;
     ss::abort_source& _as;
 
     std::unique_ptr<cloud_storage::topic_mount_handler> _topic_mount_handler;
