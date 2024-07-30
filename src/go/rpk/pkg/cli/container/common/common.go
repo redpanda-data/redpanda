@@ -399,11 +399,11 @@ func CreateNode(
 	}, nil
 }
 
-func PullImage(c Client, image string) error {
-	fmt.Printf("Pulling image: %s\n", image)
+func PullImage(c Client, img string) error {
+	fmt.Printf("Pulling image: %s\n", img)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
+	res, err := c.ImagePull(ctx, img, image.PullOptions{})
 	if res != nil {
 		defer res.Close()
 		buf := bytes.Buffer{}

@@ -67,7 +67,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			topic := args[0]
-			listed, err := cl.ListTopics(cmd.Context(), topic)
+			listed, err := cl.ListTopicsWithInternal(cmd.Context(), topic)
 			out.MaybeDie(err, "unable to list topic %q metadata: %v", topic, err)
 			listed.EachError(func(d kadm.TopicDetail) {
 				out.Die("unable to discover the partitions on topic %q: %v", d.Topic, d.Err)
