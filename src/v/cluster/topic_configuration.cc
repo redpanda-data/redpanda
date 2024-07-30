@@ -68,12 +68,12 @@ storage::ntp_config topic_configuration::make_ntp_config(
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
-      "{{ topic: {}, partition_count: {}, replication_factor: {}, "
-      "properties: "
-      "{}}}",
+      "{{ topic: {}, partition_count: {}, replication_factor: {}, is_migrated: "
+      "{}, properties: {}}}",
       cfg.tp_ns,
       cfg.partition_count,
       cfg.replication_factor,
+      cfg.is_migrated,
       cfg.properties);
 
     return o;
@@ -105,8 +105,8 @@ void adl<cluster::topic_configuration>::to(
       t.properties.shadow_indexing);
 }
 
-// note: adl deserialization doesn't support read replica fields since serde
-// should be used for new versions.
+// note: adl deserialization doesn't support read replica or migration fields
+// since serde should be used for new versions.
 cluster::topic_configuration
 adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     // NOTE: The first field of the topic_configuration is a

@@ -457,6 +457,7 @@ struct compat_check<cluster::topic_configuration> {
         json_write(tp_ns);
         json_write(partition_count);
         json_write(replication_factor);
+        json_write(is_migrated);
         json_write(properties);
     }
 
@@ -465,6 +466,7 @@ struct compat_check<cluster::topic_configuration> {
         json_read(tp_ns);
         json_read(partition_count);
         json_read(replication_factor);
+        json_read(is_migrated);
         json_read(properties);
         return obj;
     }
@@ -508,9 +510,12 @@ struct compat_check<cluster::topic_configuration> {
 
         obj.properties.mpx_virtual_cluster_id = std::nullopt;
 
+        // ADL will always squash is_migrated to false
+        obj.is_migrated = false;
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
-              "Verify of {{cluster::topic_property}} decoding "
+              "Verify of {{cluster::topic_property}} adl decoding "
               "failed:\n Expected: {}\nDecoded: {}",
               obj,
               cfg));

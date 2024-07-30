@@ -36,7 +36,7 @@ def to_tristate_json(key: str,
 def decode_topic_manifest(path: str) -> dict[str, Any]:
     return Reader(open(path, "rb")).read_envelope(
         lambda rdr, _: {
-            'cfg': rdr.read_envelope(read_topic_config, max_version=1),
+            'cfg': rdr.read_envelope(read_topic_config, max_version=2),
             'initial_revision': rdr.read_int64()
         })
 
