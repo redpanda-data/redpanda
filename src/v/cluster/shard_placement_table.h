@@ -41,6 +41,9 @@ namespace cluster {
 /// reconciliation process.
 class shard_placement_table
   : public ss::peering_sharded_service<shard_placement_table> {
+private:
+    class probe;
+
 public:
     // assignment modification methods must be called on this shard
     static constexpr ss::shard_id assignment_shard_id = 0;
@@ -117,30 +120,46 @@ public:
 
         placement_state() = default;
 
-        /// Current shard-local state for this ntp. Will be non-null if
-        /// some kvstore state for this ntp exists on this shard.
-        std::optional<shard_local_state> current;
-        /// If non-null, the ntp is expected to exist on this shard.
-        std::optional<shard_local_assignment> assigned;
+        const std::optional<shard_local_assignment>& assigned() const {
+            return _assigned;
+        }
+
+        const std::optional<shard_local_state>& current() const {
+            return _current;
+        }
 
     private:
         friend class shard_placement_table;
 
         /// If placement_state is in the _states map, then is_empty() is false.
         bool is_empty() const {
-            return !current && !_is_initial_for && !assigned;
+            return !_current && !_is_initial_for && !_assigned;
         }
+
+        /// True if shard-local state for the partition is reconciled.
+        bool is_reconciled() const;
+
+        void set_assigned(
+          std::optional<shard_local_assignment>, shard_placement_table::probe&);
+        void set_current(
+          std::optional<shard_local_state>, shard_placement_table::probe&);
+        void set_hosted_status(hosted_status, shard_placement_table::probe&);
 
         struct versioned_shard {
             ss::shard_id shard;
             model::shard_revision_id revision;
         };
 
+        /// If non-null, the ntp is expected to exist on this shard.
+        std::optional<shard_local_assignment> _assigned;
         /// If this shard is the initial shard for some incarnation of this
         /// partition on this node, this field will contain the corresponding
         /// log revision. Invariant: if both _is_initial_for and current
         /// are present, _is_initial_for > current.log_revision
         std::optional<model::revision_id> _is_initial_for;
+        /// Current shard-local state for this ntp. Will be non-null if
+        /// some kvstore state for this ntp exists on this shard.
+        std::optional<shard_local_state> _current;
         /// If x-shard transfer is in progress, will hold the destination. Note
         /// that it is initialized from target but in contrast to target, it
         /// can't change mid-transfer.
@@ -150,6 +169,7 @@ public:
     using ntp2state_t = absl::node_hash_map<model::ntp, placement_state>;
 
     explicit shard_placement_table(ss::shard_id, storage::kvstore&);
+    ~shard_placement_table();
 
     /// Must be called on assignment_shard_id.
     bool is_persistence_enabled() const;
@@ -273,6 +293,8 @@ private:
 
     chunked_hash_map<model::ntp, std::unique_ptr<entry_t>> _ntp2entry;
     model::shard_revision_id _cur_shard_revision{0};
+
+    std::unique_ptr<probe> _probe;
 };
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);
