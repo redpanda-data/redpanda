@@ -60,11 +60,7 @@ static constexpr const char* expected_payload
     "simple and intuitive web interface of the AWS Management Console.";
 static const size_t expected_payload_size = std::strlen(expected_payload);
 static constexpr const char* error_payload
-  = "<?xml version=\"1.0\" "
-    "encoding=\"UTF-8\"?><Error><Code>InternalError</"
-    "Code><Message>Error.Message</"
-    "Message><Resource>Error.Resource</Resource><RequestId>Error.RequestId</"
-    "RequestId></Error>";
+  = R"(<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>Error.Message</Message><Resource>Error.Resource</Resource><RequestId>Error.RequestId</RequestId></Error>)";
 static constexpr const char* no_such_key_payload = R"xml(
 <?xml version="1.0" encoding="UTF-8"?>
 <Error>
@@ -272,6 +268,12 @@ void set_routes(ss::httpd::routes& r) {
           return "unexpected";
       },
       "txt");
+    auto put_response_no_content = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::no_content);
+          return "";
+      },
+      "txt");
     r.add(operation_type::PUT, url("/test"), empty_put_response);
     r.add(operation_type::PUT, url("/test-error"), erroneous_put_response);
     r.add(operation_type::GET, url("/test"), get_response);
@@ -291,6 +293,10 @@ void set_routes(ss::httpd::routes& r) {
       url("/test-bucket-not-found"),
       bucket_not_found_response);
     r.add(operation_type::POST, url("/"), delete_objects_response);
+    r.add(
+      operation_type::PUT,
+      url("/test-put-no-content"),
+      put_response_no_content);
 }
 
 /// Http server and client
@@ -715,6 +721,41 @@ SEASTAR_TEST_CASE(test_delete_object_retry) {
 
         server->stop().get();
     });
+}
+
+ss::future<> do_test_put_object_no_response(bool acceptable) {
+    return ss::async([acceptable] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        iobuf payload;
+        payload.append(expected_payload, expected_payload_size);
+        auto payload_stream = make_iobuf_input_stream(std::move(payload));
+        const auto response
+          = client
+              ->put_object(
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test-put-no-content"),
+                expected_payload_size,
+                std::move(payload_stream),
+                100ms,
+                acceptable)
+              .get();
+        if (acceptable) {
+            BOOST_REQUIRE(response);
+        } else {
+            BOOST_REQUIRE(!response);
+        }
+        client->shutdown();
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_put_object_no_response_acceptable) {
+    return do_test_put_object_no_response(true);
+}
+
+SEASTAR_TEST_CASE(test_put_object_no_response_not_acceptable) {
+    return do_test_put_object_no_response(false);
 }
 
 class client_pool_fixture {

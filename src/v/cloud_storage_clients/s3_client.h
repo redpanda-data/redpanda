@@ -178,7 +178,8 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      ss::lowres_clock::duration timeout) override;
+      ss::lowres_clock::duration timeout,
+      bool accept_no_content = false) override;
 
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
@@ -218,7 +219,8 @@ private:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      bool accept_no_content = false);
 
     ss::future<list_bucket_result> do_list_objects_v2(
       const bucket_name& name,

@@ -422,6 +422,7 @@ struct upload_request {
     transfer_details transfer_details;
     upload_type type;
     iobuf payload;
+    bool accept_no_content_response{false};
 };
 
 struct download_request {

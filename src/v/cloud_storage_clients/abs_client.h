@@ -174,7 +174,8 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      ss::lowres_clock::duration timeout) override;
+      ss::lowres_clock::duration timeout,
+      bool accept_no_content = false) override;
 
     /// Send List Blobs request
     /// \param name is a container name
@@ -262,7 +263,8 @@ private:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      bool accept_no_content = false);
 
     ss::future<head_object_result> do_head_object(
       bucket_name const& name,
