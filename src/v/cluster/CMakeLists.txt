@@ -88,6 +88,7 @@ v_cc_library(
   HDRS
     topic_recovery_validator.h
   SRCS
+    errors.cc
     metadata_cache.cc
     partition_manager.cc
     scheduling/partition_allocator.cc
