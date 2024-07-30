@@ -58,12 +58,14 @@ Available tests to run:
      *** Unique pairs of Redpanda nodes each act as a client and a server.
      *** The test pushes as much data over the wire, within the test parameters.
 * Cloud storage tests
-  ** Latency test: 1024-bit object.
+  ** Configuration/Latency test: 1024-byte object.
   ** Depending on cluster read/write permissions ('cloud_storage_enable_remote_read', 'cloud_storage_enable_remote_write'), a series of cloud storage operations are performed:
-     *** Upload an object to an object storage.
-     *** List objects in the object storage.
-     *** Download an object from the object storage.
-     *** Delete the original object from the object storage, if it was uploaded.
+     *** Upload an object (a random buffer of 1024 bytes) to the cloud storage bucket/container.
+     *** List objects in the bucket/container.
+     *** Download the uploaded object from the bucket/container.
+     *** Download the uploaded object's metadata from the bucket/container.
+     *** Delete the uploaded object from the bucket/container.
+     *** Upload and then delete multiple objects (random buffers of 1024 bytes) at once from the bucket/container.
 
 This command prompts users for confirmation (unless the flag '--no-confirm' is specified), then returns a test identifier ID, and runs the tests.
 
@@ -112,7 +114,7 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 		"Comma-separated list of broker IDs that the tests will run on. If not set, tests will run for all node IDs.")
 	cmd.Flags().BoolVar(&onlyDisk, "only-disk-test", false, "Runs only the disk benchmarks")
 	cmd.Flags().BoolVar(&onlyNetwork, "only-network-test", false, "Runs only network benchmarks")
-	cmd.Flags().BoolVar(&onlyCloud, "only-cloud-test", false, "Runs only cloud storage benchmarks")
+	cmd.Flags().BoolVar(&onlyCloud, "only-cloud-test", false, "Runs only cloud storage verification")
 	cmd.MarkFlagsMutuallyExclusive("only-disk-test", "only-network-test", "only-cloud-test")
 	return cmd
 }
@@ -120,7 +122,7 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 // assembleTests creates types of pre-canned tests depending on user input
 // 1. onlyDisk - Only runs the throughput/latency disk benchmarks
 // 2. onlyNetwork - Only runs the network benchmark
-// 3. onlyCloud - Only runs the cloud benchmark
+// 3. onlyCloud - Only runs the cloud storage verification
 // 4. All false - Runs the default which is the combination of all tests.
 func assembleTests(onlyDisk bool, onlyNetwork bool, onlyCloud bool, durationDisk uint, durationNet uint, timeoutCloud uint, backoffCloud uint) []any {
 	diskcheck := []any{
