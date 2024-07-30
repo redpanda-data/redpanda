@@ -1013,14 +1013,14 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           "[{}] placement must be present if partition is",
           ntp);
         vassert(
-          maybe_placement->current
+          maybe_placement->current()
             && partition->get_log_revision_id()
-                 == maybe_placement->current->log_revision
-            && maybe_placement->current->status
+                 == maybe_placement->current()->log_revision
+            && maybe_placement->current()->status
                  == shard_placement_table::hosted_status::hosted,
           "[{}] unexpected local state: {} (partition log revision: {})",
           ntp,
-          maybe_placement->current,
+          maybe_placement->current(),
           partition->get_log_revision_id());
     }
 
@@ -1090,7 +1090,9 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           partition_operation_type::finish_update,
           replicas_view.assignment);
         co_await remove_partition_kvstore_state(
-          ntp, placement.current.value().group, expected_log_revision.value());
+          ntp,
+          placement.current().value().group,
+          expected_log_revision.value());
         co_return ss::stop_iteration::no;
     case shard_placement_table::reconciliation_action::wait_for_target_update:
         co_return errc::waiting_for_shard_placement_update;
@@ -1876,7 +1878,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
               }
               return remove_persistent_state(
                        ntp,
-                       dest_placement->current.value().group,
+                       dest_placement->current().value().group,
                        dest._storage.local().kvs())
                 .then([&dest, &ntp, log_rev] {
                     return dest._shard_placement.finish_delete(ntp, log_rev);
@@ -1959,12 +1961,12 @@ ss::future<std::error_code> controller_backend::delete_partition(
         co_return ec;
     }
 
-    if (!placement->current) {
+    if (!placement->current()) {
         // nothing to delete
         co_return errc::success;
     }
 
-    auto log_revision = placement->current->log_revision;
+    auto log_revision = placement->current()->log_revision;
     if (log_revision >= cmd_revision) {
         // Perform an extra revision check to be on the safe side, if the
         // partition has already been re-created with greater revision, do
@@ -1980,7 +1982,7 @@ ss::future<std::error_code> controller_backend::delete_partition(
         // TODO: delete log directory even when there is no partition object
         _xst_states.erase(ntp);
         co_await remove_persistent_state(
-          ntp, placement->current->group, _storage.local().kvs());
+          ntp, placement->current()->group, _storage.local().kvs());
     }
 
     co_await _shard_placement.finish_delete(ntp, log_revision);
