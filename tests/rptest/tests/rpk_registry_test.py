@@ -62,6 +62,7 @@ class RpkRegistryTest(RedpandaTest):
 
         self.schema_registry_config = SchemaRegistryConfig()
         self.schema_registry_config.require_client_auth = True
+        self.schema_registry_config.mode_mutability = True
 
     # Override Redpanda start to create the certs and enable auth.
     def setUp(self):
@@ -539,3 +540,45 @@ message AddressBook {
                               msg=bad_msg,
                               key=key_1,
                               schema_id="topic")
+
+    @cluster(num_nodes=1)
+    def test_registry_mode(self):
+        """
+        Simple test to assert rpk command works for setting the
+        SR mode, not to test the underlying Redpanda behavior.
+        """
+        read_only_mode = "READONLY"
+        read_write_mode = "READWRITE"
+        global_subject = "{GLOBAL}"
+
+        # Set the global mode to READONLY
+        self._rpk.set_mode(read_only_mode)
+
+        def findModeBySubject(subjects, target):
+            for sub in subjects:
+                if sub["subject"] == target:
+                    return sub["mode"]
+
+        out = self._rpk.get_mode()
+        assert findModeBySubject(out, global_subject) == read_only_mode
+
+        subject_1 = "subject-1"
+        subject_2 = "subject-2"
+        self._rpk.set_mode(read_write_mode, [subject_1, subject_2])
+
+        # Get All
+        out = self._rpk.get_mode([subject_1, subject_2], includeGlobal=True)
+        assert findModeBySubject(out, global_subject) == read_only_mode
+        assert findModeBySubject(out, subject_1) == read_write_mode
+        assert findModeBySubject(out, subject_2) == read_write_mode
+
+        # Reset 1
+        self._rpk.reset_mode([subject_2])
+        out = self._rpk.get_mode([subject_2])
+        # It goes back to the global mode (READONLY)
+        assert findModeBySubject(out, subject_2) == read_only_mode
+
+        # We do not support import yet
+        with expect_exception(RpkException,
+                              lambda e: 'invalid mode "IMPORT"' in str(e)):
+            self._rpk.set_mode("IMPORT", [subject_1, subject_2], format="text")
