@@ -29,6 +29,7 @@ enum class manifest_type {
     tx_range,
     cluster_metadata,
     spillover,
+    topic_mount
 };
 
 std::ostream& operator<<(std::ostream& s, manifest_type t);

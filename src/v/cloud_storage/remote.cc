@@ -277,6 +277,9 @@ ss::future<download_result> remote::do_download_manifest(
                 case manifest_type::spillover:
                     _probe.spillover_manifest_download();
                     break;
+                case manifest_type::topic_mount:
+                    _probe.topic_mount_manifest_download();
+                    break;
                 }
                 co_return download_result::success;
             } catch (...) {
@@ -382,6 +385,9 @@ ss::future<upload_result> remote::upload_manifest(
                 break;
             case manifest_type::spillover:
                 _probe.spillover_manifest_upload();
+                break;
+            case manifest_type::topic_mount:
+                _probe.topic_mount_manifest_upload();
                 break;
             }
             _probe.register_upload_size(size);

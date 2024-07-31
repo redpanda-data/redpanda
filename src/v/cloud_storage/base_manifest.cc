@@ -31,6 +31,9 @@ std::ostream& operator<<(std::ostream& s, manifest_type t) {
     case manifest_type::spillover:
         s << "spillover";
         break;
+    case manifest_type::topic_mount:
+        s << "topic_mount";
+        break;
     }
     return s;
 }
