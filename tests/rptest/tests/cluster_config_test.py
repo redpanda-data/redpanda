@@ -1089,12 +1089,29 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             strval: str
             yamlval: Any
 
+        class AliasedExample(NamedTuple):
+            key: str
+            alias: str
+            strval: str
+            yamlval: Any
+
         valid_examples = [
             Example("kafka_qdc_enable", "true", True),
             Example("append_chunk_size", "32768", 32768),
             Example("superusers", "['bob','alice']", ["bob", "alice"]),
             Example("storage_min_free_bytes", "1234567890", 1234567890),
             Example("kafka_memory_share_for_fetch", "0.6", 0.6)
+        ]
+
+        valid_aliased_examples = [
+            AliasedExample("data_transforms_per_core_memory_reservation",
+                           "wasm_per_core_memory_reservation", "123456789",
+                           123456789),
+            AliasedExample("cloud_storage_graceful_transfer_timeout_ms",
+                           "cloud_storage_graceful_transfer_timeout", "1024",
+                           1024),
+            AliasedExample("cloud_storage_max_segment_readers_per_shard",
+                           "cloud_storage_max_readers_per_shard", "128", 128)
         ]
 
         def yamlize(input) -> str:
@@ -1126,6 +1143,72 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             api_readback = self.admin.get_cluster_config()[e.key]
             self.logger.info(f"API readback for {e.key} '{api_readback}'")
             assert api_readback == e.yamlval
+
+        # Check that valid changes are accepted when config is set by key,
+        # and both alias and key are used for get.
+        for e in valid_aliased_examples:
+            self.logger.info(
+                f"Checking aliased {e.key}={e.alias}={e.strval} ({e.yamlval})")
+            self.rpk.cluster_config_set(e.key, e.strval)
+
+            # CLI readback should give same as we set
+            cli_readback_key = self.rpk.cluster_config_get(e.key)
+            cli_readback_alias = self.rpk.cluster_config_get(e.alias)
+
+            expect_cli_readback = yamlize(e.yamlval)
+
+            self.logger.info(
+                f"CLI readback for key '{cli_readback_key}', for alias '{cli_readback_alias}', expect '{expect_cli_readback}'"
+            )
+            assert cli_readback_key == cli_readback_alias == expect_cli_readback
+
+            # API readback should give properly structured+typed value
+            api_readback_key = self.admin.get_cluster_config(key=e.key)[e.key]
+            api_readback_alias = self.admin.get_cluster_config(
+                key=e.alias)[e.alias]
+            self.logger.info(
+                f"API readback for {e.key} '{api_readback_key}', for {e.alias} '{api_readback_alias}'"
+            )
+            assert api_readback_key == api_readback_alias == e.yamlval
+
+        #Reset valid_aliased_examples before we attempt to repeat tests by setting with alias.
+        valid_aliased_examples = [
+            AliasedExample("data_transforms_per_core_memory_reservation",
+                           "wasm_per_core_memory_reservation", "987654321",
+                           987654321),
+            AliasedExample("cloud_storage_graceful_transfer_timeout_ms",
+                           "cloud_storage_graceful_transfer_timeout", "4096",
+                           4096),
+            AliasedExample("cloud_storage_max_segment_readers_per_shard",
+                           "cloud_storage_max_readers_per_shard", "512", 512)
+        ]
+
+        # Check that valid changes are accepted when config is set by alias,
+        # and both alias and key are used for get.
+        for e in valid_aliased_examples:
+            self.logger.info(
+                f"Checking aliased {e.key}={e.alias}={e.strval} ({e.yamlval})")
+            self.rpk.cluster_config_set(e.alias, e.strval)
+
+            # CLI readback should give same as we set
+            cli_readback_key = self.rpk.cluster_config_get(e.key)
+            cli_readback_alias = self.rpk.cluster_config_get(e.alias)
+
+            expect_cli_readback = yamlize(e.yamlval)
+
+            self.logger.info(
+                f"CLI readback for key '{cli_readback_key}', for alias '{cli_readback_alias}', expect '{expect_cli_readback}'"
+            )
+            assert cli_readback_key == cli_readback_alias == expect_cli_readback
+
+            # API readback should give properly structured+typed value
+            api_readback_key = self.admin.get_cluster_config(key=e.key)[e.key]
+            api_readback_alias = self.admin.get_cluster_config(
+                key=e.alias)[e.alias]
+            self.logger.info(
+                f"API readback for {e.key} '{api_readback_key}', for {e.alias} '{api_readback_alias}'"
+            )
+            assert api_readback_key == api_readback_alias == e.yamlval
 
         # Check that the `set` command hits proper validation paths
         invalid_examples = [
