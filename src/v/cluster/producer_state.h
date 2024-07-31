@@ -209,6 +209,17 @@ public:
     void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
         _current_txn_start_offset = offset;
     }
+
+    model::producer_identity id() const { return _id; }
+
+    // Resets the producer to use a new epoch. The new epoch should be strictly
+    // larger than the current epoch. This is only used by the idempotent
+    // producers trying to bump epoch of the existing producer based on the
+    // incoming request with a higher epoch. Transactions follow a separate
+    // fencing based approach to bump epochs as it requires aborting any in
+    // progress transactions with older epoch.
+    void reset_with_new_epoch(model::producer_epoch new_epoch);
+
     safe_intrusive_list_hook _hook;
 
 private:
