@@ -39,7 +39,9 @@ def _redpanda_cc_test(
         default_cores = None,
         extra_args = [],
         custom_args = [],
-        tags = []):
+        tags = [],
+        env = {},
+        data = []):
     """
     Helper to define a Redpanda C++ test.
 
@@ -54,6 +56,8 @@ def _redpanda_cc_test(
       extra_args: arguments from test wrappers
       custom_args: arguments from cc_test users
       tags: tags to attach to the cc_test target
+      env: environment variables
+      data: data file dependencies
     """
     common_args = [
         "--blocked-reactor-notify-ms 2000000",
@@ -88,6 +92,8 @@ def _redpanda_cc_test(
             "layering_check",
         ],
         tags = tags,
+        env = env,
+        data = data,
     )
 
 def _redpanda_cc_unit_test(**kwargs):
@@ -124,7 +130,9 @@ def redpanda_cc_btest(
         timeout,
         srcs = [],
         deps = [],
-        args = []):
+        args = [],
+        env = {},
+        data = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = True,
         name = name,
@@ -132,6 +140,8 @@ def redpanda_cc_btest(
         srcs = srcs,
         deps = deps,
         custom_args = args,
+        env = env,
+        data = data,
     )
 
 def redpanda_cc_bench(
