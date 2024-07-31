@@ -61,41 +61,12 @@ class SelfTestTest(EndToEndTest):
         # Wait for completion
         node_reports = self.wait_for_self_test_completion()
 
-        # Verify returned results
-        def assert_pass(report):
-            assert 'error' not in report
-            assert 'warning' not in report
-
-        def assert_fail(report, error_msg):
-            assert 'error' in report
-            assert report['error'] == error_msg
-
-        read_tests = ['List', 'Head', 'Get']
-        write_tests = ['Put', 'Delete', 'Plural Delete']
-
         for node in node_reports:
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
-                if report['test_type'] == 'cloud':
-                    if report['info'] in read_tests:
-                        if remote_read:
-                            assert_pass(report)
-                        else:
-                            assert_fail(
-                                report,
-                                'Remote read is not enabled for this cluster.')
-                    else:
-                        assert report['info'] in write_tests
-                        if remote_write:
-                            assert_pass(report)
-                        else:
-                            assert_fail(
-                                report,
-                                'Remote write is not enabled for this cluster.'
-                            )
-                else:
-                    assert_pass(report)
+                assert 'error' not in report
+                assert 'warning' not in report
 
         # Ensure the results appear as expected. Assertions aren't performed
         # on specific results, but rather what tests are oberved to have run
@@ -112,6 +83,9 @@ class SelfTestTest(EndToEndTest):
         network_results = [r for r in reports if r['test_type'] == 'network']
 
         cloud_results = [r for r in reports if r['test_type'] == 'cloud']
+
+        read_tests = ['List', 'Head', 'Get']
+        write_tests = ['Put', 'Delete', 'Plural Delete']
 
         num_expected_cloud_storage_read_tests = num_nodes * len(read_tests)
         num_expected_cloud_storage_write_tests = num_nodes * len(write_tests)
