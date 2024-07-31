@@ -249,6 +249,11 @@ struct tag_field_entry {
 //    a. Have it set non-default values and default values for each
 //    b. Provide the difference in size the encoded buffers will be
 
+// NOTE: below each of the entries have is_request = false. The function
+// `check_kafka_tag_format` receives the is_request (value `false` here) as a
+// parameter but does not use this parameter. Therefore if in the future a new
+// entry with is_request = true is added, then it follows that the function
+// previously mentioned will also need to be updated to use the flag as true.
 using tag_field_entries = kafka::type_list<
   tag_field_entry<create_topics_api, 5, false>,
   tag_field_entry<api_versions_api, 3, false>>;
@@ -318,7 +323,8 @@ bool validate_buffer_against_data(
 }
 
 template<typename T>
-void check_kafka_tag_format(api_version version, bool is_request) {
+void check_kafka_tag_format(
+  api_version version, [[maybe_unused]] bool is_request) {
     decltype(T::data) non_default_data{};
     decltype(T::data) default_data{};
 
