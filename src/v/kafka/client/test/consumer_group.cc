@@ -24,7 +24,7 @@
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/list_groups.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/schemata/join_group_request.h"

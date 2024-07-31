@@ -4,6 +4,8 @@ This module contains functions for working with Kafka messages.
 
 load("//bazel:build.bzl", "redpanda_cc_library")
 
+visibility(["//src/v/kafka/protocol/..."])
+
 MESSAGES = [
     "add_offsets_to_txn",
     "add_partitions_to_txn",

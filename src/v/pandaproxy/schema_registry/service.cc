@@ -20,7 +20,7 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"

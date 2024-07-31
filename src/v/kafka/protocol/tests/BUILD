@@ -1,4 +1,25 @@
 load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//src/v/kafka/protocol:protocol.bzl", "MESSAGE_TYPES")
+
+redpanda_cc_btest(
+    name = "protocol_test",
+    timeout = "short",
+    srcs = [
+        "protocol_test.cc",
+    ],
+    data = [
+        "//src/go/kreq-gen:kafka_request_generator",
+    ],
+    # could also use runfiles here, which would be easier once cmake is gone
+    # because then we could use bazel_tools runfiles library
+    env = {"GENERATOR_BIN": "$(rootpath //src/go/kreq-gen:kafka_request_generator)"},
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:process",
+        "@boost//:test",
+    ] + MESSAGE_TYPES,
+)
 
 redpanda_cc_btest(
     name = "field_parser_test",

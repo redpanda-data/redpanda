@@ -9,7 +9,7 @@
 
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/produce.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"

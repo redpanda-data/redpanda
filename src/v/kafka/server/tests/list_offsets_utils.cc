@@ -11,7 +11,7 @@
 
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/schemata/list_offset_request.h"
 #include "kafka/protocol/schemata/list_offset_response.h"
 
