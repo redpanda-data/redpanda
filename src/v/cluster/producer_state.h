@@ -263,6 +263,14 @@ public:
           ss::lowres_system_clock::now() - _last_updated_ts);
     }
 
+    // Resets the producer to use a new epoch. The new epoch should be strictly
+    // larger than the current epoch. This is only used by the idempotent
+    // producers trying to bump epoch of the existing producer based on the
+    // incoming request with a higher epoch. Transactions follow a separate
+    // fencing based approach to bump epochs as it requires aborting any in
+    // progress transactions with older epoch.
+    void reset_with_new_epoch(model::producer_epoch new_epoch);
+
 private:
     prefix_logger& _logger;
 
