@@ -912,6 +912,10 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
   ssx::semaphore_units& units) {
+    // Check if the producer bumped the epoch and reset accordingly.
+    if (bid.pid.epoch > producer->id().epoch()) {
+        producer->reset_with_new_epoch(bid.pid.epoch);
+    }
     auto request = producer->try_emplace_request(bid, synced_term);
     if (!request) {
         co_return request.error();

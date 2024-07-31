@@ -377,6 +377,9 @@ void producer_state::apply_data(
     if (!bid.is_idempotent() || _evicted) {
         return;
     }
+    if (!bid.is_transactional && bid.pid.epoch > _id.epoch) {
+        reset_with_new_epoch(bid.pid.epoch);
+    }
     _requests.stm_apply(bid, header.ctx.term, offset);
     if (bid.is_transactional) {
         if (!_transaction_state) {

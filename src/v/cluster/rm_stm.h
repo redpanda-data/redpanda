@@ -64,10 +64,13 @@ namespace cluster {
  *
  * 2. Idempotent requests - Provides single session idempotency guarantees. Each
  * idempotent produce request is associated with a producer_identity
- * (producer_id + epoch=0). Idempotency is implemented by tracking sequence
+ * (producer_id + epoch=N). Idempotency is implemented by tracking sequence
  * numbers of last 5 inflight/processed requests and ensuring that the new
  * requests maintain the sequence order. Client stamps the record batches with
- * sequence numbers.
+ * sequence numbers. Idempotent producer may choose to increment epoch on the
+ * client side to reset the sequence tracking when it deems safe
+ * (check kip-360). The state machine detects such situations and resets the
+ * tracked sequence number state.
  *
  * 3. Transactional requests - Provides EOS semantics across multiple sessions
  * by implementing fencing as defined in the Kafka protocol. Transactional
