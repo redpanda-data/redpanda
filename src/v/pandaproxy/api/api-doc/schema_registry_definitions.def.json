@@ -31,7 +31,7 @@
                 "type": "string"
               },
               "version": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           }
@@ -65,7 +65,7 @@
                 "type": "string"
               },
               "version": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           }
@@ -78,20 +78,20 @@
     "get_compatibility": {
       "type": "object",
       "properties": {
-          "compatibilityLevel": {
-            "type": "string"
-          }
+        "compatibilityLevel": {
+          "type": "string"
+        }
       }
     },
     "put_compatibility": {
       "type": "object",
       "properties": {
-          "compatibility": {
-            "type": "string"
-          }
+        "compatibility": {
+          "type": "string"
         }
-      },
-      "mode": {
+      }
+    },
+    "mode": {
       "type": "object",
       "properties": {
         "mode": {
@@ -100,7 +100,7 @@
             "READWRITE",
             "READONLY"
           ]
-        },
+        }
       }
     },
     "is_compatibile": {

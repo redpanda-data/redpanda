@@ -1,4 +1,5 @@
-"/config/{subject}": {
+
+    "/config/{subject}": {
       "get": {
         "summary": "Get the compatibility level for a subject.",
         "operationId": "get_config_subject",
@@ -421,7 +422,7 @@
     },
     "/schemas/ids/{id}": {
       "get": {
-        "summary": "Get a schema by id.",
+        "summary": "Get a schema by ID.",
         "operationId": "get_schemas_ids_id",
         "parameters": [
           {
@@ -468,7 +469,7 @@
     },
     "/schemas/ids/{id}/versions": {
       "get": {
-        "summary": "Get a list of subject-version for the schema id.",
+        "summary": "Get a list of subject-version for the schema ID.",
         "operationId": "get_schemas_ids_id_versions",
         "parameters": [
           {
@@ -593,7 +594,7 @@
             "schema": {
               "type": "array",
               "items": {
-                  "type": "string"
+                "type": "string"
               }
             }
           },
@@ -637,7 +638,7 @@
           {
             "name": "schema_def",
             "in": "body",
-            "schema":  {
+            "schema": {
               "$ref": "#/definitions/schema_def"
             }
           }
@@ -756,7 +757,7 @@
             "schema": {
               "type": "array",
               "items": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           },
@@ -798,7 +799,7 @@
           {
             "name": "schema_def",
             "in": "body",
-            "schema":  {
+            "schema": {
               "$ref": "#/definitions/schema_def"
             }
           }
@@ -1012,7 +1013,7 @@
     },
     "/subjects/{subject}/versions/{version}/referencedby": {
       "get": {
-        "summary": "Retrieve a list of schema ids that reference the subject and version.",
+        "summary": "Retrieve a list of schema IDs that reference the subject and version.",
         "operationId": "get_subject_versions_version_referenced_by",
         "parameters": [
           {
@@ -1039,7 +1040,7 @@
             "schema": {
               "type": "array",
               "items": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           },
@@ -1094,7 +1095,7 @@
             "schema": {
               "type": "array",
               "items": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           },
@@ -1144,7 +1145,7 @@
           {
             "name": "schema_def",
             "in": "body",
-            "schema":  {
+            "schema": {
               "$ref": "#/definitions/schema_def"
             }
           }
@@ -1196,3 +1197,4 @@
         }
       }
     }
+  
