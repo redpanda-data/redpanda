@@ -83,9 +83,6 @@ cloudcheck::run(cloudcheck_opts opts) {
         co_return std::vector<self_test_result>{result};
     }
 
-    _remote_read_enabled = cfg.cloud_storage_enable_remote_read();
-    _remote_write_enabled = cfg.cloud_storage_enable_remote_write();
-
     co_return co_await ss::with_scheduling_group(
       _opts.sg, [this]() mutable { return run_benchmarks(); });
 }
@@ -116,9 +113,7 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
     const auto self_test_key = cloud_storage_clients::object_key{
       self_test_prefix / uuid};
 
-    const std::optional<iobuf> payload = (_remote_write_enabled)
-                                           ? make_random_payload()
-                                           : std::optional<iobuf>{};
+    const iobuf payload = make_random_payload();
 
     // Test Put
     auto verify_test_result = co_await do_run_test(
@@ -157,7 +152,7 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
     results.push_back(std::move(list_test_result));
 
     // Test Get
-    // If the payloaded was uploaded, this attempts to get the written
+    // If the payload was uploaded, this attempts to get the written
     // object. If it wasn't, it will attempt to get the smallest object from the
     // object list, if at least one exists.
     auto get_min_object_key =
@@ -188,7 +183,7 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
     auto& [downloaded_object, download_test_result] = download_test_result_pair;
     if (is_uploaded && downloaded_object) {
         auto& downloaded_buf = downloaded_object.value();
-        if (downloaded_buf != payload.value()) {
+        if (downloaded_buf != payload) {
             download_test_result.error
               = "Downloaded object differs from uploaded payload.";
         }
@@ -252,7 +247,7 @@ cloud_storage::download_request cloudcheck::make_download_request(
 ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
   cloud_storage_clients::bucket_name bucket,
   cloud_storage_clients::object_key key,
-  const std::optional<iobuf>& payload) {
+  const iobuf& payload) {
     auto result = self_test_result{
       .name = _opts.name, .info = "Put", .test_type = "cloud"};
 
@@ -261,15 +256,10 @@ ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
         co_return result;
     }
 
-    if (!_remote_write_enabled) {
-        result.error = "Remote write is not enabled for this cluster.";
-        co_return result;
-    }
-
     try {
         auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
         cloud_storage::upload_request upload_request = make_upload_request(
-          bucket, key, payload.value().copy(), rtc);
+          bucket, key, payload.copy(), rtc);
         const cloud_storage::upload_result upload_result
           = co_await _cloud_storage_api.local().upload_object(
             std::move(upload_request));
@@ -305,12 +295,6 @@ ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
           cloud_storage_clients::error_outcome::fail, result};
     }
 
-    if (!_remote_read_enabled) {
-        result.error = "Remote read is not enabled for this cluster.";
-        co_return verify_list_result{
-          cloud_storage_clients::error_outcome::fail, result};
-    }
-
     try {
         auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
         const cloud_storage::remote::list_result object_list
@@ -338,11 +322,6 @@ ss::future<cloudcheck::verify_head_result> cloudcheck::verify_head(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return result;
-    }
-
-    if (!_remote_read_enabled) {
-        result.error = "Remote read is not enabled for this cluster.";
         co_return result;
     }
 
@@ -388,11 +367,6 @@ ss::future<cloudcheck::verify_download_result> cloudcheck::verify_download(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return verify_download_result{std::nullopt, result};
-    }
-
-    if (!_remote_read_enabled) {
-        result.error = "Remote read is not enabled for this cluster.";
         co_return verify_download_result{std::nullopt, result};
     }
 
@@ -446,11 +420,6 @@ ss::future<cloudcheck::verify_delete_result> cloudcheck::verify_delete(
         co_return result;
     }
 
-    if (!_remote_write_enabled) {
-        result.error = "Remote write is not enabled for this cluster.";
-        co_return result;
-    }
-
     try {
         auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
         const cloud_storage::upload_result delete_result
@@ -481,11 +450,6 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return result;
-    }
-
-    if (!_remote_write_enabled) {
-        result.error = "Remote write is not enabled for this cluster.";
         co_return result;
     }
 

@@ -59,7 +59,7 @@ Available tests to run:
      *** The test pushes as much data over the wire, within the test parameters.
 * Cloud storage tests
   ** Configuration/Latency test: 1024-byte object.
-  ** Depending on cluster read/write permissions ('cloud_storage_enable_remote_read', 'cloud_storage_enable_remote_write'), a series of cloud storage operations are performed:
+  ** If cloud storage is enabled ('cloud_storage_enabled'), a series of remote operations are performed:
      *** Upload an object (a random buffer of 1024 bytes) to the cloud storage bucket/container.
      *** List objects in the bucket/container.
      *** Download the uploaded object from the bucket/container.
