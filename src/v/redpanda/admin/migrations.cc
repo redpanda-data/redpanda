@@ -331,7 +331,7 @@ cluster::data_migrations::state parse_migration_action(ss::http::request& req) {
     } else if (action_str == "cancel") {
         return cluster::data_migrations::state::canceling;
     } else if (action_str == "finish") {
-        return cluster::data_migrations::state::finished;
+        return cluster::data_migrations::state::cut_over;
     }
     throw ss::httpd::bad_param_exception(
       fmt::format("unknown data migration action: {}", action_str));

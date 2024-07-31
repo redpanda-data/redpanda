@@ -37,16 +37,16 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
 /**
  * Migration state
  *  ┌─────────┐
- *  │ planned ├────────────────────┐
- *  └────┬────┘                    │
- *       │                         │
- * ┌─────▼─────┐                   │
- * │ preparing ├─────────────────┐ │
- * └─────┬─────┘                 │ │
- *       │                       │ │
- * ┌─────▼────┐          ┌───────▼─▼──┐
- * │ prepared ├──────────► cancelling │
- * └─────┬────┘          └▲──▲─┬──────┘
+ *  │ planned ├───────────────────┐
+ *  └────┬────┘                   │
+ *       │                        │
+ * ┌─────▼─────┐                  │
+ * │ preparing ├────────────────┐ │
+ * └─────┬─────┘                │ │
+ *       │                      │ │
+ * ┌─────▼────┐          ┌──────▼─▼──┐
+ * │ prepared ├──────────► canceling │
+ * └─────┬────┘          └▲──▲─┬─────┘
  *       │                │  │ │
  * ┌─────▼─────┐          │  │ │
  * │ executing ├──────────┘  │ │
@@ -57,8 +57,14 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
  * └─────┬────┘                │
  *       │                     │
  * ┌─────▼────┐          ┌─────▼─────┐
- * │ finished │          │ cancelled │
- * └──────────┘          └───────────┘
+ * │ cut_over │          │ cancelled │
+ * └─────┬────┘          └───────────┘
+ *       │
+ * ┌─────▼────┐
+ * │ finished │
+ * └──────────┘
+ *
+ *
  */
 enum class state {
     planned,
@@ -66,6 +72,7 @@ enum class state {
     prepared,
     executing,
     executed,
+    cut_over,
     finished,
     canceling,
     cancelled,
@@ -170,8 +177,6 @@ struct inbound_migration
 
     inbound_migration copy() const;
 
-    static std::optional<state> next_replica_state(state state);
-
     auto serde_fields() { return std::tie(topics, groups); }
 
     friend bool operator==(const inbound_migration&, const inbound_migration&)
@@ -219,8 +224,6 @@ struct outbound_migration
 
     outbound_migration copy() const;
 
-    static std::optional<state> next_replica_state(state state);
-
     auto serde_fields() { return std::tie(topics, groups, copy_to); }
 
     friend bool operator==(const outbound_migration&, const outbound_migration&)
@@ -254,6 +257,22 @@ struct partition_work {
     partition_work_info info;
 };
 
+/* Additional info worker needs from backend to work on a topic */
+struct inbound_topic_work_info {
+    std::optional<model::topic_namespace> alias;
+    std::optional<cloud_storage_location> cloud_storage_location;
+};
+struct outbound_topic_work_info {
+    std::optional<copy_target> copy_to;
+};
+using topic_work_info
+  = std::variant<inbound_topic_work_info, outbound_topic_work_info>;
+struct topic_work {
+    id migration_id;
+    state sought_state;
+    topic_work_info info;
+};
+
 /**
  * Data migration metadata containing a migration definition, its id and current
  * state.
@@ -274,8 +293,6 @@ struct migration_metadata
         return migration_metadata{
           .id = id, .migration = copy_migration(migration), .state = state};
     }
-
-    std::optional<data_migrations::state> next_replica_state() const;
 
     auto serde_fields() { return std::tie(id, migration, state); }
 
