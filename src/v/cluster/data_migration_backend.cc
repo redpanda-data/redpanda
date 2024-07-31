@@ -583,6 +583,14 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
     }
     auto migration_id = it->second;
 
+    if (
+      delta.type == topic_table_delta_type::added
+      || delta.type == topic_table_delta_type::removed) {
+        // it can be only ourselves, as partition changes are not allowed when
+        // the topic migration is in one of the states tracked here
+        co_return;
+    }
+
     // coordination
     vassert(
       delta.type == topic_table_delta_type::replicas_updated
