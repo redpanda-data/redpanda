@@ -20,6 +20,7 @@ redpanda_cc_library(
         "kafka_batch_adapter.h",
         "legacy_message.h",
         "logger.h",
+        "messages.h",
         "types.h",
         "wire.h",
     ],
