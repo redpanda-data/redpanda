@@ -449,6 +449,8 @@ class ResourceSettings:
             args.append(
                 f"--unsafe-bypass-fsync={'1' if bypass_fsync else '0'}")
 
+        args.append("--io-properties-file=/etc/redpanda/io-config.yaml")
+
         return preamble, " ".join(args)
 
 
