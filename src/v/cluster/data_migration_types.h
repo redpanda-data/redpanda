@@ -100,8 +100,9 @@ std::ostream& operator<<(std::ostream& o, migrated_replica_status);
  */
 enum class migrated_resource_state {
     non_restricted,
-    restricted,
-    blocked,
+    metadata_locked,
+    read_only,
+    fully_blocked
 };
 
 std::ostream& operator<<(std::ostream& o, migrated_resource_state);
