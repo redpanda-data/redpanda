@@ -324,6 +324,22 @@ bool producer_state::can_evict() {
     return true;
 }
 
+void producer_state::reset_with_new_epoch(model::producer_epoch new_epoch) {
+    vassert(
+      new_epoch > _id.get_epoch(),
+      "Invalid epoch bump to {} for producer {}",
+      new_epoch,
+      *this);
+    vassert(
+      !_transaction_state,
+      "Invalid epoch bump to {} for a non idempotent producer: {}",
+      new_epoch,
+      *this);
+    vlog(_logger.info, "[{}] Reseting epoch to {}", *this, new_epoch);
+    _requests.reset(errc::timeout);
+    _id = model::producer_identity(_id.id, new_epoch);
+}
+
 result<request_ptr> producer_state::try_emplace_request(
   const model::batch_identity& bid, model::term_id current_term, bool reset) {
     if (bid.first_seq > bid.last_seq) {
