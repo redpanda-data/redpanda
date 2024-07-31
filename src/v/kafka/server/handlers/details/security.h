@@ -433,7 +433,8 @@ authorized_operations(request_context& ctx, const T& resource) {
       ops.end(),
       std::back_inserter(allowed_operations),
       [&ctx, &resource](security::acl_operation op) {
-          return ctx.authorized(op, resource);
+          return ctx.authorized(
+            op, resource, authz_quiet::no, audit_authz_check::no);
       });
 
     return allowed_operations;

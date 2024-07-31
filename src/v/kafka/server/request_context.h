@@ -343,14 +343,17 @@ public:
     bool authorized(
       security::acl_operation operation,
       const T& name,
-      authz_quiet quiet = authz_quiet{false}) {
+      authz_quiet quiet = authz_quiet{false},
+      audit_authz_check audit_authz = audit_authz_check::yes) {
         auto result = do_authorized(operation, name, quiet);
         auto resp = bool(result);
 
         auto key = _header.key;
         auto client_id = _header.client_id;
 
-        do_audit(std::move(result), name, key, client_id);
+        if (audit_authz) {
+            do_audit(std::move(result), name, key, client_id);
+        }
         return resp;
     }
 
