@@ -1274,6 +1274,8 @@ struct {{ request_name }}_api final {
     static constexpr const char* name = "{{ request_name }}";
     static constexpr api_key key = api_key({{ api_key }});
     static constexpr api_version min_flexible = {% if first_flex == -1 %}never_flexible{% else %}api_version({{ first_flex }}){% endif %};
+    static constexpr api_version min_valid = api_version({{ valid_range.min }});
+    static constexpr api_version max_valid = api_version({{ valid_range.max }});
 };
 {%- endif %}
 }
@@ -1978,6 +1980,9 @@ def codegen(schema_path):
     # either 'none' or 'VersionRange'
     first_flex = parse_flexible_versions(msg["flexibleVersions"])
 
+    valid_range = VersionRange(msg["validVersions"])
+    assert valid_range.min >= 0 and valid_range.max >= valid_range.min, valid_range
+
     def fail(msg):
         assert False, msg
 
@@ -1988,7 +1993,8 @@ def codegen(schema_path):
         fail=fail,
         api_key=api_key,
         request_name=request_name,
-        first_flex=first_flex)
+        first_flex=first_flex,
+        valid_range=valid_range)
 
     src = jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
                                                   op_type=op_type,
