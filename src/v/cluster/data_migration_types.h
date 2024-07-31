@@ -265,7 +265,7 @@ struct partition_work {
 
 /* Additional info worker needs from backend to work on a topic */
 struct inbound_topic_work_info {
-    model::topic_namespace source;
+    std::optional<model::topic_namespace> source;
     std::optional<cloud_storage_location> cloud_storage_location;
 };
 struct outbound_topic_work_info {
