@@ -193,17 +193,12 @@ ss::future<errc> worker::do_work(managed_ntp_cit it) noexcept {
 ss::future<errc> worker::do_work(
   const model::ntp& ntp,
   state sought_state,
-  const inbound_partition_work_info& pwi) {
+  const inbound_partition_work_info&) {
     vassert(
-      sought_state == state::prepared,
+      false,
       "inbound partition work requested on {} towards {} state",
       ntp,
       sought_state);
-
-    // todo: perform action here; remember to capture any values needed, worker
-    // doesn't keep them for you across scheduling points
-    std::ignore = ntp;
-    std::ignore = pwi;
     return ssx::now(errc::success);
 }
 

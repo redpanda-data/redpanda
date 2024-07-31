@@ -115,13 +115,25 @@ private:
     // also resulting future cannot throw when co_awaited
     do_topic_work(model::topic_namespace nt, topic_work tw) noexcept;
     ss::future<errc> do_topic_work(
-      model::topic_namespace nt,
+      const model::topic_namespace& nt,
       state sought_state,
-      inbound_topic_work_info itwi);
+      const inbound_topic_work_info& itwi);
     ss::future<errc> do_topic_work(
-      model::topic_namespace nt,
+      const model::topic_namespace& nt,
       state sought_state,
-      outbound_topic_work_info otwi);
+      const outbound_topic_work_info& otwi);
+    /* topic work helpers */
+    ss::future<errc> create_topic(
+      const model::topic_namespace& local_nt,
+      const std::optional<model::topic_namespace>& original_nt,
+      const std::optional<cloud_storage_location>& storage_location,
+      retry_chain_node& rcn);
+    ss::future<errc> prepare_mount_topic(
+      const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc> confirm_mount_topic(
+      const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
+    unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
 
     /* communication with partition workers */
     void start_partition_work(
