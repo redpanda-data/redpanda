@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/server/handlers/handler.h"
 
 namespace kafka {

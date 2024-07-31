@@ -25,7 +25,7 @@
 #include "kafka/client/utils.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "ssx/semaphore.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
