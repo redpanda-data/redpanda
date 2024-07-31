@@ -359,6 +359,9 @@ bool producer_state::update(
     if (_evicted) {
         return false;
     }
+    if (!bid.is_transactional && bid.pid.epoch > _id.epoch) {
+        reset_with_new_epoch(model::producer_epoch{bid.pid.epoch});
+    }
     bool relink_producer = _requests.stm_apply(bid, offset);
     vlog(
       clusterlog.trace,
