@@ -43,6 +43,15 @@ static const model::topic_namespace test_tp_ns_override{
 static ss::abort_source never_abort;
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
+
+static cluster::topic_configuration
+get_topic_configuration(cluster::topic_properties topic_props) {
+    auto topic_cfg = cluster::topic_configuration(
+      test_tp_ns.ns, test_tp_ns.tp, 1, 1);
+    topic_cfg.properties = std::move(topic_props);
+    return topic_cfg;
+}
+
 } // namespace
 
 struct TopicMountHandlerFixture
@@ -62,14 +71,6 @@ struct TopicMountHandlerFixture
         pool.local().shutdown_connections();
         remote.stop().get();
         pool.stop().get();
-    }
-
-    cluster::topic_configuration
-    get_topic_configuration(cluster::topic_properties topic_props) const {
-        auto topic_cfg = cluster::topic_configuration(
-          test_tp_ns.ns, test_tp_ns.tp, 1, 1);
-        topic_cfg.properties = std::move(topic_props);
-        return topic_cfg;
     }
 
     ss::sharded<cloud_storage_clients::client_pool> pool;
