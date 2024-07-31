@@ -342,7 +342,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
   },
   {
-    .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 3.199})",
+    .reader_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.199})",
     .writer_schema = R"({"type": "integer", "minimum": 1.1, "maximum": 3.2})",
     .reader_is_compatible_with_writer = false,
   },
@@ -655,7 +655,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = true,
   },
   {
-    .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 4})",
+    .reader_schema = R"({"type": "number", "minimum": 1.1, "maximum": 4})",
     .writer_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.2})",
     .reader_is_compatible_with_writer = true,
   },
