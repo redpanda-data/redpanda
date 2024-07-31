@@ -7,8 +7,50 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/server/handlers/handler_interface.h"
-#include "kafka/server/handlers/handlers.h"
+#include "kafka/protocol/add_offsets_to_txn.h"
+#include "kafka/protocol/add_partitions_to_txn.h"
+#include "kafka/protocol/alter_client_quotas.h"
+#include "kafka/protocol/alter_configs.h"
+#include "kafka/protocol/alter_partition_reassignments.h"
+#include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/create_acls.h"
+#include "kafka/protocol/create_partitions.h"
+#include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/delete_acls.h"
+#include "kafka/protocol/delete_groups.h"
+#include "kafka/protocol/delete_records.h"
+#include "kafka/protocol/delete_topics.h"
+#include "kafka/protocol/describe_acls.h"
+#include "kafka/protocol/describe_client_quotas.h"
+#include "kafka/protocol/describe_configs.h"
+#include "kafka/protocol/describe_groups.h"
+#include "kafka/protocol/describe_log_dirs.h"
+#include "kafka/protocol/describe_producers.h"
+#include "kafka/protocol/describe_transactions.h"
+#include "kafka/protocol/end_txn.h"
+#include "kafka/protocol/fetch.h"
+#include "kafka/protocol/find_coordinator.h"
+#include "kafka/protocol/heartbeat.h"
+#include "kafka/protocol/incremental_alter_configs.h"
+#include "kafka/protocol/init_producer_id.h"
+#include "kafka/protocol/join_group.h"
+#include "kafka/protocol/leave_group.h"
+#include "kafka/protocol/list_groups.h"
+#include "kafka/protocol/list_offset.h"
+#include "kafka/protocol/list_partition_reassignments.h"
+#include "kafka/protocol/list_transactions.h"
+#include "kafka/protocol/messages.h"
+#include "kafka/protocol/metadata.h"
+#include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_delete.h"
+#include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/offset_for_leader_epoch.h"
+#include "kafka/protocol/produce.h"
+#include "kafka/protocol/sasl_authenticate.h"
+#include "kafka/protocol/sasl_handshake.h"
+#include "kafka/protocol/sync_group.h"
+#include "kafka/protocol/txn_offset_commit.h"
+#include "kafka/protocol/wire.h"
 
 #include <boost/process.hpp>
 #include <boost/test/unit_test.hpp>
@@ -166,20 +208,19 @@ void check_kafka_binary_format(
         result.size()));
 }
 
-template<kafka::KafkaApiHandlerAny H>
+template<typename Api>
 void check_proto_compat() {
-    for (auto version = H::min_supported; version <= H::max_supported();
-         ++version) {
+    for (auto version = Api::min_valid; version <= Api::max_valid; ++version) {
         TEST_COMPAT_CHECK_NO_THROW(
-          check_kafka_binary_format<typename H::api::request_type>(
-            H::api::key, version, is_kafka_request::yes),
-          H::api::key,
+          check_kafka_binary_format<typename Api::request_type>(
+            Api::key, version, is_kafka_request::yes),
+          Api::key,
           version,
           true);
         TEST_COMPAT_CHECK_NO_THROW(
-          check_kafka_binary_format<typename H::api::response_type>(
-            H::api::key, version, is_kafka_request::no),
-          H::api::key,
+          check_kafka_binary_format<typename Api::response_type>(
+            Api::key, version, is_kafka_request::no),
+          Api::key,
           version,
           false);
     }
@@ -190,10 +231,9 @@ void check_all_requests(kafka::type_list<Ts...>) {
     (check_proto_compat<Ts>(), ...);
 }
 
-template<typename Request, api_version::type version, bool is_request>
-requires(KafkaApiHandler<Request>)
+template<typename Api, api_version::type version, bool is_request>
 struct tag_field_entry {
-    using api = Request::api;
+    using api = Api;
     static constexpr api_version test_version = api_version(version);
     static constexpr bool request = is_request;
 };
@@ -210,8 +250,8 @@ struct tag_field_entry {
 //    b. Provide the difference in size the encoded buffers will be
 
 using tag_field_entries = kafka::type_list<
-  tag_field_entry<create_topics_handler, 5, false>,
-  tag_field_entry<api_versions_handler, 3, false>>;
+  tag_field_entry<create_topics_api, 5, false>,
+  tag_field_entry<api_versions_api, 3, false>>;
 
 template<typename T>
 long create_default_and_non_default_data(T& non_default_data, T& default_data);
