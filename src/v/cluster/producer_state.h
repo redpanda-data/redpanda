@@ -130,6 +130,7 @@ private:
       static_cast<unsigned long>(requests_cached_max));
     bool is_valid_sequence(seq_t incoming) const;
     std::optional<request_ptr> last_request() const;
+    void reset(request_result_t::error_type);
     ss::chunked_fifo<request_ptr, chunk_size> _inflight_requests;
     ss::chunked_fifo<request_ptr, chunk_size> _finished_requests;
     friend producer_state;

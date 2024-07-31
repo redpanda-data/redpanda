@@ -122,6 +122,16 @@ std::optional<request_ptr> requests::last_request() const {
     return std::nullopt;
 }
 
+void requests::reset(request_result_t::error_type error) {
+    for (auto& request : _inflight_requests) {
+        if (!request->has_completed()) {
+            request->set_error(error);
+        }
+    }
+    _inflight_requests.clear();
+    _finished_requests.clear();
+}
+
 bool requests::is_valid_sequence(seq_t incoming) const {
     auto last_req = last_request();
     return
@@ -138,13 +148,7 @@ result<request_ptr> requests::try_emplace(
     if (reset_sequences) {
         // reset all the sequence tracking state, avoids any sequence
         // checks for sequence tracking.
-        while (!_inflight_requests.empty()) {
-            if (!_inflight_requests.front()->has_completed()) {
-                _inflight_requests.front()->set_error(errc::timeout);
-            }
-            _inflight_requests.pop_front();
-        }
-        _finished_requests.clear();
+        reset(errc::timeout);
     } else {
         // gc and fail any inflight requests from old terms
         // these are guaranteed to be failed because of sync() guarantees
@@ -232,15 +236,7 @@ bool requests::stm_apply(
     return relink_producer;
 }
 
-void requests::shutdown() {
-    for (auto& request : _inflight_requests) {
-        if (!request->has_completed()) {
-            request->set_error(errc::shutting_down);
-        }
-    }
-    _inflight_requests.clear();
-    _finished_requests.clear();
-}
+void requests::shutdown() { reset(cluster::errc::shutting_down); }
 
 producer_state::producer_state(
   ss::noncopyable_function<void()> post_eviction_hook,
