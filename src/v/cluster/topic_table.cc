@@ -48,7 +48,12 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           errc::topic_already_exists);
     }
 
-    if (_migrated_resources.is_already_migrated(cmd.key)) {
+    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    if (
+      !cmd.value.cfg.is_migrated
+      && migration_state
+           != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(clusterlog.debug, "topic {} already migrated", cmd.key);
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
     }

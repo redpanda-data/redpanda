@@ -46,6 +46,7 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
+#include "topic_configuration.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -428,11 +429,17 @@ ss::future<topic_result> topics_frontend::do_create_topic(
   custom_assignable_topic_configuration assignable_config,
   model::timeout_clock::time_point timeout) {
     if (_topics.local().contains(assignable_config.cfg.tp_ns)) {
+        vlog(
+          clusterlog.trace,
+          "unable to create topic {} as it already exists",
+          assignable_config.cfg.tp_ns);
         co_return topic_result(
           assignable_config.cfg.tp_ns, errc::topic_already_exists);
     }
 
-    if (_migrated_resources.is_already_migrated(assignable_config.cfg.tp_ns)) {
+    if (
+      !assignable_config.cfg.is_migrated
+      && _migrated_resources.is_already_migrated(assignable_config.cfg.tp_ns)) {
         vlog(
           clusterlog.warn,
           "unable to create topic {} as it is being migrated",
