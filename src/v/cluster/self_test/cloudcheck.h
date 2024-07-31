@@ -90,7 +90,7 @@ private:
     ss::future<verify_upload_result> verify_upload(
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key key,
-      const std::optional<iobuf>& payload);
+      const iobuf& payload);
 
     struct verify_list_result {
         cloud_storage::remote::list_result list_result;
@@ -144,8 +144,6 @@ private:
 
 private:
     static constexpr size_t num_default_objects = 5;
-    bool _remote_read_enabled{false};
-    bool _remote_write_enabled{false};
     bool _cancelled{false};
     ss::abort_source _as;
     ss::gate _gate;
