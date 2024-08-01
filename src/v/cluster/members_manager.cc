@@ -426,7 +426,7 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](add_node_cmd cmd) {
           vlog(
             clusterlog.info,
-            "processing node add command - broker: {}, offset: {}",
+            "applying node add command - broker: {}, offset: {}",
             cmd.value,
             update_offset);
           _first_node_operation_command_offset = std::min(
@@ -436,7 +436,7 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](update_node_cfg_cmd cmd) {
           vlog(
             clusterlog.info,
-            "processing node update command - broker: {}, offset: {}",
+            "applying node update command - broker: {}, offset: {}",
             cmd.value,
             update_offset);
           _first_node_operation_command_offset = std::min(
@@ -446,7 +446,7 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](remove_node_cmd cmd) {
           vlog(
             clusterlog.info,
-            "processing node delete command - node: {}, offset: {}",
+            "applying node delete command - node: {}, offset: {}",
             cmd.key,
             update_offset);
           _first_node_operation_command_offset = std::min(
