@@ -700,11 +700,10 @@ private:
         size_t ticks_since_refill = 0;
 
         cluster::node_health_report_ptr get_health_report() const {
-            cluster::node_health_report report;
+            cluster::node::local_state local_state;
             storage::disk node_disk{.free = total - used, .total = total};
-            report.id = id;
-            report.local_state.set_disk(node_disk);
-            report.local_state.log_data_size = {
+            local_state.set_disk(node_disk);
+            local_state.log_data_size = {
               .data_target_size = total,
               .data_current_size = used,
               .data_reclaimable_size = 0};
@@ -719,14 +718,15 @@ private:
                     .id = ntp.tp.partition, .size_bytes = repl.local_size});
             }
 
+            chunked_vector<cluster::topic_status> topics;
             for (auto& [topic, partitions] : topic2partitions) {
-                report.topics.push_back(
+                topics.push_back(
                   cluster::topic_status(topic, std::move(partitions)));
             }
 
             return ss::make_foreign(
               ss::make_lw_shared<const cluster::node_health_report>(
-                std::move(report)));
+                id, local_state, std::move(topics), std::nullopt));
         }
     };
 

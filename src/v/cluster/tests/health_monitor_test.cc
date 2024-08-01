@@ -371,10 +371,11 @@ make_ts(ss::sstring name, const std::vector<part_status>& status_list) {
 
 node_health_report
 make_nhr(int nid, const std::vector<topic_status>& statuses) {
-    node_health_report nhr;
-    nhr.id = node_id{nid};
-    std::move(statuses.begin(), statuses.end(), std::back_inserter(nhr.topics));
-    return nhr;
+    return {
+      node_id(nid),
+      node::local_state{},
+      chunked_vector<topic_status>(statuses.begin(), statuses.end()),
+      std::nullopt};
 };
 
 struct node_and_status {
@@ -436,7 +437,12 @@ FIXTURE_TEST(test_aggregate, health_report_unit) {
     model::ntp ntp2_b{model::kafka_namespace, topic_b, 2};
 
     report_cache_t empty_reports{
-      {model::node_id(0), ss::make_lw_shared<node_health_report>()}};
+      {model::node_id(0),
+       ss::make_lw_shared<node_health_report>(
+         model::node_id(0),
+         node::local_state{},
+         chunked_vector<topic_status>{},
+         std::nullopt)}};
 
     {
         // empty input, empty report

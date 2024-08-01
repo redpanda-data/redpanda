@@ -370,7 +370,6 @@ struct partition_balancer_planner_fixture {
             topics.push_back(ts);
         }
         for (int i = 0; i < last_node_idx; ++i) {
-            cluster::node_health_report node_report;
             storage::disk node_disk{
               .free = not_full_node_free_size, .total = node_size};
             if (full_nodes.contains(i)) {
@@ -378,18 +377,22 @@ struct partition_balancer_planner_fixture {
             } else if (nearly_full_nodes.contains(i)) {
                 node_disk.free = nearly_full_node_free_size;
             }
-            node_report.id = model::node_id(i);
-            node_report.local_state.log_data_size = {
+            cluster::node::local_state local_state;
+            local_state.log_data_size = {
               .data_target_size = node_disk.total,
               .data_current_size = node_disk.total - node_disk.free,
               .data_reclaimable_size = 0};
-            node_report.local_state.set_disk(node_disk);
+            local_state.set_disk(node_disk);
+            chunked_vector<cluster::topic_status> node_topics;
             if (i == 0) {
-                node_report.topics = topics.copy();
+                node_topics = topics.copy();
             }
             health_report.node_reports.emplace_back(
               ss::make_lw_shared<cluster::node_health_report>(
-                std::move(node_report)));
+                model::node_id(i),
+                local_state,
+                std::move(node_topics),
+                std::nullopt));
         }
 
         return health_report;

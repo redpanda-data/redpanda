@@ -151,12 +151,11 @@ struct topic_status
  * Node health report is collected built based on node local state at given
  * instance of time
  */
-struct node_health_report
-  : serde::envelope<
-      node_health_report,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    node_health_report() = default;
+struct node_health_report {
+    model::node_id id;
+    node::local_state local_state;
+    chunked_vector<topic_status> topics;
+    std::optional<drain_manager::drain_status> drain_status;
 
     node_health_report(
       model::node_id,
@@ -166,6 +165,22 @@ struct node_health_report
 
     node_health_report copy() const;
 
+    friend std::ostream& operator<<(std::ostream&, const node_health_report&);
+};
+
+using node_health_report_ptr
+  = ss::foreign_ptr<ss::lw_shared_ptr<const node_health_report>>;
+
+// This struct is different from node_health_report because for the latter we
+// want additional flexibility in how we store partition replica statuses (so
+// that searching for a replica status doesn't require a full scan). The _serde
+// variant is used for RPC serde and is more constrained for the reasons of
+// backwards compat.
+struct node_health_report_serde
+  : serde::envelope<
+      node_health_report_serde,
+      serde::version<0>,
+      serde::compat_version<0>> {
     model::node_id id;
     node::local_state local_state;
     chunked_vector<topic_status> topics;
@@ -175,14 +190,41 @@ struct node_health_report
         return std::tie(id, local_state, topics, drain_status);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const node_health_report&);
+    node_health_report_serde() = default;
 
-    friend bool
-    operator==(const node_health_report& a, const node_health_report& b);
+    node_health_report_serde(
+      model::node_id id,
+      node::local_state local_state,
+      chunked_vector<topic_status> topics,
+      std::optional<drain_manager::drain_status> drain_status)
+      : id(id)
+      , local_state(std::move(local_state))
+      , topics(std::move(topics))
+      , drain_status(drain_status) {}
+
+    node_health_report_serde copy() const {
+        return {id, local_state, topics.copy(), drain_status};
+    }
+
+    explicit node_health_report_serde(const node_health_report& hr)
+      : node_health_report_serde(
+        hr.id, hr.local_state, hr.topics.copy(), hr.drain_status) {}
+
+    node_health_report to_in_memory() && {
+        return node_health_report{
+          id,
+          std::move(local_state),
+          std::move(topics),
+          std::move(drain_status)};
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const node_health_report_serde&);
+
+    friend bool operator==(
+      const node_health_report_serde& a, const node_health_report_serde& b);
 };
 
-using node_health_report_ptr
-  = ss::foreign_ptr<ss::lw_shared_ptr<const node_health_report>>;
 struct cluster_health_report
   : serde::envelope<
       cluster_health_report,
@@ -218,7 +260,7 @@ struct cluster_health_report
         write(out, node_states);
         write(out, static_cast<serde::serde_size_t>(node_reports.size()));
         for (auto& nr : node_reports) {
-            co_await write_async(out, nr->copy());
+            co_await write_async(out, node_health_report_serde{*nr});
         }
         write(out, bytes_in_cloud_storage);
     }
@@ -234,10 +276,10 @@ struct cluster_health_report
           in, h._bytes_left_limit);
         node_reports.reserve(sz);
         for (auto i = 0U; i < sz; ++i) {
-            auto r = co_await read_async_nested<node_health_report>(
+            auto r = co_await read_async_nested<node_health_report_serde>(
               in, h._bytes_left_limit);
-            node_reports.emplace_back(
-              ss::make_lw_shared<node_health_report>(std::move(r)));
+            node_reports.emplace_back(ss::make_lw_shared<node_health_report>(
+              std::move(r).to_in_memory()));
         }
         bytes_in_cloud_storage = read_nested<std::optional<size_t>>(
           in, h._bytes_left_limit);
@@ -256,7 +298,7 @@ struct cluster_health_report
         write(out, node_states);
         write(out, static_cast<serde::serde_size_t>(node_reports.size()));
         for (auto& nr : node_reports) {
-            write(out, nr->copy());
+            write(out, node_health_report_serde{*nr});
         }
         write(out, bytes_in_cloud_storage);
     }
@@ -271,9 +313,10 @@ struct cluster_health_report
           in, h._bytes_left_limit);
         node_reports.reserve(sz);
         for (auto i = 0U; i < sz; ++i) {
-            auto r = read_nested<node_health_report>(in, h._bytes_left_limit);
-            node_reports.emplace_back(
-              ss::make_lw_shared<node_health_report>(std::move(r)));
+            auto r = read_nested<node_health_report_serde>(
+              in, h._bytes_left_limit);
+            node_reports.emplace_back(ss::make_lw_shared<node_health_report>(
+              std::move(r).to_in_memory()));
         }
         bytes_in_cloud_storage = read_nested<std::optional<size_t>>(
           in, h._bytes_left_limit);
@@ -424,7 +467,7 @@ struct get_node_health_reply
     using rpc_adl_exempt = std::true_type;
 
     errc error = cluster::errc::success;
-    std::optional<node_health_report> report;
+    std::optional<node_health_report_serde> report;
 
     friend bool
     operator==(const get_node_health_reply&, const get_node_health_reply&)
