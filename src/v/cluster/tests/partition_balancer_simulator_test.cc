@@ -725,7 +725,8 @@ private:
             }
 
             return ss::make_foreign(
-              ss::make_lw_shared<const cluster::node_health_report>(report));
+              ss::make_lw_shared<const cluster::node_health_report>(
+                std::move(report)));
         }
     };
 
