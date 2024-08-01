@@ -923,6 +923,14 @@ ss::future<std::error_code> members_manager::dispatch_updates_to_cores(
       "expected result: {}, have: {}",
       error,
       results);
+    if (error) {
+        vlog(
+          clusterlog.warn,
+          "error applying command with type {} at offset {} - {}",
+          Cmd::type,
+          update_offset,
+          error.message());
+    }
 
     co_return error;
 }
