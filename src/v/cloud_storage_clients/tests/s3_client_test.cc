@@ -841,7 +841,7 @@ public:
 };
 
 static ss::future<> test_client_pool_payload(
-  ss::shared_ptr<ss::httpd::http_server_control> server,
+  ss::shared_ptr<ss::httpd::http_server_control>,
   cloud_storage_clients::client_pool::client_lease lease) {
     auto client = lease.client;
     iobuf payload;
@@ -877,7 +877,7 @@ FIXTURE_TEST(test_client_pool_wait_strategy, client_pool_fixture) {
 }
 
 static ss::future<bool> test_client_pool_reconnect_helper(
-  ss::shared_ptr<ss::httpd::http_server_control> server,
+  ss::shared_ptr<ss::httpd::http_server_control>,
   cloud_storage_clients::client_pool::client_lease lease) {
     auto client = lease.client;
     co_await ss::sleep(100ms);
