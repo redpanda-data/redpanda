@@ -402,7 +402,7 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
       max_offset);
     // we only notify eviction monitor if there are segments to evict
     auto have_segments_to_evict
-      = _segs.size() > 1
+      = !_segs.empty()
         && _segs.front()->offsets().get_committed_offset() <= max_offset;
 
     if (_eviction_monitor && have_segments_to_evict) {
