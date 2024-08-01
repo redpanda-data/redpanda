@@ -9,7 +9,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
-#include "iceberg/manifest_entry.h"
+#include "iceberg/manifest_entry.avrogen.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
 
