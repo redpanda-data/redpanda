@@ -3135,7 +3135,7 @@ void tx_gateway_frontend::expire_old_txs() {
           model::tx_manager_nt);
         if (!ntp_meta) {
             vlog(
-              txlog.error,
+              txlog.debug,
               "Topic {} doesn't exist in metadata cache,",
               model::tx_manager_nt);
             return ss::now();
