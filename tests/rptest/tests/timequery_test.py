@@ -325,6 +325,11 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             # Avoid configuring spillover so tests can do it themselves.
             'cloud_storage_spillover_manifest_size':
             None,
+
+            # Disable time-based retention so that we can use synthetic
+            # timestamps that may fall outside of the default retention window.
+            'log_retention_ms':
+            -1
         })
 
         if cloud_storage:
