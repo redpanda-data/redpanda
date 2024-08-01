@@ -25,7 +25,7 @@ public:
     explicit producer_state_manager(
 
       config::binding<uint64_t> max_producer_ids,
-      std::chrono::milliseconds producer_expiration_ms,
+      config::binding<std::chrono::milliseconds> producer_expiration_ms,
       config::binding<size_t> virtual_cluster_min_producer_ids);
 
     ss::future<> start();
@@ -75,7 +75,7 @@ private:
     void evict_excess_producers();
     size_t _eviction_counter = 0;
     // if a producer is inactive for this long, it will be gc-ed
-    std::chrono::milliseconds _producer_expiration_ms;
+    config::binding<std::chrono::milliseconds> _producer_expiration_ms;
     // maximum number of active producers allowed on this shard across
     // all partitions. When exceeded, producers are evicted on an
     // LRU basis.

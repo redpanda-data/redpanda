@@ -25,9 +25,9 @@ namespace cluster {
 
 producer_state_manager::producer_state_manager(
   config::binding<uint64_t> max_producer_ids,
-  std::chrono::milliseconds producer_expiration_ms,
+  config::binding<std::chrono::milliseconds> producer_expiration_ms,
   config::binding<size_t> virtual_cluster_min_producer_ids)
-  : _producer_expiration_ms(producer_expiration_ms)
+  : _producer_expiration_ms(std::move(producer_expiration_ms))
   , _max_ids(std::move(max_producer_ids))
   , _virtual_cluster_min_producer_ids(
       std::move(virtual_cluster_min_producer_ids))
@@ -95,7 +95,7 @@ void producer_state_manager::touch(
 }
 void producer_state_manager::evict_excess_producers() {
     _cache.evict_older_than<ss::lowres_system_clock>(
-      ss::lowres_system_clock::now() - _producer_expiration_ms);
+      ss::lowres_system_clock::now() - _producer_expiration_ms());
     if (!_gate.is_closed()) {
         _reaper.arm(period);
     }
