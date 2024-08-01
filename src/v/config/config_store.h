@@ -155,6 +155,20 @@ public:
         w.EndObject();
     }
 
+    // Write a single key out to json::Writer.
+    void to_json_single_key(
+      json::Writer<json::StringBuffer>& w,
+      redact_secrets redact,
+      std::string_view key) {
+        // Whether key was either an original property name or an
+        // alias, we will obtain the original property here.
+        const auto& property = get(key);
+        w.StartObject();
+        w.Key(key.data(), key.size());
+        property.to_json(w, redact);
+        w.EndObject();
+    }
+
     void to_json_for_metrics(json::Writer<json::StringBuffer>& w) {
         w.StartObject();
 
