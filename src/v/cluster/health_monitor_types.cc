@@ -89,6 +89,10 @@ node_health_report node_health_report::copy() const {
 }
 
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
+    return o << node_health_report_serde{r};
+}
+
+std::ostream& operator<<(std::ostream& o, const node_health_report_serde& r) {
     fmt::print(
       o,
       "{{id: {}, topics: {}, local_state: {}, drain_status: {}}}",
@@ -98,7 +102,9 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
       r.drain_status);
     return o;
 }
-bool operator==(const node_health_report& a, const node_health_report& b) {
+
+bool operator==(
+  const node_health_report_serde& a, const node_health_report_serde& b) {
     return a.id == b.id && a.local_state == b.local_state
            && a.drain_status == b.drain_status
            && a.topics.size() == b.topics.size()
@@ -180,13 +186,7 @@ cluster_health_report cluster_health_report::copy() const {
     r.bytes_in_cloud_storage = bytes_in_cloud_storage;
     r.node_reports.reserve(node_reports.size());
     for (auto& nr : node_reports) {
-        node_health_report nr_copy;
-        nr_copy.id = nr->id;
-        nr_copy.drain_status = nr->drain_status;
-        nr_copy.topics = nr->topics.copy();
-        nr_copy.local_state = nr->local_state;
-
-        r.node_reports.emplace_back(ss::make_lw_shared(std::move(nr_copy)));
+        r.node_reports.emplace_back(ss::make_lw_shared(nr->copy()));
     }
     return r;
 }
