@@ -17,6 +17,7 @@ v_cc_library(
     access_time_tracker.cc
     cache_probe.cc
     download_exception.cc
+    topic_mount_manifest.cc
     partition_manifest.cc
     partition_manifest_downloader.cc
     partition_path_utils.cc
@@ -44,6 +45,7 @@ v_cc_library(
     segment_path_utils.cc
     topic_manifest.cc
     topic_manifest_downloader.cc
+    topic_mount_handler.cc
     topic_path_utils.cc
     async_manifest_view.cc
     materialized_manifest_cache.cc
