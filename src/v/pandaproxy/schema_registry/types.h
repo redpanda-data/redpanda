@@ -280,15 +280,11 @@ public:
     struct impl;
     using pimpl = ss::shared_ptr<const impl>;
 
-    explicit json_schema_definition(
-      pimpl p, canonical_schema_definition::references refs)
-      : _impl{std::move(p)}
-      , _refs(std::move(refs)) {}
+    explicit json_schema_definition(pimpl p)
+      : _impl{std::move(p)} {}
 
     canonical_schema_definition::raw_string raw() const;
-    canonical_schema_definition::references const& refs() const {
-        return _refs;
-    };
+    canonical_schema_definition::references const& refs() const;
 
     const impl& operator()() const { return *_impl; }
 
@@ -308,7 +304,6 @@ public:
 
 private:
     pimpl _impl;
-    canonical_schema_definition::references _refs;
 };
 
 ///\brief A schema that has been validated.

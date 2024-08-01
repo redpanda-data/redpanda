@@ -63,12 +63,17 @@ struct json_schema_definition::impl {
         return std::move(buf).as_iobuf();
     }
 
-    explicit impl(json::Document doc, std::string_view name)
+    explicit impl(
+      json::Document doc,
+      std::string_view name,
+      canonical_schema_definition::references refs)
       : doc{std::move(doc)}
-      , name{name} {}
+      , name{name}
+      , refs(std::move(refs)) {}
 
     json::Document doc;
     ss::sstring name;
+    canonical_schema_definition::references refs;
 };
 
 bool operator==(
@@ -87,6 +92,11 @@ std::ostream& operator<<(std::ostream& os, const json_schema_definition& def) {
 
 canonical_schema_definition::raw_string json_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl->to_json()};
+}
+
+canonical_schema_definition::references const&
+json_schema_definition::refs() const {
+    return _impl->refs;
 }
 
 ss::sstring json_schema_definition::name() const { return {_impl->name}; };
@@ -1509,8 +1519,8 @@ make_json_schema_definition(sharded_store&, canonical_schema schema) {
     std::string_view name = schema.sub()();
     auto refs = std::move(schema).def().refs();
     co_return json_schema_definition{
-      ss::make_shared<json_schema_definition::impl>(std::move(doc), name),
-      std::move(refs)};
+      ss::make_shared<json_schema_definition::impl>(
+        std::move(doc), name, std::move(refs))};
 }
 
 ss::future<canonical_schema> make_canonical_json_schema(
