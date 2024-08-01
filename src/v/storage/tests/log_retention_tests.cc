@@ -91,6 +91,27 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
     BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
 }
 
+FIXTURE_TEST(retention_test_size_with_one_segment, gc_fixture) {
+    builder | storage::start() | storage::add_segment(0)
+      | storage::add_random_batch(0, 100, storage::maybe_compress_batches::yes)
+      | storage::add_random_batch(100, 2, storage::maybe_compress_batches::yes);
+    BOOST_TEST_MESSAGE("Should not collect the segment because size equal to "
+                       "current partition size");
+    builder
+      | storage::garbage_collect(
+        model::timestamp(1),
+        std::make_optional(
+          builder.get_disk_log_impl().get_probe().partition_size()));
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 1);
+
+    BOOST_TEST_MESSAGE("Should collect the segment");
+    builder
+      | storage::garbage_collect(model::timestamp(1), std::optional<size_t>(0))
+      | storage::stop();
+
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
+}
+
 /*
  * test that both time and size are applied. the test works like this:
  *
