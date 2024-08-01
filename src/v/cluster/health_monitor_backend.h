@@ -73,7 +73,7 @@ public:
      * Return cached version of current node health of collects it if it is not
      * available in cache.
      */
-    ss::future<result<node_health_report>> get_current_node_health();
+    ss::future<result<node_health_report_ptr>> get_current_node_health();
 
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);

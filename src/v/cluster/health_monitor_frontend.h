@@ -60,7 +60,7 @@ public:
     storage::disk_space_alert get_cluster_disk_health();
 
     // Collects or return cached version of current node health report.
-    ss::future<result<node_health_report>> get_current_node_health();
+    ss::future<result<node_health_report_ptr>> get_current_node_health();
 
     /**
      * Return drain status for a given node.
