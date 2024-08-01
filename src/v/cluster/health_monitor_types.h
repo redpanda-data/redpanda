@@ -162,15 +162,12 @@ struct node_health_report
       node_health_report,
       serde::version<0>,
       serde::compat_version<0>> {
-    static constexpr int8_t current_version = 2;
-
     node_health_report() = default;
 
     node_health_report(
       model::node_id,
       node::local_state,
       chunked_vector<topic_status>,
-      bool include_drain_status,
       std::optional<drain_manager::drain_status>);
 
     node_health_report(const node_health_report&);
@@ -183,34 +180,6 @@ struct node_health_report
     model::node_id id;
     node::local_state local_state;
     chunked_vector<topic_status> topics;
-
-    /*
-     * nodes running old versions of redpanda will assert that they can decode
-     * a message they receive by requiring the encoded version to be <= to the
-     * latest that that node understands.
-     *
-     * when drain_status is added the version is bumped, which means that older
-     * nodes will crash if they try to decode such a message. this is common for
-     * many places in the code base, but node_health_report makes this problem
-     * particularly acute because nodes are polled automatically at a regular,
-     * short interval.
-     *
-     * one solution is to make the feature table available in free functions so
-     * that we can use it to query about maintenance mode cluster support in
-     * adl<T>. unfortunately that won't work well in our mult-node unit tests
-     * because thread_local references to the feature service will be clobbered.
-     *
-     * another option would be to add a constructor to node_health_report so
-     * that when a report was created we could record a `serialized_as` version
-     * and query the feature table at the call site. this doesn't work well
-     * because reflection/adl needs types to be default-constructable.
-     *
-     * the final solution, which isn't a panacea, is do the equivalent of the
-     * ctor trick described above but with a flag. it's not a universal solution
-     * because devs need to be aware and handle this manually. fortunately there
-     * is only one or two places where we create this object.
-     */
-    bool include_drain_status{false}; // not serialized
     std::optional<drain_manager::drain_status> drain_status;
 
     auto serde_fields() {

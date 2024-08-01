@@ -440,11 +440,7 @@ read_value(json::Value const& rd, cluster::node_health_report& obj) {
     read_member(rd, "topics", topics);
     read_member(rd, "drain_status", drain_status);
     obj = cluster::node_health_report(
-      id,
-      local_state,
-      std::move(topics),
-      drain_status.has_value(),
-      drain_status);
+      id, local_state, std::move(topics), drain_status);
 }
 
 inline void read_value(json::Value const& rd, cluster::node_state& obj) {
