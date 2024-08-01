@@ -107,12 +107,12 @@ public:
     /// \param cache_dir is a directory where cached data is stored
     cache(
       std::filesystem::path cache_dir,
-      size_t,
-      config::binding<double>,
-      config::binding<uint64_t>,
-      config::binding<std::optional<double>>,
-      config::binding<uint32_t>,
-      config::binding<uint16_t>) noexcept;
+      size_t disk_size,
+      config::binding<double> disk_reservation,
+      config::binding<uint64_t> max_bytes_cfg,
+      config::binding<std::optional<double>> max_percent,
+      config::binding<uint32_t> max_objects,
+      config::binding<uint16_t> walk_concurrency) noexcept;
 
     cache(const cache&) = delete;
     cache(cache&& rhs) = delete;
