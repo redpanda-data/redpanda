@@ -78,19 +78,16 @@ node_health_report::node_health_report(
   model::node_id id,
   node::local_state local_state,
   chunked_vector<topic_status> topics,
-  bool include_drain_status,
   std::optional<drain_manager::drain_status> drain_status)
   : id(id)
   , local_state(std::move(local_state))
   , topics(std::move(topics))
-  , include_drain_status(include_drain_status)
   , drain_status(drain_status) {}
 
 node_health_report::node_health_report(const node_health_report& other)
   : id(other.id)
   , local_state(other.local_state)
   , topics()
-  , include_drain_status(other.include_drain_status)
   , drain_status(other.drain_status) {
     std::copy(
       other.topics.cbegin(), other.topics.cend(), std::back_inserter(topics));
@@ -103,7 +100,6 @@ node_health_report::operator=(const node_health_report& other) {
     }
     id = other.id;
     local_state = other.local_state;
-    include_drain_status = other.include_drain_status;
     drain_status = other.drain_status;
     chunked_vector<topic_status> t;
     t.reserve(other.topics.size());

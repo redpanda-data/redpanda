@@ -201,7 +201,6 @@ std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
     }
 
     report.drain_status = it->second->drain_status;
-    report.include_drain_status = true;
 
     return ss::make_foreign(
       ss::make_lw_shared<const node_health_report>(std::move(report)));
@@ -529,7 +528,6 @@ health_monitor_backend::collect_current_node_health() {
       = features::feature_table::get_latest_logical_version();
 
     ret.drain_status = co_await _drain_manager.local().status();
-    ret.include_drain_status = true;
     ret.topics = co_await collect_topic_status();
 
     auto [it, _] = _status.try_emplace(ret.id);
