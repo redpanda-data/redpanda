@@ -905,26 +905,25 @@ ss::future<> members_manager::set_initial_state(
 template<typename Cmd>
 ss::future<std::error_code> members_manager::dispatch_updates_to_cores(
   model::offset update_offset, Cmd cmd) {
-    return _members_table
-      .map([cmd, update_offset](members_table& mt) {
+    auto results = co_await _members_table.map(
+      [cmd = std::move(cmd), update_offset](members_table& mt) {
           return mt.apply(update_offset, cmd);
-      })
-      .then([](std::vector<std::error_code> results) {
-          auto sentinel = results.front();
-          auto state_consistent = std::all_of(
-            results.begin(), results.end(), [sentinel](std::error_code res) {
-                return sentinel == res;
-            });
-
-          vassert(
-            state_consistent,
-            "State inconsistency across shards detected, "
-            "expected result: {}, have: {}",
-            sentinel,
-            results);
-
-          return sentinel;
       });
+
+    auto error = results.front();
+    auto state_consistent = std::all_of(
+      results.begin(), results.end(), [error](std::error_code res) {
+          return error == res;
+      });
+
+    vassert(
+      state_consistent,
+      "State inconsistency across shards detected, "
+      "expected result: {}, have: {}",
+      error,
+      results);
+
+    co_return error;
 }
 
 ss::future<> members_manager::stop() {
