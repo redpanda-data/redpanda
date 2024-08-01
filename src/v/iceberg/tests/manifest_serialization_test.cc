@@ -28,6 +28,9 @@
 
 using namespace iceberg;
 
+using avrogen::manifest_entry;
+using avrogen::manifest_file;
+
 namespace {
 
 // Returns true if the trivial, non-union type fields match between the two

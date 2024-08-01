@@ -16,7 +16,7 @@ foreach (schema ${schemas})
     OUTPUT ${avro_hdr}
     COMMAND avrogencpp
     -i ${schemas_dir}/${schema}
-    -o ${avro_hdr} -n iceberg
+    -o ${avro_hdr} -n iceberg::avrogen
     DEPENDS avrogencpp ${schemas_dir}/${schema}
     COMMENT "Running avrogencpp on ${schema}"
     VERBATIM)

@@ -6,14 +6,14 @@ package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 avro_cc_library(
     name = "manifest_file",
     include_prefix = "iceberg",
-    namespace = "iceberg",
+    namespace = "iceberg::avrogen",
     schema = "avroschemas/manifest_file.schema.json",
 )
 
 avro_cc_library(
     name = "manifest_entry",
     include_prefix = "iceberg",
-    namespace = "iceberg",
+    namespace = "iceberg::avrogen",
     schema = "avroschemas/manifest_entry.schema.json",
 )
 
