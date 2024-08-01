@@ -4586,7 +4586,8 @@ class RedpandaService(RedpandaServiceBase):
     def wait_for_controller_snapshot(self,
                                      node,
                                      prev_mtime=0,
-                                     prev_start_offset=0):
+                                     prev_start_offset=0,
+                                     timeout_sec=30):
         def check():
             snap_path = os.path.join(self.DATA_DIR,
                                      'redpanda/controller/0_0/snapshot')
@@ -4606,7 +4607,7 @@ class RedpandaService(RedpandaServiceBase):
             so = controller_status['start_offset']
             return (mtime > prev_mtime and so > prev_start_offset, (mtime, so))
 
-        return wait_until_result(check, timeout_sec=30, backoff_sec=1)
+        return wait_until_result(check, timeout_sec=timeout_sec, backoff_sec=1)
 
     def _get_object_storage_report(self,
                                    tolerate_empty_object_storage=False,
