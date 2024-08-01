@@ -522,7 +522,7 @@ service::do_collect_node_health_report(get_node_health_request) {
     }
     co_return get_node_health_reply{
       .error = errc::success,
-      .report = *res.value(),
+      .report = res.value()->copy(),
     };
 }
 

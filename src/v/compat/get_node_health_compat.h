@@ -44,7 +44,7 @@ struct compat_check<cluster::get_node_health_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::get_node_health_reply obj) {
-        return {compat_binary::serde(obj)};
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void

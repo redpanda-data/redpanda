@@ -170,12 +170,7 @@ struct node_health_report
       chunked_vector<topic_status>,
       std::optional<drain_manager::drain_status>);
 
-    node_health_report(const node_health_report&);
-    node_health_report& operator=(const node_health_report&);
-
-    node_health_report(node_health_report&&) = default;
-    node_health_report& operator=(node_health_report&&) = default;
-    ~node_health_report() = default;
+    node_health_report copy() const;
 
     model::node_id id;
     node::local_state local_state;
@@ -229,7 +224,7 @@ struct cluster_health_report
         write(out, node_states);
         write(out, static_cast<serde::serde_size_t>(node_reports.size()));
         for (auto& nr : node_reports) {
-            co_await write_async(out, *nr);
+            co_await write_async(out, nr->copy());
         }
         write(out, bytes_in_cloud_storage);
     }
@@ -267,7 +262,7 @@ struct cluster_health_report
         write(out, node_states);
         write(out, static_cast<serde::serde_size_t>(node_reports.size()));
         for (auto& nr : node_reports) {
-            write(out, *nr);
+            write(out, nr->copy());
         }
         write(out, bytes_in_cloud_storage);
     }
@@ -440,6 +435,13 @@ struct get_node_health_reply
     friend bool
     operator==(const get_node_health_reply&, const get_node_health_reply&)
       = default;
+
+    get_node_health_reply copy() const {
+        return {
+          .error = error,
+          .report = report ? std::optional{report->copy()} : std::nullopt,
+        };
+    }
 
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_reply&);

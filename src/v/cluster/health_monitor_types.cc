@@ -84,29 +84,8 @@ node_health_report::node_health_report(
   , topics(std::move(topics))
   , drain_status(drain_status) {}
 
-node_health_report::node_health_report(const node_health_report& other)
-  : id(other.id)
-  , local_state(other.local_state)
-  , topics()
-  , drain_status(other.drain_status) {
-    std::copy(
-      other.topics.cbegin(), other.topics.cend(), std::back_inserter(topics));
-}
-
-node_health_report&
-node_health_report::operator=(const node_health_report& other) {
-    if (this == &other) {
-        return *this;
-    }
-    id = other.id;
-    local_state = other.local_state;
-    drain_status = other.drain_status;
-    chunked_vector<topic_status> t;
-    t.reserve(other.topics.size());
-    std::copy(
-      other.topics.cbegin(), other.topics.cend(), std::back_inserter(t));
-    topics = std::move(t);
-    return *this;
+node_health_report node_health_report::copy() const {
+    return {id, local_state, topics.copy(), drain_status};
 }
 
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
