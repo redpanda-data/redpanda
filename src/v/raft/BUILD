@@ -40,6 +40,7 @@ redpanda_cc_library(
     name = "raft",
     srcs = [
         "append_entries_buffer.cc",
+        "buffered_protocol.cc",
         "configuration_bootstrap_state.cc",
         "configuration_manager.cc",
         "consensus.cc",
@@ -71,6 +72,7 @@ redpanda_cc_library(
     ],
     hdrs = [
         "append_entries_buffer.h",
+        "buffered_protocol.h",
         "configuration_bootstrap_state.h",
         "configuration_manager.h",
         "consensus.h",

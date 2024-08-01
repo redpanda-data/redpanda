@@ -38,6 +38,7 @@ v_cc_library(
     recovery_scheduler.cc
     persisted_stm.cc
     replication_monitor.cc
+    buffered_protocol.cc
   DEPS
     v::storage
     raft_rpc
