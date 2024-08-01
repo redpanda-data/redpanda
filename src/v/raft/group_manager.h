@@ -13,6 +13,7 @@
 #include "config/property.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
+#include "raft/buffered_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/notification.h"
 #include "raft/recovery_memory_quota.h"
@@ -48,6 +49,8 @@ public:
         config::binding<std::chrono::milliseconds> write_caching_flush_ms;
         config::binding<std::optional<size_t>> write_caching_flush_bytes;
         config::binding<bool> enable_longest_log_detection;
+        config::binding<size_t> max_buffered_bytes_per_node;
+        config::binding<size_t> max_inflight_requests_per_node;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -109,8 +112,8 @@ private:
       std::vector<model::broker>, model::revision_id) const;
     model::node_id _self;
     ss::scheduling_group _raft_sg;
-    raft::consensus_client_protocol _client;
     configuration _configuration;
+    ss::shared_ptr<raft::buffered_protocol> _buffered_protocol;
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;

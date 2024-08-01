@@ -1561,6 +1561,14 @@ void application::wire_up_redpanda_services(
               .enable_longest_log_detection
               = config::shard_local_cfg()
                   .raft_enable_longest_log_detection.bind(),
+              .max_buffered_bytes_per_node
+              = config::shard_local_cfg()
+                  .raft_max_buffered_follower_append_entries_bytes_per_shard
+                  .bind(),
+              .max_inflight_requests_per_node
+              = config::shard_local_cfg()
+                  .raft_max_inflight_follower_append_entries_requests_per_shard
+                  .bind(),
             };
         },
         [] {

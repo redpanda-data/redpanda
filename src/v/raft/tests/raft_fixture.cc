@@ -19,6 +19,7 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "raft/buffered_protocol.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
@@ -373,6 +374,10 @@ raft_node_instance::raft_node_instance(
   , _logger(test_log, fmt::format("[node: {}]", _id))
   , _base_directory(std::move(base_directory))
   , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
+  , _buffered_protocol(ss::make_shared<buffered_protocol>(
+      consensus_client_protocol(_protocol),
+      _max_inflight_requests.bind(),
+      _max_queued_bytes.bind()))
   , _features(feature_table)
   , _recovery_mem_quota([] {
       return raft::recovery_memory_quota::configuration{
@@ -394,7 +399,7 @@ ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
       _heartbeat_interval,
-      consensus_client_protocol(_protocol),
+      consensus_client_protocol(_buffered_protocol),
       _id,
       config::mock_binding<std::chrono::milliseconds>(1000ms),
       config::mock_binding<bool>(true),
@@ -431,7 +436,7 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
         ss::default_scheduling_group(), ss::default_priority_class()),
       config::mock_binding<std::chrono::milliseconds>(1s),
       config::mock_binding<bool>(_enable_longest_log_detection),
-      consensus_client_protocol(_protocol),
+      consensus_client_protocol(_buffered_protocol),
       [this](leadership_status ls) { leadership_notification_callback(ls); },
       _storage.local(),
       _recovery_throttle.local(),
@@ -459,6 +464,7 @@ ss::future<> raft_node_instance::stop() {
     if (started) {
         co_await _hb_manager->deregister_group(_raft->group());
         vlog(_logger.debug, "stopping protocol");
+        co_await _buffered_protocol->stop();
         co_await _protocol->stop();
         vlog(_logger.debug, "stopping raft");
         co_await _raft->stop();

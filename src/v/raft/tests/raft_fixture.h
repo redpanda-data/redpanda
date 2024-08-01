@@ -17,6 +17,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "raft/buffered_protocol.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/fwd.h"
@@ -235,6 +236,9 @@ public:
     void on_dispatch(dispatch_callback_t);
 
     ss::shared_ptr<in_memory_test_protocol> get_protocol() { return _protocol; }
+    ss::shared_ptr<buffered_protocol> get_buffered_protocol() {
+        return _buffered_protocol;
+    }
 
     storage::kvstore& get_kvstore() { return _storage.local().kvs(); }
 
@@ -243,7 +247,10 @@ private:
     model::revision_id _revision;
     prefix_logger _logger;
     ss::sstring _base_directory;
+    config::mock_property<size_t> _max_inflight_requests{16};
+    config::mock_property<size_t> _max_queued_bytes{1_MiB};
     ss::shared_ptr<in_memory_test_protocol> _protocol;
+    ss::shared_ptr<buffered_protocol> _buffered_protocol;
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;

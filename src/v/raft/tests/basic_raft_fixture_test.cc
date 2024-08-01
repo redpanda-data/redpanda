@@ -642,7 +642,7 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
         return p.second->get_vnode() != new_leader_node.get_vnode();
     });
     auto& follower_node = p->second;
-    auto leader_proto = new_leader_node.get_protocol();
+    auto leader_proto = new_leader_node.get_buffered_protocol();
     // simulate delayed install snapshot request send to follower
     install_snapshot_request request;
     request.target_node_id = follower_node->get_vnode();
@@ -701,7 +701,7 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
      * request
      */
 
-    auto follower_proto = follower_node->get_protocol();
+    auto follower_proto = follower_node->get_buffered_protocol();
     install_snapshot_request request_for_leader;
 
     request_for_leader.group = follower_node->raft()->group();
