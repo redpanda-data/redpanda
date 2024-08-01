@@ -57,6 +57,10 @@ ss::future<topic_mount_result> topic_mount_handler::check_mount(
       _bucket, manifest_path, parent, existence_check_type::manifest);
 
     // If the manifest exists, it is possible to mount the topic.
+    // If the result is anything but download_result::success, it is
+    // assumed that the mount manifest does not exist, or is unreachable for
+    // whatever reason. In that case, it is simple enough for the user to
+    // reissue a request to `mount_topic()`.
     co_return (exists_result == download_result::success)
       ? topic_mount_result::success
       : topic_mount_result::mount_manifest_does_not_exist;
@@ -72,6 +76,8 @@ ss::future<topic_mount_result> topic_mount_handler::commit_mount(
     const auto delete_result = co_await _remote.delete_object(
       _bucket, manifest_path, parent);
 
+    // If the upload_result is anything but upload_result::success,
+    // the mount manifest was not deleted, and we cannot mount the topic.
     co_return (delete_result == upload_result::success)
       ? topic_mount_result::success
       : topic_mount_result::mount_manifest_not_deleted;
