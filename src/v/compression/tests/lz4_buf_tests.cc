@@ -13,10 +13,9 @@
 #include "compression/internal/lz4_frame_compressor.h"
 #include "compression/lz4_decompression_buffers.h"
 #include "random/generators.h"
+#include "thirdparty/lz4/lz4.h"
 
 #include <gmock/gmock.h>
-
-#include <lz4.h>
 
 using enum compression::lz4_decompression_buffers::alloc_ctx::allocation_state;
 

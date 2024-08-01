@@ -12,8 +12,7 @@
 #include "crypto/crypto.h"
 #include "internal.h"
 #include "ssl_utils.h"
-
-#include <openssl/rand.h>
+#include "thirdparty/openssl/rand.h"
 
 namespace crypto {
 bytes_span<> generate_random(bytes_span<> buf, use_private_rng private_rng) {

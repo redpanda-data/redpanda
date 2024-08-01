@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cloud_storage_clients/client.h"
-#include "libxml/parser.h"
+#include "thirdparty/libxml2/parser.h"
 
 #include <stack>
 

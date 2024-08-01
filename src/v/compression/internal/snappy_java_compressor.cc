@@ -15,11 +15,11 @@
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
 #include "compression/snappy_standard_compressor.h"
+#include "thirdparty/snappy/snappy.h"
 
 #include <fmt/format.h>
 
 #include <cstring>
-#include <snappy.h>
 
 namespace compression::internal {
 struct snappy_magic {

@@ -21,15 +21,15 @@ redpanda_cc_library(
         "include/crypto/ossl_context_service.h",
         "include/crypto/types.h",
     ],
-    exclude_layering_check = True,
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/ssx:thread_worker",
+        "//src/v/thirdparty/openssl",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/container:node_hash_map",
-        "@openssl",
         "@seastar",
     ],
 )

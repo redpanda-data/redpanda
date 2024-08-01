@@ -15,11 +15,11 @@
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 #include "ssx/sformat.h"
+#include "thirdparty/ada/ada.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <re2/re2.h>
 
-#include <ada.h>
 #include <charconv>
 #include <optional>
 #include <system_error>

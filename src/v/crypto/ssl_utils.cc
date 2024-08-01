@@ -11,7 +11,7 @@
 
 #include "ssl_utils.h"
 
-#include <openssl/err.h>
+#include "thirdparty/openssl/err.h"
 
 namespace crypto::internal {
 std::string ossl_error::build_error() {

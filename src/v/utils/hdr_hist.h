@@ -18,13 +18,13 @@
 // vectorized types. needed comment to allow clang-format
 // header sorting to not resort cstdint
 #include "base/seastarx.h"
+#include "thirdparty/hdrhistogram/hdr_histogram.h"
 #include "utils/static_deleter_fn.h"
 
 #include <seastar/core/metrics_types.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <boost/intrusive/list.hpp>
-#include <hdr/hdr_histogram.h>
 
 #include <chrono>
 #include <memory>

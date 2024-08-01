@@ -12,8 +12,7 @@
 #include "crypto/crypto.h"
 #include "internal.h"
 #include "ssl_utils.h"
-
-#include <openssl/evp.h>
+#include "thirdparty/openssl/evp.h"
 
 #include <type_traits>
 

@@ -10,9 +10,9 @@
 
 #include "azure_aks_refresh_impl.h"
 
-#include "ada.h"
 #include "json/schema.h"
 #include "request_response_helpers.h"
+#include "thirdparty/ada/ada.h"
 #include "utils/file_io.h"
 
 #include <seastar/coroutine/as_future.hh>
