@@ -536,13 +536,13 @@ health_monitor_backend::collect_current_node_health() {
 
     co_return ret;
 }
-ss::future<result<node_health_report>>
+ss::future<result<node_health_report_ptr>>
 health_monitor_backend::get_current_node_health() {
     vlog(clusterlog.debug, "getting current node health");
 
     auto it = _reports.find(_self);
     if (it != _reports.end()) {
-        co_return *it->second;
+        co_return it->second;
     }
 
     auto u = _report_collection_mutex.try_get_units();
@@ -557,19 +557,23 @@ health_monitor_backend::get_current_node_health() {
         u.emplace(co_await _report_collection_mutex.get_units());
         auto it = _reports.find(_self);
         if (it != _reports.end()) {
-            co_return *it->second;
+            co_return it->second;
         }
     }
     /**
      * Current fiber will collect and cache the report
      */
     auto r = co_await collect_current_node_health();
-    if (r.has_value()) {
-        _reports.emplace(
-          _self, ss::make_lw_shared<node_health_report>(r.value()));
+    if (r.has_error()) {
+        co_return r.error();
     }
 
-    co_return std::move(r);
+    it = _reports
+           .emplace(
+             _self,
+             ss::make_lw_shared<node_health_report>(std::move(r.value())))
+           .first;
+    co_return it->second;
 }
 
 namespace {
