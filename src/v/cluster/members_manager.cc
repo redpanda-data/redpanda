@@ -426,7 +426,7 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](add_node_cmd cmd) {
           vlog(
             clusterlog.info,
-            "processing node add command - broker: {}, offset: {}",
+            "applying node add command - broker: {}, offset: {}",
             cmd.value,
             update_offset);
           _first_node_operation_command_offset = std::min(
@@ -436,7 +436,7 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](update_node_cfg_cmd cmd) {
           vlog(
             clusterlog.info,
-            "processing node update command - broker: {}, offset: {}",
+            "applying node update command - broker: {}, offset: {}",
             cmd.value,
             update_offset);
           _first_node_operation_command_offset = std::min(
@@ -446,7 +446,7 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](remove_node_cmd cmd) {
           vlog(
             clusterlog.info,
-            "processing node delete command - node: {}, offset: {}",
+            "applying node delete command - node: {}, offset: {}",
             cmd.key,
             update_offset);
           _first_node_operation_command_offset = std::min(
@@ -905,26 +905,33 @@ ss::future<> members_manager::set_initial_state(
 template<typename Cmd>
 ss::future<std::error_code> members_manager::dispatch_updates_to_cores(
   model::offset update_offset, Cmd cmd) {
-    return _members_table
-      .map([cmd, update_offset](members_table& mt) {
+    auto results = co_await _members_table.map(
+      [cmd = std::move(cmd), update_offset](members_table& mt) {
           return mt.apply(update_offset, cmd);
-      })
-      .then([](std::vector<std::error_code> results) {
-          auto sentinel = results.front();
-          auto state_consistent = std::all_of(
-            results.begin(), results.end(), [sentinel](std::error_code res) {
-                return sentinel == res;
-            });
-
-          vassert(
-            state_consistent,
-            "State inconsistency across shards detected, "
-            "expected result: {}, have: {}",
-            sentinel,
-            results);
-
-          return sentinel;
       });
+
+    auto error = results.front();
+    auto state_consistent = std::all_of(
+      results.begin(), results.end(), [error](std::error_code res) {
+          return error == res;
+      });
+
+    vassert(
+      state_consistent,
+      "State inconsistency across shards detected, "
+      "expected result: {}, have: {}",
+      error,
+      results);
+    if (error) {
+        vlog(
+          clusterlog.warn,
+          "error applying command with type {} at offset {} - {}",
+          Cmd::type,
+          update_offset,
+          error.message());
+    }
+
+    co_return error;
 }
 
 ss::future<> members_manager::stop() {
