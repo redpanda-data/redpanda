@@ -184,12 +184,12 @@ static ss::future<read_result> read_from_partition(
       std::move(aborted_transactions));
 }
 
-read_result::memory_units_t::memory_units_t(
+fetch_memory_units_t::fetch_memory_units_t(
   ssx::semaphore& memory_sem, ssx::semaphore& memory_fetch_sem) noexcept
   : kafka(ss::consume_units(memory_sem, 0))
   , fetch(ss::consume_units(memory_fetch_sem, 0)) {}
 
-read_result::memory_units_t::~memory_units_t() noexcept {
+fetch_memory_units_t::~fetch_memory_units_t() noexcept {
     if (shard == ss::this_shard_id() || !has_units()) {
         return;
     }
@@ -203,7 +203,7 @@ read_result::memory_units_t::~memory_units_t() noexcept {
     }
 }
 
-void read_result::memory_units_t::adopt(memory_units_t&& o) {
+void fetch_memory_units_t::adopt(fetch_memory_units_t&& o) {
     // Adopts assert internally that the units are from the same semaphore.
     // So there is no need to assert that they are from the same shard here.
     kafka.adopt(std::move(o.kafka));
@@ -222,12 +222,12 @@ void read_result::memory_units_t::adopt(memory_units_t&& o) {
  *   is assumed that a batch size has already been consumed from kafka
  *   memory semaphore for it.
  */
-static read_result::memory_units_t reserve_memory_units(
+static fetch_memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
   const bool obligatory_batch_read) {
-    read_result::memory_units_t memory_units;
+    fetch_memory_units_t memory_units;
     const size_t memory_kafka_now = memory_sem.current();
     const size_t memory_fetch = memory_fetch_sem.current();
     const size_t batch_size_estimate
@@ -284,7 +284,7 @@ static void adjust_semaphore_units(
 static void adjust_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
-  read_result::memory_units_t& memory_units,
+  fetch_memory_units_t& memory_units,
   const size_t read_bytes) {
     adjust_semaphore_units(memory_sem, memory_units.kafka, read_bytes);
     adjust_semaphore_units(memory_fetch_sem, memory_units.fetch, read_bytes);
@@ -304,7 +304,7 @@ static ss::future<read_result> do_read_from_ntp(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem) {
     // control available memory
-    read_result::memory_units_t memory_units(memory_sem, memory_fetch_sem);
+    fetch_memory_units_t memory_units(memory_sem, memory_fetch_sem);
     if (!ntp_config.cfg.skip_read) {
         memory_units = reserve_memory_units(
           memory_sem,
@@ -425,7 +425,7 @@ ss::future<read_result> read_from_ntp(
       memory_fetch_sem);
 }
 
-read_result::memory_units_t reserve_memory_units(
+fetch_memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
@@ -457,7 +457,7 @@ static void fill_fetch_responses(
     }
 
     // Used to aggregate semaphore_units from results.
-    std::optional<read_result::memory_units_t> total_memory_units;
+    std::optional<fetch_memory_units_t> total_memory_units;
 
     for (auto idx : range) {
         auto& res = results[idx];
