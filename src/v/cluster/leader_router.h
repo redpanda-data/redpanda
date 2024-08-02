@@ -9,6 +9,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/vformat.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
@@ -16,7 +17,6 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
-#include "vformat.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

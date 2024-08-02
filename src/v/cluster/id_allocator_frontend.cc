@@ -25,7 +25,6 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "rpc/connection_cache.h"
-#include "vformat.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
