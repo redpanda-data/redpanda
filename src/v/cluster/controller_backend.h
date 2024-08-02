@@ -373,8 +373,6 @@ private:
 
     void setup_metrics();
 
-    bool command_based_membership_active() const;
-
     bool should_skip(const model::ntp&) const;
 
     std::optional<model::offset> calculate_learner_initial_offset(

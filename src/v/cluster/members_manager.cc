@@ -1680,10 +1680,6 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
 }
 
 ss::future<std::error_code> members_manager::add_node(model::broker broker) {
-    if (!command_based_membership_active()) {
-        return _raft0->add_group_member(
-          std::move(broker), model::revision_id(0));
-    }
     return replicate_and_wait(
       _controller_stm,
       _as,
@@ -1692,10 +1688,6 @@ ss::future<std::error_code> members_manager::add_node(model::broker broker) {
 }
 
 ss::future<std::error_code> members_manager::update_node(model::broker broker) {
-    if (!command_based_membership_active()) {
-        return _raft0->update_group_member(std::move(broker));
-    }
-
     return replicate_and_wait(
       _controller_stm,
       _as,
@@ -1708,6 +1700,12 @@ members_manager::persist_members_in_kvstore(model::offset update_offset) {
     static const bytes cluster_members_key("cluster_members");
     auto current_members_snapshot = read_members_from_kvstore();
     if (current_members_snapshot.update_offset >= update_offset) {
+        vlog(
+          clusterlog.trace,
+          "skipping persisting members, update offset {}, current snapshot "
+          "offset: {}",
+          update_offset,
+          current_members_snapshot.update_offset);
         return ss::now();
     }
     std::vector<model::broker> brokers;

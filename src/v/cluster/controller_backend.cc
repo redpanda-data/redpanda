@@ -91,33 +91,6 @@ std::vector<model::broker> create_brokers_set(
     return brokers;
 }
 
-std::vector<raft::broker_revision> create_brokers_set(
-  const replicas_t& replicas,
-  const absl::flat_hash_map<model::node_id, model::revision_id>&
-    replica_revisions,
-  model::revision_id cmd_revision,
-  cluster::members_table& members) {
-    std::vector<raft::broker_revision> brokers;
-    brokers.reserve(replicas.size());
-
-    std::transform(
-      std::cbegin(replicas),
-      std::cend(replicas),
-      std::back_inserter(brokers),
-      [&](const model::broker_shard& bs) {
-          auto broker = get_node_metadata(members, bs.node_id);
-          model::revision_id rev;
-          auto rev_it = replica_revisions.find(bs.node_id);
-          if (rev_it != replica_revisions.end()) {
-              rev = rev_it->second;
-          } else {
-              rev = cmd_revision;
-          }
-          return raft::broker_revision{.broker = std::move(broker), .rev = rev};
-      });
-    return brokers;
-}
-
 static std::vector<raft::vnode> create_vnode_set(
   const replicas_t& replicas,
   const absl::flat_hash_map<model::node_id, model::revision_id>&
@@ -362,11 +335,6 @@ controller_backend::controller_backend(
 
 controller_backend::~controller_backend() = default;
 
-bool controller_backend::command_based_membership_active() const {
-    return _features.local().is_active(
-      features::feature::membership_change_controller_cmds);
-}
-
 ss::future<> controller_backend::stop() {
     vlog(clusterlog.info, "Stopping Controller Backend...");
 
@@ -499,31 +467,20 @@ ss::future<std::error_code> do_update_replica_set(
   const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id cmd_revision,
-  members_table& members,
-  bool command_based_members_update,
+  members_table&,
   std::optional<model::offset> learner_initial_offset) {
     vlog(
       clusterlog.debug,
-      "[{}] updating partition replicas. revision: {}, replicas: {}, using "
-      "vnodes: {}, learner initial offset: {}",
+      "[{}] updating partition replicas. revision: {}, replicas: {}, "
+      "learner initial offset: {}",
       p->ntp(),
       cmd_revision,
       replicas,
-      command_based_members_update,
       learner_initial_offset);
 
-    // when cluster membership updates are driven by controller commands, use
-    // only vnodes to update raft replica set
-    if (likely(command_based_members_update)) {
-        auto nodes = create_vnode_set(
-          replicas, replica_revisions, cmd_revision);
-        co_return co_await p->update_replica_set(
-          std::move(nodes), cmd_revision, learner_initial_offset);
-    }
-
-    auto brokers = create_brokers_set(
-      replicas, replica_revisions, cmd_revision, members);
-    co_return co_await p->update_replica_set(std::move(brokers), cmd_revision);
+    auto nodes = create_vnode_set(replicas, replica_revisions, cmd_revision);
+    co_return co_await p->update_replica_set(
+      std::move(nodes), cmd_revision, learner_initial_offset);
 }
 
 ss::future<std::error_code> revert_configuration_update(
@@ -531,8 +488,7 @@ ss::future<std::error_code> revert_configuration_update(
   const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id cmd_revision,
-  members_table& members,
-  bool command_based_members_update) {
+  members_table& members) {
     vlog(
       clusterlog.debug,
       "[{}] reverting already finished reconfiguration. Revision: {}, replica "
@@ -546,7 +502,6 @@ ss::future<std::error_code> revert_configuration_update(
       replica_revisions,
       cmd_revision,
       members,
-      command_based_members_update,
       std::nullopt);
 }
 
@@ -1545,7 +1500,6 @@ controller_backend::cancel_replica_set_update(
                            replicas_revisions,
                            cmd_revision,
                            _members_table.local(),
-                           command_based_membership_active(),
                            std::nullopt)
                     .then([](std::error_code ec) {
                         return result<ss::stop_iteration>{ec};
@@ -1569,8 +1523,7 @@ controller_backend::cancel_replica_set_update(
                            replicas,
                            replicas_revisions,
                            cmd_revision,
-                           _members_table.local(),
-                           command_based_membership_active())
+                           _members_table.local())
                     .then([](std::error_code ec) {
                         return result<ss::stop_iteration>{ec};
                     });
@@ -1662,8 +1615,7 @@ controller_backend::force_abort_replica_set_update(
                     replicas,
                     replicas_revisions,
                     cmd_revision,
-                    _members_table.local(),
-                    command_based_membership_active());
+                    _members_table.local());
               });
         }
         co_return errc::waiting_for_recovery;
@@ -1711,7 +1663,6 @@ controller_backend::update_partition_replica_set(
             replicas_revisions,
             cmd_revision,
             _members_table.local(),
-            command_based_membership_active(),
             learner_initial_offset);
       });
 }
