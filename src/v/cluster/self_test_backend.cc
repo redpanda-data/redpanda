@@ -54,7 +54,8 @@ ss::future<> self_test_backend::stop() {
 ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
   std::vector<diskcheck_opts> dtos,
   std::vector<netcheck_opts> ntos,
-  std::vector<cloudcheck_opts> ctos) {
+  std::vector<cloudcheck_opts> ctos,
+  std::vector<unknown_check> unknown_checks) {
     auto gate_holder = _gate.hold();
     std::vector<self_test_result> results;
 
@@ -150,6 +151,16 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         }
     }
 
+    for (const auto& unknown_check : unknown_checks) {
+        results.push_back(self_test_result{
+          .name = "Unknown",
+          .test_type = unknown_check.test_type,
+          .error = fmt::format(
+            "Unknown test type {} requested on node {}",
+            unknown_check.test_type,
+            _self)});
+    }
+
     co_return results;
 }
 
@@ -165,7 +176,8 @@ get_status_response self_test_backend::start_test(start_test_request req) {
                 return do_start_test(
                          std::move(req.dtos),
                          std::move(req.ntos),
-                         std::move(req.ctos))
+                         std::move(req.ctos),
+                         std::move(req.unknown_checks))
                   .then([this, id = req.id](auto results) {
                       for (auto& r : results) {
                           r.test_id = id;
