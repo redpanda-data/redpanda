@@ -11,9 +11,12 @@
 #include "security/acl.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/sasl_authentication.h"
-#include "ssx/fwd.h"
 
 #include <seastar/core/lowres_clock.hh>
+
+namespace ssx {
+class singleton_thread_worker;
+}
 
 namespace security {
 
