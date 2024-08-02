@@ -295,6 +295,7 @@ private:
       raft::group_id,
       model::revision_id log_revision,
       replicas_t initial_replicas,
+      const replicas_revision_map& replicas_revisions,
       force_reconfiguration is_force_reconfigured);
 
     ss::future<> add_to_shard_table(
@@ -374,8 +375,6 @@ private:
     ss::future<std::error_code> dispatch_revert_cancel_move(model::ntp);
 
     void setup_metrics();
-
-    bool command_based_membership_active() const;
 
     bool should_skip(const model::ntp&) const;
 
