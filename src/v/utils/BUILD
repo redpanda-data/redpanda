@@ -326,15 +326,14 @@ redpanda_cc_library(
     hdrs = [
         "hdr_hist.h",
     ],
-    exclude_layering_check = True,
     include_prefix = "utils",
     deps = [
         ":human",
         ":static_deleter_fn",
         "//src/v/base",
+        "//src/v/thirdparty/hdrhistogram",
         "@boost//:intrusive",
         "@fmt",
-        "@hdrhistogram",
         "@seastar",
     ],
 )
@@ -347,11 +346,11 @@ redpanda_cc_library(
     hdrs = [
         "log_hist.h",
     ],
-    exclude_layering_check = True,
     include_prefix = "utils",
     deps = [
         "//src/v/container:fragmented_vector",
         "//src/v/reflection:adl",
+        "@seastar",
     ],
 )
 
@@ -403,13 +402,13 @@ redpanda_cc_library(
     hdrs = [
         "base64.h",
     ],
-    exclude_layering_check = True,
     include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/thirdparty/base64",
         "@abseil-cpp//absl/strings",
-        "@base64",
         "@seastar",
     ],
 )

@@ -16,13 +16,13 @@
 #include "crypto/types.h"
 #include "internal.h"
 #include "ssl_utils.h"
+#include "thirdparty/openssl/bio.h"
+#include "thirdparty/openssl/bn.h"
+#include "thirdparty/openssl/evp.h"
+#include "thirdparty/openssl/param_build.h"
+#include "thirdparty/openssl/pem.h"
 
 #include <absl/container/flat_hash_set.h>
-#include <openssl/bio.h>
-#include <openssl/bn.h>
-#include <openssl/evp.h>
-#include <openssl/param_build.h>
-#include <openssl/pem.h>
 
 namespace crypto {
 

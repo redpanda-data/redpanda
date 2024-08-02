@@ -14,12 +14,11 @@
 #include "base/seastarx.h"
 #include "crypto/exceptions.h"
 #include "crypto/types.h"
+#include "thirdparty/openssl/evp.h"
+#include "thirdparty/openssl/param_build.h"
+#include "thirdparty/openssl/provider.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <openssl/evp.h>
-#include <openssl/param_build.h>
-#include <openssl/provider.h>
 
 #include <memory>
 

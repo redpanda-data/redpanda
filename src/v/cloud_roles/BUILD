@@ -23,6 +23,7 @@ redpanda_cc_library(
         "include/cloud_roles/types.h",
     ],
     strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
@@ -111,8 +112,6 @@ redpanda_cc_library(
         "include/cloud_roles/probe.h",
         "include/cloud_roles/refresh_credentials.h",
     ],
-    # for ada
-    exclude_layering_check = True,
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
@@ -134,11 +133,11 @@ redpanda_cc_library(
         "//src/v/net",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
+        "//src/v/thirdparty/ada",
         "//src/v/utils:base64",
         "//src/v/utils:file_io",
         "//src/v/utils:named_type",
         "@abseil-cpp//absl/strings",
-        "@ada",
         "@boost//:algorithm",
         "@boost//:property_tree",
         "@fmt",

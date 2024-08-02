@@ -14,8 +14,8 @@ redpanda_cc_gtest(
         "//src/v/compression",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "//src/v/thirdparty/lz4",
         "@googletest//:gtest",
-        "@lz4",
     ],
 )
 

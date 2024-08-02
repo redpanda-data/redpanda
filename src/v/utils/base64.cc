@@ -11,12 +11,11 @@
 #include "utils/base64.h"
 
 #include "base/vassert.h"
+#include "thirdparty/base64/libbase64.h"
 
 #include <seastar/core/sstring.hh>
 
 #include <absl/strings/escaping.h>
-
-#include <libbase64.h>
 
 // Required length is ceil(4n/3) rounded up to 4 bytes
 static inline size_t encode_capacity(size_t input_size) {

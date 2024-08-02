@@ -12,10 +12,9 @@
 #include "crypto/crypto.h"
 #include "internal.h"
 #include "ssl_utils.h"
-
-#include <openssl/core_names.h>
-#include <openssl/evp.h>
-#include <openssl/params.h>
+#include "thirdparty/openssl/core_names.h"
+#include "thirdparty/openssl/evp.h"
+#include "thirdparty/openssl/params.h"
 
 namespace crypto {
 namespace {

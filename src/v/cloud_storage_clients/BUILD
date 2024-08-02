@@ -27,8 +27,6 @@ redpanda_cc_library(
         "util.h",
         "xml_sax_parser.h",
     ],
-    # for libxml2
-    exclude_layering_check = True,
     include_prefix = "cloud_storage_clients",
     visibility = ["//visibility:public"],
     deps = [
@@ -38,6 +36,7 @@ redpanda_cc_library(
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_roles",
+        "//src/v/cloud_roles:types",
         "//src/v/config",
         "//src/v/container:intrusive",
         "//src/v/hashing:secure",
@@ -49,6 +48,7 @@ redpanda_cc_library(
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",
+        "//src/v/thirdparty/libxml2",
         "//src/v/utils:base64",
         "//src/v/utils:functional",
         "//src/v/utils:log_hist",
@@ -57,7 +57,6 @@ redpanda_cc_library(
         "@boost//:beast",
         "@boost//:lexical_cast",
         "@boost//:property_tree",
-        "@libxml2",
         "@seastar",
     ],
 )

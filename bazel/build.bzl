@@ -17,20 +17,11 @@ def redpanda_cc_library(
         strip_include_prefix = None,
         visibility = None,
         include_prefix = None,
-        exclude_layering_check = False,
         copts = [],
         deps = []):
     """
     Define a Redpanda C++ library.
     """
-    features = []
-    if not exclude_layering_check:
-        # TODO(bazel) Some dependencies brought in via rules_foreign_cc appear to not
-        # have all their headers declared as outputs, which causes issues with
-        # layering checks. So we allow layering check to be disabled in some
-        # cases until this issue is addressed.
-        # https://github.com/bazelbuild/rules_foreign_cc/issues/1221
-        features.append("layering_check")
 
     native.cc_library(
         name = name,
@@ -43,5 +34,7 @@ def redpanda_cc_library(
         strip_include_prefix = strip_include_prefix,
         deps = deps,
         copts = redpanda_copts() + copts,
-        features = features,
+        features = [
+            "layering_check",
+        ],
     )
