@@ -167,25 +167,13 @@ raft::group_configuration group_manager::create_initial_configuration(
      * are able to understand configuration without broker information the
      * configuration will only use raft::vnode
      */
-    if (likely(_feature_table.is_active(
-          features::feature::membership_change_controller_cmds))) {
-        std::vector<vnode> nodes;
-        nodes.reserve(initial_brokers.size());
-        for (auto& b : initial_brokers) {
-            nodes.emplace_back(b.id(), revision);
-        }
-
-        return {std::move(nodes), revision};
+    std::vector<vnode> nodes;
+    nodes.reserve(initial_brokers.size());
+    for (auto& b : initial_brokers) {
+        nodes.emplace_back(b.id(), revision);
     }
 
-    // old configuration with brokers
-    auto raft_cfg = raft::group_configuration(
-      std::move(initial_brokers), revision);
-    if (unlikely(!_feature_table.is_active(
-          features::feature::raft_improved_configuration))) {
-        raft_cfg.set_version(group_configuration::v_3);
-    }
-    return raft_cfg;
+    return {std::move(nodes), revision};
 }
 
 ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
