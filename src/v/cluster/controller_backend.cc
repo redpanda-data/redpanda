@@ -65,33 +65,6 @@
 namespace cluster {
 namespace {
 
-model::broker
-get_node_metadata(const members_table& members, model::node_id id) {
-    auto nm = members.get_node_metadata_ref(id);
-    if (!nm) {
-        nm = members.get_removed_node_metadata_ref(id);
-    }
-    if (!nm) {
-        throw std::logic_error(
-          fmt::format("Replica node {} is not available", id));
-    }
-    return nm->get().broker;
-}
-
-std::vector<model::broker> create_brokers_set(
-  const replicas_t& replicas, cluster::members_table& members) {
-    std::vector<model::broker> brokers;
-    brokers.reserve(replicas.size());
-    std::transform(
-      std::cbegin(replicas),
-      std::cend(replicas),
-      std::back_inserter(brokers),
-      [&members](const model::broker_shard& bs) {
-          return get_node_metadata(members, bs.node_id);
-      });
-    return brokers;
-}
-
 static std::vector<raft::vnode> create_vnode_set(
   const replicas_t& replicas,
   const absl::flat_hash_map<model::node_id, model::revision_id>&
@@ -292,7 +265,6 @@ controller_backend::controller_backend(
   ss::sharded<shard_placement_table>& shard_placement,
   ss::sharded<shard_table>& st,
   ss::sharded<partition_manager>& pm,
-  ss::sharded<members_table>& members,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<topics_frontend>& frontend,
   ss::sharded<storage::api>& storage,
@@ -309,7 +281,6 @@ controller_backend::controller_backend(
   , _shard_placement(shard_placement.local())
   , _shard_table(st)
   , _partition_manager(pm)
-  , _members_table(members)
   , _partition_leaders_table(leaders)
   , _topics_frontend(frontend)
   , _storage(storage)
@@ -470,7 +441,6 @@ ss::future<std::error_code> do_update_replica_set(
   const replicas_t& replicas,
   const replicas_revision_map& replica_revisions,
   model::revision_id cmd_revision,
-  members_table&,
   std::optional<model::offset> learner_initial_offset) {
     vlog(
       clusterlog.debug,
@@ -1356,8 +1326,8 @@ ss::future<std::error_code> controller_backend::create_partition(
 
     // no partition exists, create one
     if (likely(!partition)) {
-        std::vector<model::broker> initial_brokers = create_brokers_set(
-          initial_replicas, _members_table.local());
+        std::vector<raft::vnode> initial_nodes = create_vnode_set(
+          initial_replicas, replica_revision_map, log_revision);
 
         std::optional<cloud_storage_clients::bucket_name> read_replica_bucket;
         if (cfg.is_read_replica()) {
@@ -1400,7 +1370,7 @@ ss::future<std::error_code> controller_backend::create_partition(
             co_await _partition_manager.local().manage(
               std::move(ntp_config),
               group_id,
-              std::move(initial_brokers),
+              std::move(initial_nodes),
               raft::with_learner_recovery_throttle::yes,
               raft::keep_snapshotted_log::no,
               std::move(xst_state),
@@ -1529,7 +1499,6 @@ controller_backend::cancel_replica_set_update(
                            replicas,
                            replicas_revisions,
                            cmd_revision,
-                           _members_table.local(),
                            std::nullopt)
                     .then([](std::error_code ec) {
                         return result<ss::stop_iteration>{ec};
@@ -1663,7 +1632,6 @@ controller_backend::update_partition_replica_set(
             replicas,
             replicas_revisions,
             cmd_revision,
-            _members_table.local(),
             learner_initial_offset);
       });
 }
