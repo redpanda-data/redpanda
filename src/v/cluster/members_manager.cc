@@ -1707,6 +1707,10 @@ ss::future<std::error_code> members_manager::update_node(model::broker broker) {
 ss::future<>
 members_manager::persist_members_in_kvstore(model::offset update_offset) {
     static const bytes cluster_members_key("cluster_members");
+    auto current_members_snapshot = read_members_from_kvstore();
+    if (current_members_snapshot.update_offset >= update_offset) {
+        return ss::now();
+    }
     std::vector<model::broker> brokers;
     brokers.reserve(_members_table.local().node_count());
     for (auto& [_, node_metadata] : _members_table.local().nodes()) {
