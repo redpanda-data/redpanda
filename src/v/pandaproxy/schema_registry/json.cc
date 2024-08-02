@@ -103,6 +103,10 @@ ss::sstring json_schema_definition::name() const { return {_impl->name}; };
 
 namespace {
 
+std::string_view as_string_view(json::Value const& v) {
+    return {v.GetString(), v.GetStringLength()};
+}
+
 ss::future<> check_references(sharded_store& store, canonical_schema schema) {
     for (const auto& ref : schema.def().refs()) {
         co_await store.is_subject_version_deleted(ref.sub, ref.version)
@@ -289,7 +293,7 @@ result<json::Document> parse_json(iobuf buf) {
         // schema is an actual object
         if (auto it = schema.FindMember("$schema"); it != schema.MemberEnd()) {
             if (it->value.IsString()) {
-                dialect = from_uri(it->value.GetString());
+                dialect = from_uri(as_string_view(it->value));
             }
 
             if (it->value.IsString() == false || dialect == std::nullopt) {
@@ -373,7 +377,7 @@ constexpr std::optional<json_type> from_string_view(std::string_view v) {
 }
 
 constexpr auto parse_json_type(json::Value const& v) {
-    std::string_view sv{v.GetString(), v.GetStringLength()};
+    auto sv = as_string_view(v);
     auto type = from_string_view(sv);
     if (!type) {
         throw as_exception(error_info{
@@ -717,11 +721,7 @@ bool is_string_superset(json::Value const& older, json::Value const& newer) {
 
     // both have "pattern". check if they are the same, the only
     // possible_value_accepted
-    auto older_pattern = std::string_view{
-      older_val_p->GetString(), older_val_p->GetStringLength()};
-    auto newer_pattern = std::string_view{
-      newer_val_p->GetString(), newer_val_p->GetStringLength()};
-    return older_pattern == newer_pattern;
+    return as_string_view(*older_val_p) == as_string_view(*newer_val_p);
 }
 
 bool is_numeric_superset(json::Value const& older, json::Value const& newer) {
@@ -999,13 +999,11 @@ bool is_object_properties_superset(
         // or it should be checked against every schema in
         // older["patternProperties"] that matches
         auto pattern_match_found = false;
-        for (auto pname
-             = std::string_view{prop.GetString(), prop.GetStringLength()};
+        for (auto pname = as_string_view(prop);
              auto const& [propPattern, schemaPattern] :
              older_pattern_properties) {
             // TODO this rebuilds the regex each time, could be cached
-            auto regex = re2::RE2(std::string_view{
-              propPattern.GetString(), propPattern.GetStringLength()});
+            auto regex = re2::RE2(as_string_view(propPattern));
             if (re2::RE2::PartialMatch(pname, regex)) {
                 pattern_match_found = true;
                 if (!is_superset(schemaPattern, schema)) {
@@ -1461,7 +1459,7 @@ bool check_compatible_dialects(
         if (it == v.MemberEnd()) {
             return std::nullopt;
         }
-        return from_uri(it->value.GetString());
+        return from_uri(as_string_view(it->value));
     };
 
     auto older_dialect = get_dialect(older);
@@ -1501,10 +1499,7 @@ void sort(json::Value& val) {
     case rapidjson::Type::kObjectType: {
         auto v = val.GetObject();
         std::sort(v.begin(), v.end(), [](auto& lhs, auto& rhs) {
-            return std::string_view{
-                     lhs.name.GetString(), lhs.name.GetStringLength()}
-                   < std::string_view{
-                     rhs.name.GetString(), rhs.name.GetStringLength()};
+            return as_string_view(lhs.name) < as_string_view(rhs.name);
         });
     }
     }
