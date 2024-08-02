@@ -545,6 +545,10 @@ static void fill_fetch_responses(
             octx.rctx.probe().record_fetch_latency(fetch_latency);
         }
     }
+
+    if (likely(total_memory_units.has_value())) {
+        octx.adopt_fetch_memory_units(std::move(total_memory_units).value());
+    }
 }
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
@@ -1702,7 +1706,8 @@ ss::future<response_ptr> op_context::send_response() && {
         final_response.data.topics.back().partitions.push_back(std::move(r));
     }
 
-    return rctx.respond(std::move(final_response));
+    return rctx.respond(std::move(final_response))
+      .finally([units = std::move(fetch_memory_units)] {});
 }
 
 ss::future<response_ptr> op_context::send_error_response(error_code ec) && {

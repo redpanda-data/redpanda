@@ -151,6 +151,14 @@ struct op_context {
 
     response_iterator response_end() { return iteration_order.end(); }
 
+    void adopt_fetch_memory_units(fetch_memory_units_t&& units) {
+        if (unlikely(!fetch_memory_units)) {
+            fetch_memory_units = std::move(units);
+        } else {
+            fetch_memory_units->adopt(std::move(units));
+        }
+    }
+
     /**
      * @brief Get an estimate of the number of partitions in the fetch.
      *
@@ -182,6 +190,8 @@ struct op_context {
     // for fetches that have preferred replica set we skip read, therefore we
     // need other indicator of finished fetch request.
     bool contains_preferred_replica = false;
+
+    std::optional<fetch_memory_units_t> fetch_memory_units;
 };
 
 struct fetch_config {
