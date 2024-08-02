@@ -202,3 +202,17 @@ redpanda_cc_library(
         "//src/v/utils:tristate",
     ],
 )
+
+redpanda_cc_library(
+    name = "inet_address",
+    hdrs = [
+        "rw/inet_address.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+        "//src/v/ssx:sformat",
+        "@seastar",
+    ],
+)

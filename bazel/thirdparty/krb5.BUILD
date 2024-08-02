@@ -21,7 +21,10 @@ configure_make(
         "--disable-static",
     ],
     lib_source = ":srcs",
-    out_shared_libs = ["libkrb5.so"],
+    out_shared_libs = [
+        "libkrb5.so",
+        "libgssapi_krb5.so",
+    ],
     visibility = [
         "//visibility:public",
     ],

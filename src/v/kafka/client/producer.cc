@@ -21,7 +21,10 @@
 
 #include <seastar/core/gate.hh>
 
+#include <chrono>
 #include <exception>
+
+using namespace std::chrono_literals;
 
 namespace kafka::client {
 
