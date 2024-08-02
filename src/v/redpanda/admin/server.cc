@@ -3250,12 +3250,17 @@ struct cluster_partition_info {
     }
 };
 
-fragmented_vector<cluster_partition_info> topic2cluster_partitions(
+// Use contiguous_range_map for the ease of indexing when joining with the
+// health report.
+using cluster_partitions_t
+  = contiguous_range_map<model::partition_id::type, cluster_partition_info>;
+
+cluster_partitions_t topic2cluster_partitions(
   model::topic_namespace ns_tp,
   const cluster::assignments_set& assignments,
   const cluster::topic_disabled_partitions_set* disabled_set,
   std::optional<bool> disabled_filter) {
-    fragmented_vector<cluster_partition_info> ret;
+    cluster_partitions_t ret;
 
     if (disabled_filter) {
         // fast exits
@@ -3288,12 +3293,14 @@ fragmented_vector<cluster_partition_info> topic2cluster_partitions(
               *shared_ns_tp,
               id);
 
-            ret.push_back(cluster_partition_info{
-              .ns_tp = shared_ns_tp,
-              .id = id,
-              .replicas = as_it->second.replicas,
-              .disabled = true,
-            });
+            ret.emplace(
+              id,
+              cluster_partition_info{
+                .ns_tp = shared_ns_tp,
+                .id = id,
+                .replicas = as_it->second.replicas,
+                .disabled = true,
+              });
         }
     } else {
         for (const auto& [_, p_as] : assignments) {
@@ -3303,20 +3310,48 @@ fragmented_vector<cluster_partition_info> topic2cluster_partitions(
                 continue;
             }
 
-            ret.push_back(cluster_partition_info{
-              .ns_tp = shared_ns_tp,
-              .id = p_as.id,
-              .replicas = p_as.replicas,
-              .disabled = disabled,
-            });
+            ret.emplace(
+              p_as.id,
+              cluster_partition_info{
+                .ns_tp = shared_ns_tp,
+                .id = p_as.id,
+                .replicas = p_as.replicas,
+                .disabled = disabled,
+              });
         }
     }
 
-    std::sort(ret.begin(), ret.end(), [](const auto& l, const auto& r) {
-        return l.id < r.id;
-    });
-
     return ret;
+}
+
+void collect_shards_from_health_report(
+  model::topic_namespace_view ns_tp,
+  cluster_partitions_t& partitions,
+  const cluster::cluster_health_report& hr) {
+    for (const auto& node : hr.node_reports) {
+        auto topic_it = node->topics.find(ns_tp);
+        if (topic_it == node->topics.end()) {
+            continue;
+        }
+
+        for (const auto& replica : topic_it->second) {
+            auto partition_it = partitions.find(replica.id);
+            if (partition_it == partitions.end()) {
+                continue;
+            }
+            auto& part = partition_it->second;
+
+            auto bs_it = std::find_if(
+              part.replicas.begin(),
+              part.replicas.end(),
+              [node_id = node->id](const model::broker_shard& bs) {
+                  return bs.node_id == node_id;
+              });
+            if (bs_it != part.replicas.end()) {
+                bs_it->shard = replica.shard;
+            }
+        }
+    }
 }
 
 } // namespace
@@ -3333,7 +3368,7 @@ admin_server::get_cluster_partitions_handler(
 
     const auto& topics_state = _controller->get_topics_state().local();
 
-    fragmented_vector<model::topic_namespace> topics;
+    chunked_vector<model::topic_namespace> topics;
     auto fill_topics = [&](const auto& map) {
         for (const auto& [ns_tp, _] : map) {
             if (!with_internal && !model::is_user_topic(ns_tp)) {
@@ -3353,6 +3388,28 @@ admin_server::get_cluster_partitions_handler(
 
     std::sort(topics.begin(), topics.end());
 
+    std::optional<cluster::cluster_health_report> health_report;
+    if (_controller->get_topics_frontend()
+          .local()
+          .node_local_core_assignment_enabled()) {
+        // We'll need to get core assignments from the health report
+        auto hr_result = co_await _controller->get_health_monitor()
+                           .local()
+                           .get_cluster_health(
+                             cluster::cluster_report_filter{},
+                             cluster::force_refresh::no,
+                             model::timeout_clock::now() + 5s);
+        if (hr_result.has_error()) {
+            throw ss::httpd::base_exception{
+              ssx::sformat(
+                "Error getting cluster health report: {}",
+                hr_result.error().message()),
+              ss::http::reply::status_type::internal_server_error};
+        }
+
+        health_report = std::move(hr_result.value());
+    }
+
     ss::chunked_fifo<cluster_partition_info> partitions;
     for (const auto& ns_tp : topics) {
         auto topic_it = topics_state.topics_map().find(ns_tp);
@@ -3367,10 +3424,14 @@ admin_server::get_cluster_partitions_handler(
           topics_state.get_topic_disabled_set(ns_tp),
           disabled_filter);
 
-        std::move(
-          topic_partitions.begin(),
-          topic_partitions.end(),
-          std::back_inserter(partitions));
+        if (health_report) {
+            collect_shards_from_health_report(
+              ns_tp, topic_partitions, health_report.value());
+        }
+
+        for (auto& [id, part] : topic_partitions) {
+            partitions.push_back(std::move(part));
+        }
 
         co_await ss::coroutine::maybe_yield();
     }
@@ -3406,9 +3467,29 @@ admin_server::get_cluster_partitions_topic_handler(
       topics_state.get_topic_disabled_set(ns_tp),
       disabled_filter);
 
+    if (_controller->get_topics_frontend()
+          .local()
+          .node_local_core_assignment_enabled()) {
+        // We'll need to get core assignments from the health report
+        auto hr_result = co_await _controller->get_health_monitor()
+                           .local()
+                           .get_cluster_health(
+                             cluster::cluster_report_filter{},
+                             cluster::force_refresh::no,
+                             model::timeout_clock::now() + 5s);
+        if (hr_result.has_error()) {
+            throw ss::httpd::base_exception{
+              ssx::sformat(
+                "Error getting cluster health report: {}",
+                hr_result.error().message()),
+              ss::http::reply::status_type::internal_server_error};
+        }
+        collect_shards_from_health_report(ns_tp, partitions, hr_result.value());
+    }
+
     co_return ss::json::json_return_type(ss::json::stream_range_as_array(
       lw_shared_container{std::move(partitions)},
-      [](const auto& p) { return p.to_json(); }));
+      [](const auto& kv) { return kv.second.to_json(); }));
 }
 
 void admin_server::register_cluster_routes() {
