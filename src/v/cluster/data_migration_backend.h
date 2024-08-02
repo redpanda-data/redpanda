@@ -66,7 +66,6 @@ private:
           : scope(scope){};
         work_scope scope;
         topic_map_t outstanding_topics;
-        void erase_tstate_if_done(topic_map_t::iterator it);
     };
     using migration_reconciliation_states_t
       = absl::flat_hash_map<id, migration_reconciliation_state>;
@@ -164,6 +163,8 @@ private:
     void clear_tstate_belongings(
       const model::topic_namespace& nt,
       const topic_reconciliation_state& tstate);
+    void erase_tstate_if_done(
+      migration_reconciliation_state& mrstate, topic_map_t::iterator it);
 
     // call only with _mutex lock grabbed
     ss::future<> reconcile_migration(

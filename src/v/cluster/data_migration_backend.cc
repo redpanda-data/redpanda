@@ -340,7 +340,7 @@ void backend::mark_migration_step_done_for_ntp(
                 }
             }
             rs_parts.erase(rs_part_it);
-            rs.erase_tstate_if_done(rs_topic_it);
+            erase_tstate_if_done(rs, rs_topic_it);
         }
     }
 }
@@ -352,17 +352,18 @@ void backend::mark_migration_step_done_for_nt(
     if (rs_topic_it != rs_topics.end()) {
         auto& tstate = rs_topic_it->second;
         tstate.topic_scoped_work_done = true;
-        rs.erase_tstate_if_done(rs_topic_it);
+        erase_tstate_if_done(rs, rs_topic_it);
     }
 }
 
-void backend::migration_reconciliation_state::erase_tstate_if_done(
-  topic_map_t::iterator it) {
+void backend::erase_tstate_if_done(
+  migration_reconciliation_state& mrstate, topic_map_t::iterator it) {
     auto& tstate = it->second;
     if (
       tstate.outstanding_partitions.empty()
       && (!tstate.topic_scoped_work_needed || tstate.topic_scoped_work_done)) {
-        outstanding_topics.erase(it);
+        _topic_migration_map.erase(it->first);
+        mrstate.outstanding_topics.erase(it);
     }
 }
 
