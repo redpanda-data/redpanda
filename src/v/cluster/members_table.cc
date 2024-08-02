@@ -17,7 +17,10 @@
 #include "cluster/types.h"
 #include "model/metadata.h"
 
+#include <fmt/format.h>
+
 #include <algorithm>
+#include <ranges>
 #include <vector>
 
 namespace cluster {
@@ -94,7 +97,20 @@ std::error_code members_table::apply(model::offset o, add_node_cmd cmd) {
 }
 
 void members_table::set_initial_brokers(std::vector<model::broker> brokers) {
-    vassert(!_nodes.empty(), "can not initialize not empty members table");
+    /**
+     * With the new Redpanda clusters the set_initial brokers will be the first
+     * method updating the members table content. In previous versions where the
+     * configuration changes were driven by the controller Raft configuration
+     * the members table may already have some nodes when the set command is
+     * applied.
+     */
+    if (!_nodes.empty()) {
+        vlog(
+          clusterlog.info,
+          "resetting initial nodes from raft configuration: {}",
+          fmt::join(_nodes | std::views::values, ", "));
+        _nodes.clear();
+    }
     vlog(clusterlog.info, "setting initial nodes {}", brokers);
     for (auto& b : brokers) {
         const auto id = b.id();
