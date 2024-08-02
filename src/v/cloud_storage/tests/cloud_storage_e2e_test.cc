@@ -637,14 +637,14 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
         if (report.has_value()) {
             std::vector<size_t> sizes;
             for (auto& node_report : report.value().node_reports) {
-                for (auto& topic : node_report->topics) {
+                for (auto& [tp_ns, partitions] : node_report->topics) {
                     if (
-                      topic.tp_ns
+                      tp_ns
                       != model::topic_namespace_view(
                         model::kafka_namespace, topic_name)) {
                         continue;
                     }
-                    for (auto partition : topic.partitions) {
+                    for (auto partition : partitions) {
                         sizes.push_back(
                           partition.reclaimable_size_bytes.value_or(0));
                     }

@@ -714,8 +714,8 @@ leader_balancer::collect_group_replicas_from_health_report(
     group_replicas_t group_replicas;
     ssx::async_counter counter;
     for (const auto& node : hr.node_reports) {
-        for (const auto& topic : node->topics) {
-            auto maybe_meta = _topics.get_topic_metadata_ref(topic.tp_ns);
+        for (const auto& [tp_ns, partitions] : node->topics) {
+            auto maybe_meta = _topics.get_topic_metadata_ref(tp_ns);
             if (!maybe_meta) {
                 continue;
             }
@@ -723,8 +723,8 @@ leader_balancer::collect_group_replicas_from_health_report(
 
             co_await ssx::async_for_each_counter(
               counter,
-              topic.partitions.begin(),
-              topic.partitions.end(),
+              partitions.begin(),
+              partitions.end(),
               [&](const partition_status& partition) {
                   auto as_it = meta.get_assignments().find(partition.id);
                   if (as_it != meta.get_assignments().end()) {
