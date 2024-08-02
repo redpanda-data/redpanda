@@ -176,7 +176,8 @@ public:
 
     // Initialize `_id_by_uuid` and brokers list. Should be called once only
     // when bootstrapping a cluster.
-    ss::future<> set_initial_state(std::vector<model::broker>, uuid_map_t);
+    ss::future<>
+      set_initial_state(std::vector<model::broker>, uuid_map_t, model::offset);
 
     // Returns a reference to a map containing mapping between node ids and node
     // uuids. Node UUID is node globally unique identifier which has an id
@@ -249,11 +250,6 @@ private:
     ss::future<std::error_code> update_node(model::broker);
 
     ss::future<join_node_reply> make_join_node_success_reply(model::node_id id);
-
-    bool command_based_membership_active() const {
-        return _feature_table.local().is_active(
-          features::feature::membership_change_controller_cmds);
-    }
 
     struct members_snapshot
       : serde::envelope<
