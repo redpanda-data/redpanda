@@ -50,6 +50,14 @@
           "produces": ["application/json"],
           "parameters": [
             {
+              "name": "key",
+              "in": "query",
+              "schema": {"type": "string"},
+              "required": false,
+              "allowMultiple": false,
+             "description": "The name of the (sole) property to read from the config. Respects property aliases."
+            },
+            {
               "name": "include_defaults",
               "in": "query",
               "schema": {"type": "boolean"},

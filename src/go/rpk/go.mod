@@ -37,7 +37,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.55.0
-	github.com/redpanda-data/common-go/rpadmin v0.1.2
+	github.com/redpanda-data/common-go/rpadmin v0.1.3
 	github.com/rs/xid v1.5.0
 	github.com/safchain/ethtool v0.4.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1

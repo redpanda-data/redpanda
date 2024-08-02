@@ -46,6 +46,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
+#include "config/base_property.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "container/fragmented_vector.h"
@@ -1267,12 +1268,20 @@ void admin_server::register_config_routes() {
               include_defaults = str_to_bool(include_defaults_str);
           }
 
-          config::shard_local_cfg().to_json(
-            writer,
-            config::redact_secrets::yes,
-            [include_defaults](config::base_property& p) {
-                return include_defaults || !p.is_default();
-            });
+          auto key_str = req.get_query_param("key");
+          if (!key_str.empty()) {
+              // Write a single key to json.
+              config::shard_local_cfg().to_json_single_key(
+                writer, config::redact_secrets::yes, key_str);
+          } else {
+              // Write the entire config to json.
+              config::shard_local_cfg().to_json(
+                writer,
+                config::redact_secrets::yes,
+                [include_defaults](config::base_property& p) {
+                    return include_defaults || !p.is_default();
+                });
+          }
 
           reply.set_status(ss::http::reply::status_type::ok, buf.GetString());
           return "";

@@ -691,8 +691,10 @@ class Admin:
     def get_status_ready(self, node=None):
         return self._request("GET", "status/ready", node=node).json()
 
-    def get_cluster_config(self, node=None, include_defaults=None):
-        if include_defaults is not None:
+    def get_cluster_config(self, node=None, include_defaults=None, key=None):
+        if key is not None:
+            kwargs = {"params": {"key": key}}
+        elif include_defaults is not None:
             kwargs = {"params": {"include_defaults": include_defaults}}
         else:
             kwargs = {}
