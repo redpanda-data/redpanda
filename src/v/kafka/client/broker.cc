@@ -15,11 +15,10 @@
 #include "net/connection.h"
 #include "net/dns.h"
 #include "rpc/rpc_utils.h"
+#include "thirdparty/c-ares/ares.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/net/dns.hh>
-
-#include <ares.h>
 
 namespace {
 bool is_dns_failure_error(const std::system_error& e) {
