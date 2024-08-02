@@ -21,6 +21,7 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "storage/directories.h"
@@ -320,7 +321,7 @@ void archiver_fixture::initialize_shard(
             storage::ntp_config(
               ntp.first, data_dir.string(), std::move(defaults)),
             raft::group_id(1),
-            {nm->broker},
+            {raft::vnode(nm->broker.id(), model::revision_id(0))},
             raft::with_learner_recovery_throttle::yes,
             raft::keep_snapshotted_log::no,
             std::nullopt)
