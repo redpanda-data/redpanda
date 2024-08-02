@@ -81,6 +81,14 @@ def data_dependency():
     )
 
     http_archive(
+        name = "libprotobuf_mutator",
+        build_file = "//bazel/thirdparty:libprotobuf-mutator.BUILD",
+        integrity = "sha256-KWUbFgNpDJtAO6Kr0eTo1v6iczEOta72jSle9oivFhg=",
+        strip_prefix = "libprotobuf-mutator-b922c8ab9004ef9944982e4f165e2747b13223fa",
+        url = "https://github.com/google/libprotobuf-mutator/archive/b922c8ab9004ef9944982e4f165e2747b13223fa.zip",
+    )
+
+    http_archive(
         name = "libxml2",
         build_file = "//bazel/thirdparty:libxml2.BUILD",
         sha256 = "cdf9f952582c32a00513468585fb517270047ac0cfaed013ef08aa7b775fd6b4",
