@@ -830,6 +830,31 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"$schema": "http://json-schema.org/draft-06/schema#"})",
     .reader_is_compatible_with_writer = true,
   },
+  // refs
+  {
+    .reader_schema = R"({"type": "string"})",
+    .writer_schema = R"({
+  "$ref": "#/definitions/a_ref",
+  "definitions": {
+    "a_ref": {
+      "type": "string"
+    }
+  }
+})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({
+  "$ref": "#/$defs/a_ref",
+  "$defs": {
+    "a_ref": {
+      "type": "string"
+    }
+  }
+})",
+    .writer_schema = R"({"type": "string"})",
+    .reader_is_compatible_with_writer = true,
+  },
 });
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;

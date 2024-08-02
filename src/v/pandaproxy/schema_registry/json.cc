@@ -15,6 +15,7 @@
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
+#include "json/pointer.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -181,6 +182,26 @@ class schema_context {
 public:
     explicit schema_context(json_schema_definition::impl const& schema)
       : _schema{schema} {}
+
+    json::Document::ValueType const& resolve(std::string_view ref) const {
+        // Internal reference
+        if (ref.starts_with("#")) {
+            json::Pointer ptr{
+              ref.data() + 1,
+              ref.length() - 1,
+            };
+            if (auto* p = ptr.Get(_schema.doc); p) {
+                return *p;
+            }
+            throw as_exception(error_info{
+              error_code::schema_invalid,
+              fmt::format("Reference not found: '{}'", ref)});
+        }
+
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format("External references not supported: '{}'", ref)});
+    }
 
 private:
     json_schema_definition::impl const& _schema;
@@ -499,10 +520,13 @@ json_type_list normalized_type(json::Value const& v) {
     return ret;
 }
 
-// helper to convert a boolean to a schema
+// helper to convert a boolean to a schema, and traverse references
 json::Value::ConstObject
-get_schema(schema_context const&, json::Value const& v) {
+get_schema(schema_context const& ctx, json::Value const& v) {
     if (v.IsObject()) {
+        if (auto it = v.FindMember("$ref"); it != v.MemberEnd()) {
+            return ctx.resolve(as_string_view(it->value)).GetObject();
+        }
         return v.GetObject();
     }
 
@@ -1444,10 +1468,7 @@ bool is_superset(
     }
 
     for (auto not_yet_handled_keyword : {
-           "definitions",
            "dependencies",
-           // draft 6 unhandled keywords:
-           "$ref",
            // draft 2019-09 unhandled keywords:
            "dependentRequired",
            "dependentSchemas",
