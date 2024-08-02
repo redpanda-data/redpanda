@@ -176,7 +176,8 @@ public:
 
     // Initialize `_id_by_uuid` and brokers list. Should be called once only
     // when bootstrapping a cluster.
-    ss::future<> set_initial_state(std::vector<model::broker>, uuid_map_t);
+    ss::future<>
+      set_initial_state(std::vector<model::broker>, uuid_map_t, model::offset);
 
     // Returns a reference to a map containing mapping between node ids and node
     // uuids. Node UUID is node globally unique identifier which has an id
