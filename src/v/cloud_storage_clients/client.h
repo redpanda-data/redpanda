@@ -80,13 +80,15 @@ public:
     /// \param payload_size is a size of the object in bytes
     /// \param body is an input_stream that can be used to read body
     /// \param timeout is a timeout of the operation
+    /// \param accept_no_content accepts a 204 response as valid
     /// \return future that becomes ready when the upload is completed
     virtual ss::future<result<no_response, error_outcome>> put_object(
       bucket_name const& name,
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      ss::lowres_clock::duration timeout)
+      ss::lowres_clock::duration timeout,
+      bool accept_no_content = false)
       = 0;
 
     struct list_bucket_item {

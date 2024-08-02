@@ -815,9 +815,11 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   object_key const& key,
   size_t payload_size,
   ss::input_stream<char> body,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  bool accept_no_content) {
     return send_request(
-      do_put_object(name, key, payload_size, std::move(body), timeout)
+      do_put_object(
+        name, key, payload_size, std::move(body), timeout, accept_no_content)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
@@ -829,7 +831,8 @@ ss::future<> s3_client::do_put_object(
   object_key const& id,
   size_t payload_size,
   ss::input_stream<char> body,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  bool accept_no_content) {
     auto header = _requestor.make_unsigned_put_object_request(
       name, id, payload_size);
     if (!header) {
@@ -841,18 +844,22 @@ ss::future<> s3_client::do_put_object(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return ss::do_with(
       std::move(body),
-      [this, timeout, header = std::move(header), id](
+      [this, timeout, header = std::move(header), id, accept_no_content](
         ss::input_stream<char>& body) mutable {
           auto make_request = [this, &header, &body, &timeout]() {
               return _client.request(std::move(header.value()), body, timeout);
           };
 
           return ss::futurize_invoke(make_request)
-            .then([id](const http::client::response_stream_ref& ref) {
+            .then([id, accept_no_content](
+                    const http::client::response_stream_ref& ref) {
                 return util::drain_response_stream(ref).then(
-                  [ref, id](iobuf&& res) {
+                  [ref, id, accept_no_content](iobuf&& res) {
                       auto status = ref->get_headers().result();
-                      if (status != boost::beast::http::status::ok) {
+                      using enum boost::beast::http::status;
+                      if (const auto is_no_content_and_accepted
+                          = status == no_content && accept_no_content;
+                          status != ok && !is_no_content_and_accepted) {
                           vlog(
                             s3_log.warn,
                             "S3 PUT request failed for key {}: {} {:l}",

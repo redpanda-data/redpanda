@@ -642,9 +642,11 @@ abs_client::put_object(
   object_key const& key,
   size_t payload_size,
   ss::input_stream<char> body,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  bool accept_no_content) {
     return send_request(
-      do_put_object(name, key, payload_size, std::move(body), timeout)
+      do_put_object(
+        name, key, payload_size, std::move(body), timeout, accept_no_content)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       key,
@@ -656,7 +658,8 @@ ss::future<> abs_client::do_put_object(
   object_key const& key,
   size_t payload_size,
   ss::input_stream<char> body,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  bool accept_no_content) {
     auto header = _requestor.make_put_blob_request(name, key, payload_size);
     if (!header) {
         co_await body.close();
@@ -676,7 +679,11 @@ ss::future<> abs_client::do_put_object(
     vassert(response_stream->is_header_done(), "Header is not received");
 
     const auto status = response_stream->get_headers().result();
-    if (status != boost::beast::http::status::created) {
+    using enum boost::beast::http::status;
+
+    if (const auto is_no_content_and_accepted = accept_no_content
+                                                && status == no_content;
+        status != created && !is_no_content_and_accepted) {
         const auto content_type = get_response_content_type(
           response_stream->get_headers());
         auto buf = co_await util::drain_response_stream(

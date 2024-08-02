@@ -60,11 +60,7 @@ static constexpr const char* expected_payload
     "simple and intuitive web interface of the AWS Management Console.";
 static const size_t expected_payload_size = std::strlen(expected_payload);
 static constexpr const char* error_payload
-  = "<?xml version=\"1.0\" "
-    "encoding=\"UTF-8\"?><Error><Code>InternalError</"
-    "Code><Message>Error.Message</"
-    "Message><Resource>Error.Resource</Resource><RequestId>Error.RequestId</"
-    "RequestId></Error>";
+  = R"(<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>Error.Message</Message><Resource>Error.Resource</Resource><RequestId>Error.RequestId</RequestId></Error>)";
 static constexpr const char* no_such_key_payload = R"xml(
 <?xml version="1.0" encoding="UTF-8"?>
 <Error>
@@ -116,6 +112,14 @@ constexpr auto delete_objects_payload_error = R"xml(
         <Key>{}</Key>
         <Code>{}</Code>
     </Error>
+)xml";
+
+static constexpr auto no_such_config_payload = R"xml(
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchConfiguration</Code>
+    <Message>Configuration not found</Message>
+</Error>
 )xml";
 
 void set_routes(ss::httpd::routes& r) {
@@ -272,6 +276,18 @@ void set_routes(ss::httpd::routes& r) {
           return "unexpected";
       },
       "txt");
+    auto put_response_no_content = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::no_content);
+          return "";
+      },
+      "txt");
+    auto no_such_config = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::not_found);
+          return no_such_config_payload;
+      },
+      "txt");
     r.add(operation_type::PUT, url("/test"), empty_put_response);
     r.add(operation_type::PUT, url("/test-error"), erroneous_put_response);
     r.add(operation_type::GET, url("/test"), get_response);
@@ -291,6 +307,11 @@ void set_routes(ss::httpd::routes& r) {
       url("/test-bucket-not-found"),
       bucket_not_found_response);
     r.add(operation_type::POST, url("/"), delete_objects_response);
+    r.add(
+      operation_type::PUT,
+      url("/test-put-no-content"),
+      put_response_no_content);
+    r.add(operation_type::GET, url("/no-config"), no_such_config);
 }
 
 /// Http server and client
@@ -715,6 +736,72 @@ SEASTAR_TEST_CASE(test_delete_object_retry) {
 
         server->stop().get();
     });
+}
+
+ss::future<> do_test_put_object_no_response(bool acceptable) {
+    return ss::async([acceptable] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        iobuf payload;
+        payload.append(expected_payload, expected_payload_size);
+        auto payload_stream = make_iobuf_input_stream(std::move(payload));
+        const auto response
+          = client
+              ->put_object(
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test-put-no-content"),
+                expected_payload_size,
+                std::move(payload_stream),
+                100ms,
+                acceptable)
+              .get();
+        if (acceptable) {
+            BOOST_REQUIRE(response);
+        } else {
+            BOOST_REQUIRE(!response);
+        }
+        client->shutdown();
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_put_object_no_response_acceptable) {
+    return do_test_put_object_no_response(true);
+}
+
+SEASTAR_TEST_CASE(test_put_object_no_response_not_acceptable) {
+    return do_test_put_object_no_response(false);
+}
+
+ss::future<> do_test_no_such_configuration(bool acceptable) {
+    return ss::async([acceptable] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        const auto result = client
+                              ->get_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("no-config"),
+                                100ms,
+                                acceptable)
+                              .get0();
+        // acceptable only affects the log level, the end response is always 404
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::key_not_found);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::key_not_found);
+        client->shutdown();
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_no_configuration_mapped_to_404) {
+    return do_test_no_such_configuration(true);
+}
+
+SEASTAR_TEST_CASE(test_no_configuration_not_mapped_404) {
+    return do_test_no_such_configuration(false);
 }
 
 class client_pool_fixture {
