@@ -104,6 +104,33 @@ class ShardPlacementTest(PreallocNodesTest):
 
         return topic2partition2shard
 
+    def shard_maps_equal(self, left, right):
+        """return True if equal, if not, log the details"""
+        left_topics = set(left.keys())
+        right_topics = set(right.keys())
+        if left_topics != right_topics:
+            self.logger.debug(
+                f"topic sets differ: {left_topics} vs. {right_topics}")
+            return False
+
+        for topic, left_partitions in left.items():
+            right_partitions = right[topic]
+            left_ids = set(left_partitions.keys())
+            right_ids = set(right_partitions.keys())
+            if left_ids != right_ids:
+                self.logger.debug(f"partition sets for topic {topic} differ: "
+                                  f"{left_ids} vs. {right_ids}")
+                return False
+
+            for p_id, left_replicas in left_partitions.items():
+                right_replicas = right_partitions[p_id]
+                if left_replicas != right_replicas:
+                    self.logger.debug(
+                        f"replica sets for partition {topic}/{p_id} differ: "
+                        f"{left_replicas} vs. {right_replicas}")
+                    return False
+        return True
+
     def get_shard_counts_by_topic(self, shard_map, node_id):
         core_count = self.redpanda.get_node_cpu_count()
         topic2shard2count = dict()
@@ -144,7 +171,8 @@ class ShardPlacementTest(PreallocNodesTest):
         def is_stationary():
             nonlocal shard_map
             new_map = self.get_replica_shard_map(nodes, admin)
-            if new_map == shard_map:
+            if shard_map is not None and self.shard_maps_equal(
+                    new_map, shard_map):
                 return True
             else:
                 shard_map = new_map
