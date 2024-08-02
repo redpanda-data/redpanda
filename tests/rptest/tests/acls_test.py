@@ -39,7 +39,32 @@ class MTLSProvider(TLSProvider):
                                     common_name=name)
 
 
-class AccessControlListTest(RedpandaTest):
+class AccessControlListTestBase(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def security_updates_barrier(self, verify_users: list[str] = []):
+        # Hack: create a user, so that we can watch for this user in order to
+        # confirm that all preceding controller log writes landed: this is
+        # an indirect way to check that ACLs (and users) have propagated
+        # to all nodes before we proceed.
+        checkpoint_user = "_test_checkpoint"
+        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
+
+        # wait for users to propagate to nodes
+        def auth_metadata_propagated():
+            for node in self.redpanda.nodes:
+                users = self.admin.list_users(node=node)
+                if checkpoint_user not in users:
+                    return False
+                else:
+                    assert all(user in users for user in verify_users)
+            return True
+
+        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+
+
+class AccessControlListTest(AccessControlListTestBase):
     password = "password"
     algorithm = "SCRAM-SHA-256"
 
@@ -129,24 +154,11 @@ class AccessControlListTest(RedpandaTest):
         client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
-        # Hack: create a user, so that we can watch for this user in order to
-        # confirm that all preceding controller log writes landed: this is
-        # an indirect way to check that ACLs (and users) have propagated
-        # to all nodes before we proceed.
-        checkpoint_user = "_test_checkpoint"
-        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
-
-        # wait for users to propagate to nodes
-        def auth_metadata_propagated():
-            for node in self.redpanda.nodes:
-                users = self.admin.list_users(node=node)
-                if checkpoint_user not in users:
-                    return False
-                elif self.security.sasl_enabled() or enable_authz:
-                    assert "base" in users and "cluster_describe" in users
-            return True
-
-        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+        # Wait for ACLs and users to propagated to all nodes before we proceed.
+        expected_users = []
+        if self.security.sasl_enabled() or enable_authz:
+            expected_users = ["base", "cluster_describe"]
+        self.security_updates_barrier(expected_users)
 
     def get_client(self, username):
         if self.security.mtls_identity_enabled(
