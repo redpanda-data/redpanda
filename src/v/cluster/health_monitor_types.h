@@ -13,6 +13,7 @@
 #include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "serde/async.h"
@@ -158,9 +159,15 @@ struct topic_status
  * instance of time
  */
 struct node_health_report {
+    using topics_t = chunked_hash_map<
+      model::topic_namespace,
+      partition_statuses_t,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
+
     model::node_id id;
     node::local_state local_state;
-    chunked_vector<topic_status> topics;
+    topics_t topics;
     std::optional<drain_manager::drain_status> drain_status;
 
     node_health_report(
@@ -212,9 +219,7 @@ struct node_health_report_serde
         return {id, local_state, topics.copy(), drain_status};
     }
 
-    explicit node_health_report_serde(const node_health_report& hr)
-      : node_health_report_serde(
-        hr.id, hr.local_state, hr.topics.copy(), hr.drain_status) {}
+    explicit node_health_report_serde(const node_health_report& hr);
 
     node_health_report to_in_memory() && {
         return node_health_report{

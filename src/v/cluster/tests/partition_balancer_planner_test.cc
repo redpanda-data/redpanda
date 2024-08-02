@@ -528,9 +528,9 @@ FIXTURE_TEST(
     nr_0.local_state.log_data_size.value().data_current_size += 1_MiB;
 
     // Set partition sizes
-    for (auto& topic : nr_0.topics) {
-        if (topic.tp_ns.tp == "topic-1") {
-            for (auto& partition : topic.partitions) {
+    for (auto& [tp_ns, partitions] : nr_0.topics) {
+        if (tp_ns.tp == "topic-1") {
+            for (auto& partition : partitions) {
                 if (partition.id == 1) {
                     partition.size_bytes = default_partition_size - 1_KiB;
                 }

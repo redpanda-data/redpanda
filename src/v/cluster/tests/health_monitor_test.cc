@@ -54,10 +54,10 @@ void check_reports_the_same(
         BOOST_TEST_REQUIRE(
           lr->local_state.redpanda_version == rr->local_state.redpanda_version);
         BOOST_REQUIRE_EQUAL(lr->topics.size(), rr->topics.size());
-        for (auto i = 0; i < lr->topics.size(); ++i) {
-            BOOST_REQUIRE_EQUAL(lr->topics[i].tp_ns, rr->topics[i].tp_ns);
-            auto& l_partitions = lr->topics[i].partitions;
-            auto& r_partitions = rr->topics[i].partitions;
+        for (const auto& [tp_ns, l_partitions] : lr->topics) {
+            auto r_it = rr->topics.find(tp_ns);
+            BOOST_REQUIRE_MESSAGE(r_it != rr->topics.end(), "tp_ns: " << tp_ns);
+            auto& r_partitions = r_it->second;
             BOOST_REQUIRE_EQUAL(l_partitions.size(), r_partitions.size());
             for (auto p = 0; p < l_partitions.size(); ++p) {
                 auto& l_p = l_partitions[p];
@@ -173,11 +173,11 @@ cluster::topic_configuration topic_cfg(
 bool contains_exactly_ntp_leaders(
   ss::logger& logger,
   const std::unordered_set<model::ntp>& expected,
-  const chunked_vector<cluster::topic_status>& topics) {
+  const cluster::node_health_report::topics_t& topics) {
     auto left = expected;
-    for (const auto& t_l : topics) {
-        for (const auto& p_l : t_l.partitions) {
-            model::ntp ntp(t_l.tp_ns.ns, t_l.tp_ns.tp, p_l.id);
+    for (const auto& [tp_ns, partitions] : topics) {
+        for (const auto& p_l : partitions) {
+            model::ntp ntp(tp_ns.ns, tp_ns.tp, p_l.id);
             if (left.erase(ntp) == 0) {
                 vlog(
                   logger.debug,

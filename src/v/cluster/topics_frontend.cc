@@ -1645,10 +1645,10 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
 
     for (auto& node_report : health_report.value().node_reports) {
         co_await ss::max_concurrent_for_each(
-          std::move(node_report->topics),
+          node_report->topics,
           32,
-          [&info](const topic_status& status) {
-              for (const auto& partition : status.partitions) {
+          [&info](const node_health_report::topics_t::value_type& status) {
+              for (const auto& partition : status.second) {
                   info.ntp_sizes[partition.id] = partition.size_bytes;
               }
               return ss::now();

@@ -152,27 +152,29 @@ cluster_health_report health_monitor_backend::build_cluster_report(
       .bytes_in_cloud_storage = _bytes_in_cloud_storage};
 }
 
-chunked_vector<topic_status> filter_topic_status(
-  const chunked_vector<topic_status>& topics, const partitions_filter& filter) {
+node_health_report::topics_t filter_topic_status(
+  const node_health_report::topics_t& topics, const partitions_filter& filter) {
     // empty filter matches all
     if (filter.namespaces.empty()) {
-        chunked_vector<topic_status> copy;
-        copy.reserve(topics.size());
-        std::copy(topics.cbegin(), topics.cend(), std::back_inserter(copy));
-        return copy;
+        node_health_report::topics_t ret;
+        ret.reserve(topics.bucket_count());
+        for (const auto& [tp_ns, partitions] : topics) {
+            ret.emplace(tp_ns, partitions.copy());
+        }
+        return ret;
     }
 
-    chunked_vector<topic_status> filtered;
+    node_health_report::topics_t filtered;
 
-    for (auto& tl : topics) {
-        topic_status filtered_topic_status(tl.tp_ns, {});
-        for (auto& pl : tl.partitions) {
-            if (filter.matches(tl.tp_ns, pl.id)) {
-                filtered_topic_status.partitions.push_back(pl);
+    for (auto& [tp_ns, partitions] : topics) {
+        partition_statuses_t filtered_partitions;
+        for (auto& pl : partitions) {
+            if (filter.matches(tp_ns, pl.id)) {
+                filtered_partitions.push_back(pl);
             }
         }
-        if (!filtered_topic_status.partitions.empty()) {
-            filtered.push_back(std::move(filtered_topic_status));
+        if (!filtered_partitions.empty()) {
+            filtered.emplace(tp_ns, std::move(filtered_partitions));
         }
     }
 
@@ -189,17 +191,14 @@ std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
         return ss::make_foreign(it->second);
     }
 
-    auto local_state = it->second->local_state;
-    local_state.logical_version
+    node_health_report ret{
+      it->second->id, it->second->local_state, {}, it->second->drain_status};
+    ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
+    ret.topics = filter_topic_status(it->second->topics, f.ntp_filters);
 
-    decltype(it->second->topics) topics;
-    if (f.include_partitions) {
-        topics = filter_topic_status(it->second->topics, f.ntp_filters);
-    }
-
-    return ss::make_foreign(ss::make_lw_shared<const node_health_report>(
-      id, std::move(local_state), std::move(topics), it->second->drain_status));
+    return ss::make_foreign(
+      ss::make_lw_shared<const node_health_report>(std::move(ret)));
 }
 
 void health_monitor_backend::abortable_refresh_request::abort() {

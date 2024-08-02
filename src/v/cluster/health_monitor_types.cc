@@ -77,19 +77,36 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
 node_health_report::node_health_report(
   model::node_id id,
   node::local_state local_state,
-  chunked_vector<topic_status> topics,
+  chunked_vector<topic_status> topics_vec,
   std::optional<drain_manager::drain_status> drain_status)
   : id(id)
   , local_state(std::move(local_state))
-  , topics(std::move(topics))
-  , drain_status(drain_status) {}
+  , drain_status(drain_status) {
+    topics.reserve(topics_vec.size());
+    for (auto& topic : topics_vec) {
+        topics.emplace(std::move(topic.tp_ns), std::move(topic.partitions));
+    }
+}
 
 node_health_report node_health_report::copy() const {
-    return {id, local_state, topics.copy(), drain_status};
+    node_health_report ret{id, local_state, {}, drain_status};
+    ret.topics.reserve(topics.bucket_count());
+    for (const auto& [tp_ns, partitions] : topics) {
+        ret.topics.emplace(tp_ns, partitions.copy());
+    }
+    return ret;
 }
 
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     return o << node_health_report_serde{r};
+}
+
+node_health_report_serde::node_health_report_serde(const node_health_report& hr)
+  : node_health_report_serde(hr.id, hr.local_state, {}, hr.drain_status) {
+    topics.reserve(hr.topics.size());
+    for (const auto& [tp_ns, partitions] : hr.topics) {
+        topics.emplace_back(tp_ns, partitions.copy());
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const node_health_report_serde& r) {
