@@ -18,14 +18,14 @@
 #include "security/krb5.h"
 #include "security/logger.h"
 #include "ssx/thread_worker.h"
+#include "thirdparty/krb5/gssapi.h"
+#include "thirdparty/krb5/gssapi_ext.h"
 
 #include <seastar/core/lowres_clock.hh>
 
 #include <boost/outcome/basic_outcome.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/ranges.h>
-#include <gssapi/gssapi.h>
-#include <gssapi/gssapi_ext.h>
 
 #include <array>
 #include <sstream>

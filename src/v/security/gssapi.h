@@ -10,9 +10,8 @@
 #pragma once
 
 #include "bytes/bytes.h"
-
-#include <gssapi/gssapi.h>
-#include <gssapi/gssapi_ext.h>
+#include "thirdparty/krb5/gssapi.h"
+#include "thirdparty/krb5/gssapi_ext.h"
 
 #include <string_view>
 
