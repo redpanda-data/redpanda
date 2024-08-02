@@ -62,6 +62,8 @@ MachineTypeMemory = {
     'im4gn.large': 8 * GiB,
     'im4gn.xlarge': 16 * GiB,
     'im4gn.8xlarge': 128 * GiB,
+    'Standard_L8s_v3': 64 * GiB,
+    'Standard_L8as_v3': 64 * GiB,
     'n2d-standard-2': 8 * GiB,
     'n2d-standard-4': 16 * GiB,
     'n2d-standard-16': 64 * GiB,

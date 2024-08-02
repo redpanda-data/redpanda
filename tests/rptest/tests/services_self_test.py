@@ -9,10 +9,12 @@
 
 from subprocess import CalledProcessError
 from ducktape.mark import matrix
+from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test
 
 from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
 from rptest.services.cluster import cluster
+from rptest.clients.kubectl import is_redpanda_pod, SUPPORTED_PROVIDERS
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
@@ -364,6 +366,66 @@ class KubectlSelfTest(Test):
                 assert False, 'expected this command to throw'
             except CalledProcessError:
                 pass
+
+
+class KubectlLocalOnlyTest(Test):
+    @dt_cluster(num_nodes=0)
+    def test_is_redpanda_pod(self):
+        test_cases = {
+            "regular_hit": {
+                "pod": {
+                    "metadata": {
+                        "generateName": "redpanda-broker-",
+                        "labels": {
+                            "app.kubernetes.io/component":
+                            "redpanda-statefulset"
+                        }
+                    }
+                },
+                "result": True
+            },
+            "miss_wrong_generate_name": {
+                "pod": {
+                    "metadata": {
+                        "generateName": "redpanda-broker-configuration-",
+                        "labels": {
+                            "app.kubernetes.io/component":
+                            "redpanda-statefulset"
+                        }
+                    }
+                },
+                "result": False
+            },
+            "miss_wrong_component": {
+                "pod": {
+                    "metadata": {
+                        "generateName": "redpanda-broker-configuration-",
+                        "labels": {
+                            "app.kubernetes.io/component":
+                            "redpanda-post-install"
+                        }
+                    },
+                },
+                "result": False
+            },
+            "hit_legacy_pod_name": {
+                "pod": {
+                    "metadata": {
+                        "name": "rp-CLUSTER_ID-4"
+                    }
+                },
+                "result": True
+            },
+        }
+        for test_name, test_case in test_cases.items():
+            pod_obj = test_case["pod"]
+            expected_result = test_case["result"]
+            try:
+                actual_result = is_redpanda_pod(pod_obj, "CLUSTER_ID")
+            except KeyError as err:
+                self.logger.error(f"KeyError from is_redpanda_pod: {err}")
+                actual_result = False
+            assert expected_result is actual_result, f"Failed for test case '{test_name}' (expected={expected_result}, actual={actual_result})"
 
 
 class FailureInjectorSelfTest(Test):

@@ -48,10 +48,13 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
         self.logger.debug("Here we go")
 
         # assert isinstance(self.redpanda, RedpandaServiceCloud)
-        if self._configProfile['cloud_provider'] == 'gcp':
-            self._check_gcp_nodes()
-        else:
-            self._check_aws_nodes()
+        match self._configProfile['cloud_provider']:
+            case 'aws':
+                self._check_aws_nodes()
+            case 'gcp':
+                self._check_gcp_nodes()
+            case 'azure':
+                self._check_azure_nodes()
 
         self._check_rp_config()
 
@@ -62,7 +65,8 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
         self.logger.debug(
             "asserting we got the config for the right cluster: expected rp-{}, actual: {}"
             .format(self._clusterId, clusterConfig["cluster_id"]))
-        assert "rp-{}".format(self._clusterId) == clusterConfig['cluster_id']
+        assert clusterConfig['cluster_id'] in (self._clusterId,
+                                               f'rp-{self._clusterId}')
 
         for k, v in self._configProfile["cluster_config"].items():
             self.logger.debug(
@@ -70,6 +74,49 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
                 .format(k, v, clusterConfig[k]))
             if clusterConfig[k] != v and "{}".format(clusterConfig[k]) != v:
                 assert False
+
+    def _check_aws_nodes(self):
+        cmd = self.redpanda.kubectl._ssh_prefix() + [
+            'aws', 'ec2', 'describe-instances',
+            '--filters="Name=tag:Name, Values=redpanda-{}-rp"'.format(
+                self._clusterId),
+            '--query="Reservations[0].Instances[*].InstanceType"'
+        ]
+        res = subprocess.check_output(cmd)
+        resd = json.loads(res)
+
+        self.logger.debug(
+            "asserting nodes_count: expected: {}, actual: {}".format(
+                self._configProfile['nodes_count'], len(resd)))
+        assert len(resd) == self._configProfile['nodes_count']
+
+        self.logger.debug(
+            "asserting machineType: expected: {}, actual: {}".format(
+                self._configProfile['machine_type'], resd[0]))
+        assert resd[0] == self._configProfile['machine_type']
+
+    def _check_azure_nodes(self):
+        # currently, we have to override the PATH for azure because
+        # az-cli is installed via snap and /snap/bin only appears in
+        # $PATH on *interactive* shells
+        cmd = self.redpanda.kubectl._ssh_prefix() + [
+            'env', 'PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin',
+            'az', 'aks', 'nodepool', 'list',
+            '--cluster-name', f'aks-rpcloud-{self._clusterId}',
+            '--resource-group', f'rg-rpcloud-{self._clusterId}',
+            '--query', "'[?starts_with(name,`redpanda`)].vmSize'",
+            '--output', 'json'
+        ] # yapf: disable
+
+        res = subprocess.check_output(cmd)
+        resd = json.loads(res)
+
+        nc = self._configProfile['nodes_count']
+        assert len(
+            resd) == nc, f"expected nodes_count: {nc}, actual: {len(resd)}"
+
+        mt = self._configProfile['machine_type']
+        assert resd[1] == mt, f"expected machineType: {mt}, actual: {resd[1]}"
 
     def _check_gcp_nodes(self):
         cmd = self.redpanda.kubectl._ssh_prefix() + [
@@ -101,23 +148,3 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
                 .format(n["name"], self._configProfile["storage_size_bytes"],
                         total))
             assert total == self._configProfile['storage_size_bytes']
-
-    def _check_aws_nodes(self):
-        cmd = self.redpanda.kubectl._ssh_prefix() + [
-            'aws', 'ec2', 'describe-instances',
-            '--filters="Name=tag:Name, Values=redpanda-{}-rp"'.format(
-                self._clusterId),
-            '--query="Reservations[0].Instances[*].InstanceType"'
-        ]
-        res = subprocess.check_output(cmd)
-        resd = json.loads(res)
-
-        self.logger.debug(
-            "asserting nodes_count: expected: {}, actual: {}".format(
-                self._configProfile['nodes_count'], len(resd)))
-        assert len(resd) == self._configProfile['nodes_count']
-
-        self.logger.debug(
-            "asserting machineType: expected: {}, actual: {}".format(
-                self._configProfile['machine_type'], resd[0]))
-        assert resd[0] == self._configProfile['machine_type']

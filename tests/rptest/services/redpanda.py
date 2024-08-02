@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import subprocess
 from abc import ABC, abstractmethod
 import concurrent.futures
 import copy
@@ -470,6 +471,10 @@ class SISettings:
 
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
+    GLOBAL_AZURE_CLIENT_ID = "azure_client_id"
+    GLOBAL_AZURE_CLIENT_SECRET = "azure_client_secret"
+    GLOBAL_AZURE_TENANT_ID = "azure_tenant_id"
+
     GLOBAL_CLOUD_PROVIDER = "cloud_provider"
 
     # The account and key to use with local Azurite testing.
@@ -1663,14 +1668,29 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # later to dataclass
         self._cc_config = context.globals[self.GLOBAL_CLOUD_CLUSTER_CONFIG]
 
-        self._provider_config = {
-            "access_key":
-            context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
-            "secret_key":
-            context.globals.get(SISettings.GLOBAL_S3_SECRET_KEY, None),
-            "region":
-            context.globals.get(SISettings.GLOBAL_S3_REGION_KEY, None)
-        }
+        self._provider_config = {}
+        match get_cloud_provider():
+            case "aws" | "gcp":
+                self._provider_config.update({
+                    'access_key':
+                        context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
+                    'secret_key':
+                        context.globals.get(SISettings.GLOBAL_S3_SECRET_KEY, None),
+                    'region':
+                        context.globals.get(SISettings.GLOBAL_S3_REGION_KEY, None)
+                }) # yapf: disable
+            case "azure":
+                self._provider_config.update({
+                    'azure_client_id':
+                        context.globals.get(SISettings.GLOBAL_AZURE_CLIENT_ID, None),
+                    'azure_client_secret':
+                        context.globals.get(SISettings.GLOBAL_AZURE_CLIENT_SECRET, None),
+                    'azure_tenant_id':
+                        context.globals.get(SISettings.GLOBAL_AZURE_TENANT_ID, None)
+                }) # yapf: disable
+            case _:
+                pass
+
         # log cloud cluster id
         self.logger.debug(f"initial cluster_id: {self._cc_config['id']}")
 
@@ -1698,7 +1718,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             self,
             remote_uri=remote_uri,
             cluster_id=cluster_id,
-            cluster_privider=self._cloud_cluster.config.provider,
+            cluster_provider=self._cloud_cluster.config.provider,
             cluster_region=self._cloud_cluster.config.region,
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
@@ -1788,6 +1808,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         return active_rp_pods, inactive_rp_pods, unknown_rp_pods
 
+    def get_redpanda_statefulset(self):
+        """Get the statefulset for redpanda brokers"""
+        if not self.__is_operator_v2_cluster():
+            return None
+        return json.loads(
+            self.kubectl.cmd(
+                'get statefulset -n redpanda redpanda-broker -o json'))
+
     def get_redpanda_pods(self):
         """Get the current list of redpanda pods as k8s API objects."""
         pods = json.loads(self.kubectl.cmd('get pods -n redpanda -o json'))
@@ -1856,6 +1884,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Call to rebuild metadata for all cloud brokers
         self.rebuild_pods_classes()
 
+    def __is_operator_v2_cluster(self):
+        return len(self.kubectl.cmd(['get', 'redpanda', '-n=redpanda'])) > 0
+
     def rolling_restart_pods(self, pod_timeout: int = 180):
         """Restart all pods in the cluster one at a time.
 
@@ -1863,22 +1894,16 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         until the previous one has finished.
         Block until cluster is ready after all restarts are finished.
 
-        :param timeout: seconds to wait for each pod to be ready after restart
+        :param pod_timeout: seconds to wait for each pod to be ready after restart
         """
 
-        cluster_name = f'rp-{self._cloud_cluster.cluster_id}'
         pod_names = [p.name for p in self.pods]
         self.logger.info(f'rolling restart on pods: {pod_names}')
 
         for pod_name in pod_names:
             self.restart_pod(pod_name, pod_timeout)
-            # kubectl get cluster rp-clo88krkqkrfamptsst0 -n=redpanda -o=jsonpath='{.status.replicas}'
-            expected_replicas = int(
-                self.kubectl.cmd([
-                    'get', 'cluster', cluster_name, '-n=redpanda',
-                    "-o=jsonpath='{.status.replicas}'"
-                ]))
-
+            cluster_name = f'rp-{self._cloud_cluster.cluster_id}'
+            expected_replicas = self.cluster_desired_replicas(cluster_name)
             # Check cluster readiness after pod restart
             self.check_cluster_readiness(cluster_name, expected_replicas,
                                          pod_timeout)
@@ -1937,8 +1962,23 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             f"Cluster {cluster_name} arrived at readyReplicas {expected_replicas}"
         )
 
-    def cluster_ready_replicas(self, cluster_name: str):
+    def cluster_desired_replicas(self, cluster_name: str = ''):
+        """Return cluster desired replica count."""
+        if self.__is_operator_v2_cluster():
+            rp_statefulset = self.get_redpanda_statefulset()
+            return int(rp_statefulset['status']['replicas'])
+        expected_replicas = int(
+            self.kubectl.cmd([
+                'get', 'cluster', cluster_name, '-n=redpanda',
+                "-o=jsonpath='{.status.replicas}'"
+            ]))
+        return expected_replicas
+
+    def cluster_ready_replicas(self, cluster_name: str = ''):
         """Retrieves the number of ready replicas for the given cluster."""
+        if self.__is_operator_v2_cluster():
+            rp_statefulset = self.get_redpanda_statefulset()
+            return int(rp_statefulset['status']['readyReplicas'])
         ret = self.kubectl.cmd([
             'get', 'cluster', cluster_name, '-n=redpanda',
             "-o=jsonpath='{.status.readyReplicas}'"

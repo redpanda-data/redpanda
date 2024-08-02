@@ -53,6 +53,10 @@ class CloudClusterUtils:
             self.gcp_project_id = self._get_gcp_project_id(infra_id)
             self.logger.info(f"Using GCP project '{self.gcp_project_id}'")
             self.env.update({"GOOGLE_APPLICATION_CREDENTIALS": infra_id})
+        elif self.provider == 'azure':
+            self.subscription_id = context.globals['azure_subscription_id']
+            self.logger.debug(
+                f"Using Azure subscription ID: {self.subscription_id}")
 
     def _get_gcp_project_id(self, keyfilepath):
         project_id = None
@@ -131,8 +135,14 @@ class CloudClusterUtils:
         self.logger.debug("Deploying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
-        if self.provider == 'gcp':
-            cmd += ["--project-id=" + self.gcp_project_id]
+        match self.provider:
+            case 'gcp':
+                cmd += [f"--project-id={self.gcp_project_id}"]
+            case 'azure':
+                cmd += [
+                    f"--subscription-id={self.subscription_id}",
+                    "--identity=cli", "--credential-source=cli"
+                ]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
         return out

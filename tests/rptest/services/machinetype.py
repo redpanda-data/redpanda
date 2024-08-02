@@ -17,6 +17,10 @@ class MachineTypeName(str, Enum):
     IM4GN_XLARGE = 'im4gn.xlarge'
     IM4GN_8XLARGE = 'im4gn.8xlarge'
 
+    # Azure X86
+    STANDARD_L8S_V3 = 'Standard_L8s_v3'
+    STANDARD_L8AS_V3 = 'Standard_L8as_v3'
+
     # GCP X86
     N2_STANDARD_2 = 'n2-standard-2'
     N2_STANDARD_4 = 'n2-standard-4'
@@ -66,6 +70,12 @@ MachineTypeConfigs = {
     MachineTypeConfig(num_shards=3, memory=16 * GiB),
     MachineTypeName.IM4GN_8XLARGE:
     MachineTypeConfig(num_shards=31, memory=128 * GiB),
+
+    # Azure X86
+    MachineTypeName.STANDARD_L8S_V3:
+    MachineTypeConfig(num_shards=7, memory=64 * GiB),
+    MachineTypeName.STANDARD_L8AS_V3:
+    MachineTypeConfig(num_shards=7, memory=64 * GiB),
 
     # GCP X86
     MachineTypeName.N2_STANDARD_2:

@@ -29,8 +29,13 @@ CLOUD_TYPE_FMC = 'FMC'
 CLOUD_TYPE_BYOC = 'BYOC'
 PROVIDER_AWS = 'AWS'
 PROVIDER_GCP = 'GCP'
+PROVIDER_AZURE = 'AZURE'
 
-TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
+TIER_DEFAULTS = {
+    PROVIDER_AWS: "tier-1-aws",
+    PROVIDER_GCP: "tier-1-gcp",
+    PROVIDER_AZURE: "tier-1-azure-v2-x86"
+}
 
 
 def get_config_profile_name(config: None | dict[str, Any]) -> str:
@@ -82,6 +87,15 @@ class CloudTierName(Enum):
     GCP_5_P5 = 'tco-p5-tier-5-gcp'
     GCP_6_P5 = 'tco-p5-tier-6-gcp'
     GCP_7_P5 = 'tco-p5-tier-7-gcp'
+    AZURE_1 = 'tier-1-azure-v2-x86'
+    AZURE_2 = 'tier-2-azure-v2-x86'
+    AZURE_3 = 'tier-3-azure-v2-x86'
+    AZURE_4 = 'tier-4-azure-v2-x86'
+    AZURE_5 = 'tier-5-azure-v2-x86'
+    AZURE_6 = 'tier-6-azure-v2-x86'
+    AZURE_7 = 'tier-7-azure-v2-x86'
+    AZURE_8 = 'tier-8-azure-v2-x86'
+    AZURE_9 = 'tier-9-azure-v2-x86'
 
     @classmethod
     def list(cls):
@@ -119,6 +133,7 @@ class CloudClusterConfig:
     install_pack_auth: str = ""
     grafana_token: str = ""
     grafana_alerts_url: str = ""
+    require_broker_metrics_in_health_check: bool = True
 
 
 @dataclass
@@ -157,6 +172,8 @@ class LiveClusterParams:
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
     zones: list[str] = field(default_factory=list)
     aws_vpc_peering: dict[str, Any] = field(default_factory=dict)
+    # TODO Azure vpc peering was not yet tested since Azure cluster creation on cloud with Tiers is blocked. This part might change
+    azure_vpc_peering: dict[str, Any] = field(default_factory=dict)
 
     @property
     def network_endpoint(self):
@@ -216,6 +233,12 @@ class CloudCluster():
         # Init API client
         self.cloudv2 = RpCloudApiClient(self.config, logger)
 
+        # copy the regular config, but override the api_url to point
+        # to the public API instead
+        public_config = CloudClusterConfig(**cluster_config)
+        public_config.api_url = public_config.public_api_url
+        self.public_api = RpCloudApiClient(public_config, logger)
+
         # Create helper bool variable
         self.isPublicNetwork = self.config.network == 'public'
 
@@ -226,21 +249,31 @@ class CloudCluster():
         # init live cluster params
         self.current = LiveClusterParams()
         # Provider specific actions
-        if self.config.provider not in [PROVIDER_AWS, PROVIDER_GCP]:
+        if self.config.provider not in [
+                PROVIDER_AWS, PROVIDER_GCP, PROVIDER_AZURE
+        ]:
             raise RuntimeError(f"Provider '{self.config.provider}' "
                                "is not yet supported by CloudV2")
 
         if self.config.provider == PROVIDER_AWS:
             self.provider_key = provider_config['access_key']
             self.provider_secret = provider_config['secret_key']
+            self.provider_tenant = None
         elif self.config.provider == PROVIDER_GCP:
             self.provider_key = self.config.gcp_keyfile
             self.provider_secret = None
+            self.provider_tenant = None
+        elif self.config.provider == PROVIDER_AZURE:
+            self.provider_key = provider_config['azure_client_id']
+            self.provider_secret = provider_config['azure_client_secret']
+            self.provider_tenant = provider_config['azure_tenant_id']
         # Create client for the provider
-        self.provider_cli = make_provider_client(self.config.provider, logger,
+        self.provider_cli = make_provider_client(self.config.provider,
+                                                 logger,
                                                  self.config.region,
                                                  self.provider_key,
-                                                 self.provider_secret)
+                                                 self.provider_secret,
+                                                 tenant=self.provider_tenant)
         if self.config.network != 'public':
             # Check that private network is a correct CIDR
             self.config.network = self.validate_cidr(self.config.network)
@@ -260,12 +293,18 @@ class CloudCluster():
                     prefix="")
                 self.current.peer_vpc_id = _net[self.provider_cli.VPC_ID_LABEL]
                 self.current.peer_owner_id = self.provider_cli.project_id
+            elif self.config.provider == PROVIDER_AZURE:
+                # For Azure, retrieve VNet and Subscription ID
+                self.current.peer_vpc_id = self._ducktape_meta[
+                    'network-interfaces-0-vnet-id']
+                self.current.peer_owner_id = self._ducktape_meta[
+                    'subscription-id']
 
             # Currently we need provider client only for VCP in private networking
-            # Raise exception is client in not implemented yet
+            # Raise exception if client is not implemented yet
             if self.provider_cli is None and self.config.network != 'public':
                 self._logger.error(
-                    f"Current provider is not yet supports private networking "
+                    f"Current provider does not yet support private networking"
                 )
                 raise RuntimeError("Private networking is not implemented "
                                    f"for '{self.config.provider}'")
@@ -370,11 +409,14 @@ class CloudCluster():
         name = self._format_namespace_name()
         self._logger.debug(f'creating namespace name {name}')
         body = {'name': name}
-        r = self.cloudv2._http_post(endpoint='/api/v1/namespaces', json=body)
-        self._logger.debug(f'created namespaceUuid {r["id"]}')
+        # namespace, resource-group… totally the same thing
+        r = self.public_api._http_post(endpoint='/v1beta2/resource-groups',
+                                       json=body)
+        _id = r['resource_group']['id']
+        self._logger.debug(f"created namespaceUuid {_id}")
         # save namespace name
         self.config.namespace = name
-        return r['id']
+        return _id
 
     def _cluster_ready(self):
         # Get cluster info
@@ -409,15 +451,6 @@ class CloudCluster():
         return cluster['status']['listeners']['redpandaConsole']['default'][
             'urls'][0]
 
-    def _get_network_id(self):
-        """
-        Get network id.
-        :return: networkId as a string or None if not found
-        """
-        _cluster = self.cloudv2._http_get(
-            endpoint=f'/api/v1/clusters/{self.current.cluster_id}')
-        return _cluster['spec']['networkId']
-
     def _get_network(self):
         return self.cloudv2._http_get(
             endpoint=f"/api/v1/networks/{self.current.network_id}")
@@ -441,19 +474,21 @@ class CloudCluster():
     def _get_region_id(self):
         """Get the region id for a region.
 
-        :param cluster_type: cluster type, e.g. 'FMC'
-        :param provider: cloud provider, e.g. 'AWS'
-        :param region: region name, e.g. 'us-west-2'
+        :param cloudProvider: cloud provider, e.g. 'CLOUD_PROVIDER_AWS'
+        :param name: region name, e.g. 'us-west-2'
         :return: id, e.g. 'cckac9vvbr5ofm048jjg'
         """
 
-        params = {'cluster_type': self.config.type}
-        regions = self.cloudv2._http_get(
-            endpoint='/api/v1/clusters-resources/regions', params=params)
-        for r in regions[self.config.provider]:
-            if r['name'] == self.current.region:
-                return r['id']
-        return None
+        provider = f'CLOUD_PROVIDER_{self.config.provider}'
+        body = {'cloudProvider': provider, 'name': self.current.region}
+        regions = self.public_api._http_post(
+            endpoint='/redpanda.api.ui.v1alpha1.RegionService/ListRegions',
+            override_headers={'connect-protocol-version': '1'},
+            json=body)
+
+        return next(
+            filter(lambda r: r['name'] == self.current.region,
+                   regions['regions']), {'id': None})['id']
 
     def _get_product_name(self, config_profile_name):
         """Get the product name for the first matching config
@@ -484,40 +519,35 @@ class CloudCluster():
                              f"request: '{params}', response:\n{products}")
         return None
 
-    def _create_cluster_payload(self):
+    def _create_network_payload(self):
+        _net = self.config.network,
+        _provider = f"CLOUD_PROVIDER_{self.config.provider.upper()}"
+        _type = 'TYPE_BYOC' if self.config.type == 'BYOC' else 'TYPE_DEDICATED'
         # In case of private network, the value of config.network
-        # should be CIDR. We are validatin it in init
-        _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
+        # should be a CIDR, but we're validating that in __init__
         return {
-            "cluster": {
-                "name": self.current.name,
-                "spec": {
-                    "productName": self.current.product_name,
-                    "clusterType": self.config.type,
-                    "connectors": {
-                        "enabled": True
-                    },
-                    "installPackVersion": self.current.install_pack_ver,
-                    "isMultiAz": False,
-                    "networkId": "",
-                    "provider": self.config.provider,
-                    "region": self.config.region,
-                    "zones": self.current.zones,
-                }
-            },
-            "connectionType": self.current.connection_type,
-            "namespaceUuid": self.current.namespace_uuid,
-            "network": {
-                "displayName":
-                f"{self.current.connection_type}-network-{self.current.name}",
-                "spec": {
-                    "cidr": _cidr,
-                    "deploymentType": self.config.type,
-                    "installPackVersion": self.current.install_pack_ver,
-                    "provider": self.config.provider,
-                    "regionId": self.current.region_id,
-                }
-            },
+            "cidr_block": "10.1.0.0/16" if self.isPublicNetwork else _net,
+            "cloud_provider": _provider,
+            "cluster_type": _type,
+            "name": f"{self.current.name}-network",
+            "region": self.config.region,
+            "resource_group_id": self.current.namespace_uuid
+        }
+
+    def _create_cluster_payload(self):
+        _conn_type = f"CONNECTION_TYPE_{self.current.connection_type.upper()}"
+        _provider = f"CLOUD_PROVIDER_{self.config.provider.upper()}"
+        _type = 'TYPE_BYOC' if self.config.type == 'BYOC' else 'TYPE_DEDICATED'
+        return {
+            "cloud_provider": _provider,
+            "connection_type": _conn_type,
+            "name": self.current.name,
+            "network_id": self.current.network_id,
+            "region": self.config.region,
+            "resource_group_id": self.current.namespace_uuid,
+            "throughput_tier": self.current.product_name,
+            "type": _type,
+            "zones": [self.current.zones]
         }
 
     def _get_cluster(self, _id) -> dict[str, Any]:
@@ -616,18 +646,33 @@ class CloudCluster():
                 _id = cf.read()
         return _id
 
-    def _wait_for_cluster_id(self, uuid, timeout=120):
-        wait_until(lambda: self._cluster_id_updated(uuid),
+    def _netop_complete(self, netop_id: str, target: str) -> bool:
+        n = self.public_api._http_get(
+            endpoint=f'/v1beta2/operations/{netop_id}')
+        if n is None:
+            return False
+        if 'operation' not in n or 'state' not in n['operation']:
+            return False
+        self._logger.debug(
+            f"reached target state: {n['operation']['state'] == target}")
+        return n['operation']['state'] == target
+
+    def _wait_for_netop_id(self,
+                           netop_id,
+                           timeout=300,
+                           target='STATE_COMPLETED') -> str:
+        self._logger.debug(f'polling /v1beta2/operations/{netop_id}')
+        wait_until(lambda: self._netop_complete(netop_id, target) == True,
                    timeout_sec=timeout,
                    backoff_sec=10,
                    err_msg='Failed to get proper id '
                    f'of cloud cluster {self.current.name}')
-
-        # Use clusters handle to wait for non-uuid id :)
-        _cluster = self.cloudv2._http_get(endpoint=f'/api/v1/clusters/{uuid}')
-        _id = _cluster['id']
-        self._logger.info(f"Cluster ID is '{_id}'")
-        return _id
+        n = self.public_api._http_get(
+            endpoint=f'/v1beta2/operations/{netop_id}')
+        if n is None or 'operation' not in n or 'resource_id' not in n[
+                'operation']:
+            return ""
+        return n['operation']['resource_id']
 
     def _create_new_cluster(self):
         # In order not to have long list of arguments in each internal
@@ -657,29 +702,38 @@ class CloudCluster():
                                f"'{self.config.install_pack_ver}', "
                                f"'{self.config.region}'")
 
-        # Call Api to create cluster
+        # Call public API to create network
+        self._logger.warning(
+            f'creating network name "{self.current.name}-network"')
+        # Prepare network payload block
+        _body = self._create_network_payload()
+        self._logger.debug(
+            f'POST to /v1beta2/networks body: {json.dumps(_body)}')
+        # Send API request to create network
+        n = self.public_api._http_post(endpoint='/v1beta2/networks',
+                                       json=_body)
+        if n is None:
+            raise RuntimeError(self.cloudv2.lasterror)
+        netop_id = n['operation']['id']
+        self.current.network_id = self._wait_for_netop_id(netop_id)
+
+        # Call public API to create cluster
         self._logger.warning(f'creating cluster name {self.current.name}')
         # Prepare cluster payload block
         _body = self._create_cluster_payload()
-        self._logger.debug(f'body: {json.dumps(_body)}')
+        self._logger.debug(
+            f'POST to /v1beta2/clusters body: {json.dumps(_body)}')
         # Send API request to create cluster
-        r = self.cloudv2._http_post(
-            endpoint='/api/v1/workflows/network-cluster', json=_body)
-
+        r = self.public_api._http_post(endpoint='/v1beta2/clusters',
+                                       json=_body)
         # handle error on CloudV2 side
         if r is None:
             raise RuntimeError(self.cloudv2.lasterror)
+        netop_id = r['operation']['id']
 
         try:
-            # At this point cluster has UUID instead of normal one
-
-            # For BYOC creation a non-uuid is needed
-            # It gets updated when spec makes it through
-            # the workslow, so just wait
-
-            # For FMC, we just make sure that cluster is created
-            # in API and its status is updated
-            _cluster_id = self._wait_for_cluster_id(r['id'])
+            _cluster_id = self._wait_for_netop_id(netop_id,
+                                                  target='STATE_IN_PROGRESS')
             c = self._get_cluster(_cluster_id)
             self.current.last_status = c['state']
             self._logger.warning(f"Cluster ID is {_cluster_id}, last status: "
@@ -697,6 +751,7 @@ class CloudCluster():
             self.current.cluster_id = _cluster_id
             # Kick off cluster creation
             # Timeout for this is half an hour as this is only agent
+            self.utils.rpk_cloud_byoc_install(_cluster_id)
             self.utils.rpk_cloud_apply(_cluster_id)
         elif self.config.type == CLOUD_TYPE_FMC:
             # Nothing to do here
@@ -711,16 +766,14 @@ class CloudCluster():
         # Announce wait
         self._logger.info(
             f'waiting for creation of cluster {self.current.name} '
-            f'({self.current.cluster_id}), namespaceUuid {r["namespaceUuid"]},'
+            f'({self.current.cluster_id}), namespaceUuid {self.current.namespace_uuid},'
             f' checking every {self.CHECK_BACKOFF_SEC} seconds')
         wait_until(lambda: self._cluster_ready(),
                    timeout_sec=self.CHECK_TIMEOUT_SEC,
                    backoff_sec=self.CHECK_BACKOFF_SEC,
-                   err_msg='Unable to deterimine readiness '
+                   err_msg='Unable to determine readiness '
                    f'of cloud cluster {self.current.name}; '
                    f'last state {self.current.last_status}')
-
-        self.current.network_id = self._get_network_id()
 
         # at this point cluster is ready
         # just save the id to reuse it in next test
@@ -800,13 +853,20 @@ class CloudCluster():
         # Check topic count
         self._logger.info("Checking cluster topics")
         _topics = self._query_panda_proxy("/topics")
-        _critical = [
-            "_schemas", "__redpanda.connectors_logs",
-            "_internal_connectors_status", "_internal_connectors_configs",
-            "_redpanda_e2e_probe", "_internal_connectors_offsets"
-        ]
+        # For Azure, connect is in development
+        if self.config.provider == PROVIDER_AZURE:
+            _critical = ["_schemas", "_redpanda_e2e_probe"]
+            required_critical_topic_count = 2
+        else:
+            _critical = [
+                "_schemas", "__redpanda.connectors_logs",
+                "_internal_connectors_status", "_internal_connectors_configs",
+                "_redpanda_e2e_probe", "_internal_connectors_offsets"
+            ]
+            required_critical_topic_count = 6
+
         _intersect = list(set(_topics) & set(_critical))
-        if len(_intersect) < 6:
+        if len(_intersect) < required_critical_topic_count:
             return warn_and_return("Cluster missing critical topics")
         else:
             _t = ', '.join(_intersect)
@@ -821,7 +881,13 @@ class CloudCluster():
             if _metric.name == "redpanda_cluster_brokers":
                 _brokers_metric = _metric
         if _brokers_metric is None:
-            return warn_and_return("Failed to get brokers metric")
+            if self.config.require_broker_metrics_in_health_check:
+                return warn_and_return("Failed to get brokers metric")
+            else:
+                self._logger.info(
+                    "Public metric 'redpanda_cluster_brokers' is unavailable, but it is not required."
+                )
+                return None
         else:
             self._logger.info("Public metric 'redpanda_cluster_brokers' "
                               "is available")
@@ -1095,6 +1161,23 @@ class CloudCluster():
             "namespaceUuid": self.current.namespace_uuid
         }
 
+    def _create_network_peering_payload_azure(self):
+        return {
+            "networkPeering": {
+                "displayName": f'peer-{self.current.name}',
+                "spec": {
+                    "provider": "AZURE",
+                    "cloudProvider": {
+                        "azure": {
+                            "peerSubscriptionId": self.current.peer_owner_id,
+                            "peerVirtualNetworkId": self.current.peer_vpc_id
+                        }
+                    }
+                }
+            },
+            "namespaceUuid": self.current.namespace_uuid
+        }
+
     def _prepare_fmc_network_vpc_info(self):
         """
         Calls CloudV2 API to get cidr_block, vpc_id
@@ -1307,6 +1390,58 @@ class CloudCluster():
             # that was created already above
             self.current.vpc_peering_id = self.provider_cli.create_vpc_peering(
                 self.current, facing_vpcs=False)
+        elif self.config.provider == PROVIDER_AZURE:
+            # TODO This part was not yet tested. Azure cloud cluster creation for Tier testing is blocked. Added this section based on AWS, but might need to update it
+            # Azure specific VPC peering process
+            _body = self._create_network_peering_payload_azure()
+            self._logger.debug(f"body: '{_body}'")
+
+            # Create peering
+            resp = self.cloudv2._http_post(
+                endpoint=self.current.network_endpoint, json=_body)
+            if resp is None:
+                # Check if such peering exists
+                if "network peering already exists" in self.cloudv2.lasterror:
+                    self.vpc_peering = self.cloudv2._http_get(
+                        endpoint=self.current.network_endpoint)[0]
+                    self._logger.warning(
+                        "Found Cloud VPC peering connection "
+                        f"'{self.vpc_peering['displayName']}', "
+                        f"state '{self.vpc_peering['state']}'")
+                    self.current.vpc_peering_id = \
+                        self.provider_cli.find_vpc_peering_connection(
+                            "active", self.current)
+                    if self.current.vpc_peering_id is None:
+                        raise RuntimeError("Azure VPC Peering connection "
+                                           f"not found: {self.current}")
+                    else:
+                        self.current.azure_vpc_peering = \
+                            self.provider_cli.get_vpc_peering_connection(
+                                self.current.vpc_peering_id)
+                else:
+                    raise RuntimeError(self.cloudv2.lasterror)
+            else:
+                self._logger.debug(f"Created VPC peering: '{resp}'")
+                self.vpc_peering = resp
+
+                # 3. Wait for "pending acceptance"
+                self._wait_peering_status_cluster("pending acceptance")
+
+                # Find id of the correct peering VPC
+                self.current.vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
+                    "pending-acceptance", self.current)
+
+                # 4. Accept it on Azure
+                self.current.azure_vpc_peering = self.provider_cli.accept_vpc_peering(
+                    self.current.vpc_peering_id)
+
+            # 5.
+            self._create_routes_to_ducktape()
+            self._create_routes_to_cluster()
+
+            # 6.
+            self._wait_peering_status_provider("active")
+            self._wait_peering_status_cluster("ready")
 
         return
 

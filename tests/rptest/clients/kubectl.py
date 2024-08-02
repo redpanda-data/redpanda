@@ -17,7 +17,24 @@ SUPPORTED_PROVIDERS = ['aws', 'gcp', 'azure']
 
 
 def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
-    """Returns true if the pod API object name matches the Redpanda pattern."""
+    """Returns true if the pod looks like a Redpanda broker pod"""
+
+    # Azure behaves this way.  This is also the 'new' way going forward (circa 2024/7)
+    # We look for pods whose metadata indicates that it is part of a statefulset, and that
+    # the pod names are generated with the template "redpanda-broker-...".
+    # False positives are quite unlikely with this criterion:
+    # Scenario would be:
+    # - Another Statefulset
+    # - That reuses the SAME generateName (bad!)
+    try:
+        if pod_obj['metadata']['generateName'] == 'redpanda-broker-':
+            if pod_obj['metadata']['labels'][
+                    'app.kubernetes.io/component'] == 'redpanda-statefulset':
+                return True
+    except KeyError:
+        pass
+
+    # Other providers like AWS / GCP behave this way ("the old way")
     return pod_obj['metadata']['name'].startswith(f'rp-{cluster_id}')
 
 
@@ -37,7 +54,7 @@ class KubectlTool:
         remote_uri=None,
         namespace='redpanda',
         cluster_id='',
-        cluster_privider='aws',
+        cluster_provider='aws',
         cluster_region='us-west-2',
         tp_proxy=None,
         tp_token=None,
@@ -47,7 +64,7 @@ class KubectlTool:
         self._namespace = namespace
         self._cluster_id = cluster_id
 
-        self._provider = cluster_privider.lower()
+        self._provider = cluster_provider.lower()
         if self._provider not in SUPPORTED_PROVIDERS:
             raise RuntimeError("KubectlTool does not yet support "
                                f"'{self._provider}' cloud provider")
@@ -119,7 +136,13 @@ class KubectlTool:
     def _install(self):
         '''Installs kubectl on a remote target host'''
         if not self._kubectl_installed and self._remote_uri is not None:
-            self._ssh_cmd(['./breakglass-tools.sh'])
+            breakglass_cmd = ['./breakglass-tools.sh']
+            if self._provider == 'azure':
+                # for azure, we manually override the path here to ensure
+                # that azure-cli installed as a snap gets found (workaround)
+                p = ['env', 'PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin']
+                breakglass_cmd = p + breakglass_cmd
+            self._ssh_cmd(breakglass_cmd)
 
             # Determine the appropriate command for the cloud provider
             self._redpanda.logger.info(
@@ -134,17 +157,7 @@ class KubectlTool:
                     'gcloud', 'container', 'clusters', 'get-credentials',
                     f'redpanda-{self._cluster_id}', '--region', self._region
                 ],
-                'azure': [
-                    'bash', '-c',
-                    ("'if ! command -v az &> /dev/null; then "
-                     "echo \"Azure CLI not found. Installing Azure CLI.\" >&2; "
-                     "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash; "
-                     "echo \"Azure CLI installed.\" >&2; "
-                     "fi && "
-                     'az login --identity --allow-no-subscriptions && '
-                     f"az aks get-credentials --resource-group rg-rpcloud-{self._cluster_id} --name aks-rpcloud-{self._cluster_id}'"
-                     )
-                ]
+                'azure': ['kubectl', 'get', 'nodes']
             }[self._provider]
 
             # Log the full command to be executed
@@ -240,6 +253,16 @@ class KubectlTool:
         # return that instead.
         return s_out if len(s_out) > 0 else s_err
 
+    @property
+    def _redpanda_operator_v2(self) -> bool:
+        return self._provider == 'azure'
+
+    def _redpanda_broker_pod_name(self) -> str:
+        if self._redpanda_operator_v2:
+            return 'redpanda-broker-0'
+        else:
+            return f'rp-{self._cluster_id}-0'
+
     def _ssh_cmd(
             self,
             cmd: list[str],
@@ -284,19 +307,21 @@ class KubectlTool:
 
         self._install()
         if pod_name is None:
-            pod_name = f'rp-{self._cluster_id}-0'
+            pod_name = self._redpanda_broker_pod_name()
         cmd = [
             'kubectl', 'exec', pod_name, f'-n={self._namespace}',
             '-c=redpanda', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
         return self._ssh_cmd(cmd)  # type: ignore
 
-    def exists(self, remote_path):
+    def exists(self, remote_path, pod_name=None):
         self._install()
+        if pod_name is None:
+            pod_name = self._redpanda_broker_pod_name()
         try:
             self._ssh_cmd([
                 'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
-                f'rp-{self._cluster_id}-0', '--', 'stat', remote_path
+                pod_name, '--', 'stat', remote_path
             ])
             return True
         except subprocess.CalledProcessError:
