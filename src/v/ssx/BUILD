@@ -131,3 +131,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "event",
+    hdrs = [
+        "include/ssx/event.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":semaphore",
+        "//src/v/base",
+    ],
+)
