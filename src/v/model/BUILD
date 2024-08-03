@@ -17,6 +17,7 @@ redpanda_cc_library(
         "async_adl_serde.h",
         "compression.h",
         "errc.h",
+        "fips_config.h",
         "fundamental.h",
         "ktp.h",
         "limits.h",
