@@ -16,7 +16,8 @@
 #include "model/fundamental.h"
 #include "raft/consensus.h"
 #include "raft/fundamental.h"
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sleep.hh>

@@ -14,9 +14,9 @@
 #include "base/vlog.h"
 #include "cloud_storage/types.h"
 #include "cluster/logger.h"
+#include "cluster/self_test/metrics.h"
 #include "config/configuration.h"
 #include "random/generators.h"
-#include "self_test/metrics.h"
 #include "utils/uuid.h"
 
 #include <algorithm>

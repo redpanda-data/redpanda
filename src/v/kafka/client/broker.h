@@ -16,6 +16,7 @@
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
 #include "model/metadata.h"
+#include "net/connection.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>

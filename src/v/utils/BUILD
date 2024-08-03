@@ -570,3 +570,15 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "available_promise",
+    hdrs = [
+        "available_promise.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)

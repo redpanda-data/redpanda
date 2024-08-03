@@ -12,7 +12,6 @@
 #include "base/units.h"
 #include "cluster/node/types.h"
 #include "config/property.h"
-#include "resource_mgmt/storage.h"
 #include "storage/node.h"
 #include "storage/types.h"
 

@@ -16,8 +16,13 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "storage/record_batch_builder.h"
+#include "utils/to_string.h"
 
 #include <seastar/util/log.hh>
+
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 namespace tests {
 

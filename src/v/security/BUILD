@@ -58,6 +58,25 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "request_auth",
+    srcs = [
+        "request_auth.cc",
+    ],
+    hdrs = [
+        "request_auth.h",
+    ],
+    include_prefix = "security",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":security",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/config",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "security",
     srcs = [
         "acl.cc",
