@@ -68,3 +68,12 @@ redpanda_cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
 )
+
+redpanda_cc_library(
+    name = "jump_consistent",
+    hdrs = [
+        "include/hashing/jump_consistent_hash.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
