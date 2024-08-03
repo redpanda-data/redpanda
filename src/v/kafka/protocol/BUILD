@@ -21,6 +21,7 @@ redpanda_cc_library(
         "legacy_message.h",
         "logger.h",
         "messages.h",
+        "topic_properties.h",
         "types.h",
         "wire.h",
     ],

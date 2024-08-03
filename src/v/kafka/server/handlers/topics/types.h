@@ -14,6 +14,7 @@
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
+#include "kafka/protocol/topic_properties.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "model/fundamental.h"
@@ -45,10 +46,6 @@ static constexpr std::string_view topic_property_compaction_strategy
 static constexpr std::string_view topic_property_timestamp_type
   = "message.timestamp.type";
 static constexpr std::string_view topic_property_segment_size = "segment.bytes";
-static constexpr std::string_view topic_property_retention_bytes
-  = "retention.bytes";
-static constexpr std::string_view topic_property_retention_duration
-  = "retention.ms";
 static constexpr std::string_view topic_property_max_message_bytes
   = "max.message.bytes";
 static constexpr std::string_view topic_property_recovery
