@@ -156,3 +156,17 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "sharded_ptr",
+    hdrs = [
+        "include/ssx/sharded_ptr.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:mutex",
+        "@seastar",
+    ],
+)
