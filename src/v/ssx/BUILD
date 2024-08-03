@@ -183,3 +183,17 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "sharded_value",
+    hdrs = [
+        "include/ssx/sharded_value.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aligned",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
