@@ -35,7 +35,6 @@
 #include <boost/msm/front/euml/common.hpp>
 #include <boost/msm/front/functor_row.hpp>
 #include <boost/msm/front/state_machine_def.hpp>
-#include <boost/test/tools/old/interface.hpp>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 

@@ -23,7 +23,6 @@
 #include "security/scram_authenticator.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
-#include "vformat.h"
 
 #include <seastar/coroutine/exception.hh>
 
