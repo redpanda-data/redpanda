@@ -144,3 +144,15 @@ redpanda_cc_library(
         "//src/v/base",
     ],
 )
+
+redpanda_cc_library(
+    name = "sleep_abortable",
+    hdrs = [
+        "include/ssx/sleep_abortable.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@seastar",
+    ],
+)
