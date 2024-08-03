@@ -12,6 +12,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "kafka/client/client_fetch_batch_reader.h"
+#include "model/namespace.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"

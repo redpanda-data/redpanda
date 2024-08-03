@@ -9,7 +9,7 @@
 
 #include "kafka/client/broker.h"
 
-#include "cluster/cluster_utils.h"
+#include "base/seastarx.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/sasl_client.h"
 #include "net/connection.h"

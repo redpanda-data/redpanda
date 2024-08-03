@@ -49,6 +49,7 @@
 #include "resource_mgmt/memory_sampling.h"
 #include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
+#include "resource_mgmt/storage.h"
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "security/fwd.h"
