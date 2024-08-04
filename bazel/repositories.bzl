@@ -57,6 +57,14 @@ def data_dependency():
     )
 
     http_archive(
+        name = "jsoncons",
+        build_file = "//bazel/thirdparty:jsoncons.BUILD",
+        sha256 = "078ba32cd1198cbeb1903fbf4881d4960b226bdf8083d9f5a927b96f0aa8d6dd",
+        strip_prefix = "jsoncons-ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8",
+        url = "https://github.com/danielaparker/jsoncons/archive/ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8.tar.gz",
+    )
+
+    http_archive(
         name = "krb5",
         build_file = "//bazel/thirdparty:krb5.BUILD",
         sha256 = "ec3861c3bec29aa8da9281953c680edfdab1754d1b1db8761c1d824e4b25496a",

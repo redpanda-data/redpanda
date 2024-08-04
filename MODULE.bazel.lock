@@ -133,7 +133,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "IAn/1iAproS4g1y7viYki2Vqj3tgnC4rVaWe0O3JFbE=",
+        "bzlTransitiveDigest": "HBFEkvJc7CQGKz81eF4jaFNMXECW7gQi083SNLiRGvQ=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -297,6 +297,16 @@
               "sha256": "e0d8e86be89cb1459d5e70ac9e4adb300a1a97437e58a6c0e34e8186c40fd414",
               "strip_prefix": "seastar-2994105f6160087c61494c951d2e40910d31c55a",
               "url": "https://github.com/redpanda-data/seastar/archive/2994105f6160087c61494c951d2e40910d31c55a.tar.gz"
+            }
+          },
+          "jsoncons": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_archive",
+            "attributes": {
+              "build_file": "@@//bazel/thirdparty:jsoncons.BUILD",
+              "sha256": "078ba32cd1198cbeb1903fbf4881d4960b226bdf8083d9f5a927b96f0aa8d6dd",
+              "strip_prefix": "jsoncons-ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8",
+              "url": "https://github.com/danielaparker/jsoncons/archive/ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8.tar.gz"
             }
           },
           "openssl": {
