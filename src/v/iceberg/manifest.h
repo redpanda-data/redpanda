@@ -9,7 +9,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
-#include "iceberg/manifest_entry.h"
+#include "iceberg/manifest_entry.avrogen.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
 
@@ -47,7 +47,7 @@ struct manifest {
     //   on runtime partitioning and can't be statically generated
     // Rather than using these generated structs, write explicit structs to
     // represent the entries, and only use the Avro structs for serialization.
-    chunked_vector<manifest_entry> entries;
+    chunked_vector<avrogen::manifest_entry> entries;
 };
 
 } // namespace iceberg

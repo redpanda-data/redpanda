@@ -13,8 +13,8 @@
 #include "iceberg/avro_utils.h"
 #include "iceberg/manifest.h"
 #include "iceberg/manifest_avro.h"
-#include "iceberg/manifest_entry.h"
-#include "iceberg/manifest_file.h"
+#include "iceberg/manifest_entry.avrogen.h"
+#include "iceberg/manifest_file.avrogen.h"
 #include "iceberg/schema_json.h"
 #include "iceberg/tests/test_schemas.h"
 #include "utils/file_io.h"
@@ -27,6 +27,9 @@
 #include <gtest/gtest.h>
 
 using namespace iceberg;
+
+using avrogen::manifest_entry;
+using avrogen::manifest_file;
 
 namespace {
 

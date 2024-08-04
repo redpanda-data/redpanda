@@ -15,7 +15,7 @@ def avro_cc_library(name, schema, namespace, include_prefix = None, visibility =
       include_prefix: header include prefix
       visibility: library visibility
     """
-    hh_out = name + ".h"
+    hh_out = name + ".avrogen.h"
 
     native.genrule(
         name = name + "_genrule",

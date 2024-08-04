@@ -10,13 +10,13 @@ set(schemas
 set(avro_hdrs)
 foreach (schema ${schemas})
   get_filename_component(struct_name ${schema} NAME_WE)
-  set(avro_hdr "${CMAKE_CURRENT_BINARY_DIR}/${struct_name}.h")
+  set(avro_hdr "${CMAKE_CURRENT_BINARY_DIR}/${struct_name}.avrogen.h")
 
   add_custom_command (
     OUTPUT ${avro_hdr}
     COMMAND avrogencpp
     -i ${schemas_dir}/${schema}
-    -o ${avro_hdr} -n iceberg
+    -o ${avro_hdr} -n iceberg::avrogen
     DEPENDS avrogencpp ${schemas_dir}/${schema}
     COMMENT "Running avrogencpp on ${schema}"
     VERBATIM)

@@ -24,6 +24,8 @@
 
 namespace iceberg {
 
+using avrogen::manifest_entry;
+
 namespace {
 ss::sstring schema_to_json_str(const schema& s) {
     json::StringBuffer buf;
