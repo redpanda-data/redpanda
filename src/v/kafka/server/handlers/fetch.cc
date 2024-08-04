@@ -76,7 +76,7 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<read_result> read_from_partition(
-  kafka::partition_proxy part,
+  kafka::replicated_partition part,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -107,7 +107,7 @@ static ss::future<read_result> read_from_partition(
       config.client_address);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-    auto rdr = co_await part.make_reader(reader_config);
+    auto rdr = co_await part.make_reader(reader_config, std::nullopt);
     std::exception_ptr e;
     std::unique_ptr<iobuf> data;
     std::vector<cluster::tx::tx_range> aborted_transactions;
@@ -321,11 +321,13 @@ static ss::future<read_result> do_read_from_ntp(
     /*
      * lookup the ntp's partition
      */
-    auto kafka_partition = make_partition_proxy(ntp_config.ktp(), cluster_pm);
-    if (unlikely(!kafka_partition)) {
+    auto partition = cluster_pm.get(ntp_config.ktp());
+    if (unlikely(!partition)) {
         co_return read_result(error_code::unknown_topic_or_partition);
     }
-    if (!ntp_config.cfg.read_from_follower && !kafka_partition->is_leader()) {
+    auto kafka_partition = replicated_partition(partition);
+
+    if (!ntp_config.cfg.read_from_follower && !kafka_partition.is_leader()) {
         co_return read_result(error_code::not_leader_for_partition);
     }
 
@@ -333,11 +335,11 @@ static ss::future<read_result> do_read_from_ntp(
      * validate leader epoch. for more details see KIP-320
      */
     auto leader_epoch_err = details::check_leader_epoch(
-      ntp_config.cfg.current_leader_epoch, *kafka_partition);
+      ntp_config.cfg.current_leader_epoch, kafka_partition);
     if (leader_epoch_err != error_code::none) {
         co_return read_result(leader_epoch_err);
     }
-    auto offset_ec = co_await kafka_partition->validate_fetch_offset(
+    auto offset_ec = co_await kafka_partition.validate_fetch_offset(
       ntp_config.cfg.start_offset,
       ntp_config.cfg.read_from_follower,
       default_fetch_timeout + model::timeout_clock::now());
@@ -346,7 +348,7 @@ static ss::future<read_result> do_read_from_ntp(
         if (
           ntp_config.cfg.isolation_level
           == model::isolation_level::read_committed) {
-            auto maybe_lso = kafka_partition->last_stable_offset();
+            auto maybe_lso = kafka_partition.last_stable_offset();
             if (unlikely(!maybe_lso)) {
                 // partition is still bootstrapping
                 co_return read_result(maybe_lso.error());
@@ -358,20 +360,20 @@ static ss::future<read_result> do_read_from_ntp(
     if (offset_ec != error_code::none) {
         co_return read_result(
           offset_ec,
-          kafka_partition->start_offset(),
-          kafka_partition->high_watermark());
+          kafka_partition.start_offset(),
+          kafka_partition.high_watermark());
     }
     if (
       config::shard_local_cfg().enable_rack_awareness.value()
-      && ntp_config.cfg.consumer_rack_id && kafka_partition->is_leader()) {
-        auto p_info_res = kafka_partition->get_partition_info();
+      && ntp_config.cfg.consumer_rack_id && kafka_partition.is_leader()) {
+        auto p_info_res = kafka_partition.get_partition_info();
         if (p_info_res.has_error()) {
             // TODO: add mapping here
             co_return read_result(error_code::not_leader_for_partition);
         }
         auto p_info = std::move(p_info_res.value());
 
-        auto lso = kafka_partition->last_stable_offset();
+        auto lso = kafka_partition.last_stable_offset();
         if (unlikely(!lso)) {
             co_return read_result(lso.error());
         }
@@ -387,14 +389,14 @@ static ss::future<read_result> do_read_from_ntp(
               *ntp_config.cfg.consumer_rack_id,
               preferred_replica.value());
             co_return read_result(
-              kafka_partition->start_offset(),
-              kafka_partition->high_watermark(),
+              kafka_partition.start_offset(),
+              kafka_partition.high_watermark(),
               lso.value(),
               preferred_replica);
         }
     }
     read_result result = co_await read_from_partition(
-      std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
+      kafka_partition, ntp_config.cfg, foreign_read, deadline);
 
     adjust_memory_units(
       memory_sem, memory_fetch_sem, memory_units, result.data_size_bytes());
