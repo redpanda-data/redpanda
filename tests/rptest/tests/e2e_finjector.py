@@ -31,14 +31,13 @@ def const_delay(delay_seconds=10):
     return lambda: delay_seconds
 
 
-class EndToEndFinjectorTest(EndToEndTest):
-    def __init__(self, test_context):
-        super(EndToEndFinjectorTest, self).__init__(test_context=test_context)
+class Finjector:
+    def __init__(self, redpanda, scale):
+        self.redpanda = redpanda
         self.enable_manual = False
         self.enable_loop = False
-        self.scale = Scale(test_context)
         self.finjector_thread = None
-        self.failure_length_provider = scale_dependent_length(self.scale)
+        self.failure_length_provider = scale_dependent_length(scale)
         self.failure_delay_provier = const_delay(10)
         self.allowed_nodes_provider = lambda f_type: self.redpanda.nodes
         self.allowed_failures = FailureSpec.FAILURE_TYPES
@@ -133,3 +132,9 @@ class EndToEndFinjectorTest(EndToEndTest):
     def _cleanup(self):
         make_failure_injector(self.redpanda)._heal_all()
         make_failure_injector(self.redpanda)._continue_all()
+
+
+class EndToEndFinjectorTest(EndToEndTest):
+    def __init__(self, test_context):
+        super(EndToEndFinjectorTest, self).__init__(test_context=test_context)
+        self.finjector = Finjector(self.redpanda, test_context)
