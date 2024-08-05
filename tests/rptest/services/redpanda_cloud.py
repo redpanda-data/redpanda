@@ -547,7 +547,7 @@ class CloudCluster():
             "resource_group_id": self.current.namespace_uuid,
             "throughput_tier": self.current.product_name,
             "type": _type,
-            "zones": [self.current.zones]
+            "zones": self.current.zones
         }
 
     def _get_cluster(self, _id) -> dict[str, Any]:
