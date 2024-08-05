@@ -7,6 +7,6 @@ publish = false
 
 [dependencies]
 redpanda-transform-sdk = { path = "../.." }
-serde_json = "1.0.108"
-apache-avro = "0.16.0"
+serde_json = { workspace = true }
+apache-avro = { workspace = true }
 anyhow = { workspace = true }
