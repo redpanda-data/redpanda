@@ -14,6 +14,7 @@
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
+#include "kafka/protocol/topic_properties.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "model/fundamental.h"
@@ -36,19 +37,11 @@ using config_map_t
 /**
  * Topic properties string names
  */
-static constexpr std::string_view topic_property_compression
-  = "compression.type";
-static constexpr std::string_view topic_property_cleanup_policy
-  = "cleanup.policy";
 static constexpr std::string_view topic_property_compaction_strategy
   = "compaction.strategy";
 static constexpr std::string_view topic_property_timestamp_type
   = "message.timestamp.type";
 static constexpr std::string_view topic_property_segment_size = "segment.bytes";
-static constexpr std::string_view topic_property_retention_bytes
-  = "retention.bytes";
-static constexpr std::string_view topic_property_retention_duration
-  = "retention.ms";
 static constexpr std::string_view topic_property_max_message_bytes
   = "max.message.bytes";
 static constexpr std::string_view topic_property_recovery
@@ -59,10 +52,6 @@ static constexpr std::string_view topic_property_remote_read
   = "redpanda.remote.read";
 static constexpr std::string_view topic_property_read_replica
   = "redpanda.remote.readreplica";
-static constexpr std::string_view topic_property_retention_local_target_bytes
-  = "retention.local.target.bytes";
-static constexpr std::string_view topic_property_retention_local_target_ms
-  = "retention.local.target.ms";
 static constexpr std::string_view topic_property_replication_factor
   = "replication.factor";
 static constexpr std::string_view topic_property_remote_delete
@@ -100,13 +89,6 @@ static constexpr std::string_view
 static constexpr std::string_view
   topic_property_record_value_subject_name_strategy_compat
   = "confluent.value.subject.name.strategy";
-
-static constexpr std::string_view
-  topic_property_initial_retention_local_target_bytes
-  = "initial.retention.local.target.bytes";
-static constexpr std::string_view
-  topic_property_initial_retention_local_target_ms
-  = "initial.retention.local.target.ms";
 
 static constexpr std::string_view topic_property_mpx_virtual_cluster_id
   = "redpanda.virtual.cluster.id";

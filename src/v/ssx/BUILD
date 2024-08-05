@@ -156,3 +156,44 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "sharded_ptr",
+    hdrs = [
+        "include/ssx/sharded_ptr.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:mutex",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "aligned",
+    hdrs = [
+        "include/ssx/aligned.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "sharded_value",
+    hdrs = [
+        "include/ssx/sharded_value.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aligned",
+        "//src/v/base",
+        "@seastar",
+    ],
+)

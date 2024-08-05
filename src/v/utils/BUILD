@@ -582,3 +582,24 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "ema",
+    hdrs = [
+        "ema.h",
+    ],
+    include_prefix = "utils",
+)
+
+redpanda_cc_library(
+    name = "queue_depth_control",
+    hdrs = [
+        "queue_depth_control.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        ":ema",
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+    ],
+)

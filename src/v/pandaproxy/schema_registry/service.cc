@@ -21,7 +21,7 @@
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/list_offset.h"
-#include "kafka/server/handlers/topics/types.h"
+#include "kafka/protocol/topic_properties.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/logger.h"
@@ -43,6 +43,8 @@
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/util/noncopyable_function.hh>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace pandaproxy::schema_registry {
 

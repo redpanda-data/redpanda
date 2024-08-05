@@ -18,7 +18,7 @@
 #include "kafka/client/config_utils.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_response.h"
-#include "kafka/server/handlers/topics/types.h"
+#include "kafka/protocol/topic_properties.h"
 #include "model/namespace.h"
 #include "security/acl.h"
 #include "security/audit/client_probe.h"

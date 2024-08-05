@@ -1,7 +1,5 @@
 load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
 
-#visibility(["//visibility:private"])
-
 redpanda_test_cc_library(
     name = "utils",
     hdrs = [
