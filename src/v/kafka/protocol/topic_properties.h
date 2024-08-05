@@ -23,4 +23,24 @@ inline constexpr std::string_view topic_property_retention_bytes
 inline constexpr std::string_view topic_property_retention_duration
   = "retention.ms";
 
+inline constexpr std::string_view topic_property_cleanup_policy
+  = "cleanup.policy";
+
+inline constexpr std::string_view topic_property_compression
+  = "compression.type";
+
+inline constexpr std::string_view topic_property_retention_local_target_bytes
+  = "retention.local.target.bytes";
+
+inline constexpr std::string_view topic_property_retention_local_target_ms
+  = "retention.local.target.ms";
+
+inline constexpr std::string_view
+  topic_property_initial_retention_local_target_bytes
+  = "initial.retention.local.target.bytes";
+
+inline constexpr std::string_view
+  topic_property_initial_retention_local_target_ms
+  = "initial.retention.local.target.ms";
+
 } // namespace kafka

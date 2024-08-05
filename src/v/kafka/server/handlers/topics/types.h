@@ -37,10 +37,6 @@ using config_map_t
 /**
  * Topic properties string names
  */
-static constexpr std::string_view topic_property_compression
-  = "compression.type";
-static constexpr std::string_view topic_property_cleanup_policy
-  = "cleanup.policy";
 static constexpr std::string_view topic_property_compaction_strategy
   = "compaction.strategy";
 static constexpr std::string_view topic_property_timestamp_type
@@ -56,10 +52,6 @@ static constexpr std::string_view topic_property_remote_read
   = "redpanda.remote.read";
 static constexpr std::string_view topic_property_read_replica
   = "redpanda.remote.readreplica";
-static constexpr std::string_view topic_property_retention_local_target_bytes
-  = "retention.local.target.bytes";
-static constexpr std::string_view topic_property_retention_local_target_ms
-  = "retention.local.target.ms";
 static constexpr std::string_view topic_property_replication_factor
   = "replication.factor";
 static constexpr std::string_view topic_property_remote_delete
@@ -97,13 +89,6 @@ static constexpr std::string_view
 static constexpr std::string_view
   topic_property_record_value_subject_name_strategy_compat
   = "confluent.value.subject.name.strategy";
-
-static constexpr std::string_view
-  topic_property_initial_retention_local_target_bytes
-  = "initial.retention.local.target.bytes";
-static constexpr std::string_view
-  topic_property_initial_retention_local_target_ms
-  = "initial.retention.local.target.ms";
 
 static constexpr std::string_view topic_property_mpx_virtual_cluster_id
   = "redpanda.virtual.cluster.id";
