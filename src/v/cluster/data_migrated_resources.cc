@@ -17,6 +17,8 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <utility>
+
 namespace cluster::data_migrations {
 
 namespace {
@@ -25,14 +27,13 @@ void remove_from_resources(
   id id,
   const T& to_remove,
   chunked_hash_map<T, migrated_resources::resource_metadata, H, E>& resources) {
-    auto it = resources.find(to_remove);
-    vassert(
-      it != resources.end(),
-      "migrated {} resource must exists in migrated resources");
-    vassert(
-      it->second.migration_id == id,
-      "removed migration must match migrated resource migration id");
-    resources.erase(it);
+    auto it = std::as_const(resources).find(to_remove);
+    if (it != resources.cend()) {
+        vassert(
+          it->second.migration_id == id,
+          "removed migration must match migrated resource migration id");
+        resources.erase(it);
+    }
 }
 
 template<class M>
