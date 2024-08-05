@@ -32,12 +32,10 @@ result_promise_t::future_type request::result() const {
 }
 
 void request::set_value(request_result_t::value_type value) {
-    vassert(
-      _state <= request_state::in_progress && !_result.available(),
-      "unexpected request state during result set: {}",
-      *this);
-    _result.set_value(value);
-    _state = request_state::completed;
+    if (_state != request_state::completed) {
+        _result.set_value(value);
+        _state = request_state::completed;
+    }
 }
 
 void request::set_error(request_result_t::error_type error) {
