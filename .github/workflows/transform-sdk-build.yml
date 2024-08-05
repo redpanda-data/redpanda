@@ -25,6 +25,12 @@ on:
       - 'src/transform-sdk/**'
       - '.github/workflows/transform-sdk-build.yml'
 
+env:
+  RUST_VERSION: '1.80'
+  GO_VERSION: '1.22'
+  TINYGO_VERSION: 'v0.31.0-rpk2'
+  BINARYEN_VERSION: '117'
+
 jobs:
   build-integration-tests:
     name: Build integration tests
@@ -35,7 +41,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.22
+          go-version: ${{ env.GO_VERSION }}
       - name: Build integration tests
         working-directory: src/transform-sdk/tests
         run: go test -c -o ./wasm-integration-test
@@ -55,7 +61,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.22
+          go-version: ${{ env.GO_VERSION }}
       - name: Run tests
         working-directory: src/transform-sdk/go/transform
         run: go test -v ./...
@@ -76,13 +82,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.22
+          go-version: ${{ env.GO_VERSION }}
       - name: Set up Tinygo
         working-directory: src/transform-sdk/go/transform
-        env:
-          TINYGO_VERSION: v0.31.0-rpk2
         run: |
-          curl -S -s -L "https://github.com/redpanda-data/tinygo/releases/download/${TINYGO_VERSION}/tinygo-linux-amd64.tar.gz" | tar -xvz
+          curl -S -s -L "https://github.com/redpanda-data/tinygo/releases/download/${{ env.TINYGO_VERSION }}/tinygo-linux-amd64.tar.gz" | tar -xvz
           echo "$PWD/tinygo/bin" >> $GITHUB_PATH
       - name: Build integration tests
         working-directory: src/transform-sdk/go/transform/internal/testdata
@@ -115,8 +119,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Rust
         run: |
-          rustup update stable --no-self-update
-          rustup default stable
+          rustup update --no-self-update ${{ env.RUST_VERSION }}
+          rustup component add --toolchain ${{ env.RUST_VERSION }} rustfmt rust-src clippy
+          rustup default ${{ env.RUST_VERSION }}
       - name: Run tests
         working-directory: src/transform-sdk/rust
         run: cargo test --workspace
@@ -136,7 +141,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Rust
         run: |
-          rustup update stable --no-self-update
+          rustup update --no-self-update ${{ env.RUST_VERSION }}
+          rustup component add --toolchain ${{ env.RUST_VERSION }} rustfmt rust-src clippy
+          rustup default ${{ env.RUST_VERSION }}
           rustup target add wasm32-wasi
       - name: Build integration tests
         working-directory: src/transform-sdk/rust
@@ -193,7 +200,7 @@ jobs:
     needs: [test-cpp, build-integration-tests]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-21
+      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -247,7 +254,7 @@ jobs:
     needs: [test-js, build-integration-tests]
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-21
+      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -255,20 +262,20 @@ jobs:
         working-directory: src/transform-sdk/js
         run: |
           apt update
-          apt install -y git curl
+          apt install -y git curl python
           cmake --preset release-static
           cmake --build --preset release-static -- redpanda_js_transform
-          cat identity.js | ./generate_js_provider.py > identity_source.wat
-          cat identity_logging.js | ./generate_js_provider.py > logging_source.wat
-          curl -SLO https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
-          tar xf binaryen-version_117-x86_64-linux.tar.gz
-          rm binaryen-version_117-x86_64-linux.tar.gz
-          ./binaryen-version_117/bin/wasm-merge \
+          cat identity.js | python generate_js_provider.py > identity_source.wat
+          cat identity_logging.js | python generate_js_provider.py > logging_source.wat
+          curl -SLO https://github.com/WebAssembly/binaryen/releases/download/version_${{ env.BINARYEN_VERSION }}/binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
+          tar xf binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
+          rm binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
+          ./binaryen-version_${{ env.BINARYEN_VERSION }}/bin/wasm-merge \
             ./build/release-static/redpanda_js_transform js_vm \
             ./identity_source.wat redpanda_js_provider \
             -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
             -o identity.wasm
-          ./binaryen-version_117/bin/wasm-merge \
+          ./binaryen-version_${{ env.BINARYEN_VERSION }}/bin/wasm-merge \
             ./build/release-static/redpanda_js_transform js_vm \
             ./logging_source.wat redpanda_js_provider \
             -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
