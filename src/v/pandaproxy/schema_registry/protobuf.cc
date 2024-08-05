@@ -241,7 +241,8 @@ public:
                 throw as_exception(error_collector.error());
             }
         }
-        _fdp.set_name(schema.sub()());
+        const auto& sub = schema.sub()();
+        _fdp.set_name(sub.data(), sub.size());
         return _fdp;
     }
 
