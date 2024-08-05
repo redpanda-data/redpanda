@@ -37,6 +37,8 @@
 #include "src/v/pandaproxy/schema_registry/protobuf/google/type/quaternion.pb.h"
 #include "src/v/pandaproxy/schema_registry/protobuf/google/type/timeofday.pb.h"
 #include "ssx/sformat.h"
+#include "thirdparty/protobuf/descriptor.h"
+#include "thirdparty/protobuf/descriptor.pb.h"
 #include "utils/base64.h"
 
 #include <seastar/core/coroutine.hh>
@@ -48,8 +50,6 @@
 #include <google/protobuf/any.pb.h>
 #include <google/protobuf/api.pb.h>
 #include <google/protobuf/compiler/parser.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/duration.pb.h>
 #include <google/protobuf/empty.pb.h>
 #include <google/protobuf/field_mask.pb.h>

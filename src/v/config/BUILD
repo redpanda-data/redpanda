@@ -46,7 +46,7 @@ redpanda_cc_library(
         "//src/v/container:intrusive",
         "//src/v/json",
         "//src/v/model",
-        "//src/v/pandaproxy/schema_registry:config",
+        "//src/v/pandaproxy:config",
         "//src/v/security:config",
         "//src/v/serde:chrono",
         "//src/v/ssx:sformat",
