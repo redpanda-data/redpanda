@@ -88,7 +88,7 @@ SEASTAR_THREAD_TEST_CASE(test_eager_chunk_eviction) {
     protected:
         ss::future<> close_files(
           std::vector<ss::lw_shared_ptr<ss::file>> files_to_close,
-          retry_chain_logger& rtc) override {
+          retry_chain_logger&) override {
             evicted = files_to_close.size();
             co_return;
         }
@@ -120,7 +120,7 @@ SEASTAR_THREAD_TEST_CASE(test_capped_chunk_eviction) {
     protected:
         ss::future<> close_files(
           std::vector<ss::lw_shared_ptr<ss::file>> files_to_close,
-          retry_chain_logger& rtc) override {
+          retry_chain_logger&) override {
             evicted = files_to_close.size();
             co_return;
         }
@@ -154,7 +154,7 @@ SEASTAR_THREAD_TEST_CASE(test_predictive_chunk_eviction) {
     protected:
         ss::future<> close_files(
           std::vector<ss::lw_shared_ptr<ss::file>> files_to_close,
-          retry_chain_logger& rtc) override {
+          retry_chain_logger&) override {
             evicted = files_to_close.size();
             co_return;
         }
