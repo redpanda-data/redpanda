@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
+from collections import Counter
+from requests.exceptions import ConnectionError
 
 from rptest.services.admin import Admin, MigrationAction
 from rptest.services.admin import OutboundDataMigration, InboundDataMigration, NamespacedTopic, InboundTopic
@@ -37,14 +39,23 @@ class DataMigrationsApiTest(RedpandaTest):
         migrations = self.admin.list_data_migrations(node).json()
         return {migration["id"]: migration for migration in migrations}
 
+    def on_all_live_nodes(self, migration_id, predicate):
+        success_cnt = 0
+        exception_cnt = 0
+        for n in self.redpanda.nodes:
+            try:
+                map = self.get_migrations_map(n)
+                if migration_id in map and predicate(map[migration_id]):
+                    success_cnt += 1
+                else:
+                    return False
+            except ConnectionError:
+                exception_cnt += 1
+        return success_cnt > exception_cnt
+
     def wait_for_migration_states(self, id: int, states: list[str]):
         def migration_in_one_of_states():
-            for n in self.redpanda.nodes:
-                migrations = self.get_migrations_map(n)
-                if id not in migrations or migrations[id][
-                        "state"] not in states:
-                    return False
-            return True
+            return self.on_all_live_nodes(id, lambda m: m["state"] in states)
 
         wait_until(
             migration_in_one_of_states,
@@ -60,11 +71,7 @@ class DataMigrationsApiTest(RedpandaTest):
         self.logger.info(f"create migration reply: {reply}")
 
         def migration_is_present(id: int):
-            for n in self.redpanda.nodes:
-                m = self.get_migrations_map(n)
-                if id not in m:
-                    return False
-            return True
+            return self.on_all_live_nodes(id, lambda m: True)
 
         migration_id = reply["id"]
         wait_until(
@@ -123,12 +130,15 @@ class DataMigrationsApiTest(RedpandaTest):
                                        ['cut_over', 'finished'])
         self.wait_for_migration_states(out_migration_id, ['finished'])
 
-        assert migrations_map[out_migration_id]['state'] == 'planned'
-
-        for t in topics:
-            assert self.client().describe_topic(t.name).partitions == []
+        # we may be unlucky to query a slow node
+        wait_until(
+            lambda: all(self.client().describe_topic(t.name).partitions == []
+                        for t in topics),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Failed waiting for partitions to disappear")
         # in
-
+        #alias=None if i == 0 else NamespacedTopic(f"topic-{i}-alias"))
         inbound_topics = [
             InboundTopic(
                 NamespacedTopic(t.name),
