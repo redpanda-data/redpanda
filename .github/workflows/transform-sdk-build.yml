@@ -115,8 +115,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Rust
         run: |
-          rustup update stable --no-self-update
-          rustup default stable
+          rustup update 1.79 --no-self-update
+          rustup default 1.79
+          rustup component add rustfmt clippy
       - name: Run tests
         working-directory: src/transform-sdk/rust
         run: cargo test --workspace
@@ -136,7 +137,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Rust
         run: |
-          rustup update stable --no-self-update
+          rustup update 1.79 --no-self-update
+          rustup default 1.79
           rustup target add wasm32-wasi
       - name: Build integration tests
         working-directory: src/transform-sdk/rust
