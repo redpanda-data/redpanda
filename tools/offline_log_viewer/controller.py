@@ -1130,8 +1130,7 @@ class ControllerSnapshot():
 
     def read_topics(self, rdr: Reader, version: int):
         def read_tp_ns_to_str(rdr: Reader):
-            v = read_topic_namespace(rdr)
-            return f"{v['namespace']}/{v['topic']}"
+            return read_topic_namespace(rdr)
 
         def read_partition_t(rdr: Reader, version: int):
             v = {}
