@@ -90,6 +90,9 @@ static ss::future<read_result> read_from_partition(
     if (
       hw < config.start_offset || config.skip_read
       || config.start_offset > config.max_offset) {
+        if (config.start_offset > part.log_end_offset()) {
+            co_return read_result(error_code::offset_out_of_range, start_o, hw);
+        }
         co_return read_result(start_o, hw, lso.value());
     }
 
@@ -339,10 +342,6 @@ static ss::future<read_result> do_read_from_ntp(
     if (leader_epoch_err != error_code::none) {
         co_return read_result(leader_epoch_err);
     }
-    auto offset_ec = co_await kafka_partition.validate_fetch_offset(
-      ntp_config.cfg.start_offset,
-      ntp_config.cfg.read_from_follower,
-      default_fetch_timeout + model::timeout_clock::now());
 
     if (config::shard_local_cfg().enable_transactions.value()) {
         if (
@@ -357,12 +356,6 @@ static ss::future<read_result> do_read_from_ntp(
         }
     }
 
-    if (offset_ec != error_code::none) {
-        co_return read_result(
-          offset_ec,
-          kafka_partition.start_offset(),
-          kafka_partition.high_watermark());
-    }
     if (
       config::shard_local_cfg().enable_rack_awareness.value()
       && ntp_config.cfg.consumer_rack_id && kafka_partition.is_leader()) {
@@ -395,8 +388,23 @@ static ss::future<read_result> do_read_from_ntp(
               preferred_replica);
         }
     }
+
     read_result result = co_await read_from_partition(
       kafka_partition, ntp_config.cfg, foreign_read, deadline);
+
+    if (result.has_data()) {
+        auto offset_ec = co_await kafka_partition.validate_fetch_offset(
+          ntp_config.cfg.start_offset,
+          ntp_config.cfg.read_from_follower,
+          default_fetch_timeout + model::timeout_clock::now());
+
+        if (offset_ec != error_code::none) {
+            co_return read_result(
+              offset_ec,
+              kafka_partition.start_offset(),
+              kafka_partition.high_watermark());
+        }
+    }
 
     adjust_memory_units(
       memory_sem, memory_fetch_sem, memory_units, result.data_size_bytes());
