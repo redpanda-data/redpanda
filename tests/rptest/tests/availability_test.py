@@ -14,10 +14,16 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec
 from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST
-from rptest.tests.e2e_finjector import EndToEndFinjectorTest
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.e2e_finjector import Finjector
+from rptest.util import Scale
 
 
-class AvailabilityTests(EndToEndFinjectorTest):
+class AvailabilityTests(EndToEndTest):
+    def __init__(self, test_context, *args, **kwargs):
+        self.scale = Scale(test_context)
+        super(AvailabilityTests, self).__init__(test_context, *args, **kwargs)
+
     def validate_records(self):
         min_records = 40000
         producer_timeout_sec = 60
@@ -59,7 +65,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.start_consumer(1)
         self.await_startup()
         # run failure injector loop with default parameters
-        with self.finj_thread():
+        with Finjector(self.redpanda, self.scale).finj_thread():
             self.validate_records()
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
@@ -89,7 +95,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.start_consumer(1)
         self.await_startup()
 
-        with self.finj_manual() as finj:
+        with Finjector(self.redpanda, self.scale).finj_manual() as finj:
             # inject permanent random failure
             f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
                                  random.choice(self.redpanda.nodes[0:1]))
