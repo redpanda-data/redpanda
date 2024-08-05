@@ -19,7 +19,7 @@ use avro::example::Example;
 use anyhow::Result;
 use apache_avro::{from_avro_datum, from_value, AvroSchema};
 use redpanda_transform_sdk::*;
-use redpanda_transform_sdk_sr::{decode_schema_id, Schema, SchemaRegistryClient};
+use redpanda_transform_sdk_sr::*;
 use serde_json::to_vec;
 
 // This example shows usage of the schema registry integration:

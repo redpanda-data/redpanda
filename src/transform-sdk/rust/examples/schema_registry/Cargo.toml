@@ -6,12 +6,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
-redpanda-transform-sdk = { path = "../.." }
 redpanda-transform-sdk-sr = { path = "../../sr" }
-serde_json = "1.0.108"
+redpanda-transform-sdk = { path = "../.." }
+serde_json = { workspace = true }
 anyhow = { workspace = true }
-serde = { version = "1.0.195", features = ["derive"] }
-apache-avro = { version = "0.16.0", features = ["derive"] }
+serde = { workspace = true }
+apache-avro = { workspace = true }
 
 [[bin]]
 name = "schema_registry"
