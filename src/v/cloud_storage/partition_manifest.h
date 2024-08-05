@@ -196,7 +196,7 @@ public:
     const model::ntp& get_ntp() const;
 
     // Get last offset
-    model::offset get_last_offset() const;
+    model::offset get_last_offset() const { return _last_offset; }
 
     // Get the last inclusive Kafka offset
     std::optional<kafka::offset> get_last_kafka_offset() const;
@@ -225,7 +225,12 @@ public:
 
     /// Get starting offset of the current manifest (doesn't take into account
     /// spillover manifests)
-    std::optional<model::offset> get_start_offset() const;
+    std::optional<model::offset> get_start_offset() const {
+        if (_start_offset == model::offset{}) {
+            return std::nullopt;
+        }
+        return _start_offset;
+    }
 
     /// Get starting kafka offset of the current manifest (doesn't take into
     /// account spillover manifests)
@@ -256,7 +261,7 @@ public:
     const_iterator end() const;
     /// Return last segment in the list
     std::optional<segment_meta> last_segment() const;
-    size_t size() const;
+    size_t size() const { return _segments.size(); }
     bool empty() const;
 
     // Return the tracked amount of memory associated with the segments in this
@@ -505,7 +510,9 @@ public:
     void set_archive_clean_offset(
       model::offset start_rp_offset, uint64_t size_bytes);
 
-    kafka::offset get_start_kafka_offset_override() const;
+    kafka::offset get_start_kafka_offset_override() const {
+        return _start_kafka_offset_override;
+    }
 
     /// Get offset of the last applied STM command
     model::offset get_applied_offset() const noexcept {

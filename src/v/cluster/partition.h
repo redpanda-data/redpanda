@@ -137,7 +137,9 @@ public:
 
     model::term_id term() const;
 
-    model::offset dirty_offset() const;
+    model::offset dirty_offset() const {
+        return _raft->log()->offsets().dirty_offset;
+    }
 
     /// Return the offset up to which the storage layer would like to
     /// prefix truncate the log, if any.  This may be consumed as an indicator

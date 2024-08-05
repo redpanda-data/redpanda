@@ -1479,9 +1479,6 @@ model::offset partition::high_watermark() const {
 model::offset partition::leader_high_watermark() const {
     return model::next_offset(_raft->last_leader_visible_index());
 }
-model::offset partition::dirty_offset() const {
-    return _raft->log()->offsets().dirty_offset;
-}
 
 const model::ntp& partition::ntp() const { return _raft->ntp(); }
 

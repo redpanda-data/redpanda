@@ -1661,11 +1661,6 @@ ss::future<> archival_metadata_stm::stop() {
     co_await raft::persisted_stm<>::stop();
 }
 
-const cloud_storage::partition_manifest&
-archival_metadata_stm::manifest() const {
-    return *_manifest;
-}
-
 model::offset archival_metadata_stm::get_start_offset() const {
     auto p = _manifest->get_start_offset();
     if (p.has_value()) {

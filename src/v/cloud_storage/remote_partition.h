@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/read_path_probes.h"
@@ -95,7 +96,17 @@ public:
     bool bounds_timestamp(model::timestamp) const;
 
     /// Return first uploaded kafka offset
-    kafka::offset first_uploaded_offset();
+    kafka::offset first_uploaded_offset() {
+        vassert(
+          _manifest_view->stm_manifest().size() > 0,
+          "The manifest for {} is not expected to be empty",
+          _ntp);
+        auto so = _manifest_view->stm_manifest()
+                    .full_log_start_kafka_offset()
+                    .value();
+        vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
+        return so;
+    }
 
     /// Return the offset one past the end of the last offset (i.e. the high
     /// watermark as reported by object storage).
@@ -105,7 +116,18 @@ public:
     const model::ntp& get_ntp() const;
 
     /// Returns true if at least one segment is uploaded to the bucket
-    bool is_data_available() const;
+    bool is_data_available() const {
+        const auto& stmm = _manifest_view->stm_manifest();
+        const auto start_offset = stmm.get_start_offset();
+
+        // If the start offset for the STM region is not set, then the cloud log
+        // is empty. There's one special case, where the start offset is set,
+        // and yet the cloud log should be considered emtpy: retention in the
+        // STM region advanced the start offset, but the garbage collection, and
+        // subsequent truncation, did not happen yet.
+        return start_offset.has_value()
+               && start_offset.value() <= stmm.get_last_offset();
+    }
 
     uint64_t cloud_log_size() const;
 
