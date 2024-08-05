@@ -44,6 +44,8 @@
 #include <seastar/http/exception.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 namespace pandaproxy::schema_registry {
 
 static constexpr auto audit_svc_name = "Redpanda Schema Registry Service";
