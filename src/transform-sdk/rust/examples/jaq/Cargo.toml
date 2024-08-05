@@ -6,10 +6,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
-jaq-interpret = "1.2.0"
 redpanda-transform-sdk = { path = "../.." }
 anyhow = { workspace = true }
-jaq-parse = "1.0.1"
-serde_json = "1.0.108"
-jaq-core = "1.2.0"
-jaq-std = "1.2.0"
+serde_json = { workspace = true }
+jaq-interpret = "1.5"
+jaq-parse = "1.0"
+jaq-core = "1.5"
+jaq-std = "1.6"
