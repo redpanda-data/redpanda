@@ -67,3 +67,16 @@ redpanda_cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
 )
+
+redpanda_cc_library(
+    name = "json",
+    hdrs = [
+        "include/container/json.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fragmented_vector",
+        "//src/v/json",
+    ],
+)
