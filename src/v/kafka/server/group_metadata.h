@@ -18,7 +18,6 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "serde/rw/rw.h"
-#include "serde/serde.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>

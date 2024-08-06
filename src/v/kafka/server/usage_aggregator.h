@@ -13,7 +13,8 @@
 #include "base/vlog.h"
 #include "container/fragmented_vector.h"
 #include "kafka/server/logger.h"
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
 #include "storage/kvstore.h"
 
 #include <seastar/core/gate.hh>
