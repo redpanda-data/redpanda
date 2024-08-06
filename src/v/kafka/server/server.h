@@ -33,13 +33,16 @@
 #include "security/gssapi_principal_mapper.h"
 #include "security/krb5_configurator.h"
 #include "security/mtls.h"
-#include "ssx/fwd.h"
 #include "utils/ema.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+
+namespace ssx {
+class singleton_thread_worker;
+}
 
 namespace kafka {
 
