@@ -882,6 +882,75 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
     .reader_is_compatible_with_writer = true,
   },
+  // positive combinators special cases: anyOf in reader can be compared with
+  // the other
+  // combinators
+  {
+    // smoke test identical schemas
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // smoke test smaller reader is not compatible
+    .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    // smoke test bigger reader is  compatible
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // oneOf in writer can only be smaller or equal
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // oneOf in writer can only be smaller or equal
+    .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    // oneOf in writer can only be smaller or equal
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // allOf in writer can be compatible with any cardinality
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"allOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // allOf in writer can be compatible with any cardinality
+    .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema
+    = R"({"allOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // allOf in writer can be compatible with any cardinality
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema = R"({"allOf": [{"type": "number"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
   // dialects
   {
     .reader_schema = R"({"$schema": "http://json-schema.org/draft-06/schema"})",
