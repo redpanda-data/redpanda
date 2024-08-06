@@ -14,11 +14,13 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
+from rptest.clients.kcl import RawKCL
 from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException, AclList
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
 from typing import Optional
+from enum import Enum
 
 
 class MTLSProvider(TLSProvider):
@@ -39,7 +41,50 @@ class MTLSProvider(TLSProvider):
                                     common_name=name)
 
 
-class AccessControlListTest(RedpandaTest):
+class ACLOperation(Enum):
+    ALL = "all"
+    READ = "read"
+    WRITE = "write"
+    CREATE = "create"
+    # REMOVE = "remove" # Invalid cluster acl operation
+    ALTER = "alter"
+    DESCRIBE = "describe"
+    CLUSTER_ACTION = "cluster_action"
+    DESCRIBE_CONFIGS = "describe_configs"
+    ALTER_CONFIGS = "alter_configs"
+    IDEMPOTENT_WRITE = "idempotent_write"
+
+
+class KError(Enum):
+    CLUSTER_AUTHORIZATION_FAILED = 31
+
+
+class AccessControlListTestBase(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def security_updates_barrier(self, verify_users: list[str] = []):
+        # Hack: create a user, so that we can watch for this user in order to
+        # confirm that all preceding controller log writes landed: this is
+        # an indirect way to check that ACLs (and users) have propagated
+        # to all nodes before we proceed.
+        checkpoint_user = "_test_checkpoint"
+        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
+
+        # wait for users to propagate to nodes
+        def auth_metadata_propagated():
+            for node in self.redpanda.nodes:
+                users = self.admin.list_users(node=node)
+                if checkpoint_user not in users:
+                    return False
+                else:
+                    assert all(user in users for user in verify_users)
+            return True
+
+        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+
+
+class AccessControlListTest(AccessControlListTestBase):
     password = "password"
     algorithm = "SCRAM-SHA-256"
 
@@ -129,24 +174,11 @@ class AccessControlListTest(RedpandaTest):
         client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
-        # Hack: create a user, so that we can watch for this user in order to
-        # confirm that all preceding controller log writes landed: this is
-        # an indirect way to check that ACLs (and users) have propagated
-        # to all nodes before we proceed.
-        checkpoint_user = "_test_checkpoint"
-        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
-
-        # wait for users to propagate to nodes
-        def auth_metadata_propagated():
-            for node in self.redpanda.nodes:
-                users = self.admin.list_users(node=node)
-                if checkpoint_user not in users:
-                    return False
-                elif self.security.sasl_enabled() or enable_authz:
-                    assert "base" in users and "cluster_describe" in users
-            return True
-
-        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+        # Wait for ACLs and users to propagated to all nodes before we proceed.
+        expected_users = []
+        if self.security.sasl_enabled() or enable_authz:
+            expected_users = ["base", "cluster_describe"]
+        self.security_updates_barrier(expected_users)
 
     def get_client(self, username):
         if self.security.mtls_identity_enabled(
@@ -537,3 +569,86 @@ class AccessControlListTestUpgrade(AccessControlListTest):
             pass_w_cluster_user=True,
             pass_w_super_user=True,
             err_msg='check_permissions failed after upgrade')
+
+
+class AccessControlListAuthzTest(AccessControlListTestBase):
+    password = "password"
+    algorithm = "SCRAM-SHA-256"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.security = SecurityConfig()
+        self.security.enable_sasl = True
+        self.security.kafka_enable_authorization = True
+        self.security.endpoint_authn_method = 'sasl'
+
+        self.redpanda.set_security_settings(self.security)
+        self.redpanda.start()
+
+        superuser = self.redpanda.SUPERUSER_CREDENTIALS
+        self.rpk_super = RpkTool(self.redpanda,
+                                 username=superuser.username,
+                                 password=superuser.password,
+                                 sasl_mechanism=superuser.algorithm)
+        self.admin = Admin(self.redpanda)
+
+        # Create some users with varying cluster ACLs
+        self.admin.create_user("base", self.password, self.algorithm)
+
+        def cluster_username(op: ACLOperation) -> str:
+            return f"cluster_{op.value}"
+
+        for op in ACLOperation:
+            username = cluster_username(op)
+            self.admin.create_user(username, self.password, self.algorithm)
+            self.rpk_super.acl_create_allow_cluster(username, op.value)
+
+        self.security_updates_barrier()
+
+        # Now that the cluster is ready, create clients for users with various ACL levels
+        self.kcl_user = {}
+        self.kcl_user["base"] = RawKCL(self.redpanda, "base", self.password,
+                                       self.algorithm)
+
+        for op in ACLOperation:
+            username = cluster_username(op)
+            self.kcl_user[username] = RawKCL(self.redpanda, username,
+                                             self.password, self.algorithm)
+
+    @cluster(num_nodes=3)
+    def test_alter_quotas(self):
+        alter_body = {
+            "Entries": [{
+                "Entity": [{
+                    "Type": "client-id-prefix",
+                }],
+                "Ops": [{
+                    "Key": "producer_byte_rate",
+                    "Value": 10.0,
+                }],
+            }],
+        }
+
+        resp = self.kcl_user["base"].raw_alter_quotas(body=alter_body)
+        assert resp['Entries'][0]['ErrorCode'] == KError.CLUSTER_AUTHORIZATION_FAILED.value, \
+                f"Response: {resp}"
+
+        resp = self.kcl_user["cluster_alter_configs"].raw_alter_quotas(
+            body=alter_body)
+        assert resp['Entries'][0]['ErrorCode'] != KError.CLUSTER_AUTHORIZATION_FAILED.value, \
+                f"Response: {resp}"
+
+    @cluster(num_nodes=3)
+    def test_describe_quotas(self):
+        describe_body = {}
+
+        resp = self.kcl_user["base"].raw_describe_quotas(body=describe_body)
+        assert resp['ErrorCode'] == KError.CLUSTER_AUTHORIZATION_FAILED.value, \
+                f"Response: {resp}"
+
+        resp = self.kcl_user["cluster_describe_configs"].raw_describe_quotas(
+            body=describe_body)
+        assert resp['ErrorCode'] != KError.CLUSTER_AUTHORIZATION_FAILED.value, \
+                f"Response: {resp}"
