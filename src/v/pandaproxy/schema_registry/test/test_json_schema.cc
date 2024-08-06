@@ -860,6 +860,28 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .writer_schema = R"({"allOf": [{"type": "integer"}]})",
     .reader_is_compatible_with_writer = true,
   },
+  // positive combinators older is single schema, newer is allOf
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"anyOf": [{"type": "number"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators older is oneOf, newer is single schema
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
   // dialects
   {
     .reader_schema = R"({"$schema": "http://json-schema.org/draft-06/schema"})",

@@ -1259,12 +1259,29 @@ bool is_positive_combinator_superset(
             return is_superset(*older_schemas.Begin(), *newer_schemas.Begin());
         }
 
-        throw as_exception(invalid_schema(fmt::format(
-          "{} not implemented for different combinators. input: older: '{}', "
-          "newer: '{}'",
-          __FUNCTION__,
-          pj{older},
-          pj{newer})));
+        // either older or newer - or both - has more than one subschema
+
+        if (older_schemas.Size() == 1 && newer_comb == p_combinator::allOf) {
+            // older has only one subschema, newer is "allOf" so it can be
+            // compatible if any one of the subschemas matches older
+            return std::ranges::any_of(
+              newer_schemas, [&](json::Value const& s) {
+                  return is_superset(*older_schemas.Begin(), s);
+              });
+        }
+
+        if (older_comb == p_combinator::oneOf && newer_schemas.Size() == 1) {
+            // older has multiple schemas but only one can be valid. it's
+            // compatible if the only subschema in newer is compatible with one
+            // in older
+            return std::ranges::any_of(
+              older_schemas, [&](json::Value const& s) {
+                  return is_superset(s, *newer_schemas.Begin());
+              });
+        }
+
+        // different combinators, not a special case. not compatible
+        return false;
     }
 
     // same combinator for older and newer
