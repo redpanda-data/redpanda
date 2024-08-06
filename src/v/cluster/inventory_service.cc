@@ -34,7 +34,6 @@ using cloud_storage::cst_log;
 namespace csi = cloud_storage::inventory;
 
 namespace {
-constexpr auto max_hash_size_in_memory = 128_KiB;
 constexpr auto partition_leaders_retry = 5;
 constexpr auto sleep_between_get_leaders = 1s;
 
@@ -254,7 +253,11 @@ inventory_service::download_and_process_reports(csi::report_paths paths) {
 
     // Report consumer is expected to process multiple reports while keeping
     // state across calls. This is only created once per set of files.
-    csi::inventory_consumer c{_hash_store_path, ntps, max_hash_size_in_memory};
+    csi::inventory_consumer c{
+      _hash_store_path,
+      ntps,
+      config::shard_local_cfg()
+        .cloud_storage_inventory_max_hash_size_during_parse};
 
     for (const auto& path : paths) {
         const auto is_path_compressed
