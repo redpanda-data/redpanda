@@ -390,7 +390,10 @@ ss::future<> audit_client::create_internal_topic() {
           .value{retain_forever}},
         kafka::createable_topic_config{
           .name = ss::sstring(kafka::topic_property_retention_duration),
-          .value{seven_days}}}};
+          .value{seven_days}},
+        kafka::createable_topic_config{
+          .name = ss::sstring(kafka::topic_property_cleanup_policy),
+          .value = "delete"}}};
     vlog(
       adtlog.info, "Creating audit log topic with settings: {}", audit_topic);
     const auto resp = co_await _client.create_topic({std::move(audit_topic)});
