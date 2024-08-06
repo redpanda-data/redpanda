@@ -1485,6 +1485,10 @@ ss::future<> do_fetch(op_context& octx) {
 }
 } // namespace
 
+namespace testing {
+ss::future<> do_fetch(op_context& octx) { return ::kafka::do_fetch(octx); }
+} // namespace testing
+
 template<>
 ss::future<response_ptr>
 fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
