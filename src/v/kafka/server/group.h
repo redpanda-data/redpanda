@@ -525,8 +525,7 @@ public:
     void complete_join();
 
     /// Handle a heartbeat expiration.
-    void heartbeat_expire(
-      kafka::member_id member_id, clock_type::time_point deadline);
+    void heartbeat_expire(kafka::member_id member_id);
 
     /// Send response to joining member.
     void try_finish_joining_member(

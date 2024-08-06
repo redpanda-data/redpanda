@@ -208,8 +208,7 @@ public:
     const bytes&
     get_protocol_metadata(const kafka::protocol_name& protocol) const;
 
-    bool should_keep_alive(
-      clock_type::time_point deadline, clock_type::duration new_join_timeout);
+    bool should_keep_alive();
 
     void set_latest_heartbeat(clock_type::time_point t) {
         _latest_heartbeat = t;

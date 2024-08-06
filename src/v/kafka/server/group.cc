@@ -1011,9 +1011,7 @@ group::join_group_stages group::add_member_and_rebalance(
     member->set_latest_heartbeat(now);
     auto deadline = now + _conf.group_new_member_join_timeout();
     member->expire_timer().set_callback(
-      [this, deadline, member_id = member->id()]() {
-          heartbeat_expire(member_id, deadline);
-      });
+      [this, member_id = member->id()]() { heartbeat_expire(member_id); });
     member->expire_timer().arm(deadline);
 
     vlog(
@@ -1227,8 +1225,7 @@ void group::complete_join() {
     }
 }
 
-void group::heartbeat_expire(
-  kafka::member_id member_id, clock_type::time_point deadline) {
+void group::heartbeat_expire(kafka::member_id member_id) {
     if (in_state(group_state::dead)) {
         vlog(
           _ctxlog.trace,
@@ -1250,8 +1247,7 @@ void group::heartbeat_expire(
 
     } else {
         auto member = get_member(member_id);
-        const auto keep_alive = member->should_keep_alive(
-          deadline, _conf.group_new_member_join_timeout());
+        const auto keep_alive = member->should_keep_alive();
         vlog(
           _ctxlog.trace,
           "Heartbeat expired for keep_alive={} member {}",
@@ -1283,9 +1279,7 @@ void group::schedule_next_heartbeat_expiration(member_ptr member) {
     member->set_latest_heartbeat(now);
     auto deadline = now + member->session_timeout();
     member->expire_timer().set_callback(
-      [this, deadline, member_id = member->id()]() {
-          heartbeat_expire(member_id, deadline);
-      });
+      [this, member_id = member->id()]() { heartbeat_expire(member_id); });
     vlog(
       _ctxlog.trace,
       "Scheduling heartbeat expiration {} ms for {}",
