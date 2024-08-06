@@ -10,6 +10,7 @@
 package registry
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry/mode"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry/schema"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
@@ -25,6 +26,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 	cmd.AddCommand(
 		compatibilityLevelCommand(fs, p),
+		mode.NewCommand(fs, p),
 		schema.NewCommand(fs, p),
 		subjectCommand(fs, p),
 	)

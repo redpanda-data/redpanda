@@ -1713,6 +1713,33 @@ class RpkTool:
 
         return self._run_registry(cmd)
 
+    def get_mode(self, subjects=[], includeGlobal=True, format="json"):
+        cmd = ["mode", "get"]
+
+        if includeGlobal:
+            cmd += ["--global"]
+
+        if len(subjects) > 0:
+            cmd += subjects
+
+        return self._run_registry(cmd, output_format=format)
+
+    def set_mode(self, mode, subjects=[], format="json"):
+        cmd = ["mode", "set", "--mode", mode]
+
+        if len(subjects) > 0:
+            cmd += subjects
+
+        return self._run_registry(cmd, output_format=format)
+
+    def reset_mode(self, subjects=[], format="json"):
+        cmd = ["mode", "reset"]
+
+        if len(subjects) > 0:
+            cmd += subjects
+
+        return self._run_registry(cmd, output_format=format)
+
     def _run_wasm(self, rest):
         cmd = [self._rpk_binary(), "transform"]
         cmd += ["-X", "admin.hosts=" + self._redpanda.admin_endpoints()]
