@@ -118,12 +118,11 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   with_learner_recovery_throttle enable_learner_recovery_throttle,
   keep_snapshotted_log keep_snapshotted_log) {
     auto revision = log->config().get_revision();
-    auto raft_cfg = create_initial_configuration(nodes, revision);
 
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
-      std::move(raft_cfg),
+      raft::group_configuration(nodes, revision),
       raft::timeout_jitter(_configuration.election_timeout_ms),
       log,
       scheduling_config(_raft_sg, raft_priority()),
@@ -157,11 +156,6 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
             return raft;
         });
     });
-}
-
-raft::group_configuration group_manager::create_initial_configuration(
-  std::vector<raft::vnode> initial_nodes, model::revision_id revision) const {
-    return {std::move(initial_nodes), revision};
 }
 
 ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
