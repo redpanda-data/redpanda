@@ -341,7 +341,7 @@ struct empty_request
 struct start_test_request
   : serde::envelope<
       start_test_request,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
