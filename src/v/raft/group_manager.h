@@ -106,8 +106,6 @@ private:
     ss::future<xshard_transfer_state>
     do_shutdown(ss::lw_shared_ptr<consensus>, bool remove_persistent_state);
 
-    raft::group_configuration create_initial_configuration(
-      std::vector<raft::vnode>, model::revision_id) const;
     model::node_id _self;
     ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;
