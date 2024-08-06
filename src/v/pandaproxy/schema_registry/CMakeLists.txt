@@ -43,6 +43,9 @@ v_cc_library(
     jsoncons
   )
 
+set_source_files_properties(protobuf.cc
+  PROPERTIES INCLUDE_DIRECTORIES ${PROJECT_BINARY_DIR})
+
 add_subdirectory(test)
 add_subdirectory(requests)
 add_subdirectory(protobuf)

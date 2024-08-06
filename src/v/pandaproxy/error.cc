@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "error.h"
+#include "pandaproxy/error.h"
 
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/json/error.h"

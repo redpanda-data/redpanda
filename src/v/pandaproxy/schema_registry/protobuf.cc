@@ -17,22 +17,39 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/confluent/meta.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/confluent/types/decimal.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/calendar_period.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/color.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/date.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/datetime.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/dayofweek.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/decimal.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/expr.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/fraction.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/interval.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/latlng.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/localized_text.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/money.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/month.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/phone_number.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/postal_address.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/quaternion.pb.h"
+#include "src/v/pandaproxy/schema_registry/protobuf/google/type/timeofday.pb.h"
 #include "ssx/sformat.h"
+#include "thirdparty/protobuf/descriptor.h"
+#include "thirdparty/protobuf/descriptor.pb.h"
 #include "utils/base64.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <boost/algorithm/string/trim.hpp>
-#include <confluent/meta.pb.h>
-#include <confluent/types/decimal.pb.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <google/protobuf/any.pb.h>
 #include <google/protobuf/api.pb.h>
 #include <google/protobuf/compiler/parser.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/duration.pb.h>
 #include <google/protobuf/empty.pb.h>
 #include <google/protobuf/field_mask.pb.h>
@@ -42,25 +59,7 @@
 #include <google/protobuf/struct.pb.h>
 #include <google/protobuf/timestamp.pb.h>
 #include <google/protobuf/type.pb.h>
-#include <google/protobuf/util/type_resolver.h>
 #include <google/protobuf/wrappers.pb.h>
-#include <google/type/calendar_period.pb.h>
-#include <google/type/color.pb.h>
-#include <google/type/date.pb.h>
-#include <google/type/datetime.pb.h>
-#include <google/type/dayofweek.pb.h>
-#include <google/type/decimal.pb.h>
-#include <google/type/expr.pb.h>
-#include <google/type/fraction.pb.h>
-#include <google/type/interval.pb.h>
-#include <google/type/latlng.pb.h>
-#include <google/type/localized_text.pb.h>
-#include <google/type/money.pb.h>
-#include <google/type/month.pb.h>
-#include <google/type/phone_number.pb.h>
-#include <google/type/postal_address.pb.h>
-#include <google/type/quaternion.pb.h>
-#include <google/type/timeofday.pb.h>
 
 #include <string_view>
 #include <unordered_set>
@@ -242,7 +241,8 @@ public:
                 throw as_exception(error_collector.error());
             }
         }
-        _fdp.set_name(schema.sub()());
+        const auto& sub = schema.sub()();
+        _fdp.set_name(sub.data(), sub.size());
         return _fdp;
     }
 
