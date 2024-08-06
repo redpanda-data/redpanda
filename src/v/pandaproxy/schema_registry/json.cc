@@ -1250,8 +1250,9 @@ bool is_positive_combinator_superset(
     auto newer_schemas
       = newer.FindMember(to_keyword(newer_comb))->value.GetArray();
 
-    if (older_comb != newer_comb) {
-        // different combinators. there might some compatible combinations:
+    if (older_comb != p_combinator::anyOf && older_comb != newer_comb) {
+        // different combinators, and older is not "anyOf". there might some
+        // compatible combinations:
 
         if (older_schemas.Size() == 1 && newer_schemas.Size() == 1) {
             // both combinators have only one subschema, so the actual
@@ -1284,7 +1285,7 @@ bool is_positive_combinator_superset(
         return false;
     }
 
-    // same combinator for older and newer
+    // same combinator for older and newer, or older is "anyOf"
 
     // size differences between older_schemas and newer_schemas have different
     // meaning based on combinator.
