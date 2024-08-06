@@ -1289,21 +1289,18 @@ bool is_positive_combinator_superset(
     // size differences between older_schemas and newer_schemas have different
     // meaning based on combinator.
     // TODO a denormalized schema could fail this check while being compatible
-    switch (newer_comb) {
-    case p_combinator::allOf:
-        if (older_schemas.Size() > newer_schemas.Size()) {
+    if (older_schemas.Size() > newer_schemas.Size()) {
+        if (older_comb == p_combinator::allOf) {
             // older has more restrictions than newer, not compatible
             return false;
         }
-        break;
-    case p_combinator::anyOf:
-        [[fallthrough]];
-    case p_combinator::oneOf:
-        if (older_schemas.Size() < newer_schemas.Size()) {
+    } else if (older_schemas.Size() < newer_schemas.Size()) {
+        if (
+          newer_comb == p_combinator::anyOf
+          || newer_comb == p_combinator::oneOf) {
             // newer has more degrees of freedom than older, not compatible
             return false;
         }
-        break;
     }
 
     // sizes are compatible, now we need to check that every schema from
