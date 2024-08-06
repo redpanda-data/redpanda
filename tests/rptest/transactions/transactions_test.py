@@ -905,14 +905,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                    backoff_sec=2,
                    err_msg="Producers not evicted in time")
 
-        try:
-            _produce_one(producers[0], 0)
-            assert False, "We can not produce after cleaning in rm_stm"
-        except ck.cimpl.KafkaException as e:
-            kafka_error = e.args[0]
-            kafka_error.code(
-            ) == ck.cimpl.KafkaError.OUT_OF_ORDER_SEQUENCE_NUMBER
-
         # validate that the producers are evicted with LRU policy,
         # starting from this producer there should be no sequence
         # number errors as those producer state should not be evicted

@@ -226,6 +226,7 @@ redpanda_cc_library(
         "drain_manager.cc",
         "ephemeral_credential_frontend.cc",
         "ephemeral_credential_service.cc",
+        "errors.cc",
         "feature_backend.cc",
         "feature_barrier.cc",
         "feature_manager.cc",

@@ -32,12 +32,10 @@ result_promise_t::future_type request::result() const {
 }
 
 void request::set_value(request_result_t::value_type value) {
-    vassert(
-      _state <= request_state::in_progress && !_result.available(),
-      "unexpected request state during result set: {}",
-      *this);
-    _result.set_value(value);
-    _state = request_state::completed;
+    if (_state != request_state::completed) {
+        _result.set_value(value);
+        _state = request_state::completed;
+    }
 }
 
 void request::set_error(request_result_t::error_type error) {
@@ -124,6 +122,16 @@ std::optional<request_ptr> requests::last_request() const {
     return std::nullopt;
 }
 
+void requests::reset(request_result_t::error_type error) {
+    for (auto& request : _inflight_requests) {
+        if (!request->has_completed()) {
+            request->set_error(error);
+        }
+    }
+    _inflight_requests.clear();
+    _finished_requests.clear();
+}
+
 bool requests::is_valid_sequence(seq_t incoming) const {
     auto last_req = last_request();
     return
@@ -140,13 +148,7 @@ result<request_ptr> requests::try_emplace(
     if (reset_sequences) {
         // reset all the sequence tracking state, avoids any sequence
         // checks for sequence tracking.
-        while (!_inflight_requests.empty()) {
-            if (!_inflight_requests.front()->has_completed()) {
-                _inflight_requests.front()->set_error(errc::timeout);
-            }
-            _inflight_requests.pop_front();
-        }
-        _finished_requests.clear();
+        reset(errc::timeout);
     } else {
         // gc and fail any inflight requests from old terms
         // these are guaranteed to be failed because of sync() guarantees
@@ -223,15 +225,7 @@ void requests::gc_requests_from_older_terms(model::term_id current_term) {
     }
 }
 
-void requests::shutdown() {
-    for (auto& request : _inflight_requests) {
-        if (!request->has_completed()) {
-            request->_result.set_value(cluster::errc::shutting_down);
-        }
-    }
-    _inflight_requests.clear();
-    _finished_requests.clear();
-}
+void requests::shutdown() { reset(cluster::errc::shutting_down); }
 
 producer_state::producer_state(
   prefix_logger& logger,
@@ -328,6 +322,22 @@ bool producer_state::can_evict() {
     return true;
 }
 
+void producer_state::reset_with_new_epoch(model::producer_epoch new_epoch) {
+    vassert(
+      new_epoch > _id.get_epoch(),
+      "Invalid epoch bump to {} for producer {}",
+      new_epoch,
+      *this);
+    vassert(
+      !_transaction_state,
+      "Invalid epoch bump to {} for a non idempotent producer: {}",
+      new_epoch,
+      *this);
+    vlog(_logger.info, "[{}] Reseting epoch to {}", *this, new_epoch);
+    _requests.reset(errc::timeout);
+    _id = model::producer_identity(_id.id, new_epoch);
+}
+
 result<request_ptr> producer_state::try_emplace_request(
   const model::batch_identity& bid, model::term_id current_term, bool reset) {
     if (bid.first_seq > bid.last_seq) {
@@ -364,6 +374,9 @@ void producer_state::apply_data(
     auto bid = model::batch_identity::from(header);
     if (!bid.is_idempotent() || _evicted) {
         return;
+    }
+    if (!bid.is_transactional && bid.pid.epoch > _id.epoch) {
+        reset_with_new_epoch(bid.pid.epoch);
     }
     _requests.stm_apply(bid, header.ctx.term, offset);
     if (bid.is_transactional) {

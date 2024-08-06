@@ -128,7 +128,8 @@ ss::future<model::offset> rm_stm::bootstrap_committed_offset() {
       .then([this] { return _raft->committed_offset(); });
 }
 
-producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
+std::pair<producer_ptr, rm_stm::producer_previously_known>
+rm_stm::maybe_create_producer(model::producer_identity pid) {
     // Double lookup because of two reasons
     // 1. we are forced to use a ptr as map value_type because producer_state is
     // not movable
@@ -136,7 +137,7 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
     // as it is memory friendly.
     auto it = _producers.find(pid.get_id());
     if (it != _producers.end()) {
-        return it->second;
+        return std::make_pair(it->second, producer_previously_known::yes);
     }
     auto producer = ss::make_lw_shared<producer_state>(
       _ctx_log, pid, _raft->group(), [pid, this] {
@@ -145,7 +146,7 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
     _producer_state_manager.local().register_producer(*producer, _vcluster_id);
     _producers.emplace(pid.get_id(), producer);
 
-    return producer;
+    return std::make_pair(producer, producer_previously_known::no);
 }
 
 void rm_stm::cleanup_producer_state(model::producer_identity pid) {
@@ -190,7 +191,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
         co_return tx::errc::stale;
     }
     auto synced_term = _insync_term;
-    auto producer = maybe_create_producer(new_pid);
+    auto [producer, _] = maybe_create_producer(new_pid);
     co_return co_await producer->run_with_lock(
       [this,
        synced_term,
@@ -357,7 +358,7 @@ ss::future<tx::errc> rm_stm::commit_tx(
         co_return tx::errc::stale;
     }
     auto synced_term = _insync_term;
-    auto producer = maybe_create_producer(pid);
+    auto [producer, _] = maybe_create_producer(pid);
     if (pid != producer->id()) {
         co_return tx::errc::fenced;
     }
@@ -492,7 +493,7 @@ ss::future<tx::errc> rm_stm::abort_tx(
         co_return tx::errc::stale;
     }
     auto synced_term = _insync_term;
-    auto producer = maybe_create_producer(pid);
+    auto [producer, _] = maybe_create_producer(pid);
     if (pid != producer->id()) {
         co_return cluster::errc::invalid_producer_epoch;
     }
@@ -844,7 +845,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
         co_return cluster::errc::not_leader;
     }
     auto synced_term = _insync_term;
-    auto producer = maybe_create_producer(bid.pid);
+    auto [producer, _] = maybe_create_producer(bid.pid);
     co_return co_await producer->run_with_lock(
       [&, synced_term](ssx::semaphore_units units) {
           return do_transactional_replicate(
@@ -860,7 +861,8 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   model::record_batch_reader br,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
-  ssx::semaphore_units units) {
+  ssx::semaphore_units units,
+  producer_previously_known producer_known) {
     auto result = co_await do_idempotent_replicate(
       synced_term,
       producer,
@@ -868,7 +870,8 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
       std::move(br),
       opts,
       std::move(enqueued),
-      units);
+      units,
+      producer_known);
 
     if (!result) {
         vlog(
@@ -911,8 +914,31 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   model::record_batch_reader br,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
-  ssx::semaphore_units& units) {
-    auto request = producer->try_emplace_request(bid, synced_term);
+  ssx::semaphore_units& units,
+  producer_previously_known known_producer) {
+    // Check if the producer bumped the epoch and reset accordingly.
+    if (bid.pid.epoch > producer->id().epoch()) {
+        producer->reset_with_new_epoch(bid.pid.epoch);
+    }
+    // If the producer is unknown and is producing with a non zero
+    // sequence number, it is possible that the producer has been evicted
+    // from the broker memory. Instead of rejecting the request, we accept
+    // the current sequence and move on. This logic is similar to what
+    // Apache Kafka does.
+    // Ref:
+    // https://github.com/apache/kafka/blob/704476885ffb40cd3bf9b8f5c368c01eaee0a737
+    // storage/src/main/java/org/apache/kafka/storage/internals/log/ProducerAppendInfo.java#L135
+    auto skip_sequence_checks = !known_producer && bid.first_seq > 0;
+    if (unlikely(skip_sequence_checks)) {
+        vlog(
+          _ctx_log.warn,
+          "Accepting batch from unknown producer that likely got evicted: {}, "
+          "term: {}",
+          bid,
+          synced_term);
+    }
+    auto request = producer->try_emplace_request(
+      bid, synced_term, skip_sequence_checks);
     if (!request) {
         co_return request.error();
     }
@@ -969,9 +995,9 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
     }
     try {
         auto synced_term = _insync_term;
-        auto producer = maybe_create_producer(bid.pid);
+        auto [producer, known_producer] = maybe_create_producer(bid.pid);
         co_return co_await producer->run_with_lock(
-          [&](ssx::semaphore_units units) {
+          [&, known_producer](ssx::semaphore_units units) {
               return idempotent_replicate(
                 synced_term,
                 producer,
@@ -979,7 +1005,8 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
                 std::move(br),
                 opts,
                 std::move(enqueued),
-                std::move(units));
+                std::move(units),
+                known_producer);
           });
     } catch (const cache_full_error& e) {
         vlog(
@@ -1396,7 +1423,7 @@ void rm_stm::maybe_rearm_autoabort_timer(time_point_type deadline) {
 }
 
 void rm_stm::apply_fence(model::producer_identity pid, model::record_batch b) {
-    auto producer = maybe_create_producer(pid);
+    auto [producer, _] = maybe_create_producer(pid);
     auto header = b.header();
     auto batch_data = read_fence_batch(std::move(b));
     vlog(
@@ -1445,7 +1472,7 @@ void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
     vlog(
       _ctx_log.trace, "applying control batch of type {}, pid: {}", crt, pid);
-    auto producer = maybe_create_producer(pid);
+    auto [producer, _] = maybe_create_producer(pid);
     auto tx_range = producer->apply_transaction_end(crt);
     if (tx_range && crt == model::control_record_type::tx_abort) {
         // Aborted transaction
@@ -1493,7 +1520,7 @@ void rm_stm::apply_data(
     if (bid.is_idempotent()) {
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         const auto last_kafka_offset = from_log_offset(header.last_offset());
-        auto producer = maybe_create_producer(bid.pid);
+        auto [producer, _] = maybe_create_producer(bid.pid);
         producer->apply_data(header, last_kafka_offset);
         _producer_state_manager.local().touch(*producer, _vcluster_id);
         if (
