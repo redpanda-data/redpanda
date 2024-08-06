@@ -532,10 +532,9 @@ static constexpr auto compatibility_test_cases = std::to_array<
   },
   // positive combinators: mismatch of type
   {
-    .reader_schema = R"({"type": "integer"})",
-    .writer_schema = R"({"type": "integer", "anyOf": [true]})",
+    .reader_schema = R"({"type": "integer", "anyOf": [true]})",
+    .writer_schema = R"({"type": "integer"})",
     .reader_is_compatible_with_writer = false,
-    .expected_exception = true,
   },
   {
     .reader_schema = R"({"allOf": [true]})",
@@ -821,6 +820,18 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"oneOf": [{"type":"number", "multipleOf": 3}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"oneOf": [{"type":"boolean"}, {"type": "number", "multipleOf": 9}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators special case: only writer has a combinator
+  {
+    .reader_schema = R"({"type": "object"})",
+    .writer_schema = R"(
+        {"type": "object",
+            "oneOf": [
+                {"type": "object", "properties": {"c": {"type": "string"}}},
+                {"type": "object", "properties": {"d": {"type": "array"}}}
+            ]
+        })",
     .reader_is_compatible_with_writer = true,
   },
   // dialects
