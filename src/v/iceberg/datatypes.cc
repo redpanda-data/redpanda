@@ -62,6 +62,44 @@ bool operator==(const nested_field& lhs, const nested_field& rhs) {
            && lhs.name == rhs.name && lhs.type == rhs.type;
 }
 
+namespace {
+
+struct type_copying_visitor {
+    field_type operator()(const primitive_type& t) { return make_copy(t); }
+    field_type operator()(const struct_type& t) {
+        struct_type ret;
+        for (const auto& field_ptr : t.fields) {
+            ret.fields.emplace_back(field_ptr ? field_ptr->copy() : nullptr);
+        }
+        return ret;
+    }
+    field_type operator()(const list_type& t) {
+        list_type ret;
+        if (t.element_field) {
+            ret.element_field = t.element_field->copy();
+        }
+        return ret;
+    }
+    field_type operator()(const map_type& t) {
+        map_type ret;
+        if (t.key_field) {
+            ret.key_field = t.key_field->copy();
+        }
+        if (t.value_field) {
+            ret.value_field = t.value_field->copy();
+        }
+        return ret;
+    }
+};
+
+} // namespace
+
+primitive_type make_copy(const primitive_type& type) { return type; }
+
+field_type make_copy(const field_type& type) {
+    return std::visit(type_copying_visitor{}, type);
+}
+
 std::ostream& operator<<(std::ostream& o, const boolean_type&) {
     o << "boolean";
     return o;
@@ -259,5 +297,9 @@ map_type map_type::create(
         val_id, "value", val_req, std::move(val_type)),
     };
 }
+
+nested_field_ptr nested_field::copy() const {
+    return nested_field::create(id, name, required, make_copy(type));
+};
 
 } // namespace iceberg

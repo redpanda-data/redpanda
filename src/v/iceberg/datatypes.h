@@ -61,6 +61,8 @@ struct map_type;
 using field_type
   = std::variant<primitive_type, struct_type, list_type, map_type>;
 bool operator==(const field_type& lhs, const field_type& rhs);
+field_type make_copy(const field_type&);
+primitive_type make_copy(const primitive_type&);
 
 std::ostream& operator<<(std::ostream&, const boolean_type&);
 std::ostream& operator<<(std::ostream&, const int_type&);
@@ -125,6 +127,8 @@ struct nested_field {
         return std::make_unique<nested_field>(
           id_t{id}, std::move(name), req, std::move(t), std::nullopt);
     }
+
+    nested_field_ptr copy() const;
 
     friend bool operator==(const nested_field& lhs, const nested_field& rhs);
 };
