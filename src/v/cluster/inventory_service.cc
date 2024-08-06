@@ -16,6 +16,7 @@
 #include "cloud_storage/inventory/report_parser.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote.h"
+#include "config/node_config.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
@@ -100,12 +101,21 @@ default_leaders_provider::default_leaders_provider(
 ss::future<absl::node_hash_set<model::ntp>>
 default_leaders_provider::ntps(ss::abort_source& as) {
     absl::node_hash_set<model::ntp> ntps;
+    const auto self_node_id = config::node().node_id();
+    if (!self_node_id.has_value()) {
+        vlog(cst_log.warn, "node has no id, cannot find leadership");
+        co_return ntps;
+    }
+
     for (auto retry : std::ranges::iota_view{0, partition_leaders_retry}) {
         std::exception_ptr ep;
         try {
             co_await _leaders_table.local().for_each_leader(
-              [&ntps](auto tp_ns, auto pid, auto, auto) mutable {
-                  ntps.insert(model::ntp{tp_ns.ns, tp_ns.tp, pid});
+              [&ntps,
+               self_node_id](auto tp_ns, auto pid, auto node_id, auto) mutable {
+                  if (node_id == self_node_id) {
+                      ntps.insert(model::ntp{tp_ns.ns, tp_ns.tp, pid});
+                  }
               });
             break;
         } catch (...) {
