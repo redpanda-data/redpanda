@@ -25,6 +25,8 @@
 #include "schema_registry_module.h"
 #include "ssx/thread_worker.h"
 #include "storage/parser_utils.h"
+#include "thirdparty/wasmtime/wasm.h"
+#include "thirdparty/wasmtime/wasmtime.h"
 #include "transform_module.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
@@ -63,8 +65,6 @@
 #include <unistd.h>
 #include <utility>
 #include <variant>
-#include <wasm.h>
-#include <wasmtime.h>
 
 namespace wasm::wasmtime {
 
