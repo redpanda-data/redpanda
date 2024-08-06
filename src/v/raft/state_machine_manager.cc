@@ -370,8 +370,10 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
           model::no_timeout);
 
         if (max_last_applied == model::offset{}) {
-            vlog(
-              _log.warn,
+            vlogl(
+              _log,
+              _raft->log_config().cache_enabled() ? ss::log_level::warn
+                                                  : ss::log_level::debug,
               "no progress has been made during state machine apply. Current "
               "next offset: {}",
               _next);
