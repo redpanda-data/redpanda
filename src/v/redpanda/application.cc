@@ -1518,7 +1518,10 @@ void application::wire_up_redpanda_services(
       ss::sharded_parameter([]() {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
       }),
-      config::shard_local_cfg().transactional_id_expiration_ms.value(),
+      ss::sharded_parameter([]() {
+          return config::shard_local_cfg()
+            .transactional_id_expiration_ms.bind();
+      }),
       ss::sharded_parameter([]() {
           return config::shard_local_cfg()
             .virtual_cluster_min_producer_ids.bind();

@@ -55,7 +55,7 @@ struct test_fixture {
       size_t max_producers, size_t min_producers_per_vcluster) {
         _psm = std::make_unique<producer_state_manager>(
           config::mock_binding<size_t>(max_producers),
-          std::chrono::milliseconds::max(),
+          config::mock_binding(std::chrono::milliseconds::max()),
           config::mock_binding<size_t>(min_producers_per_vcluster));
         _psm->start().get();
         validate_producer_count(0);
