@@ -1245,10 +1245,20 @@ bool is_positive_combinator_superset(
 
     auto older_comb = maybe_older_comb.value();
     auto newer_comb = maybe_newer_comb.value();
+    auto older_schemas
+      = older.FindMember(to_keyword(older_comb))->value.GetArray();
+    auto newer_schemas
+      = newer.FindMember(to_keyword(newer_comb))->value.GetArray();
 
     if (older_comb != newer_comb) {
-        // different combinators. there might be cases where this is compatible,
-        // but this is not fully implemented here
+        // different combinators. there might some compatible combinations:
+
+        if (older_schemas.Size() == 1 && newer_schemas.Size() == 1) {
+            // both combinators have only one subschema, so the actual
+            // combinator does not matter. compare subschemas directly
+            return is_superset(*older_schemas.Begin(), *newer_schemas.Begin());
+        }
+
         throw as_exception(invalid_schema(fmt::format(
           "{} not implemented for different combinators. input: older: '{}', "
           "newer: '{}'",
@@ -1258,11 +1268,6 @@ bool is_positive_combinator_superset(
     }
 
     // same combinator for older and newer
-
-    auto older_schemas
-      = older.FindMember(to_keyword(older_comb))->value.GetArray();
-    auto newer_schemas
-      = newer.FindMember(to_keyword(newer_comb))->value.GetArray();
 
     // size differences between older_schemas and newer_schemas have different
     // meaning based on combinator.
