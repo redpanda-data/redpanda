@@ -29,10 +29,14 @@ static ss::future<consensus_ptr> create_raft0(
     if (!initial_brokers.empty()) {
         vlog(clusterlog.info, "Current node is a cluster founder");
     }
+    // controller log size is maintained with controller snapshots
+    auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
+    overrides->cleanup_policy_bitflags = model::cleanup_policy_bitflags::none;
 
     return pm.local()
       .manage(
-        storage::ntp_config(model::controller_ntp, data_directory),
+        storage::ntp_config(
+          model::controller_ntp, data_directory, std::move(overrides)),
         raft::group_id(0),
         std::move(initial_brokers),
         raft::with_learner_recovery_throttle::no,
