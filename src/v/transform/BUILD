@@ -1,7 +1,100 @@
-load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
+load("//bazel:build.bzl", "redpanda_cc_library")
 
-redpanda_cc_rpc_library(
-    name = "rpc",
-    src = "rpc/rpc.json",
-    out = "rpc/include/transform/rpc/rpc_service.h",
+redpanda_cc_library(
+    name = "logger",
+    srcs = [
+        "logger.cc",
+    ],
+    hdrs = [
+        "logger.h",
+    ],
+    include_prefix = "transform",
+    visibility = ["//src/v/transform:__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "commit_batcher",
+    srcs = [
+        "commit_batcher.cc",
+    ],
+    hdrs = [
+        "commit_batcher.h",
+    ],
+    include_prefix = "transform",
+    visibility = ["//src/v/transform:__subpackages__"],
+    deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/rpc",
+        "//src/v/ssx:semaphore",
+        "//src/v/ssx:sleep_abortable",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "transform",
+    srcs = [
+        "api.cc",
+        "io.h",
+        "memory_limiter.cc",
+        "memory_limiter.h",
+        "probe.cc",
+        "probe.h",
+        "transfer_queue.h",
+        "transform_logger.h",
+        "transform_manager.cc",
+        "transform_manager.h",
+        "transform_processor.cc",
+        "transform_processor.h",
+        "txn_reader.cc",
+        "txn_reader.h",
+    ],
+    hdrs = [
+        "include/transform/api.h",
+        "include/transform/fwd.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commit_batcher",
+        ":logger",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/kafka/server",
+        "//src/v/metrics",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/random:time_jitter",
+        "//src/v/resource_mgmt:io_priority",
+        "//src/v/rpc",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:semaphore",
+        "//src/v/ssx:sformat",
+        "//src/v/ssx:work_queue",
+        "//src/v/storage",
+        "//src/v/storage:parser_utils",
+        "//src/v/transform/logging",
+        "//src/v/transform/rpc",
+        "//src/v/utils:human",
+        "//src/v/utils:prefix_logger",
+        "//src/v/wasm",
+        "@abseil-cpp//absl/algorithm:container",
+        "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:outcome",
+        "@boost//:range",
+        "@fmt",
+        "@seastar",
+    ],
 )
