@@ -354,6 +354,7 @@ struct persisted_batches_map
       serde::compat_version<0>> {
     int64_t start_delta = 0;
     chunked_vector<persisted_batch> batches;
+    auto serde_fields() { return std::tie(start_delta, batches); }
 };
 
 } // namespace
