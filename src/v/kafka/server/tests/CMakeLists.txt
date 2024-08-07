@@ -116,7 +116,7 @@ rp_test(
     v::application 
     v::kafka_test_utils
   # the args below are just to keep it fast
-  ARGS "-c 1 --duration=1 --runs=1 --memory=4G"
+  ARGS "-c 3 --duration=1 --runs=1 --memory=4G"
   LABELS kafka
 )
 
