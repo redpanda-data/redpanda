@@ -11,7 +11,6 @@
 
 #include "cluster/inventory_service.h"
 
-#include "base/units.h"
 #include "cloud_storage/inventory/inv_consumer.h"
 #include "cloud_storage/inventory/report_parser.h"
 #include "cloud_storage/logger.h"
@@ -249,6 +248,10 @@ inventory_service::download_and_process_reports(csi::report_paths paths) {
     if (ntps.empty()) {
         vlog(cst_log.info, "no partitions led by this node");
         co_return false;
+    }
+
+    for (const auto& ntp : ntps) {
+        vlog(cst_log.trace, "filtering report for NTP {}", ntp);
     }
 
     // Report consumer is expected to process multiple reports while keeping
