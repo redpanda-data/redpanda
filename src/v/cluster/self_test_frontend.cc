@@ -197,8 +197,9 @@ ss::future<uuid_t> self_test_frontend::start_test(
             .id = test_id,
             .dtos = std::move(req.dtos),
             .ntos = std::move(new_ntos),
+            .unknown_checks = std::move(req.unknown_checks),
             .ctos = std::move(req.ctos),
-            .unknown_checks = std::move(req.unknown_checks)});
+          });
       });
     co_return test_id;
 }
