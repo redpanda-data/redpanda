@@ -166,7 +166,7 @@ configuration::configuration()
       *this,
       "data_transforms_enabled",
       "Enables WebAssembly powered data transforms directly in the broker."
-      "When `data_transforms_enabled` is set to `true`, "
+      "When data transforms is enabled, "
       "Redpanda reserves memory upfront for data transforms, even if no transform functions are currently deployed."
       "This memory reservation ensures that adequate resources are available for transform functions when needed, "
       "but it also means that some memory is allocated regardless of usage.",
