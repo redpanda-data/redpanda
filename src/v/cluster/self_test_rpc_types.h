@@ -341,15 +341,19 @@ struct empty_request
 struct start_test_request
   : serde::envelope<
       start_test_request,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     uuid_t id;
     std::vector<diskcheck_opts> dtos;
     std::vector<netcheck_opts> ntos;
-    std::vector<cloudcheck_opts> ctos;
     std::vector<unknown_check> unknown_checks;
+    std::vector<cloudcheck_opts> ctos;
+
+    auto serde_fields() {
+        return std::tie(id, dtos, ntos, unknown_checks, ctos);
+    }
 
     friend std::ostream&
     operator<<(std::ostream& o, const start_test_request& r) {
