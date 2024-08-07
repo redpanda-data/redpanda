@@ -67,6 +67,7 @@ struct test_msg0
     bool operator==(const test_msg0&) const = default;
 
     char _i, _j;
+    auto serde_fields() { return std::tie(_i, _j); }
 };
 
 struct test_msg1
@@ -76,6 +77,8 @@ struct test_msg1
     int _a;
     test_msg0 _m;
     int _b, _c;
+
+    auto serde_fields() { return std::tie(_a, _m, _b, _c); }
 };
 
 struct test_msg1_imcompatible
@@ -83,6 +86,8 @@ struct test_msg1_imcompatible
     bool operator==(const test_msg1_imcompatible&) const = default;
 
     test_msg0 _m;
+
+    auto serde_fields() { return std::tie(_m); }
 };
 
 struct test_msg1_new
@@ -93,6 +98,7 @@ struct test_msg1_new
     int _a;
     test_msg0 _m;
     int _b, _c;
+    auto serde_fields() { return std::tie(_a, _m, _b, _c); }
 };
 
 struct test_msg1_new_manual {
@@ -157,6 +163,7 @@ SEASTAR_THREAD_TEST_CASE(envelope_too_big_test) {
         bool operator==(const big&) const = default;
 
         std::vector<char> data_;
+        auto serde_fields() { return std::tie(data_); }
     };
 
     auto too_big = std::make_unique<big>();
@@ -171,6 +178,8 @@ SEASTAR_THREAD_TEST_CASE(simple_envelope_test) {
         bool operator==(const msg&) const = default;
 
         int32_t _i, _j;
+
+        auto serde_fields() { return std::tie(_i, _j); }
     };
 
     auto b = iobuf();
@@ -264,6 +273,8 @@ struct inner_differing_sizes
     bool operator==(const inner_differing_sizes&) const = default;
 
     std::vector<int32_t> _ints;
+
+    auto serde_fields() { return std::tie(_ints); }
 };
 
 struct complex_msg
@@ -272,6 +283,8 @@ struct complex_msg
     bool operator==(const complex_msg&) const = default;
 
     int32_t _x;
+
+    auto serde_fields() { return std::tie(_vec, _x); }
 };
 
 static_assert(serde::is_envelope<complex_msg>);
@@ -508,6 +521,8 @@ struct small
     bool operator==(const small&) const = default;
 
     int a, b, c;
+
+    auto serde_fields() { return std::tie(a, b, c); }
 };
 
 struct big
@@ -515,6 +530,8 @@ struct big
     bool operator==(const big&) const = default;
 
     int a, b, c, d{0x1234};
+
+    auto serde_fields() { return std::tie(a, b, c, d); }
 };
 
 SEASTAR_THREAD_TEST_CASE(compat_test_added_field) {
@@ -573,6 +590,7 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_1) {
 
         int a, b;
         short c;
+        auto serde_fields() { return std::tie(a, b, c); }
     };
 
     auto b = serde::to_iobuf(half_field_1{.a = 1, .b = 2, .c = 3});
@@ -588,6 +606,7 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_2) {
 
         int a, b, c;
         short d;
+        auto serde_fields() { return std::tie(a, b, c, d); }
     };
 
     auto b = serde::to_iobuf(half_field_2{.a = 1, .b = 2, .c = 3, .d = 0x1234});
@@ -611,6 +630,7 @@ SEASTAR_THREAD_TEST_CASE(serde_checksum_envelope_test) {
         bool operator==(const checksummed&) const = default;
 
         std::vector<test_msg1_new_manual> data_;
+        auto serde_fields() { return std::tie(data_); }
     };
 
     auto const obj = checksummed{
@@ -632,6 +652,7 @@ struct old_no_cs
     bool operator==(const old_no_cs&) const = default;
 
     std::vector<test_msg1_new_manual> data_;
+    auto serde_fields() { return std::tie(data_); }
 };
 struct new_cs
   : public serde::
@@ -657,6 +678,7 @@ struct new_cs
     bool operator==(const new_cs&) const = default;
 
     std::vector<test_msg1_new_manual> data_;
+    auto serde_fields() { return std::tie(data_); }
 };
 
 SEASTAR_THREAD_TEST_CASE(serde_checksum_update) {
@@ -693,6 +715,7 @@ struct old_cs
     bool operator==(const old_cs&) const = default;
 
     std::vector<test_msg1_new_manual> data_;
+    auto serde_fields() { return std::tie(data_); }
 };
 struct new_no_cs
   : public serde::
@@ -703,6 +726,8 @@ struct new_no_cs
 
     serde::checksum_t unchecked_dummy_checksum_{0U};
     std::vector<test_msg1_new_manual> data_;
+
+    auto serde_fields() { return std::tie(unchecked_dummy_checksum_, data_); }
 };
 
 SEASTAR_THREAD_TEST_CASE(serde_checksum_update_1) {
