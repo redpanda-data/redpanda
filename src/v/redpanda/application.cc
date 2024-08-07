@@ -147,6 +147,7 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/log/globals.h>
 #include <google/protobuf/stubs/logging.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
@@ -530,16 +531,21 @@ void application::initialize(
      * Disable the logger for protobuf; some interfaces don't allow a pluggable
      * error collector.
      */
+#if PROTOBUF_VERSION < 5027000
     google::protobuf::SetLogHandler(nullptr);
+#else
+    // Protobuf uses absl logging in the latest version
+    absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfinity);
+#endif
 
     /*
      * allocate per-core zstd decompression workspace and per-core
-     * async_stream_zstd workspaces. it can be several megabytes in size, so do
-     * it before memory becomes fragmented.
+     * async_stream_zstd workspaces. it can be several megabytes in size, so
+     * do it before memory becomes fragmented.
      */
     ss::smp::invoke_on_all([] {
-        // TODO: remove this when stream_zstd is replaced with async_stream_zstd
-        // in v/kafka
+        // TODO: remove this when stream_zstd is replaced with
+        // async_stream_zstd in v/kafka
         compression::stream_zstd::init_workspace(
           config::shard_local_cfg().zstd_decompress_workspace_bytes());
 

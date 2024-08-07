@@ -42,6 +42,7 @@
 #include "utils/base64.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <boost/algorithm/string/trim.hpp>
@@ -141,12 +142,23 @@ class io_error_collector final : public pb::io::ErrorCollector {
     };
 
 public:
+#if PROTOBUF_VERSION < 5027000
     void AddError(int line, int column, const std::string& message) final {
         _errors.emplace_back(err{level::error, line, column, message});
     }
     void AddWarning(int line, int column, const std::string& message) final {
         _errors.emplace_back(err{level::warn, line, column, message});
     }
+#else
+    void RecordError(int line, int column, std::string_view message) final {
+        _errors.emplace_back(
+          err{level::error, line, column, ss::sstring{message}});
+    }
+    void RecordWarning(int line, int column, std::string_view message) final {
+        _errors.emplace_back(
+          err{level::warn, line, column, ss::sstring{message}});
+    }
+#endif
 
     error_info error() const;
 
@@ -158,6 +170,7 @@ private:
 
 class dp_error_collector final : public pb::DescriptorPool::ErrorCollector {
 public:
+#if PROTOBUF_VERSION < 5027000
     void AddError(
       const std::string& filename,
       const std::string& element_name,
@@ -165,8 +178,16 @@ public:
       ErrorLocation location,
       const std::string& message) final {
         _errors.emplace_back(err{
-          level::error, filename, element_name, descriptor, location, message});
+          level::error,
+          ss::sstring{filename},
+          ss::sstring{element_name},
+          descriptor,
+          location,
+          ss::sstring {
+              message
+          }});
     }
+
     void AddWarning(
       const std::string& filename,
       const std::string& element_name,
@@ -174,8 +195,46 @@ public:
       ErrorLocation location,
       const std::string& message) final {
         _errors.emplace_back(err{
-          level::warn, filename, element_name, descriptor, location, message});
+          level::warn,
+          ss::sstring{filename},
+          ss::sstring{element_name},
+          descriptor,
+          location,
+          ss::sstring {
+              message
+          }});
     }
+#else
+    void RecordError(
+      std::string_view filename,
+      std::string_view element_name,
+      const pb::Message* descriptor,
+      ErrorLocation location,
+      std::string_view message) final {
+        _errors.emplace_back(err{
+          level::error,
+          ss::sstring{filename},
+          ss::sstring{element_name},
+          descriptor,
+          location,
+          ss::sstring{message}});
+    }
+
+    void RecordWarning(
+      std::string_view filename,
+      std::string_view element_name,
+      const pb::Message* descriptor,
+      ErrorLocation location,
+      std::string_view message) final {
+        _errors.emplace_back(err{
+          level::warn,
+          ss::sstring{filename},
+          ss::sstring{element_name},
+          descriptor,
+          location,
+          ss::sstring{message}});
+    }
+#endif
 
     error_info error() const;
 
@@ -186,11 +245,11 @@ private:
     };
     struct err {
         level lvl;
-        std::string filename;
-        std::string element_name;
+        ss::sstring filename;
+        ss::sstring element_name;
         const pb::Message* descriptor;
         ErrorLocation location;
-        std::string message;
+        ss::sstring message;
     };
     friend struct fmt::formatter<err>;
 
@@ -242,7 +301,11 @@ public:
             }
         }
         const auto& sub = schema.sub()();
+#if PROTOBUF_VERSION < 5027000
         _fdp.set_name(sub.data(), sub.size());
+#else
+        _fdp.set_name(std::string_view(sub));
+#endif
         return _fdp;
     }
 
@@ -274,8 +337,8 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 
 ///\brief Build a FileDescriptor and import references from the store.
 ///
-/// Recursively import references into the DescriptorPool, building the files
-/// on stack unwind.
+/// Recursively import references into the DescriptorPool, building the
+/// files on stack unwind.
 ss::future<const pb::FileDescriptor*> build_file_with_refs(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     for (const auto& ref : schema.def().refs()) {
@@ -294,7 +357,8 @@ ss::future<const pb::FileDescriptor*> build_file_with_refs(
     co_return build_file(dp, p.parse(schema));
 }
 
-///\brief Import a schema in the DescriptorPool and return the FileDescriptor.
+///\brief Import a schema in the DescriptorPool and return the
+/// FileDescriptor.
 ss::future<const pb::FileDescriptor*> import_schema(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     try {
@@ -474,7 +538,8 @@ struct compatibility_checker {
     bool check_compatible() { return check_compatible(_writer.fd); }
 
     bool check_compatible(const pb::FileDescriptor* writer) {
-        // There must be a compatible reader message for every writer message
+        // There must be a compatible reader message for every writer
+        // message
         for (int i = 0; i < writer->message_type_count(); ++i) {
             auto w = writer->message_type(i);
             auto r = _reader._dp.FindMessageTypeByName(w->full_name());
