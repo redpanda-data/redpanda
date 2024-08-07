@@ -362,27 +362,18 @@ raft_node_instance::raft_node_instance(
   raft_node_map& node_map,
   ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb,
-  bool enable_longest_log_detection)
-  : _id(id)
-  , _revision(revision)
-  , _logger(test_log, fmt::format("[node: {}]", _id))
-  , _base_directory(fmt::format(
-      "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)))
-  , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
-  , _features(feature_table)
-  , _recovery_mem_quota([] {
-      return raft::recovery_memory_quota::configuration{
-        .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
-          200_MiB),
-        .default_read_buffer_size = config::mock_binding<size_t>(128_KiB),
-      };
-  })
-  , _recovery_scheduler(
-      config::mock_binding<size_t>(64), config::mock_binding(10ms))
-  , _leader_clb(std::move(leader_update_clb))
-  , _enable_longest_log_detection(enable_longest_log_detection) {
-    config::shard_local_cfg().disable_metrics.set_value(true);
-}
+  bool enable_longest_log_detection,
+  std::chrono::milliseconds election_timeout)
+  : raft_node_instance(
+    id,
+    revision,
+    fmt::format(
+      "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)),
+    node_map,
+    feature_table,
+    std::move(leader_update_clb),
+    enable_longest_log_detection,
+    election_timeout) {}
 
 raft_node_instance::raft_node_instance(
   model::node_id id,
@@ -391,7 +382,8 @@ raft_node_instance::raft_node_instance(
   raft_node_map& node_map,
   ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb,
-  bool enable_longest_log_detection)
+  bool enable_longest_log_detection,
+  std::chrono::milliseconds election_timeout)
   : _id(id)
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
@@ -408,14 +400,16 @@ raft_node_instance::raft_node_instance(
   , _recovery_scheduler(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
   , _leader_clb(std::move(leader_update_clb))
-  , _enable_longest_log_detection(enable_longest_log_detection) {
+  , _enable_longest_log_detection(enable_longest_log_detection)
+  , _election_timeout(
+      config::mock_binding<std::chrono::milliseconds>(election_timeout)) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
 ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
-      config::mock_binding<std::chrono::milliseconds>(50ms),
+      config::mock_binding<std::chrono::milliseconds>(_election_timeout() / 10),
       consensus_client_protocol(_protocol),
       _id,
       config::mock_binding<std::chrono::milliseconds>(1000ms),
@@ -599,8 +593,14 @@ raft_fixture::add_node(model::node_id id, model::revision_id rev) {
       rev,
       *this,
       _features,
-      [id, this](leadership_status lst) { _leaders_view[id] = lst; },
-      _enable_longest_log_detection);
+      [id, this](leadership_status lst) {
+          _leaders_view[id] = lst;
+          if (_leader_clb) {
+              _leader_clb.value()(id, lst);
+          }
+      },
+      _enable_longest_log_detection,
+      _election_timeout);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
@@ -614,8 +614,14 @@ raft_node_instance& raft_fixture::add_node(
       std::move(base_dir),
       *this,
       _features,
-      [id, this](leadership_status lst) { _leaders_view[id] = lst; },
-      _enable_longest_log_detection);
+      [id, this](leadership_status lst) {
+          _leaders_view[id] = lst;
+          if (_leader_clb) {
+              _leader_clb.value()(id, lst);
+          }
+      },
+      _enable_longest_log_detection,
+      _election_timeout);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;

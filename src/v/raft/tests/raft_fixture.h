@@ -168,7 +168,8 @@ public:
       raft_node_map& node_map,
       ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb,
-      bool enable_longest_log_detection);
+      bool enable_longest_log_detection,
+      std::chrono::milliseconds election_timeout);
 
     raft_node_instance(
       model::node_id id,
@@ -176,7 +177,8 @@ public:
       raft_node_map& node_map,
       ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb,
-      bool enable_longest_log_detection);
+      bool enable_longest_log_detection,
+      std::chrono::milliseconds election_timeout);
 
     raft_node_instance(const raft_node_instance&) = delete;
     raft_node_instance(raft_node_instance&&) noexcept = delete;
@@ -246,8 +248,6 @@ private:
     ss::sstring _base_directory;
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::sharded<storage::api> _storage;
-    config::binding<std::chrono::milliseconds> _election_timeout
-      = config::mock_binding(500ms);
     ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
@@ -257,12 +257,15 @@ private:
     ss::lw_shared_ptr<consensus> _raft;
     bool started = false;
     bool _enable_longest_log_detection;
+    config::binding<std::chrono::milliseconds> _election_timeout;
 };
 
 class raft_fixture
   : public seastar_test
   , public raft_node_map {
 public:
+    using leader_update_clb_t
+      = ss::noncopyable_function<void(model::node_id, leadership_status)>;
     raft_fixture()
       : _logger("raft-fixture") {}
     using raft_nodes_t = absl::
@@ -534,6 +537,14 @@ public:
         _enable_longest_log_detection = value;
     }
 
+    void register_leader_callback(leader_update_clb_t clb) {
+        _leader_clb = std::move(clb);
+    }
+
+    void set_election_timeout(std::chrono::milliseconds timeout) {
+        _election_timeout = timeout;
+    }
+
 private:
     void validate_leaders();
 
@@ -544,6 +555,8 @@ private:
 
     ss::sharded<features::feature_table> _features;
     bool _enable_longest_log_detection = true;
+    std::optional<leader_update_clb_t> _leader_clb;
+    std::chrono::milliseconds _election_timeout = 500ms;
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);
