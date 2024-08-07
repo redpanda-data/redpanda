@@ -122,10 +122,7 @@ consensus::consensus(
   , _enable_longest_log_detection(std::move(enable_longest_log_detection))
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
-  , _fstats(
-      _self,
-      config::shard_local_cfg()
-        .raft_max_concurrent_append_requests_per_follower())
+  , _fstats(_self)
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
   , _probe(std::make_unique<probe>())

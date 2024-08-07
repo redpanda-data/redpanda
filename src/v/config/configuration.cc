@@ -1167,12 +1167,7 @@ configuration::configuration()
       {.visibility = visibility::tunable},
       std::nullopt)
   , raft_max_concurrent_append_requests_per_follower(
-      *this,
-      "raft_max_concurrent_append_requests_per_follower",
-      "Maximum number of concurrent append entry requests sent by the leader "
-      "to one follower.",
-      {.visibility = visibility::tunable},
-      16)
+      *this, "raft_max_concurrent_append_requests_per_follower")
   , write_caching_default(
       *this,
       "write_caching_default",

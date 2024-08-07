@@ -29,7 +29,6 @@ v_cc_library(
     configuration_manager.cc
     group_configuration.cc
     append_entries_buffer.cc
-    follower_queue.cc
     recovery_memory_quota.cc
     coordinated_recovery_throttle.cc
     heartbeats.cc
