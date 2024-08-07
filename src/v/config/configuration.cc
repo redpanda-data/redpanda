@@ -165,20 +165,24 @@ configuration::configuration()
   , data_transforms_enabled(
       *this,
       "data_transforms_enabled",
-      "Enables WebAssembly powered Data Transforms directly in the broker",
+      "Enables WebAssembly powered data transforms directly in the broker."
+      "When `data_transforms_enabled` is set to `true`, "
+      "Redpanda reserves memory upfront for data transforms, even if no transform functions are currently deployed."
+      "This memory reservation ensures that adequate resources are available for transform functions when needed, "
+      "but it also means that some memory is allocated regardless of usage.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , data_transforms_commit_interval_ms(
       *this,
       "data_transforms_commit_interval_ms",
-      "The interval at which Data Transforms commits progress.",
+      "The interval at which data transforms commits progress.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3s)
   , data_transforms_per_core_memory_reservation(
       *this,
       "data_transforms_per_core_memory_reservation",
-      "The amount of memory to reserve per core for Data Transform WebAssembly "
-      "Virtual Machines. Memory is reserved on boot. The maximum number of "
+      "The amount of memory to reserve per core for data transform WebAssembly "
+      "virtual machines. Memory is reserved on boot. The maximum number of "
       "functions that can be deployed to a cluster is equal to "
       "data_transforms_per_core_memory_reservation / "
       "data_transforms_per_function_memory_limit",
@@ -193,8 +197,8 @@ configuration::configuration()
   , data_transforms_per_function_memory_limit(
       *this,
       "data_transforms_per_function_memory_limit",
-      "The amount of memory to give an instance of a Data Transform "
-      "WebAssembly Virtual Machine. The maximum number of functions "
+      "The amount of memory to give an instance of a data transform "
+      "WebAssembly virtual machine. The maximum number of functions "
       "that can be deployed to a cluster is equal to "
       "data_transforms_per_core_memory_reservation / "
       "data_transforms_per_function_memory_limit",
@@ -244,7 +248,7 @@ configuration::configuration()
   , data_transforms_logging_line_max_bytes(
       *this,
       "data_transforms_logging_line_max_bytes",
-      "Transform log lines will be truncate to this length. Truncation occurs "
+      "Transform log lines will be truncated to this length. Truncation occurs "
       "after any character escaping.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_KiB)
@@ -326,7 +330,7 @@ configuration::configuration()
       *this,
       "partition_manager_shutdown_watchdog_timeout",
       "A threshold value to detect partitions which shutdown might have been "
-      "stuck. After this threshold a watchdog in partition manager will log "
+      "stuck. After this threshold, a watchdog in the partition manager will log "
       "information about partition shutdown not making progress",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30s)
@@ -366,7 +370,7 @@ configuration::configuration()
   , raft_max_recovery_memory(
       *this,
       "raft_max_recovery_memory",
-      "Max memory that can be used for reads in raft recovery process by "
+      "Max memory that can be used for reads in the Raft recovery process by "
       "default 15% of total memory",
       {.needs_restart = needs_restart::no,
        .example = "41943040",
