@@ -204,6 +204,10 @@ private:
         uint32_t _crash_count{0};
         uint64_t _config_checksum{0};
         model::timestamp _last_start_ts;
+
+        auto serde_fields() {
+            return std::tie(_crash_count, _config_checksum, _last_start_ts);
+        }
     };
 
     // Constructs and starts the services required to provide cryptographic
