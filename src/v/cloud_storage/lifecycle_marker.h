@@ -94,6 +94,8 @@ struct remote_nt_lifecycle_marker
 
     lifecycle_status status;
 
+    auto serde_fields() { return std::tie(cluster_id, topic, status); }
+
     cloud_storage_clients::object_key
     get_key(const remote_path_provider& path_provider) {
         return cloud_storage_clients::object_key{
