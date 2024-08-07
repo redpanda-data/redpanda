@@ -603,3 +603,11 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
     ],
 )
+
+redpanda_cc_library(
+    name = "fixed_string",
+    hdrs = [
+        "fixed_string.h",
+    ],
+    include_prefix = "utils",
+)
