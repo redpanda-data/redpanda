@@ -37,7 +37,7 @@ def get_issue_state(state: str) -> IssueState:
 class JiraHelper():
     _base_url = 'https://redpandadata.atlassian.net'
     _done_status_name = 'DONE'
-    _backlog_status_name = 'BACKLOG'
+    _backlog_status_name = 'BACKLOGGED'
     _bug_labels = ['kind/bug', 'ci-failure']
 
     def __init__(self, command: Command, logger: logging.Logger, project: str,
