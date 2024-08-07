@@ -197,3 +197,20 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "work_queue",
+    srcs = [
+        "work_queue.cc",
+    ],
+    hdrs = [
+        "include/ssx/work_queue.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":future_util",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
