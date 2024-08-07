@@ -65,6 +65,8 @@ public:
               const client_id_default_match&, const client_id_default_match&)
               = default;
 
+            auto serde_fields() { return std::tie(); }
+
             friend std::ostream&
             operator<<(std::ostream&, const client_id_default_match&);
 
@@ -96,6 +98,8 @@ public:
             }
 
             ss::sstring value;
+
+            auto serde_fields() { return std::tie(value); }
         };
 
         /// client_id_prefix_match is the quota entity type corresponding to the
@@ -122,7 +126,10 @@ public:
             }
 
             ss::sstring value;
+            auto serde_fields() { return std::tie(value); }
         };
+
+        auto serde_fields() { return std::tie(part); }
 
         serde::variant<
           client_id_default_match,
@@ -166,6 +173,11 @@ struct entity_value
     std::optional<uint64_t> producer_byte_rate;
     std::optional<uint64_t> consumer_byte_rate;
     std::optional<uint64_t> controller_mutation_rate;
+
+    auto serde_fields() {
+        return std::tie(
+          producer_byte_rate, consumer_byte_rate, controller_mutation_rate);
+    }
 };
 
 /// entity_value_diff describes the quotas diff for an entity_key
@@ -237,6 +249,8 @@ struct alter_delta_cmd_data
 
     std::vector<op> ops;
 
+    auto serde_fields() { return std::tie(ops); }
+
     friend bool
     operator==(const alter_delta_cmd_data&, const alter_delta_cmd_data&)
       = default;
@@ -286,6 +300,8 @@ struct alter_quotas_request
     alter_delta_cmd_data cmd_data;
     model::timeout_clock::duration timeout{};
 
+    auto serde_fields() { return std::tie(cmd_data, timeout); }
+
     friend bool
     operator==(const alter_quotas_request&, const alter_quotas_request&)
       = default;
@@ -299,6 +315,7 @@ struct alter_quotas_response
     using rpc_adl_exempt = std::true_type;
 
     cluster::errc ec;
+    auto serde_fields() { return std::tie(ec); }
 
     friend bool
     operator==(const alter_quotas_response&, const alter_quotas_response&)
