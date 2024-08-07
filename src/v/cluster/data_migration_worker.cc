@@ -45,6 +45,7 @@ ss::future<> worker::stop() {
     if (!_gate.is_closed()) {
         co_await _gate.close();
     }
+    vlog(dm_log.debug, "worker stopped");
 }
 
 ss::future<errc>
@@ -98,6 +99,13 @@ worker::ntp_state::ntp_state(
 
 void worker::handle_operation_result(
   model::ntp ntp, id migration_id, state sought_state, errc ec) {
+    vlog(
+      dm_log.trace,
+      "work on migration {} ntp {} towards state {} complete with errc {}",
+      migration_id,
+      ntp,
+      sought_state,
+      ec);
     auto it = _managed_ntps.find(ntp);
     if (
       it == _managed_ntps.end() || it->second.work.migration_id != migration_id
@@ -148,9 +156,16 @@ void worker::unmanage_ntp(managed_ntp_cit it, errc result) {
 }
 
 ss::future<errc> worker::do_work(managed_ntp_cit it) noexcept {
+    auto migration_id = it->second.work.migration_id;
     const auto& ntp = it->first;
     auto sought_state = it->second.work.sought_state;
     try {
+        vlog(
+          dm_log.trace,
+          "starting work on migration {} ntp {} towards state {}",
+          migration_id,
+          ntp,
+          sought_state);
         co_return co_await std::visit(
           [this, &ntp, sought_state](auto& info) {
               return do_work(ntp, sought_state, info);
@@ -159,7 +174,9 @@ ss::future<errc> worker::do_work(managed_ntp_cit it) noexcept {
     } catch (...) {
         vlog(
           dm_log.warn,
-          "exception occured during partition work on {} towards {} state: {}",
+          "exception occured during partition work on migration {} ntp {} "
+          "towards {} state: {}",
+          migration_id,
           ntp,
           sought_state,
           std::current_exception());

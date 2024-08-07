@@ -112,6 +112,7 @@ class DataMigrationsApiTest(RedpandaTest):
         self.wait_for_migration_state(out_migration_id, 'executed')
         admin.execute_data_migration_action(out_migration_id,
                                             MigrationAction.finish)
+        self.wait_for_migration_state(out_migration_id, 'cut_over')
         self.wait_for_migration_state(out_migration_id, 'finished')
 
         # TODO: check unhappy scenarios like this
