@@ -90,6 +90,17 @@ public:
 
         segment_name_format sname_format{segment_name_format::v1};
 
+        auto serde_fields() {
+            return std::tie(
+              ntp_revision,
+              base_offset,
+              committed_offset,
+              archiver_term,
+              segment_term,
+              size_bytes,
+              sname_format);
+        }
+
         auto operator<=>(const lw_segment_meta&) const = default;
 
         static lw_segment_meta convert(const segment_meta& m);
