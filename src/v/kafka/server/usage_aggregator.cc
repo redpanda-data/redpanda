@@ -11,6 +11,11 @@
 
 #include "kafka/server/usage_aggregator.h"
 
+#include "serde/rw/chrono.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/vector.h"
+
 using namespace std::chrono_literals;
 
 namespace kafka {

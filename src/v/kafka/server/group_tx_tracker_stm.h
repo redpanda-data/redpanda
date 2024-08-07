@@ -15,6 +15,9 @@
 #include "container/chunked_hash_map.h"
 #include "kafka/server/group_data_parser.h"
 #include "raft/persisted_stm.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/map.h"
+#include "serde/rw/set.h"
 
 namespace kafka {
 
