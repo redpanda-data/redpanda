@@ -45,18 +45,21 @@ struct echo_req
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
+    auto serde_fields() { return std::tie(str); }
 };
 
 struct echo_resp
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
+    auto serde_fields() { return std::tie(str); }
 };
 
 struct cnt_req
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     uint64_t expected;
+    auto serde_fields() { return std::tie(expected); }
 };
 
 struct cnt_resp
@@ -64,18 +67,21 @@ struct cnt_resp
     using rpc_adl_exempt = std::true_type;
     uint64_t expected;
     uint64_t current;
+    auto serde_fields() { return std::tie(expected, current); }
 };
 
 struct sleep_req
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     uint64_t secs;
+    auto serde_fields() { return std::tie(secs); }
 };
 
 struct sleep_resp
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
+    auto serde_fields() { return std::tie(str); }
 };
 
 enum class failure_type { throw_exception, exceptional_future, none };
@@ -84,12 +90,15 @@ struct throw_req
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     failure_type type;
+    auto serde_fields() { return std::tie(type); }
 };
 
 struct throw_resp
   : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring reply;
+
+    auto serde_fields() { return std::tie(reply); }
 };
 
 struct echo_req_serde_only
