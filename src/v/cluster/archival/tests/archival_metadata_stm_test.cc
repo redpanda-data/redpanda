@@ -566,6 +566,10 @@ struct segment
     model::initial_revision_id ntp_revision_deprecated;
     cloud_storage::segment_name name;
     cloud_storage::partition_manifest::segment_meta meta;
+
+    auto serde_fields() {
+        return std::tie(ntp_revision_deprecated, name, meta);
+    }
 };
 
 struct snapshot
@@ -573,6 +577,8 @@ struct snapshot
       envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
     /// List of segments
     std::vector<segment> segments;
+
+    auto serde_fields() { return std::tie(segments); }
 };
 
 } // namespace old
