@@ -273,7 +273,12 @@ private:
     ss::future<> do_remove_persistent_state();
     ss::future<fragmented_vector<rm_stm::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
-    producer_ptr maybe_create_producer(model::producer_identity);
+    // Tells whether the producer is already known or is created
+    // for the first time from the incoming request.
+    using producer_previously_known
+      = ss::bool_class<struct new_producer_created_tag>;
+    std::pair<producer_ptr, producer_previously_known>
+      maybe_create_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity);
     ss::future<> reset_producers();
     model::record_batch make_fence_batch(
@@ -333,7 +338,8 @@ private:
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>,
-      ssx::semaphore_units&);
+      ssx::semaphore_units&,
+      producer_previously_known);
 
     ss::future<result<kafka_result>> do_sync_and_idempotent_replicate(
       producer_ptr,
@@ -341,7 +347,8 @@ private:
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>,
-      ssx::semaphore_units);
+      ssx::semaphore_units,
+      producer_previously_known);
 
     ss::future<result<kafka_result>> replicate_msg(
       model::record_batch_reader,

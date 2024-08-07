@@ -320,7 +320,8 @@ ss::future<model::offset> rm_stm::bootstrap_committed_offset() {
       .then([this] { return _raft->committed_offset(); });
 }
 
-producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
+std::pair<producer_ptr, rm_stm::producer_previously_known>
+rm_stm::maybe_create_producer(model::producer_identity pid) {
     // Double lookup because of two reasons
     // 1. we are forced to use a ptr as map value_type because producer_state is
     // not movable
@@ -328,14 +329,14 @@ producer_ptr rm_stm::maybe_create_producer(model::producer_identity pid) {
     // as it is memory friendly.
     auto it = _producers.find(pid);
     if (it != _producers.end()) {
-        return it->second;
+        return std::make_pair(it->second, producer_previously_known::yes);
     }
     auto producer = ss::make_lw_shared<producer_state>(
       pid, _raft->group(), [pid, this] { cleanup_producer_state(pid); });
     _producer_state_manager.local().register_producer(*producer, _vcluster_id);
     _producers.emplace(pid, producer);
 
-    return producer;
+    return std::make_pair(producer, producer_previously_known::no);
 }
 
 void rm_stm::cleanup_producer_state(model::producer_identity pid) {
@@ -1104,7 +1105,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
     if (!check_tx_permitted()) {
         co_return errc::generic_tx_error;
     }
-    auto producer = maybe_create_producer(bid.pid);
+    auto [producer, _] = maybe_create_producer(bid.pid);
     co_return co_await producer
       ->run_with_lock([&](ssx::semaphore_units units) {
           return do_sync_and_transactional_replicate(
@@ -1121,7 +1122,8 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
   model::record_batch_reader br,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
-  ssx::semaphore_units units) {
+  ssx::semaphore_units units,
+  producer_previously_known known_producer) {
     if (!co_await sync(_sync_timeout)) {
         // it's ok not to set enqueued on early return because
         // the safety check in replicate_in_stages sets it automatically
@@ -1135,7 +1137,8 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
       std::move(br),
       opts,
       std::move(enqueued),
-      units);
+      units,
+      known_producer);
 
     if (!result) {
         vlog(
@@ -1178,12 +1181,31 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   model::record_batch_reader br,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
-  ssx::semaphore_units& units) {
+  ssx::semaphore_units& units,
+  producer_previously_known known_producer) {
     // Check if the producer bumped the epoch and reset accordingly.
     if (bid.pid.epoch > producer->id().epoch) {
         producer->reset_with_new_epoch(model::producer_epoch{bid.pid.epoch});
     }
-    auto request = producer->try_emplace_request(bid, synced_term);
+    // If the producer is unknown and is producing with a non zero
+    // sequence number, it is possible that the producer has been evicted
+    // from the broker memory. Instead of rejecting the request, we accept
+    // the current sequence and move on. This logic is similar to what
+    // Apache Kafka does.
+    // Ref:
+    // https://github.com/apache/kafka/blob/704476885ffb40cd3bf9b8f5c368c01eaee0a737
+    // storage/src/main/java/org/apache/kafka/storage/internals/log/ProducerAppendInfo.java#L135
+    auto skip_sequence_checks = !known_producer && bid.first_seq > 0;
+    if (unlikely(skip_sequence_checks)) {
+        vlog(
+          _ctx_log.warn,
+          "Accepting batch from unknown producer that likely got evicted: {}, "
+          "term: {}",
+          bid,
+          synced_term);
+    }
+    auto request = producer->try_emplace_request(
+      bid, synced_term, skip_sequence_checks);
     if (!request) {
         co_return request.error();
     }
@@ -1234,16 +1256,17 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
     try {
-        auto producer = maybe_create_producer(bid.pid);
+        auto [producer, known_producer] = maybe_create_producer(bid.pid);
         co_return co_await producer
-          ->run_with_lock([&](ssx::semaphore_units units) {
+          ->run_with_lock([&, known_producer](ssx::semaphore_units units) {
               return do_sync_and_idempotent_replicate(
                 producer,
                 bid,
                 std::move(br),
                 opts,
                 std::move(enqueued),
-                std::move(units));
+                std::move(units),
+                known_producer);
           })
           .finally([this, producer] {
               _producer_state_manager.local().touch(*producer, _vcluster_id);
@@ -1761,7 +1784,7 @@ void rm_stm::apply_control(
     // either epoch is the same as fencing or it's lesser in the latter
     // case we don't fence off aborts and commits because transactional
     // manager already decided a tx's outcome and acked it to the client
-    auto producer = maybe_create_producer(pid);
+    auto [producer, _] = maybe_create_producer(pid);
 
     if (likely(
           crt == model::control_record_type::tx_abort
@@ -1825,7 +1848,7 @@ void rm_stm::apply_data(
         _highest_producer_id = std::max(_highest_producer_id, bid.pid.get_id());
         const auto last_offset = header.last_offset();
         const auto last_kafka_offset = from_log_offset(header.last_offset());
-        auto producer = maybe_create_producer(bid.pid);
+        auto [producer, _] = maybe_create_producer(bid.pid);
         auto needs_touch = producer->update(bid, last_kafka_offset);
         if (needs_touch) {
             _producer_state_manager.local().touch(*producer, _vcluster_id);
