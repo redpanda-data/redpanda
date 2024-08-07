@@ -360,9 +360,9 @@ controller_api::get_partitions_reconfiguration_state(
     auto& report = result.value();
 
     for (auto& node_report : report.node_reports) {
-        for (auto& tp : node_report->topics) {
-            for (auto& p : tp.partitions) {
-                model::ntp ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id);
+        for (auto& [tp_ns, partitions] : node_report->topics) {
+            for (auto& p : partitions) {
+                model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);
                 auto it = states.find(ntp);
                 if (it == states.end()) {
                     continue;

@@ -1590,6 +1590,7 @@ class Admin:
                                ns: str | None = None,
                                topic: str | None = None,
                                disabled: bool | None = None,
+                               with_internal: bool | None = None,
                                node=None):
         if topic is not None:
             assert ns is not None
@@ -1600,6 +1601,9 @@ class Admin:
 
         if disabled is not None:
             req += f"?disabled={disabled}"
+
+        if with_internal is not None:
+            req += f"?with_internal={with_internal}"
 
         return self._request("GET", req, node=node).json()
 

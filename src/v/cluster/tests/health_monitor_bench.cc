@@ -30,25 +30,26 @@ cluster::topic_status make_topic_status(size_t id, size_t num_partitions) {
     return ts;
 }
 
-cluster::node_health_report
+cluster::node_health_report_serde
 make_node_health_report(size_t num_topics, size_t partitions_per_topic) {
-    cluster::node_health_report hr;
-    hr.id = model::node_id(1);
+    model::node_id id = model::node_id(1);
 
-    hr.local_state.redpanda_version = cluster::node::application_version(
+    cluster::node::local_state local_state;
+    local_state.redpanda_version = cluster::node::application_version(
       "v21.1.1");
-    hr.local_state.logical_version = cluster::cluster_version(1);
-    hr.local_state.uptime = std::chrono::milliseconds(100);
+    local_state.logical_version = cluster::cluster_version(1);
+    local_state.uptime = std::chrono::milliseconds(100);
 
-    hr.local_state.data_disk.path = "/bar/baz/foo/foo/foo/foo/foo/foo/foo/bar";
-    hr.local_state.data_disk.total = 1000;
-    hr.local_state.data_disk.free = 500;
+    local_state.data_disk.path = "/bar/baz/foo/foo/foo/foo/foo/foo/foo/bar";
+    local_state.data_disk.total = 1000;
+    local_state.data_disk.free = 500;
 
+    chunked_vector<cluster::topic_status> topics;
     for (size_t i = 0; i < num_topics; ++i) {
-        hr.topics.push_back(make_topic_status(i, partitions_per_topic));
+        topics.push_back(make_topic_status(i, partitions_per_topic));
     }
 
-    return hr;
+    return {id, local_state, std::move(topics), std::nullopt};
 }
 
 template<typename T>

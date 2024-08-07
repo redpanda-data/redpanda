@@ -152,27 +152,29 @@ cluster_health_report health_monitor_backend::build_cluster_report(
       .bytes_in_cloud_storage = _bytes_in_cloud_storage};
 }
 
-chunked_vector<topic_status> filter_topic_status(
-  const chunked_vector<topic_status>& topics, const partitions_filter& filter) {
+node_health_report::topics_t filter_topic_status(
+  const node_health_report::topics_t& topics, const partitions_filter& filter) {
     // empty filter matches all
     if (filter.namespaces.empty()) {
-        chunked_vector<topic_status> copy;
-        copy.reserve(topics.size());
-        std::copy(topics.cbegin(), topics.cend(), std::back_inserter(copy));
-        return copy;
+        node_health_report::topics_t ret;
+        ret.reserve(topics.bucket_count());
+        for (const auto& [tp_ns, partitions] : topics) {
+            ret.emplace(tp_ns, partitions.copy());
+        }
+        return ret;
     }
 
-    chunked_vector<topic_status> filtered;
+    node_health_report::topics_t filtered;
 
-    for (auto& tl : topics) {
-        topic_status filtered_topic_status(tl.tp_ns, {});
-        for (auto& pl : tl.partitions) {
-            if (filter.matches(tl.tp_ns, pl.id)) {
-                filtered_topic_status.partitions.push_back(pl);
+    for (auto& [tp_ns, partitions] : topics) {
+        partition_statuses_t filtered_partitions;
+        for (auto& pl : partitions) {
+            if (filter.matches(tp_ns, pl.id)) {
+                filtered_partitions.push_back(pl);
             }
         }
-        if (!filtered_topic_status.partitions.empty()) {
-            filtered.push_back(std::move(filtered_topic_status));
+        if (!filtered_partitions.empty()) {
+            filtered.emplace(tp_ns, std::move(filtered_partitions));
         }
     }
 
@@ -189,22 +191,14 @@ std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
         return ss::make_foreign(it->second);
     }
 
-    node_health_report report;
-    report.id = id;
-
-    report.local_state = it->second->local_state;
-    report.local_state.logical_version
+    node_health_report ret{
+      it->second->id, it->second->local_state, {}, it->second->drain_status};
+    ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
-
-    if (f.include_partitions) {
-        report.topics = filter_topic_status(it->second->topics, f.ntp_filters);
-    }
-
-    report.drain_status = it->second->drain_status;
-    report.include_drain_status = true;
+    ret.topics = filter_topic_status(it->second->topics, f.ntp_filters);
 
     return ss::make_foreign(
-      ss::make_lw_shared<const node_health_report>(std::move(report)));
+      ss::make_lw_shared<const node_health_report>(std::move(ret)));
 }
 
 void health_monitor_backend::abortable_refresh_request::abort() {
@@ -384,7 +378,7 @@ map_reply_result(result<get_node_health_reply> reply) {
     if (!reply.value().report.has_value()) {
         return {reply.value().error};
     }
-    return {std::move(*reply.value().report)};
+    return {std::move(*reply.value().report).to_in_memory()};
 }
 
 result<node_health_report> health_monitor_backend::process_node_reply(
@@ -521,30 +515,29 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
 ss::future<result<node_health_report>>
 health_monitor_backend::collect_current_node_health() {
     vlog(clusterlog.debug, "collecting health report");
-    node_health_report ret;
-    ret.id = _self;
+    model::node_id id = _self;
 
-    ret.local_state = _local_monitor.local().get_state_cached();
-    ret.local_state.logical_version
+    auto local_state = _local_monitor.local().get_state_cached();
+    local_state.logical_version
       = features::feature_table::get_latest_logical_version();
 
-    ret.drain_status = co_await _drain_manager.local().status();
-    ret.include_drain_status = true;
-    ret.topics = co_await collect_topic_status();
+    auto drain_status = co_await _drain_manager.local().status();
+    auto topics = co_await collect_topic_status();
 
-    auto [it, _] = _status.try_emplace(ret.id);
+    auto [it, _] = _status.try_emplace(id);
     it->second.is_alive = alive::yes;
     it->second.last_reply_timestamp = ss::lowres_clock::now();
 
-    co_return ret;
+    co_return node_health_report{
+      id, std::move(local_state), std::move(topics), std::move(drain_status)};
 }
-ss::future<result<node_health_report>>
+ss::future<result<node_health_report_ptr>>
 health_monitor_backend::get_current_node_health() {
     vlog(clusterlog.debug, "getting current node health");
 
     auto it = _reports.find(_self);
     if (it != _reports.end()) {
-        co_return *it->second;
+        co_return it->second;
     }
 
     auto u = _report_collection_mutex.try_get_units();
@@ -559,19 +552,23 @@ health_monitor_backend::get_current_node_health() {
         u.emplace(co_await _report_collection_mutex.get_units());
         auto it = _reports.find(_self);
         if (it != _reports.end()) {
-            co_return *it->second;
+            co_return it->second;
         }
     }
     /**
      * Current fiber will collect and cache the report
      */
     auto r = co_await collect_current_node_health();
-    if (r.has_value()) {
-        _reports.emplace(
-          _self, ss::make_lw_shared<node_health_report>(r.value()));
+    if (r.has_error()) {
+        co_return r.error();
     }
 
-    co_return std::move(r);
+    it = _reports
+           .emplace(
+             _self,
+             ss::make_lw_shared<node_health_report>(std::move(r.value())))
+           .first;
+    co_return it->second;
 }
 
 namespace {

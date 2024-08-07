@@ -67,10 +67,8 @@ struct health_bench : health_report_accessor {
         constexpr int nodes = 32;
 
         // genreate a random health report
-        absl::node_hash_map<
-          model::node_id,
-          ss::lw_shared_ptr<const cluster::node_health_report>>
-          reports;
+        absl::node_hash_map<model::node_id, chunked_vector<topic_status>>
+          node_topics;
 
         for (int topic = 0; topic < topic_count; topic++) {
             std::vector<topic_status> statuses;
@@ -95,11 +93,15 @@ struct health_bench : health_report_accessor {
             }
 
             for (model::node_id node{0}; node < nodes; node++) {
-                node_health_report report;
-                report.topics.emplace_back(statuses.at(node));
-                reports[node] = ss::make_lw_shared<const node_health_report>(
-                  std::move(report));
+                node_topics[node].emplace_back(statuses.at(node));
             }
+        }
+
+        report_cache_t reports;
+        for (auto& [node_id, topics] : node_topics) {
+            reports[node_id]
+              = ss::make_lw_shared<const cluster::node_health_report>(
+                node_id, node::local_state{}, std::move(topics), std::nullopt);
         }
 
         perf_tests::start_measuring_time();

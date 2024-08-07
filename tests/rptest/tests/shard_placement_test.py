@@ -88,6 +88,9 @@ class ShardPlacementTest(PreallocNodesTest):
         for node in nodes:
             partitions = admin.get_partitions(node=node)
             for p in partitions:
+                if p["topic"] == "controller":
+                    continue
+
                 topic2partition2shard.setdefault(
                     p["topic"],
                     dict()).setdefault(p["partition_id"], list()).append(
@@ -103,6 +106,54 @@ class ShardPlacementTest(PreallocNodesTest):
                 self.logger.debug(f"ntp: {topic}/{p} replicas: {replicas}")
 
         return topic2partition2shard
+
+    def get_shard_map_from_cluster_partitions(self, partitions):
+        """
+        Return map of topic -> partition -> [(node_id, core)] collected from
+        the output of /v1/cluster/partitions admin endpoint
+        """
+
+        topic2partition2shard = dict()
+        for p in partitions:
+            replicas = [(r["node_id"], r["core"]) for r in p["replicas"]]
+            # sort replicas for the ease of comparison
+            replicas.sort()
+
+            topic2partition2shard.setdefault(
+                p["topic"], dict())[p["partition_id"]] = replicas
+
+        for topic, partitions in sorted(topic2partition2shard.items()):
+            for p, replicas in sorted(partitions.items()):
+                self.logger.info(f"ntp: {topic}/{p} replicas: {replicas}")
+
+        return topic2partition2shard
+
+    def shard_maps_equal(self, left, right):
+        """return True if equal, if not, log the details"""
+        left_topics = set(left.keys())
+        right_topics = set(right.keys())
+        if left_topics != right_topics:
+            self.logger.debug(
+                f"topic sets differ: {left_topics} vs. {right_topics}")
+            return False
+
+        for topic, left_partitions in left.items():
+            right_partitions = right[topic]
+            left_ids = set(left_partitions.keys())
+            right_ids = set(right_partitions.keys())
+            if left_ids != right_ids:
+                self.logger.debug(f"partition sets for topic {topic} differ: "
+                                  f"{left_ids} vs. {right_ids}")
+                return False
+
+            for p_id, left_replicas in left_partitions.items():
+                right_replicas = right_partitions[p_id]
+                if left_replicas != right_replicas:
+                    self.logger.debug(
+                        f"replica sets for partition {topic}/{p_id} differ: "
+                        f"{left_replicas} vs. {right_replicas}")
+                    return False
+        return True
 
     def get_shard_counts_by_topic(self, shard_map, node_id):
         core_count = self.redpanda.get_node_cpu_count()
@@ -144,7 +195,8 @@ class ShardPlacementTest(PreallocNodesTest):
         def is_stationary():
             nonlocal shard_map
             new_map = self.get_replica_shard_map(nodes, admin)
-            if new_map == shard_map:
+            if shard_map is not None and self.shard_maps_equal(
+                    new_map, shard_map):
                 return True
             else:
                 shard_map = new_map
@@ -153,6 +205,38 @@ class ShardPlacementTest(PreallocNodesTest):
                    timeout_sec=timeout_sec,
                    backoff_sec=backoff_sec)
         return shard_map
+
+    def wait_shard_map_consistent_with_cluster_partitions(
+            self,
+            shard_map,
+            user_topics=[],
+            admin=None,
+            timeout_sec=30,
+            backoff_sec=3):
+        if admin is None:
+            admin = Admin(self.redpanda)
+
+        def is_consistent():
+            self.logger.debug("querying shard map for all partitions...")
+            all_partitions = admin.get_cluster_partitions(with_internal=True)
+            if not self.shard_maps_equal(
+                    self.get_shard_map_from_cluster_partitions(all_partitions),
+                    shard_map):
+                return False
+
+            self.logger.debug("querying shard map for user partitions...")
+            user_partitions = []
+            for topic in user_topics:
+                user_partitions.extend(
+                    admin.get_cluster_partitions("kafka", topic))
+            projected_map = {t: shard_map[t] for t in user_topics}
+            return self.shard_maps_equal(
+                self.get_shard_map_from_cluster_partitions(user_partitions),
+                projected_map)
+
+        wait_until(is_consistent,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec)
 
     @cluster(num_nodes=6)
     def test_upgrade(self):
@@ -176,7 +260,8 @@ class ShardPlacementTest(PreallocNodesTest):
 
         n_partitions = 10
 
-        for topic in ["foo", "bar"]:
+        topics = ["foo", "bar"]
+        for topic in topics:
             rpk.create_topic(topic, partitions=n_partitions, replicas=3)
 
         self.start_client_load("foo")
@@ -198,6 +283,8 @@ class ShardPlacementTest(PreallocNodesTest):
         map_after_upgrade = self.wait_shard_map_stationary(seed_nodes, admin)
         self.print_shard_stats(map_after_upgrade)
         assert map_after_upgrade == initial_map
+        self.wait_shard_map_consistent_with_cluster_partitions(
+            map_after_upgrade, user_topics=topics, admin=admin)
 
         # Manually move replicas of one topic on one node to shard 0
 
@@ -220,12 +307,15 @@ class ShardPlacementTest(PreallocNodesTest):
             map_after_manual_move, moved_replica_id)["foo"]
         assert foo_shard_counts[0] == n_partitions
         assert sum(foo_shard_counts) == n_partitions
+        self.wait_shard_map_consistent_with_cluster_partitions(
+            map_after_manual_move, user_topics=topics, admin=admin)
 
         # Add more nodes to the cluster and create another topic
 
         self.redpanda.start(nodes=joiner_nodes)
         self.redpanda.wait_for_membership(first_start=True)
 
+        topics.append("quux")
         rpk.create_topic("quux", partitions=n_partitions, replicas=3)
 
         # check that shard counts are balanced
@@ -281,6 +371,8 @@ class ShardPlacementTest(PreallocNodesTest):
             self.redpanda.nodes, admin)
         self.print_shard_stats(map_after_restart)
         assert map_after_restart == map_before_restart
+        self.wait_shard_map_consistent_with_cluster_partitions(
+            map_after_restart, user_topics=topics, admin=admin)
 
         self.stop_client_load()
 
@@ -294,7 +386,8 @@ class ShardPlacementTest(PreallocNodesTest):
 
         n_partitions = 10
 
-        for topic in ["foo", "bar"]:
+        topics = ["foo", "bar"]
+        for topic in topics:
             rpk.create_topic(topic, partitions=n_partitions, replicas=5)
 
         self.start_client_load("foo")
@@ -326,6 +419,8 @@ class ShardPlacementTest(PreallocNodesTest):
         assert sum(counts_by_topic["foo"]) == n_partitions
         assert counts_by_topic["bar"][core_count - 1] == n_partitions
         assert sum(counts_by_topic["bar"]) == n_partitions
+        self.wait_shard_map_consistent_with_cluster_partitions(
+            shard_map, user_topics=topics, admin=admin)
 
         admin.trigger_cores_rebalance(node)
         self.logger.info(
@@ -337,6 +432,8 @@ class ShardPlacementTest(PreallocNodesTest):
             shard_map, moved_replica_id)
         for topic, shard_counts in counts_by_topic.items():
             assert max(shard_counts) - min(shard_counts) <= 1
+        self.wait_shard_map_consistent_with_cluster_partitions(
+            shard_map, user_topics=topics, admin=admin)
 
         self.stop_client_load()
 
@@ -496,6 +593,13 @@ class ShardPlacementTest(PreallocNodesTest):
             nodes = self.redpanda.nodes
             shard_map = self.get_replica_shard_map(nodes, admin)
             self.print_shard_stats(shard_map)
+
+            for topic in topics:
+                total_count = sum(
+                    len(replicas) for p, replicas in shard_map[topic].items())
+                if total_count != n_partitions * 3:
+                    return False
+
             for n in nodes:
                 node_id = self.redpanda.node_id(n)
                 shard_counts = self.get_shard_counts_by_topic(
@@ -512,5 +616,7 @@ class ShardPlacementTest(PreallocNodesTest):
                                                     backoff_sec=2)
         self.logger.info("shard rebalance finished")
         self.print_shard_stats(shard_map_after_balance)
+        self.wait_shard_map_consistent_with_cluster_partitions(
+            shard_map_after_balance, user_topics=topics, admin=admin)
 
         self.stop_client_load()
