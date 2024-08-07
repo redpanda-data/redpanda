@@ -36,6 +36,7 @@ v_cc_library(
     partition_key.cc
     partition_key_type.cc
     schema.cc
+    schema_avro.cc
     schema_json.cc
     struct_accessor.cc
     time_transform_visitor.cc

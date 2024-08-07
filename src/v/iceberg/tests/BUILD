@@ -137,6 +137,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "schema_avro_test",
+    timeout = "short",
+    srcs = [
+        "schema_avro_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:schema",
+        "//src/v/iceberg:schema_avro",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "schema_json_test",
     timeout = "short",
     srcs = [

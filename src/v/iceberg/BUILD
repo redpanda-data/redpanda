@@ -236,6 +236,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "schema_avro",
+    srcs = [
+        "schema_avro.cc",
+    ],
+    hdrs = [
+        "schema_avro.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        "@avro",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_json",
     srcs = [
         "schema_json.cc",
