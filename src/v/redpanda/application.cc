@@ -478,6 +478,8 @@ int application::run(int ac, char** av) {
     });
 }
 
+static void apply_io_sink_hack(ss::logger& log);
+
 void application::initialize(
   std::optional<YAML::Node> proxy_cfg,
   std::optional<YAML::Node> proxy_client_cfg,
@@ -524,6 +526,8 @@ void application::initialize(
       }))
       .get();
     _cpu_profiler.invoke_on_all(&resources::cpu_profiler::start).get();
+
+    ss::smp::invoke_on_all([this] { apply_io_sink_hack(_log); }).get();
 
     /*
      * allocate per-core zstd decompression workspace and per-core
@@ -1250,6 +1254,49 @@ make_upload_controller_config(ss::scheduling_group sg) {
       priority_manager::local().archival_priority(),
       config::shard_local_cfg().cloud_storage_upload_ctrl_min_shares(),
       config::shard_local_cfg().cloud_storage_upload_ctrl_max_shares()};
+}
+
+// machinery to safely access private members
+// http://bloglitb.blogspot.com/2010/07/access-to-private-members-thats-easy.html
+namespace seastar::internal {
+template<typename Tag, typename Tag::type M>
+struct rob {
+    friend typename Tag::type get(Tag) { return M; }
+};
+
+struct io_sink_get {
+    using type = io_sink reactor::*;
+    friend type get(io_sink_get);
+};
+
+struct pending_get {
+    using type = circular_buffer<pending_io_request> io_sink::*;
+    friend type get(pending_get);
+};
+
+template struct rob<io_sink_get, &reactor::_io_sink>;
+template struct rob<pending_get, &internal::io_sink::_pending_io>;
+} // namespace seastar::internal
+
+static void apply_io_sink_hack(ss::logger& log) {
+    // The reactor has a reactor::_io_sink::_io_pending buffer which holds
+    // pending IOs after they have been drained from the io queues, and in
+    // some cases this can get very large, causing a large allocation.
+    // While we pursue a longer-term solution, we work around this by reserving
+    // a large number of elements at startup, which avoids the need to grow the
+    // array later as long as we stay below that number.
+    // See CORE-6814, CORE-2956
+    // https://github.com/scylladb/seastar/pull/2357
+    auto& io_sink = ss::engine().*get(ss::internal::io_sink_get());
+    auto& pending = io_sink.*get(ss::internal::pending_get());
+
+    static constexpr size_t initial_pending_io_size = 10000;
+    pending.reserve(initial_pending_io_size);
+
+    vlog(
+      log.info0,
+      "CORE-6814 applied: io_sink capacity >= {}",
+      initial_pending_io_size);
 }
 
 // add additional services in here
