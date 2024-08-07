@@ -2406,7 +2406,7 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
           });
     } else if (in_state(group_state::completing_rebalance)) {
         co_return txn_offset_commit_response(
-          r, error_code::rebalance_in_progress);
+          r, error_code::concurrent_transactions);
     } else {
         vlog(_ctx_txlog.error, "Unexpected group state");
         co_return txn_offset_commit_response(
@@ -2429,8 +2429,14 @@ group::handle_begin_tx(cluster::begin_group_tx_request r) {
               return begin_tx(std::move(r));
           });
     } else if (in_state(group_state::completing_rebalance)) {
+        /**
+         * When group is completing rebalance it doesn't makes sense to
+         * replicate the fence batch as the transaction may be fenced with group
+         * generation change, in this case return an error instructing client to
+         * retry.
+         */
         cluster::begin_group_tx_reply reply;
-        reply.ec = cluster::tx::errc::rebalance_in_progress;
+        reply.ec = cluster::tx::errc::concurrent_transactions;
         co_return reply;
     } else {
         vlog(_ctx_txlog.error, "Unexpected group state");
@@ -2456,7 +2462,7 @@ group::handle_abort_tx(cluster::abort_group_tx_request r) {
           });
     } else if (in_state(group_state::completing_rebalance)) {
         cluster::abort_group_tx_reply reply;
-        reply.ec = cluster::tx::errc::rebalance_in_progress;
+        reply.ec = cluster::tx::errc::concurrent_transactions;
         co_return reply;
     } else {
         vlog(_ctx_txlog.error, "Unexpected group state");
