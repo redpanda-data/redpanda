@@ -90,22 +90,22 @@ void partition_leaders_table::update_partition_leader(
 ss::future<> partition_leaders_table::update_with_node_report(
   const node_health_report_ptr& node_report) {
     ssx::async_counter counter;
-    for (const auto& topic : node_report->topics) {
+    for (const auto& [tp_ns, partitions] : node_report->topics) {
         /**
          * Here we minimize the number of topic table and topic map lookups by
          * doing it only once for each topic.
          **/
         version topic_map_version_snapshot = _topic_map_version;
-        auto [t_it, _] = _topic_leaders.try_emplace(topic.tp_ns);
+        auto [t_it, _] = _topic_leaders.try_emplace(tp_ns);
 
-        const bool is_controller = topic.tp_ns == model::controller_nt;
-        bool present_in_table = _topic_table.local().contains(topic.tp_ns);
+        const bool is_controller = tp_ns == model::controller_nt;
+        bool present_in_table = _topic_table.local().contains(tp_ns);
         auto last_applied_revision
           = _topic_table.local().last_applied_revision();
         co_await ssx::async_for_each_counter(
           counter,
-          topic.partitions.begin(),
-          topic.partitions.end(),
+          partitions.begin(),
+          partitions.end(),
           [&](const partition_status& p) {
               if (!p.leader_id.has_value()) {
                   return;
@@ -118,7 +118,7 @@ ss::future<> partition_leaders_table::update_with_node_report(
                   vlog(
                     clusterlog.trace,
                     "can't update leadership of the removed topic {}",
-                    topic.tp_ns);
+                    tp_ns);
                   return;
               }
               /**
@@ -126,9 +126,9 @@ ss::future<> partition_leaders_table::update_with_node_report(
                * previous iteration.
                */
               if (topic_map_version_snapshot != _topic_map_version) {
-                  auto result = _topic_leaders.try_emplace(topic.tp_ns);
+                  auto result = _topic_leaders.try_emplace(tp_ns);
                   t_it = result.first;
-                  present_in_table = _topic_table.local().contains(topic.tp_ns);
+                  present_in_table = _topic_table.local().contains(tp_ns);
                   last_applied_revision
                     = _topic_table.local().last_applied_revision();
                   topic_map_version_snapshot = _topic_map_version;

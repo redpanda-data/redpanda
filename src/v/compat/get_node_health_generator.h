@@ -31,8 +31,10 @@ struct instance_generator<cluster::get_node_health_reply> {
     static cluster::get_node_health_reply random() {
         return {
           .error = instance_generator<cluster::errc>::random(),
-          .report = tests::random_optional(
-            [] { return cluster::random_node_health_report(); }),
+          .report = tests::random_optional([] {
+              return cluster::node_health_report_serde{
+                cluster::random_node_health_report()};
+          }),
         };
     }
     static std::vector<cluster::get_node_health_reply> limits() { return {}; }

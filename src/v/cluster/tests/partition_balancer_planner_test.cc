@@ -470,8 +470,8 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     auto hr = create_health_report(full_nodes);
 
     populate_node_status_table().get();
-    auto nr_1 = *hr.node_reports[1];
-    auto nr_2 = *hr.node_reports[2];
+    auto nr_1 = hr.node_reports[1]->copy();
+    auto nr_2 = hr.node_reports[2]->copy();
     // Set order of full nodes
 
     nr_1.local_state.log_data_size.value().data_current_size += 1_MiB;
@@ -522,15 +522,15 @@ FIXTURE_TEST(
     std::set<size_t> full_nodes = {0, 1};
     auto hr = create_health_report(full_nodes);
     populate_node_status_table().get();
-    auto nr_0 = *hr.node_reports[0];
+    auto nr_0 = hr.node_reports[0]->copy();
 
     // Set order of full nodes
     nr_0.local_state.log_data_size.value().data_current_size += 1_MiB;
 
     // Set partition sizes
-    for (auto& topic : nr_0.topics) {
-        if (topic.tp_ns.tp == "topic-1") {
-            for (auto& partition : topic.partitions) {
+    for (auto& [tp_ns, partitions] : nr_0.topics) {
+        if (tp_ns.tp == "topic-1") {
+            for (auto& partition : partitions) {
                 if (partition.id == 1) {
                     partition.size_bytes = default_partition_size - 1_KiB;
                 }
@@ -709,7 +709,7 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     // Make node_4 disk free size less to make partition allocator disk usage
     // constraint prefer node_3 rather than node_4
-    auto nr_4 = *hr.node_reports[4];
+    auto nr_4 = hr.node_reports[4]->copy();
     nr_4.local_state.log_data_size.value().data_current_size
       = hr.node_reports[3]->local_state.log_data_size.value().data_current_size
         - 10_MiB;
