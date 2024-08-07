@@ -12,7 +12,10 @@
 #include "cluster/fwd.h"
 #include "cluster/simple_batch_builder.h"
 #include "model/fundamental.h"
-#include "serde/serde.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/rw.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
