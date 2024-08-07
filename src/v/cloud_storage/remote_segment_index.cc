@@ -321,6 +321,28 @@ struct offset_index_header
     int64_t last_time{model::timestamp::missing().value()};
     std::vector<int64_t> time_write_buf;
     iobuf time_index;
+
+    auto serde_fields() {
+        return std::tie(
+          min_file_pos_step,
+          num_elements,
+          base_rp,
+          last_rp,
+          base_kaf,
+          last_kaf,
+          base_file,
+          last_file,
+          rp_write_buf,
+          kaf_write_buf,
+          file_write_buf,
+          rp_index,
+          kaf_index,
+          file_index,
+          base_time,
+          last_time,
+          time_write_buf,
+          time_index);
+    }
 };
 
 iobuf offset_index::to_iobuf() {
