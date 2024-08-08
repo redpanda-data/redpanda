@@ -33,6 +33,8 @@ PERF_TEST(small, serialize) {
     perf_tests::start_measuring_time();
     auto o = serde::to_iobuf(small_t{});
     perf_tests::do_not_optimize(o);
+    auto o2 = serde::to_iobuf(small_t{});
+    perf_tests::do_not_optimize(o2);
     perf_tests::stop_measuring_time();
 }
 PERF_TEST(small, deserialize) {
