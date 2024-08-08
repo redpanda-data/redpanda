@@ -60,7 +60,8 @@ void server_probe::setup_metrics(
           "connections_rejected",
           [this] { return _connections_rejected; },
           sm::description(ssx::sformat(
-            "{}: Number of connections rejected for hitting connection limits",
+            "{}: Number of connection attempts rejected for hitting open "
+            "connection count limits",
             proto))),
         sm::make_counter(
           "requests_completed",
