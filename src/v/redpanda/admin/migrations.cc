@@ -11,7 +11,7 @@
 #include "base/vlog.h"
 #include "cluster/controller.h"
 #include "cluster/data_migration_frontend.h"
-#include "data_migration_types.h"
+#include "cluster/data_migration_types.h"
 #include "json/document.h"
 #include "json/validator.h"
 #include "json/writer.h"
