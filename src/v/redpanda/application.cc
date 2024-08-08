@@ -148,7 +148,12 @@
 #include <seastar/util/log.hh>
 
 #include <absl/log/globals.h>
+#if __has_include(<google/protobuf/runtime_version.h>)
+#include <google/protobuf/runtime_version.h>
+#endif
+#if __has_include(<google/protobuf/stubs/logging.h>)
 #include <google/protobuf/stubs/logging.h>
+#endif
 #include <sys/resource.h>
 #include <sys/utsname.h>
 
