@@ -162,6 +162,8 @@ private:
     GTEST_TEST_THROW_(statement, expected_exception, GTEST_FATAL_FAILURE_CORO_)
 #define GTEST_TEST_NO_THROW_CORO(statement)                                    \
     GTEST_TEST_NO_THROW_(statement, GTEST_FATAL_FAILURE_CORO_)
+#define ASSERT_NO_FATAL_FAILURE_CORO(statement)                                \
+    GTEST_TEST_NO_FATAL_FAILURE_(statement, GTEST_FATAL_FAILURE_CORO_)
 /*
  * Coroutine safe assertions
  */
