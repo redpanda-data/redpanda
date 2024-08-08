@@ -102,9 +102,11 @@ private:
     void trigger_config_update_notification();
     void collect_learner_metrics();
 
+    ss::future<>
+    do_shutdown(ss::lw_shared_ptr<consensus>, bool remove_persistent_state);
+
     raft::group_configuration create_initial_configuration(
       std::vector<model::broker>, model::revision_id) const;
-    mutex _groups_mutex{"group_manager"};
     model::node_id _self;
     ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;
