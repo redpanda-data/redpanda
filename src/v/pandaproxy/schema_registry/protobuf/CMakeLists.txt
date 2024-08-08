@@ -29,6 +29,9 @@ v_cc_library(
   DEPS protobuf::libprotobuf
 )
 
+# Disable clang tidy
+set_target_properties(v_pandaproxy_schema_registry_protobuf  PROPERTIES CXX_CLANG_TIDY "")
+
 target_include_directories(v_pandaproxy_schema_registry_protobuf
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
 )
