@@ -2412,11 +2412,13 @@ class RedpandaService(RedpandaServiceBase):
                     self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
             else:
                 self._log_level = log_level
-            self._log_config = LoggingConfig(self._log_level, {
-                'exception': 'debug',
-                'io': 'debug',
-                'seastar_memory': 'debug'
-            })
+            self._log_config = LoggingConfig(
+                self._log_level, {
+                    'exception': 'debug',
+                    'io': 'debug',
+                    'seastar_memory': 'debug',
+                    'dns_resolver': 'info'
+                })
 
         self._started: Set[ClusterNode] = set()
 
