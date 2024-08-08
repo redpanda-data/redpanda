@@ -40,7 +40,7 @@ ss::future<result<Ret>> try_with_gate(ss::gate& gate, Func&& f) {
 
 template<typename Req, typename Resp>
 using client_f = ss::future<result<Resp>> (consensus_client_protocol::*)(
-  model::node_id, Req&&, rpc::client_opts);
+  model::node_id, Req, rpc::client_opts);
 
 template<typename Req, typename Ret>
 ss::future<result<Ret>> apply_with_gate(
@@ -84,7 +84,7 @@ buffered_protocol::buffered_protocol(
 }
 
 ss::future<result<vote_reply>> buffered_protocol::vote(
-  model::node_id target_node, vote_request&& req, rpc::client_opts opts) {
+  model::node_id target_node, vote_request req, rpc::client_opts opts) {
     return apply_with_gate(
       _gate,
       _base_protocol,
@@ -96,7 +96,7 @@ ss::future<result<vote_reply>> buffered_protocol::vote(
 
 ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
   model::node_id target_node,
-  append_entries_request&& req,
+  append_entries_request req,
   rpc::client_opts opts) {
     return try_with_gate(
       _gate,
@@ -121,7 +121,7 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
 };
 
 ss::future<result<heartbeat_reply>> buffered_protocol::heartbeat(
-  model::node_id target_node, heartbeat_request&& req, rpc::client_opts opts) {
+  model::node_id target_node, heartbeat_request req, rpc::client_opts opts) {
     return apply_with_gate(
       _gate,
       _base_protocol,
@@ -132,9 +132,7 @@ ss::future<result<heartbeat_reply>> buffered_protocol::heartbeat(
 }
 
 ss::future<result<heartbeat_reply_v2>> buffered_protocol::heartbeat_v2(
-  model::node_id target_node,
-  heartbeat_request_v2&& req,
-  rpc::client_opts opts) {
+  model::node_id target_node, heartbeat_request_v2 req, rpc::client_opts opts) {
     return apply_with_gate(
       _gate,
       _base_protocol,
@@ -146,7 +144,7 @@ ss::future<result<heartbeat_reply_v2>> buffered_protocol::heartbeat_v2(
 
 ss::future<result<install_snapshot_reply>> buffered_protocol::install_snapshot(
   model::node_id target_node,
-  install_snapshot_request&& req,
+  install_snapshot_request req,
   rpc::client_opts opts) {
     return apply_with_gate(
       _gate,
@@ -158,9 +156,7 @@ ss::future<result<install_snapshot_reply>> buffered_protocol::install_snapshot(
 }
 
 ss::future<result<timeout_now_reply>> buffered_protocol::timeout_now(
-  model::node_id target_node,
-  timeout_now_request&& req,
-  rpc::client_opts opts) {
+  model::node_id target_node, timeout_now_request req, rpc::client_opts opts) {
     return apply_with_gate(
       _gate,
       _base_protocol,
@@ -173,7 +169,7 @@ ss::future<result<timeout_now_reply>> buffered_protocol::timeout_now(
 ss::future<result<transfer_leadership_reply>>
 buffered_protocol::transfer_leadership(
   model::node_id target_node,
-  transfer_leadership_request&& req,
+  transfer_leadership_request req,
   rpc::client_opts opts) {
     return apply_with_gate(
       _gate,
@@ -313,7 +309,7 @@ bool append_entries_queue::is_idle() const {
 }
 
 ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
-  append_entries_request&& r, rpc::client_opts opts) {
+  append_entries_request r, rpc::client_opts opts) {
     // or wait until we can buffer next request, this will propagate back
     // pressure to caller
     auto sz = r.total_size();

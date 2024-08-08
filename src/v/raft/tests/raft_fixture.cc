@@ -297,43 +297,43 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
 }
 
 ss::future<result<vote_reply>> in_memory_test_protocol::vote(
-  model::node_id id, vote_request&& req, rpc::client_opts) {
+  model::node_id id, vote_request req, rpc::client_opts) {
     return dispatch<vote_request, vote_reply>(id, req);
 };
 
 ss::future<result<append_entries_reply>>
 in_memory_test_protocol::append_entries(
-  model::node_id id, append_entries_request&& req, rpc::client_opts) {
+  model::node_id id, append_entries_request req, rpc::client_opts) {
     return dispatch<append_entries_request, append_entries_reply>(
       id, std::move(req));
 };
 
 ss::future<result<heartbeat_reply>> in_memory_test_protocol::heartbeat(
-  model::node_id id, heartbeat_request&& req, rpc::client_opts) {
+  model::node_id id, heartbeat_request req, rpc::client_opts) {
     return dispatch<heartbeat_request, heartbeat_reply>(id, std::move(req));
 }
 
 ss::future<result<heartbeat_reply_v2>> in_memory_test_protocol::heartbeat_v2(
-  model::node_id id, heartbeat_request_v2&& req, rpc::client_opts) {
+  model::node_id id, heartbeat_request_v2 req, rpc::client_opts) {
     return dispatch<heartbeat_request_v2, heartbeat_reply_v2>(
       id, std::move(req));
 }
 
 ss::future<result<install_snapshot_reply>>
 in_memory_test_protocol::install_snapshot(
-  model::node_id id, install_snapshot_request&& req, rpc::client_opts) {
+  model::node_id id, install_snapshot_request req, rpc::client_opts) {
     return dispatch<install_snapshot_request, install_snapshot_reply>(
       id, std::move(req));
 }
 
 ss::future<result<timeout_now_reply>> in_memory_test_protocol::timeout_now(
-  model::node_id id, timeout_now_request&& req, rpc::client_opts) {
+  model::node_id id, timeout_now_request req, rpc::client_opts) {
     return dispatch<timeout_now_request, timeout_now_reply>(id, std::move(req));
 }
 
 ss::future<result<transfer_leadership_reply>>
 in_memory_test_protocol::transfer_leadership(
-  model::node_id id, transfer_leadership_request&& req, rpc::client_opts) {
+  model::node_id id, transfer_leadership_request req, rpc::client_opts) {
     return dispatch<transfer_leadership_request, transfer_leadership_reply>(
       id, std::move(req));
 }
