@@ -218,11 +218,11 @@ ss::future<ss::stop_iteration> server::accept_finish(
           ar.remote_address.addr());
         if (!cq_units.live()) {
             // Connection limit hit, drop this connection.
-            _probe->connection_rejected();
+            _probe->connection_rejected_open_limit();
             vlog(
               _log.warn,
-              "Connection limit reached, rejecting {}",
-              ar.remote_address.addr());
+              "Open connection limit reached, rejecting {}",
+              ar.remote_address);
             co_return ss::stop_iteration::no;
         }
     }
@@ -248,10 +248,10 @@ ss::future<ss::stop_iteration> server::accept_finish(
         } catch (const std::exception& e) {
             vlog(
               _log.trace,
-              "Timeout while waiting free token for connection rate. "
-              "addr:{}",
+              "Connection rate limit reached and no token available after "
+              "wait, rejecting {}",
               ar.remote_address);
-            _probe->timeout_waiting_rate_limit();
+            _probe->connection_rejected_rate_limit();
             co_return ss::stop_iteration::no;
         }
     }

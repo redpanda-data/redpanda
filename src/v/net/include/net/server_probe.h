@@ -38,7 +38,13 @@ public:
 
     void connection_close_error() { ++_connection_close_error; }
 
-    void connection_rejected() { ++_connections_rejected; }
+    void connection_rejected_open_limit() {
+        ++_connections_rejected_open_limit;
+    }
+
+    void connection_rejected_rate_limit() {
+        ++_connections_rejected_rate_limit;
+    }
 
     void add_bytes_sent(size_t sent) { _out_bytes += sent; }
 
@@ -55,8 +61,6 @@ public:
     void service_error() { ++_service_errors; }
 
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
-
-    void timeout_waiting_rate_limit() { ++_declined_new_connections; }
 
     void waiting_for_conection_rate() { ++_connections_wait_rate; }
 
@@ -85,11 +89,14 @@ private:
     uint64_t _service_errors = 0;
     uint32_t _connections = 0;
     uint32_t _connection_close_error = 0;
-    uint64_t _connections_rejected = 0;
+    // connections rejected as we hit our "open connections" limit
+    uint64_t _connections_rejected_open_limit = 0;
+    // connections rejected as we hit our connection rate limit and
+    // delaying the connection was not sufficient to stay under the limit
+    uint32_t _connections_rejected_rate_limit = 0;
     uint32_t _corrupted_headers = 0;
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;
-    uint32_t _declined_new_connections = 0;
     uint32_t _connections_wait_rate = 0;
     uint32_t _produce_bad_create_time = 0;
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
