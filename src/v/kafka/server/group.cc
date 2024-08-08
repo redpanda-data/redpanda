@@ -2977,22 +2977,25 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
     // complete write for both this events.
     model::record_batch_reader::data_t batches;
     batches.reserve(2);
+    // if pending offsets are empty, (there was no store_txn_offsets call, do
+    // not replicate the offsets update batch)
+    if (!prepare_it->second.offsets.empty()) {
+        cluster::simple_batch_builder store_offset_builder(
+          model::record_batch_type::raft_data, model::offset(0));
+        for (const auto& [tp, metadata] : prepare_it->second.offsets) {
+            update_store_offset_builder(
+              store_offset_builder,
+              tp.topic,
+              tp.partition,
+              metadata.offset,
+              metadata.committed_leader_epoch,
+              metadata.metadata,
+              metadata.commit_timestamp,
+              metadata.expiry_timestamp);
+        }
 
-    cluster::simple_batch_builder store_offset_builder(
-      model::record_batch_type::raft_data, model::offset(0));
-    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
-        update_store_offset_builder(
-          store_offset_builder,
-          tp.topic,
-          tp.partition,
-          metadata.offset,
-          metadata.committed_leader_epoch,
-          metadata.metadata,
-          metadata.commit_timestamp,
-          metadata.expiry_timestamp);
+        batches.push_back(std::move(store_offset_builder).build());
     }
-
-    batches.push_back(std::move(store_offset_builder).build());
 
     group_log_commit_tx commit_tx;
     commit_tx.group_id = group_id;
