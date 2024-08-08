@@ -38,3 +38,29 @@ def redpanda_cc_library(
             "layering_check",
         ],
     )
+
+# buildifier: disable=function-docstring-args
+def redpanda_cc_binary(
+        name,
+        srcs = [],
+        defines = [],
+        local_defines = [],
+        visibility = None,
+        copts = [],
+        deps = []):
+    """
+    Define a Redpanda C++ binary.
+    """
+
+    native.cc_binary(
+        name = name,
+        srcs = srcs,
+        defines = defines,
+        local_defines = local_defines,
+        visibility = visibility,
+        deps = deps,
+        copts = redpanda_copts() + copts,
+        features = [
+            "layering_check",
+        ],
+    )
