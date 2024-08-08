@@ -3403,20 +3403,17 @@ class RedpandaService(RedpandaServiceBase):
                                    name: str,
                                    expect_restart: bool = False,
                                    admin_client: Optional[Admin] = None,
-                                   timeout: int = 10):
-        if admin_client is None:
-            admin_client = self._admin
-
-        patch_result = admin_client.patch_cluster_config(upsert={name: None})
-        new_version = patch_result['config_version']
-
-        self._wait_for_config_version(new_version, expect_restart, timeout)
+                                   timeout: int = 10,
+                                   tolerate_stopped_nodes=False):
+        def set_cluster_config_to_null(self, *args, **kwargs):
+            self.set_cluster_config(*args, values={name: None}, *kwargs)
 
     def set_cluster_config(self,
                            values: dict,
                            expect_restart: bool = False,
                            admin_client: Optional[Admin] = None,
-                           timeout: int = 10):
+                           timeout: int = 10,
+                           tolerate_stopped_nodes=False):
         """
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
@@ -3432,23 +3429,30 @@ class RedpandaService(RedpandaServiceBase):
                                                          remove=[])
         new_version = patch_result['config_version']
 
-        self._wait_for_config_version(new_version,
-                                      expect_restart,
-                                      timeout,
-                                      admin_client=admin_client)
+        self._wait_for_config_version(
+            new_version,
+            expect_restart,
+            timeout,
+            admin_client=admin_client,
+            tolerate_stopped_nodes=tolerate_stopped_nodes)
 
     def _wait_for_config_version(self,
                                  config_version,
                                  expect_restart: bool,
                                  timeout: int,
-                                 admin_client: Optional[Admin] = None):
+                                 admin_client: Optional[Admin] = None,
+                                 tolerate_stopped_nodes=False):
         admin_client = admin_client or self._admin
+        if tolerate_stopped_nodes:
+            started_node_ids = {self.node_id(n) for n in self.started_nodes()}
 
         def is_ready():
             status = admin_client.get_cluster_config_status(
                 node=self.controller())
-            ready = all(
-                [n['config_version'] >= config_version for n in status])
+            ready = all([
+                n['config_version'] >= config_version for n in status if
+                not tolerate_stopped_nodes or n['node_id'] in started_node_ids
+            ])
 
             return ready, status
 
@@ -5020,27 +5024,21 @@ class RedpandaService(RedpandaServiceBase):
         if not cloud_storage_partitions:
             return None
 
-        self.set_cluster_config({
-            "cloud_storage_enable_scrubbing":
-            True,
-            "cloud_storage_partial_scrub_interval_ms":
-            100,
-            "cloud_storage_full_scrub_interval_ms":
-            1000 * 60 * 10,
-            "cloud_storage_scrubbing_interval_jitter_ms":
-            100,
-            "cloud_storage_background_jobs_quota":
-            5000,
-            "cloud_storage_housekeeping_interval_ms":
-            100,
-            # Segment merging may resolve gaps in the log, so disable it
-            "cloud_storage_enable_segment_merging":
-            False,
-            # Leadership moves may perturb the scrub, so disable it to
-            # streamline the actions below.
-            "enable_leader_balancer":
-            False
-        })
+        self.set_cluster_config(
+            {
+                "cloud_storage_enable_scrubbing": True,
+                "cloud_storage_partial_scrub_interval_ms": 100,
+                "cloud_storage_full_scrub_interval_ms": 1000 * 60 * 10,
+                "cloud_storage_scrubbing_interval_jitter_ms": 100,
+                "cloud_storage_background_jobs_quota": 5000,
+                "cloud_storage_housekeeping_interval_ms": 100,
+                # Segment merging may resolve gaps in the log, so disable it
+                "cloud_storage_enable_segment_merging": False,
+                # Leadership moves may perturb the scrub, so disable it to
+                # streamline the actions below.
+                "enable_leader_balancer": False
+            },
+            tolerate_stopped_nodes=True)
 
         unavailable = set()
         for p in cloud_storage_partitions:
