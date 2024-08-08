@@ -53,7 +53,6 @@
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "security/fwd.h"
-#include "ssx/fwd.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "transform/fwd.h"

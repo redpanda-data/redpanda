@@ -80,3 +80,16 @@ redpanda_cc_library(
         "//src/v/json",
     ],
 )
+
+redpanda_cc_library(
+    name = "lw_shared_container",
+    hdrs = [
+        "include/container/lw_shared_container.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)

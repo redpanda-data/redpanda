@@ -19,7 +19,6 @@
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "kafka/server/group_manager.h"
-#include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 

@@ -12,7 +12,7 @@
 #include "base/seastarx.h"
 #include "boost/program_options.hpp"
 #include "compat/run.h"
-#include "redpanda/cluster_config_schema_util.h"
+#include "redpanda/admin/cluster_config_schema_util.h"
 #include "seastar/core/app-template.hh"
 #include "version/version.h"
 
