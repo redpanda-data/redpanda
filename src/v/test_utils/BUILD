@@ -7,8 +7,10 @@ redpanda_test_cc_library(
         "gtest_utils.cc",
     ],
     hdrs = [
+        "async.h",
         "gtest_utils.h",
         "test.h",
+        "test_macros.h",
     ],
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
