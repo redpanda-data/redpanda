@@ -9,6 +9,7 @@
  */
 #include "datalake/protobuf_to_arrow_converter.h"
 
+#include "base/vlog.h"
 #include "bytes/streambuf.h"
 #include "datalake/errors.h"
 #include "datalake/logger.h"
@@ -174,14 +175,29 @@ datalake::proto_to_arrow_converter::message_descriptor() {
     }
     return _file_desc->message_type(0);
 }
+
+#if PROTOBUF_VERSION < 5027000
 void error_collector::AddError(
   int line, int column, const std::string& message) {
     // Warning level because this is an error in the input, not Redpanda
     // itself.
-    datalake_log.warn("Protobuf Error {}:{} {}", line, column, message);
+    vlog(datalake_log.warn, "Protobuf Error {}:{} {}", line, column, message);
 }
 void error_collector::AddWarning(
   int line, int column, const std::string& message) {
-    datalake_log.warn("Protobuf Warning {}:{} {}", line, column, message);
+    vlog(datalake_log.warn, "Protobuf Warning {}:{} {}", line, column, message);
 }
+#else
+void error_collector::RecordError(
+  int line, int column, std::string_view message) override {
+    // Warning level because this is an error in the input, not Redpanda
+    // itself.
+    vlog(datalake_log.warn, "Protobuf Error {}:{} {}", line, column, message);
+}
+
+void error_collector::RecordWarning(
+  int line, int column, std::string_view message) override {
+    vlog(datalake_log.warn, "Protobuf Warning {}:{} {}", line, column, message);
+}
+#endif
 } // namespace datalake
