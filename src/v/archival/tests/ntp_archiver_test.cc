@@ -963,11 +963,10 @@ FIXTURE_TEST(
                          .get())
                        .candidate;
 
-    // The search is expected to find the next segment after the compacted
-    // segment, skipping the compacted one.
+    // The search is expected to find first compacted segment
     BOOST_REQUIRE(!candidate.sources.empty());
-    BOOST_REQUIRE_GT(candidate.starting_offset(), 0);
-    BOOST_REQUIRE_GT(
+    BOOST_REQUIRE_EQUAL(candidate.starting_offset(), 0);
+    BOOST_REQUIRE_EQUAL(
       candidate.sources.front()->offsets().get_base_offset(), model::offset{0});
 }
 
