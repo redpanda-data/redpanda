@@ -991,7 +991,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
 
     vlog(
       clusterlog.debug,
-      "[{}] reconcilation step, reconciliation state: {}",
+      "[{}] reconciliation step, reconciliation state: {}",
       ntp,
       rs);
 
