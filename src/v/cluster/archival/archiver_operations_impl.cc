@@ -34,6 +34,9 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/all.hh>
+#include <seastar/util/log.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <exception>
 
@@ -213,10 +216,13 @@ public:
                 co_return error_outcome::unexpected_failure;
             }
             std::deque<cloud_storage::segment_meta> metadata;
-            chunked_vector<ss::future<aggregated_upload_result>> uploads;
+            chunked_vector<ss::future<aggregated_upload_result>>
+              segment_uploads;
+            chunked_vector<ss::future<aggregated_upload_result>>
+              manifest_uploads;
             for (auto& upl : bundle.results) {
                 metadata.push_back(upl->metadata);
-                uploads.emplace_back(
+                segment_uploads.emplace_back(
                   upload_candidate(workflow_rtc, partition, upl));
             }
             model::offset projected_clean_offset
@@ -226,7 +232,7 @@ public:
                 const auto estimated_manifest_upl_size
                   = manifest.estimate_serialized_size();
                 auto key = partition->get_remote_manifest_path(manifest);
-                uploads.emplace_back(
+                manifest_uploads.emplace_back(
                   _api
                     ->upload_manifest(
                       _bucket, manifest, std::move(key), workflow_rtc)
@@ -241,22 +247,44 @@ public:
             }
 
             // Wait for all uploads to complete
-            auto result_vec = co_await ss::when_all(
-              uploads.begin(), uploads.end());
+            std::vector<ss::future<aggregated_upload_result>>
+              segment_result_vec;
+            std::vector<ss::future<aggregated_upload_result>>
+              manifest_result_vec;
+            if (manifest_uploads.empty()) {
+                segment_result_vec = co_await ss::when_all(
+                  segment_uploads.begin(), segment_uploads.end());
+            } else {
+                auto [first, second] = co_await ss::coroutine::all(
+                  [&segment_uploads] {
+                      return ss::when_all(
+                        segment_uploads.begin(), segment_uploads.end());
+                  },
+                  [&manifest_uploads] {
+                      return ss::when_all(
+                        manifest_uploads.begin(), manifest_uploads.end());
+                  });
+                segment_result_vec = std::move(first);
+                manifest_result_vec = std::move(second);
+            }
             size_t num_put_requests = 0;
             size_t num_bytes_sent = 0;
 
             // Process manifest upload results.
             model::offset manifest_clean_offset;
             if (inline_manifest_upl) {
-                if (result_vec.back().failed()) {
+                vassert(
+                  manifest_result_vec.size() == 1,
+                  "Manifest upload wasn't scheduled correctly {}",
+                  manifest_result_vec.size());
+                if (manifest_result_vec.back().failed()) {
                     // Manifest upload failed, we shouldn't add clean command
                     vlog(
                       _rtclog.error,
                       "Manifest upload failed {}",
-                      result_vec.back().get_exception());
+                      manifest_result_vec.back().get_exception());
                 } else {
-                    auto m_res = result_vec.back().get();
+                    auto m_res = manifest_result_vec.back().get();
                     if (m_res.code != cloud_storage::upload_result::success) {
                         // Same here
                         vlog(
@@ -270,14 +298,13 @@ public:
                     num_put_requests += m_res.put_requests;
                     num_bytes_sent += m_res.bytes_sent;
                 }
-                result_vec.pop_back();
             }
 
             // Process segment upload results.
             std::deque<std::optional<cloud_storage::segment_record_stats>>
               upload_stats;
             std::deque<cloud_storage::upload_result> upload_results;
-            for (auto& res : result_vec) {
+            for (auto& res : segment_result_vec) {
                 if (res.failed()) {
                     vlog(
                       _rtclog.error,
