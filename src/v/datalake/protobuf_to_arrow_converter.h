@@ -22,12 +22,18 @@
 
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 
 namespace datalake {
 
 struct error_collector : ::google::protobuf::io::ErrorCollector {
+#if PROTOBUF_VERSION < 5027000
     void AddError(int line, int column, const std::string& message) override;
     void AddWarning(int line, int column, const std::string& message) override;
+#else
+    void RecordError(int line, int column, std::string_view message) override;
+    void RecordWarning(int line, int column, std::string_view message) override;
+#endif
 };
 
 /** Top-level interface for parsing Protobuf messages to an Arrow table
