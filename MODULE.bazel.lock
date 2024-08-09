@@ -4446,6 +4446,156 @@
           ]
         ]
       }
+    },
+    "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
+      "general": {
+        "bzlTransitiveDigest": "y9h5L2NtWbogyWSOJgqnUaU50MTPWAW+waelXSirMVg=",
+        "usagesDigest": "daEaLVW36VlrnK0M38FumYd8qkF0bIs6gXXF5CJE+RI=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "llvm_18_toolchain_llvm": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "llvm",
+            "attributes": {
+              "alternative_llvm_sources": [],
+              "auth_patterns": {},
+              "distribution": "auto",
+              "exec_arch": "",
+              "exec_os": "",
+              "llvm_mirror": "",
+              "llvm_version": "",
+              "llvm_versions": {
+                "": "18.1.8"
+              },
+              "netrc": "",
+              "sha256": {
+                "linux-aarch64": "",
+                "linux-x86_64": "d87e46da754fa4dd08ff5caa9f2676da670abbb8a83258117b7360401a0dc558"
+              },
+              "strip_prefix": {},
+              "urls": {
+                "linux-aarch64": [
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18-ubuntu-22.04-aarch64.tar.gz"
+                ],
+                "linux-x86_64": [
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18-ubuntu-22.04-x86_64.tar.gz"
+                ]
+              }
+            }
+          },
+          "llvm_16_toolchain_llvm": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "llvm",
+            "attributes": {
+              "alternative_llvm_sources": [],
+              "auth_patterns": {},
+              "distribution": "auto",
+              "exec_arch": "",
+              "exec_os": "",
+              "llvm_mirror": "",
+              "llvm_version": "",
+              "llvm_versions": {
+                "": "16.0.3"
+              },
+              "netrc": "",
+              "sha256": {
+                "linux-aarch64": "91392722bd4dbd9534bc92dcfc9dd6eb486f8354f4442f75e7b95ef99b9e8e89",
+                "linux-x86_64": "23ad7bf7f7e673569046e6b059dbec48e2a63460cd38decaf9f8702c826fceba"
+              },
+              "strip_prefix": {},
+              "urls": {
+                "linux-aarch64": [
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-16-ubuntu-22.04-aarch64.tar.gz"
+                ],
+                "linux-x86_64": [
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-16-ubuntu-22.04-x86_64.tar.gz"
+                ]
+              }
+            }
+          },
+          "llvm_16_toolchain": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "toolchain",
+            "attributes": {
+              "absolute_paths": false,
+              "archive_flags": {},
+              "compile_flags": {},
+              "coverage_compile_flags": {},
+              "coverage_link_flags": {},
+              "cxx_builtin_include_directories": {},
+              "cxx_flags": {},
+              "cxx_standard": {
+                "": "c++20"
+              },
+              "dbg_compile_flags": {},
+              "exec_arch": "",
+              "exec_os": "",
+              "link_flags": {},
+              "link_libs": {},
+              "llvm_versions": {
+                "": "16.0.3"
+              },
+              "opt_compile_flags": {},
+              "opt_link_flags": {},
+              "stdlib": {},
+              "target_settings": {},
+              "unfiltered_compile_flags": {},
+              "toolchain_roots": {},
+              "sysroot": {}
+            }
+          },
+          "llvm_18_toolchain": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "toolchain",
+            "attributes": {
+              "absolute_paths": false,
+              "archive_flags": {},
+              "compile_flags": {},
+              "coverage_compile_flags": {},
+              "coverage_link_flags": {},
+              "cxx_builtin_include_directories": {},
+              "cxx_flags": {},
+              "cxx_standard": {
+                "": "c++20"
+              },
+              "dbg_compile_flags": {},
+              "exec_arch": "",
+              "exec_os": "",
+              "link_flags": {},
+              "link_libs": {},
+              "llvm_versions": {
+                "": "18.1.8"
+              },
+              "opt_compile_flags": {},
+              "opt_link_flags": {},
+              "stdlib": {},
+              "target_settings": {},
+              "unfiltered_compile_flags": {},
+              "toolchain_roots": {},
+              "sysroot": {}
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "toolchains_llvm~",
+            "bazel_skylib",
+            "bazel_skylib~"
+          ],
+          [
+            "toolchains_llvm~",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "toolchains_llvm~",
+            "toolchains_llvm",
+            "toolchains_llvm~"
+          ]
+        ]
+      }
     }
   }
 }

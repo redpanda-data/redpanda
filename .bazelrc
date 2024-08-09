@@ -1,9 +1,18 @@
+common --registry=https://bcr.bazel.build
+common --extra_toolchains=@llvm_16_toolchain//:all
+
+common --@toolchains_llvm//toolchain/config:libunwind=False
+build --linkopt --unwindlib=libgcc
+
+common:clang-18 --extra_toolchains=@llvm_18_toolchain//:all
+
+build:system-clang-16 --extra_toolchains=@bazel_tools//tools/cpp:toolchain
 # use a compiler name that doesn't symlink to ccache
-build --action_env=CC=clang-16 --host_action_env=CC=clang-16
-build --action_env=CXX=clang++-16 --host_action_env=CXX=clang++-16
-build --action_env=BAZEL_COMPILER=clang
-build --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
-build --linkopt -fuse-ld=lld
+build:system-clang-16 --action_env=CC=clang-16 --host_action_env=CC=clang-16
+build:system-clang-16 --action_env=CXX=clang++-16 --host_action_env=CXX=clang++-16
+build:system-clang-16 --action_env=BAZEL_COMPILER=clang
+build:system-clang-16 --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
+build:system-clang-16 --linkopt -fuse-ld=lld
 
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1065
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1186#issuecomment-2053550487
@@ -11,8 +20,6 @@ build --host_action_env=CXXFLAGS=-Wno-int-conversion
 build --action_env=CXXFLAGS=-Wno-int-conversion
 build --host_action_env=CFLAGS=-Wno-int-conversion
 build --action_env=CFLAGS=-Wno-int-conversion
-
-common --registry=https://bcr.bazel.build
 
 # =================================
 # Sanitizer
