@@ -89,6 +89,7 @@ enum class errc : int16_t {
     topic_invalid_partitions_decreased,
     producer_ids_vcluster_limit_exceeded,
     validation_of_recovery_topic_failed,
+    invalid_target_node_id,
 };
 
 std::ostream& operator<<(std::ostream& o, errc err);
@@ -262,6 +263,8 @@ struct errc_category final : public std::error_category {
             return "To many vclusters registered in producer state cache";
         case errc::validation_of_recovery_topic_failed:
             return "Validation of recovery topic failed";
+        case errc::invalid_target_node_id:
+            return "Request was intended for the node with different node id";
         }
         return "cluster::errc::unknown";
     }
