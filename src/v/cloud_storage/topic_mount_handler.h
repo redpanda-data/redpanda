@@ -22,6 +22,7 @@ namespace cloud_storage {
 enum class topic_mount_result {
     mount_manifest_does_not_exist,
     mount_manifest_not_deleted,
+    mount_manifest_exists,
     success
 };
 
@@ -36,7 +37,17 @@ public:
     topic_mount_handler(
       const cloud_storage_clients::bucket_name& bucket, remote& remote);
 
-    // Perform the unmounting process by uploading the topic mount manifest.
+    // Perform the first step of mounting process by checking the topic mount
+    // manifest exists.
+    ss::future<topic_mount_result> prepare_mount_topic(
+      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+
+    // Perform the second step of mounting process by deleting the topic mount
+    // manifest.
+    ss::future<topic_mount_result> confirm_mount_topic(
+      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+
+    // Perform the unmounting process by creating the topic mount manifest.
     // topic_cfg should be the recovered topic configuration from a topic
     // manifest in cloud storage. If it has a value, the remote_label stored in
     // the topic properties is used as the "source" label. Otherwise, the
@@ -44,15 +55,17 @@ public:
     ss::future<topic_unmount_result> unmount_topic(
       const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
 
+private:
     // Perform the mounting process by deleting the topic mount manifest.
     // topic_cfg should be the recovered topic configuration from a topic
     // manifest in cloud storage. If it has a value, the remote_label stored in
     // the topic properties is used as the "source" label. Otherwise, the
     // default uuid (all zeros) is used.
     ss::future<topic_mount_result> mount_topic(
-      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+      const cluster::topic_configuration& topic_cfg,
+      bool prepare_only,
+      retry_chain_node& parent);
 
-private:
     // Check for the existence of a topic mount manifest in tiered storage.
     // If it exists, then the topic can be mounted.
     ss::future<topic_mount_result> check_mount(
