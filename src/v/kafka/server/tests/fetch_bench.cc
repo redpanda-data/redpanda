@@ -11,6 +11,8 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "cluster/topics_frontend.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/server/handlers/fetch.h"
@@ -31,8 +33,6 @@
 #include <boost/test/tools/old/interface.hpp>
 
 #include <tuple>
-
-ss::logger flog("fetch_bench");
 
 struct fetch_bench_config {
     int num_fetches;
@@ -61,21 +61,22 @@ static constexpr auto small_fetch_config = fetch_bench_config{
   .batch_overhead = 70,
 };
 
+struct fetch_part {
+    model::partition_id pid;
+    model::offset offset;
+    size_t num_batches;
+};
+
+struct fetch_topic {
+    model::topic name;
+    std::vector<fetch_part> partitions;
+};
+
+using fetch_request_config = std::vector<fetch_topic>;
+
 template<fetch_bench_config cfg>
 struct fetch_bench_fixture : redpanda_thread_fixture {
-    struct fetch_part {
-        model::partition_id pid;
-        model::offset offset;
-        size_t num_batches;
-    };
-
-    struct fetch_topic {
-        model::topic name;
-        std::vector<fetch_part> partitions;
-    };
-
-    ss::future<size_t>
-    fetch_from(model::topic t, std::vector<fetch_part> parts) {
+    ss::future<size_t> fetch_from(fetch_request_config req_config) {
         std::optional<size_t> total_batches_per_fetch = std::nullopt;
         auto conn_context = make_connection_context();
         co_await conn_context->start();
@@ -83,21 +84,25 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
         auto make_rctx = [&] {
             size_t total_batches = 0;
 
-            // make the fetch topic
-            kafka::fetch_topic ft;
-            ft.name = t;
+            chunked_vector<kafka::fetch_topic> fetch_topics;
+            for (auto& topic_fetch : req_config) {
+                kafka::fetch_topic ft;
+                ft.name = topic_fetch.name;
 
-            // add the partitions to the fetch request
-            for (const auto& part : parts) {
-                kafka::fetch_partition fp;
-                fp.partition_index = model::partition_id(part.pid);
-                fp.fetch_offset = part.offset;
-                fp.current_leader_epoch = kafka::leader_epoch(-1);
-                fp.log_start_offset = model::offset(-1);
-                fp.max_bytes = part.num_batches
-                               * (cfg.batch_size + cfg.batch_overhead);
-                ft.fetch_partitions.push_back(std::move(fp));
-                total_batches += part.num_batches;
+                // add the partitions to the fetch request
+                for (const auto& part : topic_fetch.partitions) {
+                    kafka::fetch_partition fp;
+                    fp.partition_index = model::partition_id(part.pid);
+                    fp.fetch_offset = part.offset;
+                    fp.current_leader_epoch = kafka::leader_epoch(-1);
+                    fp.log_start_offset = model::offset(-1);
+                    fp.max_bytes = part.num_batches
+                                   * (cfg.batch_size + cfg.batch_overhead);
+                    ft.fetch_partitions.push_back(std::move(fp));
+                    total_batches += part.num_batches;
+                }
+
+                fetch_topics.push_back(std::move(ft));
             }
 
             if (!total_batches_per_fetch) {
@@ -114,7 +119,7 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
             frq_data.isolation_level = model::isolation_level::read_uncommitted;
             frq_data.session_id = kafka::invalid_fetch_session_id;
             frq_data.session_epoch = kafka::final_fetch_session_epoch;
-            frq_data.topics.push_back(std::move(ft));
+            frq_data.topics = std::move(fetch_topics);
 
             auto request = kafka::fetch_request{.data = std::move(frq_data)};
 
@@ -132,13 +137,13 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
               make_rctx(), ss::default_smp_service_group()));
         }
 
-        // Drain task queue before running the measured region in order to
-        // reduce noise from unrelated tasks.
-        co_await tests::drain_task_queue();
-
         // Do a single fetch outside of the measured region first to ensure the
         // fetched batches are in the batch cache in the subsequent fetches.
         co_await kafka::testing::do_fetch(*octxs[cfg.num_fetches]);
+
+        // Drain task queue before running the measured region in order to
+        // reduce noise from unrelated tasks.
+        co_await tests::drain_task_queue();
 
         perf_tests::start_measuring_time();
         for (int i = 0; i < cfg.num_fetches; i++) {
@@ -178,35 +183,61 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
         }
     }
 
-    ss::future<model::topic> create_topic(size_t total_partition_count) {
+    ss::future<model::topic>
+    create_topic(std::vector<model::broker_shard> partitions) {
+        auto total_partition_count = partitions.size();
         auto t = model::topic(
           random_generators::gen_alphanum_string(cfg.topic_name_length));
+
         co_await add_topic(
           model::topic_namespace_view(model::kafka_namespace, t),
           total_partition_count);
 
-        for (auto i = 0; i < total_partition_count; i++) {
-            auto ntp = model::ntp(
-              model::kafka_namespace,
-              model::topic_partition(t, model::partition_id(i)));
-            co_await wait_for_leader(ntp);
-        }
-
-        co_return t;
-    }
-
-    ss::future<> assert_on_different_shards(
-      model::topic t, model::partition_id pid_1, model::partition_id pid_2) {
-        auto get_ntp = [&](auto pid) {
+        auto ntp_for_pid = [&](auto pid) {
             return model::ntp(
               model::kafka_namespace,
               model::topic_partition(t, model::partition_id(pid)));
         };
-        auto s1 = app.shard_table.local().shard_for(get_ntp(pid_1));
-        auto s2 = app.shard_table.local().shard_for(get_ntp(pid_2));
 
-        vassert(*s1 != *s2, "ntps should be on different shards");
-        co_return;
+        for (auto i = 0; i < total_partition_count; i++) {
+            co_await wait_for_leader(ntp_for_pid(i));
+        }
+
+        cluster::topics_frontend& tf
+          = app.controller->get_topics_frontend().local();
+        for (uint32_t pid = 0; pid < partitions.size(); pid++) {
+            auto ec = co_await tf.move_partition_replicas(
+              ntp_for_pid(pid),
+              {partitions[pid]},
+              cluster::reconfiguration_policy::full_local_retention,
+              model::timeout_clock::now() + 30s);
+
+            vassert(ec == cluster::errc::success, "failed to move partition");
+        }
+
+        auto& topic_table = app.controller->get_topics_state().local();
+
+        // There is only one node in the cluster(the one this test runs in).
+        // Hence its topic_table should immediately know about all
+        // reconfigurations. Therefore waiting until there is no on-going
+        // updates will let us know if the previous partition movements have
+        // finished.
+        RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [&topic_table] {
+            return !topic_table.has_updates_in_progress();
+        });
+
+        for (uint32_t pid = 0; pid < partitions.size(); pid++) {
+            auto part_info = topic_table.get_partition_assignment(
+              ntp_for_pid(pid));
+            vassert(part_info.has_value(), "partition doesn't exist");
+
+            auto assign = part_info.value();
+            vassert(assign.replicas.size() == 1, "there should be one replica");
+            vassert(
+              assign.replicas[0] == partitions[pid], "reassignment failed");
+        }
+
+        co_return t;
     }
 
     fetch_bench_fixture() {
@@ -227,17 +258,23 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
         wait_for_controller_leadership().get();
     }
 
+    // Creates a topic with a single partition that is on shard 0.
     ss::future<model::topic> initialize_single_partition_topic() {
-        auto t = co_await create_topic(1);
+        auto t = co_await create_topic(
+          {model::broker_shard{model::node_id{0}, 0}});
         co_await produce_to_topic(t, 1, 1);
         co_return t;
     }
 
+    // Creates a topic with two partitions. One on shard 0 the other on shard 1.
     ss::future<model::topic> initialize_multi_partition_topic() {
-        auto t = co_await create_topic(2);
+        vassert(ss::smp::count >= 2, "requires at least 2 shards");
+
+        auto t = co_await create_topic({
+          model::broker_shard{model::node_id{0}, 0},
+          model::broker_shard{model::node_id{0}, 1},
+        });
         co_await produce_to_topic(t, 2, 1);
-        co_await assert_on_different_shards(
-          t, model::partition_id(0), model::partition_id(1));
         co_return t;
     }
 
@@ -247,34 +284,46 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
 using large_fetch_t = fetch_bench_fixture<large_fetch_config>;
 using small_fetch_t = fetch_bench_fixture<small_fetch_config>;
 
+fetch_request_config single_partition_req_config(model::topic t) {
+    return fetch_request_config{fetch_topic{
+      .name = std::move(t),
+      .partitions = {fetch_part{model::partition_id(0), model::offset(0), 1}}}};
+}
+
+fetch_request_config multi_partition_req_config(model::topic t) {
+    return fetch_request_config{fetch_topic{
+      .name = std::move(t),
+      .partitions = {
+        fetch_part{model::partition_id(0), model::offset(0), 1},
+        fetch_part{model::partition_id(1), model::offset(0), 1}}}};
+}
+
 PERF_TEST_CN(large_fetch_t, single_partition_fetch) {
     static model::topic t = co_await initialize_single_partition_topic();
 
-    co_return co_await fetch_from(
-      t, {fetch_part{model::partition_id(0), model::offset(0), 1}});
+    co_return co_await fetch_from(single_partition_req_config(t));
 }
 
 PERF_TEST_CN(small_fetch_t, single_partition_fetch) {
     static model::topic t = co_await initialize_single_partition_topic();
 
-    co_return co_await fetch_from(
-      t, {fetch_part{model::partition_id(0), model::offset(0), 1}});
+    co_return co_await fetch_from(single_partition_req_config(t));
 }
 
 PERF_TEST_CN(large_fetch_t, multi_partition_fetch) {
     static model::topic t = co_await initialize_multi_partition_topic();
 
-    co_return co_await fetch_from(
-      t,
-      {fetch_part{model::partition_id(0), model::offset(0), 1},
-       fetch_part{model::partition_id(1), model::offset(0), 1}});
+    // One partition will be from the same shard, while the other will be
+    // from a foreign shard. This will hopefully allow us to detect if more
+    // or less cross shard calls are being made for a fetch.
+    co_return co_await fetch_from(multi_partition_req_config(t));
 }
 
 PERF_TEST_CN(small_fetch_t, multi_partition_fetch) {
     static model::topic t = co_await initialize_multi_partition_topic();
 
-    co_return co_await fetch_from(
-      t,
-      {fetch_part{model::partition_id(0), model::offset(0), 1},
-       fetch_part{model::partition_id(1), model::offset(0), 1}});
+    // One partition will be from the same shard, while the other will be
+    // from a foreign shard. This will hopefully allow us to detect if more
+    // or less cross shard calls are being made for a fetch.
+    co_return co_await fetch_from(multi_partition_req_config(t));
 }
