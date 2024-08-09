@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/inventory/ntp_hashes.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
@@ -23,6 +24,22 @@
 #include <seastar/core/sstring.hh>
 
 namespace cloud_storage {
+
+struct existence_query_context {
+    bool is_inv_scrub_enabled{false};
+    bool is_inv_data_available{false};
+    bool force_segment_existence_check{false};
+    std::optional<inventory::ntp_path_hashes> hashes;
+
+    existence_query_context(bool always_check_for_segments, model::ntp ntp);
+
+    ss::future<> load_from_disk();
+
+    bool should_lookup_in_cloud_storage(const remote_segment_path& p) const;
+
+    static ss::future<existence_query_context>
+    load(bool always_check_for_segments, model::ntp ntp);
+};
 
 /*
  * Utility class that detects anomalies in the data and metadata uploaded
@@ -77,12 +94,17 @@ public:
 
     /// \brief run validation up to quota_limit then return
     /// \param quota_total reprensent the total number of GET request to perform
-    /// (0 will still download some objects, to ensure forward progress) \param
-    /// scrub_from it's the starting offset for the scan
+    /// (0 will still download some objects, to ensure forward progress)
+    /// \param scrub_from it's the starting offset for the scan
+    /// \param force_segment_api_checks always use HTTP head request for
+    /// every segment to be checked, even if inventory data set is not
+    /// available. This flag is useful during a topic recovery scenario where
+    /// inventory data set may be missing.
     ss::future<result> run(
       retry_chain_node&,
       quota_limit quota_total,
-      std::optional<model::offset> scrub_from = std::nullopt);
+      std::optional<model::offset> scrub_from = std::nullopt,
+      bool force_segment_api_checks = false);
 
 private:
     ss::future<std::optional<spillover_manifest>> download_spill_manifest(
@@ -93,13 +115,17 @@ private:
     ss::future<stop_detector> check_manifest(
       const partition_manifest& manifest,
       std::optional<model::offset>,
-      retry_chain_node& rtc_node);
+      retry_chain_node& rtc_node,
+      const existence_query_context& query_ctx);
 
     bool should_stop() const;
 
     /// compute how many segments can be visited, based on _received_quota and
     /// _result
     size_t get_visitable_segments() const;
+
+    ss::future<> do_lookup_segment(
+      remote_segment_path path, segment_meta meta, retry_chain_node& rtc_node);
 
     cloud_storage_clients::bucket_name _bucket;
     model::ntp _ntp;

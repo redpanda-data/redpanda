@@ -116,7 +116,9 @@ partition_validator::do_validate_manifest_metadata() {
       op_rtc_,
       cloud_storage::anomalies_detector::segment_depth_t{
         static_cast<cloud_storage::anomalies_detector::segment_depth_t::type>(
-          checks_.max_segment_depth)}));
+          checks_.max_segment_depth)},
+      std::nullopt,
+      true));
 
     if (anomalies_fut.failed()) {
         // propagate shutdown exceptions, but treat other exceptions as hard
