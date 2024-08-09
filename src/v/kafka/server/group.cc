@@ -2295,6 +2295,11 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
             _pending_offset_commits[tp] = md;
         }
     }
+    if (builder.empty()) {
+        vlog(_ctxlog.debug, "Empty offsets committed request");
+        return offset_commit_stages(
+          offset_commit_response(r, error_code::none));
+    }
 
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
