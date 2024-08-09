@@ -687,11 +687,11 @@ public:
           .set_value(std::make_optional<size_t>(expected_target_size));
         cfg.get("cloud_storage_segment_size_min")
           .set_value(std::make_optional<size_t>(expected_min_size));
-        auto remote = ss::make_shared<remote_mock>();
-        auto pm = ss::make_shared<partition_manager_mock>();
-        auto builder = ss::make_shared<upload_builder_mock>();
-        auto partition = ss::make_shared<partition_mock>();
-        auto ops = detail::make_archiver_operations_api(
+        remote = ss::make_shared<remote_mock>();
+        pm = ss::make_shared<partition_manager_mock>();
+        builder = ss::make_shared<upload_builder_mock>();
+        partition = ss::make_shared<partition_mock>();
+        ops = detail::make_archiver_operations_api(
           remote, pm, builder, c_expected_bucket);
     }
 
