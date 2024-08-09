@@ -38,6 +38,8 @@ public:
 
     ss::future<> stop();
 
+    bool loaded() const { return _loaded; }
+
 private:
     ss::future<> load_hashes(ss::directory_entry de);
     ss::future<> load_hashes(ss::input_stream<char>& stream);
