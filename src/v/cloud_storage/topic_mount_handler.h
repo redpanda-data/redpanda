@@ -36,20 +36,20 @@ public:
     topic_mount_handler(
       const cloud_storage_clients::bucket_name& bucket, remote& remote);
 
-    // Perform the mounting process by deleting the topic mount manifest.
-    // topic_cfg should be the recovered topic configuration from a topic
-    // manifest in cloud storage. If it has a value, the remote_label stored in
-    // the topic properties is used as the "source" label. Otherwise, the
-    // default uuid (all zeros) is used.
-    ss::future<topic_mount_result> mount_topic(
-      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
-
     // Perform the unmounting process by uploading the topic mount manifest.
     // topic_cfg should be the recovered topic configuration from a topic
     // manifest in cloud storage. If it has a value, the remote_label stored in
     // the topic properties is used as the "source" label. Otherwise, the
     // default uuid (all zeros) is used.
     ss::future<topic_unmount_result> unmount_topic(
+      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+
+    // Perform the mounting process by deleting the topic mount manifest.
+    // topic_cfg should be the recovered topic configuration from a topic
+    // manifest in cloud storage. If it has a value, the remote_label stored in
+    // the topic properties is used as the "source" label. Otherwise, the
+    // default uuid (all zeros) is used.
+    ss::future<topic_mount_result> mount_topic(
       const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
 
 private:
