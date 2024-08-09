@@ -189,14 +189,14 @@ void error_collector::AddWarning(
 }
 #else
 void error_collector::RecordError(
-  int line, int column, std::string_view message) override {
+  int line, int column, std::string_view message) {
     // Warning level because this is an error in the input, not Redpanda
     // itself.
     vlog(datalake_log.warn, "Protobuf Error {}:{} {}", line, column, message);
 }
 
 void error_collector::RecordWarning(
-  int line, int column, std::string_view message) override {
+  int line, int column, std::string_view message) {
     vlog(datalake_log.warn, "Protobuf Warning {}:{} {}", line, column, message);
 }
 #endif
