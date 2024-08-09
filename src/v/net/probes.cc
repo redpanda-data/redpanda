@@ -58,9 +58,17 @@ void server_probe::setup_metrics(
             "{}: Number of errors when shutting down the connection", proto))),
         sm::make_counter(
           "connections_rejected",
-          [this] { return _connections_rejected; },
+          [this] { return _connections_rejected_open_limit; },
           sm::description(ssx::sformat(
-            "{}: Number of connections rejected for hitting connection limits",
+            "{}: Number of connection attempts rejected for hitting open "
+            "connection count limits",
+            proto))),
+        sm::make_counter(
+          "connections_rejected_rate_limit",
+          [this] { return _connections_rejected_rate_limit; },
+          sm::description(ssx::sformat(
+            "{}: Number of connection attempts rejected for hitting "
+            "connection rate limits",
             proto))),
         sm::make_counter(
           "requests_completed",
@@ -166,7 +174,10 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
       << "connects: " << p._connects << ", "
       << "current connections: " << p._connections << ", "
       << "connection close errors: " << p._connection_close_error << ", "
-      << "connections rejected: " << p._connections_rejected << ", "
+      << "connections rejected (open limit): "
+      << p._connections_rejected_open_limit << ", "
+      << "connections rejected (rate limit): "
+      << p._connections_rejected_rate_limit << ", "
       << "requests received: " << p._requests_received << ", "
       << "requests completed: " << p._requests_completed << ", "
       << "service errors: " << p._service_errors << ", "
@@ -175,7 +186,6 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
       << "corrupted headers: " << p._corrupted_headers << ", "
       << "method not found errors: " << p._method_not_found_errors << ", "
       << "requests blocked by memory: " << p._requests_blocked_memory << ", "
-      << "declined new connections: " << p._declined_new_connections << ", "
       << "connections wait rate: " << p._connections_wait_rate << ", "
       << "produce bad create time: " << p._produce_bad_create_time << ", "
       << "}";
