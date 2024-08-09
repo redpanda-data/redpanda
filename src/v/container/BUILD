@@ -3,9 +3,9 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 redpanda_cc_library(
     name = "intrusive",
     hdrs = [
-        "include/container/intrusive_list_helpers.h",
+        "intrusive_list_helpers.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
     deps = [
         "@boost//:intrusive",
@@ -15,9 +15,9 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "fragmented_vector",
     hdrs = [
-        "include/container/fragmented_vector.h",
+        "fragmented_vector.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -27,9 +27,9 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "chunked_hash_map",
     hdrs = [
-        "include/container/chunked_hash_map.h",
+        "chunked_hash_map.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
     deps = [
         ":fragmented_vector",
@@ -41,18 +41,18 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "interval_set",
     hdrs = [
-        "include/container/interval_set.h",
+        "interval_set.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
     name = "contiguous_range_map",
     hdrs = [
-        "include/container/contiguous_range_map.h",
+        "contiguous_range_map.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
     deps = [
         ":fragmented_vector",
@@ -62,18 +62,18 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "zip",
     hdrs = [
-        "include/container/zip.h",
+        "zip.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
     name = "json",
     hdrs = [
-        "include/container/json.h",
+        "json.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
     deps = [
         ":fragmented_vector",
@@ -84,9 +84,9 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "lw_shared_container",
     hdrs = [
-        "include/container/lw_shared_container.h",
+        "lw_shared_container.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "container",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
