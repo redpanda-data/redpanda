@@ -1,0 +1,69 @@
+FROM ubuntu:jammy AS build
+
+RUN apt update
+RUN apt upgrade -y
+RUN apt install -y git curl python3 cmake ninja-build wget lsb-release software-properties-common gnupg
+RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+
+WORKDIR /opt
+
+RUN git clone --branch llvmorg-16.0.6 --single-branch https://github.com/llvm/llvm-project.git
+
+ENV CC=clang-18
+ENV CXX=clang++-18
+
+
+RUN cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \
+  -DCMAKE_INSTALL_PREFIX=/opt/install \
+  -B /opt/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_BUILD_STATIC=OFF \
+  -DLLVM_ENABLE_PIC=ON \
+  -DLLVM_INCLUDE_TESTS=OFF \
+  -DLLVM_INCLUDE_EXAMPLES=OFF \
+  -DLLVM_INCLUDE_UTILS=OFF \
+  -DLLVM_INCLUDE_DOCS=OFF \
+  -DLLVM_ENABLE_ZLIB=OFF \
+  -DLLVM_ENABLE_ZSTD=OFF \
+  -DLLVM_ENABLE_Z3_SOLVER=OFF \
+  -DLLVM_ENABLE_DIA_SDK=OFF \
+  -DLLVM_ENABLE_LIBEDIT=OFF \
+  -DLLVM_ENABLE_TERMINFO=OFF \
+  -DLLVM_ENABLE_LIBXML2=OFF \
+  -DLLVM_ENABLE_BACKTRACES=OFF \
+  -DLLVM_ENABLE_PROJECTS="clang;lld;lldb;clang-tools-extra;bolt" \
+  -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;compiler-rt" \
+  -DLLVM_USE_LINKER=lld \
+  -DLLVM_BUILD_TOOLS=ON \
+  -DLLVM_ENABLE_PLUGINS=OFF \
+  -DLLDB_ENABLE_CURSES=OFF \
+  -DLLDB_ENABLE_LUA=OFF \
+  -DLLDB_ENABLE_LZMA=OFF \
+  -DLLDB_ENABLE_LIBXML2=OFF \
+  -DLLDB_ENABLE_LIBEDIT=OFF \
+  -DLLVM_BINUTILS_INCDIR=ON \
+  -DLIBCLANG_BUILD_STATIC=ON \
+  -DCLANG_PLUGIN_SUPPORT=OFF \
+  -DCOMPILER_RT_INCLUDE_TESTS=OFF \
+  -DCOMPILER_RT_BUILD_SANITIZERS=ON \
+  -DCOMPILER_RT_ENABLE_IOS=OFF \
+  -DCOMPILER_RT_ENABLE_WATCHOS=OFF \
+  -DCOMPILER_RT_ENABLE_TVOS=OFF \
+  -DLIBCXX_INSTALL_EXPERIMENTAL_LIBRARY=ON \
+  -DLIBCXX_CXX_ABI=libcxxabi \
+  -DLIBCXXABI_USE_LLVM_UNWINDER=OFF \
+  -DLIBCXX_ABI_VERSION=2 \
+  -DLLVM_ENABLE_LIBCXX=ON \
+  -DLLVM_ENABLE_LTO=On \
+  -S /opt/llvm-project/llvm/
+
+RUN ninja -C /opt/build
+
+RUN ninja -C /opt/build install
+
+WORKDIR /opt/install
+
+RUN bash -c 'tar -czvf /opt/llvm-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
+
+FROM scratch AS export
+COPY --from=build /opt/llvm-*.tar.gz .
