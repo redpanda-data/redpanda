@@ -148,6 +148,7 @@
 #include <seastar/util/log.hh>
 
 #include <absl/log/globals.h>
+#include <fmt/format.h>
 #if __has_include(<google/protobuf/runtime_version.h>)
 #include <google/protobuf/runtime_version.h>
 #endif
@@ -430,8 +431,12 @@ int application::run(int ac, char** av) {
     // use endl for explicit flushing
     std::cout << community_msg << std::endl;
 
-    return app.run(ac, av, [this, &app] {
+    std::string cmd_line = fmt::to_string(
+      fmt::join(std::span{av, size_t(ac)}, " "));
+
+    return app.run(ac, av, [this, &app, cmd_line = std::move(cmd_line)] {
         vlog(_log.info, "Redpanda {}", redpanda_version());
+        vlog(_log.info, "Command line: {}", cmd_line);
         struct ::utsname buf;
         ::uname(&buf);
         vlog(
