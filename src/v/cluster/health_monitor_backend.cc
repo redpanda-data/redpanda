@@ -366,9 +366,9 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         ss::this_shard_id(),
         id,
         max_metadata_age(),
-        [timeout](controller_client_protocol client) mutable {
+        [timeout, id](controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request{}, rpc::client_opts(timeout));
+              get_node_health_request(id), rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
       .then([this, id](result<get_node_health_reply> reply) {
