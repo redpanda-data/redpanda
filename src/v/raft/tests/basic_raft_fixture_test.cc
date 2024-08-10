@@ -74,8 +74,16 @@ TEST_F(raft_fixture, test_empty_writes) {
     auto reader = model::make_memory_record_batch_reader(
       std::move(builder).build());
 
-    EXPECT_DEATH(
-      replicate(std::move(reader)).get(), "Assert failure.+Empty batch");
+    // Catch the error when appending.
+    auto res = replicate(std::move(reader)).get();
+    ASSERT_TRUE(res.has_error());
+    ASSERT_EQ(res.error(), errc::leader_append_failed);
+
+    // In this case there are no batches at all so we don't go to storage, and
+    // catch the error in Raft.
+    res = replicate(make_batches({})).get();
+    ASSERT_TRUE(res.has_error());
+    ASSERT_EQ(res.error(), errc::invalid_input_records);
 }
 
 TEST_F_CORO(raft_fixture, test_stuck_append_entries) {
