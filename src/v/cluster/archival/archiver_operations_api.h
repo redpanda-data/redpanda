@@ -270,6 +270,9 @@ public:
     /// Reupload manifest and replicate configuration batch
     virtual ss::future<result<manifest_upload_result>>
     upload_manifest(retry_chain_node&, model::ntp) noexcept = 0;
+
+    virtual ss::future<> start() = 0;
+    virtual ss::future<> stop() = 0;
 };
 
 } // namespace archival

@@ -155,7 +155,10 @@ public:
     std::optional<entry> find_nearest(model::timestamp);
     /// Find entry by file offset (the value may overshoot or find precise
     /// match)
-    std::optional<entry> find_above_size_bytes(size_t distance);
+    /// \param distance is a position inside the segment
+    /// \param max_offset is a largest allowed offset
+    std::optional<entry> find_above_size_bytes(
+      size_t distance, model::offset max_offset = model::offset{});
     /// Find entry by file offset (the value will undershoot or find precise
     /// match)
     std::optional<entry> find_below_size_bytes(size_t distance);

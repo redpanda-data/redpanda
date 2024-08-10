@@ -14,6 +14,7 @@ else()
         retention_strategy_test.cc
         archival_metadata_stm_test.cc
         async_data_uploader_test.cc
+        archiver_operations_impl_test.cc
       DEFINITIONS BOOST_TEST_DYN_LINK
       LIBRARIES
         v::seastar_testing_main
@@ -69,6 +70,7 @@ else()
       SOURCES
         archival_metadata_stm_gtest.cc
         archiver_operations_impl_gtest.cc
+        archiver_scheduler_impl_gtest.cc
       LIBRARIES
         v::raft
         v::raft_fixture

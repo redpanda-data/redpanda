@@ -17,10 +17,13 @@
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cluster/archival/archival_policy.h"
+#include "cluster/archival/archiver_operations_api.h"
+#include "cluster/archival/archiver_scheduler_api.h"
 #include "cluster/archival/probe.h"
 #include "cluster/archival/scrubber.h"
 #include "cluster/archival/types.h"
 #include "cluster/fwd.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -32,6 +35,8 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
+
+#include <chrono>
 
 namespace archival {
 
@@ -141,7 +146,9 @@ public:
       cloud_storage::remote& remote,
       cloud_storage::cache& c,
       cluster::partition& parent,
-      ss::shared_ptr<cloud_storage::async_manifest_view> amv);
+      ss::shared_ptr<cloud_storage::async_manifest_view> amv,
+      ss::shared_ptr<archiver_operations_api> ops = nullptr,
+      ss::shared_ptr<archiver_scheduler_api> sched = nullptr);
 
     /// Spawn background fibers, which depending on the mode (read replica or
     /// not) will either do uploads, or periodically read back the manifest.
@@ -226,36 +233,54 @@ public:
     uint64_t estimate_backlog_size();
 
     /// \brief Probe remote storage and truncate the manifest if needed
+    /// \param rw_fence optional read-write fence
     ss::future<std::optional<cloud_storage::partition_manifest>>
-    maybe_truncate_manifest();
+    maybe_truncate_manifest(
+      std::optional<model::offset> rw_fence = std::nullopt);
 
     /// \brief Perform housekeeping operations.
-    ss::future<> housekeeping();
+    ss::future<std::optional<model::offset>>
+    housekeeping(std::optional<model::offset> rw_fence = std::nullopt);
 
-    /// \brief Advance the start offest for the remote partition
+    /// \brief Advance the start offset for the remote partition
     /// according to the retention policy specified by the partition
     /// configuration. This function does *not* delete any data.
-    ss::future<> apply_retention();
+    /// \param rw_fence optional read-write fence
+    /// \return new read-write fence offset
+    ss::future<std::optional<model::offset>>
+    apply_retention(std::optional<model::offset> rw_fence = std::nullopt);
 
-    /// \brief Remove segments that are no longer queriable by:
+    /// \brief Remove segments that are no longer queryable by:
     /// segments that are below the current start offset and segments
     /// that have been replaced with their compacted equivalent.
-    ss::future<> garbage_collect();
+    /// \param rw_fence optional read-write fence
+    /// \return new read-write fence offset
+    ss::future<std::optional<model::offset>>
+    garbage_collect(std::optional<model::offset> rw_fence = std::nullopt);
 
     /// \brief Advance the archive start offset for the remote partition
     /// according to the retention policy specified by the partition
     /// configuration. This function does *not* delete any data.
-    ss::future<> apply_archive_retention();
+    /// \param rw_fence optional read-write fence
+    /// \return new read-write fence offset
+    ss::future<std::optional<model::offset>> apply_archive_retention(
+      std::optional<model::offset> rw_fence = std::nullopt);
 
     /// \brief Remove segments and manifests below the archive_start_offset.
-    ss::future<> garbage_collect_archive();
+    /// \param rw_fence optional read-write fence
+    /// \return new read-write fence offset
+    ss::future<std::optional<model::offset>> garbage_collect_archive(
+      std::optional<model::offset> rw_fence = std::nullopt);
 
     /// \brief If the size of the manifest exceeds the limit
     /// move some segments into a separate immutable manifest and
     /// upload it to the cloud. After that the archive_start_offset
     /// has to be advanced and segments could be removed from the
     /// STM manifest.
-    ss::future<> apply_spillover();
+    /// \param rw_fence optional read-write fence
+    /// \return new read-write fence offset
+    ss::future<std::optional<model::offset>>
+    apply_spillover(std::optional<model::offset> rw_fence = std::nullopt);
 
     // Request a flush operation of all current local data to cloud storage.
     // This function can be used in combination with wait() to block until the
@@ -376,7 +401,8 @@ public:
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.
-    ss::future<> flush_manifest_clean_offset();
+    ss::future<std::optional<model::offset>> flush_manifest_clean_offset(
+      std::optional<model::offset> rw_fence = std::nullopt);
 
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest(
@@ -575,16 +601,20 @@ private:
     /// where we didn't just upload the manifest, but want to make sure we
     /// will eventually flush projected_manifest_clean_at in case it was
     /// set by some background operation.
-    ss::future<> maybe_flush_manifest_clean_offset();
+    ss::future<std::optional<model::offset>> maybe_flush_manifest_clean_offset(
+      std::optional<model::offset> rw_fence = std::nullopt);
 
     /// While leader, within a particular term, keep trying to upload data
     /// from local storage to remote storage until our term changes or
     /// our abort source fires.
-    ss::future<> upload_until_term_change();
+    ss::future<> upload_until_term_change_legacy();
+    ss::future<> upload_until_term_change(model::offset initial_rw_fence);
 
     /// Outer loop to keep invoking upload_until_term_change until our
     /// abort source fires.
-    ss::future<> upload_until_abort();
+    ss::future<> upload_until_abort(bool legacy_mode);
+
+    bool manifest_upload_required();
 
     /// Periodically try to download and ingest the remote manifest until
     /// our term changes or abort source fires
@@ -661,6 +691,12 @@ private:
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
+
+    // This interface is used by the new background upload loop
+    ss::shared_ptr<archiver_operations_api> _ops;
+    // This object coordinates throttling and backoff in the new
+    // upload loop
+    ss::shared_ptr<archiver_scheduler_api> _sched;
 
     // Ensures that operations on the archival state are only performed by a
     // single driving fiber (archiver loop, housekeeping job, etc) at a time.
@@ -746,6 +782,9 @@ private:
       _manifest_upload_interval;
 
     ss::shared_ptr<cloud_storage::async_manifest_view> _manifest_view;
+
+    config::binding<std::chrono::milliseconds> _initial_backoff;
+    config::binding<std::chrono::milliseconds> _max_backoff;
 
     friend class archiver_fixture;
 };
