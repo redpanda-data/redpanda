@@ -378,14 +378,14 @@ struct start_test_request
 struct get_status_response
   : serde::envelope<
       get_status_response,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     uuid_t id{};
     self_test_status status{};
-    self_test_stage stage{};
     std::vector<self_test_result> results;
+    self_test_stage stage{};
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_status_response& r) {

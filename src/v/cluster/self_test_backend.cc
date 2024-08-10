@@ -207,8 +207,8 @@ get_status_response self_test_backend::start_test(start_test_request req) {
                       _prev_run = get_status_response{
                         .id = id,
                         .status = self_test_status::idle,
-                        .stage = _stage,
-                        .results = std::move(results)};
+                        .results = std::move(results),
+                        .stage = _stage};
                   });
             }).finally([units = std::move(units)] {});
     } else {
