@@ -221,9 +221,9 @@ class SelfTestTest(EndToEndTest):
                                 cloud_storage_enable_remote_read=True,
                                 cloud_storage_enable_remote_write=True))
 
-        #Attempt to run with an unknown test type "pandatest"
-        #and possibly unknown "cloud" test.
-        #The rest of the tests should proceed as normal.
+        # Attempt to run with an unknown test type "pandatest"
+        # and possibly unknown "cloud" test.
+        # The rest of the tests should proceed as normal.
         request_json = {
             'tests': [{
                 'type': 'pandatest'
@@ -236,32 +236,32 @@ class SelfTestTest(EndToEndTest):
             }]
         }
 
-        #Manually invoke self test admin endpoint.
+        # Manually invoke self test admin endpoint.
         self.redpanda._admin._request('POST',
                                       'debug/self_test/start',
                                       json=request_json)
 
-        #Populate list of unknown reports.
+        # Populate list of unknown reports.
         unknown_report_types = ['pandatest']
         redpanda_versions = [
             self.redpanda.get_version_int_tuple(node)
             for node in self.redpanda.nodes
         ]
 
-        #All nodes should have the same version of
-        #Redpanda running.
+        # All nodes should have the same version of
+        # Redpanda running.
         assert len(set(redpanda_versions)) == 1
 
-        #Cloudcheck was introduced in 24.2.1.
-        #Expect that it will be unknown to nodes running
-        #earlier versions of redpanda.
+        # Cloudcheck was introduced in 24.2.1.
+        # Expect that it will be unknown to nodes running
+        # earlier versions of redpanda.
         if redpanda_versions[0] < (24, 2, 1):
             unknown_report_types.append('cloud')
 
         # Wait for self test completion.
         node_reports = self.wait_for_self_test_completion()
 
-        #Assert reports are passing, with the exception of unknown tests.
+        # Assert reports are passing, with the exception of unknown tests.
         reports = flat_map(lambda node: node['results'], node_reports)
         assert len(reports) > 0
         for report in reports:
