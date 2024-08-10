@@ -448,10 +448,13 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
 class get_node_health_request
   : public serde::envelope<
       get_node_health_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
 public:
     using rpc_adl_exempt = std::true_type;
+    get_node_health_request() = default;
+    explicit get_node_health_request(model::node_id target_node_id)
+      : _target_node_id(target_node_id) {}
 
     friend bool
     operator==(const get_node_health_request&, const get_node_health_request&)
@@ -460,9 +463,14 @@ public:
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_request&);
 
-    auto serde_fields() { return std::tie(_filter); }
+    auto serde_fields() { return std::tie(_filter, _target_node_id); }
+    static constexpr model::node_id node_id_not_set{-1};
+
+    model::node_id get_target_node_id() const { return _target_node_id; }
 
 private:
+    // default value for backward compatibility
+    model::node_id _target_node_id = node_id_not_set;
     /**
      * This field is no longer used, as it never was. It was made private on
      * purpose

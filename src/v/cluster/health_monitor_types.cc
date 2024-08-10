@@ -259,8 +259,8 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const get_node_health_request&) {
-    fmt::print(o, "{{}}");
+std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
+    fmt::print(o, "{{target_node_id: {}}}", r.get_target_node_id());
     return o;
 }
 

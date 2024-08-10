@@ -114,6 +114,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::data_migration_already_exists:
     case cluster::errc::data_migration_not_exists:
     case cluster::errc::data_migration_invalid_resources:
+    case cluster::errc::invalid_target_node_id:
         break;
     }
     return error_code::unknown_server_error;
