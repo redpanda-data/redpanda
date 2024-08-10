@@ -5,9 +5,9 @@ package(default_visibility = ["//src/v/cloud_roles:__subpackages__"])
 redpanda_cc_library(
     name = "logger",
     hdrs = [
-        "include/cloud_roles/logger.h",
+        "logger.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "cloud_roles",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -20,9 +20,9 @@ redpanda_cc_library(
         "types.cc",
     ],
     hdrs = [
-        "include/cloud_roles/types.h",
+        "types.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "cloud_roles",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -108,11 +108,11 @@ redpanda_cc_library(
         "refresh_credentials.cc",
     ],
     hdrs = [
-        "include/cloud_roles/apply_credentials.h",
-        "include/cloud_roles/probe.h",
-        "include/cloud_roles/refresh_credentials.h",
+        "apply_credentials.h",
+        "probe.h",
+        "refresh_credentials.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "cloud_roles",
     visibility = ["//visibility:public"],
     deps = [
         ":logger",
