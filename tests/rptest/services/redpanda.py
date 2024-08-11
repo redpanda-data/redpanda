@@ -3009,7 +3009,8 @@ class RedpandaService(RedpandaServiceBase):
                    expect_fail: bool = False,
                    auto_assign_node_id: bool = False,
                    omit_seeds_on_idx_one: bool = True,
-                   skip_readiness_check: bool = False):
+                   skip_readiness_check: bool = False,
+                   node_id_override: int | None = None):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -3026,7 +3027,8 @@ class RedpandaService(RedpandaServiceBase):
                 node,
                 override_cfg_params,
                 auto_assign_node_id=auto_assign_node_id,
-                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
+                omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                node_id_override=node_id_override)
 
         if timeout is None:
             timeout = self.node_ready_timeout_s
@@ -3940,7 +3942,8 @@ class RedpandaService(RedpandaServiceBase):
                              node,
                              override_cfg_params=None,
                              auto_assign_node_id=False,
-                             omit_seeds_on_idx_one=True):
+                             omit_seeds_on_idx_one=True,
+                             node_id_override: int | None = None):
         """
         Write the node config file for a redpanda node: this is the YAML representation
         of Redpanda's `node_config` class.  Distinct from Redpanda's _cluster_ configuration
@@ -3949,7 +3952,11 @@ class RedpandaService(RedpandaServiceBase):
         node_info = {self.idx(n): n for n in self.nodes}
 
         include_seed_servers = True
-        node_id = self.idx(node)
+        if node_id_override:
+            assert auto_assign_node_id == False, "Can not use node id override when auto assigning node ids"
+            node_id = node_id_override
+        else:
+            node_id = self.idx(node)
         if omit_seeds_on_idx_one and node_id == 1:
             include_seed_servers = False
 
@@ -4583,7 +4590,8 @@ class RedpandaService(RedpandaServiceBase):
     def wait_for_controller_snapshot(self,
                                      node,
                                      prev_mtime=0,
-                                     prev_start_offset=0):
+                                     prev_start_offset=0,
+                                     timeout_sec=30):
         def check():
             snap_path = os.path.join(self.DATA_DIR,
                                      'redpanda/controller/0_0/snapshot')
@@ -4603,7 +4611,7 @@ class RedpandaService(RedpandaServiceBase):
             so = controller_status['start_offset']
             return (mtime > prev_mtime and so > prev_start_offset, (mtime, so))
 
-        return wait_until_result(check, timeout_sec=30, backoff_sec=1)
+        return wait_until_result(check, timeout_sec=timeout_sec, backoff_sec=1)
 
     def _get_object_storage_report(self,
                                    tolerate_empty_object_storage=False,
