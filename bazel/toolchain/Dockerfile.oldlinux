@@ -7,7 +7,9 @@ RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 WORKDIR /opt
 
-RUN git clone --branch llvmorg-16.0.6 --single-branch https://github.com/llvm/llvm-project.git
+ARG LLVM_VERSION=17.0.6
+
+RUN git clone --branch llvmorg-${LLVM_VERSION} --single-branch https://github.com/llvm/llvm-project.git
 
 ENV CC=clang-18
 ENV CXX=clang++-18
@@ -63,7 +65,7 @@ RUN ninja -C /opt/build install
 
 WORKDIR /opt/install
 
-RUN bash -c 'tar -czvf /opt/llvm-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
+RUN bash -c 'tar -czvf /opt/llvm-${LLVM_VERSION}-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
 
 FROM scratch AS export
 COPY --from=build /opt/llvm-*.tar.gz .
