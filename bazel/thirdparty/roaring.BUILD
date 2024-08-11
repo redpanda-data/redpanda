@@ -17,6 +17,7 @@ cc_library(
     copts = [
         "-DDISABLE_NEON=1",
         "-DROARING_DISABLE_AVX=1",
+        "-Wno-unused-function",
     ],
     strip_include_prefix = "include",
     visibility = [
