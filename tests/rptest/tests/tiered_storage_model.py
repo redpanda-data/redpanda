@@ -1391,6 +1391,7 @@ class SegmentRolledByTimeout(Expression):
         return [
             LogBasedValidator("SegmentRolledByTimeout_log",
                               "segment.ms applied, new segment start offset",
+                              confidence_threshold=4,
                               execution_stage=TestRunStage.Produce),
         ]
 
