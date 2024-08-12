@@ -499,6 +499,13 @@ struct compatibility_checker {
             }
         }
 
+        for (int i = 0; i < reader->real_oneof_decl_count(); ++i) {
+            auto r = reader->oneof_decl(i);
+            if (!check_compatible(r, writer)) {
+                return false;
+            }
+        }
+
         // check writer fields
         for (int i = 0; i < writer->field_count(); ++i) {
             auto w = writer->field(i);
@@ -523,6 +530,19 @@ struct compatibility_checker {
             }
         }
         return true;
+    }
+
+    bool check_compatible(
+      const pb::OneofDescriptor* reader, const pb::Descriptor* writer) {
+        size_t count = 0;
+        for (int i = 0; i < reader->field_count(); ++i) {
+            auto r = reader->field(i);
+            auto w = writer->FindFieldByNumber(r->number());
+            if (w && !w->real_containing_oneof()) {
+                ++count;
+            }
+        }
+        return count <= 1;
     }
 
     bool check_compatible(
