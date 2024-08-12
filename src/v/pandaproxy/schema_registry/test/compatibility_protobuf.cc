@@ -744,3 +744,17 @@ SEASTAR_THREAD_TEST_CASE(
       R"(syntax = "proto3"; message Simple { int32 id = 1; int32 new_id = 2; })",
       R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } })"));
 }
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_oneof_field_removed) {
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; } })",
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_oneof_fully_removed) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { int32 other = 3; })",
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } int32 other = 3; })"));
+}
