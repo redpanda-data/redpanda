@@ -1,10 +1,10 @@
 common --registry=https://bcr.bazel.build
-common --extra_toolchains=@llvm_16_toolchain//:all
+common --extra_toolchains=@llvm_17_toolchain//:all
 
 common --@toolchains_llvm//toolchain/config:libunwind=False
 build --linkopt --unwindlib=libgcc
 
-common:clang-17 --extra_toolchains=@llvm_17_toolchain//:all
+common:clang-16 --extra_toolchains=@llvm_16_toolchain//:all
 
 common:clang-18 --extra_toolchains=@llvm_18_toolchain//:all
 
