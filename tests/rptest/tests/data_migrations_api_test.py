@@ -68,13 +68,28 @@ class DataMigrationsApiTest(RedpandaTest):
 
     def create_and_wait(self, migration: InboundDataMigration
                         | OutboundDataMigration):
-        reply = self.admin.create_data_migration(migration).json()
-        self.logger.info(f"create migration reply: {reply}")
+        def migration_id_if_exists():
+            for n in self.redpanda.nodes:
+                for m in self.admin.list_data_migrations(node).json():
+                    if m == migration:
+                        return m[id]
+            return None
+
+        try:
+            reply = self.admin.create_data_migration(migration).json()
+            self.logger.info(f"create migration reply: {reply}")
+            migration_id = reply["id"]
+        except requests.exceptions.HTTPError as e:
+            maybe_id = migration_id_if_exists()
+            if maybe_id is None:
+                raise
+            migration_id = maybe_id
+            self.logger.info(f"create migration failed "
+                             f"but migration {migration_id} present: {e}")
 
         def migration_is_present(id: int):
             return self.on_all_live_nodes(id, lambda m: True)
 
-        migration_id = reply["id"]
         wait_until(
             lambda: migration_is_present(migration_id), 30, 2,
             f"Expected migration with id {migration_id} is not present")
