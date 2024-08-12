@@ -354,36 +354,34 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         fake_ts_step = self.producer_config.get('fake_timestamp_step_ms', 1000)
         num_messages = self.producer_config.get('msg_count', 10000)
         num_produce_runs = 0
-        done = 0
-        total = 0
-        failed_validators = []
+        # create a map with validators list to keep track as they succeed: this is used to not re-run them
+        # key: validator. value: True if it succeeded
+        validators = {
+            v: False
+            for v in test_case.validators()
+            if v.need_to_run(TestRunStage.Produce)
+        }
         for _ in range(0, MAX_RETRIES):
             lagging_validators = []
             self.logger.debug(f"Producer config: {self.producer_config}")
             self._oneshot_produce()
             num_produce_runs += 1
-            done = 0
-            total = 0
-            for v in test_case.validators():
-                if v.need_to_run(TestRunStage.Produce):
+            for v in validators.keys():
+                if not validators[v]:
                     self.logger.debug(
                         f"Produce stage validator {v.name()} has result {v.get_result()} with {v.get_confidence()} confidence"
                     )
-                    total += 1
                     success = v.get_result() and v.get_confidence(
                     ) > CONFIDENCE_THRESHOLD
                     if success:
-                        done += 1
-                    else:
-                        lagging_validators.append(v.name())
+                        validators[v] = True
             # Stop if all validators are confident enough
-            if done == total:
+            if all(validators.values()):
                 break
             else:
                 self.logger.info(
-                    f"Produce delayed by lagging validators: {lagging_validators}"
+                    f"Produce delayed by lagging validators: {[v.name() for v, done in validators.items() if not done]}"
                 )
-                failed_validators = lagging_validators
                 time.sleep(5)
 
             if fake_ts_enabled:
@@ -393,7 +391,9 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             # Apply other inputs
             self.run_stage_inputs(TestRunStage.Produce, test_case)
 
-        assert done == total, f"Failed to produce data after {num_produce_runs} runs, {failed_validators} validators failed"
+        assert all(
+            validators.values()
+        ), f"Failed to produce data after {num_produce_runs} runs, {[v.name() for v, done in validators.items() if not done]} validators failed"
         self._build_timequery_map(num_produce_runs, original_fake_ts)
 
     def clean_up_cache(self):
