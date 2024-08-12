@@ -211,3 +211,6 @@ class DataMigrationsApiTest(RedpandaTest):
             # admin.execute_data_migration_action(out_migration_id,
             #                                     MigrationAction.cancel)
             # self.wait_for_migration_state(out_migration_id, 'canceling')
+        # todo: fix rp_storage_tool to use overridden topic names
+        self.redpanda.si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest", "missing_segments"})
