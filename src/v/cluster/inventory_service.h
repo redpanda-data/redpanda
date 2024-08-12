@@ -85,6 +85,13 @@ public:
     bool can_use_inventory_data() const { return _can_use_inventory_data; }
 
 private:
+    /// Attempts to create inventory configuration (which schedules the report
+    /// to be generated). Returns true if the config was created. Note that this
+    /// also returns true if the config was created by another node, the return
+    /// value lets us know if the inventory schedule creation should be retried
+    /// later.
+    ss::future<bool> maybe_create_inventory_config();
+
     /// Checks for the existence of an inventory report on a set frequency. If a
     /// report is found, it's date is checked to compare with the last date
     /// processed by this node. If the date is newer (or we have not processed
@@ -121,7 +128,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtc;
-    bool _try_creating_inv_config{false};
+    bool _retry_creating_inv_config{false};
 
     ss::timer<ss::lowres_clock> _report_check_timer;
     std::optional<cloud_storage::inventory::report_datetime> _last_fetched;

@@ -163,26 +163,9 @@ ss::future<> inventory_service::start() {
       _should_create_report_config,
       _inventory_report_check_interval);
 
-    if (_should_create_report_config) {
-        vlog(cst_log.info, "Attempting to create inventory configuration");
-        auto rtc = make_rtc(_as);
-        if (const auto res = co_await _ops.maybe_create_inventory_configuration(
-              _remote->ref(), rtc);
-            res.has_error()) {
-            vlog(
-              cst_log.warn,
-              "Inventory configuration creation failed, will retry later",
-              res.error());
-            // If we failed creating inventory, try again later (on next expiry
-            // of _inventory_report_check_interval). If another node succeeded
-            // in creating the inventory, this is not counted as a failure.
-            _try_creating_inv_config = true;
-        } else {
-            vlog(
-              cst_log.info,
-              "Inventory configuration creation result: {}",
-              res.value());
-        }
+    const auto config_created = co_await maybe_create_inventory_config();
+    if (!config_created && _should_create_report_config) {
+        _retry_creating_inv_config = true;
     }
 
     _report_check_timer.set_callback([this] {
@@ -200,22 +183,39 @@ ss::future<> inventory_service::start() {
     _report_check_timer.arm_periodic(_inventory_report_check_interval);
 }
 
-ss::future<> inventory_service::check_for_current_inventory() {
-    auto h = _gate.hold();
-    if (_should_create_report_config && _try_creating_inv_config) {
+ss::future<bool> inventory_service::maybe_create_inventory_config() {
+    bool config_created{false};
+    if (_should_create_report_config) {
+        vlog(cst_log.info, "Attempting to create inventory configuration");
         auto rtc = make_rtc(_as);
-        auto res = co_await _ops.maybe_create_inventory_configuration(
-          _remote->ref(), rtc);
-
-        if (res.has_value()) {
-            _try_creating_inv_config = false;
-        }
-
-        if (res.has_error()) {
+        if (const auto res = co_await _ops.maybe_create_inventory_configuration(
+              _remote->ref(), rtc);
+            res.has_error()) {
             vlog(
               cst_log.warn,
               "Inventory configuration creation failed, will retry later",
               res.error());
+        } else {
+            // If another node succeeded in creating the inventory, this is not
+            // counted as a failure. The end goal is that the
+            // configuration/schedule should exist by the time this call is
+            // finished.
+            vlog(
+              cst_log.info,
+              "Inventory configuration creation result: {}",
+              res.value());
+            config_created = true;
+        }
+    }
+    co_return config_created;
+}
+
+ss::future<> inventory_service::check_for_current_inventory() {
+    auto h = _gate.hold();
+    if (_retry_creating_inv_config) {
+        const auto config_created = co_await maybe_create_inventory_config();
+        if (config_created) {
+            _retry_creating_inv_config = false;
         }
 
         // We either created the inventory just now, or failed again. In either
