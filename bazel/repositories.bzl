@@ -19,9 +19,9 @@ def data_dependency():
     http_archive(
         name = "avro",
         build_file = "//bazel/thirdparty:avro.BUILD",
-        sha256 = "72919e8a512ed7c57ea77bbd2a47ceab0dab123a40767309b4d22350cf2ed960",
-        strip_prefix = "avro-121d2a86cc43e5d4037d265f221aa3b64b9db0de",
-        url = "https://github.com/redpanda-data/avro/archive/121d2a86cc43e5d4037d265f221aa3b64b9db0de.tar.gz",
+        sha256 = "a95c1b9517493d2e09d62a428ba7b4295c5cdb76eb07a0b2466f64a268486387",
+        strip_prefix = "avro-b3d7efe3d8bc15e7a19ee349c51e14f8795b1515",
+        url = "https://github.com/redpanda-data/avro/archive/b3d7efe3d8bc15e7a19ee349c51e14f8795b1515.tar.gz",
     )
 
     http_archive(
