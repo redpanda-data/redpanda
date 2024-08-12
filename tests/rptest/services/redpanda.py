@@ -3171,29 +3171,37 @@ class RedpandaService(RedpandaServiceBase):
         capture detailed memory usage for the top 3 memory-consuming processes.
         """
 
-        self.logger.debug(f"Gathering process and port usage information on {node.name}...")
+        self.logger.debug(
+            f"Gathering process and port usage information on {node.name}...")
 
         # Capture general process information
         process_lines = []
-        for line in node.account.ssh_capture("ps aux --sort=-%mem", timeout_sec=30):
+        for line in node.account.ssh_capture("ps aux --sort=-%mem",
+                                             timeout_sec=30):
             process_lines.append(line.strip())
             self.logger.debug(line.strip())
 
         # Capture network information
-        for line in node.account.ssh_capture("netstat -panelot", timeout_sec=30):
+        for line in node.account.ssh_capture("netstat -panelot",
+                                             timeout_sec=30):
             self.logger.debug(line.strip())
 
         # Analyze memory usage in detail for the top 3 processes
-        self.logger.debug("Gathering detailed memory usage for the top 3 memory-consuming processes...")
-        for process_line in process_lines[1:4]:  # Skip header, get top 3 processes
+        self.logger.debug(
+            "Gathering detailed memory usage for the top 3 memory-consuming processes..."
+        )
+        for process_line in process_lines[
+                1:4]:  # Skip header, get top 3 processes
             fields = process_line.split()
             pid = fields[1]
             mem_usage = fields[3]
-            self.logger.debug(f"Process PID: {pid}, Memory Usage: {mem_usage}%")
+            self.logger.debug(
+                f"Process PID: {pid}, Memory Usage: {mem_usage}%")
             self.logger.debug(f"Memory map for PID {pid}:")
-            for pmap_line in node.account.ssh_capture(f"pmap {pid}", timeout_sec=30):
+            for pmap_line in node.account.ssh_capture(f"pmap {pid}",
+                                                      timeout_sec=30):
                 self.logger.debug(pmap_line.strip())
-        
+
     def start_service(self, node, start):
         # Maybe the service collides with something that wasn't cleaned up
         # properly: let's peek at what's going on on the node before starting it.
