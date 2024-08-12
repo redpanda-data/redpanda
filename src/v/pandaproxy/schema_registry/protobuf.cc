@@ -499,6 +499,13 @@ struct compatibility_checker {
             }
         }
 
+        for (int i = 0; i < writer->real_oneof_decl_count(); ++i) {
+            auto w = writer->oneof_decl(i);
+            if (!check_compatible(reader, w)) {
+                return false;
+            }
+        }
+
         for (int i = 0; i < reader->real_oneof_decl_count(); ++i) {
             auto r = reader->oneof_decl(i);
             if (!check_compatible(r, writer)) {
@@ -526,6 +533,25 @@ struct compatibility_checker {
             auto w = writer->FindFieldByNumber(number);
             // A writer may ignore a reader field iff it is not `required`
             if ((!w || !w->is_required()) && r->is_required()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool check_compatible(
+      const pb::Descriptor* reader, const pb::OneofDescriptor* writer) {
+        // If the oneof in question doesn't appear in the reader descriptor,
+        // then we don't need to account for any difference in fields.
+        if (!reader->FindOneofByName(writer->name())) {
+            return true;
+        }
+
+        for (int i = 0; i < writer->field_count(); ++i) {
+            auto w = writer->field(i);
+            auto r = reader->FindFieldByNumber(w->number());
+
+            if (!r || !r->real_containing_oneof()) {
                 return false;
             }
         }
