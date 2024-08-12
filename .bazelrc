@@ -4,17 +4,22 @@ common --extra_toolchains=@llvm_17_toolchain//:all
 common --@toolchains_llvm//toolchain/config:libunwind=False
 build --linkopt --unwindlib=libgcc
 
-common:clang-16 --extra_toolchains=@llvm_16_toolchain//:all
-
 common:clang-18 --extra_toolchains=@llvm_18_toolchain//:all
 
-build:system-clang-16 --extra_toolchains=@bazel_tools//tools/cpp:toolchain
+build:system-clang --extra_toolchains=@bazel_tools//tools/cpp:toolchain
+build:system-clang --action_env=BAZEL_COMPILER=clang
+build:system-clang --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
+build:system-clang --linkopt -fuse-ld=lld
 # use a compiler name that doesn't symlink to ccache
+build:system-clang-16 --config=system-clang
 build:system-clang-16 --action_env=CC=clang-16 --host_action_env=CC=clang-16
 build:system-clang-16 --action_env=CXX=clang++-16 --host_action_env=CXX=clang++-16
-build:system-clang-16 --action_env=BAZEL_COMPILER=clang
-build:system-clang-16 --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
-build:system-clang-16 --linkopt -fuse-ld=lld
+build:system-clang-17 --config=system-clang
+build:system-clang-17 --action_env=CC=clang-17 --host_action_env=CC=clang-17
+build:system-clang-17 --action_env=CXX=clang++-17 --host_action_env=CXX=clang++-17
+build:system-clang-18 --config=system-clang
+build:system-clang-18 --action_env=CC=clang-18 --host_action_env=CC=clang-18
+build:system-clang-18 --action_env=CXX=clang++-18 --host_action_env=CXX=clang++-18
 
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1065
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1186#issuecomment-2053550487
