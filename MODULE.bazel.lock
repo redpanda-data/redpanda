@@ -4450,11 +4450,41 @@
     "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "y9h5L2NtWbogyWSOJgqnUaU50MTPWAW+waelXSirMVg=",
-        "usagesDigest": "8e3+PTXNdvB774oWzBc7FRkYPdod+1JK+fRft46rm+s=",
+        "usagesDigest": "ep+hByDRZ4KDWtg8DB2GlZjTxKmXxmCbRahBPbVXtiY=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
+          "llvm_17_toolchain_llvm": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "llvm",
+            "attributes": {
+              "alternative_llvm_sources": [],
+              "auth_patterns": {},
+              "distribution": "auto",
+              "exec_arch": "",
+              "exec_os": "",
+              "llvm_mirror": "",
+              "llvm_version": "",
+              "llvm_versions": {
+                "": "17.0.6"
+              },
+              "netrc": "",
+              "sha256": {
+                "linux-aarch64": "259da3d332e2080ecfe5a059dedb8f485f0b20e6ed2e3880bc5a5b57084f4036",
+                "linux-x86_64": "2c06b2acb362a10b9e7ac3b0aebdccd710a5329d9c7ee46c10889fdf00a41b9f"
+              },
+              "strip_prefix": {},
+              "urls": {
+                "linux-aarch64": [
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"
+                ],
+                "linux-x86_64": [
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"
+                ]
+              }
+            }
+          },
           "llvm_18_toolchain_llvm": {
             "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
             "ruleClassName": "llvm",
@@ -4471,7 +4501,7 @@
               },
               "netrc": "",
               "sha256": {
-                "linux-aarch64": "",
+                "linux-aarch64": "8fec19b8073c83c5b46f97f09989ff280141ef8dc63abaf0f333e02638f6d487",
                 "linux-x86_64": "d87e46da754fa4dd08ff5caa9f2676da670abbb8a83258117b7360401a0dc558"
               },
               "strip_prefix": {},
@@ -4483,6 +4513,37 @@
                   "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18-ubuntu-22.04-x86_64.tar.gz"
                 ]
               }
+            }
+          },
+          "llvm_17_toolchain": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "toolchain",
+            "attributes": {
+              "absolute_paths": false,
+              "archive_flags": {},
+              "compile_flags": {},
+              "coverage_compile_flags": {},
+              "coverage_link_flags": {},
+              "cxx_builtin_include_directories": {},
+              "cxx_flags": {},
+              "cxx_standard": {
+                "": "c++20"
+              },
+              "dbg_compile_flags": {},
+              "exec_arch": "",
+              "exec_os": "",
+              "link_flags": {},
+              "link_libs": {},
+              "llvm_versions": {
+                "": "17.0.6"
+              },
+              "opt_compile_flags": {},
+              "opt_link_flags": {},
+              "stdlib": {},
+              "target_settings": {},
+              "unfiltered_compile_flags": {},
+              "toolchain_roots": {},
+              "sysroot": {}
             }
           },
           "llvm_16_toolchain_llvm": {
