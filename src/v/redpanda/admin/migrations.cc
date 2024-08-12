@@ -60,6 +60,7 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
         if (inbound_t.alias) {
             inbound_tp.alias = to_admin_type(*inbound_t.alias);
         }
+        migration.topics.push(inbound_tp);
     }
     for (auto& cg : idm.groups) {
         migration.consumer_groups.push(cg);
