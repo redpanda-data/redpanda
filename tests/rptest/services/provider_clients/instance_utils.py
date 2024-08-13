@@ -110,12 +110,18 @@ class ProviderInstanceUtils():
     def _get_instance_type(self, provider, metadata) -> str:
         # Use default for any provider
         instance_type = "default"
-        if provider == 'AWS' and 'instance-type' in metadata:
-            instance_type = metadata['instance-type']
-        elif provider == 'GCP' and 'machine-type' in metadata:
-            # Cut the type name from the variable
-            # Example content: 'projects/606234194099/machineTypes/n2-highmem-4'
-            instance_type = metadata['machine-type'].split('/')[-1]
+        if provider == 'AWS':
+            if 'instance-type' in metadata:
+                instance_type = metadata['instance-type']
+            else:
+                return "default"
+        elif provider == 'GCP':
+            if 'machine-type' in metadata:
+                # Cut the type name from the variable
+                # Example content: 'projects/606234194099/machineTypes/n2-highmem-4'
+                instance_type = metadata['machine-type'].split('/')[-1]
+            else:
+                return "default"
         else:
             raise RuntimeError(f"Unsupported provider: '{provider}'")
         return instance_type
@@ -126,11 +132,19 @@ class ProviderInstanceUtils():
         if not provider:
             # No provider, exit right away with default specs
             return instance_specs["default"]
+        else:
+            provider = provider.upper()
 
         # Getting instance metadata
         self.logger.info("Queriyng metadata for flink instance "
                          f"'{node.account.hostname}'")
         _meta = self.get_metadata_for_node(provider, node)
+        # handle errors
+        # Occasionally, metadata returned as
+        # b'{":%20401,%20\'Unauthorized\'": ""}'
+        if len(_meta.keys()) < 2:
+            self.logger.debug("Failed to get metadata. Using 'default' specs")
+            return instance_specs["default"]
         # Get instance type from meta
         instance_type = self._get_instance_type(provider, _meta)
         # If available, get specs
