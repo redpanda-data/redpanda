@@ -59,7 +59,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/pandaproxy",
-        "//src/v/reflection:adl",
+        "//src/v/reflection:type_traits",
         "//src/v/ssx:thread_worker",
         "//src/v/storage:parser_utils",
         "//src/v/strings:utf8",

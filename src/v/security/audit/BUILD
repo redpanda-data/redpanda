@@ -85,7 +85,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/net",
-        "//src/v/reflection:adl",
+        "//src/v/reflection:type_traits",
         "//src/v/security",
         "//src/v/security:request_auth",
         "//src/v/ssx:semaphore",
