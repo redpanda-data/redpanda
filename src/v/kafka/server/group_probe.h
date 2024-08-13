@@ -46,8 +46,8 @@ public:
         auto topic_label = sm::label("topic");
         auto partition_label = sm::label("partition");
         std::vector<sm::label_instance> labels{
-          group_label(group_id()),
-          topic_label(tp.topic()),
+          group_label(prometheus_sanitize::metrics_name(group_id())),
+          topic_label(prometheus_sanitize::metrics_name(tp.topic())),
           partition_label(tp.partition())};
         _metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:group"),
@@ -70,8 +70,8 @@ public:
         auto topic_label = metrics::make_namespaced_label("topic");
         auto partition_label = metrics::make_namespaced_label("partition");
         std::vector<sm::label_instance> labels{
-          group_label(group_id()),
-          topic_label(tp.topic()),
+          group_label(prometheus_sanitize::metrics_name(group_id())),
+          topic_label(prometheus_sanitize::metrics_name(tp.topic())),
           partition_label(tp.partition())};
 
         _public_metrics.add_group(
@@ -121,7 +121,8 @@ public:
 
         auto group_label = metrics::make_namespaced_label("group");
 
-        std::vector<sm::label_instance> labels{group_label(group_id())};
+        std::vector<sm::label_instance> labels{
+          group_label(prometheus_sanitize::metrics_name(group_id()))};
 
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:consumer:group"),

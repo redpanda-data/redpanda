@@ -280,8 +280,8 @@ class ClusterMetricsTest(RedpandaTest):
             topics_info = RpkTool(self.redpanda).list_topics()
             raise e
 
-    @cluster(num_nodes=3)
-    def max_offset_matches_committed_group_offset_test(self):
+    def _max_offset_matches_committed_group_offset_base(
+            self, group_name, prometheus_group_name):
         rpk = RpkTool(self.redpanda)
 
         topic = "topic"
@@ -293,7 +293,7 @@ class ClusterMetricsTest(RedpandaTest):
             rpk.produce(topic, "k", "v")
 
         # consume those messages with a group
-        group = "group"
+        group = group_name
         rpk.consume(topic, n=count, group=group)
 
         def check():
@@ -307,7 +307,7 @@ class ClusterMetricsTest(RedpandaTest):
                 "group_committed_offset",
                 metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
             samples = samples.label_filter({
-                "redpanda_group": group,
+                "redpanda_group": prometheus_group_name,
                 "redpanda_topic": topic
             })
             self.logger.debug(
@@ -320,3 +320,13 @@ class ClusterMetricsTest(RedpandaTest):
             return max_offset == group_offset == count
 
         wait_until(check, timeout_sec=5, backoff_sec=0.5, retry_on_exc=True)
+
+    @cluster(num_nodes=3)
+    def max_offset_matches_committed_group_offset_test(self):
+        self._max_offset_matches_committed_group_offset_base(
+            group_name="group", prometheus_group_name="group")
+
+    @cluster(num_nodes=3)
+    def test_group_metrics_are_sanitized(self):
+        self._max_offset_matches_committed_group_offset_base(
+            group_name="group\"", prometheus_group_name="group_")
