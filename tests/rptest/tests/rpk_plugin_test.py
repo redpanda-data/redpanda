@@ -81,3 +81,35 @@ class RpkPluginTest(RedpandaTest):
         # Stripped:
         assert not find_flag(out["flags"], "-X", "brokers=127.0.0.1:9092")
         assert not find_flag(out["flags"], "--verbose", "")
+
+    @ok_to_fail_fips
+    @cluster(num_nodes=1)
+    def test_non_managed_plugin(self):
+        assert ".rpk.ac-pluginmock" in self._rpk.plugin_list()
+
+        def find_flag(flags, name, value):
+            for flag in flags:
+                if flag["name"] == name and flag["value"] == value:
+                    return True
+            return False
+
+        arg1 = "run"  # This is part of the command, we don't expect it in the output.
+        arg2 = "something"  # This can be anything, we expect it in the output.
+
+        # Flag for the command
+        flag1 = "-c"
+        val1 = "config.yaml"
+        # rpk flag
+        flag2 = "-X"
+        val2 = "tls.insecure_skip_verify=true"
+
+        out = self._rpk.run_mock_plugin([arg1, arg2, flag1, val1, flag2, val2])
+
+        assert arg1 not in out["args"]
+        assert arg2 in out["args"]
+
+        # Included:
+        assert find_flag(out["flags"], flag1, val1)
+
+        # Stripped:
+        assert not find_flag(out["flags"], flag2, val2)

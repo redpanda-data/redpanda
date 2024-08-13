@@ -197,6 +197,14 @@ RUN /byoc-mock && rm /byoc-mock
 
 #################################
 
+FROM golang AS plugin-mock
+
+COPY --chown=0:0 --chmod=0755 tests/go/plugin-mock /opt/redpanda-tests/go/plugin-mock
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/plugin-mock /
+RUN /plugin-mock && rm /plugin-mock
+
+#################################
+
 FROM base AS keycloak
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/keycloak /
@@ -312,6 +320,7 @@ COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
 COPY --from=kcl /usr/local/bin/kcl /usr/local/bin/
 COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
 COPY --from=byoc-mock /opt/redpanda-tests/go/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
+COPY --from=plugin-mock /opt/redpanda-tests/go/plugin-mock/.rpk.ac-pluginmock /root/.local/bin/.rpk.ac-pluginmock
 COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
 COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
 COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/

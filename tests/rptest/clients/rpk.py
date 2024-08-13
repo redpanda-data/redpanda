@@ -1973,3 +1973,8 @@ class RpkTool:
         out = self._execute(cmd)
 
         return json.loads(out) if output_format == "json" else out
+
+    def run_mock_plugin(self, cmd):
+        cmd = [self._rpk_binary(), "pluginmock"] + cmd
+        out = self._execute(cmd)
+        return json.loads(out)
