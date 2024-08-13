@@ -555,18 +555,85 @@ struct compatibility_checker {
         if (!_seen_descriptors.insert(reader).second) {
             return true;
         }
-        for (int i = 0; i < writer->field_count(); ++i) {
-            if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
-                continue;
+
+        for (int i = 0; i < writer->nested_type_count(); ++i) {
+            auto w = writer->nested_type(i);
+            auto r = reader->FindNestedTypeByName(w->full_name());
+            if (!r || !check_compatible(r, w)) {
+                return false;
             }
-            int number = writer->field(i)->number();
+        }
+
+        for (int i = 0; i < writer->real_oneof_decl_count(); ++i) {
+            auto w = writer->oneof_decl(i);
+            if (!check_compatible(reader, w)) {
+                return false;
+            }
+        }
+
+        for (int i = 0; i < reader->real_oneof_decl_count(); ++i) {
+            auto r = reader->oneof_decl(i);
+            if (!check_compatible(r, writer)) {
+                return false;
+            }
+        }
+
+        // check writer fields
+        for (int i = 0; i < writer->field_count(); ++i) {
+            auto w = writer->field(i);
+            int number = w->number();
             auto r = reader->FindFieldByNumber(number);
-            // A reader may ignore a writer field
-            if (r && !check_compatible(r, writer->field(i))) {
+            // A reader may ignore a writer field iff it is not `required`
+            if (!r && w->is_required()) {
+                return false;
+            } else if (r && !check_compatible(r, w)) {
+                return false;
+            }
+        }
+
+        // check reader required fields
+        for (int i = 0; i < reader->field_count(); ++i) {
+            auto r = reader->field(i);
+            int number = r->number();
+            auto w = writer->FindFieldByNumber(number);
+            // A writer may ignore a reader field iff it is not `required`
+            if ((!w || !w->is_required()) && r->is_required()) {
                 return false;
             }
         }
         return true;
+    }
+
+    bool check_compatible(
+      const pb::Descriptor* reader, const pb::OneofDescriptor* writer) {
+        // If the oneof in question doesn't appear in the reader descriptor,
+        // then we don't need to account for any difference in fields.
+        if (!reader->FindOneofByName(writer->name())) {
+            return true;
+        }
+
+        for (int i = 0; i < writer->field_count(); ++i) {
+            auto w = writer->field(i);
+            auto r = reader->FindFieldByNumber(w->number());
+
+            if (!r || !r->real_containing_oneof()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool check_compatible(
+      const pb::OneofDescriptor* reader, const pb::Descriptor* writer) {
+        size_t count = 0;
+        for (int i = 0; i < reader->field_count(); ++i) {
+            auto r = reader->field(i);
+            auto w = writer->FindFieldByNumber(r->number());
+            if (w && !w->real_containing_oneof()) {
+                ++count;
+            }
+        }
+        return count <= 1;
     }
 
     bool check_compatible(
@@ -578,9 +645,16 @@ struct compatibility_checker {
                                     == pb::FieldDescriptor::Type::TYPE_MESSAGE
                                   || reader->type()
                                        == pb::FieldDescriptor::Type::TYPE_GROUP;
-            return type_is_compat
-                   && check_compatible(
-                     reader->message_type(), writer->message_type());
+
+            if (
+              !type_is_compat
+              || reader->message_type()->name()
+                   != writer->message_type()->name()) {
+                return false;
+            } else {
+                return check_compatible(
+                  reader->message_type(), writer->message_type());
+            }
         }
         case pb::FieldDescriptor::Type::TYPE_FLOAT:
         case pb::FieldDescriptor::Type::TYPE_DOUBLE:
