@@ -7,11 +7,14 @@ RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 WORKDIR /opt
 
-RUN git clone --branch llvmorg-16.0.6 --single-branch https://github.com/llvm/llvm-project.git
+ARG LLVM_VERSION=17.0.6
+ARG MAX_LINKER_JOBS=0
+ARG MAX_COMPILER_JOBS=0
+
+RUN git clone --branch llvmorg-${LLVM_VERSION} --single-branch https://github.com/llvm/llvm-project.git
 
 ENV CC=clang-18
 ENV CXX=clang++-18
-
 
 RUN cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \
   -DCMAKE_INSTALL_PREFIX=/opt/install \
@@ -52,8 +55,11 @@ RUN cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \
   -DLIBCXX_INSTALL_EXPERIMENTAL_LIBRARY=ON \
   -DLIBCXX_CXX_ABI=libcxxabi \
   -DLIBCXXABI_USE_LLVM_UNWINDER=OFF \
+  -DLLVM_PARALLEL_COMPILE_JOBS=${MAX_COMPILER_JOBS} \
+  -DLLVM_PARALLEL_LINK_JOBS=${MAX_LINKER_JOBS} \
   -DLIBCXX_ABI_VERSION=2 \
   -DLLVM_ENABLE_LIBCXX=ON \
+  -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
   -DLLVM_ENABLE_LTO=On \
   -S /opt/llvm-project/llvm/
 
@@ -63,7 +69,7 @@ RUN ninja -C /opt/build install
 
 WORKDIR /opt/install
 
-RUN bash -c 'tar -czvf /opt/llvm-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
+RUN bash -c 'tar -czvf /opt/llvm-${LLVM_VERSION}-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
 
 FROM scratch AS export
 COPY --from=build /opt/llvm-*.tar.gz .

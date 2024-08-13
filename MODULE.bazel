@@ -88,6 +88,60 @@ use_repo(non_module_dependencies, "wasmtime")
 use_repo(non_module_dependencies, "xxhash")
 use_repo(non_module_dependencies, "xz")
 
+bazel_dep(name = "toolchains_llvm", version = "1.1.2")
+git_override(
+    module_name = "toolchains_llvm",
+    commit = "a7ac0ad3e4ce01f5390e7413c4e06ac4baf1807d",
+    remote = "https://github.com/mmaslankaprv/toolchains_llvm",
+)
+
+# ====================================
+# LLVM toolchains
+# ====================================
+
+# NOTE: We build our toolchains on ubuntu:jammy so you're going to need a distro at least that old.
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+
+CXX_STANDARD = "c++20"
+
+llvm.toolchain(
+    name = "llvm_17_toolchain",
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_versions = {
+        "": "17.0.6",
+    },
+    sha256 = {
+        "linux-aarch64": "259da3d332e2080ecfe5a059dedb8f485f0b20e6ed2e3880bc5a5b57084f4036",
+        "linux-x86_64": "2c06b2acb362a10b9e7ac3b0aebdccd710a5329d9c7ee46c10889fdf00a41b9f",
+    },
+    urls = {
+        "linux-aarch64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"],
+        "linux-x86_64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"],
+    },
+)
+use_repo(llvm, "llvm_17_toolchain", "llvm_17_toolchain_llvm")
+
+register_toolchains("@llvm_17_toolchain//:all")
+
+llvm.toolchain(
+    name = "llvm_18_toolchain",
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_versions = {
+        "": "18.1.8",
+    },
+    sha256 = {
+        "linux-aarch64": "95223a9fd35a2cfea2582b34519bbf65ff6bed498a378eb545a9d4fb8ee5a832",
+        "linux-x86_64": "f79565afd6f5d270c10a11cbe4d4b59ecf807df29051af2b479daf4524aa9c73",
+    },
+    urls = {
+        "linux-aarch64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18.1.8-ubuntu-22.04-aarch64.tar.gz"],
+        "linux-x86_64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18.1.8-ubuntu-22.04-x86_64.tar.gz"],
+    },
+)
+use_repo(llvm, "llvm_18_toolchain", "llvm_18_toolchain_llvm")
+
+register_toolchains("@llvm_18_toolchain//:all")
+
 # currently the only go code built with bazel is the kafka-request-generator
 # that is used in tests. if we start building other things, such as rpk, then it
 # may be worth generating build files with gazelle. explicitly listing the one
