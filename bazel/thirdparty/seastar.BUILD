@@ -581,6 +581,9 @@ cc_library(
     }) + select({
         ":use_openssl": ["SEASTAR_WITH_TLS_OSSL"],
         "//conditions:default": [],
+    }) + select({
+        ":with_debug": ["SEASTAR_DEBUG"],
+        "//conditions:default": [],
     }),
     includes = [
         "include",
@@ -608,9 +611,6 @@ cc_library(
         "//conditions:default": [],
     }) + select({
         ":use_system_allocator": ["SEASTAR_DEFAULT_ALLOCATOR"],
-        "//conditions:default": [],
-    }) + select({
-        ":with_debug": ["SEASTAR_DEBUG"],
         "//conditions:default": [],
     }) + select({
         ":with_shuffle_task_queue": ["SEASTAR_SHUFFLE_TASK_QUEUE"],
