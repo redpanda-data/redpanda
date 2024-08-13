@@ -16,7 +16,7 @@ configure_make(
         "--disable-shared",
         "--enable-static",
         "--with-zlib=$$EXT_BUILD_DEPS/zlib",
-        "--with-lzma=$$EXT_BUILD_DEPS/xz",
+        "--without-lzma",
     ],
     lib_source = ":srcs",
     out_include_dir = "include/libxml2",
@@ -25,7 +25,6 @@ configure_make(
         "//visibility:public",
     ],
     deps = [
-        "@xz",
         "@zlib",
     ],
 )
