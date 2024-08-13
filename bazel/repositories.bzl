@@ -189,11 +189,3 @@ def data_dependency():
         strip_prefix = "xxHash-bbb27a5efb85b92a0486cf361a8635715a53f6ba",
         url = "https://github.com/Cyan4973/xxHash/archive/bbb27a5efb85b92a0486cf361a8635715a53f6ba.tar.gz",
     )
-
-    http_archive(
-        name = "xz",
-        build_file = "//bazel/thirdparty:xz.BUILD",
-        sha256 = "0d2b89629f13dd1a0602810529327195eff5f62a0142ccd65b903bc16a4ac78a",
-        strip_prefix = "xz-5.2.5",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/xz-v5.2.5.tar.gz",
-    )
