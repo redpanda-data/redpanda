@@ -123,7 +123,7 @@ TEST(HeapAllocatorTest, CanReturnMemoryToThePool) {
 // current executing task, so we can't enforce the scenario we want to test, so
 // this test only runs in debug mode, which forces as many scheduling points as
 // possible and the zeroing task always happens asynchronously.
-#ifndef NDEBUG
+#ifdef SEASTAR_DEBUG
 
 using ::testing::_;
 

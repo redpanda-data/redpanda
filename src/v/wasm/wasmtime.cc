@@ -31,7 +31,7 @@
 #include "utils/human.h"
 #include "utils/to_string.h"
 #include "wasi.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 #include "wasm/errc.h"
 #include "wasm/parser/parser.h"
 #include "wasm/transform_probe.h"

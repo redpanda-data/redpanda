@@ -17,7 +17,7 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "serde/rw/rw.h"
 #include "storage/record_batch_builder.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 #include "wasm/transform_probe.h"
 
 #include <gtest/gtest.h>

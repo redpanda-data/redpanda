@@ -1,9 +1,9 @@
 v_cc_library(
   NAME wasm
   SRCS
-    api.cc
     ffi.cc
     logger.cc
+    impl.cc
     transform_probe.cc
     schema_registry.cc
     schema_registry_module.cc

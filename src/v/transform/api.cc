@@ -39,8 +39,8 @@
 #include "transform_manager.h"
 #include "transform_processor.h"
 #include "txn_reader.h"
-#include "wasm/api.h"
 #include "wasm/cache.h"
+#include "wasm/engine.h"
 #include "wasm/errc.h"
 
 #include <seastar/core/circular_buffer.hh>

@@ -15,8 +15,9 @@
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "random/generators.h"
-#include "wasm/api.h"
 #include "wasm/cache.h"
+#include "wasm/engine.h"
+#include "wasm/wasi_logger.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>

@@ -13,8 +13,6 @@
 
 #include "utils/vint.h"
 
-#include <boost/fusion/container/list/cons.hpp>
-
 #include <algorithm>
 #include <cstdint>
 #include <span>

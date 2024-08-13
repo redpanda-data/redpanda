@@ -13,6 +13,7 @@
 
 #include "logger.h"
 #include "model/transform.h"
+#include "wasm/wasi_logger.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>

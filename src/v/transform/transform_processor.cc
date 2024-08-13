@@ -19,7 +19,7 @@
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
 #include "storage/parser_utils.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>

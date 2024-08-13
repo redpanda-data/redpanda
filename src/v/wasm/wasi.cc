@@ -18,7 +18,6 @@
 #include "ffi.h"
 #include "logger.h"
 #include "strings/utf8.h"
-#include "wasm/api.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>

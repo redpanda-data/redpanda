@@ -20,9 +20,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
-#include "utils/named_type.h"
 #include "wasi.h"
-#include "wasm/api.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -231,10 +229,9 @@ ss::future<int32_t> transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!d) {
         co_return INVALID_BUFFER;
     }
-    auto result = co_await _call_ctx->callback->emit(
+    auto success = co_await _call_ctx->callback->emit(
       std::nullopt, *std::move(d));
-    co_return result == write_success::yes ? int32_t(buf.size())
-                                           : INVALID_WRITE;
+    co_return success ? int32_t(buf.size()) : INVALID_WRITE;
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -254,10 +251,9 @@ ss::future<int32_t> transform_module::write_record_with_options(
     if (!options) {
         co_return INVALID_BUFFER;
     }
-    auto result = co_await _call_ctx->callback->emit(
+    auto success = co_await _call_ctx->callback->emit(
       options->topic, *std::move(d));
-    co_return result == write_success::yes ? int32_t(buf.size())
-                                           : INVALID_WRITE;
+    co_return success ? int32_t(buf.size()) : INVALID_WRITE;
 }
 
 void transform_module::start() {

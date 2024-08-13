@@ -20,6 +20,7 @@ redpanda_test_cc_library(
         "//src/v/compression",
         "//src/v/model",
         "//src/v/random:generators",
+        "//src/v/test_utils:random",
         "//src/v/utils:vint",
         "//src/v/utils/tests:random",
         "@seastar",

@@ -13,7 +13,7 @@
 
 #include "model/transform.h"
 #include "utils/mutex.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>

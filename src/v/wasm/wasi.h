@@ -31,7 +31,7 @@
 #include "ffi.h"
 #include "model/timestamp.h"
 #include "utils/named_type.h"
-#include "wasm/fwd.h"
+#include "wasm/wasi_logger.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/noncopyable_function.hh>
