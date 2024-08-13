@@ -62,6 +62,7 @@ redpanda_cc_library(
         "//src/v/wasm",
         "@abseil-cpp//absl/log:globals",
         "@boost//:program_options",
+        "@fmt",
         "@protobuf",
         "@protobuf//:protobuf_lite",
         "@seastar",
