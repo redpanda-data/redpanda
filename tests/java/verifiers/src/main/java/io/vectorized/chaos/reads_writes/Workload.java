@@ -106,15 +106,9 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
 
         last_known_offset = -1;
         write_by_op = new HashMap<>();
@@ -259,7 +253,7 @@ public class Workload {
 
         KafkaConsumer<String, String> consumer = null;
 
-        log(thread_id, "started\t" + args.server + "\tconsumer");
+        log(thread_id, "started\t" + args.hostname + "\tconsumer");
 
         long prev_offset = -1;
         while (is_active) {
@@ -298,7 +292,7 @@ public class Workload {
             while (it.hasNext()) {
                 var record = it.next();
 
-                if (!record.key().equals(args.server)) {
+                if (!record.key().equals(args.hostname)) {
                     continue;
                 }
 
@@ -430,7 +424,7 @@ public class Workload {
 
         Producer<String, String> producer = null;
 
-        log(thread_id, "started\t" + args.server + "\tproducer");
+        log(thread_id, "started\t" + args.hostname + "\tproducer");
 
         while (is_active) {
             tick();
@@ -477,7 +471,7 @@ public class Workload {
                     
                     write_by_op.put(op, info);
                 }
-                var f = producer.send(new ProducerRecord<String, String>(args.topic, args.server, "" + op));
+                var f = producer.send(new ProducerRecord<String, String>(args.topic, args.hostname, "" + op));
                 var m = f.get();
                 var offset = m.offset();
                 var should_acquire = false;

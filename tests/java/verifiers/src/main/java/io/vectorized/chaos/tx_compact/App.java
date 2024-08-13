@@ -17,8 +17,8 @@ public class App
     }
     
     public static class InitBody {
-        public String experiment;
-        public String server;
+        public String hostname;
+        public String results_dir;
         public String brokers;
         public String topic;
         public WorkflowSettings settings;
@@ -100,10 +100,10 @@ public class App
             Gson gson = new Gson();
             
             params = gson.fromJson(req.body(), InitBody.class);
-            File root = new File(params.experiment);
+            File root = new File(params.results_dir);
 
-            if (!root.mkdir()) {
-                throw new Exception("Can't create folder: " + params.experiment);
+            if (!root.exists() && !root.mkdirs()) {
+                throw new Exception("Can't create folder: " + params.results_dir);
             }
             
             res.status(200);

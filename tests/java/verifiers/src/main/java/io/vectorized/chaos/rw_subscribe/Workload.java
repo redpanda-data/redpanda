@@ -213,15 +213,9 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
         
         random = new Random();
         ops_info = new HashMap<>();
@@ -353,7 +347,7 @@ public class Workload {
         props.put(ProducerConfig.RETRIES_CONFIG, 5);
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
 
-        log(pid, "started\t" + args.server + "\tproducing");
+        log(pid, "started\t" + args.hostname + "\tproducing");
     
         Producer<String, String> producer = null;
 
@@ -399,7 +393,7 @@ public class Workload {
 
             try {
                 log(pid, "send\t" + op.partition + "\t" + op.oid);
-                offset = producer.send(new ProducerRecord<String, String>(args.topic, op.partition, args.server, "" + op.oid)).get().offset();
+                offset = producer.send(new ProducerRecord<String, String>(args.topic, op.partition, args.hostname, "" + op.oid)).get().offset();
             } catch (Exception e1) {
                 var eid = get_error_id();
                 log(pid, "err\t" + eid);
@@ -487,7 +481,7 @@ public class Workload {
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
             "org.apache.kafka.common.serialization.StringDeserializer");
         
-        log(rid, "started\t" + args.server + "\tconsuming");
+        log(rid, "started\t" + args.hostname + "\tconsuming");
 
         Consumer<String, String> consumer = null;
         TrackingRebalanceListener tracker = null;

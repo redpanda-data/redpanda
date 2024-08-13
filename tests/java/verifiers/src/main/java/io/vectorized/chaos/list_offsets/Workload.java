@@ -81,16 +81,10 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
         update_known_offset(-1);
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
         
         threads = new ArrayList<>();
         ops_info = new HashMap<>();
@@ -192,7 +186,7 @@ public class Workload {
 
         Producer<String, String> producer = null;
 
-        log(thread_id, "started\t" + args.server);
+        log(thread_id, "started\t" + args.hostname);
 
         while (is_active) {
             long op = get_op();
@@ -275,7 +269,7 @@ public class Workload {
 
         AdminClient client = null;
 
-        log(thread_id, "started\t" + args.server + "\tadmin");
+        log(thread_id, "started\t" + args.hostname + "\tadmin");
 
         Map<TopicPartition, OffsetSpec> partitions = new HashMap<>();
         var tp = new TopicPartition(args.topic, 0);

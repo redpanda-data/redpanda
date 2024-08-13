@@ -79,15 +79,9 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
         
         should_reset = new HashMap<>();
         last_success_us = new HashMap<>();
@@ -186,7 +180,7 @@ public class Workload {
     
         Producer<String, String> producer = null;
     
-        log(wid, "started\t" + args.server);
+        log(wid, "started\t" + args.hostname);
     
         while (is_active) {
             tick(wid);
@@ -243,8 +237,8 @@ public class Workload {
             producer.beginTransaction();
 
             try {
-                var f1 = producer.send(new ProducerRecord<String, String>(acc1, args.server, "1"));
-                var f2 = producer.send(new ProducerRecord<String, String>(acc2, args.server, "-1"));
+                var f1 = producer.send(new ProducerRecord<String, String>(acc1, args.hostname, "1"));
+                var f2 = producer.send(new ProducerRecord<String, String>(acc2, args.hostname, "-1"));
                 f1.get();
                 f2.get();
             } catch (Exception e1) {

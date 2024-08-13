@@ -99,15 +99,9 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
         
         ops_info = new HashMap<>();
         
@@ -267,7 +261,7 @@ public class Workload {
     
         Producer<String, String> producer = null;
     
-        log(wid, "started\t" + args.server + "\twriter");
+        log(wid, "started\t" + args.hostname + "\twriter");
     
         var seq = 0;
         var ltid = 0;
@@ -421,7 +415,7 @@ public class Workload {
     }
 
     private void readHistProcess(int rid) throws Exception {
-        log(rid, "started\t" + args.server + "\tconsumer\thist");
+        log(rid, "started\t" + args.hostname + "\tconsumer\thist");
         
         while (is_active) {
             readProcess(rid, last_offset);
@@ -430,7 +424,7 @@ public class Workload {
     }
 
     private void readEdgeProcess(int rid) throws Exception {
-        log(rid, "started\t" + args.server + "\tconsumer\tedge");
+        log(rid, "started\t" + args.hostname + "\tconsumer\tedge");
         
         while (is_active) {
             readProcess(rid, Long.MAX_VALUE);

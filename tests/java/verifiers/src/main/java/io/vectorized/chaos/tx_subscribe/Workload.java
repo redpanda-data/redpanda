@@ -153,15 +153,9 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
         
         should_reset = new HashMap<>();
         last_success_us = new HashMap<>();
@@ -279,7 +273,7 @@ public class Workload {
     }
 
     private void producingProcess(int pid, int partition) throws Exception {
-        log(pid, "started\t" + args.server + "\tproducing\t" + partition);
+        log(pid, "started\t" + args.hostname + "\tproducing\t" + partition);
     
         Producer<String, String> producer = null;
 
@@ -323,7 +317,7 @@ public class Workload {
             try {
                 log(pid, "send\t" + op.oid);
                 producer.beginTransaction();
-                offset = producer.send(new ProducerRecord<String, String>(args.source, partition, args.server, "" + op.oid)).get().offset();
+                offset = producer.send(new ProducerRecord<String, String>(args.source, partition, args.hostname, "" + op.oid)).get().offset();
             } catch (Exception e1) {
                 var eid1 = get_error_id();
                 synchronized (this) {
@@ -453,7 +447,7 @@ public class Workload {
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
             "org.apache.kafka.common.serialization.StringDeserializer");
         
-        log(sid, "started\t" + args.server + "\tstreaming");
+        log(sid, "started\t" + args.hostname + "\tstreaming");
 
         Consumer<String, String> consumer = null;
         TrackingRebalanceListener tracker = null;
@@ -595,7 +589,7 @@ public class Workload {
                 try {
                     log(sid, "tx");
                     producer.beginTransaction();
-                    var f = producer.send(new ProducerRecord<String, String>(args.target, args.server, "" + record.key() + "\t" + record.partition() + "\t" + oid));
+                    var f = producer.send(new ProducerRecord<String, String>(args.target, args.hostname, "" + record.key() + "\t" + record.partition() + "\t" + oid));
                     var offsets = new HashMap<TopicPartition, OffsetAndMetadata>();
                     offsets.put(new TopicPartition(args.source, record.partition()), new OffsetAndMetadata(record.offset() + 1));
                     producer.sendOffsetsToTransaction(offsets, consumer.groupMetadata());
@@ -713,7 +707,7 @@ public class Workload {
 
         KafkaConsumer<String, String> consumer = null;
         
-        log(rid, "started\t" + args.server + "\tconsuming");
+        log(rid, "started\t" + args.hostname + "\tconsuming");
 
         long prev_offset = -1;
         HashMap<String, HashMap<Integer, Long>> processed_oids = new HashMap<>();
@@ -785,7 +779,7 @@ public class Workload {
                 }
                 partition_oids.put(partition, oid);
 
-                if (!server.equals(args.server)) {
+                if (!server.equals(args.hostname)) {
                     continue;
                 }
 

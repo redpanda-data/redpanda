@@ -114,15 +114,9 @@ public class Workload {
     }
 
     public void start() throws Exception {
-        File root = new File(args.experiment, args.server);
-
-        if (!root.mkdir()) {
-            throw new Exception("Can't create folder: " + root);
-        }
-
         is_active = true;
         past_us = 0;
-        opslog = new BufferedWriter(new FileWriter(new File(new File(args.experiment, args.server), "workload.log")));
+        opslog = new BufferedWriter(new FileWriter(new File(new File(args.results_dir), "workload.log")));
         
         ops_info = new HashMap<>();
         txes = new HashMap<>();
@@ -253,7 +247,7 @@ public class Workload {
     
         Producer<String, String> producer = null;
     
-        log(wid, "started\t" + args.server);
+        log(wid, "started\t" + args.hostname);
     
         while (is_active) {
             try {
@@ -325,7 +319,7 @@ public class Workload {
                             } catch (Exception e) { }
                         }
                     }
-                    var offset = producer.send(new ProducerRecord<String, String>(args.topic, args.server, tx.tid + "\t" + last_oid)).get().offset();
+                    var offset = producer.send(new ProducerRecord<String, String>(args.topic, args.hostname, tx.tid + "\t" + last_oid)).get().offset();
                     log(wid, "log\twriten\t" + last_oid + "@" + offset);
                     synchronized(this) {
                         if (op.offset != -1) {
@@ -479,7 +473,7 @@ public class Workload {
 
         KafkaConsumer<String, String> consumer = null;
 
-        log(rid, "started\t" + args.server + "\tconsumer");
+        log(rid, "started\t" + args.hostname + "\tconsumer");
 
         long prev_offset = -1;
         
@@ -525,7 +519,7 @@ public class Workload {
                 last_success_us = System.nanoTime() / 1000;
                 var record = it.next();
 
-                if (!record.key().equals(args.server)) {
+                if (!record.key().equals(args.hostname)) {
                     continue;
                 }
 
