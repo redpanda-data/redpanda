@@ -95,8 +95,12 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestDoesNotExist) {
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
     retry_chain_node rtc(never_abort, 10s, 20ms);
-    auto mount_result = handler.mount_topic(topic_cfg, rtc).get();
-    ASSERT_EQ(mount_result, topic_mount_result::mount_manifest_does_not_exist);
+    auto prepare_result = handler.prepare_mount_topic(topic_cfg, rtc).get();
+    ASSERT_EQ(
+      prepare_result, topic_mount_result::mount_manifest_does_not_exist);
+    auto confirm_result = handler.confirm_mount_topic(topic_cfg, rtc).get();
+    ASSERT_EQ(
+      confirm_result, topic_mount_result::mount_manifest_does_not_exist);
 }
 
 TEST_P(TopicMountHandlerFixture, TestMountTopicManifestNotDeleted) {
@@ -151,8 +155,10 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestNotDeleted) {
 
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
-    auto mount_result = handler.mount_topic(topic_cfg, rtc).get();
-    ASSERT_EQ(mount_result, topic_mount_result::mount_manifest_not_deleted);
+    auto prepare_result = handler.prepare_mount_topic(topic_cfg, rtc).get();
+    ASSERT_EQ(prepare_result, topic_mount_result::mount_manifest_exists);
+    auto confirm_result = handler.confirm_mount_topic(topic_cfg, rtc).get();
+    ASSERT_EQ(confirm_result, topic_mount_result::mount_manifest_not_deleted);
 
     const auto exists_result
       = remote.local()
@@ -197,8 +203,10 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicSuccess) {
 
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
-    auto mount_result = handler.mount_topic(topic_cfg, rtc).get();
-    ASSERT_EQ(mount_result, topic_mount_result::success);
+    auto prepare_result = handler.prepare_mount_topic(topic_cfg, rtc).get();
+    ASSERT_EQ(prepare_result, topic_mount_result::mount_manifest_exists);
+    auto confirm_result = handler.confirm_mount_topic(topic_cfg, rtc).get();
+    ASSERT_EQ(confirm_result, topic_mount_result::success);
 
     const auto exists_result
       = remote.local()

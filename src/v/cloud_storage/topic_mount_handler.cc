@@ -25,6 +25,8 @@ std::ostream& operator<<(std::ostream& o, const topic_mount_result& r) {
         return o << "{mount_manifest_does_not_exist}";
     case topic_mount_result::mount_manifest_not_deleted:
         return o << "{mount_manifest_not_deleted}";
+    case topic_mount_result::mount_manifest_exists:
+        return o << "{topic_manifest_exists}";
     case topic_mount_result::success:
         return o << "{success}";
     }
@@ -62,7 +64,7 @@ ss::future<topic_mount_result> topic_mount_handler::check_mount(
     // whatever reason. In that case, it is simple enough for the user to
     // reissue a request to `mount_topic()`.
     co_return (exists_result == download_result::success)
-      ? topic_mount_result::success
+      ? topic_mount_result::mount_manifest_exists
       : topic_mount_result::mount_manifest_does_not_exist;
 }
 
@@ -84,7 +86,9 @@ ss::future<topic_mount_result> topic_mount_handler::commit_mount(
 }
 
 ss::future<topic_mount_result> topic_mount_handler::mount_topic(
-  const cluster::topic_configuration& topic_cfg, retry_chain_node& parent) {
+  const cluster::topic_configuration& topic_cfg,
+  bool prepare_only,
+  retry_chain_node& parent) {
     const auto remote_tp_ns = topic_cfg.remote_tp_ns();
     const auto path_provider = remote_path_provider(
       topic_cfg.properties.remote_label, remote_tp_ns);
@@ -97,12 +101,16 @@ ss::future<topic_mount_result> topic_mount_handler::mount_topic(
 
     const auto check_result = co_await check_mount(
       manifest, path_provider, parent);
-    if (check_result != topic_mount_result::success) {
+    if (check_result != topic_mount_result::mount_manifest_exists) {
         vlog(
-          cst_log.error,
+          cst_log.warn,
           "Couldn't mount topic {}, check result was {}.",
           topic_cfg.tp_ns,
           check_result);
+        co_return check_result;
+    }
+
+    if (prepare_only) {
         co_return check_result;
     }
 
@@ -111,7 +119,7 @@ ss::future<topic_mount_result> topic_mount_handler::mount_topic(
 
     if (commit_result != topic_mount_result::success) {
         vlog(
-          cst_log.error,
+          cst_log.warn,
           "Couldn't mount topic {}, commit result was {}.",
           topic_cfg.tp_ns,
           commit_result);
@@ -145,6 +153,16 @@ ss::future<topic_unmount_result> topic_mount_handler::unmount_topic(
     }
 
     co_return topic_unmount_result::success;
+}
+
+ss::future<topic_mount_result> topic_mount_handler::prepare_mount_topic(
+  const cluster::topic_configuration& topic_cfg, retry_chain_node& parent) {
+    return mount_topic(topic_cfg, true, parent);
+}
+
+ss::future<topic_mount_result> topic_mount_handler::confirm_mount_topic(
+  const cluster::topic_configuration& topic_cfg, retry_chain_node& parent) {
+    return mount_topic(topic_cfg, false, parent);
 }
 
 } // namespace cloud_storage
