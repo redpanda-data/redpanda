@@ -149,11 +149,11 @@ class BacktraceCapture(threading.Thread):
             return ci_location
 
         # Workstation: find our build directory by searching back from binary
-        vbuild = find_vbuild_path_from_binary(self.binary, 5)
+        vbuild = find_vbuild_path_from_binary(self.binary, 3)
         if vbuild:
             location = os.path.join(
                 vbuild,
-                "deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
+                "v_deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
             )
 
             if not os.path.exists(location):
