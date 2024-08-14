@@ -14,7 +14,6 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
-#include "wasm/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>

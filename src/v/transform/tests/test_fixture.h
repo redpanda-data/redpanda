@@ -17,7 +17,7 @@
 #include "model/transform.h"
 #include "ssx/semaphore.h"
 #include "transform/io.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 #include "wasm/transform_probe.h"
 
 #include <seastar/core/chunked_fifo.hh>

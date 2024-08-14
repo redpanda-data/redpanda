@@ -14,7 +14,7 @@
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "test_utils/randoms.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 #include "wasm/logger.h"
 #include "wasm/schema_registry.h"
 #include "wasm/tests/wasm_logger.h"

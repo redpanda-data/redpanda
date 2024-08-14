@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "transform/logging/log_manager.h"
-#include "wasm/api.h"
+#include "wasm/wasi_logger.h"
 
 #include <seastar/util/log.hh>
 

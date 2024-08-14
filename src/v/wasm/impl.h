@@ -9,15 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-#include "wasm/api.h"
+#pragma once
 
-#include "schema_registry.h"
-#include "wasmtime.h"
+#include "pandaproxy/schema_registry/fwd.h"
+#include "wasm/engine.h"
+
+#include <memory>
 
 namespace wasm {
+
 std::unique_ptr<runtime>
-runtime::create_default(pandaproxy::schema_registry::api* schema_reg) {
-    return wasmtime::create_runtime(
-      wasm::schema_registry::make_default(schema_reg));
-}
+create_default_runtime(pandaproxy::schema_registry::api* schema_reg);
+
 } // namespace wasm

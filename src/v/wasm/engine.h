@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Redpanda Data, Inc.
+ * Copyright 2024 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -89,12 +89,6 @@ public:
  */
 class runtime {
 public:
-    /**
-     * Create the default runtime.
-     */
-    static std::unique_ptr<runtime>
-    create_default(pandaproxy::schema_registry::api*);
-
     runtime() = default;
     runtime(const runtime&) = delete;
     runtime& operator=(const runtime&) = delete;
@@ -151,22 +145,6 @@ public:
     virtual ss::future<> validate(model::wasm_binary_iobuf) = 0;
 
     virtual ~runtime() = default;
-};
-
-/**
- * A logging interface for wasm transforms.
- *
- */
-class logger {
-public:
-    logger() = default;
-    virtual ~logger() = default;
-    logger(const logger&) = delete;
-    logger& operator=(const logger&) = delete;
-    logger(logger&&) = delete;
-    logger& operator=(logger&&) = delete;
-
-    virtual void log(ss::log_level lvl, std::string_view message) noexcept = 0;
 };
 
 } // namespace wasm

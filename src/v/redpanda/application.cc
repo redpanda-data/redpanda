@@ -129,8 +129,9 @@
 #include "utils/human.h"
 #include "utils/uuid.h"
 #include "version/version.h"
-#include "wasm/api.h"
 #include "wasm/cache.h"
+#include "wasm/engine.h"
+#include "wasm/impl.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/memory.hh>
@@ -1348,7 +1349,7 @@ void application::wire_up_runtime_services(
 
     if (wasm_data_transforms_enabled()) {
         syschecks::systemd_message("Starting wasm runtime").get();
-        auto base_runtime = wasm::runtime::create_default(
+        auto base_runtime = wasm::create_default_runtime(
           _schema_registry.get());
         construct_single_service(_wasm_runtime, std::move(base_runtime));
 

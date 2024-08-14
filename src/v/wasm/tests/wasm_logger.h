@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "wasm/api.h"
+#include "wasm/wasi_logger.h"
 
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>

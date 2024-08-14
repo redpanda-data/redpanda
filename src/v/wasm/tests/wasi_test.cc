@@ -11,7 +11,6 @@
 
 #include "bytes/iobuf_parser.h"
 #include "json/document.h"
-#include "test_utils/fixture.h"
 #include "wasm/tests/wasm_fixture.h"
 
 #include <absl/container/flat_hash_set.h>

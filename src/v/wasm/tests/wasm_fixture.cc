@@ -20,7 +20,7 @@
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "storage/record_batch_builder.h"
-#include "wasm/api.h"
+#include "wasm/engine.h"
 #include "wasm/schema_registry.h"
 #include "wasm/tests/wasm_fixture.h"
 #include "wasm/tests/wasm_logger.h"

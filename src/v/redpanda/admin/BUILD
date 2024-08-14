@@ -204,7 +204,7 @@ redpanda_cc_library(
         "//src/v/strings:utf8",
         "//src/v/transform",
         "//src/v/utils:unresolved_address",
-        "//src/v/wasm",
+        "//src/v/wasm:api",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@boost//:algorithm",
