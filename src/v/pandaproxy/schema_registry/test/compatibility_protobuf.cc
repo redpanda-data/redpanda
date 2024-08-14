@@ -670,3 +670,91 @@ message Bar {
 }
 )");
 }
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_message_removed) {
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; Inner x = 1; })",
+      R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; message Inner2 { int32 id = 1;}; Inner x = 1; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_field_name_type_changed) {
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; message Inner2 { int32 id = 1;}; Inner2 x = 1; })",
+      R"(syntax = "proto3"; message Outer { message Inner { int32 id = 1;}; message Inner2 { int32 id = 1;}; Inner  x = 1; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_protobuf_compatibility_required_field_added_removed) {
+    // field added
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; })"));
+    // field removed
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_field_made_reserved) {
+    // required
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })"));
+    // not required
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; optional int32 new_id = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_field_unmade_reserved) {
+    // required
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; required int32 new_id = 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })"));
+    // not required
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; optional int32 new_id = 2; })",
+      R"(syntax = "proto2"; message Simple { optional int32 id = 1; reserved 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_protobuf_compatibility_multiple_fields_moved_to_oneof) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; } })",
+      R"(syntax = "proto3"; message Simple { int32 id = 1; })"));
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } })",
+      R"(syntax = "proto3"; message Simple { int32 id = 1; int32 new_id = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_protobuf_compatibility_fields_moved_out_of_oneof) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { int32 id = 1; int32 new_id = 2; })",
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_oneof_field_removed) {
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; } })",
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_oneof_fully_removed) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Simple { int32 other = 3; })",
+      R"(syntax = "proto3"; message Simple { oneof wrapper { int32 id = 1; int32 new_id = 2; } int32 other = 3; })"));
+}
