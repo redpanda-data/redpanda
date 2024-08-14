@@ -47,7 +47,7 @@ frontend::frontend(
   , _leaders_table(leaders)
   , _connections(connections)
   , _as(as)
-  , _operation_timeout(5s) {}
+  , _operation_timeout(10s) {}
 
 template<
   typename Request,

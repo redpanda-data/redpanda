@@ -103,7 +103,7 @@ worker::ntp_state::ntp_state(
   , work(std::move(work))
   , leadership_subscription(leadership_subscription) {}
 
-void worker::handle_operation_result(
+ss::future<> worker::handle_operation_result(
   model::ntp ntp, id migration_id, state sought_state, errc ec) {
     vlog(
       dm_log.trace,
@@ -112,6 +112,14 @@ void worker::handle_operation_result(
       ntp,
       sought_state,
       ec);
+    if (ec != errc::success && ec != errc::shutting_down) {
+        // any other result deemed retryable. We leave is_running flag in place
+        // while waiting.
+
+        // todo: configure sleep time, make it abortable from
+        // worker::abort_partition_work
+        co_await ss::sleep_abortable(1s, _as);
+    }
     auto it = _managed_ntps.find(ntp);
     if (
       it == _managed_ntps.end() || it->second.work.migration_id != migration_id
@@ -124,11 +132,11 @@ void worker::handle_operation_result(
           std::move(ntp),
           sought_state,
           ec);
-        return;
+        co_return;
     }
-    it->second.is_running = false;
     if (ec != errc::success && ec != errc::shutting_down) {
         // any other errors deemed retryable
+        it->second.is_running = false;
         vlog(
           dm_log.info,
           "as part of migration {}, partition work for moving ntp {} to state "
@@ -138,7 +146,7 @@ void worker::handle_operation_result(
           sought_state,
           ec);
         spawn_work_if_leader(it);
-        return;
+        co_return;
     }
     unmanage_ntp(it, ec);
 }
@@ -257,7 +265,7 @@ void worker::spawn_work_if_leader(managed_ntp_it it) {
                                  migration_id = it->second.work.migration_id,
                                  sought_state = it->second.work.sought_state,
                                  this](errc ec) mutable {
-            handle_operation_result(
+            return handle_operation_result(
               std::move(ntp), migration_id, sought_state, ec);
         });
     });

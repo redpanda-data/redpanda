@@ -263,7 +263,7 @@ ss::future<> backend::work_once() {
 
     // defer RPC retries and topic work
     // todo: configure timeout
-    auto new_deadline = now + 5s;
+    auto new_deadline = now + 2s;
     for (const auto& node_id : rpc_responses | std::views::keys) {
         if (_node_states.contains(node_id)) {
             _nodes_to_retry.try_emplace(node_id, new_deadline);
@@ -475,7 +475,7 @@ ss::future<errc> backend::do_topic_work(
   state sought_state,
   const inbound_topic_work_info& itwi) {
     ss::abort_source as;
-    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 5s};
+    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 2s};
     // this switch should be in accordance to the logic in get_work_scope
     switch (sought_state) {
     case state::prepared:
@@ -508,7 +508,7 @@ ss::future<errc> backend::do_topic_work(
       sought_state == state::finished,
       "only ->finished state transition requires topic work");
     ss::abort_source as;
-    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 5s};
+    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 2s};
     // todo: unmount first
     auto unmount_res = co_await retry_loop(
       rcn, [this, &nt, &rcn] { return unmount_topic(nt, rcn); });
@@ -599,7 +599,7 @@ ss::future<errc> backend::create_topic(
     cfg_vector.push_back(
       custom_assignable_topic_configuration(std::move(topic_to_create_cfg)));
     auto ct_res = co_await _topics_frontend.create_topics(
-      std::move(cfg_vector), model::timeout_clock::now() + 5s);
+      std::move(cfg_vector), rcn.get_deadline());
     auto ec = ct_res[0].ec;
     if (ec == errc::topic_already_exists) {
         // make topic creation idempotent
