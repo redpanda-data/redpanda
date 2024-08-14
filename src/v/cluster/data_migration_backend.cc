@@ -99,7 +99,7 @@ backend::backend(
   , _cloud_storage_api(cloud_storage_api)
   , _as(as) {}
 
-void backend::start() {
+ss::future<> backend::start() {
     vassert(
       ss::this_shard_id() == data_migrations_shard, "Called on wrong shard");
 
@@ -115,10 +115,7 @@ void backend::start() {
                   _gate, [this]() { return handle_raft0_leadership_update(); });
             }
         });
-    _table_notification_id = _table.register_notification([this](id id) {
-        ssx::spawn_with_gate(
-          _gate, [this, id]() { return handle_migration_update(id); });
-    });
+
     _topic_table_notification_id = _topic_table.register_delta_notification(
       [this](topic_table::delta_range_t deltas) {
           _unprocessed_deltas.reserve(
@@ -137,16 +134,17 @@ void backend::start() {
           handle_shard_update(ntp, g, shard);
       });
 
-    _table_notification_id = _table.register_notification([this](id id) {
-        ssx::spawn_with_gate(
-          _gate, [this, id]() { return handle_migration_update(id); });
-    });
-    // process those that were already there when we subscribed
-    for (auto id : _table.get_migrations()) {
-        co_await handle_migration_update(id);
-    }
-
     if (_cloud_storage_api) {
+        _table_notification_id = _table.register_notification([this](id id) {
+            ssx::spawn_with_gate(
+              _gate, [this, id]() { return handle_migration_update(id); });
+        });
+
+        // process those that were already there when we subscribed
+        for (auto id : _table.get_migrations()) {
+            co_await handle_migration_update(id);
+        }
+
         auto maybe_bucket = cloud_storage::configuration::get_bucket_config()();
         vassert(
           maybe_bucket, "cloud_storage_api active but no bucket configured");
@@ -173,19 +171,21 @@ ss::future<> backend::stop() {
     _topic_table.unregister_delta_notification(_topic_table_notification_id);
     _leaders_table.unregister_leadership_change_notification(
       model::controller_ntp, _plt_raft0_leadership_notification_id);
-    _table.unregister_notification(_table_notification_id);
+    if (_cloud_storage_api) {
+        _table.unregister_notification(_table_notification_id);
+    }
     co_await _worker.invoke_on_all(&worker::stop);
     co_await _gate.close();
-    vlog(dm_log.debug, "backend stopped");
+    vlog(dm_log.info, "backend stopped");
 }
 
 ss::future<> backend::loop_once() {
+    co_await _sem.wait(_as);
+    _sem.consume(_sem.available_units());
     {
         auto units = co_await _mutex.get_units(_as);
         co_await work_once();
     }
-    co_await _sem.wait(_as);
-    _sem.consume(_sem.available_units());
 }
 
 ss::future<> backend::work_once() {

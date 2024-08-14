@@ -71,6 +71,10 @@ public:
      */
     std::optional<std::reference_wrapper<const migration_metadata>>
       get_migration(id) const;
+    /**
+     * Returns a list of all existing migration ids.
+     */
+    chunked_vector<id> get_migrations() const;
 
     /**
      * Registers notification that if fired every time a data migration state is

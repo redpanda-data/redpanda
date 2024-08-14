@@ -42,7 +42,7 @@ public:
         _cloud_storage_api,
       ss::abort_source& as);
 
-    void start();
+    ss::future<> start();
     ss::future<> stop();
 
 private:
