@@ -36,8 +36,6 @@ deb_deps=(
   xfslibs-dev
   valgrind
   git
-  cargo
-  rustc
   bison
   pkgconf
 )
@@ -55,8 +53,6 @@ fedora_deps=(
   valgrind-devel
   git
   clang
-  cargo
-  rust
   bison
 )
 
