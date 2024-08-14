@@ -276,7 +276,7 @@ private:
     std::unique_ptr<data_migrations::migrations_table> _data_migration_table;
     ss::sharded<partition_leaders_table>
       _partition_leaders;                                // instance per core
-    ss::sharded<shard_placement_table> _shard_placement; // istance per core
+    ss::sharded<shard_placement_table> _shard_placement; // instance per core
     ss::sharded<drain_manager> _drain_manager;           // instance per core
     ss::sharded<members_manager> _members_manager;       // single instance
     ss::sharded<topics_frontend> _tp_frontend;           // instance per core
