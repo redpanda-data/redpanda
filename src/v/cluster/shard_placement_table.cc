@@ -1221,11 +1221,15 @@ shard_placement_table::prepare_transfer(
         }
 
         if (is_initial) {
-            state._is_initial_for = std::nullopt;
-            if (state.is_empty()) {
-                _states.erase(ntp);
+            if (state._is_initial_for == expected_log_rev) {
+                state._is_initial_for = std::nullopt;
+                if (state.is_empty()) {
+                    _states.erase(ntp);
+                }
             }
+
             ret.is_finished = true;
+
             co_return ret;
         }
 
