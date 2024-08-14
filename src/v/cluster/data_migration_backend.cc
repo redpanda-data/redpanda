@@ -100,6 +100,7 @@ backend::backend(
   , _as(as) {}
 
 ss::future<> backend::start() {
+    vlog(dm_log.info, "backend starting");
     vassert(
       ss::this_shard_id() == data_migrations_shard, "Called on wrong shard");
 
@@ -164,6 +165,7 @@ ss::future<> backend::start() {
 }
 
 ss::future<> backend::stop() {
+    vlog(dm_log.info, "backend stopping");
     _mutex.broken();
     _sem.broken();
     _timer.cancel();
@@ -701,6 +703,11 @@ void backend::spawn_advances() {
 
 ss::future<> backend::handle_raft0_leadership_update() {
     auto units = co_await _mutex.get_units(_as);
+    vlog(
+      dm_log.trace,
+      "_is_raft0_leader={}, _is_coordinator={}",
+      _is_raft0_leader,
+      _is_coordinator);
     if (_is_raft0_leader == _is_coordinator) {
         co_return;
     }
@@ -733,8 +740,9 @@ ss::future<> backend::handle_raft0_leadership_update() {
 }
 
 ss::future<> backend::handle_migration_update(id id) {
-    auto units = co_await _mutex.get_units(_as);
     vlog(dm_log.debug, "received data migration {} notification", id);
+    auto units = co_await _mutex.get_units(_as);
+    vlog(dm_log.debug, "lock acquired for data migration {} notification", id);
 
     bool need_wakeup = false;
 
@@ -895,10 +903,9 @@ backend::check_ntp_states_locally(check_ntp_states_request&& req) {
         auto maybe_rwstate = get_replica_work_state(ntp_req.ntp);
         if (!maybe_rwstate) {
             vlog(
-              dm_log.warn,
+              dm_log.debug,
               "migration_id={} got RPC to move ntp {} to state {}, but "
-              "missing "
-              "partition state for it",
+              "missing partition state for it",
               ntp_req.migration,
               ntp_req.ntp,
               ntp_req.state);

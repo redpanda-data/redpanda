@@ -64,12 +64,13 @@ private:
       typename DispatchFunc,
       typename ProcessFunc,
       typename ReplyMapperFunc>
-    auto process_or_dispatch(
-      Request,
-      can_dispatch_to_leader,
-      DispatchFunc,
-      ProcessFunc,
-      ReplyMapperFunc);
+    ss::future<std::invoke_result_t<ReplyMapperFunc, result<Reply>>>
+      process_or_dispatch(
+        Request,
+        can_dispatch_to_leader,
+        DispatchFunc,
+        ProcessFunc,
+        ReplyMapperFunc);
 
     inline void validate_migration_shard() const {
         vassert(
