@@ -51,7 +51,7 @@ fetch_dep(seastar
 
 fetch_dep(avro
   REPO https://github.com/redpanda-data/avro
-  TAG release-1.11.1-redpanda
+  TAG release-1.12.0-redpanda
   SOURCE_SUBDIR redpanda_build)
 
 fetch_dep(rapidjson
