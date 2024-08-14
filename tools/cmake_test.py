@@ -133,7 +133,7 @@ class BacktraceCapture(threading.Thread):
         # Workstation: find our build directory by searching back from binary
         path_parts = self.binary.split("/")
         try:
-            vbuild = "/".join(path_parts[0:path_parts.index("vbuild") + 5])
+            vbuild = "/".join(path_parts[0:path_parts.index("vbuild") + 3])
         except (ValueError, IndexError):
             sys.stderr.write(
                 f"Could not find vbuild in binary path {self.binary}\n")
@@ -141,7 +141,7 @@ class BacktraceCapture(threading.Thread):
         else:
             location = os.path.join(
                 vbuild,
-                "deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
+                "v_deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
             )
 
             if not os.path.exists(location):
