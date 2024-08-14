@@ -55,13 +55,13 @@ template<
   typename DispatchFunc,
   typename ProcessFunc,
   typename ReplyMapperFunc>
-auto frontend::process_or_dispatch(
+ss::future<std::invoke_result_t<ReplyMapperFunc, result<Reply>>>
+frontend::process_or_dispatch(
   Request req,
   can_dispatch_to_leader can_dispatch,
   DispatchFunc dispatch,
   ProcessFunc process,
   ReplyMapperFunc reply_mapper) {
-    using result_t = std::invoke_result_t<ReplyMapperFunc, result<Reply>>;
     auto controller_leader = _leaders_table.local().get_leader(
       model::controller_ntp);
     /// Return early if there is no controller leader
@@ -71,7 +71,7 @@ auto frontend::process_or_dispatch(
           "unable to process request {}, no controller present",
           req);
 
-        return ssx::now<result_t>(errc::no_leader_controller);
+        co_return errc::no_leader_controller;
     }
 
     /// If current node is a leader, process request
@@ -80,13 +80,13 @@ auto frontend::process_or_dispatch(
           dm_log.debug,
           "current node is controller leader, processing request {}",
           req);
-        return process(std::move(req));
+        co_return co_await process(std::move(req));
     }
 
     /// If current node is not a leader and request can not be dispatched,
     /// return error
     if (!can_dispatch) {
-        return ssx::now<result_t>(errc::not_leader);
+        co_return errc::not_leader;
     }
 
     vlog(
@@ -95,19 +95,24 @@ auto frontend::process_or_dispatch(
       req,
       *controller_leader);
     /// If leader is somewhere else, dispatch RPC request to current leader
-    return _connections.local()
-      .with_node_client<data_migrations_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        *controller_leader,
-        _operation_timeout,
-        [req = std::move(req), dispatch = std::forward<DispatchFunc>(dispatch)](
-          data_migrations_client_protocol client) mutable {
-            return dispatch(std::move(req), client)
-              .then(&rpc::get_ctx_data<Reply>);
-        })
-      .then([reply_mapper = std::forward<ReplyMapperFunc>(reply_mapper)](
-              result<Reply> r) { return reply_mapper(std::move(r)); });
+    auto reply = co_await _connections.local()
+                   .with_node_client<data_migrations_client_protocol>(
+                     _self,
+                     ss::this_shard_id(),
+                     *controller_leader,
+                     _operation_timeout,
+                     [req = std::move(req),
+                      dispatch = std::forward<DispatchFunc>(dispatch)](
+                       data_migrations_client_protocol client) mutable {
+                         return dispatch(std::move(req), client)
+                           .then(&rpc::get_ctx_data<Reply>);
+                     });
+    vlog(
+      dm_log.debug,
+      "got reply {} from controller leader at {}",
+      reply,
+      *controller_leader);
+    co_return reply_mapper(std::move(reply));
 }
 
 bool frontend::data_migrations_active() const {
