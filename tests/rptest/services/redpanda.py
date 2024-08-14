@@ -69,12 +69,22 @@ from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
+import enum
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
 
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
+
+
+class CloudStorageCleanupStrategy(enum.Enum):
+    # I.e. if we are using a lifecycle rule, then we do NOT clean the bucket
+    IF_NOT_USING_LIFECYCLE_RULE = "IF_NOT_USING_LIFECYCLE_RULE"
+
+    # Ignore large buckets (based on number of objects). For small buckets, ALWAYS clean.
+    ALWAYS_SMALL_BUCKETS_ONLY = "ALWAYS_SMALL_BUCKETS_ONLY"
+
 
 SaslCredentials = redpanda_types.SaslCredentials
 
@@ -536,6 +546,10 @@ class SISettings:
                     CloudStorageType, test_context.
                     injected_args['cloud_storage_type_and_url_style'][0])
 
+        # For most cloud storage backends, we clean up small buckets always.
+        # In some cases, we will modify this strategy in the block below.
+        self.cloud_storage_cleanup_strategy = CloudStorageCleanupStrategy.ALWAYS_SMALL_BUCKETS_ONLY
+
         if self.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
             self.cloud_storage_access_key = cloud_storage_access_key
@@ -551,6 +565,10 @@ class SISettings:
             elif test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
                                           'aws') == 'gcp':
                 self.cloud_storage_api_endpoint = 'storage.googleapis.com'
+                # For GCP, we currently use S3 compat API over boto3, which does not support batch deletes
+                # This makes cleanup slow, even for small-ish buckets.
+                # Therefore, we maintain logic of skipping bucket cleaning completely, if we are using lifecycle rule.
+                self.cloud_storage_cleanup_strategy = CloudStorageCleanupStrategy.IF_NOT_USING_LIFECYCLE_RULE
             else:
                 # Endpoint defaults to minio-s3
                 self.cloud_storage_api_endpoint = 'minio-s3'
@@ -589,6 +607,7 @@ class SISettings:
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
         self.use_bucket_cleanup_policy = use_bucket_cleanup_policy
+
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
         self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
         self.retention_local_strict = retention_local_strict
@@ -3220,11 +3239,42 @@ class RedpandaService(RedpandaServiceBase):
         return self._cloud_storage_client
 
     def delete_bucket_from_si(self):
-        if self.si_settings.use_bucket_cleanup_policy:
-            self.logger.info(
-                f"Skipping deletion of bucket/container: {self.si_settings.cloud_storage_bucket}."
-                "Using a cleanup policy instead. Please delete it manually")
-            return
+        self.logger.info(
+            f"cloud_storage_cleanup_strategy = {self.si_settings.cloud_storage_cleanup_strategy}"
+        )
+
+        if self.si_settings.cloud_storage_cleanup_strategy == CloudStorageCleanupStrategy.ALWAYS_SMALL_BUCKETS_ONLY:
+            bucket_is_small = True
+            max_object_count = 3000
+
+            # See if the bucket is small enough
+            for i, m in enumerate(
+                    self.cloud_storage_client.list_objects(
+                        self.si_settings.cloud_storage_bucket)):
+                if i >= max_object_count:
+                    bucket_is_small = False
+                    break
+            if bucket_is_small:
+                self.logger.info(
+                    f"Always deleting bucket {self.si_settings.cloud_storage_bucket} (if it's small), even though we might use lifecycle policy also"
+                )
+            else:
+                self.logger.info(
+                    f"Bucket contains more than {max_object_count} objects, NOT cleaning."
+                )
+                return
+
+        elif self.si_settings.cloud_storage_cleanup_strategy == CloudStorageCleanupStrategy.IF_NOT_USING_LIFECYCLE_RULE:
+            if self.si_settings.use_bucket_cleanup_policy:
+                self.logger.info(
+                    f"Skipping deletion of bucket/container: {self.si_settings.cloud_storage_bucket}."
+                    "Using a cleanup policy instead. Please delete it manually"
+                )
+                return
+        else:
+            raise ValueError(
+                f"Unimplemented cloud storage cleanup strategy {self.si_settings.cloud_storage_cleanup_strategy}"
+            )
 
         self.logger.debug(
             f"Deleting bucket/container: {self.si_settings.cloud_storage_bucket}"
