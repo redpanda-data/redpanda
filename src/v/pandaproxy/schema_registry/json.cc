@@ -1096,6 +1096,55 @@ bool is_object_required_superset(
     return true;
 }
 
+bool is_object_dependencies_superset(
+  json::Value const& older, json::Value const& newer) {
+    // "dependencies", if present, is a dict of <property, string_array |
+    // schema>. To be compatible, each key in older has to be in newer and the
+    // values have to be of the same type and compatible.
+    // older string array needs to be a subset of newer string array.
+    // older schema needs to be compatible with newer schema
+
+    auto [maybe_skip, older_p, newer_p] = extract_property_and_gate_check(
+      older, newer, "dependencies");
+    if (maybe_skip.has_value()) {
+        return maybe_skip.value();
+    }
+    // older and newer have "dependencies"
+
+    // all dependencies in older need to carry over in newer, and need to be
+    // compatible
+    // TODO: n^2 search
+    return std::ranges::all_of(
+      older_p->GetObject(),
+      [newer_dep = newer_p->GetObject()](json::Value::Member const& older_dep) {
+          auto n_it = newer_dep.FindMember(older_dep.name);
+          if (n_it == newer_dep.MemberEnd()) {
+              // dependency definition removed, not compatible
+              return false;
+          }
+
+          // check that the dependency values for this name are compatible
+          auto const& o = older_dep.value;
+          auto const& n = n_it->value;
+
+          if (o.IsArray() && n.IsArray()) {
+              // string array: n needs to be a a superset of o
+              // TODO: n^2 search
+              return std::ranges::all_of(
+                o.GetArray(), [n_array = n.GetArray()](json::Value const& p) {
+                    return std::ranges::find(n_array, p) != n_array.End();
+                });
+          }
+
+          if (o.IsObject() && n.IsObject()) {
+              // schemas: o and n needs to be compatible
+              return is_superset(o, n);
+          }
+
+          return false;
+      });
+}
+
 bool is_object_superset(json::Value const& older, json::Value const& newer) {
     if (!is_numeric_property_value_superset(
           older, newer, "minProperties", std::less_equal<>{}, 0)) {
@@ -1126,6 +1175,10 @@ bool is_object_superset(json::Value const& older, json::Value const& newer) {
     }
     if (!is_object_required_superset(older, newer)) {
         // required properties are not compatible
+        return false;
+    }
+    if (!is_object_dependencies_superset(older, newer)) {
+        // dependencies are not compatible
         return false;
     }
 
@@ -1408,8 +1461,6 @@ bool is_superset(
     }
 
     for (auto not_yet_handled_keyword : {
-           "definitions",
-           "dependencies",
            // draft 6 unhandled keywords:
            "$ref",
            // draft 2019-09 unhandled keywords:
