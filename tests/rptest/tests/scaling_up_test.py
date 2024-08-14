@@ -475,8 +475,8 @@ class ScalingUpTest(PreallocNodesTest):
             for id in added_ids:
                 added_node_usage = usage[id]
                 assert added_node_usage < percentage * avg_usage, \
-                f"Added node {id} disk usage {added_node_usage} is to large,"
-                "expected usage to be smaller than {percentage * avg_usage} bytes"
+                f"Added node {id} disk usage {added_node_usage} is too large, "
+                f"expected usage to be smaller than {percentage * avg_usage} bytes"
 
         usage = self._kafka_usage(nodes=self.redpanda.nodes[0:5])
         print_disk_usage(usage)
