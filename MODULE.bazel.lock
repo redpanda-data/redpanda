@@ -134,7 +134,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "LqnwQrMtm7KxqLCeJI9itm4dnKuIn/sLwGxUwRMYuec=",
+        "bzlTransitiveDigest": "bo67EZAnCBdJ8M1cs47miolprEcco2x6jiNx9Vn5hvU=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -245,9 +245,9 @@
             "ruleClassName": "http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:libxml2.BUILD",
-              "sha256": "ed0c91c5845008f1936739e4eee2035531c1c94742c6541f44ee66d885948d45",
-              "strip_prefix": "libxml2-2.10.4",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/libxml2-2.10.4.tar.xz"
+              "sha256": "cdf9f952582c32a00513468585fb517270047ac0cfaed013ef08aa7b775fd6b4",
+              "strip_prefix": "libxml2-3b1742b8391e966be780bdc43fdf959f7b3a118c",
+              "url": "https://github.com/GNOME/libxml2/archive/3b1742b8391e966be780bdc43fdf959f7b3a118c.tar.gz"
             }
           },
           "openssl-fips": {
