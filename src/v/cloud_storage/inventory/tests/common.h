@@ -58,7 +58,8 @@ public:
        retry_chain_node& parent,
        const std::string_view stream_label,
        const download_metrics& metrics,
-       std::optional<cloud_storage_clients::http_byte_range> byte_range));
+       std::optional<cloud_storage_clients::http_byte_range> byte_range),
+      (override));
 };
 
 ss::input_stream<char> make_report_stream(

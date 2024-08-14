@@ -78,26 +78,35 @@ namespace archival {
 
 struct partition_mock : public detail::cluster_partition_api {
     MOCK_METHOD(
-      const cloud_storage::partition_manifest&, manifest, (), (const));
+      const cloud_storage::partition_manifest&,
+      manifest,
+      (),
+      (const, override));
 
-    MOCK_METHOD(model::offset, get_next_uploaded_offset, (), (const));
+    MOCK_METHOD(model::offset, get_next_uploaded_offset, (), (const, override));
 
-    MOCK_METHOD(model::offset, get_applied_offset, (), (const));
-
-    MOCK_METHOD(model::offset_delta, offset_delta, (model::offset), (const));
+    MOCK_METHOD(model::offset, get_applied_offset, (), (const, override));
 
     MOCK_METHOD(
-      std::optional<model::term_id>, get_offset_term, (model::offset), (const));
+      model::offset_delta, offset_delta, (model::offset), (const, override));
 
-    MOCK_METHOD(model::producer_id, get_highest_producer_id, (), (const));
+    MOCK_METHOD(
+      std::optional<model::term_id>,
+      get_offset_term,
+      (model::offset),
+      (const, override));
 
-    MOCK_METHOD(model::initial_revision_id, get_initial_revision, (), (const));
+    MOCK_METHOD(
+      model::producer_id, get_highest_producer_id, (), (const, override));
+
+    MOCK_METHOD(
+      model::initial_revision_id, get_initial_revision, (), (const, override));
 
     MOCK_METHOD(
       ss::future<fragmented_vector<model::tx_range>>,
       aborted_transactions,
       (model::offset, model::offset),
-      (const));
+      (const, override));
 
     MOCK_METHOD(
       ss::future<result<model::offset>>,
@@ -109,7 +118,7 @@ struct partition_mock : public detail::cluster_partition_api {
        ss::lowres_clock::time_point deadline,
        ss::abort_source& external_as,
        bool is_validated),
-      (noexcept));
+      (noexcept, override));
 
     cloud_storage::remote_segment_path
     get_remote_segment_path(const cloud_storage::segment_meta& meta) override {
