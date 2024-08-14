@@ -25,8 +25,8 @@ redpanda_cc_library(
         "snappy_standard_compressor.h",
         "stream_zstd.h",
     ],
-    local_defines = ["ZSTD_STATIC_LINKING_ONLY"],
     include_prefix = "compression",
+    local_defines = ["ZSTD_STATIC_LINKING_ONLY"],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
