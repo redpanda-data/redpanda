@@ -65,7 +65,7 @@ private:
     using managed_ntp_it = managed_ntps_map_t::iterator;
     using managed_ntp_cit = managed_ntps_map_t::const_iterator;
 
-    void handle_operation_result(
+    ss::future<> handle_operation_result(
       model::ntp ntp, id migration_id, state desired_state, errc ec);
     void handle_leadership_update(const model::ntp& ntp, bool is_leader);
     void unmanage_ntp(managed_ntp_cit it, errc result);
