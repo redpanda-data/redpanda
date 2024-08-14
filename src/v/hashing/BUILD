@@ -3,9 +3,9 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 redpanda_cc_library(
     name = "crc32",
     hdrs = [
-        "include/hashing/crc32.h",
+        "crc32.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "@zlib",
@@ -15,9 +15,9 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "crc32c",
     hdrs = [
-        "include/hashing/crc32c.h",
+        "crc32c.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
@@ -28,9 +28,9 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "secure",
     hdrs = [
-        "include/hashing/secure.h",
+        "secure.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes",
@@ -41,12 +41,12 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "xx",
     hdrs = [
-        "include/hashing/xx.h",
+        "xx.h",
     ],
     defines = [
         "XXH_PRIVATE_API",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -60,30 +60,30 @@ redpanda_cc_library(
         "murmur.cc",
     ],
     hdrs = [
-        "include/hashing/murmur.h",
+        "murmur.h",
     ],
     copts = [
         "-Wno-implicit-fallthrough",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
     name = "jump_consistent",
     hdrs = [
-        "include/hashing/jump_consistent_hash.h",
+        "jump_consistent_hash.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
     name = "combine",
     hdrs = [
-        "include/hashing/combine.h",
+        "combine.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "@abseil-cpp//absl/hash",
