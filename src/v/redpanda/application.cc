@@ -432,7 +432,7 @@ int application::run(int ac, char** av) {
     std::cout << community_msg << std::endl;
 
     return app.run(ac, av, [this, &app] {
-        vlog(_log.info, "Redpanda {}", redpanda_version());
+        vlog(_log.info, "Redpanda version {}", redpanda_version());
         struct ::utsname buf;
         ::uname(&buf);
         vlog(
