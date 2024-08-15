@@ -96,7 +96,7 @@ git_override(
 )
 
 # ====================================
-# LLVM toolchains
+# LLVM toolchain
 # ====================================
 
 # NOTE: We build our toolchains on ubuntu:jammy so you're going to need a distro at least that old.
@@ -142,6 +142,12 @@ use_repo(llvm, "llvm_18_toolchain", "llvm_18_toolchain_llvm")
 
 register_toolchains("@llvm_18_toolchain//:all")
 
+# ====================================
+# Go Toolchain
+# ====================================
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.23.0")
+
 # currently the only go code built with bazel is the kafka-request-generator
 # that is used in tests. if we start building other things, such as rpk, then it
 # may be worth generating build files with gazelle. explicitly listing the one
@@ -154,6 +160,9 @@ go_deps.module(
 )
 use_repo(go_deps, "com_github_twmb_franz_go_pkg_kmsg")
 
+# ====================================
+# Rust Toolchain
+# ====================================
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2021",
