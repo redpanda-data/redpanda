@@ -16,12 +16,12 @@ redpanda_cc_library(
         "ssl_utils.h",
     ],
     hdrs = [
-        "include/crypto/crypto.h",
-        "include/crypto/exceptions.h",
-        "include/crypto/ossl_context_service.h",
-        "include/crypto/types.h",
+        "crypto.h",
+        "exceptions.h",
+        "ossl_context_service.h",
+        "types.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "crypto",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
