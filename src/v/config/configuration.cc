@@ -1113,7 +1113,8 @@ configuration::configuration()
   , raft_timeout_now_timeout_ms(
       *this,
       "raft_timeout_now_timeout_ms",
-      "Timeout for a timeout now request",
+      "Timeout for Raft's timeout_now RPC. This RPC is used to force a "
+      "follower to dispatch a round of votes immediately.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1s)
   , raft_transfer_leader_recovery_timeout_ms(
