@@ -130,6 +130,11 @@ std::ostream& operator<<(std::ostream&, const s3_self_configuration_result&);
 std::ostream&
 operator<<(std::ostream&, const client_self_configuration_output&);
 
+// In the case of S3-compatible providers, all that is needed to infer the
+// backend is the access point/uri.
+model::cloud_storage_backend
+infer_backend_from_uri(const access_point_uri& uri);
+
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,
   model::cloud_credentials_source cloud_storage_credentials_source);
