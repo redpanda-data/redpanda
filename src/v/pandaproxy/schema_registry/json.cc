@@ -226,7 +226,7 @@ jsoncons::jsonschema::json_schema<jsoncons::json> const& get_metaschema() {
     return meteschema_doc;
 }
 
-result<void> validate_json_schema(
+result<json_schema_dialect> validate_json_schema(
   json_schema_dialect dialect, const jsoncons::json& schema) {
     // validation pre-step: get metaschema for json draft
     auto const& metaschema_doc = [=]() -> const auto& {
@@ -261,10 +261,11 @@ result<void> validate_json_schema(
     // schema is a syntactically valid json schema, where $schema == Dialect.
     // TODO AB cross validate "$ref" fields, this is not done automatically
     // TODO validate that "pattern" and "patternProperties" are valid regex
-    return outcome::success();
+    return dialect;
 }
 
-result<void> try_validate_json_schema(const jsoncons::json& schema) {
+result<json_schema_dialect>
+try_validate_json_schema(const jsoncons::json& schema) {
     using enum json_schema_dialect;
 
     // no explicit $schema: try to validate from newest to oldest draft
@@ -272,7 +273,7 @@ result<void> try_validate_json_schema(const jsoncons::json& schema) {
     for (auto d : {draft202012, draft201909, draft7, draft6, draft4}) {
         auto res = validate_json_schema(d, schema);
         if (res.has_value()) {
-            return outcome::success();
+            return res;
         }
         // failed to validated with dialect d. save error for reporting
         if (!first_error.has_value()) {
