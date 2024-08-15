@@ -25,42 +25,37 @@ else
 fi
 
 deb_deps=(
-  clang
-  lld
-  ragel
-  automake
-  make
   autoconf
-  libtool
+  automake
   autopoint
-  xfslibs-dev
-  valgrind
-  git
   bison
+  git
+  libtool
+  make
   pkgconf
+  ragel
+  valgrind
+  xfslibs-dev
 )
 
 fedora_deps=(
-  lld
-  ragel
-  perl
   autoconf
-  libtool
   automake
+  bison
+  gettext-devel
+  git
+  libtool
+  perl
+  ragel
+  valgrind-devel
   xfsprogs-devel
   xorg-x11-util-macros
-  gettext-devel
-  valgrind-devel
-  git
-  clang
-  bison
 )
 
 case "$ID" in
   ubuntu | debian | pop)
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y "${deb_deps[@]}"
-    which clang-16 || apt install -y clang-16
     if [[ $CLEAN_PKG_CACHE == true ]]; then
       rm -rf /var/lib/apt/lists/*
     fi
