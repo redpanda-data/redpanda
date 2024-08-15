@@ -554,12 +554,23 @@ s3_client::s3_client(
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 s3_client::self_configure() {
+    auto result = s3_self_configuration_result{
+      .url_style = s3_url_style::virtual_host};
+    // Oracle cloud storage only supports path-style requests
+    // (https://www.oracle.com/ca-en/cloud/storage/object-storage/faq/#category-amazon),
+    // but self-configuration will misconfigure to virtual-host style due to a
+    // ListObjects request that happens to succeed. Override for this
+    // specific case.
+    auto inferred_backend = infer_backend_from_uri(_requestor._ap);
+    if (inferred_backend == model::cloud_storage_backend::oracle_s3_compat) {
+        result.url_style = s3_url_style::path;
+        co_return result;
+    }
+
     // Test virtual host style addressing, fall back to path if necessary.
     // If any configuration options prevent testing, addressing style will
     // default to virtual_host.
     // If both addressing methods fail, return an error.
-    auto result = s3_self_configuration_result{
-      .url_style = s3_url_style::virtual_host};
     const auto remote_read
       = config::shard_local_cfg().cloud_storage_enable_remote_read();
     const auto remote_write
