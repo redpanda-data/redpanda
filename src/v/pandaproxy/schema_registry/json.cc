@@ -1229,50 +1229,79 @@ bool is_positive_combinator_superset(
         return res;
     };
 
-    auto older_comb = get_combinator(older);
-    auto newer_comb = get_combinator(newer);
-    if (!older_comb.has_value() && !newer_comb.has_value()) {
-        // both without a combinator, compatible
+    auto maybe_older_comb = get_combinator(older);
+    auto maybe_newer_comb = get_combinator(newer);
+    if (!maybe_older_comb.has_value()) {
+        // older has not a combinator, maximum freedom for newer. compatible
         return true;
     }
+    // older has a combinator
 
-    if (older_comb != newer_comb) {
-        // different combinators. there might be cases where this is compatible,
-        // but this is not fully implemented here
-        throw as_exception(invalid_schema(fmt::format(
-          "{} not implemented for different combinators. input: older: '{}', "
-          "newer: '{}'",
-          __FUNCTION__,
-          pj{older},
-          pj{newer})));
+    if (!maybe_newer_comb.has_value()) {
+        // older has a combinator but newer does not. not compatible
+        return false;
+    }
+    // newer has a combinator
+
+    auto older_comb = maybe_older_comb.value();
+    auto newer_comb = maybe_newer_comb.value();
+    auto older_schemas
+      = older.FindMember(to_keyword(older_comb))->value.GetArray();
+    auto newer_schemas
+      = newer.FindMember(to_keyword(newer_comb))->value.GetArray();
+
+    if (older_comb != p_combinator::anyOf && older_comb != newer_comb) {
+        // different combinators, and older is not "anyOf". there might some
+        // compatible combinations:
+
+        if (older_schemas.Size() == 1 && newer_schemas.Size() == 1) {
+            // both combinators have only one subschema, so the actual
+            // combinator does not matter. compare subschemas directly
+            return is_superset(*older_schemas.Begin(), *newer_schemas.Begin());
+        }
+
+        // either older or newer - or both - has more than one subschema
+
+        if (older_schemas.Size() == 1 && newer_comb == p_combinator::allOf) {
+            // older has only one subschema, newer is "allOf" so it can be
+            // compatible if any one of the subschemas matches older
+            return std::ranges::any_of(
+              newer_schemas, [&](json::Value const& s) {
+                  return is_superset(*older_schemas.Begin(), s);
+              });
+        }
+
+        if (older_comb == p_combinator::oneOf && newer_schemas.Size() == 1) {
+            // older has multiple schemas but only one can be valid. it's
+            // compatible if the only subschema in newer is compatible with one
+            // in older
+            return std::ranges::any_of(
+              older_schemas, [&](json::Value const& s) {
+                  return is_superset(s, *newer_schemas.Begin());
+              });
+        }
+
+        // different combinators, not a special case. not compatible
+        return false;
     }
 
-    // same combinator for older and newer
-    auto combinator = older_comb.value();
-
-    auto older_schemas
-      = older.FindMember(to_keyword(combinator))->value.GetArray();
-    auto newer_schemas
-      = newer.FindMember(to_keyword(combinator))->value.GetArray();
+    // same combinator for older and newer, or older is "anyOf"
 
     // size differences between older_schemas and newer_schemas have different
     // meaning based on combinator.
     // TODO a denormalized schema could fail this check while being compatible
-    switch (combinator) {
-    case p_combinator::allOf:
-        if (older_schemas.Size() > newer_schemas.Size()) {
+    if (older_schemas.Size() > newer_schemas.Size()) {
+        if (older_comb == p_combinator::allOf) {
             // older has more restrictions than newer, not compatible
             return false;
         }
-        break;
-    case p_combinator::anyOf:
-        [[fallthrough]];
-    case p_combinator::oneOf:
-        if (older_schemas.Size() < newer_schemas.Size()) {
+    } else if (older_schemas.Size() < newer_schemas.Size()) {
+        if (
+          newer_comb == p_combinator::anyOf
+          || newer_comb == p_combinator::oneOf) {
             // newer has more degrees of freedom than older, not compatible
             return false;
         }
-        break;
     }
 
     // sizes are compatible, now we need to check that every schema from

@@ -342,7 +342,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = false,
   },
   {
-    .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 3.199})",
+    .reader_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.199})",
     .writer_schema = R"({"type": "integer", "minimum": 1.1, "maximum": 3.2})",
     .reader_is_compatible_with_writer = false,
   },
@@ -532,16 +532,9 @@ static constexpr auto compatibility_test_cases = std::to_array<
   },
   // positive combinators: mismatch of type
   {
-    .reader_schema = R"({"type": "integer"})",
-    .writer_schema = R"({"type": "integer", "anyOf": [true]})",
+    .reader_schema = R"({"type": "integer", "anyOf": [true]})",
+    .writer_schema = R"({"type": "integer"})",
     .reader_is_compatible_with_writer = false,
-    .expected_exception = true,
-  },
-  {
-    .reader_schema = R"({"allOf": [true]})",
-    .writer_schema = R"({"anyOf": [true]})",
-    .reader_is_compatible_with_writer = false,
-    .expected_exception = true,
   },
   // positive combinators: mismatch of size
   {
@@ -655,7 +648,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_is_compatible_with_writer = true,
   },
   {
-    .reader_schema = R"({"type": "number", "minumum": 1.1, "maximum": 4})",
+    .reader_schema = R"({"type": "number", "minimum": 1.1, "maximum": 4})",
     .writer_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.2})",
     .reader_is_compatible_with_writer = true,
   },
@@ -821,6 +814,141 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"oneOf": [{"type":"number", "multipleOf": 3}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"oneOf": [{"type":"boolean"}, {"type": "number", "multipleOf": 9}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators special case: only writer has a combinator
+  {
+    .reader_schema = R"({"type": "object"})",
+    .writer_schema = R"(
+        {"type": "object",
+            "oneOf": [
+                {"type": "object", "properties": {"c": {"type": "string"}}},
+                {"type": "object", "properties": {"d": {"type": "array"}}}
+            ]
+        })",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators single schema cases: the actual combinator does not
+  // matter
+  {
+    .reader_schema = R"({"anyOf": [{"type": "number"}]})",
+    .writer_schema = R"({"oneOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"allOf": [{"type": "number"}]})",
+    .writer_schema = R"({"oneOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}]})",
+    .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"allOf": [{"type": "number"}]})",
+    .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"anyOf": [{"type": "number"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators older is single schema, newer is allOf
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"anyOf": [{"type": "number"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators older is oneOf, newer is single schema
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema = R"({"allOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  // positive combinators special cases: anyOf in reader can be compared with
+  // the other
+  // combinators
+  {
+    // smoke test identical schemas
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // smoke test smaller reader is not compatible
+    .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    // smoke test bigger reader is  compatible
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // oneOf in writer can only be smaller or equal
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // oneOf in writer can only be smaller or equal
+    .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema
+    = R"({"oneOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    // oneOf in writer can only be smaller or equal
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // allOf in writer can be compatible with any cardinality
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema
+    = R"({"allOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // allOf in writer can be compatible with any cardinality
+    .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
+    .writer_schema
+    = R"({"allOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    // allOf in writer can be compatible with any cardinality
+    .reader_schema
+    = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
+    .writer_schema = R"({"allOf": [{"type": "number"}, {"type": "string"}]})",
     .reader_is_compatible_with_writer = true,
   },
   // dialects
