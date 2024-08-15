@@ -17,7 +17,6 @@ redpanda_cc_library(
     ],
     include_prefix = "wasm",
     deps = [
-        ":logger",
         "//src/v/base",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
@@ -47,6 +46,9 @@ redpanda_cc_library(
     hdrs = [
         "ffi.h",
     ],
+    implementation_deps = [
+        "//src/v/utils:vint",
+    ],
     include_prefix = "wasm",
     deps = [
         ":logger",
@@ -55,7 +57,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/reflection:type_traits",
         "//src/v/utils:named_type",
-        "//src/v/utils:vint",
         "@seastar",
     ],
 )
@@ -84,14 +85,16 @@ redpanda_cc_library(
     hdrs = [
         "schema_registry_module.h",
     ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/utils:named_type",
+    ],
     include_prefix = "wasm",
     deps = [
         ":ffi",
-        ":logger",
         ":schema_registry",
         "//src/v/base",
         "//src/v/pandaproxy",
-        "//src/v/utils:named_type",
         "@seastar",
     ],
 )
@@ -113,17 +116,19 @@ redpanda_cc_library(
     hdrs = [
         "wasi.h",
     ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/strings:utf8",
+        "@abseil-cpp//absl/strings",
+    ],
     include_prefix = "wasm",
     deps = [
         ":ffi",
-        ":logger",
         ":wasi_logger",
         "//src/v/base",
         "//src/v/model",
-        "//src/v/strings:utf8",
         "//src/v/utils:named_type",
         "@abseil-cpp//absl/container:flat_hash_map",
-        "@abseil-cpp//absl/strings",
         "@seastar",
     ],
 )
@@ -136,15 +141,17 @@ redpanda_cc_library(
     hdrs = [
         "transform_module.h",
     ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/bytes:iobuf_parser",
+    ],
     include_prefix = "wasm",
     deps = [
         ":api",
         ":ffi",
-        ":logger",
         ":wasi",
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/bytes:iobuf_parser",
         "//src/v/model",
         "@seastar",
     ],
@@ -161,9 +168,6 @@ redpanda_cc_library(
     include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
-        ":ffi",
-        ":logger",
-        ":wasi",
         "//src/v/base",
         "//src/v/metrics",
         "//src/v/utils:log_hist",
@@ -182,9 +186,6 @@ redpanda_cc_library(
     include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
-        ":ffi",
-        ":logger",
-        ":wasi",
         "//src/v/base",
         "//src/v/metrics",
         "@abseil-cpp//absl/container:btree",
@@ -220,10 +221,8 @@ redpanda_cc_library(
     hdrs = [
         "wasmtime.h",
     ],
-    include_prefix = "wasm",
-    deps = [
+    implementation_deps = [
         ":allocator",
-        ":api",
         ":engine_probe",
         ":ffi",
         ":logger",
@@ -233,7 +232,6 @@ redpanda_cc_library(
         ":transform_probe",
         ":wasi",
         ":wasi_logger",
-        "//src/v/base",
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/pandaproxy",
@@ -250,6 +248,11 @@ redpanda_cc_library(
         "@abseil-cpp//absl/strings",
         "@crates//:wasmtime_c",
         "@fmt",
+    ],
+    include_prefix = "wasm",
+    deps = [
+        ":api",
+        "//src/v/base",
         "@seastar",
     ],
 )
@@ -262,23 +265,20 @@ redpanda_cc_library(
     hdrs = [
         "cache.h",
     ],
+    implementation_deps = [
+        ":logger",
+    ],
     include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         ":api",
         ":engine_probe",
-        ":logger",
         ":transform_probe",
         ":wasi_logger",
         "//src/v/base",
         "//src/v/model",
         "//src/v/utils:mutex",
-        "//src/v/utils:named_type",
-        "//src/v/utils:to_string",
-        "//src/v/wasm/parser",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:btree",
-        "@fmt",
         "@seastar",
     ],
 )
@@ -291,12 +291,14 @@ redpanda_cc_library(
     hdrs = [
         "impl.h",
     ],
+    implementation_deps = [
+        ":schema_registry",
+        ":wasmtime",
+    ],
     include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         ":api",
-        ":schema_registry",
-        ":wasmtime",
         "//src/v/base",
         "//src/v/pandaproxy",
         "@seastar",

@@ -15,6 +15,7 @@ def redpanda_cc_library(
         defines = [],
         local_defines = [],
         strip_include_prefix = None,
+        implementation_deps = [],
         visibility = None,
         include_prefix = None,
         copts = [],
@@ -32,6 +33,7 @@ def redpanda_cc_library(
         visibility = visibility,
         include_prefix = include_prefix,
         strip_include_prefix = strip_include_prefix,
+        implementation_deps = implementation_deps,
         deps = deps,
         copts = redpanda_copts() + copts,
         features = [

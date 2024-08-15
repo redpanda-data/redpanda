@@ -22,6 +22,7 @@ redpanda_test_cc_library(
         "//src/v/model/tests:random",
         "//src/v/test_utils:gtest",
         "//src/v/wasm:api",
+        "//src/v/wasm:schema_registry",
         "//src/v/wasm:wasmtime",
         "@googletest//:gtest",
         "@seastar",
