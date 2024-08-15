@@ -13,8 +13,8 @@
 
 #include "base/units.h"
 #include "bytes/iobuf_parser.h"
-#include "leb128.h"
 #include "strings/utf8.h"
+#include "wasm/parser/leb128.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
