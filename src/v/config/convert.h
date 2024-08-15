@@ -368,7 +368,12 @@ struct convert<model::cloud_storage_backend> {
     using type = model::cloud_storage_backend;
 
     static constexpr auto acceptable_values = std::to_array(
-      {"aws", "google", "azure", "minio", "unknown"});
+      {"aws",
+       "google_s3_compat",
+       "azure",
+       "minio",
+       "oracle_s3_compat",
+       "unknown"});
 
     static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
 
@@ -388,6 +393,9 @@ struct convert<model::cloud_storage_backend> {
                   model::cloud_storage_backend::google_s3_compat)
                 .match("minio", model::cloud_storage_backend::minio)
                 .match("azure", model::cloud_storage_backend::azure)
+                .match(
+                  "oracle_s3_compat",
+                  model::cloud_storage_backend::oracle_s3_compat)
                 .match("unknown", model::cloud_storage_backend::unknown);
 
         return true;
