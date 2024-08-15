@@ -7,9 +7,9 @@ redpanda_cc_library(
         "syschecks.cc",
     ],
     hdrs = [
-        "include/syschecks/syschecks.h",
+        "syschecks.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "syschecks",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
