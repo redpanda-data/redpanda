@@ -298,7 +298,7 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
     @matrix(cloud_storage_enabled=[True, False],
             truncate_point=[
                 "at_segment_boundary", "random_offset",
-                "one_below_high_watermark", "at_high_watermark"
+                "one_below_high_watermark", "at_high_watermark", "start_offset"
             ])
     def test_delete_records_segment_deletion(self, cloud_storage_enabled: bool,
                                              truncate_point: str):
@@ -345,6 +345,8 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             truncate_offset = None
             high_watermark = int(
                 self.get_topic_info(TEST_TOPIC_NAME).high_watermark)
+            start_offset = int(
+                self.get_topic_info(TEST_TOPIC_NAME).start_offset)
             if truncate_point == "one_below_high_watermark":
                 truncate_offset = high_watermark - 1  # Leave 1 record
             elif truncate_point == "at_high_watermark":
@@ -354,6 +356,8 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             elif truncate_point == "at_segment_boundary":
                 random_segment = random.randint(1, len(local_snapshot) - 1)
                 truncate_offset = segment_boundaries[random_segment]
+            elif truncate_point == "start_offset":
+                truncate_offset = start_offset
             else:
                 assert False, "unknown test parameter encountered"
 
@@ -484,10 +488,6 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                                             truncate_offset)
         assert low_watermark == truncate_offset
 
-        # Try to truncate before and at the low_watermark
-        bad_truncation(0)
-        bad_truncation(low_watermark)
-
         # Try to truncate at a specific edge case where the start and end
         # are 1 offset away from eachother
         truncate_offset = num_records - 2
@@ -495,9 +495,6 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             low_watermark = self.delete_records(TEST_TOPIC_NAME, 0, t_ofs)
             assert low_watermark == t_ofs
 
-        # Assert that nothing is readable
-        bad_truncation(truncate_offset)
-        bad_truncation(num_records)
         bad_truncation(num_records + 1)
 
     @cluster(num_nodes=3)
@@ -522,11 +519,6 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             missing_idx = 15
             self.rpk.trim_prefix(TEST_TOPIC_NAME, 0, [missing_idx])
 
-        # Assert out of range occurs on an empty topic
-        with expect_exception(RpkException,
-                              lambda e: out_of_range_prefix in str(e)):
-            self.rpk.trim_prefix(TEST_TOPIC_NAME, 0, [0])
-
         # Assert correct behavior on a topic with 1 record
         self.rpk.produce(TEST_TOPIC_NAME, "k", "v", partition=0)
         self.wait_until_records(TEST_TOPIC_NAME,
@@ -535,8 +527,7 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                                 backoff_sec=1)
         with expect_exception(RpkException,
                               lambda e: out_of_range_prefix in str(e)):
-            self.rpk.trim_prefix(TEST_TOPIC_NAME, 0, [0])
-
+            self.rpk.trim_prefix(TEST_TOPIC_NAME, 100, [0])
         # ... truncating at high watermark 1 should delete all data
         low_watermark = self.delete_records(TEST_TOPIC_NAME, 0, 1)
         assert low_watermark == 1
@@ -657,10 +648,13 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             raise ThreadReporter.exc
 
     @cluster(num_nodes=5)
-    @parametrize(cloud_storage_enabled=True)
-    @parametrize(cloud_storage_enabled=False)
-    def test_delete_records_concurrent_truncations(self,
-                                                   cloud_storage_enabled):
+    @matrix(cloud_storage_enabled=[True, False],
+            truncate_point=[
+                "random_offset", "one_below_high_watermark",
+                "at_high_watermark", "start_offset"
+            ])
+    def test_delete_records_concurrent_truncations(self, cloud_storage_enabled,
+                                                   truncate_point):
         """
         This tests verifies that issuing DeleteRecords requests with concurrent
         producers and consumers has no effect on correctness
@@ -683,23 +677,29 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
 
         def issue_delete_records():
             topic_info = self.get_topic_info(TEST_TOPIC_NAME)
-            start_offset = topic_info.start_offset + 1
-            high_watermark = topic_info.high_watermark - 1
-            if high_watermark - start_offset <= 0:
-                self.redpanda.logger.info("Waiting on log to populate")
-                return
-            truncate_point = random.randint(start_offset, high_watermark)
+            start_offset = topic_info.start_offset
+            high_watermark = topic_info.high_watermark
+            if truncate_point == "one_below_high_watermark":
+                truncate_offset = high_watermark - 1  # Leave 1 record
+            elif truncate_point == "at_high_watermark":
+                truncate_offset = high_watermark  # Delete all data
+            elif truncate_point == "random_offset":
+                truncate_offset = random.randint(start_offset, high_watermark)
+            elif truncate_point == "start_offset":
+                truncate_offset = start_offset
+            else:
+                assert False, "unknown test parameter encountered"
             self.redpanda.logger.info(
-                f"Issuing delete_records request at offset: {truncate_point}")
-            response = self.rpk.trim_prefix(TEST_TOPIC_NAME, truncate_point,
+                f"Issuing delete_records request at offset: {truncate_offset}")
+            response = self.rpk.trim_prefix(TEST_TOPIC_NAME, truncate_offset,
                                             [0])
             assert len(response) == 1
-            assert response[0].new_start_offset == truncate_point
+            assert response[0].new_start_offset == truncate_offset
             assert response[0].error_msg == ""
             # Cannot assert end boundaries as there is a concurrent producer
             # moving the hwm forward
             self.assert_start_partition_boundaries(TEST_TOPIC_NAME,
-                                                   truncate_point)
+                                                   truncate_offset)
 
         def issue_partition_move():
             self._dispatch_random_partition_move(TEST_TOPIC_NAME, 0)
