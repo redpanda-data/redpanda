@@ -7,9 +7,9 @@ redpanda_cc_library(
         "parser.cc",
     ],
     hdrs = [
-        "include/wasm/parser/parser.h",
+        "parser.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "wasm/parser",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
