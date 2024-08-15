@@ -1918,6 +1918,8 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
     if (!co_await ss::file_exists(cache_dir.string())) {
         vlog(cst_log.info, "Creating cache directory {}", cache_dir);
         co_await ss::recursive_touch_directory(cache_dir.string());
+        vlog(
+          cst_log.debug, "Successfully created cache directory {}", cache_dir);
     }
 }
 
