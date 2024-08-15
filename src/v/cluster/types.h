@@ -782,7 +782,7 @@ struct create_partitions_configuration
     // This is new total number of partitions in topic.
     int32_t new_total_partition_count;
 
-    // TODO: use when we will start supporting custom partitions assignment
+    // TODO: use when we start supporting custom partitions assignment
     std::vector<custom_assignment> custom_assignments;
 
     friend bool operator==(

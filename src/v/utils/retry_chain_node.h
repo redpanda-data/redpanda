@@ -12,8 +12,8 @@
 #pragma once
 
 /* This mechanism is supposed to help with the situation when
- * we have a fiber that spauns multiple fibers which in turn
- * can spaun even more fibers. It's a normal situation with the
+ * we have a fiber that spawns multiple fibers which in turn
+ * can spawn even more fibers. It's a normal situation with
  * Seastar but the problem has many dimentions:
  * - logging is tricky since every shard runs many concurrent
  *   futures and it's hard to correlate messages with each other
@@ -21,8 +21,8 @@
  *   have some time limitation but child fibers might not finish
  *   in time.
  * - aborting is only possible from top to bottom, it's not possible
- *   for the child fiber to abort an entire tree
- * Provided mechanism can solve this two issues by creating an
+ *   for a child fiber to abort the entire tree
+ * Provided mechanism can solve these two issues by creating an
  * explicit tree of dependency between the fibers and tracking
  * retries and fiber identities/relationships.
  *
@@ -31,7 +31,7 @@
  * ss::future<reply_t> endpoint::send_request(request req) {
  *   while (true) {
  *     try {
- *       co_retury co_await do_send_request(req);
+ *       co_return co_await do_send_request(req);
  *     } catch (const network_error& err) {
  *       vlog(logger, "send_request to {} error {}", name, err);
  *     }
@@ -44,7 +44,7 @@
  * ss::future<reply_t> fan_out_read(request req,
  *                                  const endpoint_list& endpoints)
  * {
- *   using result_fut = std::future<reply>;
+ *   using result_fut = std::future<reply_t>;
  *   std::vector<result_fut> fut;
  *   for (auto endpoint: endpoints) {
  *     // send request is long running and can retry
@@ -67,7 +67,7 @@
  *   retry_chain_node fn(&n, now + 1000ms, 100ms);
  *   while (true) {
  *     try {
- *       co_retury co_await do_send_request(req);
+ *       co_return co_await do_send_request(req);
  *     } catch (network_error) {
  *       vlog(logger, "{} send_request to {} error {}", fn(), name, err);
  *     }
@@ -88,7 +88,7 @@
  *   auto now = ss::lowres_clock::now();
  *   retry_chain_node root(abort_source, now + 10000ms, 100ms);
  *   retry_permit perm = root.retry();
- *   using result_fut = std::future<reply>;
+ *   using result_fut = std::future<reply_t>;
  *   while (perm.is_allowed) {
  *      std::vector<result_fut> fut;
  *      for (auto endpoint: endpoints) {
@@ -101,8 +101,8 @@
  *                 return ss::make_ready_future<reply_t>(r);
  *         }));
  *      }
- *      auo res = co_await ss::when_all(fut.begin(), fut.end());
- *      for(auto& f: res) {
+ *      auto res = co_await ss::when_all(fut.begin(), fut.end());
+ *      for (auto& f: res) {
  *        if (!f.failed()) {
  *          co_return f.get();
  *        }
@@ -115,7 +115,7 @@
  *
  * Here the 'retry_chain_node' inside of the 'fan_out_read' function is a
  * tree root. The 'retry_chain_node' instances inside the 'send_request' are
- * leafs of the tree. The 'abort_source' is propagated form the root, so any
+ * leaves of the tree. The 'abort_source' is propagated from the root, so any
  * leaf can be used to cancel the entire tree. This is done when the first
  * reply is received. Also, the 'retry_chain_node' is used to generate unique
  * fiber ids in the example.
@@ -191,7 +191,7 @@ struct retry_permit {
 ///
 /// The node can be either a root or a leaf. The root node doesn't receive
 /// a pointer to the parent node in c-tor. It can receive an abort_source,
-/// timeout value, or backoff interval in c-tor. This parameters are used
+/// timeout value, or backoff interval in c-tor. These parameters are used
 /// by all child nodes. They have to respect the timeout of the root and
 /// can't set larger timeout.
 /// The leaf node receives a pointer to a parent node (leaf or root).
