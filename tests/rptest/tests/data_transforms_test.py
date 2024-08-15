@@ -9,6 +9,7 @@
 
 import typing
 import time
+import math
 import random
 import string
 import json
@@ -1162,36 +1163,70 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
     def test_manager_metrics_values(self):
         self.logger.debug("Set flush interval to 1h so buffers fill up")
         self.redpanda.set_cluster_config(
-            {'data_transforms_logging_flush_interval_ms': 60 * 60 * 1000})
+            {
+                'data_transforms_logging_flush_interval_ms': 60 * 60 * 1000,
+                'data_transforms_logging_buffer_capacity_bytes': 100 * 1024
+            },
+            expect_restart=True)
+
+        cfg = self._admin.get_cluster_config()
+
+        buf_capacity_B = cfg.get(
+            'data_transforms_logging_buffer_capacity_bytes', 0)
+        assert buf_capacity_B > 0, "Expected non-zero log buffer capacity"
+
+        max_log_line_B = cfg.get('data_transforms_logging_line_max_bytes', 0)
+        assert max_log_line_B > 0, "Expected non-zero max log line"
+
+        self.logger.warn(
+            f"Buffer capacity: {buf_capacity_B}B, Max log line: {max_log_line_B}B"
+        )
+
+        input_topic = TopicSpec()
+        self._rpk.create_topic(input_topic.name, input_topic.partition_count,
+                               input_topic.replication_factor)
 
         it, ot = self.setup_identity_xform(
-            self.topics[0],
+            input_topic,
             self.topics[1],
             name=f"logger-xform",
         )
 
-        N_PER_TP = 32
-        for _ in range(0, N_PER_TP):
+        def get_buffer_usage() -> list[float]:
+            all_nodes_usage: list[float] = []
+            for node in self.redpanda.nodes:
+                samples = self.unpack_samples(
+                    self.get_metrics_from_node(
+                        node,
+                        ["log_manager_buffer_usage"],
+                        endpoint=MetricsEndpoint.METRICS,
+                    ))
+
+                for s in samples['log_manager_buffer_usage']:
+                    all_nodes_usage.append(s['value'])
+            self.logger.debug(f"MAX: {max(all_nodes_usage)}")
+            return all_nodes_usage
+
+        N_PER_TP = int(math.ceil(buf_capacity_B / max_log_line_B))
+        k = self.random_ascii_string(128, 128)
+
+        self.logger.debug("Produce enough data to fill the buffers twice over")
+        for _ in range(0, N_PER_TP * 2):
             self._rpk.produce(
                 it.name,
-                self.random_ascii_string(128, 128),
-                self.random_ascii_string(128, 128),
+                k,
+                self.random_ascii_string(max_log_line_B, max_log_line_B),
             )
 
-        self._rpk.consume(ot.name, n=1, offset=N_PER_TP - 1)
+        self.logger.debug(
+            "This should trigger a flush, preventing us from getting close to 100% usage"
+        )
 
-        all_nodes_usage = []
-        for node in self.redpanda.nodes:
-            samples = self.unpack_samples(
-                self.get_metrics_from_node(
-                    node,
-                    ["log_manager_buffer_usage"],
-                    endpoint=MetricsEndpoint.METRICS,
-                ))
+        with expect_exception(TimeoutError, lambda _: True):
+            wait_until(lambda: any(bu > 1.0 for bu in get_buffer_usage()),
+                       timeout_sec=10,
+                       backoff_sec=1,
+                       err_msg=f"buffers never filled up!")
 
-            for s in samples['log_manager_buffer_usage']:
-                all_nodes_usage.append(s['value'])
-
-        assert any(
-            bu > 0.0 for bu in all_nodes_usage
-        ), f"Expected some non-zero buffer usage, got {all_nodes_usage}"
+        self.logger.debug(
+            f"Final buffer usage: {json.dumps(get_buffer_usage(), indent=1)}")
