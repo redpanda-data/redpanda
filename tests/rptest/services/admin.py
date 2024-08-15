@@ -1035,24 +1035,6 @@ class Admin:
         path = f"transaction/{tid}/find_coordinator"
         return self._request('get', path, node=node).json()
 
-    def describe_tx_registry(self, node=None):
-        """
-        describe_tx_registry
-        """
-        path = f"tx_registry"
-        info = self._request('get', path, node=node).json()
-        mapping = {
-            x["partition_id"]: x["hosted_txs"]
-            for x in info["tx_mapping"]
-        }
-        for key in mapping:
-            if "excluded_transactions" not in mapping[key]:
-                mapping[key]["excluded_transactions"] = []
-            if "included_transactions" not in mapping[key]:
-                mapping[key]["included_transactions"] = []
-        info["tx_mapping"] = mapping
-        return info
-
     def set_partition_replicas(self,
                                topic,
                                partition,

@@ -630,12 +630,7 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
-  , find_coordinator_timeout_ms(
-      *this,
-      "find_coordinator_timeout_ms",
-      "Time to wait for a response from tx_registry",
-      {.visibility = visibility::user},
-      2000ms)
+  , find_coordinator_timeout_ms(*this, "find_coordinator_timeout_ms")
   , seq_table_min_size(*this, "seq_table_min_size")
   , tx_timeout_delay_ms(
       *this,

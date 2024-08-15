@@ -225,6 +225,8 @@ public:
 
         model::offset offset;
         fragmented_vector<tx_metadata> transactions;
+        // hash_ranges is unused and the relevant code can be
+        // removed at some point.
         locally_hosted_txs hash_ranges;
     };
 
