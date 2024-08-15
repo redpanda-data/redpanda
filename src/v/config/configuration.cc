@@ -314,7 +314,7 @@ configuration::configuration()
       *this,
       "topic_partitions_reserve_shard0",
       "Reserved partition slots on shard (CPU core) 0 on each node.  If this "
-      "is >= topic_partitions_per_core, no data partitions will be scheduled "
+      "is >= topic_partitions_per_shard, no data partitions will be scheduled "
       "on shard 0",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0,
