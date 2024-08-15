@@ -188,8 +188,9 @@ class GCPClient:
         # _r contains iterator to zone items among other fields
         # Object returned is ListPager: https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.zones.pagers.ListPager
         _available = [i.name for i in _r]
-        # Return single zone
-        return _available[:1]
+
+        # Return a single zone as a string
+        return _available[0]
 
     def get_instance_meta(self, target='localhost'):
         """

@@ -690,8 +690,9 @@ class CloudCluster():
         # Multi-zone not supported, so get a single one from the list
         self.current.region = self.config.region
         self.current.region_id = self._get_region_id()
-        self.current.zones = self.provider_cli.get_single_zone(
-            self.current.region)
+        self.current.zones = [
+            self.provider_cli.get_single_zone(self.current.region)
+        ]
         # Call CloudV2 API to determine Product ID
         self.current.product_name = self._get_product_name(
             self.config.config_profile_name)
