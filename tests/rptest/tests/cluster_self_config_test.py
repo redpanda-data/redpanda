@@ -60,7 +60,7 @@ class ClusterSelfConfigTest(EndToEndTest):
         """
         si_settings = SISettings(
             self.ctx,
-            #Force self configuration through setting cloud_storage_url_style to None.
+            # Force self configuration through setting cloud_storage_url_style to None.
             cloud_storage_url_style=None,
             cloud_storage_enable_remote_read=cloud_storage_enable_remote_read,
             cloud_storage_enable_remote_write=cloud_storage_enable_remote_write
@@ -91,6 +91,58 @@ class ClusterSelfConfigTest(EndToEndTest):
             # Currently, virtual_host will succeed in all cases with MinIO.
             self_config_expected_results = [
                 '{s3_self_configuration_result: {s3_url_style: virtual_host}}',
+                '{s3_self_configuration_result: {s3_url_style: path}}'
+            ]
+
+            assert self_config_result and self_config_result in self_config_expected_results
+
+    @cluster(num_nodes=1)
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]),
+            cloud_storage_enable_remote_read=[True, False],
+            cloud_storage_enable_remote_write=[True, False])
+    def test_s3_oracle_self_config(self, cloud_storage_type,
+                                   cloud_storage_enable_remote_read,
+                                   cloud_storage_enable_remote_write):
+        """
+        Verify that the cloud_storage_url_style self-configuration for OCI
+        backend always results in path-style.
+        """
+        si_settings = SISettings(
+            self.ctx,
+            # Force self configuration through setting cloud_storage_url_style to None.
+            cloud_storage_url_style=None,
+            # Set Oracle endpoint to expected format.
+            # https://docs.oracle.com/en-us/iaas/Content/Object/Tasks/s3compatibleapi_topic-Amazon_S3_Compatibility_API_Support.htm#s3-api-support
+            cloud_storage_api_endpoint=
+            'mynamespace.compat.objectstorage.us-phoenix-1.oraclecloud.com',
+            cloud_storage_enable_remote_read=cloud_storage_enable_remote_read,
+            cloud_storage_enable_remote_write=cloud_storage_enable_remote_write,
+            # Bypass bucket creation, cleanup, and scrubbing, as we won't actually be able to access the endpoint (Self configuration will usi the endpoint to set path-style).
+            bypass_bucket_creation=True,
+            use_bucket_cleanup_policy=False,
+            skip_end_of_test_scrubbing=True)
+
+        self.start_redpanda(si_settings=si_settings)
+        admin = Admin(self.redpanda)
+        self.log_searcher = LogSearchLocal(self.ctx, [], self.redpanda.logger,
+                                           self.redpanda.STDOUT_STDERR_CAPTURE)
+
+        config = admin.get_cluster_config()
+
+        # Even after self-configuring, the cloud_storage_url_style setting will
+        # still be left unset at the cluster config level.
+        assert config['cloud_storage_url_style'] is None
+
+        for node in self.redpanda.nodes:
+            # Assert that self configuration started.
+            assert self.self_config_start_in_logs(node)
+
+            # Assert that self configuration returned a result.
+            self_config_result = self.self_config_result_from_logs(node)
+
+            # Oracle only supports path-style requests, self-configuration will always succeed.
+            self_config_expected_results = [
                 '{s3_self_configuration_result: {s3_url_style: path}}'
             ]
 
