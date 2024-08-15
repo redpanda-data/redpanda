@@ -26,7 +26,7 @@ def redpanda_cc_rpc_library(name, src, out = None, include_prefix = None, visibi
         name = name + "_genrule",
         srcs = [src],
         outs = [out],
-        cmd = "$(location //src/v/rpc:compiler) --service_file $< --output_file $@",
+        cmd = "$(execpath //src/v/rpc:compiler) --service_file $< --output_file $@",
         tools = ["//src/v/rpc:compiler"],
     )
 
