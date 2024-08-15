@@ -14,6 +14,7 @@
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/tests/produce_utils.h"
+#include "cloud_storage/tests/read_replica_fixture.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/health_monitor_frontend.h"
@@ -828,6 +829,97 @@ FIXTURE_TEST(test_cloud_storage_timequery, e2e_fixture) {
 
     // This will attempt to timequery from local disk since cloud storage cannot
     // answer it, but won't have a value anyways.
+    make_and_verify_timequery(
+      model::timestamp{
+        base_timestamp() + (batch_time_delta_ms * total_records)},
+      model::offset{total_records},
+      false);
+}
+
+FIXTURE_TEST(
+  test_cloud_storage_timequery_read_replica_mode, read_replica_e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(0);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto log = partition->log();
+    auto& archiver = partition->archiver().value().get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+
+    const auto batches_per_segment = 1;
+    const auto num_segs = 5;
+    const auto batch_time_delta_ms = 10;
+    const auto base_timestamp = model::timestamp{0};
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(batches_per_segment)
+                           .base_timestamp(base_timestamp)
+                           .batch_time_delta_ms(batch_time_delta_ms)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_EQUAL(total_records, 5);
+
+    auto rr_rp = start_read_replica_fixture();
+
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::disabled;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
+    auto rr_archiver_ref = rr_partition->archiver();
+    BOOST_REQUIRE(rr_archiver_ref.has_value());
+    auto& rr_archiver = rr_partition->archiver()->get();
+    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    rr_archiver.sync_manifest().get();
+    BOOST_REQUIRE_EQUAL(rr_archiver.manifest().size(), 5);
+
+    auto make_and_verify_timequery =
+      [rr_partition](
+        model::timestamp t,
+        model::offset o,
+        bool expect_value = false,
+        std::optional<model::offset> expected_o = std::nullopt) {
+          auto timequery_conf = storage::timequery_config(
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
+
+          auto result = rr_partition->timequery(timequery_conf).get();
+
+          if (expect_value) {
+              BOOST_REQUIRE(result.has_value());
+              BOOST_REQUIRE_EQUAL(result.value().offset, expected_o.value());
+          } else {
+              BOOST_REQUIRE(!result.has_value());
+          }
+      };
+
+    make_and_verify_timequery(
+      base_timestamp, model::offset{0}, true, model::offset{0});
+
+    for (int i = 1; i < total_records; ++i) {
+        const auto min_timestamp = base_timestamp()
+                                   + batch_time_delta_ms * (i - 1);
+        const auto max_timestamp = min_timestamp + batch_time_delta_ms;
+        const auto query_timestamp = random_generators::get_int(
+          min_timestamp + 1, max_timestamp);
+        make_and_verify_timequery(
+          model::timestamp{query_timestamp},
+          model::offset{i},
+          true,
+          model::offset{i});
+    }
+
+    // This won't have a valid result in cloud storage.
     make_and_verify_timequery(
       model::timestamp{
         base_timestamp() + (batch_time_delta_ms * total_records)},

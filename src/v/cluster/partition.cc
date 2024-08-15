@@ -565,7 +565,7 @@ partition::timequery(storage::timequery_config cfg) {
 }
 
 bool partition::may_read_from_cloud() const {
-    return is_remote_fetch_enabled()
+    return (is_remote_fetch_enabled() || is_read_replica_mode_enabled())
            && (_cloud_storage_partition && _cloud_storage_partition->is_data_available());
 }
 
