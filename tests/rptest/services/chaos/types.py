@@ -10,3 +10,7 @@
 
 class NoProgressError(Exception):
     pass
+
+
+class ConsistencyCheckError(Exception):
+    pass

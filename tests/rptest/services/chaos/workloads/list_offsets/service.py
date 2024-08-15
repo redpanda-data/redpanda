@@ -9,14 +9,18 @@
 
 import requests
 import signal
+import os
 from enum import Enum
 import dataclasses
 
 from ducktape.services.service import Service
+from ducktape.tests.test import TestContext
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.errors import TimeoutError
 
 from rptest.util import wait_until
+from . import consistency
 
 from ...types import NoProgressError
 
@@ -37,6 +41,8 @@ class WorkloadInfo:
 
 class ListOffsetsWorkload(Service):
     PERSISTENT_ROOT = "/var/lib/chaos_workloads/list_offsets"
+    SYSTEM_LOG_PATH = os.path.join(PERSISTENT_ROOT, "system.log")
+    WORKLOAD_LOG_PATH = os.path.join(PERSISTENT_ROOT, "workload.log")
 
     def __init__(self, ctx, brokers_str, topic):
         super().__init__(ctx, num_nodes=1)
@@ -47,12 +53,16 @@ class ListOffsetsWorkload(Service):
         self._brokers_str = brokers_str
         self._topic = topic
 
-    logs = {
-        "workload_logs": {
-            "path": PERSISTENT_ROOT,
-            "collect_default": True
+        self.logs = {
+            "system": {
+                "path": self.SYSTEM_LOG_PATH,
+                "collect_default": True,
+            },
+            "workload": {
+                "path": self.WORKLOAD_LOG_PATH,
+                "collect_default": True,
+            }
         }
-    }
 
     def _remote_url(self, node, path):
         return f"http://{node.account.hostname}:{self._remote_port}/{path}"
@@ -95,7 +105,7 @@ class ListOffsetsWorkload(Service):
         cmd = "java -cp /opt/verifiers/verifiers.jar io.vectorized.chaos.list_offsets.App"
         assert node.name not in self._pids
 
-        wrapped_cmd = f"nohup {cmd} > {self.PERSISTENT_ROOT}/system.log 2>&1 & echo $!"
+        wrapped_cmd = f"nohup {cmd} > {self.SYSTEM_LOG_PATH} 2>&1 & echo $!"
 
         pid_str = node.account.ssh_output(wrapped_cmd, timeout_sec=10)
         self.logger.debug(
@@ -186,6 +196,7 @@ class ListOffsetsWorkload(Service):
 
         for node in nodes:
             assert self._node_states.get(node.name) == NodeState.INITIALIZED
+            self.logger.info(f"starting workload on {node.name}")
             self._request("post", node, "start")
             self._node_states[node.name] = NodeState.STARTED
 
@@ -228,3 +239,35 @@ class ListOffsetsWorkload(Service):
 
     def emit_event(self, node, name):
         self._request("post", node, "event/" + name)
+
+    ### post-workload checks
+
+    def _results_dir(self):
+        return os.path.join(
+            TestContext.results_dir(self.context, self.context.test_index),
+            self.service_id)
+
+    def _node_results_dir(self, node):
+        return os.path.join(self._results_dir(), node.account.hostname)
+
+    def copy_workload_logs(self):
+        for node in self.nodes:
+            assert self._node_states.get(node.name) == NodeState.STOPPED
+            dest = self._node_results_dir(node)
+            if not os.path.isdir(dest):
+                mkdir_p(dest)
+            node.account.copy_from(self.WORKLOAD_LOG_PATH, dest)
+
+        # disable automatic copying
+        del self.logs["workload"]
+
+    def stop_and_validate(self):
+        self.stop_workload()
+        self.copy_workload_logs()
+
+        consistency.validate(
+            self._results_dir(),
+            [n.name for n in self.nodes],
+            brokers_str=self._brokers_str,
+            topic=self._topic,
+        )
