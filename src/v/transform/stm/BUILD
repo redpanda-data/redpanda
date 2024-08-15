@@ -6,9 +6,9 @@ redpanda_cc_library(
         "transform_offsets_stm.cc",
     ],
     hdrs = [
-        "include/transform/stm/transform_offsets_stm.h",
+        "transform_offsets_stm.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "transform/stm",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",

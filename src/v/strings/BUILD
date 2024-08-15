@@ -6,9 +6,9 @@ redpanda_cc_library(
         "utf8.cc",
     ],
     hdrs = [
-        "include/strings/utf8.h",
+        "utf8.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "strings",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -19,8 +19,8 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "string_switch",
     hdrs = [
-        "include/strings/string_switch.h",
+        "string_switch.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "strings",
     visibility = ["//visibility:public"],
 )
