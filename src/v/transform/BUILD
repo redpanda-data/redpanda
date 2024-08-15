@@ -58,10 +58,10 @@ redpanda_cc_library(
         "txn_reader.h",
     ],
     hdrs = [
-        "include/transform/api.h",
-        "include/transform/fwd.h",
+        "api.h",
+        "fwd.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "transform",
     visibility = ["//visibility:public"],
     deps = [
         ":commit_batcher",

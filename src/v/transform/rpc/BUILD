@@ -18,12 +18,12 @@ redpanda_cc_library(
         "service.cc",
     ],
     hdrs = [
-        "include/transform/rpc/client.h",
-        "include/transform/rpc/deps.h",
-        "include/transform/rpc/serde.h",
-        "include/transform/rpc/service.h",
+        "client.h",
+        "deps.h",
+        "serde.h",
+        "service.h",
     ],
-    strip_include_prefix = "include",
+    include_prefix = "transform/rpc",
     visibility = ["//visibility:public"],
     deps = [
         ":transform_rpc",
