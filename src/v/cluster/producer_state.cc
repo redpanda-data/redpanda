@@ -122,6 +122,16 @@ std::optional<request_ptr> requests::last_request() const {
     return std::nullopt;
 }
 
+void requests::reset(request_result_t::error_type error) {
+    for (auto& request : _inflight_requests) {
+        if (!request->has_completed()) {
+            request->set_error(error);
+        }
+    }
+    _inflight_requests.clear();
+    _finished_requests.clear();
+}
+
 bool requests::is_valid_sequence(seq_t incoming) const {
     auto last_req = last_request();
     return
@@ -138,13 +148,7 @@ result<request_ptr> requests::try_emplace(
     if (reset_sequences) {
         // reset all the sequence tracking state, avoids any sequence
         // checks for sequence tracking.
-        while (!_inflight_requests.empty()) {
-            if (!_inflight_requests.front()->has_completed()) {
-                _inflight_requests.front()->set_error(errc::timeout);
-            }
-            _inflight_requests.pop_front();
-        }
-        _finished_requests.clear();
+        reset(errc::timeout);
     } else {
         // gc and fail any inflight requests from old terms
         // these are guaranteed to be failed because of sync() guarantees
@@ -232,15 +236,7 @@ bool requests::stm_apply(
     return relink_producer;
 }
 
-void requests::shutdown() {
-    for (auto& request : _inflight_requests) {
-        if (!request->has_completed()) {
-            request->set_error(errc::shutting_down);
-        }
-    }
-    _inflight_requests.clear();
-    _finished_requests.clear();
-}
+void requests::shutdown() { reset(cluster::errc::shutting_down); }
 
 producer_state::producer_state(
   ss::noncopyable_function<void()> post_eviction_hook,
@@ -315,6 +311,17 @@ bool producer_state::can_evict() {
     return true;
 }
 
+void producer_state::reset_with_new_epoch(model::producer_epoch new_epoch) {
+    vassert(
+      new_epoch > _id.get_epoch(),
+      "Invalid epoch bump to {} for producer {}",
+      new_epoch,
+      *this);
+    vlog(clusterlog.info, "[{}] Reseting epoch to {}", *this, new_epoch);
+    _requests.reset(errc::timeout);
+    _id = model::producer_identity(_id.id, new_epoch);
+}
+
 result<request_ptr> producer_state::try_emplace_request(
   const model::batch_identity& bid, model::term_id current_term, bool reset) {
     if (bid.first_seq > bid.last_seq) {
@@ -351,6 +358,9 @@ bool producer_state::update(
   const model::batch_identity& bid, kafka::offset offset) {
     if (_evicted) {
         return false;
+    }
+    if (!bid.is_transactional && bid.pid.epoch > _id.epoch) {
+        reset_with_new_epoch(model::producer_epoch{bid.pid.epoch});
     }
     bool relink_producer = _requests.stm_apply(bid, offset);
     vlog(

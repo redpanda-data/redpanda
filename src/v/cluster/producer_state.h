@@ -130,6 +130,7 @@ private:
       static_cast<unsigned long>(requests_cached_max));
     bool is_valid_sequence(seq_t incoming) const;
     std::optional<request_ptr> last_request() const;
+    void reset(request_result_t::error_type);
     ss::chunked_fifo<request_ptr, chunk_size> _inflight_requests;
     ss::chunked_fifo<request_ptr, chunk_size> _finished_requests;
     friend producer_state;
@@ -208,6 +209,17 @@ public:
     void update_current_txn_start_offset(std::optional<kafka::offset> offset) {
         _current_txn_start_offset = offset;
     }
+
+    model::producer_identity id() const { return _id; }
+
+    // Resets the producer to use a new epoch. The new epoch should be strictly
+    // larger than the current epoch. This is only used by the idempotent
+    // producers trying to bump epoch of the existing producer based on the
+    // incoming request with a higher epoch. Transactions follow a separate
+    // fencing based approach to bump epochs as it requires aborting any in
+    // progress transactions with older epoch.
+    void reset_with_new_epoch(model::producer_epoch new_epoch);
+
     safe_intrusive_list_hook _hook;
 
 private:

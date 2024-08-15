@@ -90,6 +90,9 @@ enum class errc : int16_t {
     producer_ids_vcluster_limit_exceeded,
     validation_of_recovery_topic_failed,
 };
+
+std::ostream& operator<<(std::ostream& o, errc err);
+
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
 

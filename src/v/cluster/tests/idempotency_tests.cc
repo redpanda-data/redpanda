@@ -317,41 +317,6 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
       r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
 
-FIXTURE_TEST(test_rm_stm_prevents_odd_session_start_off, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get0();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
-
-    auto count = 5;
-    auto rdr = random_batches_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 0,
-      .producer_epoch = 0,
-      .base_sequence = 1});
-
-    auto bid = model::batch_identity{
-      .pid = model::producer_identity{0, 0},
-      .first_seq = 1,
-      .last_seq = 1 + (count - 1)};
-
-    auto r = stm
-               .replicate(
-                 bid,
-                 std::move(rdr),
-                 raft::replicate_options(raft::consistency_level::quorum_ack))
-               .get0();
-    BOOST_REQUIRE(
-      r == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
-}
-
 FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
     create_stm_and_start_raft();
     auto& stm = *_stm;
