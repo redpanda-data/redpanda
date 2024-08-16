@@ -98,6 +98,25 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "partition_key_test",
+    timeout = "short",
+    srcs = [
+        "partition_key_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        ":value_generator",
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:partition_key",
+        "//src/v/iceberg:struct_accessor",
+        "//src/v/iceberg:transform",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "partition_key_type_test",
     timeout = "short",
     srcs = [

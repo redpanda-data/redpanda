@@ -33,6 +33,7 @@ v_cc_library(
     json_utils.cc
     logger.cc
     manifest_avro.cc
+    partition_key.cc
     partition_key_type.cc
     schema.cc
     schema_json.cc

@@ -138,6 +138,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partition_key",
+    srcs = [
+        "partition_key.cc",
+    ],
+    hdrs = [
+        "partition_key.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition",
+        ":struct_accessor",
+        ":transform_utils",
+        ":values",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition_key_type",
     srcs = [
         "partition_key_type.cc",
