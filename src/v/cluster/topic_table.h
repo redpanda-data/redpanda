@@ -185,6 +185,11 @@ public:
             return _policy;
         }
 
+        bool is_force_reconfiguration() const {
+            return _state == reconfiguration_state::force_cancelled
+                   || _state == reconfiguration_state::force_update;
+        }
+
         friend std::ostream&
         operator<<(std::ostream&, const in_progress_update&);
 
