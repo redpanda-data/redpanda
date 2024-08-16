@@ -13,7 +13,6 @@
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
-#include "storage/logger.h"
 #include "storage/types.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -90,10 +89,7 @@ public:
         _compaction_removed_bytes += bytes;
     }
 
-    void batch_write_error(const std::exception_ptr& e) {
-        stlog.error("Error writing record batch {}", e);
-        ++_batch_write_errors;
-    }
+    void batch_write_error(const std::exception_ptr& e);
 
     void add_batches_read(uint32_t batches) { _batches_read += batches; }
     void add_cached_batches_read(uint32_t batches) {

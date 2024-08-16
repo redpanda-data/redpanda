@@ -9,11 +9,13 @@
 
 #include "storage/snapshot.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "hashing/crc32c.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/logger.h"
 #include "storage/segment_utils.h"
 #include "utils/directory_walker.h"
 

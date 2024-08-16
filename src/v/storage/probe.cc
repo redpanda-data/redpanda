@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "metrics/prometheus_sanitize.h"
+#include "storage/logger.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/segment.h"
 
@@ -185,6 +186,11 @@ void probe::add_initial_segment(const segment& s) {
 }
 void probe::delete_segment(const segment& s) {
     _partition_bytes -= s.file_size();
+}
+
+void probe::batch_write_error(const std::exception_ptr& e) {
+    stlog.error("Error writing record batch {}", e);
+    ++_batch_write_errors;
 }
 
 void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
