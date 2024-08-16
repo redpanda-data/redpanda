@@ -3092,6 +3092,10 @@ void application::start_kafka(
         cvar.wait().get();
     }
 
+    ss::smp::invoke_on_all([]() {
+        return ss::default_priority_class().update_shares(1000);
+    }).get();
+
     _kafka_server.invoke_on_all(&net::server::start).get();
     vlog(
       _log.info,
