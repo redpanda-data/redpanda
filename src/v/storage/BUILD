@@ -1,5 +1,11 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
+package(
+    default_visibility = [
+        "//src/v/storage/tests:__pkg__",
+    ],
+)
+
 redpanda_cc_library(
     name = "config",
     hdrs = [
@@ -54,6 +60,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "logger",
+    srcs = [
+        "logger.cc",
+    ],
+    hdrs = [
+        "logger.h",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -73,7 +94,6 @@ redpanda_cc_library(
         "log_manager.cc",
         "log_reader.cc",
         "log_replayer.cc",
-        "logger.cc",
         "node.cc",
         "offset_to_filepos.cc",
         "offset_translator.cc",
@@ -128,7 +148,6 @@ redpanda_cc_library(
         "log_manager.h",
         "log_reader.h",
         "log_replayer.h",
-        "logger.h",
         "node.h",
         "ntp_config.h",
         "offset_assignment.h",
@@ -156,6 +175,10 @@ redpanda_cc_library(
         "translating_reader.h",
         "types.h",
         "version.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/syschecks",
     ],
     include_prefix = "storage",
     visibility = ["//visibility:public"],

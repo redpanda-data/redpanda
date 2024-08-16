@@ -10,6 +10,12 @@
  */
 #include "storage/api.h"
 
+#include "base/vlog.h"
+#include "storage/logger.h"
+#include "syschecks/syschecks.h"
+
+#include <seastar/core/seastar.hh>
+
 namespace storage {
 
 ss::future<usage_report> api::disk_usage() {
@@ -35,5 +41,37 @@ void api::handle_disk_notification(
 }
 
 void api::trigger_gc() { _log_mgr->trigger_gc(); }
+
+ss::future<bool> api::wait_for_cluster_uuid() {
+    if (_cluster_uuid.has_value()) {
+        co_return true;
+    }
+    try {
+        co_await _has_cluster_uuid_cond.wait();
+        vassert(
+          _cluster_uuid.has_value(), "Expected cluster UUID after waiting");
+        co_return true;
+    } catch (ss::broken_condition_variable&) {
+        vlog(stlog.info, "Stopped waiting for cluster UUID");
+    }
+    co_return false;
+}
+
+namespace directories {
+
+ss::future<> initialize(ss::sstring dir) {
+    return recursive_touch_directory(dir)
+      .handle_exception([dir](std::exception_ptr ep) {
+          stlog.error(
+            "Directory `{}` cannot be initialized. Failed with {}", dir, ep);
+          return ss::make_exception_future<>(std::move(ep));
+      })
+      .then([dir] {
+          vlog(stlog.info, "Checking `{}` for supported filesystems", dir);
+          return syschecks::disk(dir);
+      });
+}
+
+} // namespace directories
 
 } // namespace storage

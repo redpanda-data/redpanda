@@ -10,6 +10,8 @@
  */
 #include "storage/node.h"
 
+#include "storage/logger.h"
+
 #include <seastar/core/reactor.hh>
 
 namespace storage {

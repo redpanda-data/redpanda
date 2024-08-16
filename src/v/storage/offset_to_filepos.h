@@ -16,7 +16,6 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/fwd.h"
-#include "storage/logger.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>

@@ -12,13 +12,10 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "base/vlog.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
-#include "storage/logger.h"
-#include "storage/probe.h"
 #include "storage/storage_resources.h"
 #include "utils/notification_list.h"
 
@@ -87,20 +84,7 @@ public:
         return _cluster_uuid;
     }
 
-    ss::future<bool> wait_for_cluster_uuid() {
-        if (_cluster_uuid.has_value()) {
-            co_return true;
-        }
-        try {
-            co_await _has_cluster_uuid_cond.wait();
-            vassert(
-              _cluster_uuid.has_value(), "Expected cluster UUID after waiting");
-            co_return true;
-        } catch (ss::broken_condition_variable&) {
-            vlog(stlog.info, "Stopped waiting for cluster UUID");
-        }
-        co_return false;
-    }
+    ss::future<bool> wait_for_cluster_uuid();
 
     kvstore& kvs() { return *_kvstore; }
     log_manager& log_mgr() { return *_log_mgr; }

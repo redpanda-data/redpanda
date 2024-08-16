@@ -11,6 +11,8 @@
 
 #include "storage/offset_to_filepos.h"
 
+#include "base/vlog.h"
+#include "storage/logger.h"
 #include "storage/parser.h"
 #include "storage/segment.h"
 #include "storage/segment_utils.h"
