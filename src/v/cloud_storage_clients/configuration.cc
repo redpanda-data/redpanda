@@ -327,6 +327,21 @@ operator<<(std::ostream& o, const client_self_configuration_output& r) {
       r);
 }
 
+model::cloud_storage_backend
+infer_backend_from_uri(const access_point_uri& uri) {
+    auto result
+      = string_switch<model::cloud_storage_backend>(uri())
+          .match_expr("google", model::cloud_storage_backend::google_s3_compat)
+          .match_expr(R"(127\.0\.0\.1)", model::cloud_storage_backend::aws)
+          .match_expr("localhost", model::cloud_storage_backend::aws)
+          .match_expr("minio", model::cloud_storage_backend::minio)
+          .match_expr("amazon", model::cloud_storage_backend::aws)
+          .match_expr(
+            "oraclecloud", model::cloud_storage_backend::oracle_s3_compat)
+          .default_match(model::cloud_storage_backend::unknown);
+    return result;
+}
+
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,
   model::cloud_credentials_source cloud_storage_credentials_source) {
@@ -374,15 +389,7 @@ model::cloud_storage_backend infer_backend_from_configuration(
 
     auto& s3_config = std::get<s3_configuration>(client_config);
     const auto& uri = s3_config.uri;
-
-    auto result
-      = string_switch<model::cloud_storage_backend>(uri())
-          .match_expr("google", model::cloud_storage_backend::google_s3_compat)
-          .match_expr(R"(127\.0\.0\.1)", model::cloud_storage_backend::aws)
-          .match_expr("localhost", model::cloud_storage_backend::aws)
-          .match_expr("minio", model::cloud_storage_backend::minio)
-          .match_expr("amazon", model::cloud_storage_backend::aws)
-          .default_match(model::cloud_storage_backend::unknown);
+    auto result = infer_backend_from_uri(uri);
 
     vlog(
       client_config_log.info,

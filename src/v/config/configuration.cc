@@ -2080,6 +2080,7 @@ configuration::configuration()
        model::cloud_storage_backend::google_s3_compat,
        model::cloud_storage_backend::azure,
        model::cloud_storage_backend::minio,
+       model::cloud_storage_backend::oracle_s3_compat,
        model::cloud_storage_backend::unknown})
   , cloud_storage_credentials_host(
       *this,

@@ -183,6 +183,9 @@ int remote::delete_objects_max_keys() const {
     switch (_cloud_storage_backend) {
     case model::cloud_storage_backend::aws:
         [[fallthrough]];
+    case model::cloud_storage_backend::oracle_s3_compat:
+        // https://docs.oracle.com/en-us/iaas/api/#/en/s3objectstorage/20160918/Object/BulkDelete
+        [[fallthrough]];
     case model::cloud_storage_backend::minio:
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
         return 1000;
