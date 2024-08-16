@@ -140,6 +140,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "logger",
+    srcs = [
+        "logger.cc",
+    ],
+    hdrs = [
+        "logger.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema",
     hdrs = [
         "schema.h",
