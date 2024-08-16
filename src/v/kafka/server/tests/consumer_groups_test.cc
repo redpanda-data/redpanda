@@ -103,6 +103,41 @@ FIXTURE_TEST(join_empty_group_static_member, consumer_offsets_fixture) {
     }).get();
 }
 
+FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
+    scoped_config cfg;
+    cfg.get("group_topic_partitions").set_value(1);
+    add_topic(
+      model::topic_namespace_view{model::kafka_namespace, model::topic{"foo"}})
+      .get();
+    kafka::group_instance_id gr("instance-1");
+    wait_for_consumer_offsets_topic(gr);
+    auto client = make_kafka_client().get0();
+    auto deferred = ss::defer([&client] {
+        client.stop().then([&client] { client.shutdown(); }).get();
+    });
+    client.connect().get();
+    // Regression test for a crash that we would previously see with empty
+    // requests.
+    // NOTE: errors are stored in partition fields of the response. Since the
+    // requests are empty, there are no errors.
+    {
+        auto req = offset_commit_request{
+          .data{.group_id = kafka::group_id{"foo-topics"}, .topics = {}}};
+        req.data.group_instance_id = gr;
+        auto resp = client.dispatch(std::move(req)).get();
+        BOOST_REQUIRE(!resp.data.errored());
+    }
+    {
+        auto req = offset_commit_request{.data{
+          .group_id = kafka::group_id{"foo-partitions"},
+          .topics = {offset_commit_request_topic{
+            .name = model::topic{"foo"}, .partitions = {}}}}};
+        req.data.group_instance_id = gr;
+        auto resp = client.dispatch(std::move(req)).get();
+        BOOST_REQUIRE(!resp.data.errored());
+    }
+}
+
 FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
     scoped_config cfg;
     cfg.get("group_topic_partitions").set_value(1);
