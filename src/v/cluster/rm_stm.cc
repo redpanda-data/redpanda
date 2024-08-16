@@ -316,10 +316,11 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
           model::offset(r.value().last_offset()),
           model::timeout_clock::now() + _sync_timeout)) {
         vlog(
-          _ctx_log.trace,
-          "timeout on waiting until {} is applied (begin_tx pid:{} tx_seq:{})",
+          _ctx_log.warn,
+          "Timed out while waiting for offset {} to be applied (begin_tx "
+          "producer: {} tx_seq: {})",
           r.value().last_offset(),
-          pid,
+          *producer,
           tx_seq);
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("begin_tx apply error");
@@ -454,6 +455,13 @@ ss::future<tx::errc> rm_stm::do_commit_tx(
     }
     if (!co_await wait_no_throw(
           r.value().last_offset, model::timeout_clock::now() + timeout)) {
+        vlog(
+          _ctx_log.warn,
+          "Timed out while waiting for commit marker at offset {} to be "
+          "applied (commit_tx producer: {} tx_seq: {})",
+          r.value().last_offset,
+          *producer,
+          expected_tx_seq);
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("do_commit_tx wait error");
         }
@@ -589,7 +597,7 @@ ss::future<tx::errc> rm_stm::do_abort_tx(
 
     if (!r) {
         vlog(
-          _ctx_log.info,
+          _ctx_log.warn,
           "Error \"{}\" on replicating pid:{} tx_seq:{} abort batch",
           r.error(),
           pid,
@@ -603,10 +611,11 @@ ss::future<tx::errc> rm_stm::do_abort_tx(
     if (!co_await wait_no_throw(
           r.value().last_offset, model::timeout_clock::now() + timeout)) {
         vlog(
-          _ctx_log.trace,
-          "timeout on waiting until {} is applied (abort_tx pid:{} tx_seq:{})",
+          _ctx_log.warn,
+          "Timed out while waiting for offset {} to be applied (abort_tx "
+          "producer: {} tx_seq: {})",
           r.value().last_offset,
-          pid,
+          *producer,
           expected_tx_seq.value_or(model::tx_seq(-1)));
         if (_raft->is_leader() && _raft->term() == synced_term) {
             co_await _raft->step_down("abort_tx apply error");
@@ -809,10 +818,11 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
       synced_term, std::move(rdr), make_replicate_options());
     if (!r) {
         vlog(
-          _ctx_log.info,
-          "got {} on replicating tx data batch for pid:{}",
+          _ctx_log.warn,
+          "Error {} on replicating tx data batch for bid:{}, producer: {}",
           r.error(),
-          bid.pid);
+          bid,
+          *producer);
         req_ptr->set_error(r.error());
         co_return r.error();
     }
@@ -821,8 +831,11 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           model::timeout_clock::now() + _sync_timeout)) {
         vlog(
           _ctx_log.warn,
-          "application of the replicated tx batch has timed out pid:{}",
-          bid.pid);
+          "Timed out while waiting for offset: {}, batch: {} to be applied "
+          "using producer: {}",
+          r.value().last_offset,
+          bid,
+          *producer);
         req_ptr->set_error(cluster::errc::timeout);
         co_return tx::errc::timeout;
     }
@@ -1309,9 +1322,10 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
                       model::timeout_clock::now() + _sync_timeout)) {
                     vlog(
                       _ctx_log.warn,
-                      "Timed out on waiting for the commit marker to be "
-                      "applied pid:{} tx_seq:{}",
-                      pid,
+                      "Timed out while waiting for the commit marker at offset "
+                      "{} to be applied using producer: {} tx_seq: {}",
+                      cr.value().last_offset,
+                      *producer,
                       tx_seq);
                     if (_raft->is_leader() && _raft->term() == synced_term) {
                         co_await _raft->step_down(
@@ -1350,8 +1364,9 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
                       model::timeout_clock::now() + _sync_timeout)) {
                     vlog(
                       _ctx_log.warn,
-                      "Timed out on waiting for the abort marker to be applied "
-                      "for transaction: {}",
+                      "Timed out while waiting for the abort marker at offset: "
+                      "{} to be applied for transaction: {}",
+                      cr.value().last_offset,
                       *producer);
                     if (_raft->is_leader() && _raft->term() == synced_term) {
                         co_await _raft->step_down(
@@ -1399,11 +1414,11 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
               model::offset(cr.value().last_offset()),
               model::timeout_clock::now() + _sync_timeout)) {
             vlog(
-              _ctx_log.trace,
-              "timeout on waiting until {} is applied (try_abort_old_tx "
-              "pid:{})",
+              _ctx_log.warn,
+              "Timed out while waiting for offset {} to be applied "
+              "(try_abort_old_tx producer: {})",
               cr.value().last_offset(),
-              pid);
+              *producer);
             if (_raft->is_leader() && _raft->term() == synced_term) {
                 co_await _raft->step_down("try_abort_old_tx apply error");
             }
