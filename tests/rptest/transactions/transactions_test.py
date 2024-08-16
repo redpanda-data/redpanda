@@ -447,8 +447,9 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         try:
             producer.commit_transaction()
             assert False, "transaction should have been aborted by now."
-        except ck.KafkaException:
-            pass
+        except ck.KafkaException as e:
+            assert e.args[0].code(
+            ) == ck.KafkaError.INVALID_PRODUCER_ID_MAPPING, f"Invalid error thrown on expiration {e}"
 
     @cluster(num_nodes=3)
     def expired_tx_test(self):

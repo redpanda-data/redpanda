@@ -1797,7 +1797,7 @@ ss::future<tx_gateway_frontend::op_result_t> tx_gateway_frontend::do_end_txn(
               "commit/abort",
               request.transactional_id,
               pid);
-            err = tx::errc::unknown_server_error;
+            err = tx::errc::invalid_producer_id_mapping;
         }
         outcome->set_value(err);
         co_return err;
