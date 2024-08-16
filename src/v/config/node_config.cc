@@ -138,6 +138,13 @@ node_config::node_config() noexcept
       "`cloud_storage_enabled` is present",
       {.visibility = visibility::user},
       std::nullopt)
+  , cloud_storage_inventory_hash_store(
+      *this,
+      "cloud_storage_inventory_hash_path_directory",
+      "Directory to store inventory report hashes for use by cloud storage "
+      "scrubber",
+      {.visibility = visibility::user},
+      std::nullopt)
   , enable_central_config(*this, "enable_central_config")
   , crash_loop_limit(
       *this,

@@ -11,11 +11,11 @@
 
 #include "cluster/inventory_service.h"
 
-#include "base/units.h"
 #include "cloud_storage/inventory/inv_consumer.h"
 #include "cloud_storage/inventory/report_parser.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote.h"
+#include "config/node_config.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
@@ -33,7 +33,6 @@ using cloud_storage::cst_log;
 namespace csi = cloud_storage::inventory;
 
 namespace {
-constexpr auto max_hash_size_in_memory = 128_KiB;
 constexpr auto partition_leaders_retry = 5;
 constexpr auto sleep_between_get_leaders = 1s;
 
@@ -79,6 +78,13 @@ ss::future<> remove_entry(std::filesystem::path parent, ss::directory_entry e) {
     co_return co_await ss::recursive_remove_directory(path);
 }
 
+retry_chain_node make_rtc(ss::abort_source& as) {
+    return retry_chain_node{
+      as,
+      config::shard_local_cfg().cloud_storage_hydration_timeout_ms(),
+      config::shard_local_cfg().cloud_storage_initial_backoff_ms()};
+}
+
 } // namespace
 
 namespace cluster {
@@ -100,12 +106,21 @@ default_leaders_provider::default_leaders_provider(
 ss::future<absl::node_hash_set<model::ntp>>
 default_leaders_provider::ntps(ss::abort_source& as) {
     absl::node_hash_set<model::ntp> ntps;
+    const auto self_node_id = config::node().node_id();
+    if (!self_node_id.has_value()) {
+        vlog(cst_log.warn, "node has no id, cannot find leadership");
+        co_return ntps;
+    }
+
     for (auto retry : std::ranges::iota_view{0, partition_leaders_retry}) {
         std::exception_ptr ep;
         try {
             co_await _leaders_table.local().for_each_leader(
-              [&ntps](auto tp_ns, auto pid, auto, auto) mutable {
-                  ntps.insert(model::ntp{tp_ns.ns, tp_ns.tp, pid});
+              [&ntps,
+               self_node_id](auto tp_ns, auto pid, auto node_id, auto) mutable {
+                  if (node_id == self_node_id) {
+                      ntps.insert(model::ntp{tp_ns.ns, tp_ns.tp, pid});
+                  }
               });
             break;
         } catch (...) {
@@ -126,38 +141,31 @@ inventory_service::inventory_service(
   std::shared_ptr<leaders_provider> leaders,
   std::shared_ptr<remote_provider> remote,
   csi::inv_ops inv_ops,
-  ss::lowres_clock::duration inventory_report_check_interval)
+  ss::lowres_clock::duration inventory_report_check_interval,
+  bool should_create_report_config)
   : _hash_store_path{std::move(hash_store_path)}
   , _leaders{std::move(leaders)}
   , _remote{std::move(remote)}
   , _ops{std::move(inv_ops)}
   , _rtc{_as}
-  , _inventory_report_check_interval{inventory_report_check_interval} {}
+  , _inventory_report_check_interval{inventory_report_check_interval}
+  , _should_create_report_config{should_create_report_config} {}
 
 ss::future<> inventory_service::start() {
-    if (ss::this_shard_id() != 0) {
+    if (ss::this_shard_id() != shard_id) {
         co_return;
     }
 
-    auto rtc = retry_chain_node{_as, 60s, 1s};
+    vlog(
+      cst_log.info,
+      "starting inventory download service, should create config: {}, check "
+      "interval: {}",
+      _should_create_report_config,
+      _inventory_report_check_interval);
 
-    vlog(cst_log.info, "Attempting to create inventory configuration");
-    if (const auto res = co_await _ops.maybe_create_inventory_configuration(
-          _remote->ref(), rtc);
-        res.has_error()) {
-        vlog(
-          cst_log.warn,
-          "Inventory configuration creation failed, will retry later",
-          res.error());
-        // If we failed creating inventory, try again later (on next expiry
-        // of _inventory_report_check_interval). If another node succeeded in
-        // creating the inventory, this is not counted as a failure.
-        _try_creating_inv_config = true;
-    } else {
-        vlog(
-          cst_log.info,
-          "Inventory configuration creation result: {}",
-          res.value());
+    const auto config_created = co_await maybe_create_inventory_config();
+    if (!config_created && _should_create_report_config) {
+        _retry_creating_inv_config = true;
     }
 
     _report_check_timer.set_callback([this] {
@@ -175,15 +183,39 @@ ss::future<> inventory_service::start() {
     _report_check_timer.arm_periodic(_inventory_report_check_interval);
 }
 
+ss::future<bool> inventory_service::maybe_create_inventory_config() {
+    bool config_created{false};
+    if (_should_create_report_config) {
+        vlog(cst_log.info, "Attempting to create inventory configuration");
+        auto rtc = make_rtc(_as);
+        if (const auto res = co_await _ops.maybe_create_inventory_configuration(
+              _remote->ref(), rtc);
+            res.has_error()) {
+            vlog(
+              cst_log.warn,
+              "Inventory configuration creation failed, will retry later",
+              res.error());
+        } else {
+            // If another node succeeded in creating the inventory, this is not
+            // counted as a failure. The end goal is that the
+            // configuration/schedule should exist by the time this call is
+            // finished.
+            vlog(
+              cst_log.info,
+              "Inventory configuration creation result: {}",
+              res.value());
+            config_created = true;
+        }
+    }
+    co_return config_created;
+}
+
 ss::future<> inventory_service::check_for_current_inventory() {
     auto h = _gate.hold();
-    if (_try_creating_inv_config) {
-        auto rtc = retry_chain_node{_as, 60s, 1s};
-        auto res = co_await _ops.maybe_create_inventory_configuration(
-          _remote->ref(), rtc);
-
-        if (res.has_value()) {
-            _try_creating_inv_config = false;
+    if (_retry_creating_inv_config) {
+        const auto config_created = co_await maybe_create_inventory_config();
+        if (config_created) {
+            _retry_creating_inv_config = false;
         }
 
         // We either created the inventory just now, or failed again. In either
@@ -191,11 +223,17 @@ ss::future<> inventory_service::check_for_current_inventory() {
         co_return;
     }
 
-    // TODO use config values from cloud_storage
-    auto rtc = retry_chain_node{_as, 60s, 1s};
+    auto rtc = make_rtc(_as);
     auto res = co_await _ops.fetch_latest_report_metadata(_remote->ref(), rtc);
     if (res.has_error()) {
-        vlog(cst_log.info, "failed to fetch report metadata: ", res.error());
+        const auto& error = res.error();
+        if (
+          error == cloud_storage::inventory::error_outcome::no_reports_found) {
+            vlog(cst_log.info, "finished inventory check: {}", res.error());
+        } else {
+            vlog(
+              cst_log.info, "failed to fetch report metadata: {}", res.error());
+        }
         co_return;
     }
 
@@ -231,9 +269,17 @@ inventory_service::download_and_process_reports(csi::report_paths paths) {
         co_return false;
     }
 
+    for (const auto& ntp : ntps) {
+        vlog(cst_log.trace, "filtering report for NTP {}", ntp);
+    }
+
     // Report consumer is expected to process multiple reports while keeping
     // state across calls. This is only created once per set of files.
-    csi::inventory_consumer c{_hash_store_path, ntps, max_hash_size_in_memory};
+    csi::inventory_consumer c{
+      _hash_store_path,
+      ntps,
+      config::shard_local_cfg()
+        .cloud_storage_inventory_max_hash_size_during_parse};
 
     for (const auto& path : paths) {
         const auto is_path_compressed
@@ -246,8 +292,7 @@ inventory_service::download_and_process_reports(csi::report_paths paths) {
           path(),
           is_path_compressed);
 
-        // TODO use config values from cloud_storage
-        auto rtc = retry_chain_node{_as, 60s, 1s};
+        auto rtc = make_rtc(_as);
         if (auto res = co_await _remote->ref().download_stream(
               _ops.bucket(),
               cloud_storage::remote_segment_path{path},

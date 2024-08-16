@@ -62,6 +62,9 @@ public:
     // Shadow indexing/S3 cache location
     property<std::optional<ss::sstring>> cloud_storage_cache_directory;
 
+    // Path to store inventory file hashes for cloud storage scrubber
+    property<std::optional<ss::sstring>> cloud_storage_inventory_hash_store;
+
     deprecated_property enable_central_config;
 
     property<std::optional<uint32_t>> crash_loop_limit;
@@ -124,6 +127,14 @@ public:
         } else {
             return data_directory().path / "cloud_storage_cache";
         }
+    }
+
+    std::filesystem::path cloud_storage_inventory_hash_path() const {
+        if (cloud_storage_inventory_hash_store().has_value()) {
+            return std::filesystem::path{
+              cloud_storage_inventory_hash_store().value()};
+        }
+        return data_directory().path / "cloud_storage_inventory";
     }
 
     std::vector<model::broker_endpoint> advertised_kafka_api() const {

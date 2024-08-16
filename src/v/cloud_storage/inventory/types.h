@@ -13,11 +13,10 @@
 #include "base/outcome.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
-#include "utils/named_type.h"
+#include "model/metadata.h"
 
 #include <seastar/core/sharded.hh>
 
-#include <type_traits>
 #include <variant>
 
 class retry_chain_node;
@@ -152,6 +151,9 @@ concept vendor_ops_provider = std::is_base_of_v<base_ops, T>;
 
 template<vendor_ops_provider... Ts>
 using inv_ops_variant = std::variant<Ts...>;
+
+bool
+  validate_backend_supported_for_inventory_scrub(model::cloud_storage_backend);
 
 } // namespace cloud_storage::inventory
 

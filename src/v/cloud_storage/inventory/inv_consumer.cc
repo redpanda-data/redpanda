@@ -213,6 +213,11 @@ ss::future<> inventory_consumer::flush_ntp_hashes(
     }
 
     ntp_hash_path /= fmt::format("{}", file_name);
+    vlog(
+      cst_log.trace,
+      "Writing {} hashe(s) to file {}",
+      hashes.size(),
+      ntp_hash_path);
     co_return co_await ss::with_file_close_on_failure(
       ss::open_file_dma(
         ntp_hash_path.string(), ss::open_flags::create | ss::open_flags::wo),
@@ -223,7 +228,6 @@ ss::future<> inventory_consumer::flush_ntp_hashes(
 
 ss::future<> inventory_consumer::write_hashes_to_file(
   ss::file& f, fragmented_vector<uint64_t> hashes) {
-    vlog(cst_log.trace, "Writing {} hashe(s) to disk", hashes.size());
     std::exception_ptr ep;
     auto stream = co_await ss::make_file_output_stream(f);
     auto res = co_await ss::coroutine::as_future(

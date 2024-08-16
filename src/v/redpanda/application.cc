@@ -12,8 +12,12 @@
 #include "base/vlog.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"
+#include "cloud_storage/configuration.h"
+#include "cloud_storage/inventory/inv_ops.h"
+#include "cloud_storage/inventory/types.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
 #include "cluster/archival/ntp_archiver_service.h"
@@ -41,6 +45,7 @@
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/inventory_service.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
@@ -1514,6 +1519,8 @@ void application::wire_up_redpanda_services(
         recovery_throttle.stop().get();
     });
 
+    model::cloud_storage_backend backend{model::cloud_storage_backend::unknown};
+    cloud_storage_clients::bucket_name bucket{};
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting cloud storage api").get();
         ss::sharded<cloud_storage::configuration> cloud_configs;
@@ -1526,6 +1533,10 @@ void application::wire_up_redpanda_services(
                 [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
           })
           .get();
+        backend = cloud_storage_clients::infer_backend_from_configuration(
+          cloud_configs.local().client_config,
+          cloud_configs.local().cloud_credentials_source);
+        bucket = cloud_configs.local().bucket_name;
         construct_service(
           cloud_storage_clients,
           cloud_configs.local().connection_limit,
@@ -1884,6 +1895,60 @@ void application::wire_up_redpanda_services(
                   topic_recovery_status_frontend, topic_recovery_service);
             })
           .get();
+
+        if (
+          config::shard_local_cfg()
+            .cloud_storage_inventory_based_scrub_enabled()
+          && config::shard_local_cfg().cloud_storage_enable_scrubbing()) {
+            const auto manual_setup
+              = config::shard_local_cfg()
+                  .cloud_storage_inventory_self_managed_report_config();
+            const auto supported = cloud_storage::inventory::
+              validate_backend_supported_for_inventory_scrub(backend);
+            if (!manual_setup && !supported) {
+                throw std::runtime_error(fmt::format(
+                  "cloud storage backend inferred as {} which is "
+                  "not supported for inventory based scrubbing",
+                  backend));
+            }
+
+            std::shared_ptr<cluster::leaders_provider> leaders_provider
+              = std::make_shared<cluster::default_leaders_provider>(
+                controller->get_partition_leaders());
+            std::shared_ptr<cluster::remote_provider> remote_provider
+              = std::make_shared<cluster::default_remote_provider>(
+                cloud_storage_api);
+            auto inv_ops
+              = cloud_storage::inventory::make_inv_ops(
+                  bucket,
+                  cloud_storage::inventory::inventory_config_id{
+                    config::shard_local_cfg().cloud_storage_inventory_id()},
+                  config::shard_local_cfg()
+                    .cloud_storage_inventory_reports_prefix())
+                  .get();
+            const auto report_check_interval
+              = config::shard_local_cfg()
+                  .cloud_storage_inventory_report_check_interval_ms();
+            // If the self-managed flag is enabled, do not create report
+            // schedule
+            const auto should_create_report_config
+              = !config::shard_local_cfg()
+                   .cloud_storage_inventory_self_managed_report_config();
+            construct_single_service_sharded(
+              inventory_service,
+              config::node().cloud_storage_inventory_hash_path(),
+              leaders_provider,
+              remote_provider,
+              std::move(inv_ops),
+              report_check_interval,
+              should_create_report_config)
+              .get();
+            inventory_service
+              .invoke_on(
+                cluster::inventory_service::shard_id,
+                &cluster::inventory_service::start)
+              .get();
+        }
     }
 
     construct_single_service(

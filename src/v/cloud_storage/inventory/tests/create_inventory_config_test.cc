@@ -24,7 +24,7 @@ constexpr auto frequency = csi::report_generation_frequency::daily;
 const auto expected_key = fmt::format("?inventory&id={}", id);
 const auto expected_xml_payload = fmt::format(
   R"({header}
-<InventoryConfiguration {ns}><Destination><S3BucketDestination><Format>{format}</Format><Prefix>{prefix}</Prefix><Bucket>arn::aws::s3:::{bucket}</Bucket></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>{id}</Id><Schedule><Frequency>{schedule}</Frequency></Schedule></InventoryConfiguration>)",
+<InventoryConfiguration {ns}><Destination><S3BucketDestination><Format>{format}</Format><Prefix>{prefix}</Prefix><Bucket>arn:aws:s3:::{bucket}</Bucket></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>{id}</Id><IncludedObjectVersions>Current</IncludedObjectVersions><Schedule><Frequency>{schedule}</Frequency></Schedule></InventoryConfiguration>)",
   fmt::arg("header", R"(<?xml version="1.0" encoding="utf-8"?>)"),
   fmt::arg("ns", R"(xmlns="http://s3.amazonaws.com/doc/2006-03-01/")"),
   fmt::arg("format", format),
