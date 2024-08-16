@@ -2004,7 +2004,7 @@ tx_gateway_frontend::do_end_txn(
               "abort",
               request.transactional_id,
               pid);
-            err = tx_errc::unknown_server_error;
+            err = tx_errc::invalid_producer_id_mapping;
         }
         outcome->set_value(err);
         co_return err;
