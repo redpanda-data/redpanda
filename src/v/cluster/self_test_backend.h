@@ -76,11 +76,8 @@ public:
     ss::future<netcheck_response> netcheck(model::node_id, iobuf&&);
 
 private:
-    ss::future<std::vector<self_test_result>> do_start_test(
-      std::vector<diskcheck_opts> dtos,
-      std::vector<netcheck_opts> ntos,
-      std::vector<cloudcheck_opts> ctos,
-      std::vector<unknown_check> unknown_checks);
+    ss::future<std::vector<self_test_result>>
+    do_start_test(start_test_request r);
 
     struct previous_netcheck_entity {
         static const inline model::node_id unassigned{-1};
