@@ -314,7 +314,7 @@ configuration::configuration()
       *this,
       "topic_partitions_reserve_shard0",
       "Reserved partition slots on shard (CPU core) 0 on each node.  If this "
-      "is >= topic_partitions_per_core, no data partitions will be scheduled "
+      "is >= topic_partitions_per_shard, no data partitions will be scheduled "
       "on shard 0",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0,
@@ -630,12 +630,7 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
-  , find_coordinator_timeout_ms(
-      *this,
-      "find_coordinator_timeout_ms",
-      "Time to wait for a response from tx_registry",
-      {.visibility = visibility::user},
-      2000ms)
+  , find_coordinator_timeout_ms(*this, "find_coordinator_timeout_ms")
   , seq_table_min_size(*this, "seq_table_min_size")
   , tx_timeout_delay_ms(
       *this,
@@ -1118,7 +1113,8 @@ configuration::configuration()
   , raft_timeout_now_timeout_ms(
       *this,
       "raft_timeout_now_timeout_ms",
-      "Timeout for a timeout now request",
+      "Timeout for Raft's timeout_now RPC. This RPC is used to force a "
+      "follower to dispatch a round of votes immediately.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1s)
   , raft_transfer_leader_recovery_timeout_ms(

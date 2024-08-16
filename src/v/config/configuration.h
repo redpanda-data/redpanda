@@ -146,7 +146,7 @@ struct configuration final : public config_store {
     deprecated_property tx_registry_sync_timeout_ms;
     deprecated_property tm_violation_recovery_policy;
     property<std::chrono::milliseconds> rm_sync_timeout_ms;
-    property<std::chrono::milliseconds> find_coordinator_timeout_ms;
+    deprecated_property find_coordinator_timeout_ms;
     deprecated_property seq_table_min_size;
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     deprecated_property rm_violation_recovery_policy;
