@@ -1372,19 +1372,22 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 'cloud_storage_enabled': True,
                 'cloud_storage_credentials_source': 'aws_instance_metadata',
                 'cloud_storage_region': 'us-east-1',
-                'cloud_storage_bucket': 'dearliza'
+                'cloud_storage_bucket': 'dearliza',
+                'cloud_storage_url_style': 'virtual_host'
             },
             {
                 'cloud_storage_enabled': True,
                 'cloud_storage_credentials_source': 'gcp_instance_metadata',
                 'cloud_storage_region': 'us-east-1',
-                'cloud_storage_bucket': 'dearliza'
+                'cloud_storage_bucket': 'dearliza',
+                'cloud_storage_url_style': 'virtual_host'
             },
             {
                 'cloud_storage_enabled': True,
                 'cloud_storage_credentials_source': 'sts',
                 'cloud_storage_region': 'us-east-1',
-                'cloud_storage_bucket': 'dearliza'
+                'cloud_storage_bucket': 'dearliza',
+                'cloud_storage_url_style': 'virtual_host'
             },
             {
                 'cloud_storage_enabled': True,
@@ -1392,7 +1395,8 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 'cloud_storage_access_key': 'sesame',
                 'cloud_storage_credentials_source': 'config_file',
                 'cloud_storage_region': 'us-east-1',
-                'cloud_storage_bucket': 'dearliza'
+                'cloud_storage_bucket': 'dearliza',
+                'cloud_storage_url_style': 'virtual_host'
             },
         ]
         for payload in valid_updates:
@@ -1421,7 +1425,8 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             'cloud_storage_secret_key': 'open',
             'cloud_storage_access_key': 'sesame',
             'cloud_storage_region': 'us-east-1',
-            'cloud_storage_bucket': 'dearliza'
+            'cloud_storage_bucket': 'dearliza',
+            'cloud_storage_url_style': 'virtual_host'
         }
         patch_result = self.admin.patch_cluster_config(upsert=static_config,
                                                        remove=[])
