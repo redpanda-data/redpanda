@@ -16,7 +16,6 @@ redpanda_cc_gtest(
         "//src/v/test_utils:random",
         "//src/v/transform:commit_batcher",
         "//src/v/transform:logger",
-        "//src/v/transform/logging:logger",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/strings",
         "@fmt",

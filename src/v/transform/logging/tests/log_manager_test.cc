@@ -181,7 +181,7 @@ TEST_F(TransformLogManagerTest, EnqueueLogs) {
 TEST_F(TransformLogManagerTest, LogsDroppedAtShutdown) {
     constexpr size_t n = 10;
 
-    for (int i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         enqueue_log("Hello, World!");
     }
 
@@ -204,7 +204,7 @@ TEST_F(TransformLogManagerTest, LargeBuffer) {
 
     auto N = buf_cap / line_max;
 
-    for (int i = 0; i < N; ++i) {
+    for (size_t i = 0; i < N; ++i) {
         enqueue_log(
           ss::log_level::info,
           model::transform_name_view{names.at(i % names.size())()},
@@ -234,7 +234,7 @@ TEST_F(TransformLogManagerTest, BufferLimits) {
 
     // some logs will get dropped due to buffer limit semaphore
     // irrespective of transform name
-    for (int i = 0; i < line_cap * 2; ++i) {
+    for (size_t i = 0; i < line_cap * 2; ++i) {
         enqueue_log(
           ss::log_level::info,
           model::transform_name_view{names.at(i % names.size())()},
@@ -245,7 +245,7 @@ TEST_F(TransformLogManagerTest, BufferLimits) {
     EXPECT_EQ(logs().size(), line_cap);
 
     // we should have full capacity now
-    for (int i = 0; i < line_cap; ++i) {
+    for (size_t i = 0; i < line_cap; ++i) {
         enqueue_log(
           ss::log_level::info,
           model::transform_name_view{names.at(i % names.size())()},
