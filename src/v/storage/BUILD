@@ -198,6 +198,7 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",
+        "//src/v/syschecks",
         "//src/v/utils:adjustable_semaphore",
         "//src/v/utils:directory_walker",
         "//src/v/utils:file_io",

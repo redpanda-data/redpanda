@@ -12,6 +12,9 @@
 
 #include "base/vlog.h"
 #include "storage/logger.h"
+#include "syschecks/syschecks.h"
+
+#include <seastar/core/seastar.hh>
 
 namespace storage {
 
@@ -53,5 +56,22 @@ ss::future<bool> api::wait_for_cluster_uuid() {
     }
     co_return false;
 }
+
+namespace directories {
+
+ss::future<> initialize(ss::sstring dir) {
+    return recursive_touch_directory(dir)
+      .handle_exception([dir](std::exception_ptr ep) {
+          stlog.error(
+            "Directory `{}` cannot be initialized. Failed with {}", dir, ep);
+          return ss::make_exception_future<>(std::move(ep));
+      })
+      .then([dir] {
+          vlog(stlog.info, "Checking `{}` for supported filesystems", dir);
+          return syschecks::disk(dir);
+      });
+}
+
+} // namespace directories
 
 } // namespace storage
