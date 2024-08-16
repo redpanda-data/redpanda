@@ -263,6 +263,8 @@ struct start_test_request
     std::vector<netcheck_opts> ntos;
     std::vector<unknown_check> unknown_checks;
 
+    auto serde_fields() { return std::tie(id, dtos, ntos, unknown_checks); }
+
     friend std::ostream&
     operator<<(std::ostream& o, const start_test_request& r) {
         std::stringstream ss;
