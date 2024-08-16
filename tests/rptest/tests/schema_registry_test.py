@@ -1489,6 +1489,55 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.json()["id"] == v1_id
 
     @cluster(num_nodes=3)
+    def test_post_compatibility_subject_version_transitive_order(self):
+        """
+        Verify the compatibility message shows the latest failing schema
+        """
+
+        topic = create_topic_names(1)[0]
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_2_data = json.dumps({"schema": schema2_def})
+        schema_3_data = json.dumps({"schema": schema3_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(f"{result_raw=}")
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Set subject config - BACKWARD_TRANSITIVE")
+        result_raw = self._set_config_subject(
+            subject=f"{topic}-key",
+            data=json.dumps({"compatibility": "BACKWARD_TRANSITIVE"}))
+        self.logger.debug(f"{result_raw=}")
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 2 (compatible with schema 1)")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data)
+        self.logger.debug(result_raw, result_raw.json())
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug(
+            "Check compatibility schema 3 (incompatible with both schema 1 and 2) with verbose=True"
+        )
+        result_raw = self._post_compatibility_subject_version(
+            subject=f"{topic}-key",
+            version=1,
+            data=schema_3_data,
+            verbose=True)
+        self.logger.debug(result_raw, result_raw.json())
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["is_compatible"] == False
+
+        messages = result_raw.json().get("messages", [])
+        assert not any(schema1_def in m for m in messages), \
+            f"Expected schema 3 to be compared against schema 2 only (not schema 1)"
+        assert any(schema2_def in m for m in messages), \
+            f"Expected schema 3 to be compared against schema 2 only (not schema 1)"
+
+    @cluster(num_nodes=3)
     @parametrize(schemas=("avro", "avro_incompat", "AVRO"))
     @parametrize(schemas=("proto3", "proto3_incompat", "PROTOBUF"))
     @parametrize(schemas=("proto2", "proto2_incompat", "PROTOBUF"))

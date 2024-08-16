@@ -752,13 +752,17 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
         throw as_exception(invalid_schema_type(new_schema.type()));
     }
 
-    // if transitive, search all, otherwise seach forwards from version
+    // search backwards
+    // if transitive, search all, seach until version
     if (
       compat == compatibility_level::backward_transitive
       || compat == compatibility_level::forward_transitive
       || compat == compatibility_level::full_transitive) {
         ver_it = versions.begin();
     }
+
+    auto it = std::reverse_iterator(versions.end());
+    auto it_end = std::reverse_iterator(ver_it);
 
     auto new_valid = co_await make_valid_schema(std::move(new_schema));
 
@@ -773,13 +777,13 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
         };
     };
 
-    for (; result.is_compat && ver_it != versions.end(); ++ver_it) {
-        if (ver_it->deleted) {
+    for (; result.is_compat && it != it_end; ++it) {
+        if (it->deleted) {
             continue;
         }
 
         auto old_schema = co_await get_subject_schema(
-          sub, ver_it->version, include_deleted::no);
+          sub, it->version, include_deleted::no);
         auto old_valid = co_await make_valid_schema(
           std::move(old_schema.schema));
 
