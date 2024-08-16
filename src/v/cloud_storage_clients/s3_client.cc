@@ -573,21 +573,6 @@ s3_client::self_configure() {
     // If any configuration options prevent testing, addressing style will
     // default to virtual_host.
     // If both addressing methods fail, return an error.
-    const auto remote_read
-      = config::shard_local_cfg().cloud_storage_enable_remote_read();
-    const auto remote_write
-      = config::shard_local_cfg().cloud_storage_enable_remote_write();
-    if (!remote_read && !remote_write) {
-        vlog(
-          s3_log.warn,
-          "Could not self-configure S3 Client, {}, {} are not enabled. "
-          "Defaulting to {} ",
-          config::shard_local_cfg().cloud_storage_enable_remote_read.name(),
-          config::shard_local_cfg().cloud_storage_enable_remote_write.name(),
-          result.url_style);
-        co_return result;
-    }
-
     const auto& bucket_config = config::shard_local_cfg().cloud_storage_bucket;
 
     if (!bucket_config.value().has_value()) {
@@ -607,7 +592,7 @@ s3_client::self_configure() {
       _requestor._ap_style == s3_url_style::virtual_host,
       "_ap_style should be virtual host by default before self configuration "
       "begins");
-    if (co_await self_configure_test(bucket, remote_read, remote_write)) {
+    if (co_await self_configure_test(bucket)) {
         // Virtual-host style request succeeded.
         co_return result;
     }
@@ -622,7 +607,7 @@ s3_client::self_configure() {
     // Test path style.
     _requestor._ap_style = s3_url_style::path;
     result.url_style = _requestor._ap_style;
-    if (co_await self_configure_test(bucket, remote_read, remote_write)) {
+    if (co_await self_configure_test(bucket)) {
         // Path style request succeeded.
         co_return result;
     }
@@ -636,41 +621,12 @@ s3_client::self_configure() {
     co_return error_outcome::fail;
 }
 
-ss::future<bool> s3_client::self_configure_test(
-  const bucket_name& bucket, bool remote_read, bool remote_write) {
-    if (remote_read) {
-        // Verify with a list objects request.
-        auto list_objects_result = co_await list_objects(
-          bucket, std::nullopt, std::nullopt, 1);
-        co_return list_objects_result;
-    } else {
-        vassert(remote_write, "Remote write is not enabled");
-        // Verify with a upload and delete request.
-        auto now = ss::lowres_clock::now();
-        const ss::sstring key_and_payload = fmt::format(
-          "S3ClientSelfConfigurationKey.{}", now.time_since_epoch().count());
-        iobuf payload;
-        payload.append(key_and_payload.data(), key_and_payload.size());
-        auto payload_stream = make_iobuf_input_stream(std::move(payload));
-        const ss::lowres_clock::duration timeout = {std::chrono::seconds(30)};
-
-        auto upload_object_result = co_await put_object(
-          bucket,
-          object_key{key_and_payload},
-          key_and_payload.size(),
-          std::move(payload_stream),
-          timeout);
-
-        if (!upload_object_result) {
-            // Upload failed, return early.
-            co_return upload_object_result;
-        }
-
-        // Clean up uploaded object.
-        auto delete_object_result = co_await delete_object(
-          bucket, object_key{key_and_payload}, timeout);
-        co_return (upload_object_result && delete_object_result);
-    }
+ss::future<bool> s3_client::self_configure_test(const bucket_name& bucket) {
+    // Check that the current addressing-style works by issuing a ListObjects
+    // request.
+    auto list_objects_result = co_await list_objects(
+      bucket, std::nullopt, std::nullopt, 1);
+    co_return list_objects_result;
 }
 
 ss::future<> s3_client::stop() { return _client.stop(); }
