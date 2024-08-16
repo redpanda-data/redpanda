@@ -83,6 +83,7 @@ enum class errc : int16_t {
     topic_invalid_partitions_memory_limit,
     topic_invalid_partitions_fd_limit,
     topic_invalid_partitions_decreased,
+    invalid_target_node_id,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -241,6 +242,8 @@ struct errc_category final : public std::error_category {
             return "Can not increase partition count due to FD limit";
         case errc::topic_invalid_partitions_decreased:
             return "Can not decrease the number of partitions";
+        case errc::invalid_target_node_id:
+            return "Request was intended for the node with different node id";
         }
         return "cluster::errc::unknown";
     }
