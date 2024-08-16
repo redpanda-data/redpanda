@@ -104,6 +104,13 @@ public:
         return iobuf_copy(in, len);
     }
 
+    bytes peek_bytes(size_t n) const {
+        auto in = _in;
+        auto b = ss::uninitialized_string<bytes>(n);
+        in.consume_to(n, b.begin());
+        return b;
+    }
+
 protected:
     iobuf& ref() { return *std::get<owned_buf>(_buf); }
 

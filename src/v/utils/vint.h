@@ -23,9 +23,9 @@ struct var_decoder {
     uint64_t result = 0;
     size_t bytes_read = 0;
     uint64_t shift = 0;
-    uint8_t limit;
+    uint64_t limit;
 
-    explicit var_decoder(uint8_t limit)
+    explicit var_decoder(uint64_t limit)
       : limit(limit) {}
 
     /**
@@ -53,7 +53,8 @@ struct var_decoder {
 
 template<typename Range>
 inline std::pair<uint64_t, size_t>
-deserialize(Range&& r, uint8_t limit) noexcept {
+deserialize(Range&& r, size_t max_bytes) noexcept {
+    uint64_t limit = ((max_bytes - 1) * 7);
     var_decoder decoder(limit);
     for (auto byte : r) {
         if (decoder.accept(byte)) {
@@ -87,10 +88,8 @@ inline size_t serialize(uint64_t value, uint8_t* out) noexcept {
 
 template<typename Range>
 inline std::pair<uint32_t, size_t> deserialize(Range&& r) noexcept {
-    /// Consume up to 5 iterations (0-4) of reading 7 bits each time
-    constexpr auto limit = ((max_length - 1) * 7);
     auto [result, bytes_read] = detail::deserialize(
-      std::forward<Range>(r), limit);
+      std::forward<Range>(r), max_length);
     return {static_cast<uint32_t>(result), bytes_read};
 }
 
@@ -153,10 +152,8 @@ inline size_t serialize(const int64_t x, uint8_t* out) noexcept {
 /// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
 template<typename Range>
 inline std::pair<int64_t, size_t> deserialize(Range&& r) noexcept {
-    /// Consume up to 10 iterations (0-9) of reading 7 bits each time
-    constexpr auto limit = ((max_length - 1) * 7);
     auto [result, bytes_read] = unsigned_vint::detail::deserialize(
-      std::forward<Range>(r), limit);
+      std::forward<Range>(r), max_length);
     return {decode_zigzag(result), bytes_read};
 }
 

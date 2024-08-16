@@ -72,8 +72,9 @@ public:
     using this_type = fragmented_vector<T, fragment_size_bytes>;
     using backing_type = std::vector<std::vector<T>>;
     using value_type = T;
-    using reference = T&;
-    using const_reference = const T&;
+    using reference = std::conditional_t<std::is_same_v<T, bool>, bool, T&>;
+    using const_reference
+      = std::conditional_t<std::is_same_v<T, bool>, bool, const T&>;
     using size_type = size_t;
     using allocator_type = backing_type::allocator_type;
     using difference_type = backing_type::difference_type;
@@ -211,26 +212,26 @@ public:
         update_generation();
     }
 
-    const T& at(size_t index) const {
+    const_reference at(size_t index) const {
         return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
     }
 
-    T& at(size_t index) {
+    reference at(size_t index) {
         return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
     }
 
-    const T& operator[](size_t index) const {
+    const_reference operator[](size_t index) const {
         return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
-    T& operator[](size_t index) {
+    reference operator[](size_t index) {
         return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
-    const T& front() const { return _frags.front().front(); }
-    const T& back() const { return _frags.back().back(); }
-    T& front() { return _frags.front().front(); }
-    T& back() { return _frags.back().back(); }
+    const_reference front() const { return _frags.front().front(); }
+    const_reference back() const { return _frags.back().back(); }
+    reference front() { return _frags.front().front(); }
+    reference back() { return _frags.back().back(); }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
     size_t capacity() const noexcept { return _capacity; }
@@ -333,8 +334,10 @@ public:
         using iterator_category = std::random_access_iterator_tag;
         using value_type = typename std::conditional_t<C, const T, T>;
         using difference_type = std::ptrdiff_t;
-        using pointer = value_type*;
-        using reference = value_type&;
+        using pointer
+          = std::conditional_t<std::is_same_v<T, bool>, bool, value_type*>;
+        using reference
+          = std::conditional_t<std::is_same_v<T, bool>, bool, value_type&>;
 
         iter() = default;
 
