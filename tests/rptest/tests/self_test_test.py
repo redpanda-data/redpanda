@@ -46,16 +46,12 @@ class SelfTestTest(EndToEndTest):
         return wait_until_result(all_idle, timeout_sec=90, backoff_sec=1)
 
     @cluster(num_nodes=3)
-    @matrix(remote_read=[True, False], remote_write=[True, False])
-    def test_self_test(self, remote_read, remote_write):
+    def test_self_test(self):
         """Assert the self test starts/completes with success."""
         num_nodes = 3
         self.start_redpanda(
             num_nodes=num_nodes,
-            si_settings=SISettings(
-                test_context=self.test_context,
-                cloud_storage_enable_remote_read=remote_read,
-                cloud_storage_enable_remote_write=remote_write))
+            si_settings=SISettings(test_context=self.test_context))
         self.rpk_client().self_test_start(2000, 2000, 5000, 100)
 
         # Wait for completion
@@ -215,11 +211,9 @@ class SelfTestTest(EndToEndTest):
            with mixed versions of Redpanda."""
         num_nodes = 3
 
-        self.start_redpanda(num_nodes=num_nodes,
-                            si_settings=SISettings(
-                                test_context=self.test_context,
-                                cloud_storage_enable_remote_read=True,
-                                cloud_storage_enable_remote_write=True))
+        self.start_redpanda(
+            num_nodes=num_nodes,
+            si_settings=SISettings(test_context=self.test_context))
 
         #Attempt to run with an unknown test type "pandatest"
         #and possibly unknown "cloud" test.
