@@ -103,25 +103,30 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
       .default_match(std::nullopt);
 }
 
+struct document_context {
+    json::Document doc;
+    json_schema_dialect dialect;
+};
+
 } // namespace
 
 struct json_schema_definition::impl {
     iobuf to_json() const {
         json::chunked_buffer buf;
         json::Writer<json::chunked_buffer> wrt(buf);
-        doc.Accept(wrt);
+        ctx.doc.Accept(wrt);
         return std::move(buf).as_iobuf();
     }
 
-    explicit impl(
-      json::Document doc,
+    impl(
+      document_context ctx,
       std::string_view name,
       canonical_schema_definition::references refs)
-      : doc{std::move(doc)}
+      : ctx{std::move(ctx)}
       , name{name}
       , refs(std::move(refs)) {}
 
-    json::Document doc;
+    document_context ctx;
     ss::sstring name;
     canonical_schema_definition::references refs;
 };
@@ -288,7 +293,7 @@ try_validate_json_schema(const jsoncons::json& schema) {
     return first_error.value();
 }
 
-result<json::Document> parse_json(iobuf buf) {
+result<document_context> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
     auto schema_stream = json::chunked_input_stream{
       buf.share(0, buf.size_bytes())};
@@ -339,7 +344,7 @@ result<json::Document> parse_json(iobuf buf) {
         return validation_res.as_failure();
     }
 
-    return {std::move(schema)};
+    return {std::move(schema), validation_res.assume_value()};
 }
 
 /// is_superset section
@@ -1639,15 +1644,15 @@ ss::future<canonical_schema> make_canonical_json_schema(
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
     auto [def, type, refs] = std::move(unparsed).destructure();
 
-    auto doc = parse_json(std::move(def)).value(); // throws on error
+    auto ctx = parse_json(std::move(def)).value(); // throws on error
     if (norm) {
-        sort(doc);
+        sort(ctx.doc);
         std::sort(refs.begin(), refs.end());
         refs.erase(std::unique(refs.begin(), refs.end()), refs.end());
     }
     json::chunked_buffer out;
     json::Writer<json::chunked_buffer> w{out};
-    doc.Accept(w);
+    ctx.doc.Accept(w);
 
     canonical_schema schema{
       std::move(sub),
@@ -1668,13 +1673,13 @@ compatibility_result check_compatible(
   verbose is_verbose [[maybe_unused]]) {
     auto is_compatible = [&]() {
         // schemas might be using incompatible dialects
-        if (!check_compatible_dialects(reader().doc, writer().doc)) {
+        if (!check_compatible_dialects(reader().ctx.doc, writer().ctx.doc)) {
             return false;
         }
         // reader is a superset of writer iff every schema that is valid for
         // writer is also valid for reader
         context ctx{.older{reader()}, .newer{writer()}};
-        return is_superset(ctx, reader().doc, writer().doc);
+        return is_superset(ctx, reader().ctx.doc, writer().ctx.doc);
     }();
 
     // TODO(gellert.nagy): start using the is_verbose flag in a follow up PR
