@@ -14,20 +14,29 @@ import string
 import threading
 import confluent_kafka as ck
 import ducktape
+from typing import Callable, NamedTuple
 
 from ducktape.mark import parametrize, matrix
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.kafka import KafkaServiceAdapter
+from rptest.clients.kafka_cat import KafkaCat
+from kafkatest.services.kafka import KafkaService
+from kafkatest.services.zookeeper import ZookeeperService
+from kafkatest.version import V_3_0_0
+from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaDeleteOffsetsResponse
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.util import produce_until_segments, wait_until_result, expect_exception
 from rptest.services.redpanda import SISettings
 from rptest.utils.si_utils import BucketView, NTP
+from ducktape.mark.resource import cluster as ducktape_cluster
+from ducktape.tests.test import Test
 
 TEST_TOPIC_NAME = "test-topic-1"
 TEST_COMPACTED_TOPIC_NAME = "test-topic-2-compact"
@@ -775,3 +784,175 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         status = consumer.consumer_status
         assert status.validator.invalid_reads == 0
         assert status.validator.out_of_scope_invalid_reads == 0
+
+
+class TopicPartitionOffset(NamedTuple):
+    topic: str
+    partition: int
+    offset: int
+
+
+class BaseDeleteRecordsTest:
+    client: Callable[[], DefaultClient]
+    test_context: dict
+
+    def _make_delete_records_for_cli(
+            self, topic_partition_offsets: list[TopicPartitionOffset]):
+        delete_records_json = {"version": 1, "partitions": []}
+        for tpo in topic_partition_offsets:
+            delete_records_json["partitions"].append({
+                "topic": tpo.topic,
+                "partition": tpo.partition,
+                "offset": tpo.offset
+            })
+        return delete_records_json
+
+    def _execute_kafka_delete_records(
+            self, cluster, delete_records_tpos: list[TopicPartitionOffset]):
+        delete_records_json = self._make_delete_records_for_cli(
+            delete_records_tpos)
+        kafka_tools = KafkaCliTools(cluster)
+        res = kafka_tools.delete_records(delete_records_json)
+        for r in res:
+            if r.error_msg != "":
+                raise Exception(r.error_msg)
+        return res
+
+    def _test_delete_records_empty_topic(self, cluster):
+        self.rpk = RpkTool(cluster)
+        empty_topic = TopicSpec(name=TEST_TOPIC_NAME,
+                                partition_count=1,
+                                replication_factor=3)
+        self.client().create_topic(empty_topic)
+        delete_records_tpos = [TopicPartitionOffset(TEST_TOPIC_NAME, 0, 0)]
+
+        delete_records_result = self._execute_kafka_delete_records(
+            cluster, delete_records_tpos)[0]
+        kafka_low_watermark = delete_records_result.new_start_offset
+        assert kafka_low_watermark == 0
+
+        trim_prefix_result = self.rpk.trim_prefix(TEST_TOPIC_NAME, 0, [0])[0]
+        rpk_low_watermark = trim_prefix_result.new_start_offset
+        assert rpk_low_watermark == 0
+
+    def _test_delete_records_non_empty_topic(self, cluster, truncate_point):
+        self.rpk = RpkTool(cluster)
+        topic = TopicSpec(name=TEST_TOPIC_NAME,
+                          partition_count=1,
+                          replication_factor=3)
+        self.client().create_topic(topic)
+
+        # Produce some data to the partition
+        producer = KgoVerifierProducer(self.test_context,
+                                       cluster,
+                                       TEST_TOPIC_NAME,
+                                       msg_size=1,
+                                       msg_count=10)
+
+        producer.start()
+        producer.wait()
+
+        # Make an initial DeleteRecords request to bump up the start offset
+        delete_records_tpos = [TopicPartitionOffset(TEST_TOPIC_NAME, 0, 5)]
+        delete_records_result = self._execute_kafka_delete_records(
+            cluster, delete_records_tpos)[0]
+
+        # Should see the new_start_offset == 5
+        new_start_offset = delete_records_result.new_start_offset
+        assert new_start_offset == 5
+
+        # Set the truncation offset and result expectations based on the test injection parameter
+        # Kafka/redpanda should both handle truncation_offset <= start_offset.
+        truncate_offset = None
+        expect_error = False
+        expected_new_start_offset = None
+        if truncate_point == "start_offset":
+            truncate_offset = new_start_offset
+            expected_new_start_offset = truncate_offset
+        elif truncate_point == "below_start_offset":
+            truncate_offset = new_start_offset - 1
+            expected_new_start_offset = new_start_offset
+        else:
+            assert False, "unknown truncate point encountered"
+
+        kafka_offset_out_of_range = "org.apache.kafka.common.errors.OffsetOutOfRangeException"
+        rp_offset_out_of_range = "OFFSET_OUT_OF_RANGE"
+
+        # Perform Kafka DeleteRecords
+        delete_records_tpos = [
+            TopicPartitionOffset(TEST_TOPIC_NAME, 0, truncate_offset)
+        ]
+        try:
+            delete_records_result = self._execute_kafka_delete_records(
+                cluster, delete_records_tpos)[0]
+            print(truncate_offset, new_start_offset, expected_new_start_offset,
+                  delete_records_result)
+            assert delete_records_result.new_start_offset == expected_new_start_offset
+        except Exception as e:
+            assert expect_error
+            assert kafka_offset_out_of_range in str(e)
+
+        # Perform rpk trim-prefix
+        try:
+            trim_prefix_result = self.rpk.trim_prefix(TEST_TOPIC_NAME,
+                                                      truncate_offset, [0])[0]
+            assert trim_prefix_result.new_start_offset == expected_new_start_offset
+        except RpkException as e:
+            assert expect_error
+            assert rp_offset_out_of_range in str(e)
+
+
+class DeleteRecordsRedpandaTest(RedpandaTest, BaseDeleteRecordsTest):
+    def setUp(self):
+        self.redpanda.start()
+
+    @ducktape_cluster(num_nodes=3)
+    def test_delete_records_empty_topic(self):
+        self._test_delete_records_empty_topic(self.redpanda)
+
+    @ducktape_cluster(num_nodes=4)
+    @matrix(truncate_point=["start_offset", "below_start_offset"])
+    def test_delete_records_non_empty_topic(self, truncate_point):
+        self._test_delete_records_non_empty_topic(self.redpanda,
+                                                  truncate_point)
+
+
+class DeleteRecordsKafkaTest(Test, BaseDeleteRecordsTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.zk = ZookeeperService(self.test_context,
+                                   num_nodes=1,
+                                   version=V_3_0_0)
+
+        self.kafka = KafkaServiceAdapter(
+            self.test_context,
+            KafkaService(self.test_context,
+                         num_nodes=3,
+                         zk=self.zk,
+                         version=V_3_0_0))
+
+        self._client = DefaultClient(self.kafka)
+
+    def client(self):
+        return self._client
+
+    def setUp(self):
+        self.zk.start()
+        self.kafka.start()
+
+    def tearDown(self):
+        self.logger.info("Stopping Kafka...")
+        self.kafka.stop()
+
+        self.logger.info("Stopping Zookeeper...")
+        self.zk.stop()
+
+    @ducktape_cluster(num_nodes=4)
+    def test_delete_records_empty_topic(self):
+        self._test_delete_records_empty_topic(self.kafka)
+
+    @ducktape_cluster(num_nodes=5)
+    @matrix(truncate_point=["start_offset", "below_start_offset"])
+    def test_delete_records_non_empty_topic(self, truncate_point):
+        self._test_delete_records_non_empty_topic(self.kafka, truncate_point)
