@@ -124,15 +124,13 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "partition",
-    srcs = [
-        "partition.cc",
-    ],
     hdrs = [
         "partition.h",
     ],
     include_prefix = "iceberg",
     deps = [
         ":datatypes",
+        ":transform",
         "//src/v/container:fragmented_vector",
         "//src/v/utils:named_type",
         "@seastar",
@@ -183,6 +181,17 @@ redpanda_cc_library(
         ":schema",
         "//src/v/json",
     ],
+)
+
+redpanda_cc_library(
+    name = "transform",
+    srcs = [
+        "transform.cc",
+    ],
+    hdrs = [
+        "transform.h",
+    ],
+    include_prefix = "iceberg",
 )
 
 redpanda_cc_library(
