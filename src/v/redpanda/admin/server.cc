@@ -2821,22 +2821,15 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
             for (const auto& element : params) {
                 const auto& obj = element.GetObject();
                 const ss::sstring test_type(obj["type"].GetString());
-                if (test_type == "disk") {
-                    r.dtos.push_back(cluster::diskcheck_opts::from_json(obj));
-                } else if (test_type == "network") {
-                    r.ntos.push_back(cluster::netcheck_opts::from_json(obj));
-                } else if (test_type == "cloud") {
-                    r.ctos.push_back(cluster::cloudcheck_opts::from_json(obj));
-                } else {
-                    rapidjson::StringBuffer buffer;
-                    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-                    element.Accept(writer);
-                    r.unknown_checks.push_back(cluster::unknown_check{
-                      .test_type = test_type,
-                      .test_json = ss::sstring{
-                        buffer.GetString(), buffer.GetSize()}});
-                }
+                rapidjson::StringBuffer buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                element.Accept(writer);
+                r.unparsed_checks.push_back(cluster::unparsed_check{
+                  .test_type = test_type,
+                  .test_json = ss::sstring{
+                    buffer.GetString(), buffer.GetSize()}});
             }
+            cluster::parse_self_test_checks(r);
         } else {
             /// Default test run is to start 1 disk and 1 network test with
             /// default arguments

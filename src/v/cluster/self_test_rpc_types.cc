@@ -75,4 +75,32 @@ make_netcheck_request(model::node_id src, size_t sz) {
     co_return cluster::netcheck_request{.source = src, .buf = std::move(iob)};
 }
 
+void parse_self_test_checks(start_test_request& r) {
+    static constexpr auto known_checks = std::to_array(
+      {"disk", "network", "cloud"});
+    for (auto it = r.unparsed_checks.begin(); it != r.unparsed_checks.end();) {
+        const auto& test_type = it->test_type;
+        if (
+          std::find(known_checks.begin(), known_checks.end(), test_type)
+          != known_checks.end()) {
+            json::Document doc;
+            if (doc.Parse(it->test_json.c_str()).HasParseError()) {
+                ++it;
+                continue;
+            }
+            const auto& obj = doc.GetObject();
+            if (test_type == "disk") {
+                r.dtos.push_back(cluster::diskcheck_opts::from_json(obj));
+            } else if (test_type == "network") {
+                r.ntos.push_back(cluster::netcheck_opts::from_json(obj));
+            } else if (test_type == "cloud") {
+                r.ctos.push_back(cluster::cloudcheck_opts::from_json(obj));
+            }
+            it = r.unparsed_checks.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 } // namespace cluster

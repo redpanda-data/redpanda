@@ -142,7 +142,7 @@ ss::future<uuid_t> self_test_frontend::start_test(
     }
     if (
       req.dtos.empty() && req.ntos.empty() && req.ctos.empty()
-      && req.unknown_checks.empty()) {
+      && req.unparsed_checks.empty()) {
         throw self_test_exception("No tests specified to run");
     }
     /// Validate input
@@ -197,7 +197,7 @@ ss::future<uuid_t> self_test_frontend::start_test(
             .id = test_id,
             .dtos = std::move(req.dtos),
             .ntos = std::move(new_ntos),
-            .unknown_checks = std::move(req.unknown_checks),
+            .unparsed_checks = std::move(req.unparsed_checks),
             .ctos = std::move(req.ctos),
           });
       });

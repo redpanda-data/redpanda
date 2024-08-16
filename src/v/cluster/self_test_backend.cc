@@ -52,34 +52,17 @@ ss::future<> self_test_backend::stop() {
     co_await std::move(f);
 }
 
-void self_test_backend::parse_unknown_checks(
-  std::vector<cloudcheck_opts>& ctos,
-  std::vector<unknown_check>& unknown_checks) {
-    for (auto it = unknown_checks.begin(); it != unknown_checks.end();) {
-        if (it->test_type == "cloud") {
-            json::Document doc;
-            if (doc.Parse(it->test_json.c_str()).HasParseError()) {
-                ++it;
-                continue;
-            }
-            const auto& obj = doc.GetObject();
-            ctos.push_back(cluster::cloudcheck_opts::from_json(obj));
-            it = unknown_checks.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
-  std::vector<diskcheck_opts> dtos,
-  std::vector<netcheck_opts> ntos,
-  std::vector<cloudcheck_opts> ctos,
-  std::vector<unknown_check> unknown_checks) {
+ss::future<std::vector<self_test_result>>
+self_test_backend::do_start_test(start_test_request r) {
     auto gate_holder = _gate.hold();
     std::vector<self_test_result> results;
 
-    parse_unknown_checks(ctos, unknown_checks);
+    parse_self_test_checks(r);
+
+    auto dtos = std::move(r.dtos);
+    auto ntos = std::move(r.ntos);
+    auto ctos = std::move(r.ctos);
+    auto unparsed_checks = std::move(r.unparsed_checks);
 
     _stage = self_test_stage::disk;
     for (auto& dto : dtos) {
@@ -173,13 +156,13 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         }
     }
 
-    for (const auto& unknown_check : unknown_checks) {
+    for (const auto& unparsed_check : unparsed_checks) {
         results.push_back(self_test_result{
           .name = "Unknown",
-          .test_type = unknown_check.test_type,
+          .test_type = unparsed_check.test_type,
           .error = fmt::format(
             "Unknown test type {} requested on node {}",
-            unknown_check.test_type,
+            unparsed_check.test_type,
             _self)});
     }
 
@@ -195,21 +178,16 @@ get_status_response self_test_backend::start_test(start_test_request req) {
           clusterlog.debug, "Request to start self-tests with id: {}", req.id);
         ssx::background
           = ssx::spawn_with_gate_then(_gate, [this, req = std::move(req)]() {
-                return do_start_test(
-                         std::move(req.dtos),
-                         std::move(req.ntos),
-                         std::move(req.ctos),
-                         std::move(req.unknown_checks))
-                  .then([this, id = req.id](auto results) {
-                      for (auto& r : results) {
-                          r.test_id = id;
-                      }
-                      _prev_run = get_status_response{
-                        .id = id,
-                        .status = self_test_status::idle,
-                        .results = std::move(results),
-                        .stage = _stage};
-                  });
+                return do_start_test(std::move(req)).then([this](auto results) {
+                    for (auto& r : results) {
+                        r.test_id = _id;
+                    }
+                    _prev_run = get_status_response{
+                      .id = _id,
+                      .status = self_test_status::idle,
+                      .results = std::move(results),
+                      .stage = _stage};
+                });
             }).finally([units = std::move(units)] {});
     } else {
         vlog(
