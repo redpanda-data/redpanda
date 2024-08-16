@@ -152,10 +152,15 @@ rm_stm::maybe_create_producer(model::producer_identity pid) {
 void rm_stm::cleanup_producer_state(model::producer_identity pid) {
     auto it = _producers.find(pid.get_id());
     if (it != _producers.end() && it->second->id() == pid) {
-        vassert(
-          !it->second->_active_transaction_hook.is_linked(),
-          "Cleaning up {} while active transaction is in progress",
-          *(it->second));
+        const auto& producer = *(it->second);
+        if (producer._active_transaction_hook.is_linked()) {
+            vlog(
+              _ctx_log.error,
+              "Ignoring cleanup request of producer {} due to in progress "
+              "transaction.",
+              producer);
+            return;
+        }
         _producers.erase(it);
     }
 };
@@ -286,10 +291,13 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
     }
     // By now any in progresss transactions are aborted and the resulting
     // state and the resulting changes are reflected in the producer state.
-    vassert(
-      !producer->has_transaction_in_progress(),
-      "There is an in progress transaction for producer, invalid state: {}",
-      producer);
+    if (producer->has_transaction_in_progress()) {
+        vlog(
+          _ctx_log.error,
+          "[{}] Inprogress transaction despite aborting existing transaction",
+          *producer);
+        co_return tx::errc::request_rejected;
+    }
 
     model::record_batch batch = make_fence_batch(
       pid, tx_seq, transaction_timeout_ms, tm);
@@ -340,12 +348,15 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
     }
 
     const auto& tx_state = producer->transaction_state();
-    vassert(
-      tx_state && tx_state->sequence == tx_seq,
-      "Inconsistent state detected after tx begin, expected sequence: {}, from "
-      "producer: {}",
-      tx_seq,
-      *producer);
+    if (!tx_state || tx_state->sequence != tx_seq) {
+        vlog(
+          _ctx_log.error,
+          "[{}] Invalid sequence number after replicating begin, expected: {}",
+          *producer,
+          tx_seq);
+        // let the coordinator retry.
+        co_return tx::errc::timeout;
+    }
 
     co_return synced_term;
 }
@@ -703,10 +714,13 @@ ss::future<result<partition_transactions>> rm_stm::get_transactions() {
     partition_transactions ans;
     for (auto& producer : _active_tx_producers) {
         const auto& tx_state = producer.transaction_state();
-        vassert(
-          tx_state,
-          "Invalid transactional state_tracking for producer: {}",
-          producer);
+        if (!tx_state) {
+            vlog(
+              _ctx_log.error,
+              "No transaction state for active producer: {}",
+              producer);
+            continue;
+        }
         partition_transaction_info tx_info;
         tx_info.lso_bound = tx_state->first;
         tx_info.status = tx_state->status;
@@ -1085,11 +1099,15 @@ model::offset rm_stm::last_stable_offset() {
     if (_is_tx_enabled && !_active_tx_producers.empty()) {
         const auto& earliest_open_tx_producer = _active_tx_producers.begin();
         const auto& tx_state = earliest_open_tx_producer->transaction_state();
-        vassert(
-          tx_state,
-          "invalid transaction state tracking: {}",
-          *earliest_open_tx_producer);
-        first_tx_start = tx_state->first;
+        if (tx_state) {
+            first_tx_start = tx_state->first;
+        } else {
+            vlog(
+              _ctx_log.error,
+              "[{}] Invalid transaction state for transactional producer, lso "
+              "may be incorrect",
+              *earliest_open_tx_producer);
+        }
     }
 
     auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term;
@@ -1222,18 +1240,22 @@ rm_stm::get_expired_producers() const {
       = std::chrono::milliseconds::max();
     for (const auto& producer : _active_tx_producers) {
         auto it = _producers.find(producer.id().get_id());
-        vassert(
-          it != _producers.end(),
-          "No entry for {} in _producers, incorrect state tracking",
-          producer);
+        if (it == _producers.end()) {
+            vlog(
+              _ctx_log.error, "No producer entry for {}, ignoring", producer);
+            continue;
+        }
         if (producer.has_transaction_expired()) {
             result.push_back(it->second);
         } else {
             const auto& tx_state = producer.transaction_state();
-            vassert(
-              tx_state,
-              "No transaction state for in progress transaction: {}",
-              producer);
+            if (!tx_state) {
+                vlog(
+                  _ctx_log.error,
+                  "No transaction state for active producer: {}",
+                  producer);
+                continue;
+            }
             auto ms_to_expire = tx_state->timeout_ms()
                                 - producer.ms_since_last_update();
             min_pending_expiration = std::min(
@@ -1508,12 +1530,14 @@ void rm_stm::apply_control(
         // the producer may be unlinked if only the abort batch is retained
         // from the transaction and everything else got truncated.
         auto it = _active_tx_producers.iterator_to(*producer);
-        vassert(
-          it != _active_tx_producers.end(),
-          "Invalid transacation state tracking, {} is not in active producers "
-          "list",
-          *producer);
-        _active_tx_producers.erase(it);
+        if (it != _active_tx_producers.end()) {
+            _active_tx_producers.erase(it);
+        } else {
+            vlog(
+              _ctx_log.error,
+              "[{}] not tracked under active transactions list",
+              *producer);
+        }
     }
     _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
 }
@@ -1582,8 +1606,8 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     } else if (hdr.version == tx_snapshot_v6::version) {
         data = co_await serde::read_async<tx_snapshot_v6>(data_parser);
     } else {
-        vassert(
-          false, "unsupported tx_snapshot_header version {}", hdr.version);
+        vlog(_ctx_log.error, "Ignored snapshot version {}", hdr.version);
+        co_return;
     }
 
     _highest_producer_id = std::max(
