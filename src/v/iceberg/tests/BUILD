@@ -128,6 +128,21 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "struct_accessor_test",
+    timeout = "short",
+    srcs = [
+        "struct_accessor_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        ":value_generator",
+        "//src/v/iceberg:struct_accessor",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "values_test",
     timeout = "short",
     srcs = [

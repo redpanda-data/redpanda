@@ -35,6 +35,7 @@ v_cc_library(
     manifest_avro.cc
     schema.cc
     schema_json.cc
+    struct_accessor.cc
     transform.cc
     values.cc
   DEPS

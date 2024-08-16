@@ -169,6 +169,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "struct_accessor",
+    srcs = [
+        "struct_accessor.cc",
+    ],
+    hdrs = [
+        "struct_accessor.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":values",
+        "//src/v/container:chunked_hash_map",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_json",
     srcs = [
         "schema_json.cc",
