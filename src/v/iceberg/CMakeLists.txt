@@ -35,12 +35,14 @@ v_cc_library(
     manifest_avro.cc
     partition.cc
     schema_json.cc
+    values.cc
   DEPS
     Avro::avro
     v::bytes
     v::container
     v::json
     v::strings
+    v::utils
 )
 
 add_subdirectory(tests)

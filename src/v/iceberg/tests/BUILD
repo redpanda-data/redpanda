@@ -97,3 +97,18 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "values_test",
+    timeout = "short",
+    srcs = [
+        "values_test.cc",
+    ],
+    deps = [
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:values",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
