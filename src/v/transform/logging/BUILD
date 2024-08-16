@@ -1,5 +1,9 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
+package(
+    default_visibility = ["//src/v/transform/logging:__subpackages__"],
+)
+
 redpanda_cc_library(
     name = "logger",
     srcs = [
@@ -9,7 +13,6 @@ redpanda_cc_library(
         "logger.h",
     ],
     include_prefix = "transform/logging",
-    visibility = ["//src/v/transform:__subpackages__"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -17,15 +20,65 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "probes",
+    srcs = [
+        "probes.cc",
+    ],
+    hdrs = [
+        "probes.h",
+    ],
+    implementation_deps = [
+        "//src/v/config",
+    ],
+    include_prefix = "transform/logging",
+    deps = [
+        "//src/v/base",
+        "//src/v/metrics",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "record_batcher",
+    srcs = ["record_batcher.cc"],
+    hdrs = ["record_batcher.h"],
+    implementation_deps = [
+        ":logger",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:human",
+        "@abseil-cpp//absl/algorithm:container",
+    ],
+    include_prefix = "transform/logging",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "event",
+    srcs = ["event.cc"],
+    hdrs = ["event.h"],
+    implementation_deps = [
+        "//src/v/json",
+    ],
+    include_prefix = "transform/logging",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:streambuf",
+        "//src/v/model",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "logging",
     srcs = [
-        "event.cc",
-        "event.h",
         "log_manager.cc",
-        "probes.cc",
-        "probes.h",
-        "record_batcher.cc",
-        "record_batcher.h",
         "rpc_client.cc",
     ],
     hdrs = [
@@ -38,7 +91,10 @@ redpanda_cc_library(
     include_prefix = "transform/logging",
     visibility = ["//visibility:public"],
     deps = [
+        ":event",
         ":logger",
+        ":probes",
+        ":record_batcher",
         "//src/v/base",
         "//src/v/bytes:streambuf",
         "//src/v/cluster",

@@ -42,7 +42,8 @@ TEST(TransformLogEventTest, ValidateLogEventJson) {
 
     EXPECT_TRUE(
       doc.HasMember("timeUnixNano") && doc["timeUnixNano"].IsUint64()
-      && doc["timeUnixNano"].GetUint64() == now.time_since_epoch() / 1ns);
+      && doc["timeUnixNano"].GetUint64()
+           == static_cast<uint64_t>(now.time_since_epoch() / 1ns));
 
     EXPECT_TRUE(
       doc.HasMember("severityNumber") && doc["severityNumber"].IsUint()

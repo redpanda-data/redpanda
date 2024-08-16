@@ -185,6 +185,7 @@ def redpanda_test_cc_library(
         local_defines = [],
         visibility = None,
         include_prefix = None,
+        implementation_deps = [],
         deps = []):
     native.cc_library(
         name = name,
@@ -194,6 +195,7 @@ def redpanda_test_cc_library(
         local_defines = local_defines,
         visibility = visibility,
         include_prefix = include_prefix,
+        implementation_deps = implementation_deps,
         deps = deps,
         copts = redpanda_copts(),
         testonly = True,
