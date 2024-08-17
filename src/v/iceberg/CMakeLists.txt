@@ -43,6 +43,7 @@ v_cc_library(
     transform.cc
     transform_utils.cc
     values.cc
+    values_avro.cc
   DEPS
     Avro::avro
     v::bytes

@@ -332,3 +332,22 @@ redpanda_cc_library(
         "@fmt",
     ],
 )
+
+redpanda_cc_library(
+    name = "values_avro",
+    srcs = [
+        "values_avro.cc",
+    ],
+    hdrs = [
+        "values_avro.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":values",
+        "@avro",
+    ],
+)
