@@ -17,6 +17,7 @@ rp_test(
     schema_test.cc
     struct_accessor_test.cc
     test_schemas.cc
+    transform_utils_test.cc
     values_test.cc
     value_generator.cc
   LIBRARIES

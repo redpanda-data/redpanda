@@ -160,6 +160,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "transform_utils_test",
+    timeout = "short",
+    srcs = [
+        "transform_utils_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:transform",
+        "//src/v/iceberg:transform_utils",
+        "//src/v/iceberg:values",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "values_test",
     timeout = "short",
     srcs = [

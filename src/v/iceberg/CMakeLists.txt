@@ -37,7 +37,9 @@ v_cc_library(
     schema.cc
     schema_json.cc
     struct_accessor.cc
+    time_transform_visitor.cc
     transform.cc
+    transform_utils.cc
     values.cc
   DEPS
     Avro::avro

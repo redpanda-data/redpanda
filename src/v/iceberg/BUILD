@@ -219,6 +219,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "time_transform_visitor",
+    srcs = [
+        "time_transform_visitor.cc",
+    ],
+    hdrs = [
+        "time_transform_visitor.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":values",
+    ],
+)
+
+redpanda_cc_library(
     name = "transform",
     srcs = [
         "transform.cc",
@@ -227,6 +241,22 @@ redpanda_cc_library(
         "transform.h",
     ],
     include_prefix = "iceberg",
+)
+
+redpanda_cc_library(
+    name = "transform_utils",
+    srcs = [
+        "transform_utils.cc",
+    ],
+    hdrs = [
+        "transform_utils.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":time_transform_visitor",
+        ":transform",
+        ":values",
+    ],
 )
 
 redpanda_cc_library(
