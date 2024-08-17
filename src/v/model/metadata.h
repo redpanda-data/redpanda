@@ -468,7 +468,8 @@ enum class cloud_storage_backend {
     google_s3_compat = 1,
     azure = 2,
     minio = 3,
-    unknown = 4,
+    oracle_s3_compat = 4,
+    unknown
 };
 
 inline std::ostream& operator<<(std::ostream& os, cloud_storage_backend csb) {
@@ -481,6 +482,8 @@ inline std::ostream& operator<<(std::ostream& os, cloud_storage_backend csb) {
         return os << "azure";
     case cloud_storage_backend::minio:
         return os << "minio";
+    case cloud_storage_backend::oracle_s3_compat:
+        return os << "oracle_s3_compat";
     case cloud_storage_backend::unknown:
         return os << "unknown";
     }

@@ -3802,6 +3802,12 @@ class RedpandaService(RedpandaServiceBase):
 
     def clean(self, **kwargs):
         super().clean(**kwargs)
+        # If we bypassed bucket creation, there is no need to try to delete it.
+        if self._si_settings and self._si_settings.bypass_bucket_creation:
+            self.logger.info(
+                f"Skipping deletion of bucket/container: {self.si_settings.cloud_storage_bucket},"
+                "because its creation was bypassed.")
+            return
         if self._cloud_storage_client:
             try:
                 self.delete_bucket_from_si()
