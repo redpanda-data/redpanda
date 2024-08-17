@@ -47,12 +47,8 @@ class ClusterSelfConfigTest(EndToEndTest):
 
     @cluster(num_nodes=1)
     @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]),
-            cloud_storage_enable_remote_read=[True, False],
-            cloud_storage_enable_remote_write=[True, False])
-    def test_s3_self_config(self, cloud_storage_type,
-                            cloud_storage_enable_remote_read,
-                            cloud_storage_enable_remote_write):
+        applies_only_on=[CloudStorageType.S3]))
+    def test_s3_self_config(self, cloud_storage_type):
         """
         Verify that cloud_storage_url_style self configuration occurs for the s3_client
         when it is not specified. There aren't any endpoints for testing this, so
@@ -62,10 +58,7 @@ class ClusterSelfConfigTest(EndToEndTest):
         si_settings = SISettings(
             self.ctx,
             # Force self configuration through setting cloud_storage_url_style to None.
-            cloud_storage_url_style=None,
-            cloud_storage_enable_remote_read=cloud_storage_enable_remote_read,
-            cloud_storage_enable_remote_write=cloud_storage_enable_remote_write
-        )
+            cloud_storage_url_style=None)
 
         self.start_redpanda(si_settings=si_settings)
         admin = Admin(self.redpanda)
@@ -82,10 +75,6 @@ class ClusterSelfConfigTest(EndToEndTest):
             # Assert that self configuration started.
             assert self.self_config_start_in_logs(node)
 
-            # If neither remote_read or remote_write are enabled, check for the "defaulting" output
-            if not cloud_storage_enable_remote_read and not cloud_storage_enable_remote_write:
-                assert self.self_config_default_in_logs(node)
-
             # Assert that self configuration returned a result.
             self_config_result = self.self_config_result_from_logs(node)
 
@@ -99,12 +88,8 @@ class ClusterSelfConfigTest(EndToEndTest):
 
     @cluster(num_nodes=1)
     @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]),
-            cloud_storage_enable_remote_read=[True, False],
-            cloud_storage_enable_remote_write=[True, False])
-    def test_s3_oracle_self_config(self, cloud_storage_type,
-                                   cloud_storage_enable_remote_read,
-                                   cloud_storage_enable_remote_write):
+        applies_only_on=[CloudStorageType.S3]))
+    def test_s3_oracle_self_config(self, cloud_storage_type):
         """
         Verify that the cloud_storage_url_style self-configuration for OCI
         backend always results in path-style.
@@ -117,8 +102,6 @@ class ClusterSelfConfigTest(EndToEndTest):
             # https://docs.oracle.com/en-us/iaas/Content/Object/Tasks/s3compatibleapi_topic-Amazon_S3_Compatibility_API_Support.htm#s3-api-support
             cloud_storage_api_endpoint=
             'mynamespace.compat.objectstorage.us-phoenix-1.oraclecloud.com',
-            cloud_storage_enable_remote_read=cloud_storage_enable_remote_read,
-            cloud_storage_enable_remote_write=cloud_storage_enable_remote_write,
             # Bypass bucket creation, cleanup, and scrubbing, as we won't actually be able to access the endpoint (Self configuration will usi the endpoint to set path-style).
             bypass_bucket_creation=True,
             use_bucket_cleanup_policy=False,
