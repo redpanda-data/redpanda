@@ -468,6 +468,58 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "object", "properties": {"a": {"type": "integer", "default": 10}}, "required": ["a"]})",
     .reader_is_compatible_with_writer = false,
   },
+  // object checks: dependencies removed
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"], "b": ["a"]}
+})",
+    .writer_schema = R"({"type": "object"})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // object checks: dependencies missing members
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"], "b": ["a"]}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"]}
+})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // object checks: dependencies missing value in string array
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b", "c"]}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"]}
+})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // object checks: dependencies incompatible schemas
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": {"type": "integer"}}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": {"type": "number"}}
+})",
+    .reader_is_compatible_with_writer = false,
+  },
   // array checks: size increase is not allowed
   {
     .reader_schema = R"({"type": "array", "minItems": 2, "maxItems": 10})",
@@ -721,6 +773,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   // - patternProperties evolve
   // - additionalProperties evolve
   // - required list increase
+  // - dependencies list increase
   {
     .reader_schema = R"(
 {
@@ -734,7 +787,8 @@ static constexpr auto compatibility_test_cases = std::to_array<
     "^b": {"type": "string"}
   },
   "additionalProperties": {"type": "boolean"},
-  "required": ["aaaa"]
+  "required": ["aaaa"],
+  "dependencies": {"a":["c", "b"], "b": {"type": "number"}}
 })",
     .writer_schema = R"(
 {
@@ -750,7 +804,8 @@ static constexpr auto compatibility_test_cases = std::to_array<
     "^b": {"type": "string", "minLength":10}
   },
   "additionalProperties": false,
-  "required": ["aaaa", "cccc"]
+  "required": ["aaaa", "cccc"],
+  "dependencies": {"a": ["b", "c", "d"], "b": {"type": "integer"}, "d": ["a"]}
 })",
     .reader_is_compatible_with_writer = true,
   },
