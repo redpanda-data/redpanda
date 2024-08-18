@@ -82,24 +82,25 @@ redpanda_cc_library(
     hdrs = [
         "index_state.h",
     ],
-    include_prefix = "storage",
-    deps = [
-        ":logger",
+    implementation_deps = [
         "//src/v/base",
-        "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
-        "//src/v/container:fragmented_vector",
-        "//src/v/features",
         "//src/v/hashing:crc32c",
         "//src/v/hashing:xx",
-        "//src/v/model",
         "//src/v/reflection:adl",
-        "//src/v/serde",
         "//src/v/serde:bool_class",
+        "//src/v/serde:iobuf",
         "//src/v/serde:optional",
         "//src/v/serde:vector",
         "//src/v/utils:to_string",
         "@fmt",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
         "@seastar",
     ],
 )

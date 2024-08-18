@@ -13,15 +13,17 @@
 
 #include "bytes/iobuf.h"
 #include "container/fragmented_vector.h"
-#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 
-#include <seastar/core/sharded.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <cstdint>
 #include <optional>
+#include <tuple>
+
+class iobuf_parser;
 
 namespace storage {
 

@@ -1,6 +1,18 @@
+/*
+ * Copyright 2024 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
 #define BOOST_TEST_MODULE storage
+
 #include "bytes/bytes.h"
 #include "random/generators.h"
+#include "serde/rw/envelope.h"
 #include "storage/index_state.h"
 
 #include <boost/test/unit_test.hpp>

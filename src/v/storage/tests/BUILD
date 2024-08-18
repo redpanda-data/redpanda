@@ -65,6 +65,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/bytes",
         "//src/v/random:generators",
+        "//src/v/serde",
         "//src/v/storage:index_state",
         "@boost//:test",
     ],
