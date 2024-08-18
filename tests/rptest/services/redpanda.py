@@ -496,7 +496,7 @@ class SISettings:
                  cloud_storage_access_key: str = 'panda-user',
                  cloud_storage_secret_key: str = 'panda-secret',
                  cloud_storage_region: str = 'panda-region',
-                 cloud_storage_api_endpoint: str = 'minio-s3',
+                 cloud_storage_api_endpoint: Optional[str] = None,
                  cloud_storage_api_endpoint_port: int = 9000,
                  cloud_storage_url_style: str = 'virtual_host',
                  cloud_storage_cache_size: Optional[int] = None,
@@ -548,11 +548,17 @@ class SISettings:
             self.cloud_storage_region = cloud_storage_region
             self._cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}'
             self.cloud_storage_url_style = cloud_storage_url_style
+            self.has_cloud_storage_api_endpoint_override = False
 
-            self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
-            if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
-                                        'aws') == 'gcp':
+            if cloud_storage_api_endpoint is not None:
+                self.has_cloud_storage_api_endpoint_override = True
+                self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+            elif test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
+                                          'aws') == 'gcp':
                 self.cloud_storage_api_endpoint = 'storage.googleapis.com'
+            else:
+                # Endpoint defaults to minio-s3
+                self.cloud_storage_api_endpoint = 'minio-s3'
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
 
             if hasattr(test_context, 'injected_args') \
@@ -662,6 +668,11 @@ class SISettings:
         Update based on the test context, to e.g. consume AWS access keys in
         the globals dictionary.
         """
+        if self.has_cloud_storage_api_endpoint_override:
+            logger.info(
+                "cloud_storage_api_endpoint is overridden, skipping loading global test_context options in _load_s3_context."
+            )
+            return
         cloud_storage_credentials_source = test_context.globals.get(
             self.GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY, 'config_file')
         cloud_storage_access_key = test_context.globals.get(
