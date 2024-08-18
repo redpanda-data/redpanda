@@ -35,6 +35,35 @@
 
 namespace storage {
 
+offset_time_index::offset_time_index(
+  model::timestamp ts, offset_delta_time with_offset)
+  : _with_offset(with_offset) {
+    if (_with_offset == offset_delta_time::yes) {
+        _val = static_cast<uint32_t>(
+          std::clamp(ts(), delta_time_min, delta_time_max) + offset);
+    } else {
+        _val = _val = static_cast<uint32_t>(std::clamp(
+          ts(),
+          model::timestamp::type{std::numeric_limits<uint32_t>::min()},
+          model::timestamp::type{std::numeric_limits<uint32_t>::max()}));
+    }
+}
+
+uint32_t offset_time_index::operator()() const {
+    if (_with_offset == offset_delta_time::yes) {
+        return _val - static_cast<uint32_t>(offset);
+    } else {
+        return _val;
+    }
+}
+
+offset_time_index::offset_time_index(
+  uint32_t val, offset_delta_time with_offset)
+  : _with_offset(with_offset)
+  , _val(val) {}
+
+uint32_t offset_time_index::raw_value() const { return _val; }
+
 index_state index_state::make_empty_index(offset_delta_time with_offset) {
     index_state idx{};
     idx.with_offset = with_offset;
@@ -256,5 +285,84 @@ void read_nested(
         st.num_compactible_records_appended = std::nullopt;
     }
 }
+
+index_state index_state::copy() const { return *this; }
+
+size_t index_state::size() const { return relative_offset_index.size(); }
+
+bool index_state::empty() const { return relative_offset_index.empty(); }
+
+void index_state::add_entry(
+  uint32_t relative_offset, offset_time_index relative_time, uint64_t pos) {
+    relative_offset_index.push_back(relative_offset);
+    relative_time_index.push_back(relative_time.raw_value());
+    position_index.push_back(pos);
+}
+void index_state::pop_back() {
+    relative_offset_index.pop_back();
+    relative_time_index.pop_back();
+    position_index.pop_back();
+    if (empty()) {
+        non_data_timestamps = false;
+    }
+}
+std::tuple<uint32_t, offset_time_index, uint64_t>
+index_state::get_entry(size_t i) const {
+    return {
+      relative_offset_index[i],
+      offset_time_index{relative_time_index[i], with_offset},
+      position_index[i]};
+}
+
+void index_state::shrink_to_fit() {
+    relative_offset_index.shrink_to_fit();
+    relative_time_index.shrink_to_fit();
+    position_index.shrink_to_fit();
+}
+
+std::optional<std::tuple<uint32_t, offset_time_index, uint64_t>>
+index_state::find_entry(model::timestamp ts) {
+    const auto idx = offset_time_index{ts, with_offset};
+
+    auto it = std::lower_bound(
+      std::begin(relative_time_index),
+      std::end(relative_time_index),
+      idx.raw_value(),
+      std::less<uint32_t>{});
+    if (it == relative_offset_index.end()) {
+        return std::nullopt;
+    }
+
+    const auto dist = std::distance(relative_offset_index.begin(), it);
+
+    // lower_bound will place us on the first batch in the index that has
+    // 'max_timestamp' greater than 'ts'. Since not every batch is indexed,
+    // it's not guaranteed* that 'ts' will be present in the batch
+    // (i.e. 'ts > first_timestamp'). For this reason, we go back one batch.
+    //
+    // *In the case where lower_bound places on the first batch, we'll
+    // start the timequery from the beggining of the segment as the user
+    // data batch is always indexed.
+    return get_entry(dist > 0 ? dist - 1 : 0);
+}
+
+void index_state::update_batch_timestamps_are_monotonic(bool pred) {
+    batch_timestamps_are_monotonic = batch_timestamps_are_monotonic && pred;
+}
+
+index_state::index_state(const index_state& o) noexcept
+  : bitflags(o.bitflags)
+  , base_offset(o.base_offset)
+  , max_offset(o.max_offset)
+  , base_timestamp(o.base_timestamp)
+  , max_timestamp(o.max_timestamp)
+  , relative_offset_index(o.relative_offset_index.copy())
+  , relative_time_index(o.relative_time_index.copy())
+  , position_index(o.position_index.copy())
+  , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
+  , with_offset(o.with_offset)
+  , non_data_timestamps(o.non_data_timestamps)
+  , broker_timestamp(o.broker_timestamp)
+  , num_compactible_records_appended(o.num_compactible_records_appended) {}
 
 } // namespace storage
