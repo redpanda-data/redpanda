@@ -138,7 +138,6 @@ redpanda_cc_library(
         "fs_utils.h",
         "fwd.h",
         "index_state.h",
-        "index_state_serde_compat.h",
         "key_offset_map.h",
         "kvstore.h",
         "lock_manager.h",

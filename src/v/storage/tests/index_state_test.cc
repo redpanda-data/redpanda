@@ -3,7 +3,6 @@
 #include "random/generators.h"
 #include "serde/serde.h"
 #include "storage/index_state.h"
-#include "storage/index_state_serde_compat.h"
 
 #include <boost/test/unit_test.hpp>
 

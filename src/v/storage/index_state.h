@@ -170,4 +170,13 @@ private:
     index_state(const index_state& o) noexcept;
 };
 
+namespace serde_compat {
+struct index_state_serde {
+    static constexpr int8_t ondisk_version = 3;
+    static uint64_t checksum(const index_state& r);
+    static index_state decode(iobuf_parser& parser);
+    static iobuf encode(const index_state& st);
+};
+} // namespace serde_compat
+
 } // namespace storage
