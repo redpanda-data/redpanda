@@ -1,7 +1,6 @@
 #define BOOST_TEST_MODULE storage
 #include "bytes/bytes.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "storage/index_state.h"
 
 #include <boost/test/unit_test.hpp>

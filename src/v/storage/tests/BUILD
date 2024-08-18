@@ -55,3 +55,17 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "index_state_test",
+    timeout = "short",
+    srcs = [
+        "index_state_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/random:generators",
+        "//src/v/storage:index_state",
+        "@boost//:test",
+    ],
+)
