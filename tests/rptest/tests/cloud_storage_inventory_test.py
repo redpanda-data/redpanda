@@ -94,7 +94,7 @@ class CloudStorageInventoryTest(PreallocNodesTest):
                 expected.add(NTP(ns="kafka", topic=spec.name, partition=pid))
         for node in self.redpanda.started_nodes():
             found |= self._find_ntp_hashes_on_node(node)
-        self.logger.debug(f"{found=} |= {expected=}")
+        self.logger.debug(f"{found=}, {expected=}")
         return found == expected
 
     def _find_ntp_hashes_on_node(self, node):
