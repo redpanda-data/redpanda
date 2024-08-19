@@ -6,7 +6,7 @@ build --linkopt --unwindlib=libgcc
 
 common:clang-18 --extra_toolchains=@llvm_18_toolchain//:all
 
-build:system-clang --extra_toolchains=@bazel_tools//tools/cpp:toolchain
+build:system-clang --extra_toolchains=@local_config_cc_toolchains//:all
 build:system-clang --action_env=BAZEL_COMPILER=clang
 build:system-clang --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
 build:system-clang --linkopt -fuse-ld=lld
