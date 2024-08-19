@@ -7,9 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import threading
-import time
 import concurrent.futures
+import numpy
+import time
+import threading
 
 from ducktape.utils.util import wait_until
 
@@ -22,13 +23,6 @@ from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.scale_parameters import ScaleParameters
-
-HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
-
-HTTP_POST_HEADERS = {
-    "Accept": "application/vnd.schemaregistry.v1+json",
-    "Content-Type": "application/vnd.schemaregistry.v1+json"
-}
 
 
 class LargeMessagesTest(RedpandaTest):
@@ -54,7 +48,7 @@ class LargeMessagesTest(RedpandaTest):
         # messages
         self.message_count = 100
         # 1MB
-        self.message_size = 2**20
+        self.message_size = 2**20 * 20
         # Topics
         self.n_topics = 20
         self.n_partitions = 2
@@ -321,26 +315,21 @@ class LargeMessagesTest(RedpandaTest):
 
         read_samples, read_bytes = _get_samples(read_metric_name)
         sent_samples, sent_bytes = _get_samples(sent_metric_name)
-        sent_bytes = self.redpanda.metric_sum(
-            metric_name=sent_metric_name,
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
-            namespace='kafka')
-
         return read_bytes, sent_bytes
 
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_large_messages_throughput(self):
         """Test creates 9 topics, and uses client-swarm to
-        generate 100 messages with parametrized rate of msg/sec rate
+        generate 120 messages with parametrized rate of msg/sec rate
         to each topic and validates high watermark values
 
         Returns:
             None
         """
 
-        messages_per_second_per_producer = 1
+        messages_per_second_per_producer = 0
 
-        # Start kafka
+        # Start redpanda
         self.redpanda.start()
 
         # Do create topics stage
@@ -354,15 +343,20 @@ class LargeMessagesTest(RedpandaTest):
         total_bytes = self.n_topics * self.message_count * self.message_size
         total_mb = total_bytes / 1024 / 1024
         if messages_per_second_per_producer:
+            # By default, we expect ~20MB per sec
+            # I.e. 20 topics, 1 messages per topic, 1MB message size
             running_time_sec = \
                 self.message_count // messages_per_second_per_producer
             expected_min_throughput = total_bytes / \
                 (self.message_count // messages_per_second_per_producer)
         else:
-            running_time_sec = self.message_count * self.message_size // 2**10
-            # By default, we expect not less than 20MB per sec
-            expected_min_throughput = 20 * (2**10)
+            # If there is no limit on throughput, use 2 min value
+            running_time_sec = 120
+            expected_min_throughput = messages_per_second_per_producer * self.n_topics * (
+                2**10)
 
+        # Lower throughput expectation by 10% to account for network errors
+        expected_min_throughput *= 0.9
         expected_throughput_mb = expected_min_throughput / 1024 / 1024
         self.logger.info(f"Total data: {total_mb:.2f}MB ({total_bytes}b), "
                          f"Expected throughput: {expected_throughput_mb}MB/s")
@@ -378,30 +372,47 @@ class LargeMessagesTest(RedpandaTest):
         #     self.n_topics, [self.topic_prefix], _group)
 
         # Wait for all messages to be produced
-        self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
+        self.logger.info(f"Measuring bandwidth")
 
         # Measure bandwidth each 2 seconds
         # if no new bytes received by RP, check swarm and exit
         # if at least one finished
-        interval = 2
+        bandwidth_in = []
+        bandwidth_out = []
+        backoff_interval = 2
         seconds_spent = 0
-        last_read = 0
+        last_read, last_sent = self._get_rw_metrics()
+        interval_start_sec = time.time()
         while seconds_spent < running_time_sec:
             read, sent = self._get_rw_metrics()
-            bytes_per_sec = (read - last_read) / 2
-            mb_per_sec = bytes_per_sec / 1024 / 1024
-            self.logger.debug(f"Bytes read: {read} ({mb_per_sec:.2f}MB/sec), "
-                              f"Bytes sent: {sent}")
-
+            # Since we are doing some other calculations,
+            # Use timing to determine elapsed interval
+            interval_end_sec = time.time()
+            elapsed_sec = interval_end_sec - interval_start_sec
+            # Calculate ingress BW
+            bytes_per_sec_in = (read - last_read) / elapsed_sec
+            mb_per_sec_in = bytes_per_sec_in / 1024 / 1024
+            # Calculate egress BW
+            bytes_per_sec_out = (sent - last_sent) / 2
+            mb_per_sec_out = bytes_per_sec_out / 1024 / 1024
+            self.logger.debug(
+                f"Bytes read: {read} ({mb_per_sec_in:.2f}MB/sec), "
+                f"Bytes sent: {sent} ({mb_per_sec_out:.2f}MB/sec)")
             # If no new bytes received, check swarm nodes
             if last_read == read:
                 if any([not s.is_alive() for s in swarm_producers]):
                     # At least one is done, exit
                     break
 
+            # Save measurements
+            bandwidth_in.append(bytes_per_sec_in)
+            bandwidth_out.append(bytes_per_sec_out)
+
             last_read = read
-            time.sleep(interval)
-            seconds_spent += interval
+            last_sent = sent
+            time.sleep(backoff_interval)
+            seconds_spent += elapsed_sec
+            interval_start_sec = interval_end_sec
 
         # Run checks if swarm nodes finished
         self.logger.info("Make sure that swarm node producers are finished")
@@ -434,5 +445,26 @@ class LargeMessagesTest(RedpandaTest):
             f"Message counts per swarm node mismatch: " \
             f"target={self.message_count}, " \
             f"swarm_nodes='''{', '.join([str(num) for num in hwms])}'''"
+
+        # Remove first two measurements as it is more of a ramp up
+        bandwidth_in = bandwidth_in[2:]
+        bandwidth_out = bandwidth_out[2:]
+        # Calculate percentiles
+        bw_in_perc = numpy.percentile(bandwidth_in, [50, 90, 99])
+        bw_out_perc = numpy.percentile(bandwidth_out, [50, 90, 99])
+        # Prettify for log
+        str_in = []
+        str_out = []
+        for val in bw_in_perc:
+            str_in.append(f"{val / 1024 / 1024:.02f}MB/sec")
+        for val in bw_out_perc:
+            str_out.append(f"{val / 1024 / 1024:.02f}MB/sec")
+        self.logger.info(f"Measured bandwidth (avg, P90, P99):\n"
+                         f"RPC in: {', '.join(str_in)}\n"
+                         f"RPC out: {', '.join(str_out)}")
+        # Check that measured BW is not lower than expected
+        assert bw_in_perc[0] > expected_min_throughput, \
+            "Measured input bandwidth is lower than expected: " \
+            f"{bw_in_perc[0]} vs {expected_min_throughput}"
 
         return
