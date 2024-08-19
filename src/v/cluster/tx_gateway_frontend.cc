@@ -1818,6 +1818,19 @@ tx_gateway_frontend::handle_commit_tx(
         co_return tx::errc::fenced;
     }
 
+    /**
+     * Completed commit transaction do not require any further steps, simply
+     * return success to make the end_txn request fully idempotent.
+     */
+    if (tx.status == tx_status::completed_commit) {
+        vlog(
+          txlog.warn,
+          "[tx_id={}] transaction is {} already committed",
+          tx.id,
+          tx);
+        co_return tx::errc::none;
+    }
+
     if (is_state_transition_valid(tx, tx_status::preparing_commit)) {
         try {
             auto r = co_await do_commit_tm_tx(term, stm, tx, timeout, outcome);
