@@ -75,6 +75,37 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "index_state",
+    srcs = [
+        "index_state.cc",
+    ],
+    hdrs = [
+        "index_state.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/hashing:crc32c",
+        "//src/v/hashing:xx",
+        "//src/v/reflection:adl",
+        "//src/v/serde:bool_class",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:optional",
+        "//src/v/serde:vector",
+        "//src/v/utils:to_string",
+        "@fmt",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -87,7 +118,6 @@ redpanda_cc_library(
         "disk_log_impl.cc",
         "file_sanitizer_types.cc",
         "fs_utils.cc",
-        "index_state.cc",
         "key_offset_map.cc",
         "kvstore.cc",
         "lock_manager.cc",
@@ -137,8 +167,6 @@ redpanda_cc_library(
         "file_sanitizer_types.h",
         "fs_utils.h",
         "fwd.h",
-        "index_state.h",
-        "index_state_serde_compat.h",
         "key_offset_map.h",
         "kvstore.h",
         "lock_manager.h",
@@ -183,6 +211,7 @@ redpanda_cc_library(
     include_prefix = "storage",
     visibility = ["//visibility:public"],
     deps = [
+        ":index_state",
         ":parser_utils",
         ":record_batch_builder",
         "//src/v/base",

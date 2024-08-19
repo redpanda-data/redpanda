@@ -13,15 +13,17 @@
 
 #include "bytes/iobuf.h"
 #include "container/fragmented_vector.h"
-#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 
-#include <seastar/core/sharded.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <cstdint>
 #include <optional>
+#include <tuple>
+
+class iobuf_parser;
 
 namespace storage {
 
@@ -39,33 +41,14 @@ public:
     static constexpr model::timestamp::type delta_time_min = -offset;
     static constexpr model::timestamp::type delta_time_max = offset - 1;
 
-    offset_time_index(model::timestamp ts, offset_delta_time with_offset)
-      : _with_offset(with_offset) {
-        if (_with_offset == offset_delta_time::yes) {
-            _val = static_cast<uint32_t>(
-              std::clamp(ts(), delta_time_min, delta_time_max) + offset);
-        } else {
-            _val = _val = static_cast<uint32_t>(std::clamp(
-              ts(),
-              model::timestamp::type{std::numeric_limits<uint32_t>::min()},
-              model::timestamp::type{std::numeric_limits<uint32_t>::max()}));
-        }
-    }
+    offset_time_index(model::timestamp ts, offset_delta_time with_offset);
 
-    uint32_t operator()() const {
-        if (_with_offset == offset_delta_time::yes) {
-            return _val - static_cast<uint32_t>(offset);
-        } else {
-            return _val;
-        }
-    }
+    uint32_t operator()() const;
 
 private:
-    offset_time_index(uint32_t val, offset_delta_time with_offset)
-      : _with_offset(with_offset)
-      , _val(val) {}
+    offset_time_index(uint32_t val, offset_delta_time with_offset);
 
-    uint32_t raw_value() const { return _val; }
+    uint32_t raw_value() const;
 
     offset_delta_time _with_offset;
     uint32_t _val;
@@ -105,7 +88,7 @@ struct index_state
     index_state& operator=(const index_state&) = delete;
     ~index_state() noexcept = default;
 
-    index_state copy() const { return *this; }
+    index_state copy() const;
 
     /// \brief unused
     uint32_t bitflags{0};
@@ -148,63 +131,21 @@ struct index_state
     // support this field, and we can't conclude anything.
     std::optional<size_t> num_compactible_records_appended{0};
 
-    size_t size() const { return relative_offset_index.size(); }
+    size_t size() const;
 
-    bool empty() const { return relative_offset_index.empty(); }
+    bool empty() const;
 
     void add_entry(
-      uint32_t relative_offset, offset_time_index relative_time, uint64_t pos) {
-        relative_offset_index.push_back(relative_offset);
-        relative_time_index.push_back(relative_time.raw_value());
-        position_index.push_back(pos);
-    }
-    void pop_back() {
-        relative_offset_index.pop_back();
-        relative_time_index.pop_back();
-        position_index.pop_back();
-        if (empty()) {
-            non_data_timestamps = false;
-        }
-    }
-    std::tuple<uint32_t, offset_time_index, uint64_t>
-    get_entry(size_t i) const {
-        return {
-          relative_offset_index[i],
-          offset_time_index{relative_time_index[i], with_offset},
-          position_index[i]};
-    }
+      uint32_t relative_offset, offset_time_index relative_time, uint64_t pos);
 
-    void shrink_to_fit() {
-        relative_offset_index.shrink_to_fit();
-        relative_time_index.shrink_to_fit();
-        position_index.shrink_to_fit();
-    }
+    void pop_back();
+
+    std::tuple<uint32_t, offset_time_index, uint64_t> get_entry(size_t i) const;
+
+    void shrink_to_fit();
 
     std::optional<std::tuple<uint32_t, offset_time_index, uint64_t>>
-    find_entry(model::timestamp ts) {
-        const auto idx = offset_time_index{ts, with_offset};
-
-        auto it = std::lower_bound(
-          std::begin(relative_time_index),
-          std::end(relative_time_index),
-          idx.raw_value(),
-          std::less<uint32_t>{});
-        if (it == relative_offset_index.end()) {
-            return std::nullopt;
-        }
-
-        const auto dist = std::distance(relative_offset_index.begin(), it);
-
-        // lower_bound will place us on the first batch in the index that has
-        // 'max_timestamp' greater than 'ts'. Since not every batch is indexed,
-        // it's not guaranteed* that 'ts' will be present in the batch
-        // (i.e. 'ts > first_timestamp'). For this reason, we go back one batch.
-        //
-        // *In the case where lower_bound places on the first batch, we'll
-        // start the timequery from the beggining of the segment as the user
-        // data batch is always indexed.
-        return get_entry(dist > 0 ? dist - 1 : 0);
-    }
+    find_entry(model::timestamp ts);
 
     bool maybe_index(
       size_t accumulator,
@@ -218,9 +159,7 @@ struct index_state
       bool user_data,
       size_t compactible_records);
 
-    void update_batch_timestamps_are_monotonic(bool pred) {
-        batch_timestamps_are_monotonic = batch_timestamps_are_monotonic && pred;
-    }
+    void update_batch_timestamps_are_monotonic(bool pred);
 
     friend bool operator==(const index_state&, const index_state&) = default;
 
@@ -230,20 +169,16 @@ struct index_state
     friend void read_nested(iobuf_parser&, index_state&, const size_t);
 
 private:
-    index_state(const index_state& o) noexcept
-      : bitflags(o.bitflags)
-      , base_offset(o.base_offset)
-      , max_offset(o.max_offset)
-      , base_timestamp(o.base_timestamp)
-      , max_timestamp(o.max_timestamp)
-      , relative_offset_index(o.relative_offset_index.copy())
-      , relative_time_index(o.relative_time_index.copy())
-      , position_index(o.position_index.copy())
-      , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
-      , with_offset(o.with_offset)
-      , non_data_timestamps(o.non_data_timestamps)
-      , broker_timestamp(o.broker_timestamp)
-      , num_compactible_records_appended(o.num_compactible_records_appended) {}
+    index_state(const index_state& o) noexcept;
 };
+
+namespace serde_compat {
+struct index_state_serde {
+    static constexpr int8_t ondisk_version = 3;
+    static uint64_t checksum(const index_state& r);
+    static index_state decode(iobuf_parser& parser);
+    static iobuf encode(const index_state& st);
+};
+} // namespace serde_compat
 
 } // namespace storage
