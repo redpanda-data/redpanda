@@ -28,7 +28,8 @@ public:
       segment_full_path,
       ss::file,
       ss::io_priority_class,
-      size_t max_chunk_memory) noexcept;
+      size_t max_chunk_memory,
+      ss::abort_source* _as) noexcept;
 
     ss::future<> close() final;
 
@@ -57,6 +58,7 @@ private:
     std::optional<compacted_index::footer> _footer;
     bool _end_of_stream{false};
     std::optional<ss::input_stream<char>> _cursor;
+    ss::abort_source* _as;
 
     friend std::ostream&
     operator<<(std::ostream&, const compacted_index_chunk_reader&);

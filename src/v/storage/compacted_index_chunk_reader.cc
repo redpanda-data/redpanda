@@ -36,11 +36,13 @@ compacted_index_chunk_reader::compacted_index_chunk_reader(
   segment_full_path path,
   ss::file in,
   ss::io_priority_class pc,
-  size_t max_chunk_memory) noexcept
+  size_t max_chunk_memory,
+  ss::abort_source* as) noexcept
   : compacted_index_reader::impl(std::move(path))
   , _handle(std::move(in))
   , _iopc(pc)
-  , _max_chunk_memory(max_chunk_memory) {}
+  , _max_chunk_memory(max_chunk_memory)
+  , _as(as) {}
 
 ss::future<> compacted_index_chunk_reader::close() { return _handle.close(); }
 
@@ -200,6 +202,9 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
     if (!_cursor) {
         _cursor = ss::make_file_input_stream(_handle, 0, _footer->size);
     }
+    if (_as) {
+        _as->check();
+    }
 
     return ss::do_with(ret_t{}, [this](ret_t& slice) {
         return ss::do_until(
@@ -267,10 +272,11 @@ compacted_index_reader make_file_backed_compacted_reader(
   segment_full_path path,
   ss::file f,
   ss::io_priority_class iopc,
-  size_t step_chunk) {
+  size_t step_chunk,
+  ss::abort_source* as) {
     return compacted_index_reader(
       ss::make_shared<internal::compacted_index_chunk_reader>(
-        std::move(path), std::move(f), iopc, step_chunk));
+        std::move(path), std::move(f), iopc, step_chunk, as));
 }
 
 } // namespace storage
