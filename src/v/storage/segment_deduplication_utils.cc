@@ -65,7 +65,7 @@ ss::future<bool> build_offset_map_for_segment(
       compaction_idx_path, cfg.sanitizer_config);
     std::exception_ptr eptr;
     auto rdr = make_file_backed_compacted_reader(
-      compaction_idx_path, compaction_idx_file, cfg.iopc, 64_KiB);
+      compaction_idx_path, compaction_idx_file, cfg.iopc, 64_KiB, cfg.asrc);
     try {
         co_await rdr.verify_integrity();
     } catch (...) {
