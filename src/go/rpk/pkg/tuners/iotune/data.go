@@ -250,6 +250,50 @@ func precompiledData() map[string]map[string]map[string]io {
 				// advertised:      3200000                       1760000
 				"default": {"", 16 * 200633, 16 * 1427463808, 16 * 110542, 16 * 1113520256},
 			},
+
+			// m7gd values are taken from direct measurement with iotune except
+			// where noted.
+			"m7gd.large": {
+				// advertised:  33542             16771
+				"default": {"", 33638, 157521648, 16836, 75264032},
+			},
+
+			"m7gd.xlarge": {
+				// advertised:  67084             33542
+				"default": {"", 67274, 315774176, 33676, 150679296},
+			},
+
+			"m7gd.2xlarge": {
+				// advertised:  134168             67084
+				"default": {"", 134550, 631589440, 67358, 301293568},
+			},
+
+			"m7gd.4xlarge": {
+				// advertised:  268336              134168
+				"default": {"", 269588, 1263357056, 134608, 604995968},
+			},
+
+			// at 8xlarge and above the read-side IOPS values start to scale
+			// more poorly that advertised/expected, so use scaled values
+			// from 4xlarge instead, under the assumption it is a measurement
+			// limitation
+			"m7gd.8xlarge": {
+				// advertised:      536672                      268336
+				// measured:        423119                      269819
+				"default": {"", 2 * 269588, 2 * 1263357056, 2 * 134608, 2 * 604995968},
+			},
+
+			// 12x large was not measured
+			"m7gd.12xlarge": {
+				// advertised:      805008                      402504
+				"default": {"", 3 * 269588, 3 * 1263357056, 3 * 134608, 3 * 604995968},
+			},
+
+			"m7gd.16xlarge": {
+				// advertised:     1073344                      536672
+				// measured         752697,                     539426,
+				"default": {"", 4 * 269588, 4 * 1263357056, 4 * 134608, 4 * 604995968},
+			},
 		},
 	}
 }
