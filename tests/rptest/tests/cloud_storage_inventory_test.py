@@ -82,11 +82,11 @@ class CloudStorageInventoryTest(PreallocNodesTest):
         self.start_redpanda()
         self._create_initial_topics()
         self.populate_bucket()
-        wait_until(lambda: self._assert_hashes_are_found_on_leaders(),
+        wait_until(lambda: self._hashes_are_found_on_leaders(),
                    timeout_sec=60,
                    backoff_sec=5)
 
-    def _assert_hashes_are_found_on_leaders(self):
+    def _hashes_are_found_on_leaders(self):
         found = set()
         expected = set()
         for spec in self.topics:
