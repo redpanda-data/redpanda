@@ -184,17 +184,19 @@ archival_policy::lookup_result archival_policy::find_segment(
     const auto& set = log->segments();
     const auto& ntp_conf = log->config();
     auto it = set.lower_bound(start_offset);
-    if (it == set.end() || eligible_for_compacted_reupload(**it)) {
-        // Skip forward if we hit a gap or compacted segment
-        for (auto i = set.begin(); i != set.end(); i++) {
-            const auto& sg = *i;
-            if (start_offset < sg->offsets().get_base_offset()) {
-                // Move last offset forward
-                it = i;
-                start_offset = sg->offsets().get_base_offset();
-                break;
-            }
-        }
+    if (it == set.end() && start_offset < log->offsets().committed_offset) {
+        // The 'start_offset' is in the gap. Normally this shouldn't happen.
+        vlog(
+          archival_log.warn,
+          "Upload policy for {}: can't find segment with base_offset={}",
+          _ntp,
+          start_offset);
+        it = std::find_if(
+          set.begin(),
+          set.end(),
+          [start_offset](const ss::lw_shared_ptr<storage::segment>& s) {
+              return s->offsets().get_base_offset() >= start_offset;
+          });
     }
     if (it == set.end()) {
         vlog(
