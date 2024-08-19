@@ -407,19 +407,29 @@ void producer_state::apply_data(
 void producer_state::apply_transaction_begin(
   const model::record_batch_header& header,
   const fence_batch_data& parsed_batch) {
-    vassert(
-      !has_transaction_in_progress() && !_active_transaction_hook.is_linked(),
-      "Transaction already in progress {} for producer {}, hook {}",
-      _transaction_state,
-      *this,
-      _active_transaction_hook.is_linked());
-    // update pid incase the producer got fenced.
     const auto& pid = parsed_batch.bid.pid;
-    vassert(
-      pid.epoch >= _id.epoch,
-      "[{}] Invalid fencing using a pid with lower epoch: {}",
-      *this,
-      header);
+    if (pid.epoch < _id.epoch) {
+        vlog(
+          _logger.error,
+          "[{}] Epoch downgrade to {}, ignoring batch {}",
+          *this,
+          pid,
+          header);
+        return;
+    }
+    if (has_transaction_in_progress() || _active_transaction_hook.is_linked()) {
+        // We have checks in place in the stm so this does not happen. If it
+        // still does it could be a bug or the log has been truncated and some
+        // entries disappeared. We log and move on to make forward progress.
+        vlog(
+          _logger.error,
+          "[{}] Encountered a begin batch {} while transaction already in "
+          "progress, overriding transaction state to make forward progress. "
+          "This can have unintended consequences. Hook state: {}",
+          *this,
+          header,
+          _active_transaction_hook.is_linked());
+    }
     _id = pid;
     _transaction_state = std::make_unique<producer_partition_transaction_state>(
       producer_partition_transaction_state{
@@ -456,7 +466,8 @@ producer_state::apply_transaction_end(model::control_record_type crt) {
     } else if (crt == model::control_record_type::tx_abort) {
         _transaction_state->status = partition_transaction_status::aborted;
     } else {
-        vassert(false, "Invalid control batch type: {}", crt);
+        vlog(_logger.error, "Ignoring invalid control batch type: {}", crt);
+        return std::nullopt;
     }
     return model::tx_range{
       id(), _transaction_state->first, _transaction_state->last};
@@ -491,12 +502,16 @@ producer_state::snapshot(kafka::offset log_start_offset) const {
     snapshot.ms_since_last_update = ms_since_last_update();
     snapshot.finished_requests.reserve(_requests._finished_requests.size());
     for (auto& req : _requests._finished_requests) {
-        vassert(
-          req->has_completed(),
-          "_finished_requests has unresolved promise: {}, range:[{}, {}]",
-          *this,
-          req->_first_sequence,
-          req->_last_sequence);
+        if (!req->has_completed()) {
+            vlog(
+              _logger.error,
+              "[{}] Ignoring unresolved finished request during snapshot, "
+              "range: "
+              "range:[{}, {}]",
+              *this,
+              *req);
+            continue;
+        }
         auto kafka_offset
           = req->_result.get_shared_future().get().value().last_offset;
         // offsets older than log start are no longer interesting.
