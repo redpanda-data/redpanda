@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "ffi.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "schema_registry.h"
+#include "wasm/ffi.h"
+#include "wasm/schema_registry.h"
 
 namespace wasm {
 
