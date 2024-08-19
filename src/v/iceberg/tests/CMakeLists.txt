@@ -11,6 +11,7 @@ rp_test(
     datatypes_json_test.cc
     datatypes_test.cc
     manifest_serialization_test.cc
+    partition_key_type_test.cc
     partition_test.cc
     schema_json_test.cc
     schema_test.cc

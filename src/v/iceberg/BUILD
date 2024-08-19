@@ -138,6 +138,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partition_key_type",
+    srcs = [
+        "partition_key_type.cc",
+    ],
+    hdrs = [
+        "partition_key_type.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":partition",
+        ":schema",
+    ],
+)
+
+redpanda_cc_library(
     name = "logger",
     srcs = [
         "logger.cc",
