@@ -140,6 +140,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "logger",
+    srcs = [
+        "logger.cc",
+    ],
+    hdrs = [
+        "logger.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema",
     hdrs = [
         "schema.h",
@@ -167,5 +182,28 @@ redpanda_cc_library(
         ":json_utils",
         ":schema",
         "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
+    name = "values",
+    srcs = [
+        "values.cc",
+    ],
+    hdrs = [
+        "values.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:hash",
+        "//src/v/bytes:iobuf_parser",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/numeric:int128",
+        "@boost//:container_hash",
+        "@fmt",
     ],
 )

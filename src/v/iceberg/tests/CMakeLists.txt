@@ -14,6 +14,7 @@ rp_test(
     partition_test.cc
     schema_json_test.cc
     test_schemas.cc
+    values_test.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams

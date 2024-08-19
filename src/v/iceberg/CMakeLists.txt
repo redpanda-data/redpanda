@@ -31,15 +31,18 @@ v_cc_library(
     datatypes.cc
     datatypes_json.cc
     json_utils.cc
+    logger.cc
     manifest_avro.cc
     partition.cc
     schema_json.cc
+    values.cc
   DEPS
     Avro::avro
     v::bytes
     v::container
     v::json
     v::strings
+    v::utils
 )
 
 add_subdirectory(tests)
