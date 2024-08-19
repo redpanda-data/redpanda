@@ -190,7 +190,9 @@ class FlinkScaleTests(RedpandaTest):
             and consume/process given number of transactions
         """
         # Create service
-        flink = FlinkService(self.test_context)
+        flink = FlinkService(self.test_context,
+                             self.redpanda.get_node_cpu_count(),
+                             self.redpanda.get_node_memory_mb())
 
         if not self.redpanda.dedicated_nodes:
             # Single workload
@@ -316,7 +318,9 @@ class FlinkScaleTests(RedpandaTest):
 
         # Create flink
         flinks = [
-            FlinkService(self.test_context) for idx in range(total_nodes)
+            FlinkService(self.test_context, self.redpanda.get_node_cpu_count(),
+                         self.redpanda.get_node_memory_mb())
+            for idx in range(total_nodes)
         ]
 
         # Start Flinks
