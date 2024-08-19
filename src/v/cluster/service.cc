@@ -510,7 +510,21 @@ ss::future<get_cluster_health_reply> service::get_cluster_health_report(
 }
 
 ss::future<get_node_health_reply>
-service::do_collect_node_health_report(get_node_health_request) {
+service::do_collect_node_health_report(get_node_health_request req) {
+    // validate if the receiving node is the one that that the request is
+    // addressed to
+    if (
+      req.get_target_node_id() != get_node_health_request::node_id_not_set
+      && req.get_target_node_id() != _controller->self()) {
+        vlog(
+          clusterlog.debug,
+          "Received a get_node_health request addressed to different node. "
+          "Requested node id: {}, current node id: {}",
+          req.get_target_node_id(),
+          _controller->self());
+        co_return get_node_health_reply{.error = errc::invalid_target_node_id};
+    }
+
     auto res = co_await _hm_frontend.local().get_current_node_health();
     if (res.has_error()) {
         co_return get_node_health_reply{

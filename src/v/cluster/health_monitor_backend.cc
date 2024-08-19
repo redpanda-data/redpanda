@@ -366,9 +366,9 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         ss::this_shard_id(),
         id,
         max_metadata_age(),
-        [timeout](controller_client_protocol client) mutable {
+        [timeout, id](controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request{}, rpc::client_opts(timeout));
+              get_node_health_request(id), rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
       .then([this, id](result<get_node_health_reply> reply) {
@@ -376,20 +376,23 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
       });
 }
 
-result<node_health_report>
-map_reply_result(result<get_node_health_reply> reply) {
+result<node_health_report> map_reply_result(
+  model::node_id target_node_id, result<get_node_health_reply> reply) {
     if (!reply) {
         return {reply.error()};
     }
     if (!reply.value().report.has_value()) {
         return {reply.value().error};
     }
+    if (reply.value().report->id != target_node_id) {
+        return {errc::invalid_target_node_id};
+    }
     return {std::move(*reply.value().report)};
 }
 
 result<node_health_report> health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
-    auto res = map_reply_result(std::move(reply));
+    auto res = map_reply_result(id, std::move(reply));
     auto [status_it, _] = _status.try_emplace(id);
     if (!res) {
         vlog(

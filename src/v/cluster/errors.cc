@@ -166,6 +166,8 @@ std::ostream& operator<<(std::ostream& o, cluster::errc err) {
         return o << "cluster::errc::producer_ids_vcluster_limit_exceeded";
     case errc::validation_of_recovery_topic_failed:
         return o << "cluster::errc::validation_of_recovery_topic_failed";
+    case errc::invalid_target_node_id:
+        return o << "cluster::errc::invalid_target_node_id";
     }
 }
 } // namespace cluster
