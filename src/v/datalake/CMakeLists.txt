@@ -9,6 +9,8 @@ v_cc_library(
     protobuf_to_arrow_converter.cc
     proto_to_arrow_scalar.cc
     proto_to_arrow_struct.cc
+    record_multiplexer.cc
+    schemaless_translator.cc
   DEPS
     v::storage
     Seastar::seastar
