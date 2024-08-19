@@ -13,6 +13,7 @@ rp_test(
     manifest_serialization_test.cc
     partition_test.cc
     schema_json_test.cc
+    schema_test.cc
     test_schemas.cc
     values_test.cc
   LIBRARIES

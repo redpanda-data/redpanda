@@ -33,6 +33,7 @@ v_cc_library(
     json_utils.cc
     logger.cc
     manifest_avro.cc
+    schema.cc
     schema_json.cc
     transform.cc
     values.cc

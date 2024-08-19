@@ -154,6 +154,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "schema",
+    srcs = [
+        "schema.cc",
+    ],
     hdrs = [
         "schema.h",
     ],
