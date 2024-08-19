@@ -40,6 +40,7 @@ storage::compacted_index_writer make_dummy_compacted_index(
 
 struct compacted_topic_fixture {
     storage::storage_resources resources;
+    ss::abort_source as;
 };
 
 bytes extract_record_key(bytes prefixed_key) {
@@ -131,7 +132,8 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
       storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
-      32_KiB);
+      32_KiB,
+      &as);
     auto footer = rdr.load_footer().get0();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
@@ -158,7 +160,8 @@ FIXTURE_TEST(
       storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
-      32_KiB);
+      32_KiB,
+      &as);
     auto footer = rdr.load_footer().get0();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
@@ -199,7 +202,8 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
       storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
-      32_KiB);
+      32_KiB,
+      &as);
     auto key_bitmap = rdr
                         .consume(
                           storage::internal::compaction_key_reducer(),
@@ -241,7 +245,8 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
       storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
-      32_KiB);
+      32_KiB,
+      &as);
 
     rdr.verify_integrity().get();
     rdr.reset();
@@ -308,7 +313,8 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
-      32_KiB);
+      32_KiB,
+      &as);
 
     rdr.verify_integrity().get();
     auto bitmap
@@ -339,7 +345,8 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
           storage::segment_full_path::mock("dummy name - final "),
           ss::file(ss::make_shared(tmpbuf_file(final_data))),
           ss::default_priority_class(),
-          32_KiB);
+          32_KiB,
+          &as);
         final_rdr.verify_integrity().get();
         {
             auto vec = compaction_index_reader_to_memory(final_rdr).get0();
@@ -441,12 +448,13 @@ verify_index_integrity(const iobuf& data) {
         fstream.write(fragment.get(), fragment.size()).get();
     }
     fstream.flush().get();
-
+    ss::abort_source as;
     auto rdr = storage::make_file_backed_compacted_reader(
       storage::segment_full_path::mock("dummy name"),
       file,
       ss::default_priority_class(),
-      32_KiB);
+      32_KiB,
+      &as);
     rdr.verify_integrity().get();
     return rdr.load_footer().get();
 }
