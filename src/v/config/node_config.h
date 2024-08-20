@@ -14,9 +14,11 @@
 #include "config/broker_endpoint.h"
 #include "config/convert.h"
 #include "config/data_directory_path.h"
+#include "config/node_overrides.h"
 #include "config/property.h"
 #include "config/seed_server.h"
 #include "config_store.h"
+#include "model/fundamental.h"
 
 #include <algorithm>
 #include <iterator>
@@ -86,6 +88,8 @@ public:
     // Timeout upper-bound for setting verbose (>=DEBUG) logging.
     bounded_property<std::optional<std::chrono::seconds>>
       verbose_logging_timeout_sec_max;
+
+    property<std::vector<config::node_id_override>> node_id_overrides;
 
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {

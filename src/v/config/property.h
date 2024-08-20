@@ -655,6 +655,10 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::
                            is_same_v<type, model::recovery_validation_mode>) {
         return "recovery_validation_mode";
+    } else if constexpr (std::is_same_v<type, model::node_uuid>) {
+        return "string";
+    } else if constexpr (std::is_same_v<type, config::node_id_override>) {
+        return "node_id_override";
     } else {
         static_assert(
           utils::unsupported_type<T>::value, "Type name not defined");
@@ -929,5 +933,4 @@ private:
         }
     }
 };
-
 }; // namespace config
