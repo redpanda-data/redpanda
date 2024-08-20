@@ -98,7 +98,7 @@ private:
       do_allocate_id(model::timeout_clock::duration);
     ss::future<bool> set_state(int64_t, model::timeout_clock::duration);
 
-    ss::future<> apply(const model::record_batch&) final;
+    ss::future<> do_apply(const model::record_batch&) final;
 
     // Moves the state forward to the given value if the curent id is lower
     // than it.
@@ -108,7 +108,8 @@ private:
     ss::future<> write_snapshot();
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<bool> sync(model::timeout_clock::duration);
 

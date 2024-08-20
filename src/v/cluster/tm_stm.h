@@ -362,9 +362,10 @@ private:
     std::optional<tx_metadata> find_tx(const kafka::transactional_id&);
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override;
 
-    ss::future<> apply(const model::record_batch& b) final;
+    ss::future<> do_apply(const model::record_batch& b) final;
 
     ss::future<>
     apply_tm_update(model::record_batch_header hdr, model::record_batch b);
@@ -380,7 +381,8 @@ private:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
-    ss::future<raft::stm_snapshot> do_take_snapshot();
+    ss::future<raft::stm_snapshot>
+    do_take_snapshot(ssx::semaphore_units apply_units);
     ss::future<result<raft::replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
 

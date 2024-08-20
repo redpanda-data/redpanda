@@ -1479,7 +1479,7 @@ void rm_stm::apply_fence(model::producer_identity pid, model::record_batch b) {
     _producer_state_manager.local().touch(*producer, _vcluster_id);
 }
 
-ss::future<> rm_stm::apply(const model::record_batch& b) {
+ss::future<> rm_stm::do_apply(const model::record_batch& b) {
     const auto& hdr = b.header();
     const auto bid = model::batch_identity::from(hdr);
 
@@ -1726,11 +1726,14 @@ ss::future<> rm_stm::offload_aborted_txns() {
     _aborted_tx_state.aborted = std::move(snapshot.aborted);
 }
 
-ss::future<raft::stm_snapshot> rm_stm::take_local_snapshot() {
-    return do_take_local_snapshot(active_snapshot_version());
+ss::future<raft::stm_snapshot>
+rm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
+    return do_take_local_snapshot(
+      active_snapshot_version(), std::move(apply_units));
 }
 
-ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
+ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
+  uint8_t version, ssx::semaphore_units apply_units) {
     vassert(
       version == tx_snapshot_v5::version || version == tx_snapshot_v6::version,
       "Unsupported snapshot version requested: {}",
@@ -1809,8 +1812,14 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
             stm_snapshot.producers.push_back(std::move(snapshot));
         }
     }
+    auto snapshot_offset = last_applied_offset();
+    apply_units.return_all();
 
-    vlog(_ctx_log.trace, "Serializing snapshot {}", stm_snapshot);
+    vlog(
+      _ctx_log.trace,
+      "Serializing snapshot {} at offset: {}",
+      stm_snapshot,
+      snapshot_offset);
 
     iobuf snapshot_buf;
     if (version == tx_snapshot_v6::version) {
@@ -1821,7 +1830,7 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(uint8_t version) {
     }
 
     co_return raft::stm_snapshot::create(
-      version, last_applied_offset(), std::move(snapshot_buf));
+      version, snapshot_offset, std::move(snapshot_buf));
 }
 
 uint64_t rm_stm::get_local_snapshot_size() const {

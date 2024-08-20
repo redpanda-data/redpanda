@@ -166,7 +166,8 @@ public:
     /**
      * Called when a local snapshot is taken
      */
-    ss::future<stm_snapshot> take_local_snapshot() final {
+    ss::future<stm_snapshot> take_local_snapshot(
+      [[maybe_unused]] ssx::semaphore_units apply_units) final {
         co_return stm_snapshot::create(
           0, last_applied_offset(), serde::to_iobuf(state));
     };
@@ -212,7 +213,7 @@ public:
         return last_op;
     }
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> do_apply(const model::record_batch& batch) override {
         auto last_op = apply_to_state(batch, state);
         if (last_op) {
             last_operation = std::move(*last_op);
@@ -292,7 +293,7 @@ public:
      * as it is going to be started without the full data in the snapshot, hence
      * the validation would fail.
      */
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> do_apply(const model::record_batch& batch) override {
         if (batch.header().type != model::record_batch_type::raft_data) {
             co_return;
         }
@@ -446,7 +447,7 @@ struct persisted_stm_test_fixture : state_machine_fixture {
 
     ss::future<> take_local_snapshot_on_every_node() {
         for (auto& stm : node_stms) {
-            co_await stm.second->take_local_snapshot();
+            co_await stm.second->write_local_snapshot();
         }
     }
 

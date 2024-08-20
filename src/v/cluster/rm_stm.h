@@ -261,8 +261,10 @@ private:
       model::timeout_clock::duration);
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
-    ss::future<raft::stm_snapshot> do_take_local_snapshot(uint8_t version);
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override;
+    ss::future<raft::stm_snapshot>
+    do_take_local_snapshot(uint8_t version, ssx::semaphore_units apply_units);
     ss::future<std::optional<tx::abort_snapshot>>
       load_abort_snapshot(tx::abort_index);
     ss::future<> save_abort_snapshot(tx::abort_snapshot);
@@ -330,7 +332,7 @@ private:
 
     abort_origin get_abort_origin(tx::producer_ptr, model::tx_seq) const;
 
-    ss::future<> apply(const model::record_batch&) override;
+    ss::future<> do_apply(const model::record_batch&) override;
     void apply_fence(model::producer_identity, model::record_batch);
     void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, const model::record_batch_header&);
