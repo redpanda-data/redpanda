@@ -11,6 +11,7 @@ v_cc_library(
     validators.cc
     throughput_control_group.cc
     tls_config.cc
+    node_overrides.cc
   DEPS
     v::json
     v::model
