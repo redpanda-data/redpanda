@@ -41,6 +41,7 @@ def _redpanda_cc_test(
         custom_args = [],
         tags = [],
         env = {},
+        target_compatible_with = [],
         data = []):
     """
     Helper to define a Redpanda C++ test.
@@ -57,6 +58,7 @@ def _redpanda_cc_test(
       custom_args: arguments from cc_test users
       tags: tags to attach to the cc_test target
       env: environment variables
+      target_compatible_with: constraints
       data: data file dependencies
     """
     common_args = [
@@ -93,6 +95,7 @@ def _redpanda_cc_test(
         ],
         tags = tags,
         env = env,
+        target_compatible_with = target_compatible_with,
         data = data,
     )
 
@@ -132,6 +135,7 @@ def redpanda_cc_btest(
         deps = [],
         args = [],
         env = {},
+        target_compatible_with = [],
         data = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = True,
@@ -141,6 +145,7 @@ def redpanda_cc_btest(
         deps = deps,
         custom_args = args,
         env = env,
+        target_compatible_with = target_compatible_with,
         data = data,
     )
 
