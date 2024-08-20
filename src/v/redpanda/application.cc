@@ -398,6 +398,11 @@ int application::run(int ac, char** av) {
       "redpanda-cfg",
       po::value<std::string>(),
       ".yaml file config for redpanda");
+    app.add_options()(
+      "node-id-overrides",
+      po::value<std::vector<config::node_id_override>>()->multitoken(),
+      "Override node UUID and ID iff current UUID matches "
+      "- usage: <current UUID>:<new UUID>:<new ID>");
 
     // Validate command line args using options registered by the app and
     // seastar. Keep the resulting variables in a temporary map so they don't
@@ -416,6 +421,14 @@ int application::run(int ac, char** av) {
         if (vm["version"].as<bool>()) {
             std::cout << redpanda_version() << std::endl;
             return 0;
+        }
+
+        if (!vm["node-id-overrides"].empty()) {
+            fmt::print(
+              std::cout,
+              "Node ID overrides: {}",
+              vm["node-id-overrides"]
+                .as<std::vector<config::node_id_override>>());
         }
     }
     // use endl for explicit flushing
@@ -808,6 +821,15 @@ void application::hydrate_config(const po::variables_map& cfg) {
           "`redpanda.rack = ''` from your node config as in the future this "
           "may result in Redpanda failing to start");
         config::node().rack.set_value(std::nullopt);
+    }
+
+    // load ID overrides
+    if (!cfg["node-id-overrides"].empty()) {
+        ss::smp::invoke_on_all([&cfg] {
+            config::node().node_id_overrides.set_value(
+              cfg["node-id-overrides"]
+                .as<std::vector<config::node_id_override>>());
+        }).get();
     }
 
     // This includes loading from local bootstrap file or legacy
