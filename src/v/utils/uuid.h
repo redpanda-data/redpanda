@@ -41,6 +41,7 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& os, const uuid_t& u);
+    friend std::istream& operator>>(std::istream& is, uuid_t& u);
     friend bool operator==(const uuid_t& u, const uuid_t& v) = default;
 
     operator ss::sstring() const;
