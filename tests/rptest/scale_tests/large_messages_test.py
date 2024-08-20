@@ -12,6 +12,7 @@ import numpy
 import time
 import threading
 
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
@@ -38,26 +39,7 @@ class LargeMessagesTest(RedpandaTest):
     LEADER_BALANCER_PERIOD_MS = 30000
 
     def __init__(self, *args, **kwargs):
-        # Specific configs
-        # With big messages, there will be big partitions
-        self.mib_per_partition = 4
-        # TODO: Check if we can increase later
-        self.topic_partitions_per_shard = 1000
-        # Turn off S3
-        self.tiered_storage_enabled = False
-        # messages
-        self.message_count = 100
-        # 1MB
-        self.message_size = 2**20 * 20
         # Topics
-        self.n_topics = 20
-        self.n_partitions = 2
-        self.replication_factor = 3
-        self.topic_prefix = "large-messages"
-        self.topic_names = [
-            f"{self.topic_prefix}-{i}" for i in range(self.n_topics)
-        ]
-
         # Prepare RP
         super().__init__(
             *args,
@@ -127,9 +109,6 @@ class LargeMessagesTest(RedpandaTest):
         self.rpk = RpkTool(self.redpanda)
         self.thread_local = threading.Lock()
 
-        # Ongoing test vars
-        self.scale = self._init_scale_config()
-
     def setUp(self):
         # defer redpanda startup to the test, it might want to tweak
         # ResourceSettings based on its parameters.
@@ -146,14 +125,6 @@ class LargeMessagesTest(RedpandaTest):
             self.topic_partitions_per_shard,
             tiered_storage_enabled=self.tiered_storage_enabled)
 
-        n_topics = 1
-
-        # Partitions per topic
-        n_partitions = int(scale.partition_limit / n_topics)
-
-        self.logger.info(
-            f"Running large messages ({self.message_size}) scale test "
-            f"with {n_partitions} partitions on {n_topics} topics")
         if scale.si_settings:
             self.redpanda.set_si_settings(scale.si_settings)
 
@@ -190,10 +161,15 @@ class LargeMessagesTest(RedpandaTest):
                 'segment.bytes': self.scale.segment_size,
                 'retention.bytes': self.scale.retention_bytes,
                 'cleanup.policy': 'delete',
-                'num.replica.fetchers': 16,
-                'replica.fetch.max.bytes': 10485760 * 2,
-                'num.network.threads': 16,
-                'num.io.threads': 16,
+                # RP reports that this is not supported
+                # INFO  2024-08-20 19:41:52,068 [shard 1:main] kafka - create_topics.cc:274 - topic large-messages-5 not supported configuration num.replica.fetchers={16} property will be ignored
+                # INFO  2024-08-20 19:41:52,068 [shard 1:main] kafka - create_topics.cc:274 - topic large-messages-5 not supported configuration replica.fetch.max.bytes={20971520} property will be ignored
+                # INFO  2024-08-20 19:41:52,068 [shard 1:main] kafka - create_topics.cc:274 - topic large-messages-5 not supported configuration num.network.threads={16} property will be ignored
+                # INFO  2024-08-20 19:41:52,068 [shard 1:main] kafka - create_topics.cc:274 - topic large-messages-5 not supported configuration num.io.threads={16} property will be ignored
+                # 'num.replica.fetchers': 16,
+                # 'replica.fetch.max.bytes': 10485760 * 2,
+                # 'num.network.threads': 16,
+                # 'num.io.threads': 16,
             }
             if self.scale.local_retention_bytes:
                 config['retention.local.target.bytes'] = \
@@ -317,16 +293,54 @@ class LargeMessagesTest(RedpandaTest):
         sent_samples, sent_bytes = _get_samples(sent_metric_name)
         return read_bytes, sent_bytes
 
-    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_large_messages_throughput(self):
-        """Test creates 9 topics, and uses client-swarm to
-        generate 120 messages with parametrized rate of msg/sec rate
-        to each topic and validates high watermark values
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @parametrize(message_size_mib=1)
+    @parametrize(message_size_mib=2)
+    @parametrize(message_size_mib=8)
+    @parametrize(message_size_mib=16)
+    def test_large_messages_throughput(self, message_size_mib):
+        """Test creates 10 topics, and uses client-swarm to
+        generate 100 messages with parametrized size and sends this count
+        to each topic and validates high watermark values along with expected
+        throughput
 
         Returns:
             None
         """
+        # Generated throughput should be significantly higher that limits
+        # Total min data size generated on producers with no limitations:
+        # 2 nodes * 10 topics * 100 messages * 1MB = 2GB
+        self.n_topics = 10
+        self.n_partitions = 1
+        self.replication_factor = 3
+        self.swarm_nodes = 2
+        self.topic_prefix_template = "large-messages"
+        self.topic_prefixes = [
+            f"{self.topic_prefix_template}-n{i}"
+            for i in range(self.swarm_nodes)
+        ]
+        self.topic_names = [
+            f"{t}-{i}" for i in range(self.n_topics)
+            for t in self.topic_prefixes
+        ]
 
+        # Specific configs
+        # With big messages, there will be big partitions
+        # reserve more memory for processing
+        self.mib_per_partition = 16
+        # TODO: Check if we can increase later
+        self.topic_partitions_per_shard = 200
+        # Turn off S3
+        self.tiered_storage_enabled = False
+        # messages
+        self.message_count = 100
+        # message_size_mib * 1MB
+        self.message_size = 2**20 * message_size_mib
+
+        # Init scale settings in the RP cluster
+        self.scale = self._init_scale_config()
+
+        # Set message processing limit
         messages_per_second_per_producer = 0
 
         # Start redpanda
@@ -352,28 +366,28 @@ class LargeMessagesTest(RedpandaTest):
         else:
             # If there is no limit on throughput, use 2 min value
             running_time_sec = 120
-            expected_min_throughput = messages_per_second_per_producer * self.n_topics * (
-                2**10)
+            # and use scale parameter for max throughput
+            expected_min_throughput = self.scale.expect_single_bandwidth
 
         # Lower throughput expectation by 10% to account for network errors
+        # and swarm node slow start/end
         expected_min_throughput *= 0.9
         expected_throughput_mb = expected_min_throughput / 1024 / 1024
         self.logger.info(f"Total data: {total_mb:.2f}MB ({total_bytes}b), "
-                         f"Expected throughput: {expected_throughput_mb}MB/s")
+                         f"Expected throughput >{expected_throughput_mb}MB/s")
+
+        # # Run swarm consumers
+        _group = "large_messages_group"
+        swarm_consumers = self._run_consumers_with_constant_rate(
+            self.n_topics, self.topic_prefixes, _group)
 
         # Run swarm producers
         swarm_producers = self._run_producers_with_constant_rate(
-            self.n_topics, [self.topic_prefix],
+            self.n_topics, self.topic_prefixes,
             messages_per_second_per_producer)
 
-        # # Run swarm consumers
-        # _group = "large_messages_group"
-        # swarm_consumers = self._run_consumers_with_constant_rate(
-        #     self.n_topics, [self.topic_prefix], _group)
-
         # Wait for all messages to be produced
-        self.logger.info(f"Measuring bandwidth")
-
+        self.logger.info("Measuring bandwidth")
         # Measure bandwidth each 2 seconds
         # if no new bytes received by RP, check swarm and exit
         # if at least one finished
@@ -420,11 +434,15 @@ class LargeMessagesTest(RedpandaTest):
             # account for up to one-third delays
             s.wait(running_time_sec * 2)
         self.logger.info("Make sure that swarm node consumers are finished")
-        # for s in swarm_consumers:
-        #     # account for up to one-third delays
-        #     s.wait(running_time_sec * 2)
+        for s in swarm_consumers:
+            # account for up to one-third delays
+            s.wait(running_time_sec * 2)
 
         self.logger.info("Calculating high watermarks for all topics")
+
+        # Once again, do the healthcheck on RP
+        # to make sure that all messages got delivered
+        self._wait_until_cluster_healthy()
 
         # Topic hwm getter
         def _get_hwm(topic):
@@ -463,7 +481,7 @@ class LargeMessagesTest(RedpandaTest):
                          f"RPC in: {', '.join(str_in)}\n"
                          f"RPC out: {', '.join(str_out)}")
         # Check that measured BW is not lower than expected
-        assert bw_in_perc[0] > expected_min_throughput, \
+        assert bw_in_perc[0] + bw_out_perc[0] > expected_min_throughput, \
             "Measured input bandwidth is lower than expected: " \
             f"{bw_in_perc[0]} vs {expected_min_throughput}"
 
