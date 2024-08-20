@@ -27,7 +27,6 @@
 #include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_map.h>
 
 #include <limits>
 #include <type_traits>

@@ -106,11 +106,36 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "batch_cache",
+    srcs = [
+        "batch_cache.cc",
+    ],
+    hdrs = [
+        "batch_cache.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:to_string",
+        "@fmt",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "//src/v/model",
+        "//src/v/resource_mgmt:available_memory",
+        "//src/v/ssx:semaphore",
+        "@abseil-cpp//absl/container:btree",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
         "backlog_controller.cc",
-        "batch_cache.cc",
         "compacted_index_chunk_reader.cc",
         "compaction_controller.cc",
         "compaction_reducers.cc",
@@ -147,7 +172,6 @@ redpanda_cc_library(
     hdrs = [
         "api.h",
         "backlog_controller.h",
-        "batch_cache.h",
         "batch_consumer_utils.h",
         "chunk_cache.h",
         "compacted_index.h",
@@ -211,6 +235,7 @@ redpanda_cc_library(
     include_prefix = "storage",
     visibility = ["//visibility:public"],
     deps = [
+        ":batch_cache",
         ":index_state",
         ":parser_utils",
         ":record_batch_builder",

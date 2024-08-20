@@ -15,7 +15,6 @@
 #include "model/fundamental.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
-#include "storage/logger.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/coroutine.hh>
