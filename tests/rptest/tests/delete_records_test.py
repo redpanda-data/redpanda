@@ -861,6 +861,7 @@ class BaseDeleteRecordsTest:
         new_start_offset = delete_records_result.new_start_offset
         assert new_start_offset == 5
 
+        high_watermark = 10
         # Set the truncation offset and result expectations based on the test injection parameter
         # Kafka/redpanda should both handle truncation_offset <= start_offset.
         truncate_offset = None
@@ -872,6 +873,12 @@ class BaseDeleteRecordsTest:
         elif truncate_point == "below_start_offset":
             truncate_offset = new_start_offset - 1
             expected_new_start_offset = new_start_offset
+        elif truncate_point == "below_zero_not_negative_one":
+            truncate_offset = -123
+            expect_error = True
+        elif truncate_point == "negative_one":
+            truncate_offset = -1
+            expected_new_start_offset = high_watermark
         else:
             assert False, "unknown truncate point encountered"
 
@@ -885,8 +892,6 @@ class BaseDeleteRecordsTest:
         try:
             delete_records_result = self._execute_kafka_delete_records(
                 cluster, delete_records_tpos)[0]
-            print(truncate_offset, new_start_offset, expected_new_start_offset,
-                  delete_records_result)
             assert delete_records_result.new_start_offset == expected_new_start_offset
         except Exception as e:
             assert expect_error
@@ -911,7 +916,10 @@ class DeleteRecordsRedpandaTest(RedpandaTest, BaseDeleteRecordsTest):
         self._test_delete_records_empty_topic(self.redpanda)
 
     @ducktape_cluster(num_nodes=4)
-    @matrix(truncate_point=["start_offset", "below_start_offset"])
+    @matrix(truncate_point=[
+        "start_offset", "below_start_offset", "below_zero_not_negative_one",
+        "negative_one"
+    ])
     def test_delete_records_non_empty_topic(self, truncate_point):
         self._test_delete_records_non_empty_topic(self.redpanda,
                                                   truncate_point)
@@ -953,6 +961,9 @@ class DeleteRecordsKafkaTest(Test, BaseDeleteRecordsTest):
         self._test_delete_records_empty_topic(self.kafka)
 
     @ducktape_cluster(num_nodes=5)
-    @matrix(truncate_point=["start_offset", "below_start_offset"])
+    @matrix(truncate_point=[
+        "start_offset", "below_start_offset", "below_zero_not_negative_one",
+        "negative_one"
+    ])
     def test_delete_records_non_empty_topic(self, truncate_point):
         self._test_delete_records_non_empty_topic(self.kafka, truncate_point)

@@ -486,6 +486,12 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
 ss::future<error_code> replicated_partition::prefix_truncate(
   model::offset kafka_truncation_offset,
   ss::lowres_clock::time_point deadline) {
+    if (kafka_truncation_offset() == -1) {
+        kafka_truncation_offset = high_watermark();
+    }
+    if (kafka_truncation_offset() < 0) {
+        co_return error_code::offset_out_of_range;
+    }
     if (kafka_truncation_offset <= start_offset()) {
         // No-op, return early.
         co_return kafka::error_code::none;
