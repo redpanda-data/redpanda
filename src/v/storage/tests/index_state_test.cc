@@ -47,7 +47,7 @@ static storage::index_state make_random_index_state(
     }
 
     if (apply_offset == storage::offset_delta_time::no) {
-        fragmented_vector<uint32_t> time_index;
+        chunked_vector<uint32_t> time_index;
         for (auto i = 0; i < n; ++i) {
             time_index.push_back(random_generators::get_int<uint32_t>());
         }
