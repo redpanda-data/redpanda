@@ -102,7 +102,8 @@ public:
     ss::future<> start() override { co_await raft::persisted_stm<>::start(); }
     ss::future<> stop() override { co_await _gate.close(); }
 
-    ss::future<> apply(const model::record_batch& record_batch) override {
+    ss::future<>
+    apply_with_lock(const model::record_batch& record_batch) override {
         if (record_batch.header().type != model::record_batch_type::raft_data) {
             co_return;
         }

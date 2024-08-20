@@ -302,7 +302,7 @@ private:
     ss::future<std::error_code>
     do_replicate_commands(model::record_batch, ss::abort_source&);
 
-    ss::future<> apply(const model::record_batch& batch) override;
+    ss::future<> apply_with_lock(const model::record_batch& batch) override;
     ss::future<> apply_raft_snapshot(const iobuf&) override;
 
     ss::future<>

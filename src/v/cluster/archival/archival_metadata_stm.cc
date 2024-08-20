@@ -1015,7 +1015,8 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     co_return errc::success;
 }
 
-ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
+ss::future<>
+archival_metadata_stm::apply_with_lock(const model::record_batch& b) {
     if (
       b.header().type != model::record_batch_type::archival_metadata
       && b.header().type != model::record_batch_type::prefix_truncate) {

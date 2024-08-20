@@ -98,7 +98,7 @@ private:
       do_allocate_id(model::timeout_clock::duration);
     ss::future<bool> set_state(int64_t, model::timeout_clock::duration);
 
-    ss::future<> apply(const model::record_batch&) final;
+    ss::future<> apply_with_lock(const model::record_batch&) final;
 
     // Moves the state forward to the given value if the curent id is lower
     // than it.

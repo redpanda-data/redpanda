@@ -713,7 +713,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     return ss::now();
 }
 
-ss::future<> tm_stm::apply(const model::record_batch& b) {
+ss::future<> tm_stm::apply_with_lock(const model::record_batch& b) {
     const auto& hdr = b.header();
 
     if (hdr.type == model::record_batch_type::tm_update) {

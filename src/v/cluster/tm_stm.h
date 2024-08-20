@@ -364,7 +364,7 @@ private:
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
     ss::future<raft::stm_snapshot> take_local_snapshot() override;
 
-    ss::future<> apply(const model::record_batch& b) final;
+    ss::future<> apply_with_lock(const model::record_batch& b) final;
 
     ss::future<>
     apply_tm_update(model::record_batch_header hdr, model::record_batch b);

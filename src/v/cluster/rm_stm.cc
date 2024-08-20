@@ -1442,7 +1442,7 @@ void rm_stm::apply_fence(model::producer_identity pid, model::record_batch b) {
     _producer_state_manager.local().touch(*producer, _vcluster_id);
 }
 
-ss::future<> rm_stm::apply(const model::record_batch& b) {
+ss::future<> rm_stm::apply_with_lock(const model::record_batch& b) {
     const auto& hdr = b.header();
     const auto bid = model::batch_identity::from(hdr);
 

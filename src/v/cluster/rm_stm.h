@@ -330,7 +330,7 @@ private:
 
     abort_origin get_abort_origin(tx::producer_ptr, model::tx_seq) const;
 
-    ss::future<> apply(const model::record_batch&) override;
+    ss::future<> apply_with_lock(const model::record_batch&) override;
     void apply_fence(model::producer_identity, model::record_batch);
     void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, const model::record_batch_header&);

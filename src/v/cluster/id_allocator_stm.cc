@@ -152,7 +152,7 @@ id_allocator_stm::do_allocate_id(model::timeout_clock::duration timeout) {
     co_return stm_allocation_result{id};
 }
 
-ss::future<> id_allocator_stm::apply(const model::record_batch& b) {
+ss::future<> id_allocator_stm::apply_with_lock(const model::record_batch& b) {
     if (b.header().type != model::record_batch_type::id_allocator) {
         return ss::now();
     }

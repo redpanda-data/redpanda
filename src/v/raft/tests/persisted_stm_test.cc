@@ -212,7 +212,7 @@ public:
         return last_op;
     }
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply_with_lock(const model::record_batch& batch) override {
         auto last_op = apply_to_state(batch, state);
         if (last_op) {
             last_operation = std::move(*last_op);
@@ -292,7 +292,7 @@ public:
      * as it is going to be started without the full data in the snapshot, hence
      * the validation would fail.
      */
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply_with_lock(const model::record_batch& batch) override {
         if (batch.header().type != model::record_batch_type::raft_data) {
             co_return;
         }

@@ -45,7 +45,8 @@ void group_tx_tracker_stm::maybe_end_tx(
     }
 }
 
-ss::future<> group_tx_tracker_stm::apply(const model::record_batch& b) {
+ss::future<>
+group_tx_tracker_stm::apply_with_lock(const model::record_batch& b) {
     auto holder = _gate.hold();
     co_await parse(b.copy());
 }

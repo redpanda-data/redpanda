@@ -293,7 +293,9 @@ ss::future<> persisted_stm<T>::wait_for_snapshot_hydrated() {
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::do_write_local_snapshot() {
+    auto u = co_await _apply_lock.get_units();
     auto snapshot = co_await take_local_snapshot();
+    u.return_all();
     auto offset = snapshot.header.offset;
 
     co_await _snapshot_backend.persist_local_snapshot(std::move(snapshot));

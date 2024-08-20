@@ -379,7 +379,8 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
     co_return result.value().last_offset;
 }
 
-ss::future<> log_eviction_stm::apply(const model::record_batch& batch) {
+ss::future<>
+log_eviction_stm::apply_with_lock(const model::record_batch& batch) {
     if (likely(
           batch.header().type != model::record_batch_type::prefix_truncate)) {
         co_return;

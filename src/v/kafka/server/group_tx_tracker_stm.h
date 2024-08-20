@@ -44,7 +44,7 @@ public:
         return ss::make_ready_future<fragmented_vector<model::tx_range>>();
     }
 
-    ss::future<> apply(const model::record_batch&) override;
+    ss::future<> apply_with_lock(const model::record_batch&) override;
 
     model::offset max_collectible_offset() override;
 

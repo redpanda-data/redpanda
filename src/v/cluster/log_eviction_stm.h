@@ -123,7 +123,7 @@ private:
     ss::future<> monitor_log_eviction();
     ss::future<> do_write_raft_snapshot(model::offset);
     ss::future<> handle_log_eviction_events();
-    ss::future<> apply(const model::record_batch&) final;
+    ss::future<> apply_with_lock(const model::record_batch&) final;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
     ss::future<offset_result> replicate_command(
