@@ -593,7 +593,8 @@ tm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     return ss::now();
 }
 
-ss::future<raft::stm_snapshot> tm_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot>
+tm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     // Update hash ranges to always have batch in log
     // So it cannot be deleted with cleanup policy
     if (_raft->is_leader()) {
@@ -604,31 +605,37 @@ ss::future<raft::stm_snapshot> tm_stm::take_local_snapshot() {
         }
     }
     co_return co_await ss::with_gate(
-      _gate, [this] { return do_take_snapshot(); });
+      _gate, [this, units = std::move(apply_units)]() mutable {
+          return do_take_snapshot(std::move(units));
+      });
 }
 
-ss::future<raft::stm_snapshot> tm_stm::do_take_snapshot() {
+ss::future<raft::stm_snapshot>
+tm_stm::do_take_snapshot(ssx::semaphore_units apply_units) {
     auto snapshot_version = active_snapshot_version();
+    auto snapshot_offset = last_applied_offset();
     if (snapshot_version == tm_snapshot_v0::version) {
         tm_snapshot_v0 tm_ss;
-        tm_ss.offset = last_applied_offset();
+        tm_ss.offset = snapshot_offset;
         tm_ss.transactions = get_transactions_list();
 
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot_v0>{}.to(tm_ss_buf, std::move(tm_ss));
 
+        apply_units.return_all();
         co_return raft::stm_snapshot::create(
-          tm_snapshot_v0::version, last_applied_offset(), std::move(tm_ss_buf));
+          tm_snapshot_v0::version, snapshot_offset, std::move(tm_ss_buf));
     } else {
         tm_snapshot tm_ss;
-        tm_ss.offset = last_applied_offset();
+        tm_ss.offset = snapshot_offset;
         tm_ss.transactions = get_transactions_list();
 
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
 
+        apply_units.return_all();
         co_return raft::stm_snapshot::create(
-          tm_snapshot::version, last_applied_offset(), std::move(tm_ss_buf));
+          tm_snapshot::version, snapshot_offset, std::move(tm_ss_buf));
     }
 }
 
@@ -713,7 +720,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     return ss::now();
 }
 
-ss::future<> tm_stm::apply(const model::record_batch& b) {
+ss::future<> tm_stm::do_apply(const model::record_batch& b) {
     const auto& hdr = b.header();
 
     if (hdr.type == model::record_batch_type::tm_update) {

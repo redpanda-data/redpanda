@@ -41,14 +41,15 @@ public:
         return ss::make_ready_future<fragmented_vector<model::tx_range>>();
     }
 
-    ss::future<> apply(const model::record_batch&) override;
+    ss::future<> do_apply(const model::record_batch&) override;
 
     model::offset max_collectible_offset() override;
 
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&& bytes) override;
 
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot>
+      take_local_snapshot(ssx::semaphore_units) override;
 
     ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<iobuf> take_snapshot(model::offset) final;

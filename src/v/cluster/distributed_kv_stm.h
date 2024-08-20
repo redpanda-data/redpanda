@@ -102,7 +102,7 @@ public:
     ss::future<> start() override { co_await raft::persisted_stm<>::start(); }
     ss::future<> stop() override { co_await _gate.close(); }
 
-    ss::future<> apply(const model::record_batch& record_batch) override {
+    ss::future<> do_apply(const model::record_batch& record_batch) override {
         if (record_batch.header().type != model::record_batch_type::raft_data) {
             co_return;
         }
@@ -149,7 +149,8 @@ public:
         _kvs = std::move(snap.kv_data);
     }
 
-    ss::future<raft::stm_snapshot> take_local_snapshot() override {
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override {
         auto holder = _gate.hold();
         auto units = co_await _snapshot_lock.hold_write_lock();
         auto last_applied = last_applied_offset();
@@ -160,6 +161,7 @@ public:
         }
         result.kv_data = _kvs;
         iobuf result_buf;
+        apply_units.return_all();
         co_await serde::write_async(result_buf, std::move(result));
         co_return raft::stm_snapshot::create(
           0, last_applied, std::move(result_buf));
