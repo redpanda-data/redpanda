@@ -93,25 +93,38 @@ class ClusterSelfConfigTest(EndToEndTest):
         Verify that the cloud_storage_url_style self-configuration for OCI
         backend always results in path-style.
         """
+        oracle_api_endpoint = 'mynamespace.compat.objectstorage.us-phoenix-1.oraclecloud.com'
         si_settings = SISettings(
             self.ctx,
             # Force self configuration through setting cloud_storage_url_style to None.
             cloud_storage_url_style=None,
             # Set Oracle endpoint to expected format.
             # https://docs.oracle.com/en-us/iaas/Content/Object/Tasks/s3compatibleapi_topic-Amazon_S3_Compatibility_API_Support.htm#s3-api-support
-            cloud_storage_api_endpoint=
-            'mynamespace.compat.objectstorage.us-phoenix-1.oraclecloud.com',
-            # Bypass bucket creation, cleanup, and scrubbing, as we won't actually be able to access the endpoint (Self configuration will usi the endpoint to set path-style).
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            cloud_storage_api_endpoint=oracle_api_endpoint,
+            # Bypass bucket creation, cleanup, and scrubbing, as we won't actually be
+            # able to access the endpoint (Self configuration will use the endpoint
+            # to set path-style without issuing a request).
             bypass_bucket_creation=True,
             use_bucket_cleanup_policy=False,
             skip_end_of_test_scrubbing=True)
+        extra_rp_conf = {
+            'cloud_storage_enable_scrubbing': False,
+            'cloud_storage_disable_upload_loop_for_tests': True,
+            'enable_cluster_metadata_upload_loop': False
+        }
 
-        self.start_redpanda(si_settings=si_settings)
+        self.start_redpanda(extra_rp_conf=extra_rp_conf,
+                            si_settings=si_settings)
         admin = Admin(self.redpanda)
         self.log_searcher = LogSearchLocal(self.ctx, [], self.redpanda.logger,
                                            self.redpanda.STDOUT_STDERR_CAPTURE)
 
         config = admin.get_cluster_config()
+
+        # Make sure that the endpoint was overridden.
+        assert config['cloud_storage_api_endpoint'] == oracle_api_endpoint
 
         # Even after self-configuring, the cloud_storage_url_style setting will
         # still be left unset at the cluster config level.
