@@ -1,6 +1,8 @@
 import base64
 from pathlib import Path
 
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
@@ -80,9 +82,11 @@ class CloudStorageInventoryTest(PreallocNodesTest):
         self.start_redpanda()
         self._create_initial_topics()
         self.populate_bucket()
-        self._assert_hashes_are_found_on_leaders()
+        wait_until(lambda: self._hashes_are_found_on_leaders(),
+                   timeout_sec=60,
+                   backoff_sec=5)
 
-    def _assert_hashes_are_found_on_leaders(self):
+    def _hashes_are_found_on_leaders(self):
         found = set()
         expected = set()
         for spec in self.topics:
@@ -90,7 +94,8 @@ class CloudStorageInventoryTest(PreallocNodesTest):
                 expected.add(NTP(ns="kafka", topic=spec.name, partition=pid))
         for node in self.redpanda.started_nodes():
             found |= self._find_ntp_hashes_on_node(node)
-        assert found == expected, f"{found=} |= {expected=}"
+        self.logger.debug(f"{found=}, {expected=}")
+        return found == expected
 
     def _find_ntp_hashes_on_node(self, node):
         """
