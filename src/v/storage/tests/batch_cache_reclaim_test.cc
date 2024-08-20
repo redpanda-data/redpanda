@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/simple_batch_builder.h"
 #include "model/record.h"
 #include "storage/batch_cache.h"
+#include "storage/record_batch_builder.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/memory.hh>
@@ -33,9 +33,9 @@ model::record_batch make_batch(size_t size) {
     static model::offset base_offset{0};
     iobuf value;
     value.append(ss::temporary_buffer<char>(size));
-    cluster::simple_batch_builder builder(
+    storage::record_batch_builder builder(
       model::record_batch_type::raft_data, base_offset);
-    builder.add_kv(iobuf{}, std::move(value));
+    builder.add_raw_kv(iobuf{}, std::move(value));
     auto batch = std::move(builder).build();
     base_offset += model::offset(batch.record_count());
     return batch;
