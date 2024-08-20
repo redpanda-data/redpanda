@@ -2354,6 +2354,25 @@ void application::start_bootstrap_services() {
             serde::to_iobuf(node_uuid))
           .get();
     }
+
+    _node_overrides.maybe_set_overrides(
+      node_uuid, config::node().node_id_overrides());
+
+    // Apply UUID override to node config if present
+    if (auto u = _node_overrides.node_uuid(); u.has_value()) {
+        vlog(
+          _log.warn,
+          "Overriding UUID for node: {} -> {}",
+          node_uuid,
+          u.value());
+        node_uuid = u.value();
+        kvs
+          .put(
+            storage::kvstore::key_space::controller,
+            node_uuid_key,
+            serde::to_iobuf(node_uuid))
+          .get();
+    }
     storage
       .invoke_on_all([node_uuid](storage::api& storage) mutable {
           storage.set_node_uuid(node_uuid);
@@ -2409,6 +2428,18 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           "Running with already-established node ID {}",
           config::node().node_id());
         node_id = config::node().node_id().value();
+    } else if (auto id = _node_overrides.node_id(); id.has_value()) {
+        vlog(
+          _log.warn,
+          "Overriding node ID: {} -> {}",
+          config::node().node_id(),
+          id);
+        node_id = id.value();
+        // null out the config'ed ID indiscriminately; it will be set outside
+        // the conditional
+        ss::smp::invoke_on_all([] {
+            config::node().node_id.set_value(std::nullopt);
+        }).get();
     } else {
         auto registration_result = cd.register_with_cluster().get();
         node_id = registration_result.assigned_node_id;
