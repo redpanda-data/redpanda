@@ -338,6 +338,8 @@ private:
     // instantiated only in recovery mode
     std::unique_ptr<cluster::tx_manager_migrator> _tx_manager_migrator;
 
+    config::node_override_store _node_overrides{};
+
     ss::sharded<ss::abort_source> _as;
 };
 
