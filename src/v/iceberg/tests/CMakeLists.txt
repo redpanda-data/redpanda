@@ -16,6 +16,7 @@ rp_test(
     schema_test.cc
     test_schemas.cc
     values_test.cc
+    value_generator.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams

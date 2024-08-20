@@ -14,6 +14,21 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "value_generator",
+    srcs = [
+        "value_generator.cc",
+    ],
+    hdrs = [
+        "value_generator.h",
+    ],
+    include_prefix = "iceberg/tests",
+    deps = [
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "datatypes_test",
     timeout = "short",
