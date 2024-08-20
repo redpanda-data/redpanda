@@ -534,6 +534,8 @@ public:
         return _configuration_manager.has_configuration_override();
     }
 
+    ss::future<> flush_batcher_cache() { return _batcher.flush_sync(false); }
+
 private:
     friend replication_monitor;
     friend replicate_entries_stm;

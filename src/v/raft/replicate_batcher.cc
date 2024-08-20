@@ -27,7 +27,8 @@ using namespace std::chrono_literals; // NOLINT
 replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
   , _max_batch_size_sem(cache_size, "raft/repl-batch")
-  , _max_batch_size(cache_size) {}
+  , _max_batch_size(cache_size)
+  , _is_user_topic(model::is_user_topic(ptr->ntp())) {}
 
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,
@@ -55,34 +56,11 @@ replicate_batcher::cache_and_wait_for_result(
         // now request is already enqueued, we can release first
         // stage future
         enqueued.set_value();
-
-        /**
-         * Dispatching flush in a background.
-         *
-         * The batcher mutex may be grabbed without the timeout as each item
-         * has its own timeout timer. The shutdown related exceptions may be
-         * ignored here as all pending item promises will be completed in
-         * replicate batcher stop method
-         *
-         */
-        if (!_flush_pending) {
-            _flush_pending = true;
-            ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
-                return _lock.get_units()
-                  .then([this](auto units) {
-                      return flush(std::move(units), false);
-                  })
-                  .handle_exception([this](const std::exception_ptr& e) {
-                      // an exception here is quite unlikely, since the flush()
-                      // method generally catches all its exceptions and
-                      // propagates them to the promises associated with the
-                      // items being flushed
-                      vlog(
-                        _ptr->_ctxlog.error,
-                        "Error in background flush: {}",
-                        e);
-                  });
-            });
+        bool flush_immediately = !_is_user_topic
+                                 || !config::shard_local_cfg()
+                                       .raft_replicate_batcher_linger_ms_mean();
+        if (flush_immediately) {
+            maybe_flush_in_background();
         }
     } catch (...) {
         // exception in caching phase
@@ -174,6 +152,30 @@ replicate_batcher::do_cache_with_backpressure(
     co_return i;
 }
 
+ss::future<> replicate_batcher::flush_sync(bool leader_transfer) {
+    if (_flush_in_progress) {
+        return ss::make_ready_future<>();
+    }
+    _flush_in_progress = true;
+    auto holder = _bg.hold();
+    return _lock.get_units()
+      .then([this, leader_transfer](auto units) {
+          return flush(std::move(units), leader_transfer);
+      })
+      .handle_exception([this](const std::exception_ptr& e) {
+          // an exception here is quite unlikely, since the flush()
+          // method generally catches all its exceptions and
+          // propagates them to the promises associated with the
+          // items being flushed
+          vlog(_ptr->_ctxlog.error, "Error in background flush: {}", e);
+      })
+      .finally([holder = std::move(holder)] {});
+}
+
+void replicate_batcher::maybe_flush_in_background() {
+    ssx::spawn_with_gate(_bg, [this] { return flush_sync(false); });
+}
+
 ss::future<> replicate_batcher::flush(
   ssx::semaphore_units batcher_units, bool const transfer_flush) {
     auto item_cache = std::exchange(_item_cache, {});
@@ -181,7 +183,7 @@ ss::future<> replicate_batcher::flush(
     // since it is usually invoked in the background and there is
     // nowhere suitable to
     try {
-        _flush_pending = false;
+        _flush_in_progress = false;
         if (item_cache.empty()) {
             co_return;
         }

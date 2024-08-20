@@ -1490,7 +1490,12 @@ void application::wire_up_redpanda_services(
               .enable_longest_log_detection
               = config::shard_local_cfg()
                   .raft_enable_longest_log_detection.bind(),
-            };
+              .raft_replicate_batcher_linger_ms_mean
+              = config::shard_local_cfg()
+                  .raft_replicate_batcher_linger_ms_mean.bind(),
+              .raft_replicate_batcher_linger_ms_stddev
+              = config::shard_local_cfg()
+                  .raft_replicate_batcher_linger_ms_stddev.bind()};
         },
         [] {
             return raft::recovery_memory_quota::configuration{

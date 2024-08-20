@@ -260,6 +260,8 @@ private:
     ss::lw_shared_ptr<consensus> _raft;
     bool started = false;
     bool _enable_longest_log_detection;
+    ss::timer<> _periodic_batcher_cache_flusher;
+    ss::gate _gate;
     config::binding<std::chrono::milliseconds> _election_timeout;
 };
 

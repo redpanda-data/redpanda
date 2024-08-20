@@ -466,13 +466,20 @@ ss::future<> raft_node_instance::init_and_start(
 
 ss::future<> raft_node_instance::start(
   std::optional<raft::state_machine_manager_builder> builder) {
+    _periodic_batcher_cache_flusher.set_callback([this] {
+        ssx::spawn_with_gate(
+          _gate, [this] { return _raft->flush_batcher_cache(); });
+    });
+    _periodic_batcher_cache_flusher.arm_periodic(250ms);
     co_await _raft->start(std::move(builder));
+
     started = true;
 }
 
 ss::future<> raft_node_instance::stop() {
     vlog(_logger.info, "stopping node");
     if (started) {
+        _periodic_batcher_cache_flusher.cancel();
         co_await _hb_manager->deregister_group(_raft->group());
         vlog(_logger.debug, "stopping protocol");
         co_await _protocol->stop();
@@ -488,6 +495,7 @@ ss::future<> raft_node_instance::stop() {
         _raft = nullptr;
         vlog(_logger.debug, "stopping storage");
         co_await _storage.stop();
+        co_await _gate.close();
     }
     vlog(_logger.info, "node stopped");
 }

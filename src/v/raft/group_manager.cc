@@ -20,6 +20,8 @@
 
 #include <seastar/core/scheduling.hh>
 
+#include <random/generators.h>
+
 #include <optional>
 
 namespace raft {
@@ -70,6 +72,13 @@ group_manager::group_manager(
       [this]() { trigger_config_update_notification(); });
     _configuration.write_caching_flush_bytes.watch(
       [this]() { trigger_config_update_notification(); });
+    _configuration.raft_replicate_batcher_linger_ms_mean.watch(
+      [this]() { rearm_batcher_flusher(); });
+    _configuration.raft_replicate_batcher_linger_ms_stddev.watch(
+      [this]() { rearm_batcher_flusher(); });
+    _periodic_batcher_cache_flusher.set_callback(
+      [this] { flush_batcher_cache_all_groups(); });
+    rearm_batcher_flusher();
     setup_metrics();
 }
 
@@ -83,6 +92,7 @@ ss::future<> group_manager::stop() {
     _metrics.clear();
     _public_metrics.clear();
     _metrics_timer.cancel();
+    _periodic_batcher_cache_flusher.cancel();
     auto f = _gate.close();
 
     f = f.then([this] { return _recovery_scheduler.stop(); });
@@ -106,6 +116,26 @@ void group_manager::set_ready() {
     std::for_each(
       _groups.begin(), _groups.end(), [](ss::lw_shared_ptr<consensus>& c) {
           c->reset_node_priority();
+      });
+}
+
+void group_manager::flush_batcher_cache_all_groups() {
+    ssx::spawn_with_gate(
+      _gate,
+      // todo: avoid this copy
+      [this, groups = _groups]() mutable {
+          return do_with(std::move(groups), [this](auto& groups) {
+              return ss::max_concurrent_for_each(
+                       groups,
+                       64,
+                       [this](ss::lw_shared_ptr<consensus> raft) {
+                           if (!raft || _gate.is_closed()) {
+                               return ss::now();
+                           }
+                           return raft->flush_batcher_cache();
+                       })
+                .finally([this] { rearm_batcher_flusher(); });
+          });
       });
 }
 
@@ -260,6 +290,28 @@ void group_manager::trigger_config_update_notification() {
     for (auto& group : _groups) {
         group->notify_config_update();
     }
+}
+
+void group_manager::rearm_batcher_flusher() {
+    if (_gate.is_closed()) {
+        return;
+    }
+    auto batcher_linger_ms_mean
+      = config::shard_local_cfg().raft_replicate_batcher_linger_ms_mean();
+    if (!batcher_linger_ms_mean) {
+        return;
+    }
+    auto batcher_linger_ms_stddev = config::shard_local_cfg()
+                                      .raft_replicate_batcher_linger_ms_stddev()
+                                      .value_or(std::chrono::milliseconds{1});
+    std::normal_distribution<long double> dist(
+      static_cast<long double>(batcher_linger_ms_mean.value().count()),
+      static_cast<long double>(batcher_linger_ms_stddev.count()));
+    auto next_flush_ms = std::chrono::milliseconds{
+      static_cast<std::chrono::milliseconds::rep>(
+        dist(random_generators::internal::gen))};
+    _periodic_batcher_cache_flusher.rearm(
+      next_flush_ms + ss::lowres_clock::now());
 }
 
 void group_manager::collect_learner_metrics() {
