@@ -505,9 +505,7 @@ producer_state::snapshot(kafka::offset log_start_offset) const {
         if (!req->has_completed()) {
             vlog(
               _logger.error,
-              "[{}] Ignoring unresolved finished request during snapshot, "
-              "range: "
-              "range:[{}, {}]",
+              "[{}] Ignoring unresolved finished request {} during snapshot",
               *this,
               *req);
             continue;
