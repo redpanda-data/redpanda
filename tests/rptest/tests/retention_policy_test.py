@@ -704,9 +704,9 @@ class BogusTimestampTest(RedpandaTest):
             cleanup_policy=TopicSpec.CLEANUP_DELETE,
             # 1 megabyte segments
             segment_bytes=segment_size,
-            # 10 second retention: in the case of mixed timestamps,
+            # 20 second retention: in the case of mixed timestamps,
             # give active segment time to help adjust retention timestamps and show up in log monitor.
-            retention_ms=10000), )
+            retention_ms=20000), )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args,
