@@ -121,8 +121,7 @@ std::error_code members_table::apply(model::offset o, update_node_cfg_cmd cmd) {
 }
 
 std::error_code members_table::apply(model::offset o, remove_node_cmd cmd) {
-    vlog(
-      clusterlog.info, "applying remove node config command for: {}", cmd.key);
+    vlog(clusterlog.info, "applying remove node command for: {}", cmd.key);
     _version = model::revision_id(o);
     auto it = _nodes.find(cmd.key);
     if (it == _nodes.end()) {
