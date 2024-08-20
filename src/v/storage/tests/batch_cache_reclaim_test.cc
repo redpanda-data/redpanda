@@ -75,7 +75,7 @@ FIXTURE_TEST(reclaim, fixture) {
 
     // insert batches into the cache up to roughly have the amount needed to
     // trigger reclaim
-    for (auto i = 0; i < (pages_until_reclaim / 2); i++) {
+    for (size_t i = 0; i < (pages_until_reclaim / 2); i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
         cache_entries.push_back(cache.put(index, batch, is_dirty_entry::no));
@@ -94,7 +94,7 @@ FIXTURE_TEST(reclaim, fixture) {
     BOOST_TEST(stats.reclaims() == 0);
 
     // now allocate past what should cause relcaims to trigger
-    for (auto i = 0; i < pages_until_reclaim; i++) {
+    for (size_t i = 0; i < pages_until_reclaim; i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
         auto e = cache.put(index, std::move(batch), is_dirty_entry::no);
