@@ -24,7 +24,7 @@ use_repo(
     "boost",
 )
 
-bazel_dep(name = "abseil-cpp", version = "20240116.1")
+bazel_dep(name = "abseil-cpp", version = "20240722.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "crc32c", version = "1.1.0")
 bazel_dep(name = "fmt", version = "8.1.1")
