@@ -9,3 +9,4 @@
 
 from .service_base import WorkloadServiceBase
 from .list_offsets.service import ListOffsetsWorkload
+from .tx_subscribe.service import TxSubscribeWorkload
