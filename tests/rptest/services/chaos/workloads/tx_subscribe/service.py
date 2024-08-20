@@ -10,6 +10,7 @@
 from dataclasses import dataclass
 
 from ..service_base import WorkloadServiceBase
+from . import consistency
 
 
 class TxSubscribeWorkload(WorkloadServiceBase):
@@ -23,9 +24,15 @@ class TxSubscribeWorkload(WorkloadServiceBase):
         # consumer group id
         group_id: str
 
-    def __init__(self, ctx, brokers_str, setup: Setup, retries=5):
+    def __init__(self,
+                 ctx,
+                 brokers_str,
+                 setup: Setup,
+                 fail_consistency_on_interruption=False,
+                 retries=5):
         super().__init__(ctx, brokers_str, num_nodes=2)
         self._setup = setup
+        self._fail_consistency_on_interruption = fail_consistency_on_interruption
         self._retries = retries
 
     @property
@@ -45,8 +52,9 @@ class TxSubscribeWorkload(WorkloadServiceBase):
         }
 
     def validate_consistency(self):
-        # TODO
-        pass
+        consistency.validate(
+            self._results_dir(), [n.name for n in self.nodes],
+            fail_on_interruption=self._fail_consistency_on_interruption)
 
     def collect_stats(self):
         # TODO
