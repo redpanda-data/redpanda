@@ -34,13 +34,7 @@ static model::record_batch
 make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
     storage::record_batch_builder b(model::record_batch_type(1), offset);
     for (size_t i = 0; i < size; i++) {
-        std::string_view key_data = "key";
-        std::string_view val_data = "value";
-        iobuf key;
-        iobuf val;
-        key.append(key_data.data(), key_data.size());
-        val.append(val_data.data(), val_data.size());
-        b.add_raw_kv(std::move(key), std::move(val));
+        b.add_raw_kv(iobuf::from("key"), iobuf::from("value"));
     }
     return std::move(b).build();
 }
