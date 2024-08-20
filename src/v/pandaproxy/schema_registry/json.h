@@ -22,7 +22,9 @@ make_json_schema_definition(sharded_store& store, canonical_schema schema);
 ss::future<canonical_schema> make_canonical_json_schema(
   sharded_store& store, unparsed_schema def, normalize norm = normalize::no);
 
-bool check_compatible(
-  const json_schema_definition& reader, const json_schema_definition& writer);
+compatibility_result check_compatible(
+  const json_schema_definition& reader,
+  const json_schema_definition& writer,
+  verbose is_verbose = verbose::no);
 
 } // namespace pandaproxy::schema_registry

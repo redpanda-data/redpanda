@@ -23,7 +23,8 @@ import (
 )
 
 type compatCheckResponse struct {
-	Compatible bool `json:"compatible" yaml:"compatible"`
+	Compatible bool     `json:"compatible" yaml:"compatible"`
+	Messages   []string `json:"messages,omitempty" yaml:"messages,omitempty"`
 }
 
 func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -66,9 +67,10 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 				Type:       t,
 				References: references,
 			}
-			compatible, err := cl.CheckCompatibility(cmd.Context(), subject, version, schema)
+			ctx := sr.WithParams(cmd.Context(), sr.Verbose)
+			compatible, err := cl.CheckCompatibility(ctx, subject, version, schema)
 			out.MaybeDie(err, "unable to check compatibility: %v", err)
-			if isText, _, s, err := f.Format(compatCheckResponse{compatible.Is}); !isText {
+			if isText, _, s, err := f.Format(compatCheckResponse{compatible.Is, compatible.Messages}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)
 			}
@@ -76,6 +78,8 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 				fmt.Println("Schema is compatible.")
 			} else {
 				fmt.Println("Schema is not compatible.")
+				messages := strings.Join(compatible.Messages, "\n")
+				fmt.Println(messages)
 			}
 		},
 	}
