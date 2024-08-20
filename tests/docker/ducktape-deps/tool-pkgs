@@ -6,6 +6,7 @@ apt-get install -qq \
   bind9-dnsutils \
   bsdmainutils \
   dmidecode \
+  gnuplot-nox \
   krb5-admin-server \
   krb5-kdc \
   krb5-user \
