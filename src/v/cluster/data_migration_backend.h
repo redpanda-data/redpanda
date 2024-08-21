@@ -177,7 +177,7 @@ private:
       topic_reconciliation_state& tstate,
       id migration,
       work_scope scope,
-      bool schedule_local_work);
+      bool schedule_local_partition_work);
 
     std::optional<std::reference_wrapper<replica_work_state>>
     get_replica_work_state(const model::ntp& ntp);
@@ -260,7 +260,8 @@ private:
     /* Node-local data */
     using topic_work_state_t
       = chunked_hash_map<model::partition_id, replica_work_state>;
-    chunked_hash_map<model::topic_namespace, topic_work_state_t> _work_states;
+    chunked_hash_map<model::topic_namespace, topic_work_state_t>
+      _local_work_states;
 
     chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
     chunked_vector<topic_work_result> _topic_work_results;
