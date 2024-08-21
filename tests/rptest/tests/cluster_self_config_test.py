@@ -91,7 +91,7 @@ class ClusterSelfConfigTest(EndToEndTest):
     def test_s3_oracle_self_config(self, cloud_storage_type):
         """
         Verify that the cloud_storage_url_style self-configuration for OCI
-        backend always results in path-style.
+        backend always results in path-style. Draft commit to run CDT and fix this! :)
         """
         oracle_api_endpoint = 'mynamespace.compat.objectstorage.us-phoenix-1.oraclecloud.com'
         si_settings = SISettings(
