@@ -3314,28 +3314,32 @@ class RedpandaService(RedpandaServiceBase):
             max_object_count = 3000
 
             # See if the bucket is small enough
+            t = time.time()
             for i, m in enumerate(
                     self.cloud_storage_client.list_objects(
                         self.si_settings.cloud_storage_bucket)):
                 if i >= max_object_count:
                     bucket_is_small = False
                     break
+            print(
+                f"Determining bucket count for {self.si_settings.cloud_storage_bucket} up to {max_object_count} objects took {time.time() - t}s"
+            )
             if bucket_is_small:
+                # Log grep hint: "a small bucket"
                 self.logger.info(
-                    f"Always deleting bucket {self.si_settings.cloud_storage_bucket} (if it's small), even though we might use lifecycle policy also"
+                    f"Bucket {self.si_settings.cloud_storage_bucket} is a small bucket (deleting it)"
                 )
             else:
                 self.logger.info(
-                    f"Bucket contains more than {max_object_count} objects, NOT cleaning."
+                    f"Bucket {self.si_settings.cloud_storage_bucket} is NOT a small bucket (NOT deleting it)"
                 )
                 return
 
         elif self.si_settings.cloud_storage_cleanup_strategy == CloudStorageCleanupStrategy.IF_NOT_USING_LIFECYCLE_RULE:
             if self.si_settings.use_bucket_cleanup_policy:
                 self.logger.info(
-                    f"Skipping deletion of bucket/container: {self.si_settings.cloud_storage_bucket}."
-                    "Using a cleanup policy instead. Please delete it manually"
-                )
+                    f"Skipping deletion of bucket/container: {self.si_settings.cloud_storage_bucket}. "
+                    "Using a cleanup policy instead.")
                 return
         else:
             raise ValueError(
@@ -3347,9 +3351,14 @@ class RedpandaService(RedpandaServiceBase):
         )
 
         assert self.si_settings.cloud_storage_bucket, f"missing bucket : {self.si_settings.cloud_storage_bucket}"
+        t = time.time()
         self.cloud_storage_client.empty_and_delete_bucket(
             self.si_settings.cloud_storage_bucket,
             parallel=self.dedicated_nodes)
+
+        print(
+            f"Emptying and deleting bucket {self.si_settings.cloud_storage_bucket} took {time.time() - t}s"
+        )
 
     def get_objects_from_si(self):
         assert self.cloud_storage_client and self._si_settings and self._si_settings.cloud_storage_bucket, \
