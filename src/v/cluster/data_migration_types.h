@@ -122,6 +122,8 @@ struct cloud_storage_location
     friend std::ostream&
     operator<<(std::ostream&, const cloud_storage_location&);
 
+    auto serde_fields() { return std::tie(); }
+
     friend bool
     operator==(const cloud_storage_location&, const cloud_storage_location&)
       = default;
@@ -200,6 +202,8 @@ struct inbound_migration
 struct copy_target
   : serde::envelope<copy_target, serde::version<0>, serde::compat_version<0>> {
     ss::sstring bucket;
+
+    auto serde_fields() { return std::tie(bucket); }
 
     friend bool operator==(const copy_target&, const copy_target&) = default;
     friend std::ostream& operator<<(std::ostream&, const copy_target&);
