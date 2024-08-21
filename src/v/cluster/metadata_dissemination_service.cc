@@ -395,7 +395,7 @@ ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
 ss::future<> metadata_dissemination_service::dispatch_one_update(
   model::node_id target_id, update_retry_meta& meta) {
     // copy updates to make retries possible
-    fragmented_vector<ntp_leader_revision> updates;
+    chunked_vector<ntp_leader_revision> updates;
     updates.reserve(meta.updates.size());
     std::copy(
       meta.updates.begin(), meta.updates.end(), std::back_inserter(updates));
