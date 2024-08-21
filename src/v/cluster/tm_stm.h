@@ -381,8 +381,7 @@ private:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
-    ss::future<raft::stm_snapshot>
-    do_take_snapshot(ssx::semaphore_units apply_units);
+
     ss::future<result<raft::replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
 
