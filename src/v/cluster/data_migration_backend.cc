@@ -828,13 +828,13 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
 
     // local partition work
     if (has_local_replica(delta.ntp)) {
-        _work_states[nt].try_emplace(
+        _local_work_states[nt].try_emplace(
           delta.ntp.tp.partition,
           migration_id,
           *_migration_states.find(migration_id)->second.scope.sought_state);
     } else {
-        auto topic_work_it = _work_states.find(nt);
-        if (topic_work_it != _work_states.end()) {
+        auto topic_work_it = _local_work_states.find(nt);
+        if (topic_work_it != _local_work_states.end()) {
             auto& topic_work_state = topic_work_it->second;
             auto rwstate_it = topic_work_state.find(delta.ntp.tp.partition);
             if (rwstate_it != topic_work_state.end()) {
@@ -844,7 +844,7 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
                 }
                 topic_work_state.erase(rwstate_it);
                 if (topic_work_state.empty()) {
-                    _work_states.erase(topic_work_it);
+                    _local_work_states.erase(topic_work_it);
                 }
             }
         }
@@ -998,7 +998,7 @@ void backend::drop_migration_reconciliation_rstate(
     const auto& topics = rs_it->second.outstanding_topics;
     for (const auto& [nt, tstate] : topics) {
         clear_tstate_belongings(nt, tstate);
-        _work_states.erase(nt);
+        _local_work_states.erase(nt);
         _topic_migration_map.erase(nt);
     }
     _migration_states.erase(rs_it);
@@ -1009,8 +1009,8 @@ ss::future<> backend::reconcile_topic(
   topic_reconciliation_state& tstate,
   id migration,
   work_scope scope,
-  bool schedule_local_work) {
-    if (!schedule_local_work && !_is_coordinator) {
+  bool schedule_local_partition_work) {
+    if (!schedule_local_partition_work && !_is_coordinator) {
         vlog(
           dm_log.debug,
           "not tracking topic {} transition towards state {} as part of "
@@ -1027,15 +1027,20 @@ ss::future<> backend::reconcile_topic(
       nt,
       scope.sought_state,
       migration,
-      schedule_local_work,
+      schedule_local_partition_work,
       _is_coordinator);
     auto now = model::timeout_clock::now();
     if (scope.partition_work_needed) {
         if (auto maybe_assignments = _topic_table.get_topic_assignments(nt)) {
             co_await ssx::async_for_each(
               *maybe_assignments | std::views::values,
-              [this, nt, &tstate, scope, migration, now, schedule_local_work](
-                const auto& assignment) {
+              [this,
+               nt,
+               &tstate,
+               scope,
+               migration,
+               now,
+               schedule_local_partition_work](const auto& assignment) {
                   model::ntp ntp{nt.ns, nt.tp, assignment.id};
                   auto nodes = assignment.replicas
                                | std::views::transform(
@@ -1067,7 +1072,7 @@ ss::future<> backend::reconcile_topic(
                             it->second);
                           _nodes_to_retry.insert_or_assign(node_id, now);
                       }
-                      if (schedule_local_work && _self == node_id) {
+                      if (schedule_local_partition_work && _self == node_id) {
                           vlog(
                             dm_log.debug,
                             "tracking ntp {} transition towards state {} as "
@@ -1077,7 +1082,7 @@ ss::future<> backend::reconcile_topic(
                             ntp,
                             scope.sought_state,
                             migration);
-                          auto& topic_work_state = _work_states[nt];
+                          auto& topic_work_state = _local_work_states[nt];
                           auto [it, _] = topic_work_state.try_emplace(
                             assignment.id, migration, *scope.sought_state);
                           auto& rwstate = it->second;
@@ -1135,7 +1140,7 @@ ss::future<> backend::reconcile_migration(
 std::optional<std::reference_wrapper<backend::replica_work_state>>
 backend::get_replica_work_state(const model::ntp& ntp) {
     model::topic_namespace nt{ntp.ns, ntp.tp.topic};
-    if (auto it = _work_states.find(nt); it != _work_states.end()) {
+    if (auto it = _local_work_states.find(nt); it != _local_work_states.end()) {
         auto& topic_work_state = it->second;
         auto rwstate_it = topic_work_state.find(ntp.tp.partition);
         if (rwstate_it != topic_work_state.end()) {
