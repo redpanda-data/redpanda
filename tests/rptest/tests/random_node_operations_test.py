@@ -105,10 +105,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.rate_limit = 100 * 1024 * 1024  # 100 MBps
             self.total_data = 5 * 1024 * 1024 * 1024
         else:
-            # container test setup
-            if num_to_upgrade > 0:
-                self.should_skip = True
-
             self.max_partitions = 32
             self.producer_throughput = 1000 if self.debug_mode else 10000
             self.node_operations = 10
@@ -156,6 +152,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         else:
             self.redpanda.start(auto_assign_node_id=True,
                                 omit_seeds_on_idx_one=False)
+
+        self.redpanda.await_feature('membership_change_controller_cmds',
+                                    'active',
+                                    timeout_sec=30)
 
     def _alter_local_topic_retention_bytes(self, topic, retention_bytes):
         rpk = RpkTool(self.redpanda)
