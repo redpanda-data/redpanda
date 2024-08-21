@@ -35,12 +35,12 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/thirdparty/lz4",
         "//src/v/thirdparty/lz4:lz4_frame",
-        "//src/v/thirdparty/snappy",
         "//src/v/thirdparty/zlib",
         "//src/v/utils:object_pool",
         "//src/v/utils:static_deleter_fn",
         "@fmt",
         "@seastar",
+        "@snappy",
         "@zstd",
     ],
 )

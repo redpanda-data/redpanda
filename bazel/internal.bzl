@@ -19,6 +19,7 @@ def redpanda_copts():
     copts = []
     copts.append("-Iexternal/abseil-cpp~")
     copts.append("-Iexternal/re2~")
+    copts.append("-Iexternal/snappy~")
 
     copts.append("-Werror")
     copts.append("-Wall")
