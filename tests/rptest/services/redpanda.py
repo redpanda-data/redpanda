@@ -3321,7 +3321,7 @@ class RedpandaService(RedpandaServiceBase):
                 if i >= max_object_count:
                     bucket_is_small = False
                     break
-            print(
+            self.logger.info(
                 f"Determining bucket count for {self.si_settings.cloud_storage_bucket} up to {max_object_count} objects took {time.time() - t}s"
             )
             if bucket_is_small:
@@ -3356,7 +3356,7 @@ class RedpandaService(RedpandaServiceBase):
             self.si_settings.cloud_storage_bucket,
             parallel=self.dedicated_nodes)
 
-        print(
+        self.logger.info(
             f"Emptying and deleting bucket {self.si_settings.cloud_storage_bucket} took {time.time() - t}s"
         )
 
