@@ -486,6 +486,8 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
 ss::future<error_code> replicated_partition::prefix_truncate(
   model::offset kafka_truncation_offset,
   ss::lowres_clock::time_point deadline) {
+    // truncation_offset < 0 cases have already been checked in
+    // `kafka::prefix_truncate()` handler.
     if (kafka_truncation_offset <= start_offset()) {
         // No-op, return early.
         co_return kafka::error_code::none;
