@@ -12,6 +12,14 @@ configure_make(
     configure_in_place = True,
     configure_options = [
         "--disable-libudev",
+
+        # Disable graphics and the many kinds of display driver discovery
+        "--disable-gl",
+        "--disable-opencl",
+        "--disable-cuda",
+        "--disable-rsmi",
+
+        # Build a static library
         "--disable-shared",
         "--enable-static",
     ],
