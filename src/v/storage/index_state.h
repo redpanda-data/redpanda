@@ -119,9 +119,9 @@ struct index_state
     model::timestamp max_timestamp{0};
 
     /// breaking indexes into their own has a 6x latency reduction
-    fragmented_vector<uint32_t> relative_offset_index;
-    fragmented_vector<uint32_t> relative_time_index;
-    fragmented_vector<uint64_t> position_index;
+    chunked_vector<uint32_t> relative_offset_index;
+    chunked_vector<uint32_t> relative_time_index;
+    chunked_vector<uint64_t> position_index;
 
     // flag indicating whether the maximum timestamp on the batches
     // of this segment are monontonically increasing.
