@@ -550,6 +550,7 @@ public:
       : serde::
           envelope<version_fence, serde::version<0>, serde::compat_version<0>> {
         cluster::cluster_version active_version;
+        auto serde_fields() { return std::tie(active_version); }
     };
 
     static constexpr std::string_view version_fence_batch_key = "state";
