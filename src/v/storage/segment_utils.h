@@ -209,6 +209,7 @@ struct clean_segment_value
       serde::version<0>,
       serde::compat_version<0>> {
     ss::sstring segment_name;
+    auto serde_fields() { return std::tie(segment_name); }
 };
 
 inline bool
