@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ..service_base import WorkloadServiceBase
-from . import consistency
+from . import consistency, stat
 
 
 class ListOffsetsWorkload(WorkloadServiceBase):
@@ -36,3 +36,7 @@ class ListOffsetsWorkload(WorkloadServiceBase):
             brokers_str=self._brokers_str,
             topic=self._topic,
         )
+
+    def collect_stats(self):
+        return stat.collect(self.context.test_id, self._results_dir(),
+                            [n.name for n in self.nodes])

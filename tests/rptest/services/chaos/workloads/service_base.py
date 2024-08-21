@@ -53,6 +53,10 @@ class WorkloadServiceBase(ABC, Service):
     def validate_consistency(self):
         pass
 
+    @abstractmethod
+    def collect_stats(self):
+        pass
+
     PERSISTENT_ROOT = "/var/lib/chaos_workload"
     SYSTEM_LOG_PATH = os.path.join(PERSISTENT_ROOT, "system.log")
     WORKLOAD_LOG_PATH = os.path.join(PERSISTENT_ROOT, "workload.log")
@@ -254,5 +258,14 @@ class WorkloadServiceBase(ABC, Service):
     def stop_and_validate(self):
         self.stop_workload()
         self.copy_workload_logs()
+
+        try:
+            stats = self.collect_stats()
+        except:
+            self.logger.warn(
+                f"{self.who_am_i()}: failed to collect workload stats",
+                exc_info=True)
+        else:
+            self.logger.info(f"{self.who_am_i()} workload stats: {stats}")
 
         self.validate_consistency()
