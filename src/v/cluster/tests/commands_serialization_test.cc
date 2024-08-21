@@ -46,6 +46,8 @@ struct fake_serde_only_key
     using rpc_adl_exempt = std::true_type;
 
     ss::sstring str;
+
+    auto serde_fields() { return std::tie(str); }
 };
 struct fake_serde_only_val
   : serde::envelope<
@@ -55,6 +57,8 @@ struct fake_serde_only_val
     using rpc_adl_exempt = std::true_type;
 
     ss::sstring str;
+
+    auto serde_fields() { return std::tie(str); }
 };
 using fake_serde_only_cmd = cluster::controller_command<
   fake_serde_only_key,
