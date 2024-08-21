@@ -90,7 +90,7 @@ public:
     ss::future<consensus_ptr> manage(
       storage::ntp_config,
       raft::group_id,
-      std::vector<raft::vnode>,
+      std::vector<model::broker>,
       raft::with_learner_recovery_throttle,
       raft::keep_snapshotted_log,
       std::optional<xshard_transfer_state>,

@@ -241,7 +241,7 @@ ss::future<> controller::start(
       _partition_manager,
       _shard_table,
       config::node().data_directory().as_sstring(),
-      seed_nodes);
+      initial_raft0_brokers);
 
     co_await _partition_leaders.start(std::ref(_tp_state));
     co_await _drain_manager.start(std::ref(_partition_manager));
@@ -448,6 +448,7 @@ ss::future<> controller::start(
       std::ref(_shard_placement),
       std::ref(_shard_table),
       std::ref(_partition_manager),
+      std::ref(_members_table),
       std::ref(_partition_leaders),
       std::ref(_tp_frontend),
       std::ref(_storage),

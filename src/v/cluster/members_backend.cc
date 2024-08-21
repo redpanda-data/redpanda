@@ -443,6 +443,10 @@ ss::future<> members_backend::maybe_finish_decommissioning(update_meta& meta) {
 }
 
 ss::future<std::error_code> members_backend::do_remove_node(model::node_id id) {
+    if (!_features.local().is_active(
+          features::feature::membership_change_controller_cmds)) {
+        return _raft0->remove_member(id, model::revision_id{0});
+    }
     return _members_frontend.local().remove_node(id);
 }
 
