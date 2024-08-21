@@ -16,6 +16,7 @@ configure_make(
         # Disable graphics and the many kinds of display driver discovery
         "--disable-gl",
         "--disable-opencl",
+        "--disable-nvml",
         "--disable-cuda",
         "--disable-rsmi",
 
