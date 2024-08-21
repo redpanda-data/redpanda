@@ -144,6 +144,8 @@
     "https://bcr.bazel.build/modules/rules_python/0.4.0/MODULE.bazel": "9208ee05fd48bf09ac60ed269791cf17fb343db56c8226a720fbb1cdf467166c",
     "https://bcr.bazel.build/modules/rules_rust/0.49.3/MODULE.bazel": "7c747ca20606b61fdb3c99c537a97a7cc89ac48482c0f25b3e70787297b0ec46",
     "https://bcr.bazel.build/modules/rules_rust/0.49.3/source.json": "0f4627d0ed4cd0d5af58f0162f87dcdf38fe4578e5308a3d7dca4c68cb13e323",
+    "https://bcr.bazel.build/modules/snappy/1.2.1/MODULE.bazel": "ccfc05c2f321f33fa4190a57280f3b0b428982f7c66618f2acadf162fa0bbb95",
+    "https://bcr.bazel.build/modules/snappy/1.2.1/source.json": "9a3e0181edc27543b4304f377a216ad09e014859db57921261552d0a4939ee1d",
     "https://bcr.bazel.build/modules/stardoc/0.5.0/MODULE.bazel": "f9f1f46ba8d9c3362648eea571c6f9100680efc44913618811b58cc9c02cd678",
     "https://bcr.bazel.build/modules/stardoc/0.5.1/MODULE.bazel": "1a05d92974d0c122f5ccf09291442580317cdd859f07a8655f1db9a60374f9f8",
     "https://bcr.bazel.build/modules/stardoc/0.5.3/MODULE.bazel": "c7f6948dae6999bf0db32c1858ae345f112cacf98f174c7a8bb707e41b974f1c",
@@ -167,7 +169,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "/MqP0N0rJqOQIVgvSLEn/DUIwqwpedDP2S/k48jYYuQ=",
+        "bzlTransitiveDigest": "jjpzZNeglEOU9HDEnuA+Dy5U5wS39+0nBkIdi27GZgU=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -251,16 +253,6 @@
               "sha256": "78487658b774f27546e79de2ddd37fca56679b23f256425d2c86aabf7d1b8066",
               "strip_prefix": "CRoaring-c433d1c70c10fb2e40f049e019e2abbcafa6e69d",
               "url": "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz"
-            }
-          },
-          "snappy": {
-            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-            "ruleClassName": "http_archive",
-            "attributes": {
-              "build_file": "@@//bazel/thirdparty:snappy.BUILD",
-              "sha256": "774c337a545d6b818163c12455627ba61ed8d2daa9a9236b3aa88c64f081560e",
-              "strip_prefix": "snappy-ca541bd6c80d97cf93d1a33e613521947701ea53",
-              "url": "https://github.com/redpanda-data/snappy/archive/ca541bd6c80d97cf93d1a33e613521947701ea53.tar.gz"
             }
           },
           "wasmtime": {
@@ -380,7 +372,13 @@
               "build_file": "@@//bazel/thirdparty:avro.BUILD",
               "sha256": "a95c1b9517493d2e09d62a428ba7b4295c5cdb76eb07a0b2466f64a268486387",
               "strip_prefix": "avro-b3d7efe3d8bc15e7a19ee349c51e14f8795b1515",
-              "url": "https://github.com/redpanda-data/avro/archive/b3d7efe3d8bc15e7a19ee349c51e14f8795b1515.tar.gz"
+              "url": "https://github.com/redpanda-data/avro/archive/b3d7efe3d8bc15e7a19ee349c51e14f8795b1515.tar.gz",
+              "patches": [
+                "@@//bazel/thirdparty:avro-snappy-includes.patch"
+              ],
+              "patch_args": [
+                "-p1"
+              ]
             }
           },
           "xxhash": {

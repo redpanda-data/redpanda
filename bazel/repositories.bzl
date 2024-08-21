@@ -22,6 +22,8 @@ def data_dependency():
         sha256 = "a95c1b9517493d2e09d62a428ba7b4295c5cdb76eb07a0b2466f64a268486387",
         strip_prefix = "avro-b3d7efe3d8bc15e7a19ee349c51e14f8795b1515",
         url = "https://github.com/redpanda-data/avro/archive/b3d7efe3d8bc15e7a19ee349c51e14f8795b1515.tar.gz",
+        patches = ["//bazel/thirdparty:avro-snappy-includes.patch"],
+        patch_args = ["-p1"],
     )
 
     http_archive(
@@ -164,14 +166,6 @@ def data_dependency():
         sha256 = "18204fa9a6db7cf7695ad017a0850f58ebf385e9d0f4b05e8770fe4316a45ea2",
         strip_prefix = "seastar-6499285ac3899809712124da7a50fbb21f9409f2",
         url = "https://github.com/redpanda-data/seastar/archive/6499285ac3899809712124da7a50fbb21f9409f2.tar.gz",
-    )
-
-    http_archive(
-        name = "snappy",
-        build_file = "//bazel/thirdparty:snappy.BUILD",
-        sha256 = "774c337a545d6b818163c12455627ba61ed8d2daa9a9236b3aa88c64f081560e",
-        strip_prefix = "snappy-ca541bd6c80d97cf93d1a33e613521947701ea53",
-        url = "https://github.com/redpanda-data/snappy/archive/ca541bd6c80d97cf93d1a33e613521947701ea53.tar.gz",
     )
 
     http_archive(

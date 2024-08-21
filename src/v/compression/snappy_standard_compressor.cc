@@ -13,10 +13,11 @@
 #include "base/units.h"
 #include "base/vassert.h"
 #include "bytes/bytes.h"
-#include "thirdparty/snappy/snappy-sinksource.h"
-#include "thirdparty/snappy/snappy.h"
 
 #include <fmt/format.h>
+
+#include <snappy-sinksource.h>
+#include <snappy.h>
 
 namespace compression {
 
