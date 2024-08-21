@@ -158,17 +158,9 @@ std::string_view to_string_view(feature_state::state s) {
 // imply that new data formats may be written.
 static constexpr cluster_version latest_version = cluster_version{12};
 
-// The earliest version we can upgrade from.  This is the version that
-// a freshly initialized node will start at: e.g. a 23.1 Redpanda joining
-// a cluster of 22.3.6 peers would do this:
-// - Start up blank, initialize feature table to version 7
-// - Send join request advertising version range 7-9
-// - 22.3.x peer accepts join request because version range 7-9 includes its
-//   active version (7).
-// - The new 23.1 node advances feature table to version 8 when it joins and
-//   sees controller log replay.
-// - Eventually once all nodes are 23.1, all nodes advance active version to 9
-static constexpr cluster_version earliest_version = cluster_version{7};
+// The earliest version we can upgrade from.
+// This is the version that a freshly initialized node will start at.
+static constexpr cluster_version earliest_version = cluster_version{10};
 
 // Extra features that will be wired into the feature table if a special
 // environment variable is set
