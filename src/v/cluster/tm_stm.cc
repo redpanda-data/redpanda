@@ -595,23 +595,6 @@ tm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 
 ss::future<raft::stm_snapshot>
 tm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
-    // Update hash ranges to always have batch in log
-    // So it cannot be deleted with cleanup policy
-    if (_raft->is_leader()) {
-        auto sync_res = co_await sync();
-        if (sync_res.has_error()) {
-            throw std::runtime_error(fmt::format(
-              "Cannot sync before taking snapshot, err: {}", sync_res.error()));
-        }
-    }
-    co_return co_await ss::with_gate(
-      _gate, [this, units = std::move(apply_units)]() mutable {
-          return do_take_snapshot(std::move(units));
-      });
-}
-
-ss::future<raft::stm_snapshot>
-tm_stm::do_take_snapshot(ssx::semaphore_units apply_units) {
     auto snapshot_version = active_snapshot_version();
     auto snapshot_offset = last_applied_offset();
     if (snapshot_version == tm_snapshot_v0::version) {
