@@ -289,10 +289,11 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def __init__(self,
                  context,
                  schema_registry_config=SchemaRegistryConfig(),
-                 **kwargs):
+                 num_brokers=3,
+                 **kwargs) -> None:
         super(SchemaRegistryEndpoints, self).__init__(
             context,
-            num_brokers=3,
+            num_brokers=num_brokers,
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
