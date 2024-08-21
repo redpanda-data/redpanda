@@ -10,7 +10,7 @@
 from dataclasses import dataclass
 
 from ..service_base import WorkloadServiceBase
-from . import consistency
+from . import consistency, stat
 
 
 class TxSubscribeWorkload(WorkloadServiceBase):
@@ -57,5 +57,6 @@ class TxSubscribeWorkload(WorkloadServiceBase):
             fail_on_interruption=self._fail_consistency_on_interruption)
 
     def collect_stats(self):
-        # TODO
-        return {}
+        return stat.collect(self.context.test_id,
+                            self._results_dir(), [n.name for n in self.nodes],
+                            source_partitions=self._setup.source_partitions)
