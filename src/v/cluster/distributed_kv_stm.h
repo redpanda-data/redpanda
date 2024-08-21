@@ -107,7 +107,6 @@ public:
             co_return;
         }
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_read_lock();
         co_await record_batch.for_each_record_async(
           [this](model::record r) -> ss::future<> {
               auto key = reflection::from_iobuf<record_key>(r.release_key());
@@ -134,8 +133,6 @@ public:
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&& bytes) override {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_write_lock();
-
         iobuf_parser parser(std::move(bytes));
         auto snap = co_await serde::read_async<snapshot>(parser);
 
@@ -152,7 +149,6 @@ public:
     ss::future<raft::stm_snapshot>
     take_local_snapshot(ssx::semaphore_units apply_units) override {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_write_lock();
         auto last_applied = last_applied_offset();
         snapshot result;
         if (_is_routing_partition) {
@@ -185,7 +181,6 @@ public:
         if (!_is_routing_partition) {
             co_return errc::invalid_request;
         }
-        auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {
             co_return errc::not_leader;
         }
@@ -231,7 +226,6 @@ public:
      */
     ss::future<result<std::optional<Value>, cluster::errc>> get(Key key) {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {
             co_return errc::not_leader;
         }
@@ -247,7 +241,6 @@ public:
      */
     ss::future<result<kv_data_t, cluster::errc>> list() {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {
             co_return errc::not_leader;
         }
@@ -271,7 +264,6 @@ public:
     /** Batch write values to the stm. */
     ss::future<errc> put(kv_data_t kvs) {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_read_lock();
         if (!co_await sync(sync_timeout)) {
             co_return errc::not_leader;
         }
@@ -282,7 +274,6 @@ public:
     /** Remove a singular key from the stm. */
     ss::future<errc> remove(Key key) {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_read_lock();
         auto it = _kvs.find(key);
         if (it == _kvs.end()) {
             co_return errc::success;
@@ -297,7 +288,6 @@ public:
      */
     ss::future<errc> remove_all(ss::noncopyable_function<bool(Key)> pred) {
         auto holder = _gate.hold();
-        auto units = co_await _snapshot_lock.hold_read_lock();
         absl::btree_set<Key> deleted;
         auto it = _kvs.begin();
         while (it != _kvs.end()) {
@@ -338,7 +328,6 @@ public:
         if (!co_await sync(sync_timeout)) {
             co_return errc::not_leader;
         }
-        auto units = co_await _snapshot_lock.hold_read_lock();
         auto repartition_units = co_await _repartitioning_lock.get_units();
         if (_num_partitions && _num_partitions.value() == new_partition_count) {
             co_return _num_partitions.value();
@@ -451,10 +440,6 @@ private:
     size_t _default_max_partitions;
     const bool _is_routing_partition;
     ss::gate _gate;
-    // grabbed in exclusive mode when taking/applying snapshots so
-    // there is a consistent state. All readers/updaters grab this
-    // in read mode and wait until the snapshot operations finish.
-    ss::rwlock _snapshot_lock;
     mutex _repartitioning_lock{"distributed_kv_stm::repartitioning_lock"};
 };
 
