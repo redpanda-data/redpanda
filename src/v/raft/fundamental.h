@@ -12,8 +12,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "model/fundamental.h"
-#include "serde/envelope.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -33,40 +31,6 @@ enum class reply_result : uint8_t {
     failure,
     group_unavailable,
     timeout
-};
-
-/**
- * Class representing single incarnation of a node being a member of Raft group.
- * This class allows Raft to recognize members with the same id coming from
- * different reconfiguration epochs.
- */
-class vnode
-  : public serde::envelope<vnode, serde::version<0>, serde::compat_version<0>> {
-public:
-    constexpr vnode() = default;
-
-    constexpr vnode(model::node_id nid, model::revision_id rev)
-      : _node_id(nid)
-      , _revision(rev) {}
-
-    bool operator==(const vnode& other) const = default;
-    bool operator!=(const vnode& other) const = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const vnode& r);
-
-    template<typename H>
-    friend H AbslHashValue(H h, const vnode& node) {
-        return H::combine(std::move(h), node._node_id, node._revision);
-    }
-
-    constexpr model::node_id id() const { return _node_id; }
-    constexpr model::revision_id revision() const { return _revision; }
-
-    auto serde_fields() { return std::tie(_node_id, _revision); }
-
-private:
-    model::node_id _node_id;
-    model::revision_id _revision;
 };
 
 } // namespace raft
