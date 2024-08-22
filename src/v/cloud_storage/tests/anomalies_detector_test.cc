@@ -26,6 +26,7 @@
 
 #include <seastar/util/short_streams.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -378,6 +379,30 @@ public:
         remove_object(ssx::sformat("/{}", path().string()));
     }
 
+    struct write_hash_opts {
+        absl::flat_hash_set<cloud_storage::segment_meta> skip_metas;
+    };
+
+    ss::future<> write_hashes_to_disk(const write_hash_opts& opts) {
+        return cloud_storage::inventory::flush_ntp_hashes(
+          config::node().cloud_storage_inventory_hash_path(),
+          get_stm_manifest().get_ntp(),
+          path_hashes(opts.skip_metas),
+          0);
+    }
+
+    fragmented_vector<uint64_t> path_hashes(
+      const absl::flat_hash_set<cloud_storage::segment_meta>& skip_metas) {
+        std::vector<ss::sstring> paths;
+        std::ranges::copy(
+          manifest_paths(_stm_manifest, skip_metas), std::back_inserter(paths));
+        for (const auto& m : _spillover_manifests) {
+            std::ranges::copy(
+              manifest_paths(m, skip_metas), std::back_inserter(paths));
+        }
+        return path_hashes(std::move(paths));
+    }
+
 private:
     void remove_json_stm_manifest(
       const cloud_storage::partition_manifest& manifest) {
@@ -483,6 +508,28 @@ private:
                  {"Content-Length", ssx::sformat("{}", seg.size_bytes)}},
                 ss::http::reply::status_type::ok);
         }
+    }
+
+    std::vector<ss::sstring> manifest_paths(
+      const cloud_storage::partition_manifest& manifest,
+      const absl::flat_hash_set<cloud_storage::segment_meta>& skip_metas) {
+        std::vector<ss::sstring> paths;
+        for (const auto& seg_meta : manifest) {
+            if (!skip_metas.contains(seg_meta)) {
+                paths.emplace_back(
+                  manifest.generate_segment_path(seg_meta, path_provider)()
+                    .string());
+            }
+        }
+        return paths;
+    }
+
+    fragmented_vector<uint64_t> path_hashes(std::vector<ss::sstring> paths) {
+        fragmented_vector<uint64_t> hashes;
+        for (auto& path : paths) {
+            hashes.push_back(xxhash_64(path.data(), path.size()));
+        }
+        return hashes;
     }
 
     cloud_storage_clients::s3_configuration get_client_configuration() {
@@ -1252,7 +1299,7 @@ SEASTAR_THREAD_TEST_CASE(test_query_lookup_when_data_loaded_successfully) {
     constexpr std::string_view test_path{"t"};
 
     cloud_storage::inventory::flush_ntp_hashes(
-      config::node_config().cloud_storage_inventory_hash_path(),
+      config::node().cloud_storage_inventory_hash_path(),
       ntp,
       {xxhash_64(test_path.data(), test_path.size())},
       0)
