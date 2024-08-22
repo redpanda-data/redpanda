@@ -171,8 +171,8 @@ TEST_F_CORO(state_machine_fixture, test_snapshot_with_bg_fibers) {
 
     co_await ss::sleep(10s);
     stop = true;
-    co_await std::move(write_sleep_f);
-    co_await std::move(truncate_sleep_f);
+    co_await ss::when_all(
+      std::move(write_sleep_f), std::move(truncate_sleep_f));
 }
 
 TEST_F_CORO(state_machine_fixture, test_apply_throwing_exception) {
