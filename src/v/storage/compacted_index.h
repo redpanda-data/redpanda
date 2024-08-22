@@ -13,6 +13,7 @@
 #include "bytes/bytes.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
+#include "storage/compaction.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -20,14 +21,6 @@
 
 namespace storage {
 // simple types shared among readers and writers
-
-/**
- * Type representing a record key prefixed with batch_type
- */
-struct compaction_key : bytes {
-    explicit compaction_key(bytes b)
-      : bytes(std::move(b)) {}
-};
 
 inline compaction_key enhance_key(
   model::record_batch_type type, bool is_control_batch, bytes_view key) {
