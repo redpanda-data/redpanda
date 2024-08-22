@@ -338,7 +338,6 @@ private:
     void apply_data(model::batch_identity, const model::record_batch_header&);
 
     ss::future<> reduce_aborted_list();
-    ss::future<> offload_aborted_txns();
 
     /**
      * Return when the committed offset has been established when STM starts.
