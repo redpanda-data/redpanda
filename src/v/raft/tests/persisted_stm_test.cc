@@ -166,7 +166,8 @@ public:
     /**
      * Called when a local snapshot is taken
      */
-    ss::future<stm_snapshot> take_local_snapshot() final {
+    ss::future<stm_snapshot> take_local_snapshot(
+      [[maybe_unused]] ssx::semaphore_units apply_units) final {
         co_return stm_snapshot::create(
           0, last_applied_offset(), serde::to_iobuf(state));
     };
@@ -212,7 +213,7 @@ public:
         return last_op;
     }
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> do_apply(const model::record_batch& batch) override {
         auto last_op = apply_to_state(batch, state);
         if (last_op) {
             last_operation = std::move(*last_op);
@@ -292,7 +293,7 @@ public:
      * as it is going to be started without the full data in the snapshot, hence
      * the validation would fail.
      */
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> do_apply(const model::record_batch& batch) override {
         if (batch.header().type != model::record_batch_type::raft_data) {
             co_return;
         }
@@ -446,11 +447,55 @@ struct persisted_stm_test_fixture : state_machine_fixture {
 
     ss::future<> take_local_snapshot_on_every_node() {
         for (auto& stm : node_stms) {
-            co_await stm.second->take_local_snapshot();
+            co_await stm.second->write_local_snapshot();
         }
     }
 
     absl::flat_hash_map<raft::vnode, ss::shared_ptr<persisted_kv>> node_stms;
+};
+
+class slow_persisted_stm : public persisted_stm<> {
+public:
+    static constexpr std::string_view name = "slow_persisted_stm";
+
+    explicit slow_persisted_stm(raft_node_instance& rn)
+      : persisted_stm<>("slow_persisted_stm", logger, rn.raft().get()) {}
+
+    ss::future<> do_apply(const model::record_batch& batch) override {
+        _last_stm_applied = batch.last_offset();
+        co_return;
+    }
+
+    ss::future<> apply_raft_snapshot(const iobuf& buffer) override {
+        co_return;
+    };
+
+    ss::future<iobuf>
+    take_snapshot(model::offset last_included_offset) override {
+        co_return iobuf{};
+    }
+
+    ss::future<>
+    apply_local_snapshot(stm_snapshot_header header, iobuf&& buffer) override {
+        _last_stm_applied = serde::from_iobuf<model::offset>(std::move(buffer));
+        co_return;
+    }
+
+    ss::future<> validate_applied_offsets(model::offset before) {
+        ASSERT_EQ_CORO(before, _last_stm_applied);
+    }
+
+    ss::future<stm_snapshot> take_local_snapshot(
+      [[maybe_unused]] ssx::semaphore_units apply_units) override {
+        auto applied_offset_before = _last_stm_applied;
+        co_await ss::sleep(2ms);
+        co_await validate_applied_offsets(applied_offset_before);
+        co_return stm_snapshot::create(
+          0, last_applied_offset(), serde::to_iobuf(_last_stm_applied));
+    }
+
+private:
+    model::offset _last_stm_applied{};
 };
 
 TEST_F_CORO(persisted_stm_test_fixture, test_basic_operations) {
@@ -650,4 +695,35 @@ TEST_F_CORO(persisted_stm_test_fixture, test_adding_state_machine) {
         ASSERT_EQ_CORO(stm->state, expected);
         ASSERT_EQ_CORO(stm->last_operation, other_stm->last_operation);
     }
+}
+
+// Test ensures that the snapshot is not interleaved with apply
+TEST_F_CORO(state_machine_fixture, test_concurrent_apply_and_snapshot) {
+    // Initialize raft group and stms
+    add_node(model::node_id(0), model::revision_id(0));
+    auto& raft_nodes = nodes();
+    ASSERT_EQ_CORO(raft_nodes.size(), 1);
+
+    auto& node = raft_nodes.begin()->second;
+    co_await node->initialise(all_vnodes());
+    raft::state_machine_manager_builder builder;
+    auto stm = builder.create_stm<slow_persisted_stm>(*node);
+    co_await node->start(std::move(builder));
+    co_await wait_for_leader(5s);
+
+    bool stop = false;
+    auto write_sleep_f = ss::do_until(
+      [&stop] { return stop; },
+      [&] {
+          return build_random_state(100).discard_result().then(
+            [] { return ss::sleep(3ms); });
+      });
+
+    auto local_snapshot_f = ss::do_until(
+      [&stop] { return stop; }, [&] { return stm->write_local_snapshot(); });
+
+    co_await ss::sleep(2s);
+    stop = true;
+    co_await std::move(write_sleep_f);
+    co_await std::move(local_snapshot_f);
 }
