@@ -767,6 +767,7 @@ class TS_Read(Expression):
             MetricBasedValidator(
                 "TS_Read",
                 "vectorized_cloud_storage_successful_downloads_total",
+                confidence_threshold=4,
                 execution_stage=TestRunStage.Consume)
         ]
 
@@ -1391,6 +1392,7 @@ class SegmentRolledByTimeout(Expression):
         return [
             LogBasedValidator("SegmentRolledByTimeout_log",
                               "segment.ms applied, new segment start offset",
+                              confidence_threshold=4,
                               execution_stage=TestRunStage.Produce),
         ]
 
