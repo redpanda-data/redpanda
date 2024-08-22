@@ -1704,31 +1704,6 @@ uint8_t rm_stm::active_snapshot_version() {
     return tx_snapshot_v5::version;
 }
 
-ss::future<> rm_stm::offload_aborted_txns() {
-    // Note: this method requires a consistent view of aborted state
-    // make sure to call this under _state_lock.write_lock()
-    std::sort(
-      std::begin(_aborted_tx_state.aborted),
-      std::end(_aborted_tx_state.aborted),
-      [](tx_range a, tx_range b) { return a.first < b.first; });
-
-    abort_snapshot snapshot{
-      .first = model::offset::max(), .last = model::offset::min()};
-    for (auto const& entry : _aborted_tx_state.aborted) {
-        snapshot.first = std::min(snapshot.first, entry.first);
-        snapshot.last = std::max(snapshot.last, entry.last);
-        snapshot.aborted.push_back(entry);
-        if (snapshot.aborted.size() == _abort_index_segment_size) {
-            auto idx = abort_index{snapshot.first, snapshot.last};
-            _aborted_tx_state.abort_indexes.push_back(idx);
-            co_await save_abort_snapshot(std::move(snapshot));
-            snapshot = abort_snapshot{
-              .first = model::offset::max(), .last = model::offset::min()};
-        }
-    }
-    _aborted_tx_state.aborted = std::move(snapshot.aborted);
-}
-
 ss::future<raft::stm_snapshot>
 rm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     return do_take_local_snapshot(
