@@ -37,33 +37,38 @@ configuration::configuration()
   , pandaproxy_api_tls(
       *this,
       "pandaproxy_api_tls",
-      "TLS configuration for Pandaproxy api",
+      "TLS configuration for Pandaproxy api.",
       {},
       {},
       config::endpoint_tls_config::validate_many)
   , advertised_pandaproxy_api(
       *this,
       "advertised_pandaproxy_api",
-      "Rest API address and port to publish to client",
+      "Network address for the HTTP Proxy API server to publish to clients.",
       {},
       {},
       model::broker_endpoint::validate_many)
   , api_doc_dir(
       *this,
       "api_doc_dir",
-      "API doc directory",
+      "Path to the API specifications for the HTTP Proxy API.",
       {},
       "/usr/share/redpanda/proxy-api-doc")
   , consumer_instance_timeout(
       *this,
       "consumer_instance_timeout_ms",
-      "How long to wait for an idle consumer before removing it",
+      "How long to wait for an idle consumer before removing it. A consumer is "
+      "considered idle when it's not making requests or heartbeats.",
       {},
       std::chrono::minutes{5})
   , client_cache_max_size(
       *this,
       "client_cache_max_size",
-      "The maximum number of kafka clients in the LRU cache",
+      "The maximum number of Kafka client connections that Redpanda can cache "
+      "in the LRU (least recently used) cache. The LRU cache helps optimize "
+      "resource utilization by keeping the most recently used clients in "
+      "memory, facilitating quicker reconnections for frequent clients while "
+      "limiting memory usage.",
       {.needs_restart = config::needs_restart::yes},
       10,
       [](const size_t max_size) {
@@ -76,7 +81,8 @@ configuration::configuration()
   , client_keep_alive(
       *this,
       "client_keep_alive",
-      "Time in milliseconds that an idle connection may remain open",
+      "Time, in milliseconds, that an idle client connection may remain open "
+      "to the HTTP Proxy API.",
       {.needs_restart = config::needs_restart::yes, .example = "300000"},
       5min,
       [](const std::chrono::milliseconds& keep_alive) {
