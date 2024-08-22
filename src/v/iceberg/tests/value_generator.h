@@ -32,6 +32,8 @@ struct value_spec {
 
     // If set, numeric primitives will have values based on this value.
     std::optional<int64_t> forced_num_val = std::nullopt;
+
+    std::optional<iobuf> forced_fixed_val = std::nullopt;
 };
 
 // Creates an Iceberg value in accordance to the provided specification.

@@ -37,6 +37,7 @@ rp_test(
     v::kafka_test_utils
     v::datalake
     v::model_test_utils
+    v::iceberg_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )

@@ -92,6 +92,9 @@ struct generating_primitive_value_visitor {
         }
     }
     value operator()(const fixed_type& t) {
+        if (spec_.forced_fixed_val.has_value()) {
+            return fixed_value{spec_.forced_fixed_val.value().copy()};
+        }
         switch (spec_.pattern) {
         case value_pattern::zeros:
             return fixed_value{iobuf{}};
