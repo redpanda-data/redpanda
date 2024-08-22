@@ -3880,10 +3880,110 @@ class SchemaRegistryCompatibilityModes(SchemaRegistryEndpoints):
                 return CompatDataset(schemas=list(reversed(json_schema_set)),
                                      antimode="BACKWARD")
 
+        elif schema_type == "AVRO":
+            if mode == "NONE":
+                return CompatDataset(schemas=[
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "int"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "null"
+                        }]
+                    }),
+                ],
+                                     antimode="BACKWARD")
+
+            if mode == "FULL" or mode == "FULL_TRANSITIVE":
+                return CompatDataset(schemas=[
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "doc": "doc1",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "doc": "doc2",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "doc": "doc3",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                ],
+                                     antimode=None)
+
+            # a series backward-transitive-compatibles schemas
+            avro_schema_set = [
+                json.dumps({
+                    "type": "record",
+                    "name": "myrecord",
+                    "fields": [{
+                        "name": "f1",
+                        "type": "string"
+                    }]
+                }),
+                json.dumps({
+                    "type":
+                    "record",
+                    "name":
+                    "myrecord",
+                    "fields": [{
+                        "name": "f1",
+                        "type": ["null", "string"]
+                    }]
+                }),
+                json.dumps({
+                    "type":
+                    "record",
+                    "name":
+                    "myrecord",
+                    "fields": [{
+                        "name": "f1",
+                        "type": ["int", "null", "string"]
+                    }]
+                }),
+            ]
+            if mode == "BACKWARD" or mode == "BACKWARD_TRANSITIVE":
+                return CompatDataset(schemas=avro_schema_set,
+                                     antimode='FORWARD')
+            elif mode == "FORWARD" or mode == "FORWARD_TRANSITIVE":
+                # forward can use the reversed json_schema_set
+                return CompatDataset(schemas=list(reversed(avro_schema_set)),
+                                     antimode='BACKWARD')
         assert False, f"not implemented for {schema_type=} and {mode=}"
 
     @cluster(num_nodes=1)
-    @matrix(schema_type=["JSON"],
+    @matrix(schema_type=["JSON", "AVRO"],
             mode=[
                 "BACKWARD", "BACKWARD_TRANSITIVE", "FORWARD",
                 "FORWARD_TRANSITIVE", "NONE", "FULL", "FULL_TRANSITIVE"
