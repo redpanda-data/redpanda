@@ -108,52 +108,19 @@ ss::future<model::offset> build_offset_map(
         if (cfg.asrc) {
             cfg.asrc->check();
         }
-        const auto& seg = iter->get();
+        auto seg = *iter;
         vlog(gclog.trace, "Adding segment to offset map: {}", seg->filename());
-        auto read_lock = co_await seg->read_lock();
-        segment_full_path idx_path = seg->path().to_compacted_index();
-        std::optional<scoped_file_tracker> to_clean;
-        bool segment_closed = false;
-        while (true) {
-            if (seg->is_closed()) {
-                // Stop early if the segment e.g. has been prefix truncated.
-                // We'll make do with the offset map we have so far.
-                vlog(
-                  gclog.debug,
-                  "Stopping add to offset map, segment closed: {}",
-                  seg->filename());
-                segment_closed = true;
-                break;
-            }
-            auto state = co_await internal::detect_compaction_index_state(
-              idx_path, cfg);
-            if (!internal::compacted_index_needs_rebuild(state)) {
-                break;
-            }
-            // Rebuilding the compaction index will take the read lock again,
-            // so release here.
-            read_lock.return_all();
 
-            // Until we check the segment isn't closed under lock, we may need
-            // to delete the new index: its segment may already be removed!
-            if (!to_clean.has_value()) {
-                to_clean.emplace(
-                  scoped_file_tracker{cfg.files_to_cleanup, {idx_path}});
-            }
-
-            co_await internal::rebuild_compaction_index(
-              *iter, stm_manager, cfg, probe, resources);
-
-            // Take the lock again before checking the compaction index state
-            // to avoid races with truncations while building the offset map.
-            read_lock = co_await seg->read_lock();
-        }
-        if (segment_closed) {
+        try {
+            auto read_lock = co_await seg->read_lock();
+            co_await internal::maybe_rebuild_compaction_index(
+              seg, stm_manager, cfg, read_lock, resources, probe);
+        } catch (const segment_closed_exception& e) {
+            // Stop early if the segment e.g. has been prefix truncated.
+            // We'll make do with the offset map we have so far.
             break;
         }
-        if (to_clean.has_value()) {
-            to_clean->clear();
-        }
+
         auto seg_fully_indexed = co_await build_offset_map_for_segment(
           cfg, *seg, m);
         if (!seg_fully_indexed) {
