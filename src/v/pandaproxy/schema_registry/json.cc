@@ -1580,43 +1580,6 @@ bool is_superset(
     return true;
 }
 
-// this function assumes that the inputs are valid schemas, and if they have a
-// $schema member it will have a string value
-bool check_compatible_dialects(
-  json::Value const& older, json::Value const& newer) {
-    auto get_dialect =
-      [](json::Value const& v) -> std::optional<json_schema_dialect> {
-        if (!v.IsObject()) {
-            // support true/false schemas
-            return std::nullopt;
-        }
-        auto it = v.FindMember("$schema");
-        if (it == v.MemberEnd()) {
-            return std::nullopt;
-        }
-        return from_uri(as_string_view(it->value));
-    };
-
-    auto older_dialect = get_dialect(older);
-    auto newer_dialect = get_dialect(newer);
-    if (!older_dialect.has_value() && !newer_dialect.has_value()) {
-        // no $schema, compatible
-        return true;
-    }
-    // basic support: require that both use the same dialect.
-    // TODO: schemas using different dialects could be conditionally compatible
-    if (older_dialect != newer_dialect) {
-        throw as_exception(invalid_schema(fmt::format(
-          "not yet implemented compatibility check between different dialects: "
-          "{}, {}",
-          older_dialect ? to_uri(older_dialect.value()) : "[not specified]",
-          newer_dialect ? to_uri(newer_dialect.value()) : "[not specified]")));
-    }
-
-    // same dialect, compatible
-    return true;
-}
-
 void sort(json::Value& val) {
     switch (val.GetType()) {
     case rapidjson::Type::kFalseType:
@@ -1686,10 +1649,6 @@ compatibility_result check_compatible(
   const json_schema_definition& writer,
   verbose is_verbose [[maybe_unused]]) {
     auto is_compatible = [&]() {
-        // schemas might be using incompatible dialects
-        if (!check_compatible_dialects(reader().ctx.doc, writer().ctx.doc)) {
-            return false;
-        }
         // reader is a superset of writer iff every schema that is valid for
         // writer is also valid for reader
         context ctx{.older{reader()}, .newer{writer()}};
