@@ -191,6 +191,8 @@ public:
     explicit schema_context(json_schema_definition::impl const& schema)
       : _schema{schema} {}
 
+    json_schema_dialect dialect() const { return _schema.ctx.dialect; }
+
 private:
     json_schema_definition::impl const& _schema;
 };
