@@ -841,18 +841,11 @@ model::node_id members_manager::get_node_id(const model::node_uuid& node_uuid) {
 }
 
 ss::future<> members_manager::set_initial_state(
-  std::vector<model::broker> initial_brokers,
-  uuid_map_t id_by_uuid,
-  model::offset update_offset) {
+  std::vector<model::broker> initial_brokers, uuid_map_t id_by_uuid) {
     vassert(_id_by_uuid.empty(), "will not overwrite existing data");
-
-    vlog(
-      clusterlog.info,
-      "initializing cluster state with initial brokers {}, and node UUID map: "
-      "{} at offset: {}",
-      initial_brokers,
-      id_by_uuid,
-      update_offset);
+    if (!id_by_uuid.empty()) {
+        vlog(clusterlog.info, "Initial node UUID map: {}", id_by_uuid);
+    }
     // Start the node ID assignment counter just past the highest node ID. This
     // helps ensure removed seed servers are accounted for when auto-assigning
     // node IDs, since seed servers don't call get_or_assign_node_id().
@@ -870,7 +863,7 @@ ss::future<> members_manager::set_initial_state(
           table.set_initial_brokers(initial_brokers);
       });
 
-    co_await persist_members_in_kvstore(update_offset);
+    co_await persist_members_in_kvstore(model::offset(0));
     // update partition allocator
     co_await _allocator.invoke_on(
       partition_allocator::shard,
@@ -881,7 +874,8 @@ ss::future<> members_manager::set_initial_state(
       });
 
     // update internode connections
-    if (_last_connection_update_offset < update_offset) {
+
+    if (_last_connection_update_offset < model::offset{0}) {
         for (auto& b : initial_brokers) {
             if (b.id() == _self.id()) {
                 continue;
@@ -894,7 +888,7 @@ ss::future<> members_manager::set_initial_state(
               _rpc_tls_config);
         }
 
-        _last_connection_update_offset = update_offset;
+        _last_connection_update_offset = model::offset{0};
     }
     for (auto& b : initial_brokers) {
         auto update = node_update{
@@ -1687,6 +1681,10 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
 }
 
 ss::future<std::error_code> members_manager::add_node(model::broker broker) {
+    if (!command_based_membership_active()) {
+        return _raft0->add_group_member(
+          std::move(broker), model::revision_id(0));
+    }
     return replicate_and_wait(
       _controller_stm,
       _as,
@@ -1695,6 +1693,10 @@ ss::future<std::error_code> members_manager::add_node(model::broker broker) {
 }
 
 ss::future<std::error_code> members_manager::update_node(model::broker broker) {
+    if (!command_based_membership_active()) {
+        return _raft0->update_group_member(std::move(broker));
+    }
+
     return replicate_and_wait(
       _controller_stm,
       _as,
@@ -1705,16 +1707,6 @@ ss::future<std::error_code> members_manager::update_node(model::broker broker) {
 ss::future<>
 members_manager::persist_members_in_kvstore(model::offset update_offset) {
     static const bytes cluster_members_key("cluster_members");
-    auto current_members_snapshot = read_members_from_kvstore();
-    if (current_members_snapshot.update_offset >= update_offset) {
-        vlog(
-          clusterlog.trace,
-          "skipping persisting members, update offset {}, current snapshot "
-          "offset: {}",
-          update_offset,
-          current_members_snapshot.update_offset);
-        return ss::now();
-    }
     std::vector<model::broker> brokers;
     brokers.reserve(_members_table.local().node_count());
     for (auto& [_, node_metadata] : _members_table.local().nodes()) {
