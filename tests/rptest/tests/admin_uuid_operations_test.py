@@ -29,6 +29,7 @@ from rptest.util import wait_until_result, wait_until
 class TestMode(IntEnum):
     CFG_OVERRIDE = 1
     NO_OVERRIDE = 2
+    CLI_OVERRIDE = 3
 
 
 class AdminUUIDOperationsTest(RedpandaTest):
@@ -124,6 +125,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
     def _restart_node(self,
                       node: ClusterNode,
                       overrides: dict | None = None,
+                      extra_cli: list[str] = [],
                       drop_disk: bool = False):
         self.redpanda.stop_node(node)
         if drop_disk:
@@ -136,6 +138,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
             auto_assign_node_id=True,
             omit_seeds_on_idx_one=False,
             override_cfg_params=overrides,
+            extra_cli=extra_cli,
         )
 
     def _decommission(self, node_id, node=None):
@@ -183,6 +186,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
     @cluster(num_nodes=3)
     @parametrize(mode=TestMode.CFG_OVERRIDE)
     @parametrize(mode=TestMode.NO_OVERRIDE)
+    @parametrize(mode=TestMode.CLI_OVERRIDE)
     def test_force_uuid_override(self, mode):
         to_stop = self.redpanda.nodes[0]
         initial_to_stop_id = self.redpanda.node_id(to_stop)
@@ -232,6 +236,18 @@ class AdminUUIDOperationsTest(RedpandaTest):
                          new_uuid=old_uuid,
                          new_id=initial_to_stop_id)
                 ], ),
+                drop_disk=False,
+            )
+        elif mode == TestMode.CLI_OVERRIDE:
+            self.logger.debug(
+                f"Override with known-good uuid/id via command line options: {THE_OVERRIDE}"
+            )
+            self._restart_node(
+                to_stop,
+                extra_cli=[
+                    "--node-id-overrides",
+                    f"{current_uuid}:{old_uuid}:{initial_to_stop_id}",
+                ],
                 drop_disk=False,
             )
         elif mode == TestMode.NO_OVERRIDE:
@@ -294,7 +310,9 @@ class AdminUUIDOperationsTest(RedpandaTest):
                    retry_on_exc=True)
 
     @cluster(num_nodes=3)
-    def test_force_uuid_override_multinode(self):
+    @parametrize(mode=TestMode.CFG_OVERRIDE)
+    @parametrize(mode=TestMode.CLI_OVERRIDE)
+    def test_force_uuid_override_multinode(self, mode):
         to_stop = self.redpanda.nodes[1:]
         initial_to_stop_ids = [self.redpanda.node_id(n) for n in to_stop]
 
@@ -332,16 +350,28 @@ class AdminUUIDOperationsTest(RedpandaTest):
         self.logger.debug(
             "Restart both nodes again, with overrides. Keep both disks")
 
-        self.redpanda.restart_nodes(
-            to_stop,
-            override_cfg_params=dict(node_id_overrides=[
-                dict(current_uuid=current_uuids[n],
-                     new_uuid=old_uuids[initial_to_stop_ids[n]],
-                     new_id=initial_to_stop_ids[n])
-                for n in range(0, len(to_stop))
-            ]),
-            auto_assign_node_id=True,
-        )
+        if mode == TestMode.CFG_OVERRIDE:
+            self.redpanda.restart_nodes(
+                to_stop,
+                override_cfg_params=dict(node_id_overrides=[
+                    dict(current_uuid=current_uuids[n],
+                         new_uuid=old_uuids[initial_to_stop_ids[n]],
+                         new_id=initial_to_stop_ids[n])
+                    for n in range(0, len(to_stop))
+                ]),
+                auto_assign_node_id=True,
+            )
+        elif mode == TestMode.CLI_OVERRIDE:
+            self.redpanda.restart_nodes(
+                to_stop,
+                extra_cli=[
+                    "--node-id-overrides",
+                ] + [
+                    f"{current_uuids[n]}:{old_uuids[initial_to_stop_ids[n]]}:{initial_to_stop_ids[n]}"
+                    for n in range(0, len(to_stop))
+                ],
+                auto_assign_node_id=True,
+            )
 
         self.logger.debug("Wait for the cluster to become healthy...")
 
