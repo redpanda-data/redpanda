@@ -104,102 +104,66 @@ void write_migration_as_json(
 json::validator make_migration_validator() {
     const std::string schema = R"(
 {
+    "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
-    "properties": {
-        "migration_type": {
-            "description": "Migration type",
-            "type": "string",
-            "enum": [
-                "inbound",
-                "outbound"
-            ]
-        }
-    },
-    "required": [
-        "migration_type"
-    ],
-    "allOf": [
+    "anyOf": [
         {
-            "if": {
-                "properties": {
-                    "migration_type": {
-                        "const": "inbound"
+            "properties": {
+                "migration_type": {
+                    "description": "Migration type",
+                    "type": "string",
+                    "enum": ["inbound"]
+                },
+                "topics": {
+                    "description": "Topics to migrate",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inbound_topic"
+                    }
+                },
+                "consumer_groups": {
+                    "description": "Groups to migrate",
+                    "type": "array",
+                    "items": {
+                      "type":"string"
                     }
                 }
             },
-            "then": {
-                "properties": {
-                    "migration_type": {
-                        "description": "Migration type",
-                        "type": "string",
-                        "enum": [
-                            "inbound",
-                            "outbound"
-                        ]
-                    },
-                    "topics": {
-                        "description": "Topics to migrate",
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/definitions/inbound_topic"
-                        }
-                    },
-                    "consumer_groups": {
-                        "description": "Groups to migrate",
-                        "type": "array",
-                        "items": {
-                          "type":"string"
-                        }
-                    }
-                },
-                "required": [
-                    "migration_type",
-                    "topics",
-                    "consumer_groups"
-                ],
-                "additionalProperties": false
-            }
+            "required": [
+                "migration_type",
+                "topics",
+                "consumer_groups"
+            ],
+            "additionalProperties": false
         },
         {
-            "if": {
-                "properties": {
-                    "migration_type": {
-                        "const": "outbound"
+            "properties": {
+                "migration_type": {
+                    "description": "Migration type",
+                    "type": "string",
+                    "enum": ["outbound"]
+                },
+                "topics": {
+                    "description": "Topics to migrate",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/namespaced_topic"
+                    }
+                },
+                "consumer_groups": {
+                    "description": "Groups to migrate",
+                    "type": "array",
+                    "items": {
+                      "type":"string"
                     }
                 }
             },
-            "then": {
-                "properties": {
-                    "migration_type": {
-                        "description": "Migration type",
-                        "type": "string",
-                        "enum": [
-                            "inbound",
-                            "outbound"
-                        ]
-                    },
-                    "topics": {
-                        "description": "Topics to migrate",
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/definitions/namespaced_topic"
-                        }
-                    },
-                    "consumer_groups": {
-                        "description": "Groups to migrate",
-                        "type": "array",
-                       	"items": {
-                          "type":"string"
-                        }
-                    }
-                },
-                "additionalProperties": false,
-                "required": [
-                    "topics",
-                    "consumer_groups",
-                    "migration_type"
-                ]
-            }
+            "additionalProperties": false,
+            "required": [
+                "topics",
+                "consumer_groups",
+                "migration_type"
+            ]
         }
     ],
     "definitions": {
