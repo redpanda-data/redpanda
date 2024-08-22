@@ -35,9 +35,8 @@ public:
 
 private:
     iceberg::struct_type _schema;
-    data_writer_result _result{};
+    data_writer_result _result;
 };
-
 class test_data_writer_factory : public data_writer_factory {
 public:
     std::unique_ptr<data_writer>
