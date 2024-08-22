@@ -202,32 +202,63 @@ class FlinkService(Service):
         ]
 
         self.logger.info(f"Using specs: {num_cpus} cpus, {node_ram_mb}MB RAM")
-
-        # Handle service configuration for single node
-        # 10% ram - reserved
-        # 10% ram - job manager
-        # 80% ram / vcpus - per taskmanager
-        # Example, xlarge, 32 ram, 4 vcpus
-        # 32 * 0.1 = 3 (rounded down)
-        # 32 * 0.8 / vcpus = 6 (rounded down)
-        node_ram_gb = node_ram_mb // 1024
-        jm_ram = int(node_ram_gb * 0.1)
-        tm_ram = int(node_ram_gb * 0.8 // num_cpus)
         self.service_config = flink_config
-        # default, 1600m
-        self.service_config['jobmanager.memory.process.size'] = f"{jm_ram}g"
-        # default, 1728m
-        self.service_config['taskmanager.memory.process.size'] = f"{tm_ram}g"
-        # 1280m, total - 1g for JVM metadata, etc
-        self.service_config['taskmanager.memory.flink.size'] = f"{tm_ram-1}g"
+
+        tm_count = num_cpus
+        if node_ram_mb < 10240:
+            # Handle service configuration for single node in case docker
+            # I.e. low memory scenarios
+            # 0% ram - no ram reserve needed for docker virtual memory
+            # 792mb ram - job manager
+            # total - 792mb = 1384mb ram - for taskmanager
+            # Tight memory scenario
+            jm_ram = 792
+            tm_ram = int(node_ram_mb - jm_ram // num_cpus)
+            if tm_ram < 1024:
+                tm_count = 1
+                new_tm_ram = node_ram_mb - jm_ram
+                self.logger.info(f"Using {tm_count} taskmanager with "
+                                 f"{new_tm_ram}MB due to low calculated "
+                                 f"memory size ({tm_ram}MB)")
+                tm_ram = new_tm_ram
+            # use min memory, default case is 792mb out of 2048mb
+            self.service_config[
+                'jobmanager.memory.process.size'] = f"{jm_ram}m"
+            # default, ~1280mb out of 2048 if 1 cpu
+            self.service_config[
+                'taskmanager.memory.process.size'] = f"{tm_ram}m"
+            # 1000mb, total - 792mb for JVM metadata, etc
+            self.service_config[
+                'taskmanager.memory.flink.size'] = f"{tm_ram - 512}m"
+        else:
+            # Handle service configuration for single node in case of EC2
+            # 10% ram - reserved
+            # 10% ram - job manager
+            # 80% ram / vcpus - per taskmanager
+            # Example, xlarge, 32 ram, 4 vcpus
+            # 32 * 0.1 = 3 (rounded down)
+            # 32 * 0.8 / vcpus = 6 (rounded down)
+            node_ram_gb = node_ram_mb // 1024
+            jm_ram = int(node_ram_gb * 0.1)
+            tm_ram = int(node_ram_gb * 0.8 // num_cpus)
+            # default, 1600m
+            self.service_config[
+                'jobmanager.memory.process.size'] = f"{jm_ram}g"
+            # default, 1728m
+            self.service_config[
+                'taskmanager.memory.process.size'] = f"{tm_ram}g"
+            # 1280m, total - 1g for JVM metadata, etc
+            self.service_config[
+                'taskmanager.memory.flink.size'] = f"{tm_ram-1}g"
+
         # Task slots is half cpu cores, 1
         self.service_config['taskmanager.numberOfTaskSlots'] = 1
         # Set default per-task parallelism to number of vcpus
-        self.service_config['pipeline.max-parallelism'] = num_cpus
+        self.service_config['pipeline.max-parallelism'] = tm_count
         # Set maximum default paralel tasks to 2xvcpus
         self.service_config[
             'execution.batch.adaptive.auto-parallelism.max-parallelism'] = \
-            num_cpus * 2
+            tm_count * 2
         # Adaptive scheduler that handles parallelism auto configuration
         self.service_config['jobmanager.scheduler'] = 'Adaptive'
         # Task restarts with delay of 30 s if rate per interval exceeded 5
@@ -250,7 +281,7 @@ class FlinkService(Service):
         # It is better to run multiple task managers. So, there should be
         # one task manager running for each vcpus. This will provide
         # efficient use of resources
-        self.num_taskmanagers = num_cpus
+        self.num_taskmanagers = tm_count
         # internal metric storage
         self._metric = {}
         self.job_idle_threshold_ms = 30000
