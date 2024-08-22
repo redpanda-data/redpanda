@@ -29,7 +29,10 @@ formatter = logging.Formatter(fmt_string)
 for h in logging.getLogger().handlers:
     h.setFormatter(formatter)
 
-COMMON_TEST_ARGS = ["--blocked-reactor-notify-ms 2000000"]
+COMMON_TEST_ARGS = [
+    "--blocked-reactor-notify-ms 2000000",
+    "--abort-on-seastar-bad-alloc",
+]
 
 
 def find_vbuild_path_from_binary(binary_path, num_subdirs=1):
