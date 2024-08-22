@@ -1543,9 +1543,6 @@ bool is_superset(
     for (auto not_yet_handled_keyword : {
            // draft 6 unhandled keywords:
            "$ref",
-           // draft 2019-09 unhandled keywords:
-           "dependentRequired",
-           "dependentSchemas",
            // draft 2020-12 unhandled keywords:
            "prefixItems",
          }) {
