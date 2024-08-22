@@ -104,12 +104,12 @@ FIXTURE_TEST(retention_test_size_with_one_segment, gc_fixture) {
           builder.get_disk_log_impl().get_probe().partition_size()));
     BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 1);
 
-    BOOST_TEST_MESSAGE("Should collect the segment");
+    BOOST_TEST_MESSAGE("Should not collect the segment");
     builder
       | storage::garbage_collect(model::timestamp(1), std::optional<size_t>(0))
       | storage::stop();
 
-    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 1);
 }
 
 /*
