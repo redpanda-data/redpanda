@@ -793,7 +793,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-    fragmented_vector<cluster::ntp_leader_revision> l_revs;
+    chunked_vector<cluster::ntp_leader_revision> l_revs;
     l_revs.emplace_back(
       model::random_ntp(),
       tests::random_named_int<model::term_id>(),
