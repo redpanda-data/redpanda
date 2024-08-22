@@ -10,7 +10,8 @@
 
 #include "container/fragmented_vector.h"
 #include "hashing/secure.h"
-#include "storage/compacted_index.h"
+#include "model/fundamental.h"
+#include "storage/compaction.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/core/future.hh>

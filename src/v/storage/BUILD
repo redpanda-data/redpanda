@@ -132,6 +132,37 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "compaction",
+    hdrs = [
+        "compaction.h",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/bytes",
+    ],
+)
+
+redpanda_cc_library(
+    name = "key_offset_map",
+    srcs = [
+        "key_offset_map.cc",
+    ],
+    hdrs = [
+        "key_offset_map.h",
+    ],
+    include_prefix = "storage",
+    deps = [
+        ":compaction",
+        "//src/v/container:fragmented_vector",
+        "//src/v/hashing:secure",
+        "//src/v/model",
+        "//src/v/utils:tracking_allocator",
+        "@abseil-cpp//absl/container:btree",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -143,7 +174,6 @@ redpanda_cc_library(
         "disk_log_impl.cc",
         "file_sanitizer_types.cc",
         "fs_utils.cc",
-        "key_offset_map.cc",
         "kvstore.cc",
         "lock_manager.cc",
         "log_manager.cc",
@@ -191,7 +221,6 @@ redpanda_cc_library(
         "file_sanitizer_types.h",
         "fs_utils.h",
         "fwd.h",
-        "key_offset_map.h",
         "kvstore.h",
         "lock_manager.h",
         "log.h",
@@ -236,7 +265,9 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":batch_cache",
+        ":compaction",
         ":index_state",
+        ":key_offset_map",
         ":parser_utils",
         ":record_batch_builder",
         "//src/v/base",

@@ -224,14 +224,14 @@ TEST(HashKeyOffsetMapTest, Initialize) {
     const auto orig_size = map.size();
 
     // we'll try to overwrite with 99
-    for (int i = 0; i < orig_size; ++i) {
+    for (size_t i = 0; i < orig_size; ++i) {
         const auto key = fmt::format("key-{}", i);
         storage::compaction_key ck(bytes(key.begin(), key.end()));
         ASSERT_TRUE(map.put(ck, model::offset(99)).get());
     }
 
     // but it won't work cause they are still in the map
-    for (int i = 0; i < orig_size; ++i) {
+    for (size_t i = 0; i < orig_size; ++i) {
         const auto key = fmt::format("key-{}", i);
         storage::compaction_key ck(bytes(key.begin(), key.end()));
         const auto val = map.get(ck).get();
@@ -245,7 +245,7 @@ TEST(HashKeyOffsetMapTest, Initialize) {
     EXPECT_EQ(map.size(), 0);
 
     // now try to write the 99 offsets
-    for (int i = 0; i < orig_size; ++i) {
+    for (size_t i = 0; i < orig_size; ++i) {
         const auto key = fmt::format("key-{}", i);
         storage::compaction_key ck(bytes(key.begin(), key.end()));
         EXPECT_TRUE(map.put(ck, model::offset(99)).get());
@@ -253,7 +253,7 @@ TEST(HashKeyOffsetMapTest, Initialize) {
     EXPECT_EQ(map.size(), orig_size);
 
     // and we'll see the offset = 99 entries
-    for (int i = 0; i < orig_size; ++i) {
+    for (size_t i = 0; i < orig_size; ++i) {
         const auto key = fmt::format("key-{}", i);
         storage::compaction_key ck(bytes(key.begin(), key.end()));
         const auto val = map.get(ck).get();
