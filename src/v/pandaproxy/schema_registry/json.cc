@@ -671,18 +671,22 @@ bool is_additional_superset(
     //  schema  |   true   |  recurse with {}
     //  schema  |   false  |  recurse with {"not":{}}
 
-    auto field_name = [&] {
+    // in draft 2020, if checking "type": "array", "items" is used to represent
+    // additional tuples items instead of an "additionalItems"
+    auto get_field_name = [&](json_schema_dialect d) {
         switch (field_type) {
         case additional_field_for::object:
             return "additionalProperties";
         case additional_field_for::array:
-            return "additionalItems";
+            return d == json_schema_dialect::draft202012 ? "items"
+                                                         : "additionalItems";
         }
-    }();
+    };
+
     // helper to parse additional__
-    auto get_additional_props =
-      [&](json::Value const& v) -> std::variant<bool, json::Value const*> {
-        auto it = v.FindMember(field_name);
+    auto get_additional_props = [&](json_schema_dialect d, json::Value const& v)
+      -> std::variant<bool, json::Value const*> {
+        auto it = v.FindMember(get_field_name(d));
         if (it == v.MemberEnd()) {
             return true;
         }
@@ -725,8 +729,8 @@ bool is_additional_superset(
             // check subschemas for compatibility
             return is_superset(ctx, *older, *newer);
         }),
-      get_additional_props(older),
-      get_additional_props(newer));
+      get_additional_props(ctx.older.dialect(), older),
+      get_additional_props(ctx.newer.dialect(), newer));
 }
 
 bool is_string_superset(json::Value const& older, json::Value const& newer) {
