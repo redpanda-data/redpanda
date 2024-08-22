@@ -878,7 +878,7 @@ bool is_array_superset(
     // for array, "items" is a schema that validates all the elements.
     // for tuple in Draft4, "items" is an array of schemas to validate the
     // tuple, and "additionalItems" a schema to validate extra elements.
-    // TODO in later drafts, tuple validation has "prefixItems" as array of
+    // from draft 2020, tuple validation has "prefixItems" as array of
     // schemas, "items" is for validation of extra elements, "additionalItems"
     // is not used.
     // This superset function has a common section for tuples and array, and
@@ -920,19 +920,27 @@ bool is_array_superset(
         return false;
     }
 
+    // in draft 2020, "prefixItems" is used to represent tuples instead of an
+    // overloaded "items"
+    constexpr static auto get_tuple_items_kw = [](json_schema_dialect d) {
+        if (d == json_schema_dialect::draft202012) {
+            return "prefixItems";
+        }
+        return "items";
+    };
+
     // check if the input is an array schema or a tuple schema
-    auto is_array = [](json::Value const& v) -> bool {
-        // TODO "prefixItems" is not in Draft4, it's from later drafts. if it's
-        // present, it's a tuple schema
-        auto items_it = v.FindMember("items");
+    auto is_array = [](json_schema_dialect d, json::Value const& v) -> bool {
+        auto tuple_items_it = v.FindMember(get_tuple_items_kw(d));
         // default for items is `{}` so it's not a tuple schema
         // v is a tuple schema if "items" is an array of schemas
-        auto is_tuple = items_it != v.MemberEnd() && items_it->value.IsArray();
+        auto is_tuple = tuple_items_it != v.MemberEnd()
+                        && tuple_items_it->value.IsArray();
         return !is_tuple;
     };
 
-    auto older_is_array = is_array(older);
-    auto newer_is_array = is_array(newer);
+    auto older_is_array = is_array(ctx.older.dialect(), older);
+    auto newer_is_array = is_array(ctx.newer.dialect(), newer);
 
     if (older_is_array != newer_is_array) {
         // one is a tuple and the other is not. not compatible
@@ -942,8 +950,7 @@ bool is_array_superset(
 
     if (older_is_array) {
         // both are array, only "items" is relevant and it's a schema
-        // TODO after draft 4 "items" can be also a boolean so this needs to
-        // account for that note that "additionalItems" can be defined, but it's
+        // note that "additionalItems" can be defined, but it's
         // not used by validation because every element is validated against
         // "items"
         return is_superset(
@@ -962,8 +969,10 @@ bool is_array_superset(
         return false;
     }
 
-    auto older_tuple_schema = older["items"].GetArray();
-    auto newer_tuple_schema = newer["items"].GetArray();
+    auto older_tuple_schema
+      = older[get_tuple_items_kw(ctx.older.dialect())].GetArray();
+    auto newer_tuple_schema
+      = newer[get_tuple_items_kw(ctx.newer.dialect())].GetArray();
     // find the first pair of schemas that do not match
     auto [older_it, newer_it] = std::ranges::mismatch(
       older_tuple_schema,
@@ -988,7 +997,11 @@ bool is_array_superset(
     // excess elements with older["additionalItems"]
 
     auto older_additional_schema = get_object_or_empty(
-      ctx.older, older, "additionalItems");
+      ctx.older,
+      older,
+      ctx.older.dialect() == json_schema_dialect::draft202012
+        ? "items"
+        : "additionalItems");
 
     // check that all excess schemas are compatible with
     // older["additionalItems"]
@@ -1547,8 +1560,6 @@ bool is_superset(
     for (auto not_yet_handled_keyword : {
            // draft 6 unhandled keywords:
            "$ref",
-           // draft 2020-12 unhandled keywords:
-           "prefixItems",
          }) {
         if (
           newer.HasMember(not_yet_handled_keyword)
