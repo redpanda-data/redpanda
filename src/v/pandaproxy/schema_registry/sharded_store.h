@@ -178,12 +178,24 @@ public:
     ss::future<bool>
     is_compatible(schema_version version, canonical_schema new_schema);
 
+    ///\brief Check if the provided schema is compatible with the subject and
+    /// version, according the the current compatibility, with the result
+    /// optionally accompanied by a vector of detailed error messages.
+    ///
+    /// If the compatibility level is transitive, then all versions are checked,
+    /// otherwise checks are against the version provided and newer.
+    ss::future<compatibility_result> is_compatible(
+      schema_version version, canonical_schema new_schema, verbose is_verbose);
+
     ss::future<bool> has_version(const subject&, schema_id, include_deleted);
 
     //// \brief Throw if the store is not mutable
     void check_mode_mutability(force f) const;
 
 private:
+    ss::future<compatibility_result> do_is_compatible(
+      schema_version version, canonical_schema new_schema, verbose is_verbose);
+
     ss::future<bool>
     upsert_schema(schema_id id, canonical_schema_definition def);
     ss::future<> delete_schema(schema_id id);
