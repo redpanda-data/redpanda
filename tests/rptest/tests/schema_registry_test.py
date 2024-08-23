@@ -379,10 +379,11 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def __init__(self,
                  context,
                  schema_registry_config=SchemaRegistryConfig(),
-                 **kwargs):
+                 num_brokers=3,
+                 **kwargs) -> None:
         super(SchemaRegistryEndpoints, self).__init__(
             context,
-            num_brokers=3,
+            num_brokers=num_brokers,
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
@@ -4005,3 +4006,222 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
 
         result = self.sr_client.get_schema(3)
         assert result == well_known_schema, f"Result: {result}"
+
+
+# dataset for SchemaRegistryCompatibilityModes: schemas is a list of 3 schemas compatible for `mode`, `antimode` is a suitable mode that will make the compat check for schemas fail
+CompatDataset = NamedTuple("CompatDataset", [("schemas", list[str]),
+                                             ("antimode", str | None)])
+
+
+class SchemaRegistryCompatibilityModes(SchemaRegistryEndpoints):
+    def __init__(self, test_context, **kwargs):
+        super().__init__(test_context, num_brokers=1, **kwargs)
+        self._sr_client = SchemaRegistryClient({'url': self._base_uri()})
+        self._topic = "test-topic"
+
+    def _register_schema(self,
+                         schema: str,
+                         type: str,
+                         mode: None | str,
+                         expect_invalid_schema=False):
+        """
+        utility to register a `schema` of `type` with compatibility set to `mode`.
+        if `expect_invalid_schema` is True, then a SchemaRegistryError is expected, for schema incompatibility
+        """
+        if mode is not None:
+            self._sr_client.set_compatibility(subject_name=self._topic,
+                                              level=mode)
+        try:
+            self._sr_client.register_schema(subject_name=self._topic,
+                                            schema=Schema(schema_str=schema,
+                                                          schema_type=type))
+            assert not expect_invalid_schema, "expected invalid schema"
+        except SchemaRegistryError as e:
+            assert expect_invalid_schema, f"{schema=} was expected valid, got {e=}"
+            assert e.error_code == 409, f"expected SchemaRegistryError 409/'Schema being registered is incompatible with an earlier schema [...]',  got {e=}"
+
+    @staticmethod
+    def _get_dataset_for_schema_type_mode(schema_type: str,
+                                          mode: str) -> CompatDataset:
+        if schema_type == "JSON":
+            if mode == "NONE":
+                # some non-compatible schemas
+                return CompatDataset(schemas=[
+                    json.dumps({"type": "integer"}),
+                    json.dumps({"type": "boolean"}),
+                    json.dumps({"type": "array"}),
+                ],
+                                     antimode="BACKWARD")
+
+            if mode == "FULL" or "FULL_TRANSITIVE":
+                # full or full transitive requires that schemas are backward and forward compatible, basically can change only the non-functional parts
+                return CompatDataset(schemas=[
+                    json.dumps({
+                        "$id": "id-1",
+                        "type": "integer",
+                    }),
+                    json.dumps({
+                        "$id": "id-2",
+                        "type": "integer",
+                    }),
+                    json.dumps({
+                        "$id": "id-3",
+                        "type": "integer",
+                    }),
+                ],
+                                     antimode=None)
+
+            # a series backward-transitive-compatibles schemas, each one more relaxed than the one before
+            json_schema_set = [
+                json.dumps({
+                    "type": "integer",
+                    "minimum": 10,
+                }),
+                json.dumps({
+                    "type": "integer",
+                    "minimum": 5,
+                }),
+                json.dumps({
+                    "type": "number",
+                    "minimum": 5,
+                })
+            ]
+            if mode == "BACKWARD" or mode == "BACKWARD_TRANSITIVE":
+                return CompatDataset(schemas=json_schema_set,
+                                     antimode="FORWARD")
+            elif mode == "FORWARD" or mode == "FORWARD_TRANSITIVE":
+                # forward can use the reversed json_schema_set
+                return CompatDataset(schemas=list(reversed(json_schema_set)),
+                                     antimode="BACKWARD")
+
+        elif schema_type == "AVRO":
+            if mode == "NONE":
+                return CompatDataset(schemas=[
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "int"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "null"
+                        }]
+                    }),
+                ],
+                                     antimode="BACKWARD")
+
+            if mode == "FULL" or mode == "FULL_TRANSITIVE":
+                return CompatDataset(schemas=[
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "doc": "doc1",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "doc": "doc2",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                    json.dumps({
+                        "type": "record",
+                        "name": "myrecord",
+                        "doc": "doc3",
+                        "fields": [{
+                            "name": "f1",
+                            "type": "string"
+                        }]
+                    }),
+                ],
+                                     antimode=None)
+
+            # a series backward-transitive-compatibles schemas
+            avro_schema_set = [
+                json.dumps({
+                    "type": "record",
+                    "name": "myrecord",
+                    "fields": [{
+                        "name": "f1",
+                        "type": "string"
+                    }]
+                }),
+                json.dumps({
+                    "type":
+                    "record",
+                    "name":
+                    "myrecord",
+                    "fields": [{
+                        "name": "f1",
+                        "type": ["null", "string"]
+                    }]
+                }),
+                json.dumps({
+                    "type":
+                    "record",
+                    "name":
+                    "myrecord",
+                    "fields": [{
+                        "name": "f1",
+                        "type": ["int", "null", "string"]
+                    }]
+                }),
+            ]
+            if mode == "BACKWARD" or mode == "BACKWARD_TRANSITIVE":
+                return CompatDataset(schemas=avro_schema_set,
+                                     antimode='FORWARD')
+            elif mode == "FORWARD" or mode == "FORWARD_TRANSITIVE":
+                # forward can use the reversed json_schema_set
+                return CompatDataset(schemas=list(reversed(avro_schema_set)),
+                                     antimode='BACKWARD')
+        assert False, f"not implemented for {schema_type=} and {mode=}"
+
+    @cluster(num_nodes=1)
+    @matrix(schema_type=["JSON", "AVRO"],
+            mode=[
+                "BACKWARD", "BACKWARD_TRANSITIVE", "FORWARD",
+                "FORWARD_TRANSITIVE", "NONE", "FULL", "FULL_TRANSITIVE"
+            ])
+    def test_compatible_schemas(self, schema_type: str, mode: str):
+        """
+        register a base schema, and then for each remaining schema, checks that it's rejects with compatibility=`antimode` and accepted with compatibility=`mode`
+        e.g: mode=BACKWARD, antimode=FORWARD, schemas is a list where schemas[N+1] is backward compatible with schemas[N]
+        """
+        schemas, antimode = SchemaRegistryCompatibilityModes._get_dataset_for_schema_type_mode(
+            schema_type, mode)
+
+        self.logger.debug(f"register base {schemas[0]=}")
+        self._register_schema(schema=schemas[0], type=schema_type, mode=None)
+
+        for s in schemas[1:]:
+            if antimode is not None:
+                self.logger.debug(
+                    f"try register schema={s} with {antimode} compatibility and expect an exception"
+                )
+                self._register_schema(schema=s,
+                                      type=schema_type,
+                                      mode=antimode,
+                                      expect_invalid_schema=True)
+
+            self.logger.debug(f"register schema={s} with {mode} compatibility")
+            self._register_schema(schema=s, type=schema_type, mode=mode)
