@@ -144,6 +144,40 @@ avro::Schema base_field_as_avro(const nested_field& field) {
     return std::visit(avro_field_visitor{field.id}, field.type);
 }
 
+struct type_and_required {
+    field_type type;
+    field_required required;
+};
+
+// Returns the parsed Iceberg type of the given node, handling unions as
+// optional values.
+type_and_required maybe_optional_from_avro(const avro::NodePtr& n) {
+    const auto& type = n->type();
+    if (type != avro::AVRO_UNION) {
+        return {type_from_avro(n), field_required::yes};
+    }
+    if (n->leaves() != 2) {
+        throw std::invalid_argument(
+          fmt::format("Expected 2 leaves in union: {}", n->leaves()));
+    }
+    size_t num_nulls = 0;
+    size_t child_idx = 0;
+    for (size_t i = 0; i < 2; i++) {
+        if (n->leafAt(i)->type() == avro::AVRO_NULL) {
+            ++num_nulls;
+        } else {
+            child_idx = i;
+        }
+    }
+    if (num_nulls != 1) {
+        throw std::invalid_argument(
+          fmt::format("Expected 1 null in union: {}", num_nulls));
+    }
+    const auto& child = n->leafAt(child_idx);
+    field_type parsed_type = type_from_avro(child);
+    return {type_from_avro(child), field_required::no};
+}
+
 } // namespace
 
 avro::Schema field_to_avro(const nested_field& field) {
@@ -172,6 +206,120 @@ struct_type_to_avro(const struct_type& type, const ss::sstring& name) {
               child_schema.root(), avro::GenericUnion(child_schema.root())));
     }
     return avro_schema;
+}
+
+nested_field_ptr
+child_field_from_avro(const avro::NodePtr& parent, size_t child_idx) {
+    const auto& type = parent->type();
+    if (type != avro::AVRO_RECORD) {
+        throw std::invalid_argument("Expected Avro record type");
+    }
+    if (child_idx >= parent->leaves()) {
+        throw std::invalid_argument(
+          fmt::format("Cannot get {}, {} leaves", child_idx, parent->leaves()));
+    }
+    const auto& child = parent->leafAt(child_idx);
+    const auto& name = parent->nameAt(child_idx);
+    const auto& attrs = parent->customAttributesAt(child_idx);
+    auto field_id_str = attrs.getAttribute("field-id");
+    if (!field_id_str.has_value()) {
+        throw std::invalid_argument("Missing field-id attribute");
+    }
+    auto field_id = std::stoi(field_id_str.value());
+    type_and_required parsed_child = maybe_optional_from_avro(child);
+    return nested_field::create(
+      field_id, name, parsed_child.required, std::move(parsed_child.type));
+}
+
+field_type type_from_avro(const avro::NodePtr& n) {
+    const auto& type = n->type();
+    switch (type) {
+    case avro::AVRO_STRING:
+        return string_type{};
+    case avro::AVRO_BYTES:
+        return binary_type{};
+    case avro::AVRO_INT: {
+        if (n->logicalType().type() == avro::LogicalType::DATE) {
+            return date_type{};
+        }
+        return int_type{};
+    }
+    case avro::AVRO_LONG:
+        if (n->logicalType().type() == avro::LogicalType::TIME_MICROS) {
+            return time_type{};
+        }
+        if (n->logicalType().type() == avro::LogicalType::TIMESTAMP_MICROS) {
+            // XXX: handle 'adjust-to-utc'.
+            return timestamp_type{};
+        }
+        return long_type{};
+    case avro::AVRO_FLOAT:
+        return float_type{};
+    case avro::AVRO_DOUBLE:
+        return double_type{};
+    case avro::AVRO_BOOL:
+        return boolean_type{};
+    case avro::AVRO_NULL:
+        // NOTE: should be handled by maybe_optional_from_avro().
+        throw std::invalid_argument(
+          "Avro null type expected to be a part of an Avro union");
+    case avro::AVRO_RECORD: {
+        struct_type ret;
+        const auto num_leaves = n->leaves();
+        for (size_t i = 0; i < num_leaves; i++) {
+            ret.fields.emplace_back(child_field_from_avro(n, i));
+        }
+        return ret;
+    }
+    case avro::AVRO_ENUM:
+        throw std::invalid_argument("Avro enum type not supported");
+    case avro::AVRO_ARRAY: {
+        if (n->leaves() != 1) {
+            throw std::invalid_argument(fmt::format(
+              "Avro list type must have 1 child type", n->leaves()));
+        }
+        if (n->logicalType().type() == avro::LogicalType::MAP) {
+            const auto& kv_node = n->leafAt(0);
+            if (kv_node->type() != avro::AVRO_RECORD) {
+                throw std::invalid_argument(
+                  "Expected map type to be array of records");
+            }
+            if (kv_node->leaves() != 2) {
+                throw std::invalid_argument(fmt::format(
+                  "Expected 2 leaves in key-value record: {}", n->leaves()));
+            }
+            auto key_field = child_field_from_avro(kv_node, 0);
+            auto val_field = child_field_from_avro(kv_node, 1);
+            return map_type::create(
+              key_field->id,
+              std::move(key_field->type),
+              val_field->id,
+              val_field->required,
+              std::move(val_field->type));
+        }
+        const auto& node = dynamic_cast<const avro::NodeArray&>(*n);
+        if (!node.elementId_.has_value()) {
+            throw std::invalid_argument("Avro array type missing element id");
+        }
+        type_and_required parsed_child = maybe_optional_from_avro(n->leafAt(0));
+        return list_type::create(
+          static_cast<int32_t>(*node.elementId_),
+          parsed_child.required,
+          std::move(parsed_child.type));
+    }
+    case avro::AVRO_MAP:
+        // NOTE: should be handled as an array.
+        throw std::invalid_argument("Avro map type not supported");
+    case avro::AVRO_UNION:
+        // NOTE: should be handled by maybe_optional_from_avro().
+        throw std::invalid_argument("Avro union type not supported");
+    case avro::AVRO_FIXED:
+        return fixed_type{n->fixedSize()};
+    case avro::AVRO_SYMBOLIC:
+        throw std::invalid_argument("Avro symbolic type not supported");
+    case avro::AVRO_UNKNOWN:
+        throw std::invalid_argument("Avro unknown type");
+    }
 }
 
 } // namespace iceberg

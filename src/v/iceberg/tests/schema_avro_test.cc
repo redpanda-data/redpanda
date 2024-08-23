@@ -81,6 +81,12 @@ TEST(SchemaAvroSerialization, TestSimpleFields) {
 }
 )";
     ASSERT_STREQ(expected_str, avro_schema.toJson().c_str());
+
+    // Now parse it back from Avro and ensure the types are equal.
+    auto parsed_type = type_from_avro(avro_schema.root());
+    ASSERT_TRUE(std::holds_alternative<struct_type>(parsed_type));
+    const auto& parsed_struct = std::get<struct_type>(parsed_type);
+    ASSERT_EQ(s.schema_struct, parsed_struct);
 }
 
 TEST(SchemaAvroSerialization, TestListFields) {
@@ -157,6 +163,12 @@ TEST(SchemaAvroSerialization, TestListFields) {
 }
 )";
     ASSERT_STREQ(expected_str, avro_schema.toJson().c_str());
+
+    // Now parse it back from Avro and ensure the types are equal.
+    auto parsed_type = type_from_avro(avro_schema.root());
+    ASSERT_TRUE(std::holds_alternative<struct_type>(parsed_type));
+    const auto& parsed_struct = std::get<struct_type>(parsed_type);
+    ASSERT_EQ(s.schema_struct, parsed_struct);
 }
 
 TEST(SchemaAvroSerialization, TestStruct) {
@@ -217,6 +229,12 @@ TEST(SchemaAvroSerialization, TestStruct) {
 }
 )";
     ASSERT_STREQ(expected_str, avro_schema.toJson().c_str());
+
+    // Now parse it back from Avro and ensure the types are equal.
+    auto parsed_type = type_from_avro(avro_schema.root());
+    ASSERT_TRUE(std::holds_alternative<struct_type>(parsed_type));
+    const auto& parsed_struct = std::get<struct_type>(parsed_type);
+    ASSERT_EQ(s.schema_struct, parsed_struct);
 }
 
 TEST(SchemaAvroSerialization, TestMap) {
@@ -311,6 +329,12 @@ TEST(SchemaAvroSerialization, TestMap) {
 }
 )";
     ASSERT_STREQ(expected_str, avro_schema.toJson().c_str());
+
+    // Now parse it back from Avro and ensure the types are equal.
+    auto parsed_type = type_from_avro(avro_schema.root());
+    ASSERT_TRUE(std::holds_alternative<struct_type>(parsed_type));
+    const auto& parsed_struct = std::get<struct_type>(parsed_type);
+    ASSERT_EQ(s.schema_struct, parsed_struct);
 }
 
 TEST(SchemaAvroSerialization, TestNestedSchema) {
@@ -370,4 +394,10 @@ TEST(SchemaAvroSerialization, TestNestedSchema) {
     ASSERT_NO_FATAL_FAILURE(
       check_optional(leaf6->leafAt(1)->leafAt(0), avro::Type::AVRO_STRING));
     ASSERT_EQ(leaf6->leafAt(1)->leafAt(1)->type(), avro::Type::AVRO_INT);
+
+    // Now parse it back from Avro and ensure the types are equal.
+    auto parsed_type = type_from_avro(avro_node.root());
+    ASSERT_TRUE(std::holds_alternative<struct_type>(parsed_type));
+    const auto& parsed_struct = std::get<struct_type>(parsed_type);
+    ASSERT_EQ(s.schema_struct, parsed_struct);
 }

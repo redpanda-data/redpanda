@@ -22,4 +22,11 @@ namespace iceberg {
 avro::Schema field_to_avro(const nested_field& field);
 avro::Schema struct_type_to_avro(const struct_type&, const ss::sstring& name);
 
+// Translates the given Avro schema into its corresponding field/type, throwing
+// an exception if the schema is not a valid Iceberg schema (e.g. missing
+// attributes).
+nested_field_ptr
+child_field_from_avro(const avro::NodePtr& parent, size_t child_idx);
+field_type type_from_avro(const avro::NodePtr&);
+
 } // namespace iceberg
