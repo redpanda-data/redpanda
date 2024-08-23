@@ -2,8 +2,8 @@
 # This build is a translation from the cmake build. The second link below is a
 # cleaned up version of the first.
 #
-# https://github.com/redpanda-data/avro/blob/release-1.11.1-redpanda/lang/c%2B%2B/CMakeLists.txt
-# https://github.com/redpanda-data/avro/blob/release-1.11.1-redpanda/redpanda_build/CMakeLists.txt
+# https://github.com/redpanda-data/avro/blob/release-1.12.0-redpanda/lang/c%2B%2B/CMakeLists.txt
+# https://github.com/redpanda-data/avro/blob/release-1.12.0-redpanda/redpanda_build/CMakeLists.txt
 #
 # All of the header gymnastics below is to work around the problem of the C++
 # implementation files including the headers without the "avro/" prefix. It
@@ -141,6 +141,7 @@ cc_library(
         "@boost//:format",
         "@boost//:iostreams",
         "@boost//:lexical_cast",
+        "@fmt",
         "@snappy",
     ],
 )
@@ -157,5 +158,6 @@ cc_binary(
     deps = [
         ":avro",
         "@boost//:program_options",
+        "@fmt",
     ],
 )
