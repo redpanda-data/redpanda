@@ -31,7 +31,9 @@ class FlinkBasicTests(RedpandaTest):
         # Prepare FlinkService
         self.topic_name = "flink_workload_topic"
         self.topics = [TopicSpec(name=self.topic_name)]
-        self.flink = FlinkService(test_context)
+        self.flink = FlinkService(test_context,
+                                  self.redpanda.get_node_cpu_count(),
+                                  self.redpanda.get_node_memory_mb())
         # Prepare client
         self.kafkacli = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -39,10 +41,6 @@ class FlinkBasicTests(RedpandaTest):
         self.workload_manager = WorkloadManager(self.logger)
 
         return
-
-    def tearDown(self):
-        self.kafkacli.delete_topic(self.topic)
-        return super().tearDown()
 
     def _run_workloads(self, workloads, config, wait_timeout=900):
         """
