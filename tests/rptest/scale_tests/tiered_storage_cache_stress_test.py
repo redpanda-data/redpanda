@@ -64,6 +64,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
             'disable_public_metrics': False,
+            'cloud_storage_cache_check_interval': 500,
         }
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
 
