@@ -36,6 +36,8 @@ class post_subject_versions_request_handler
         schema,
         id,
         version,
+        metadata,
+        ruleset,
         schema_type,
         references,
         reference,
@@ -74,6 +76,8 @@ public:
                                      .match("schema", state::schema)
                                      .match("id", state::id)
                                      .match("version", state::version)
+                                     .match("metadata", state::metadata)
+                                     .match("ruleSet", state::ruleset)
                                      .match("schemaType", state::schema_type)
                                      .match("references", state::references)
                                      .default_match(std::nullopt)};
@@ -97,12 +101,36 @@ public:
         case state::schema:
         case state::id:
         case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
             return false;
+        }
+        return false;
+    }
+
+    bool Null() {
+        switch (_state) {
+        case state::metadata:
+        case state::ruleset:
+            _state = state::record;
+            return true;
+        case state::empty:
+        case state::record:
+        case state::schema:
+        case state::id:
+        case state::version:
+        case state::schema_type:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+            break;
         }
         return false;
     }
@@ -127,6 +155,8 @@ public:
         case state::empty:
         case state::record:
         case state::schema:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference:
@@ -170,6 +200,8 @@ public:
         case state::record:
         case state::id:
         case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::references:
         case state::reference:
         case state::reference_version:
@@ -193,6 +225,8 @@ public:
         case state::schema:
         case state::id:
         case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::reference:
         case state::reference_name:
@@ -222,6 +256,8 @@ public:
         case state::schema:
         case state::id:
         case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference_name:
