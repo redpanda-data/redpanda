@@ -9,21 +9,11 @@ This tool is **not** for everyday use on live clusters.
 
 ## Quickstart
 
-    # Get a rust toolchain
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+You can build the tool as a docker image and run it as a container.
 
-    # Compile and run
-    cargo run --release -- --backend=<aws|gcp|azure> scan --source=<bucket name>
+    docker build -t rp-storage-tool ./tools/rp_storage_tool
 
-## Installation
-
-To run the tool outside a built tree, you may simply copy the statically linked binary.
-
-    # Compile
-    cargo build --release
-
-    # Grab the binary
-    cp target/release/rp-storage-tool /usr/local/bin
+    docker run -it --network=host rp-storage-tool
 
 ## Usage
 
@@ -81,7 +71,42 @@ For example, to use the tool with a bucket called `data` in a minio cluster at `
     AWS_ALLOW_HTTP=1 AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin AWS_REGION=us-east-1 \
       AWS_ENDPOINT=http://aplite:9000 cargo run --release -- --backend aws scan --source data
 
-### Building a portable binary
+### Taking the binary out of the docker image
+
+If you'd like to run the binary locally or copy it to a remote machine, you can take the built binary out of the docker image.
+
+    # Run the docker image and keep it alive while you're copying the binary out
+    docker run -it --entrypoint bash rp-storage-tool
+
+    # In another terminal, copy the binary out of the running container
+    docker cp rp-storage-tool:/usr/local/bin/rp-storage-tool ./
+
+
+## Building locally
+
+If you don't want to use docker to build and run the tool (see above for how to do that), you can build the tool directly
+using the rust toolchain and install it on your machine.
+
+#### Using cargo
+
+    # Get a rust toolchain
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+    # Compile and run
+    cargo run --release -- --backend=<aws|gcp|azure> scan --source=<bucket name>
+
+#### Installation
+
+To run the tool outside a built tree, you may simply copy the statically linked binary.
+
+    # Compile
+    cargo build --release
+
+    # Grab the binary
+    cp target/release/rp-storage-tool /usr/local/bin
+
+
+#### Building a portable binary
 
 If you are building on a workstation and copying the binary to a remote machine, and your
 workstation doesn't happen to run the same linux distro as the remote machine, it is
