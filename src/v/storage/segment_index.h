@@ -197,6 +197,24 @@ public:
           _state.broker_timestamp, _state.max_timestamp, _retention_timestamp);
     }
 
+    // Check if compacted timestamp has a value.
+    bool has_clean_compact_timestamp() const {
+        return _state.clean_compact_timestamp.has_value();
+    }
+
+    // Set the compacted timestamp, if it doesn't already have a value.
+    void maybe_set_clean_compact_timestamp(model::timestamp t) {
+        if (!_state.clean_compact_timestamp.has_value()) {
+            _state.clean_compact_timestamp = t;
+            _needs_persistence = true;
+        }
+    }
+
+    // Get the compacted timestamp.
+    std::optional<model::timestamp> clean_compact_timestamp() const {
+        return _state.clean_compact_timestamp;
+    }
+
     ss::future<bool> materialize_index();
     ss::future<> flush();
     ss::future<> truncate(model::offset, model::timestamp);
