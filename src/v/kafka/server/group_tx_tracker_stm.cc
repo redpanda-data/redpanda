@@ -45,7 +45,7 @@ void group_tx_tracker_stm::maybe_end_tx(
     }
 }
 
-ss::future<> group_tx_tracker_stm::apply(const model::record_batch& b) {
+ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
     auto holder = _gate.hold();
     co_await parse(b.copy());
 }
@@ -69,13 +69,15 @@ ss::future<> group_tx_tracker_stm::apply_local_snapshot(
     _all_txs = std::move(snap.transactions);
 }
 
-ss::future<raft::stm_snapshot> group_tx_tracker_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot>
+group_tx_tracker_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     auto holder = _gate.hold();
     // Copy over the snapshot state for a consistent view.
     auto offset = last_applied_offset();
     snapshot snap;
     snap.transactions = _all_txs;
     iobuf snap_buf;
+    apply_units.return_all();
     co_await serde::write_async(snap_buf, snap);
     // snapshot versioning handled via serde.
     co_return raft::stm_snapshot::create(0, offset, std::move(snap_buf));

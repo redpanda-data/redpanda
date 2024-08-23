@@ -152,7 +152,7 @@ id_allocator_stm::do_allocate_id(model::timeout_clock::duration timeout) {
     co_return stm_allocation_result{id};
 }
 
-ss::future<> id_allocator_stm::apply(const model::record_batch& b) {
+ss::future<> id_allocator_stm::do_apply(const model::record_batch& b) {
     if (b.header().type != model::record_batch_type::id_allocator) {
         return ss::now();
     }
@@ -229,7 +229,8 @@ id_allocator_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) {
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<raft::stm_snapshot> id_allocator_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot>
+id_allocator_stm::take_local_snapshot(ssx::semaphore_units) {
     return ss::make_exception_future<raft::stm_snapshot>(
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }

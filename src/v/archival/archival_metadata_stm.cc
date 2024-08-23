@@ -1012,7 +1012,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     co_return errc::success;
 }
 
-ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
+ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
     if (
       b.header().type != model::record_batch_type::archival_metadata
       && b.header().type != model::record_batch_type::prefix_truncate) {
@@ -1285,7 +1285,8 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
     co_return;
 }
 
-ss::future<raft::stm_snapshot> archival_metadata_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot>
+archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     auto segments = segments_from_manifest(*_manifest);
     auto replaced = replaced_segments_from_manifest(*_manifest);
     auto spillover = spillover_from_manifest(*_manifest);
@@ -1307,17 +1308,19 @@ ss::future<raft::stm_snapshot> archival_metadata_stm::take_local_snapshot() {
       .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
       .detected_anomalies = _manifest->detected_anomalies(),
       .highest_producer_id = _manifest->highest_producer_id()});
+    auto snapshot_offset = last_applied_offset();
+    apply_units.return_all();
 
     vlog(
       _logger.debug,
       "creating snapshot at offset: {}, remote start_offset: {}, "
       "last_offset: {}",
-      last_applied_offset(),
+      snapshot_offset,
       get_start_offset(),
       get_last_offset());
 
     co_return raft::stm_snapshot::create(
-      0, last_applied_offset(), std::move(snap_data));
+      0, snapshot_offset, std::move(snap_data));
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {

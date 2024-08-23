@@ -378,7 +378,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
     co_return result.value().last_offset;
 }
 
-ss::future<> log_eviction_stm::apply(const model::record_batch& batch) {
+ss::future<> log_eviction_stm::do_apply(const model::record_batch& batch) {
     if (likely(
           batch.header().type != model::record_batch_type::prefix_truncate)) {
         co_return;
@@ -450,10 +450,12 @@ ss::future<> log_eviction_stm::apply_local_snapshot(
     return ss::now();
 }
 
-ss::future<raft::stm_snapshot> log_eviction_stm::take_local_snapshot() {
+ss::future<raft::stm_snapshot>
+log_eviction_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     vlog(_log.trace, "Taking snapshot at offset: {}", last_applied_offset());
     iobuf snap_data = serde::to_iobuf(
       snapshot_data{.effective_start_offset = _delete_records_eviction_offset});
+    apply_units.return_all();
     co_return raft::stm_snapshot::create(
       0, last_applied_offset(), std::move(snap_data));
 }

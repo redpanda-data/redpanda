@@ -216,10 +216,16 @@ public:
     ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
 
+    ss::future<> apply(const model::record_batch& b) final {
+        return _apply_lock.with([this, &b] { return do_apply(b); });
+    }
+
 protected:
     ss::future<> start() override;
 
     ss::future<> stop() override;
+
+    virtual ss::future<> do_apply(const model::record_batch& b) = 0;
 
     /**
      * Called when local snapshot is applied to the state machine
@@ -227,9 +233,11 @@ protected:
     virtual ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) = 0;
 
     /**
-     * Called when a local snapshot is taken
+     * Called when a local snapshot is taken. Apply fiber is stalled until
+     * apply_units are alive for a consistent snapshot of the state machine.
      */
-    virtual ss::future<stm_snapshot> take_local_snapshot() = 0;
+    virtual ss::future<stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) = 0;
 
     /*
      * `sync` checks that current node is a leader and if `sync` wasn't
@@ -253,7 +261,7 @@ private:
     ss::future<> wait_for_snapshot_hydrated();
 
     ss::future<> do_write_local_snapshot();
-
+    mutex _apply_lock{"persisted_stm::apply_lock"};
     mutex _op_lock{"persisted_stm::op_lock"};
     std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
     ss::condition_variable _on_snapshot_hydrated;

@@ -302,12 +302,13 @@ private:
     ss::future<std::error_code>
     do_replicate_commands(model::record_batch, ss::abort_source&);
 
-    ss::future<> apply(const model::record_batch& batch) override;
+    ss::future<> do_apply(const model::record_batch& batch) override;
     ss::future<> apply_raft_snapshot(const iobuf&) override;
 
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override;
 
     struct segment;
     struct start_offset;

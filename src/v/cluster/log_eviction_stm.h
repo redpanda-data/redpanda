@@ -112,7 +112,8 @@ protected:
     ss::future<>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
 
-    ss::future<raft::stm_snapshot> take_local_snapshot() override;
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override;
 
     virtual ss::future<model::offset> storage_eviction_event();
 
@@ -123,7 +124,7 @@ private:
     ss::future<> monitor_log_eviction();
     ss::future<> do_write_raft_snapshot(model::offset);
     ss::future<> handle_log_eviction_events();
-    ss::future<> apply(const model::record_batch&) final;
+    ss::future<> do_apply(const model::record_batch&) final;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
     ss::future<offset_result> replicate_command(
