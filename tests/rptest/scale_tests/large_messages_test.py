@@ -10,7 +10,6 @@
 import concurrent.futures
 import numpy
 import time
-import threading
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
@@ -36,6 +35,7 @@ class LargeMessagesTest(RedpandaTest):
     # Progress wait timeout
     PROGRESS_TIMEOUT = 60 * 3
 
+    # Leader balancer timeout time
     LEADER_BALANCER_PERIOD_MS = 30000
 
     def __init__(self, *args, **kwargs):
@@ -107,7 +107,6 @@ class LargeMessagesTest(RedpandaTest):
 
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
-        self.thread_local = threading.Lock()
 
     def setUp(self):
         # defer redpanda startup to the test, it might want to tweak
@@ -199,31 +198,30 @@ class LargeMessagesTest(RedpandaTest):
             return unavailable_count == 0 and \
                 (under_replicated_count == 0 or not include_underreplicated)
 
-        wait_until(
-            lambda: is_healthy(),
-            timeout_sec=self.HEALTHY_WAIT_SECONDS,
-            backoff_sec=30,
-            err_msg=f"couldn't reach under-replicated count target: {0}")
+        wait_until(lambda: is_healthy(),
+                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
+                   backoff_sec=30,
+                   err_msg="couldn't reach under-replicated count target of 0")
 
     def _run_producers_with_constant_rate(self, topic_count, topic_prefixes,
                                           message_rps):
         swarm_node_producers = []
         for topic in topic_prefixes:
-            swarm_producer = ProducerSwarm(
-                self.test_context,
-                self.redpanda,
-                topic,
-                topic_count,
-                self.message_count,
-                unique_topics=True,
-                messages_per_second_per_producer=message_rps,
-                min_record_size=self.message_size,
-                max_record_size=self.message_size)
-            swarm_node_producers.append(swarm_producer)
+            swarm_node_producers.append(
+                ProducerSwarm(self.test_context,
+                              self.redpanda,
+                              topic,
+                              topic_count,
+                              self.message_count,
+                              unique_topics=True,
+                              messages_per_second_per_producer=message_rps,
+                              min_record_size=self.message_size,
+                              max_record_size=self.message_size))
 
         # Run topic swarm for each topic group
         for swarm_client in swarm_node_producers:
-            self.logger.info(f"Starting swarm client on node {swarm_client}")
+            self.logger.info("Starting swarm client (producers) on node "
+                             f"{swarm_client}")
             swarm_client.start()
 
         return swarm_node_producers
@@ -233,25 +231,26 @@ class LargeMessagesTest(RedpandaTest):
         swarm_node_consumers = []
         node_message_count = int(0.95 * (self.message_count * topic_count))
         for topic in topic_prefixes:
-            swarm_producer = ConsumerSwarm(self.test_context,
-                                           self.redpanda,
-                                           topic,
-                                           group,
-                                           topic_count,
-                                           node_message_count,
-                                           unique_topics=True,
-                                           unique_groups=True)
-            swarm_node_consumers.append(swarm_producer)
+            swarm_node_consumers.append(
+                ConsumerSwarm(self.test_context,
+                              self.redpanda,
+                              topic,
+                              group,
+                              topic_count,
+                              node_message_count,
+                              unique_topics=True,
+                              unique_groups=True))
 
         # Run topic swarm for each topic group
         for swarm_client in swarm_node_consumers:
-            self.logger.info(f"Starting swarm client on node {swarm_client}")
+            self.logger.info("Starting swarm client (consumers) on node "
+                             f"{swarm_client}")
             swarm_client.start()
 
         return swarm_node_consumers
 
     def _wait_workload_progress(self, swarm_nodes):
-        def _check():
+        def _check_at_least_one():
             metrics = []
             for node in swarm_nodes:
                 metrics.append(node.get_metrics_summary(seconds=20).p50)
@@ -259,14 +258,13 @@ class LargeMessagesTest(RedpandaTest):
             _m = [str(m) for m in metrics]
             self.logger.debug(f"...last 20 sec rate is {total_rate} "
                               f"({', '.join(_m)})")
-            return total_rate >= target_rate
+            return total_rate >= 1
 
         # Value for progress checks is 20 sec
         # Since we expect slowdowns with big messages,
         # expect at least one message per 20 sec
-        target_rate = 1
         self.redpanda.wait_until(
-            _check,
+            _check_at_least_one,
             timeout_sec=self.PROGRESS_TIMEOUT,
             backoff_sec=5,
             err_msg="Producer Swarm nodes not making progress")
@@ -407,7 +405,7 @@ class LargeMessagesTest(RedpandaTest):
             bytes_per_sec_in = (read - last_read) / elapsed_sec
             mb_per_sec_in = bytes_per_sec_in / 1024 / 1024
             # Calculate egress BW
-            bytes_per_sec_out = (sent - last_sent) / 2
+            bytes_per_sec_out = (sent - last_sent) / elapsed_sec
             mb_per_sec_out = bytes_per_sec_out / 1024 / 1024
             self.logger.debug(
                 f"Bytes read: {read} ({mb_per_sec_in:.2f}MB/sec), "
@@ -427,6 +425,24 @@ class LargeMessagesTest(RedpandaTest):
             time.sleep(backoff_interval)
             seconds_spent += elapsed_sec
             interval_start_sec = interval_end_sec
+
+        # Why timeout here is doubled?
+        # First, 30 is a magic number in statistics. It's being said
+        # that if you measure something, your sample size should be
+        # >30 to be used. Or, in our case, if delay is more than 30%
+        # then it is a significant deviation from normal value.
+        # Example. Also, fun thing to watch is a Simpson's paradox
+        # explanation.
+        #
+        # Actual formula leading to this is this: 100 MB over 10MB/s
+        # line will be done in 10 sec. Same amount of data if we
+        # account for delays on processing, say throughput will drop
+        # to 7MB/s (30%), it will take ~14.5 sec. If we account for
+        # delays on the network and cut those 20% for it (Classic
+        # number for calculating network bandwidth to account for
+        # noisy neighbor's traffic) the resulting throughput will drop
+        # to 5MB/s (20% more), which is 20 sec. That's why normal
+        # timeout is doubled.
 
         # Run checks if swarm nodes finished
         self.logger.info("Make sure that swarm node producers are finished")
