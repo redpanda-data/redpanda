@@ -15,6 +15,8 @@
 #include "cluster/rm_stm_types.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
+#include "container/chunked_hash_map.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/wire.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
@@ -38,6 +40,7 @@
 #include <seastar/coroutine/as_future.hh>
 
 #include <filesystem>
+#include <iterator>
 #include <optional>
 #include <ranges>
 #include <utility>
@@ -1701,31 +1704,6 @@ uint8_t rm_stm::active_snapshot_version() {
     return tx_snapshot_v5::version;
 }
 
-ss::future<> rm_stm::offload_aborted_txns() {
-    // Note: this method requires a consistent view of aborted state
-    // make sure to call this under _state_lock.write_lock()
-    std::sort(
-      std::begin(_aborted_tx_state.aborted),
-      std::end(_aborted_tx_state.aborted),
-      [](tx_range a, tx_range b) { return a.first < b.first; });
-
-    abort_snapshot snapshot{
-      .first = model::offset::max(), .last = model::offset::min()};
-    for (auto const& entry : _aborted_tx_state.aborted) {
-        snapshot.first = std::min(snapshot.first, entry.first);
-        snapshot.last = std::max(snapshot.last, entry.last);
-        snapshot.aborted.push_back(entry);
-        if (snapshot.aborted.size() == _abort_index_segment_size) {
-            auto idx = abort_index{snapshot.first, snapshot.last};
-            _aborted_tx_state.abort_indexes.push_back(idx);
-            co_await save_abort_snapshot(std::move(snapshot));
-            snapshot = abort_snapshot{
-              .first = model::offset::max(), .last = model::offset::min()};
-        }
-    }
-    _aborted_tx_state.aborted = std::move(snapshot.aborted);
-}
-
 ss::future<raft::stm_snapshot>
 rm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     return do_take_local_snapshot(
@@ -1745,11 +1723,14 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
       "taking snapshot with last included offset of: {}",
       last_applied_offset());
 
-    // Get rid of any aborted transactions state, from the part of the log
-    // that was prefix truncated.
-    fragmented_vector<abort_index> abort_indexes;
+    // all the operations during snapshot creation are made against the two
+    // local variables, after all garbage collection is done the internal stm
+    // state is updated.
+    fragmented_vector<abort_index> final_abort_indexes;
     fragmented_vector<abort_index> expired_abort_indexes;
 
+    // first, check if there are any indicies and aborted ranges to drop.
+    // whatever is there to retain is moved to the `final_` local variables.
     for (const auto& idx : _aborted_tx_state.abort_indexes) {
         if (idx.last < start_offset) {
             // caching expired indexes instead of removing them as we go
@@ -1757,53 +1738,71 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
             // concurrent access to _log_state.abort_indexes
             expired_abort_indexes.push_back(idx);
         } else {
-            abort_indexes.push_back(idx);
+            final_abort_indexes.push_back(idx);
         }
     }
-    _aborted_tx_state.abort_indexes = std::move(abort_indexes);
 
-    vlog(
-      _ctx_log.debug,
-      "Removing abort indexes {} with offset < {}",
-      expired_abort_indexes.size(),
-      start_offset);
-
-    co_await ss::max_concurrent_for_each(
-      expired_abort_indexes.begin(),
-      expired_abort_indexes.end(),
-      64,
-      [this](const abort_index& idx) {
-          auto f_name = abort_idx_name(idx.first, idx.last);
-          vlog(
-            _ctx_log.debug,
-            "removing aborted transactions {} snapshot file",
-            f_name);
-          _abort_snapshot_sizes.erase(std::make_pair(idx.first, idx.last));
-          return _abort_snapshot_mgr.remove_snapshot(f_name);
-      });
-
-    fragmented_vector<tx_range> aborted;
+    fragmented_vector<tx::tx_range> preserved_aborted_ranges;
+    // remove obsolete aborted ranges, this doesn't influence correctness as
+    // logs start offset already advanced past those ranges.
     std::copy_if(
       _aborted_tx_state.aborted.begin(),
       _aborted_tx_state.aborted.end(),
-      std::back_inserter(aborted),
-      [start_offset](tx_range range) { return range.last >= start_offset; });
-    _aborted_tx_state.aborted = std::move(aborted);
+      std::back_inserter(preserved_aborted_ranges),
+      [start_offset](const tx_range& range) {
+          return range.last >= start_offset;
+      });
+
+    _aborted_tx_state.aborted = std::move(preserved_aborted_ranges);
+    // check if any of the aborted ranges have to be offloaded to the snapshots.
+    chunked_vector<abort_snapshot> aborted_snapshots;
+    // store ranges that are going to be included in aborted transaction
+    // snapshots.
+    chunked_hash_set<tx_range> ranges_offloaded_to_abort_snapshots;
+    const auto snapshot_offset = last_applied_offset();
+    tx::tx_snapshot_v6 stm_snapshot;
 
     if (_aborted_tx_state.aborted.size() > _abort_index_segment_size) {
-        // There is nested locking here. Snapshot is done under
-        // persisted_stm::_op_lock and we grab a write lock to stop all the
-        // writers to aborted state to have a consistent snpahot to offload.
-        // Ensure this order is not violated in other places to avoid a
-        // deadlock.
-        auto units = co_await _state_lock.hold_write_lock();
-        co_await offload_aborted_txns();
+        std::sort(
+          _aborted_tx_state.aborted.begin(),
+          _aborted_tx_state.aborted.end(),
+          [](const tx_range& a, const tx_range& b) {
+              return a.first < b.first;
+          });
+
+        model::offset first = model::offset::max();
+        model::offset last = model::offset::min();
+        fragmented_vector<tx::tx_range> aborted_ranges;
+
+        for (auto const& entry : _aborted_tx_state.aborted) {
+            first = std::min(first, entry.first);
+            last = std::max(last, entry.last);
+            aborted_ranges.push_back(entry);
+
+            if (aborted_ranges.size() >= _abort_index_segment_size) {
+                // max snapshot size reached, take snapshot and update indexes.
+                for (auto& r : aborted_ranges) {
+                    ranges_offloaded_to_abort_snapshots.emplace(r);
+                }
+                aborted_snapshots.push_back(abort_snapshot{
+                  .first = first,
+                  .last = last,
+                  .aborted = std::move(aborted_ranges)});
+                final_abort_indexes.emplace_back(first, last);
+                // reset the current state
+                first = model::offset::max();
+                last = model::offset::min();
+                aborted_ranges = {};
+            }
+        }
+        // everything that left ends up in snapshot
+        stm_snapshot.aborted = std::move(aborted_ranges);
+    } else {
+        stm_snapshot.aborted = _aborted_tx_state.aborted.copy();
     }
+
+    stm_snapshot.abort_indexes = final_abort_indexes.copy();
     kafka::offset start_kafka_offset = from_log_offset(start_offset);
-    tx::tx_snapshot_v6 stm_snapshot;
-    // aborted transactions state.
-    stm_snapshot.abort_indexes = _aborted_tx_state.abort_indexes.copy();
-    stm_snapshot.aborted = _aborted_tx_state.aborted.copy();
     stm_snapshot.highest_producer_id = _highest_producer_id;
     // producers state (includes idempotent and transactional producers)
     for (const auto& [_, state] : _producers) {
@@ -1812,15 +1811,59 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
             stm_snapshot.producers.push_back(std::move(snapshot));
         }
     }
-    auto snapshot_offset = last_applied_offset();
+
     apply_units.return_all();
 
+    co_await ss::max_concurrent_for_each(
+      std::move(aborted_snapshots), 64, [this](abort_snapshot& snapshot) {
+          return save_abort_snapshot(std::move(snapshot));
+      });
+
+    _aborted_tx_state.abort_indexes = std::move(final_abort_indexes);
+    fragmented_vector<tx::tx_range> cleaned_aborted_ranges;
+    cleaned_aborted_ranges.reserve(_aborted_tx_state.aborted.size());
+    // preserve those aborted ranges which were not included in the snapshot
+    std::copy_if(
+      _aborted_tx_state.aborted.begin(),
+      _aborted_tx_state.aborted.end(),
+      std::back_inserter(cleaned_aborted_ranges),
+      [&ranges_offloaded_to_abort_snapshots](const tx_range& range) {
+          // only preserve ranges that were not included in the snapshot
+          return !ranges_offloaded_to_abort_snapshots.contains(range);
+      });
+    vlog(
+      _ctx_log.debug,
+      "Preserved {} aborted transaction ranges",
+      cleaned_aborted_ranges.size());
+    _aborted_tx_state.aborted = std::move(cleaned_aborted_ranges);
+
+    if (!expired_abort_indexes.empty()) {
+        vlog(
+          _ctx_log.debug,
+          "Removing {} expired aborted indexes with offsets smaller than {}",
+          expired_abort_indexes.size(),
+          start_offset);
+    }
+    co_await ss::max_concurrent_for_each(
+      expired_abort_indexes.begin(),
+      expired_abort_indexes.end(),
+      64,
+      [this](const abort_index& idx) {
+          auto f_name = abort_idx_name(idx.first, idx.last);
+          vlog(
+            _ctx_log.debug,
+            "removing aborted transactions snapshot file: {}",
+            f_name);
+          return _abort_snapshot_mgr.remove_snapshot(f_name).then(
+            [this, key = std::make_pair(idx.first, idx.last)] {
+                _abort_snapshot_sizes.erase(key);
+            });
+      });
     vlog(
       _ctx_log.trace,
       "Serializing snapshot {} at offset: {}",
       stm_snapshot,
       snapshot_offset);
-
     iobuf snapshot_buf;
     if (version == tx_snapshot_v6::version) {
         co_await serde::write_async(snapshot_buf, std::move(stm_snapshot));
