@@ -63,6 +63,8 @@ public:
  */
 using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
 
+using audit_authz_check = ss::bool_class<struct audit_authz_check_tag>;
+
 struct request_header;
 class request_context;
 
