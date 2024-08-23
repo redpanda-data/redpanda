@@ -74,10 +74,11 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<7>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<8>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
     static constexpr auto num_compactible_records_version = 7;
+    static constexpr auto clean_compact_timestamp_version = 8;
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
@@ -130,6 +131,12 @@ struct index_state
     // Returns std::nullopt if this index was written in a version that didn't
     // support this field, and we can't conclude anything.
     std::optional<size_t> num_compactible_records_appended{0};
+
+    // If set, the timestamp at which every record up to and including
+    // those in this segment were first compacted via sliding window.
+    // If not yet set, sliding window compaction has not yet been applied to
+    // every previous record in the log.
+    std::optional<model::timestamp> clean_compact_timestamp{std::nullopt};
 
     size_t size() const;
 

@@ -198,6 +198,7 @@ ss::future<index_state> deduplicate_segment(
     auto new_idx = co_await std::move(rdr).consume(
       std::move(copy_reducer), model::no_timeout);
     new_idx.broker_timestamp = seg->index().broker_timestamp();
+    new_idx.clean_compact_timestamp = seg->index().clean_compact_timestamp();
     co_return new_idx;
 }
 
