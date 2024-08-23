@@ -258,6 +258,10 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: Build integration tests
         working-directory: src/transform-sdk/js
         run: |
@@ -267,6 +271,8 @@ jobs:
           cmake --build --preset release-static -- redpanda_js_transform
           cat identity.js | python3 generate_js_provider.py > identity_source.wat
           cat identity_logging.js | python3 generate_js_provider.py > logging_source.wat
+          (cd schema_registry_example && npm install && npm run build)
+          cat schema_registry_example/dist/schema_registry_example.js | python3 generate_js_provider.py > sr_source.wat
           curl -SLO https://github.com/WebAssembly/binaryen/releases/download/version_${{ env.BINARYEN_VERSION }}/binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
           tar xf binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
           rm binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
@@ -280,6 +286,11 @@ jobs:
             ./logging_source.wat redpanda_js_provider \
             -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
             -o logging.wasm
+          ./binaryen-version_117/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./sr_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o sr.wasm
       - name: Download integration test suite
         uses: actions/download-artifact@v4
         with:
@@ -291,7 +302,7 @@ jobs:
           IDENTITY: identity.wasm
           LOGGING: logging.wasm
           TEE: "@UNIMPLEMENTED@"
-          SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
+          SCHEMA_REGISTRY: sr.wasm
         run: |
           chmod +x wasm-integration-test
           ./wasm-integration-test -test.v
