@@ -4396,7 +4396,20 @@ class RedpandaService(RedpandaServiceBase):
         output = node.account.ssh_output(shlex.join(cmd),
                                          combine_stderr=False,
                                          timeout_sec=10)
-        namespaces = json.loads(output)
+        json_output = json.loads(output)
+        if "parse_failed" in json_output:
+            self.logger.error(f"segment parsing failed: {json_output}")
+            segment_src = json_output["segment"]
+            segment_destination = os.path.join(
+                TestContext.results_dir(self._context,
+                                        self._context.test_index),
+                "parse_failures")
+            os.makedirs(segment_destination)
+            self.logger.info(
+                f"copying segment from {segment_src} to {segment_destination}")
+            node.account.copy_from(segment_src, segment_destination)
+            raise AssertionError
+        namespaces = json_output
         for ns, topics in namespaces.items():
             ns_path = os.path.join(store.data_dir, ns)
             ns = store.add_namespace(ns, ns_path)
