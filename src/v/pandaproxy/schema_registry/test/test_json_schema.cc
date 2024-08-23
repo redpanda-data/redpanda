@@ -847,6 +847,55 @@ static constexpr auto compatibility_test_cases = std::to_array<
   })",
     .reader_is_compatible_with_writer = true,
   },
+  // array checks: prefixItems/items are compatible across drafts
+  {
+    .reader_schema = R"({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "prefixItems": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "items": false
+        })",
+
+    .writer_schema = R"({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "type": "array",
+            "items": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "additionalItems": false
+        })",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "type": "array",
+            "items": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "additionalItems": false
+        })",
+    .writer_schema = R"({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "array",
+            "prefixItems": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "items": false
+        })",
+
+    .reader_is_compatible_with_writer = true,
+  },
   // combinators: "not"
   {
     .reader_schema
@@ -1015,6 +1064,52 @@ static constexpr auto compatibility_test_cases = std::to_array<
   {
     .reader_schema = R"({"$schema": "http://json-schema.org/draft-04/schema"})",
     .writer_schema = "true",
+    .reader_is_compatible_with_writer = true,
+  },
+  // array checks: prefixItems/items are compatible across drafts, unspecified
+  // schema
+  {
+    .reader_schema = R"({
+            "type": "array",
+            "prefixItems": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "items": false
+        })",
+
+    .writer_schema = R"({
+            "type": "array",
+            "items": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "additionalItems": false
+        })",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"({
+            "type": "array",
+            "items": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "additionalItems": false
+        })",
+    .writer_schema = R"({
+            "type": "array",
+            "prefixItems": [
+                {
+                    "type": "integer"
+                }
+            ],
+            "items": false
+        })",
+
     .reader_is_compatible_with_writer = true,
   },
 });
