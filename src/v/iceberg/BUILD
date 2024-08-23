@@ -124,18 +124,49 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "partition",
-    srcs = [
-        "partition.cc",
-    ],
     hdrs = [
         "partition.h",
     ],
     include_prefix = "iceberg",
     deps = [
         ":datatypes",
+        ":transform",
         "//src/v/container:fragmented_vector",
         "//src/v/utils:named_type",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_key",
+    srcs = [
+        "partition_key.cc",
+    ],
+    hdrs = [
+        "partition_key.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition",
+        ":struct_accessor",
+        ":transform_utils",
+        ":values",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_key_type",
+    srcs = [
+        "partition_key_type.cc",
+    ],
+    hdrs = [
+        "partition_key_type.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":partition",
+        ":schema",
     ],
 )
 
@@ -156,6 +187,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "schema",
+    srcs = [
+        "schema.cc",
+    ],
     hdrs = [
         "schema.h",
     ],
@@ -164,6 +198,22 @@ redpanda_cc_library(
         ":datatypes",
         "//src/v/container:chunked_hash_map",
         "//src/v/utils:named_type",
+    ],
+)
+
+redpanda_cc_library(
+    name = "struct_accessor",
+    srcs = [
+        "struct_accessor.cc",
+    ],
+    hdrs = [
+        "struct_accessor.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":values",
+        "//src/v/container:chunked_hash_map",
     ],
 )
 
@@ -182,6 +232,47 @@ redpanda_cc_library(
         ":json_utils",
         ":schema",
         "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
+    name = "time_transform_visitor",
+    srcs = [
+        "time_transform_visitor.cc",
+    ],
+    hdrs = [
+        "time_transform_visitor.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":values",
+    ],
+)
+
+redpanda_cc_library(
+    name = "transform",
+    srcs = [
+        "transform.cc",
+    ],
+    hdrs = [
+        "transform.h",
+    ],
+    include_prefix = "iceberg",
+)
+
+redpanda_cc_library(
+    name = "transform_utils",
+    srcs = [
+        "transform_utils.cc",
+    ],
+    hdrs = [
+        "transform_utils.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":time_transform_visitor",
+        ":transform",
+        ":values",
     ],
 )
 

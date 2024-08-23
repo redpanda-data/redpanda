@@ -10,34 +10,12 @@
 
 #include "container/fragmented_vector.h"
 #include "iceberg/datatypes.h"
+#include "iceberg/transform.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
 namespace iceberg {
-
-struct identity_transform {};
-struct bucket_transform {
-    uint32_t n;
-};
-struct truncate_transform {
-    uint32_t length;
-};
-struct year_transform {};
-struct month_transform {};
-struct day_transform {};
-struct hour_transform {};
-struct void_transform {};
-
-using transform = std::variant<
-  identity_transform,
-  bucket_transform,
-  truncate_transform,
-  year_transform,
-  month_transform,
-  hour_transform,
-  void_transform>;
-bool operator==(const transform& lhs, const transform& rhs);
 
 struct partition_field {
     using id_t = named_type<int32_t, struct field_id_tag>;

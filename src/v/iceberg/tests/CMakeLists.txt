@@ -11,10 +11,16 @@ rp_test(
     datatypes_json_test.cc
     datatypes_test.cc
     manifest_serialization_test.cc
+    partition_key_test.cc
+    partition_key_type_test.cc
     partition_test.cc
     schema_json_test.cc
+    schema_test.cc
+    struct_accessor_test.cc
     test_schemas.cc
+    transform_utils_test.cc
     values_test.cc
+    value_generator.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams

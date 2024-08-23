@@ -14,6 +14,21 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "value_generator",
+    srcs = [
+        "value_generator.cc",
+    ],
+    hdrs = [
+        "value_generator.h",
+    ],
+    include_prefix = "iceberg/tests",
+    deps = [
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "datatypes_test",
     timeout = "short",
@@ -83,6 +98,42 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "partition_key_test",
+    timeout = "short",
+    srcs = [
+        "partition_key_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        ":value_generator",
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:partition_key",
+        "//src/v/iceberg:struct_accessor",
+        "//src/v/iceberg:transform",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partition_key_type_test",
+    timeout = "short",
+    srcs = [
+        "partition_key_type_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:partition_key_type",
+        "//src/v/iceberg:schema",
+        "//src/v/iceberg:transform",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "schema_json_test",
     timeout = "short",
     srcs = [
@@ -93,6 +144,51 @@ redpanda_cc_gtest(
         "//src/v/iceberg:schema",
         "//src/v/iceberg:schema_json",
         "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "schema_test",
+    timeout = "short",
+    srcs = [
+        "schema_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "struct_accessor_test",
+    timeout = "short",
+    srcs = [
+        "struct_accessor_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        ":value_generator",
+        "//src/v/iceberg:struct_accessor",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "transform_utils_test",
+    timeout = "short",
+    srcs = [
+        "transform_utils_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:transform",
+        "//src/v/iceberg:transform_utils",
+        "//src/v/iceberg:values",
+        "//src/v/model",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],
