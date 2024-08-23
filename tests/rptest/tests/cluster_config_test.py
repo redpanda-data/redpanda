@@ -2102,6 +2102,22 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
 
             self.redpanda.start_node(node)
 
+        def all_versions_are_the_same():
+            admin = Admin(self.redpanda)
+            node_features = [
+                admin.get_features(n) for n in self.redpanda.nodes
+            ]
+
+            self.logger.info(
+                f"Current cluster versions: {[f['cluster_version']  for f in node_features]}"
+            )
+            return all(f['cluster_version'] == f['node_latest_version']
+                       for f in node_features)
+
+        wait_until(
+            all_versions_are_the_same, 30, 1,
+            "failed waiting for all brokers to report the same version")
+
     @cluster(num_nodes=3)
     @parametrize(wipe_cache=True)
     @parametrize(wipe_cache=False)
@@ -2110,7 +2126,9 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
         self.installer.install(self.redpanda.nodes, versions[0])
         self.redpanda.start()
         self._check_value_everywhere(self.key, self.legacy_default)
-
+        self.logger.info(
+            f"Executing upgrade tests starting with version: {versions[0]} and upgrading through: {versions[1:]}"
+        )
         for v in versions[1:]:
             self._upgrade(wipe_cache, v)
             self._check_value_everywhere(self.key, self.legacy_default)
