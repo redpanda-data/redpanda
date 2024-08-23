@@ -14,6 +14,7 @@ v_cc_library(
   SRCS
     api.cc
     configuration.cc
+    compatibility.cc
     handlers.cc
     error.cc
     service.cc
