@@ -1919,7 +1919,15 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         self.rebuild_pods_classes()
 
     def __is_operator_v2_cluster(self):
-        return len(self.kubectl.cmd(['get', 'redpanda', '-n=redpanda'])) > 0
+        # Even when nothing is found, kubectl always exits 0.  Ref: https://github.com/kubernetes/kubectl/issues/821
+        # But when nothing is found, kubectl by default prints "No resources found in redpanda namespace." to stderr.
+        # Which gets merged into the result lines!
+        #
+        # So, we add --ignore-not-found.  This flag skips the human-readable "No resource" message.
+        # By the way, exit code is still 0, even with this flag :)
+        return len(
+            self.kubectl.cmd(
+                ['get', 'redpanda', '-n=redpanda', '--ignore-not-found'])) > 0
 
     def rolling_restart_pods(self, pod_timeout: int = 180):
         """Restart all pods in the cluster one at a time.
