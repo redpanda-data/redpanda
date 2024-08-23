@@ -1271,8 +1271,13 @@ void admin_server::register_config_routes() {
           auto key_str = req.get_query_param("key");
           if (!key_str.empty()) {
               // Write a single key to json.
-              config::shard_local_cfg().to_json_single_key(
-                writer, config::redact_secrets::yes, key_str);
+              try {
+                  config::shard_local_cfg().to_json_single_key(
+                    writer, config::redact_secrets::yes, key_str);
+              } catch (std::out_of_range&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Unknown property {{{}}}", key_str));
+              }
           } else {
               // Write the entire config to json.
               config::shard_local_cfg().to_json(
