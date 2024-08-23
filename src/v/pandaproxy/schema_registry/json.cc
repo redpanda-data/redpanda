@@ -678,8 +678,16 @@ bool is_additional_superset(
         case additional_field_for::object:
             return "additionalProperties";
         case additional_field_for::array:
-            return d == json_schema_dialect::draft202012 ? "items"
-                                                         : "additionalItems";
+            using enum json_schema_dialect;
+            switch (d) {
+            case draft4:
+            case draft6:
+            case draft7:
+            case draft201909:
+                return "additionalItems";
+            case draft202012:
+                return "items";
+            }
         }
     };
 
@@ -923,10 +931,28 @@ bool is_array_superset(
     // in draft 2020, "prefixItems" is used to represent tuples instead of an
     // overloaded "items"
     constexpr static auto get_tuple_items_kw = [](json_schema_dialect d) {
-        if (d == json_schema_dialect::draft202012) {
+        using enum json_schema_dialect;
+        switch (d) {
+        case draft4:
+        case draft6:
+        case draft7:
+        case draft201909:
+            return "items";
+        case draft202012:
             return "prefixItems";
         }
-        return "items";
+    };
+    constexpr static auto get_additional_items_kw = [](json_schema_dialect d) {
+        using enum json_schema_dialect;
+        switch (d) {
+        case draft4:
+        case draft6:
+        case draft7:
+        case draft201909:
+            return "additionalItems";
+        case draft202012:
+            return "items";
+        }
     };
 
     // check if the input is an array schema or a tuple schema
@@ -997,11 +1023,7 @@ bool is_array_superset(
     // excess elements with older["additionalItems"]
 
     auto older_additional_schema = get_object_or_empty(
-      ctx.older,
-      older,
-      ctx.older.dialect() == json_schema_dialect::draft202012
-        ? "items"
-        : "additionalItems");
+      ctx.older, older, get_additional_items_kw(ctx.older.dialect()));
 
     // check that all excess schemas are compatible with
     // older["additionalItems"]
