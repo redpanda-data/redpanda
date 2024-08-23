@@ -64,7 +64,7 @@ rp_test(
   SOURCES ${gsrcs}
   LIBRARIES  v::raft v::storage_test_utils v::model_test_utils v::features v::gtest_main
   LABELS raft
-  ARGS "-- -c 8"
+  ARGS "-- -c 8 -m 2G"
 )
 
 rp_test(
