@@ -46,7 +46,8 @@ segment_index::segment_index(
   size_t step,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> sanitizer_config,
-  std::optional<model::timestamp> broker_timestamp)
+  std::optional<model::timestamp> broker_timestamp,
+  std::optional<model::timestamp> clean_compact_timestamp)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
@@ -55,6 +56,7 @@ segment_index::segment_index(
   , _sanitizer_config(std::move(sanitizer_config)) {
     _state.base_offset = base;
     _state.broker_timestamp = broker_timestamp;
+    _state.clean_compact_timestamp = clean_compact_timestamp;
 }
 
 segment_index::segment_index(
@@ -86,10 +88,15 @@ ss::future<ss::file> segment_index::open() {
 }
 
 void segment_index::reset() {
+    // Persist the base offset and clean compaction timestamp through a reset.
     auto base = _state.base_offset;
+    auto clean_compact_timestamp = _state.clean_compact_timestamp;
+
     _state = index_state::make_empty_index(
       storage::internal::should_apply_delta_time_offset(_feature_table));
+
     _state.base_offset = base;
+    _state.clean_compact_timestamp = clean_compact_timestamp;
 
     _acc = 0;
 }
