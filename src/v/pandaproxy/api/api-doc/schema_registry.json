@@ -1148,6 +1148,12 @@
             "schema": {
               "$ref": "#/definitions/schema_def"
             }
+          },
+          {
+            "name": "verbose",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "produces": [

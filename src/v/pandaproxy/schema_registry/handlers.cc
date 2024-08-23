@@ -637,6 +637,9 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto is_verbose{
+      parse::query_param<std::optional<verbose>>(*rq.req, "verbose")
+        .value_or(verbose::no)};
     auto unparsed = co_await ppj::rjson_parse(
       std::move(rq.req), post_subject_versions_request_handler<>{sub});
 
@@ -660,17 +663,43 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
         version = parse_numerical_schema_version(ver).value();
     }
 
-    auto schema = co_await rq.service().schema_store().make_canonical_schema(
-      std::move(unparsed.def));
+    canonical_schema schema;
+    try {
+        schema = co_await rq.service().schema_store().make_canonical_schema(
+          std::move(unparsed.def));
+    } catch (exception& e) {
+        constexpr auto reportable = [](std::error_code ec) {
+            constexpr std::array errors{
+              error_code::schema_invalid, error_code::schema_empty};
+            return absl::c_any_of(
+              errors, [ec](error_code e) { return ec == e; });
+        };
+        if (is_verbose && reportable(e.code())) {
+            rp.rep->write_body(
+              "json",
+              json::rjson_serialize(post_compatibility_res{
+                .is_compat = false,
+                .messages = {e.message()},
+                .is_verbose = is_verbose,
+              }));
+            co_return rp;
+        }
+        throw;
+    }
+
     auto get_res = co_await get_or_load(
-      rq, [&rq, schema{std::move(schema)}, version]() {
+      rq, [&rq, schema{std::move(schema)}, version, is_verbose]() {
           return rq.service().schema_store().is_compatible(
-            version, schema.share());
+            version, schema.share(), is_verbose);
       });
 
     rp.rep->write_body(
       "json",
-      ppj::rjson_serialize(post_compatibility_res{.is_compat = get_res}));
+      json::rjson_serialize(post_compatibility_res{
+        .is_compat = get_res.is_compat,
+        .messages = std::move(get_res.messages),
+        .is_verbose = is_verbose,
+      }));
     co_return rp;
 }
 
