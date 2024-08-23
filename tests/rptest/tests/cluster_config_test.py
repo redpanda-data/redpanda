@@ -1226,6 +1226,21 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                     f"Config setting {key}={strval} should have been rejected")
                 assert False
 
+        # Check that the `get` command hits proper validation paths
+        unknown_examples = [
+            "panda_size", "panda_retention_ms", "panda_mutation_rate"
+        ]
+
+        for key in unknown_examples:
+            with expect_exception(RpkException,
+                                  lambda e: "Unknown property" in str(e)):
+                self.rpk.cluster_config_get(key)
+
+        for key in unknown_examples:
+            with expect_exception(requests.exceptions.HTTPError,
+                                  lambda e: e.response.status_code == 400):
+                self.admin.get_cluster_config(key=key)
+
         # Check that resetting properties to their default via `set` works
         default_examples = [
             ("kafka_qdc_enable", False),
