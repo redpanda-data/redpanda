@@ -144,6 +144,14 @@ def compute_size(data_dir: Path, sizes: bool, calculate_md5: bool,
                             # It's valid to have a segment deleted
                             # at anytime
                             continue
+                        except AssertionError as e:
+                            if print_flat:
+                                raise e
+                            return {
+                                "parse_failed": True,
+                                "segment": str(segment),
+                                "error": str(e)
+                            }
                     part_output[segment.name] = seg_output
                 topic_output[partition.name] = part_output
             ns_output[topic.name] = topic_output
