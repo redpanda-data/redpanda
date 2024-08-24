@@ -45,11 +45,6 @@ bool_flag(
 )
 
 bool_flag(
-    name = "openssl",
-    build_setting_default = False,
-)
-
-bool_flag(
     name = "sstring",
     build_setting_default = True,
 )
@@ -97,13 +92,6 @@ config_setting(
     name = "use_sstring",
     flag_values = {
         ":sstring": "true",
-    },
-)
-
-config_setting(
-    name = "use_openssl",
-    flag_values = {
-        ":openssl": "true",
     },
 )
 
@@ -292,6 +280,7 @@ cc_library(
         "src/net/native-stack.cc",
         "src/net/native-stack-impl.hh",
         "src/net/net.cc",
+        "src/net/ossl.cc",
         "src/net/packet.cc",
         "src/net/posix-stack.cc",
         "src/net/proxy.cc",
@@ -318,10 +307,7 @@ cc_library(
         "src/util/short_streams.cc",
         "src/util/tmp_file.cc",
         "src/websocket/server.cc",
-    ] + select({
-        ":use_openssl": ["src/net/ossl.cc"],
-        "//conditions:default": ["src/net/tls.cc"],
-    }),
+    ],
     hdrs = [
         "include/seastar/core/abort_on_ebadf.hh",
         "include/seastar/core/abort_on_expiry.hh",
@@ -569,6 +555,7 @@ cc_library(
         "BOOST_TEST_NO_LIB",
         "SEASTAR_API_LEVEL=$(API_LEVEL)",
         "SEASTAR_SCHEDULING_GROUPS_COUNT=$(SCHEDULING_GROUPS)",
+        "SEASTAR_WITH_TLS_OSSL",
     ] + select({
         ":use_task_backtrace": ["SEASTAR_TASK_BACKTRACE"],
         "//conditions:default": [],
@@ -577,9 +564,6 @@ cc_library(
         "//conditions:default": [],
     }) + select({
         ":use_logger_compile_time_fmt": ["SEASTAR_LOGGER_COMPILE_TIME_FMT"],
-        "//conditions:default": [],
-    }) + select({
-        ":use_openssl": ["SEASTAR_WITH_TLS_OSSL"],
         "//conditions:default": [],
     }) + select({
         ":with_debug": ["SEASTAR_DEBUG"],
@@ -640,6 +624,7 @@ cc_library(
         "@fmt",
         "@lksctp",
         "@lz4",
+        "@openssl",
         "@protobuf",
         "@yaml-cpp",
     ] + select({
@@ -651,14 +636,12 @@ cc_library(
     }) + select({
         ":use_numactl": ["@numactl"],
         "//conditions:default": [],
-    }) + select({
-        ":use_openssl": ["@openssl"],
-        "//conditions:default": ["@gnutls"],
     }),
 )
 
 cc_library(
     name = "testing",
+    testonly = True,
     srcs = [
         "src/testing/entry_point.cc",
         "src/testing/random.cc",
@@ -690,6 +673,7 @@ cc_library(
 
 cc_library(
     name = "benchmark",
+    testonly = True,
     srcs = [
         "tests/perf/linux_perf_event.cc",
         "tests/perf/perf_tests.cc",
