@@ -69,7 +69,6 @@ build:release --config=secure
 build:release --copt -mllvm --copt -inline-threshold=2500
 build:release --linkopt=-flto
 
-build --@seastar//:openssl=True
 build --keep_going
 
 # prevent actions and tests from using the network. anything that needs to

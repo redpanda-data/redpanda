@@ -9,6 +9,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/hashing:secure",
         "@boost//:test",
+        "@seastar//:testing",
     ],
 )
 
