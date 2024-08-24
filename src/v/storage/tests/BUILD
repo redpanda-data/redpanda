@@ -68,6 +68,7 @@ redpanda_cc_btest(
         "//src/v/serde",
         "//src/v/storage:index_state",
         "@boost//:test",
+        "@seastar//:testing",
     ],
 )
 

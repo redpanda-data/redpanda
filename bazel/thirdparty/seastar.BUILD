@@ -618,7 +618,6 @@ cc_library(
         "@boost//:filesystem",
         "@boost//:lockfree",
         "@boost//:program_options",
-        "@boost//:test.so",
         "@boost//:thread",
         "@c-ares",
         "@fmt",
@@ -668,6 +667,7 @@ cc_library(
     ],
     deps = [
         ":seastar",
+        "@boost//:test.so",
     ],
 )
 
