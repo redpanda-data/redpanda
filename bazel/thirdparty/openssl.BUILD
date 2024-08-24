@@ -1,5 +1,12 @@
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "int_flag", "string_flag")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+
+# Make this build faster by setting `build --@openssl//:build_jobs=16` in user.bazelrc
+int_flag(
+    name = "build_jobs",
+    build_setting_default = 1,
+    make_variable = "BUILD_JOBS",
+)
 
 string_flag(
     name = "build_mode",
@@ -32,6 +39,8 @@ filegroup(
 
 configure_make(
     name = "openssl",
+    # These don't get make variables expanded, so use the injected environment variable.
+    args = ["-j$OPENSSL_BUILD_JOBS"],
     configure_command = "Configure",
     configure_options = [
         "--libdir=lib",
@@ -40,11 +49,15 @@ configure_make(
         ":release_mode": ["--release"],
         "//conditions:default": [],
     }),
+    env = {
+        "OPENSSL_BUILD_JOBS": "$(BUILD_JOBS)",
+    },
     lib_source = ":srcs",
     out_shared_libs = [
         "libssl.so",
         "libcrypto.so",
     ],
+    toolchains = [":build_jobs"],
     visibility = [
         "//visibility:public",
     ],
