@@ -54,8 +54,8 @@ configure_make(
     },
     lib_source = ":srcs",
     out_shared_libs = [
-        "libssl.so",
-        "libcrypto.so",
+        "libssl.so.3",
+        "libcrypto.so.3",
     ],
     toolchains = [":build_jobs"],
     visibility = [
