@@ -22,8 +22,10 @@ configure_make(
     ],
     lib_source = ":srcs",
     out_shared_libs = [
-        "libkrb5.so",
-        "libgssapi_krb5.so",
+        "libgssapi_krb5.so.2",
+        "libk5crypto.so.3",
+        "libkrb5.so.3",
+        "libkrb5support.so.0",
     ],
     visibility = [
         "//visibility:public",
