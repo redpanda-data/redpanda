@@ -89,7 +89,7 @@ std::ostream& operator<<(std::ostream& os, const bytes& b);
 std::ostream& operator<<(std::ostream& os, const bytes_opt& b);
 
 inline bytes iobuf_to_bytes(const iobuf& in) {
-    auto out = ss::uninitialized_string<bytes>(in.size_bytes());
+    bytes out(bytes::initialized_later{}, in.size_bytes());
     {
         iobuf::iterator_consumer it(in.cbegin(), in.cend());
         it.consume_to(in.size_bytes(), out.data());

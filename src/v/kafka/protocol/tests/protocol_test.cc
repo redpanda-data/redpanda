@@ -122,7 +122,7 @@ bytes invoke_franz_harness(
           c.exit_code(),
           stdout);
     }
-    auto result = ss::uninitialized_string<bytes>(stdout.size());
+    bytes result(bytes::initialized_later{}, stdout.size());
     std::copy_n(stdout.begin(), stdout.size(), result.begin());
     return result;
 }

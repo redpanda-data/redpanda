@@ -116,7 +116,7 @@ iobuf make_random_data(size_t len) {
 
 // fill an iobuf with len copies of char c
 iobuf make_iobuf_with_char(size_t len, unsigned char c) {
-    auto buf = ss::uninitialized_string<bytes>(len);
+    bytes buf(bytes::initialized_later{}, len);
     std::memset(buf.data(), c, len);
     iobuf ret;
     ret.append(buf.data(), buf.size());

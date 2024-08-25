@@ -65,7 +65,7 @@ public:
     }
 
     bytes read_bytes(size_t n) {
-        auto b = ss::uninitialized_string<bytes>(n);
+        bytes b(bytes::initialized_later{}, n);
         _in.consume_to(n, b.begin());
         return b;
     }
@@ -106,7 +106,7 @@ public:
 
     bytes peek_bytes(size_t n) const {
         auto in = _in;
-        auto b = ss::uninitialized_string<bytes>(n);
+        bytes b(bytes::initialized_later{}, n);
         in.consume_to(n, b.begin());
         return b;
     }

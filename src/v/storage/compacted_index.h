@@ -28,7 +28,7 @@ inline compaction_key enhance_key(
       static_cast<std::underlying_type<model::record_batch_type>::type>(type));
     auto ctrl_le = ss::cpu_to_le(static_cast<int8_t>(is_control_batch));
     auto total_size = sizeof(bt_le) + key.size() + sizeof(ctrl_le);
-    auto enriched_key = ss::uninitialized_string<bytes>(total_size);
+    bytes enriched_key(bytes::initialized_later{}, total_size);
     auto out = enriched_key.begin();
     out = std::copy_n(
       reinterpret_cast<const char*>(&bt_le), sizeof(bt_le), out);
