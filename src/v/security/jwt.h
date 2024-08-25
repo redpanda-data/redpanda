@@ -48,7 +48,7 @@ concept string_viewable = detail::is_string_viewable<T>::value;
 
 template<typename ToCharT = char>
 std::basic_string_view<ToCharT> char_view_cast(string_viewable auto const& sv) {
-    return {reinterpret_cast<ToCharT const*>(sv.data()), sv.length()};
+    return {reinterpret_cast<ToCharT const*>(sv.data()), sv.size()};
 }
 
 struct string_viewable_compare {

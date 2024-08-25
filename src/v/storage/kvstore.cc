@@ -216,7 +216,7 @@ ss::future<> kvstore::for_each(
           if (!spaced_key.starts_with(prefix)) {
               return;
           }
-          auto key = spaced_key.substr(prefix.length());
+          auto key = spaced_key.substr(prefix.size());
           visitor(key, kv.second);
       });
 }

@@ -41,7 +41,7 @@ inline void tag_invoke(
               sizeof(addr)));
         }
 
-        std::memcpy(&addr, address_bytes.c_str(), sizeof(addr));
+        std::memcpy(&addr, address_bytes.data(), sizeof(addr));
         t = ss::net::inet_address(addr);
     } else {
         ::in6_addr addr{};
@@ -56,7 +56,7 @@ inline void tag_invoke(
               address_bytes.size(),
               sizeof(addr)));
         }
-        std::memcpy(&addr, address_bytes.c_str(), sizeof(addr));
+        std::memcpy(&addr, address_bytes.data(), sizeof(addr));
         t = ss::net::inet_address(addr);
     }
 }
