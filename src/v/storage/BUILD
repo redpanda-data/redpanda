@@ -125,6 +125,7 @@ redpanda_cc_library(
         "//src/v/container:intrusive",
         "//src/v/model",
         "//src/v/resource_mgmt:available_memory",
+        "//src/v/ssx:async_algorithm",
         "//src/v/ssx:semaphore",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
