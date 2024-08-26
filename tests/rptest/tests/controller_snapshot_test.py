@@ -118,7 +118,8 @@ class ControllerState:
                 continue
             new_v = other.features_response.get(k)
             if allow_upgrade_changes and k in ('cluster_version',
-                                               'node_latest_version'):
+                                               'node_latest_version',
+                                               'node_earliest_version'):
                 assert new_v >= v, f"unexpected value, ({k=}, {new_v=}, {v=})"
             else:
                 assert new_v == v, \

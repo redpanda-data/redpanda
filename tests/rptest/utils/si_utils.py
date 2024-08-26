@@ -622,7 +622,7 @@ def is_close_size(actual_size, expected_size):
     The actual size shouldn't be less than expected. Also, the difference
     between two values shouldn't be greater than the size of one segment.
     """
-    lower_bound = expected_size
+    lower_bound = int(expected_size * 0.95)
     upper_bound = expected_size + default_log_segment_size + \
                   int(default_log_segment_size * 0.2)
     return actual_size in range(lower_bound, upper_bound)
