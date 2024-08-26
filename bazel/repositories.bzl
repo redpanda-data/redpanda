@@ -6,7 +6,11 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 def data_dependency():
     """
-    Define third party dependency soruces.
+    Define third party dependency sources.
+
+    `integrity` can be generated using:
+
+    openssl dgst -sha256 -binary ARCHIVE.tar.gz | openssl base64 -A | sed 's/^/sha256-/'
     """
     http_archive(
         name = "ada",
@@ -45,9 +49,9 @@ def data_dependency():
     http_archive(
         name = "hdrhistogram",
         build_file = "//bazel/thirdparty:hdrhistogram.BUILD",
-        sha256 = "f81a192b62ae25bcebe63c9f3c74f371d04f88a74c1867532ec8a0012a9e482c",
-        strip_prefix = "HdrHistogram_c-0.11.5",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/HdrHistogram_c-0.11.5.tar.gz",
+        integrity = "sha256-u5U1GmqLJC3Jvh8oVidhqE1M8Kh0/8kKm2MHcKZGjpQ=",
+        strip_prefix = "HdrHistogram_c-0.11.8",
+        url = "https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.8.tar.gz",
     )
 
     http_archive(
