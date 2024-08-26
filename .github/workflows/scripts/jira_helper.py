@@ -122,6 +122,9 @@ class JiraHelper():
         elif (event_name == 'labeled' or event_name == 'unlabeled'):
             issue_id = self._find_issue()
             self._update_issue(issue_id) if issue_id is not None else None
+        elif (event_name == 'milestoned'): 
+            issue_id = self._find_issue()
+            self._update_issue(issue_id) if issue_id is not None else None
         else:
             self.logger.info(f'No action performed for event {event_name}')
 
@@ -129,7 +132,7 @@ class JiraHelper():
         self.logger.debug(f'Executing command {self.command}')
         if self.command == Command.ISSUE:
             self._issue_helper()
-        elif self.command == Command.UPDATE_COMMENT:
+        elif self.command == Command.UPDATE_COMMENT: 
             self._update_comment()
         else:
             raise NotImplementedError(
@@ -201,7 +204,6 @@ class JiraHelper():
         issue_title = os.environ['ISSUE_TITLE']
         labels = self._get_gh_issue_labels()
         issue_type = self._get_issue_type(labels)
-
         jira_issue_body = self._ghm_to_jira(issue_body)
 
         fields = {
@@ -276,6 +278,7 @@ issue that triggered this issue's creation.
         gh_issue_title = os.environ['ISSUE_TITLE']
         gh_issue_labels = self._get_gh_issue_labels()
         gh_issue_labels.sort()
+        gh_milestone = os.environ['MILESTONE_TITLE']
         self.logger.debug(f'GH Labels: {gh_issue_labels}')
 
         fields = {}
@@ -295,6 +298,26 @@ issue that triggered this issue's creation.
                 f'Jira issue {issue_id} labels do not match GH issue: "{jira_issue_labels}" != "{gh_issue_labels}"'
             )
             fields['labels'] = gh_issue_labels
+
+        ## all of this is fudged until I can figure out how to test it
+        jira_fix_version = self._jira.issue_field_value(issue_id, 
+                                                        field='Fix Versions')
+        jira_version_exists = False 
+        versions = self._jira.get_product_versions_paginated(self._project_key, query=gh_milestone)
+        if versions is not None: 
+            jira_fix_version.append(versions[0])
+            fields['Fix Versions'] = jira_fix_version
+        else: 
+            new_version = self._jira.add_version(
+                                    self._project_key,
+                                    "",
+                                    gh_milestone,
+                                    is_archived=False,
+                                    is_released=False,
+                                  )  
+            jira_fix_version.append(new_version)
+            fields['Fix Versions'] = jira_fix_version
+        # end fudged bit
 
         if len(fields) == 0:
             self.logger.debug('No updates necessary')

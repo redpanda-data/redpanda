@@ -9,6 +9,7 @@ on:
       - deleted
       - labeled
       - unlabeled
+      - milestoned
 
 
 jobs:
@@ -50,4 +51,5 @@ jobs:
           ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name) }}
           ISSUE_STATE: ${{ github.event.issue.state }}
           EVENT_NAME: ${{ github.event.action }}
+          MILESTONE_TITLE: ${{ github.event.issue.milestone.title }}
         run: python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose -p CORE
