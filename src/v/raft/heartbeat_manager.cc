@@ -82,6 +82,12 @@ heartbeat_manager::requests_for_range() {
           r->_fstats.end(),
           [this, r, last_heartbeat, &pending_beats, &reconnect_nodes](
             follower_stats::value_type& p) {
+              // we need to check again as the leadership might have been lost
+              // while we yield.
+              if (!r->is_elected_leader()) {
+                  return;
+              }
+
               auto& [id, follower_metadata] = p;
               if (
                 follower_metadata.last_received_reply_timestamp
