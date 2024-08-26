@@ -168,7 +168,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "jjpzZNeglEOU9HDEnuA+Dy5U5wS39+0nBkIdi27GZgU=",
+        "bzlTransitiveDigest": "TMy4PlZ6gUhQm7zbM+I4lGWAfD2vbn9osHMiidDFBnA=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -219,9 +219,9 @@
             "ruleClassName": "http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:hdrhistogram.BUILD",
-              "sha256": "f81a192b62ae25bcebe63c9f3c74f371d04f88a74c1867532ec8a0012a9e482c",
-              "strip_prefix": "HdrHistogram_c-0.11.5",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/HdrHistogram_c-0.11.5.tar.gz"
+              "integrity": "sha256-u5U1GmqLJC3Jvh8oVidhqE1M8Kh0/8kKm2MHcKZGjpQ=",
+              "strip_prefix": "HdrHistogram_c-0.11.8",
+              "url": "https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.8.tar.gz"
             }
           },
           "base64": {
