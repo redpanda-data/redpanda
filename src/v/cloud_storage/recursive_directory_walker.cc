@@ -121,7 +121,7 @@ ss::future<> walker_process_directory(
         if (unlikely(!seen_dentries) && target != start_dir) {
             empty_dirs.push_back(target);
         }
-    } catch (std::filesystem::filesystem_error& e) {
+    } catch (const std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
             // skip this directory, move to the next one
         } else {
