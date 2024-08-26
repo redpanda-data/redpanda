@@ -600,7 +600,7 @@ inline void parse_and_set_bool(
             property.value = string_switch<bool>(*value)
                                .match("true", true)
                                .match("false", false);
-        } catch (std::runtime_error) {
+        } catch (const std::runtime_error&) {
             // Our callers expect this exception type on malformed values
             throw boost::bad_lexical_cast();
         }
