@@ -9,3 +9,4 @@
 
 from .fault import FaultBase, OneoffFault, RecoverableFault
 from .isolate_leader import IsolateLeaderFault
+from .hijack_tx_ids import HijackTxIDsFault
