@@ -2272,7 +2272,7 @@ ss::future<> ntp_archiver::housekeeping() {
         // Shutdown-type exceptions are thrown, to promptly drop out
         // of the upload loop.
         throw;
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         // Unexpected exceptions are logged, and suppressed: we do not
         // want to stop who upload loop because of issues in housekeeping
         vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());

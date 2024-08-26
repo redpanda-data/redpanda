@@ -263,7 +263,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
     try {
         co_await ss::sleep_abortable(license_check_retry, _as.local());
-    } catch (ss::sleep_aborted) {
+    } catch (const ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }
@@ -306,11 +306,11 @@ ss::future<> feature_manager::maybe_update_feature_table() {
             // some feature activations to do.
             co_await _update_wait.wait([this]() { return updates_pending(); });
         }
-    } catch (ss::condition_variable_timed_out&) {
+    } catch (const ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
-    } catch (ss::broken_condition_variable&) {
+    } catch (const ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted&) {
+    } catch (const ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }
