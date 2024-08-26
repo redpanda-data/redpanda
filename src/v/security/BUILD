@@ -147,6 +147,7 @@ redpanda_cc_library(
         "//src/v/reflection:adl",
         "//src/v/security/audit:types",
         "//src/v/serde",
+        "//src/v/serde:bytes",
         "//src/v/serde:enum",
         "//src/v/serde:optional",
         "//src/v/ssx:future_util",

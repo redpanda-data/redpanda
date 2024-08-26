@@ -37,7 +37,7 @@ redpanda_cc_library(
     deps = [
         ":iobuf",
         "//src/v/base",
-        "@abseil-cpp//absl/hash",
+        "@abseil-cpp//absl/container:inlined_vector",
         "@seastar",
     ],
 )

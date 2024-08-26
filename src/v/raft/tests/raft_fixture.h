@@ -26,6 +26,8 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
+#include "random/generators.h"
+#include "serde/rw/bytes.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/test.h"

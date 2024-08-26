@@ -13,6 +13,7 @@
 #include "serde/peek.h"
 #include "serde/rw/array.h"
 #include "serde/rw/bool_class.h"
+#include "serde/rw/bytes.h"
 #include "serde/rw/chrono.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"

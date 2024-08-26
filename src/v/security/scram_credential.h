@@ -13,6 +13,7 @@
 #include "reflection/adl.h"
 #include "security/acl.h"
 #include "serde/envelope.h"
+#include "serde/rw/bytes.h"
 
 #include <iosfwd>
 
