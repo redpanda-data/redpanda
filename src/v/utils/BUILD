@@ -611,3 +611,19 @@ redpanda_cc_library(
     ],
     include_prefix = "utils",
 )
+
+redpanda_cc_library(
+    name = "external_process",
+    srcs = [
+        "external_process.cc"
+    ],
+    hdrs = [
+        "external_process.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:mutex",
+        "@seastar",
+    ],
+)
