@@ -77,7 +77,7 @@ scram_authenticator<T>::handle_client_final(bytes_view auth_bytes) {
 
     auto computed_stored_key = scram::computed_stored_key(
       client_signature,
-      bytes(client_final.proof().begin(), client_final.proof().end()));
+      bytes(client_final.proof().cbegin(), client_final.proof().cend()));
 
     if (computed_stored_key != _credential->stored_key()) {
         vlog(
