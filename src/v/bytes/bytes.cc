@@ -28,24 +28,9 @@ std::ostream& operator<<(std::ostream& os, const bytes& b) {
     return os << bytes_view(b);
 }
 
-std::ostream& operator<<(std::ostream& os, const bytes_opt& b) {
-    if (b) {
-        return os << *b;
-    }
-    return os << "empty";
-}
-
 namespace std {
 std::ostream& operator<<(std::ostream& os, const bytes_view& b) {
     fmt::print(os, "{{bytes:{}}}", b.size());
     return os;
 }
 } // namespace std
-
-bool bytes_type_cmp::operator()(const bytes& lhs, const bytes_view& rhs) const {
-    return lhs < rhs;
-}
-
-bool bytes_type_cmp::operator()(const bytes& lhs, const bytes& rhs) const {
-    return lhs < rhs;
-}

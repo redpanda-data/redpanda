@@ -45,7 +45,7 @@ struct compacted_topic_fixture {
 
 bytes extract_record_key(bytes prefixed_key) {
     size_t sz = prefixed_key.size() - 2;
-    auto read_key = ss::uninitialized_string<bytes>(sz);
+    bytes read_key(bytes::initialized_later{}, sz);
 
     std::copy_n(prefixed_key.begin() + 2, sz, read_key.begin());
     return read_key;

@@ -134,7 +134,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_istream) {
 
     BOOST_CHECK_THROW(in.consume_type<char>(), std::out_of_range);
 
-    bytes b = ss::uninitialized_string<bytes>(10);
+    bytes b(bytes::initialized_later{}, 10);
     BOOST_CHECK_THROW(in.consume_to(1, b.begin()), std::out_of_range);
     in.consume_to(0, b.begin());
 }
