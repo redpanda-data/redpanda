@@ -110,6 +110,8 @@ public:
         return a.data_ < b.data_;
     }
 
+    friend std::ostream& operator<<(std::ostream& os, const bytes& b);
+
 private:
     container_type data_;
 };
@@ -168,6 +170,8 @@ public:
           a.begin(), a.end(), b.begin(), b.end());
     }
 
+    friend std::ostream& operator<<(std::ostream& os, const bytes_view& b);
+
 private:
     explicit bytes_view(container_type data)
       : data_(data) {}
@@ -216,8 +220,6 @@ inline ss::sstring to_hex(const std::array<Char, Size>& data) {
     return to_hex(to_bytes_view(data));
 }
 
-std::ostream& operator<<(std::ostream& os, const bytes& b);
-
 inline bytes iobuf_to_bytes(const iobuf& in) {
     bytes out(bytes::initialized_later{}, in.size_bytes());
     {
@@ -257,12 +259,6 @@ struct hash<bytes> {
     size_t operator()(const bytes& v) const { return hash<bytes_view>()(v); }
 };
 } // namespace std
-
-// FIXME: remove overload from std::
-// NOLINTNEXTLINE(cert-dcl58-cpp)
-namespace std {
-std::ostream& operator<<(std::ostream& os, const bytes_view& b);
-}
 
 inline bool
 bytes_type_eq::operator()(const bytes& lhs, const bytes& rhs) const {
