@@ -1578,7 +1578,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
           _term,
           _configuration_manager.get_latest());
 
-    } catch (ss::broken_semaphore&) {
+    } catch (const ss::broken_semaphore&) {
     }
 }
 

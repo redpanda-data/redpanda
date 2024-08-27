@@ -213,7 +213,7 @@ inline kafka::leader_epoch leader_epoch_from_term(model::term_id term) {
     try {
         return kafka::leader_epoch(
           boost::numeric_cast<kafka::leader_epoch::type>(term()));
-    } catch (boost::bad_numeric_cast&) {
+    } catch (const boost::bad_numeric_cast&) {
         return kafka::invalid_leader_epoch;
     }
 }

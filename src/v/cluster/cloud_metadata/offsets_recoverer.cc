@@ -139,7 +139,7 @@ ss::future<offsets_recovery_reply> offsets_recoverer::recover(
         }
         try {
             co_await offsets_lookup.run_lookups(std::move(ntps), retry_node);
-        } catch (ss::timed_out_error&) {
+        } catch (const ss::timed_out_error&) {
             reply.ec = cluster::errc::timeout;
             co_return reply;
         }

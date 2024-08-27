@@ -79,7 +79,7 @@ bool is_reconnect_error(const std::system_error& e) {
 std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     try {
         rethrow_exception(e);
-    } catch (std::system_error& e) {
+    } catch (const std::system_error& e) {
         if (is_reconnect_error(e)) {
             return e.code().message();
         }

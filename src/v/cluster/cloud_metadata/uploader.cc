@@ -333,7 +333,7 @@ ss::future<> uploader::upload_until_abort() {
             bool shutdown = false;
             try {
                 co_await _leader_cond.wait();
-            } catch (ss::broken_condition_variable&) {
+            } catch (const ss::broken_condition_variable&) {
                 shutdown = true;
             }
             if (shutdown || _as.abort_requested()) {

@@ -154,7 +154,7 @@ private:
         auto auth_state = [this, &req]() -> request_auth_result {
             try {
                 return _auth.authenticate(req);
-            } catch (unauthorized_user_exception& e) {
+            } catch (const unauthorized_user_exception& e) {
                 audit_authn_failure(req, e.get_username(), e.what());
                 throw;
             } catch (const ss::httpd::base_exception& e) {
