@@ -128,16 +128,6 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 				return
 			}
 
-			// The current profile was auth'd to the current organization.
-			// We tell the status of what org the user is talking to.
-			if p.FromCloud {
-				fmt.Printf("You are talking to a cloud cluster %q (rpk profile name: %q)\n", p.CloudCluster.FullName(), p.Name)
-				fmt.Println("Select a different cluster to talk to (or ctrl+c to keep the current cluster)?")
-				err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
-				profile.MaybeDieExistingName(err)
-				return
-			}
-
 			// Below here, the current profile is pointed to a
 			// local container cluster or a self hosted cluster.
 			// We want to create or swap to the cloud profile,
@@ -152,6 +142,16 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 				// The current profile is a self hosted cluster.
 				fmt.Printf("You are talking to a self hosted cluster (rpk profile name: %q)\n", p.Name)
 				fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster select'.")
+				return
+			}
+
+			// The current profile was auth'd to the current organization.
+			// We tell the status of what org the user is talking to.
+			if p.FromCloud {
+				fmt.Printf("You are talking to a cloud cluster %q (rpk profile name: %q)\n", p.CloudCluster.FullName(), p.Name)
+				fmt.Println("Select a different cluster to talk to (or ctrl+c to keep the current cluster)?")
+				err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
+				profile.MaybeDieExistingName(err)
 				return
 			}
 
