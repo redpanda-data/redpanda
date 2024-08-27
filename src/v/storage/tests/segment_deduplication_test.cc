@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "gmock/gmock.h"
+#include "model/record_batch_types.h"
+#include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "storage/chunk_cache.h"
 #include "storage/disk_log_impl.h"
@@ -122,8 +124,6 @@ TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
     ASSERT_EQ(segs.front()->offsets().get_base_offset(), model::offset{0});
 }
 
-// Even though segments with one record would be skipped over during
-// compaction, that shouldn't be reflected by the sliding range.
 TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
     storage::disk_log_builder b;
     build_segments(
@@ -140,12 +140,11 @@ TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
       ss::default_priority_class(),
       never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
-    // Even though these segments don't have compactible records, they should
-    // be collected. E.g., they should still be self compacted to rebuild
-    // indexes if necessary, etc.
     ASSERT_EQ(5, segs.size());
+
+    // These segments are considered to have compactible records.
     for (const auto& seg : segs) {
-        ASSERT_FALSE(seg->may_have_compactible_records());
+        ASSERT_TRUE(seg->may_have_compactible_records());
     }
 
     // Add some segments with multiple records. They should be eligible for
@@ -158,11 +157,65 @@ TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
       /*mark_compacted=*/false);
     segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(8, segs.size());
-    int i = 0;
     for (const auto& seg : segs) {
-        bool should_have_records = i >= 5;
-        ASSERT_EQ(should_have_records, seg->may_have_compactible_records());
-        i++;
+        ASSERT_TRUE(seg->may_have_compactible_records());
+    }
+}
+
+TEST(FindSlidingRangeTest, TestPlaceholderBatchesNoCompactibleRecords) {
+    storage::disk_log_builder b;
+    b | start();
+    const int num_placeholder_batches = 3;
+    std::vector<int> offsets = {10, 17, 25};
+    ASSERT_EQ(offsets.size(), num_placeholder_batches);
+    for (int i = 0; i < num_placeholder_batches; ++i) {
+        auto placeholder_batch = model::test::make_random_batch(
+          model::offset{offsets[i]},
+          2,
+          false,
+          model::record_batch_type::compaction_placeholder);
+        b | add_segment(offsets[i]) | add_batch(std::move(placeholder_batch));
+    }
+    auto& disk_log = b.get_disk_log_impl();
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    compaction_config cfg(
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
+
+    ASSERT_EQ(disk_log.segment_count(), num_placeholder_batches);
+
+    // None of the segments should be included in the sliding range.
+    auto segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(0, segs.size());
+
+    for (const auto& seg : disk_log.segments()) {
+        ASSERT_FALSE(seg->may_have_compactible_records());
+    }
+}
+
+TEST(FindSlidingRangeTest, TestEmptySegmentNoCompactibleRecords) {
+    storage::disk_log_builder b;
+    b | start();
+    b | add_segment(0);
+    auto& disk_log = b.get_disk_log_impl();
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    compaction_config cfg(
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
+
+    ASSERT_EQ(disk_log.segment_count(), 1);
+
+    // The single closed, empty segment shouldn't be included in the sliding
+    // range.
+    auto segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(0, segs.size());
+
+    for (const auto& seg : disk_log.segments()) {
+        ASSERT_FALSE(seg->may_have_compactible_records());
     }
 }
 
