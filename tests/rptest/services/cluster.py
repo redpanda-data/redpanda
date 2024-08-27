@@ -16,7 +16,8 @@ from ducktape.mark._mark import Mark
 from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import RedpandaServiceBase, RedpandaServiceCloud
+from rptest.services.redpanda import RedpandaServiceBase, RedpandaService, \
+    RedpandaServiceCloud
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 
@@ -122,7 +123,7 @@ def cluster(log_allow_list=None,
                     if isinstance(redpanda, RedpandaServiceBase):
                         redpanda.cloud_storage_diagnostics()
                     if isinstance(redpanda,
-                                  RedpandaServiceCloud | RedpandaServiceCloud):
+                                  RedpandaService | RedpandaServiceCloud):
                         redpanda.raise_on_crash(log_allow_list=log_allow_list)
 
                 raise
