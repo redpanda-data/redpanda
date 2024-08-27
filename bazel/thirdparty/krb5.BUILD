@@ -14,11 +14,22 @@ configure_make(
     configure_options = [
         "--srcdir=./src",
         "--disable-thread-support",
+        "--with-crypto-impl=openssl",
+        "--with-tls-impl=openssl",
+        # Normally, these libraries are auto detected,
+        # but we never want them so explicitly disable
+        # them.
         "--without-netlib",
+        "--without-keyutils",
+        "--without-lmdb",
+        "--without-libedit",
+        "--without-readline",
+        "--without-system-verto",
         # TODO(bazel) when building the static library the linker is exiting with a
         # duplicate symbol error
         "--enable-shared",
         "--disable-static",
+        # "--enable-asan=undefined,address",
     ],
     lib_source = ":srcs",
     out_shared_libs = [
@@ -26,6 +37,9 @@ configure_make(
         "libk5crypto.so.3",
         "libkrb5.so.3",
         "libkrb5support.so.0",
+    ],
+    deps = [
+        "@openssl",
     ],
     visibility = [
         "//visibility:public",
