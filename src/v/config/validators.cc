@@ -247,4 +247,18 @@ validate_cloud_storage_api_endpoint(const std::optional<ss::sstring>& os) {
     return std::nullopt;
 }
 
+std::optional<ss::sstring> validate_tombstone_retention_ms(
+  const std::optional<std::chrono::milliseconds>& ms) {
+    const auto& cloud_storage_enabled
+      = config::shard_local_cfg().cloud_storage_enabled;
+    if (cloud_storage_enabled() && ms.has_value()) {
+        return fmt::format(
+          "cannot set {} if {} is enabled at the cluster level",
+          config::shard_local_cfg().tombstone_retention_ms.name(),
+          cloud_storage_enabled.name());
+    }
+
+    return std::nullopt;
+}
+
 }; // namespace config

@@ -178,6 +178,8 @@ struct configuration final : public config_store {
     // same as log.retention.ms in kafka
     retention_duration_property log_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
+    // same as delete.retention.ms in kafka
+    property<std::optional<std::chrono::milliseconds>> tombstone_retention_ms;
     property<bool> log_disable_housekeeping_for_tests;
     property<bool> log_compaction_use_sliding_window;
     // same as retention.size in kafka - TODO: size not implemented
