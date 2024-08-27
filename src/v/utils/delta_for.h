@@ -29,6 +29,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <list>
 #include <optional>
 #include <span>
 #include <type_traits>
