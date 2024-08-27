@@ -363,7 +363,8 @@ raft_node_instance::raft_node_instance(
   ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb,
   bool enable_longest_log_detection,
-  std::chrono::milliseconds election_timeout)
+  config::binding<std::chrono::milliseconds> election_timeout,
+  config::binding<std::chrono::milliseconds> heartbeat_interval)
   : raft_node_instance(
     id,
     revision,
@@ -373,7 +374,8 @@ raft_node_instance::raft_node_instance(
     feature_table,
     std::move(leader_update_clb),
     enable_longest_log_detection,
-    election_timeout) {}
+    std::move(election_timeout),
+    std::move(heartbeat_interval)) {}
 
 raft_node_instance::raft_node_instance(
   model::node_id id,
@@ -383,7 +385,8 @@ raft_node_instance::raft_node_instance(
   ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb,
   bool enable_longest_log_detection,
-  std::chrono::milliseconds election_timeout)
+  config::binding<std::chrono::milliseconds> election_timeout,
+  config::binding<std::chrono::milliseconds> heartbeat_interval)
   : _id(id)
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
@@ -401,15 +404,15 @@ raft_node_instance::raft_node_instance(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
   , _leader_clb(std::move(leader_update_clb))
   , _enable_longest_log_detection(enable_longest_log_detection)
-  , _election_timeout(
-      config::mock_binding<std::chrono::milliseconds>(election_timeout)) {
+  , _election_timeout(std::move(election_timeout))
+  , _heartbeat_interval(std::move(heartbeat_interval)) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
 ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
-      config::mock_binding<std::chrono::milliseconds>(_election_timeout() / 10),
+      _heartbeat_interval,
       consensus_client_protocol(_protocol),
       _id,
       config::mock_binding<std::chrono::milliseconds>(1000ms),
@@ -600,7 +603,8 @@ raft_fixture::add_node(model::node_id id, model::revision_id rev) {
           }
       },
       _enable_longest_log_detection,
-      _election_timeout);
+      _election_timeout.bind(),
+      _heartbeat_interval.bind());
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
@@ -621,7 +625,8 @@ raft_node_instance& raft_fixture::add_node(
           }
       },
       _enable_longest_log_detection,
-      _election_timeout);
+      _election_timeout.bind(),
+      _heartbeat_interval.bind());
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
