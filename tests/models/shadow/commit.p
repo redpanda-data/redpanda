@@ -21,10 +21,10 @@ machine CommitProtocol {
   var object: L0d_object;
   var object_id: int;
 
-  // mapping from offset in object to source request
-  var object_to_request: seq[int];
-  // mapping from append request to offset of data in object
-  var append_to_object: map[int, int];
+  // mapping from batch offset in object to source request
+  var request_by_object_offset: seq[int];
+  // mapping from append request id to offset of batch in object
+  var object_offset_by_request_id: map[int, int];
 
   // holds the next request id
   var request_id: int;
@@ -53,8 +53,8 @@ machine CommitProtocol {
       // first the placeholder append request is mapped back to its respective
       // batch expressed as an offset within the L0d object. This offset is then
       // mapped back to the originating produce request using the
-      // `object_to_request` shuffle index.
-      offset = object_to_request[append_to_object[response.request_id]];
+      // `request_by_object_offset` shuffle index.
+      offset = request_by_object_offset[object_offset_by_request_id[response.request_id]];
       request = requests[offset];
 
       send request.source, produce_response_event, (
@@ -64,17 +64,17 @@ machine CommitProtocol {
   }
 
   // Build the L0d object from the input produce requests. Batches in the L0d
-  // object may have any ordering as long as the object_to_request mapping
+  // object may have any ordering as long as the request_by_object_offset mapping
   // maintains the property that for each offset in the object, the value of
-  // object_to_request[offset] is the offset of the source request.
+  // request_by_object_offset[offset] is the offset of the source request.
   //
-  // More detail about object_to_request: currently the order of batches in the
+  // More detail about request_by_object_offset: currently the order of batches in the
   // L0d offset is the same as the ordering of their respective produce requests
   // in the `requests` sequence, which means that only the `offset` is necessary
   // to correlate items between the data structures. This means that currently
-  // `object_to_request` is effectively an identify function. However in general
+  // `request_by_object_offset` is effectively an identify function. However in general
   // this ordering need not hold and we may  want to model other organizations
-  // of data in the L0d object. The `object_to_request` map allows the freedom
+  // of data in the L0d object. The `request_by_object_offset` map allows the freedom
   // to organize L0d contents by providing an index from object offset back to
   // the original request index. See `append_response_event` handler for use.
   fun build_L0d() {
@@ -82,7 +82,7 @@ machine CommitProtocol {
     var request: produce_request;
     while (request_idx < sizeof(requests)) {
       object += (sizeof(object), requests[request_idx].batch_id);
-      object_to_request += (sizeof(object_to_request), request_idx);
+      request_by_object_offset += (sizeof(request_by_object_offset), request_idx);
       request_idx = request_idx + 1;
     }
   }
@@ -114,8 +114,8 @@ machine CommitProtocol {
     var request: produce_request;
 
     while (batch_idx < sizeof(object)) {
-      append_to_object[request_id] = batch_idx;
-      request = requests[object_to_request[batch_idx]];
+      object_offset_by_request_id[request_id] = batch_idx;
+      request = requests[request_by_object_offset[batch_idx]];
 
       send request.partition, append_request_event, (
         source = this,
