@@ -36,7 +36,8 @@ struct kv_t {
       size_t start,
       size_t num_records,
       std::optional<size_t> val_start = std::nullopt,
-      size_t key_cardinality = 0) {
+      size_t key_cardinality = 0,
+      bool produce_tombstones = false) {
         size_t vstart = val_start.value_or(start);
         std::vector<kv_t> records;
         records.reserve(num_records);
@@ -45,8 +46,10 @@ struct kv_t {
             if (key_cardinality > 0) {
                 key = key % key_cardinality;
             }
-            records.emplace_back(
-              ssx::sformat("key{}", key), ssx::sformat("val{}", vstart + i));
+            const auto value = produce_tombstones
+                                 ? ""
+                                 : ssx::sformat("val{}", vstart + i);
+            records.emplace_back(ssx::sformat("key{}", key), value);
         }
         return records;
     }
