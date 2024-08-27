@@ -1,4 +1,12 @@
+load("@bazel_skylib//rules:common_settings.bzl", "int_flag")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+
+# Make this build faster by setting `build --@krb5//:build_jobs=4` in user.bazelrc
+int_flag(
+    name = "build_jobs",
+    build_setting_default = 1,
+    make_variable = "BUILD_JOBS",
+)
 
 filegroup(
     name = "srcs",
@@ -7,6 +15,8 @@ filegroup(
 
 configure_make(
     name = "krb5",
+    # These don't get make variables expanded, so use the injected environment variable.
+    args = ["-j$KRB5_BUILD_JOBS"],
     autoreconf = True,
     autoreconf_options = ["-ivf ./src"],
     configure_command = "./src/configure",
@@ -31,6 +41,9 @@ configure_make(
         "--disable-static",
         # "--enable-asan=undefined,address",
     ],
+    env = {
+        "KRB5_BUILD_JOBS": "$(BUILD_JOBS)",
+    },
     lib_source = ":srcs",
     out_shared_libs = [
         "libgssapi_krb5.so.2",
@@ -38,10 +51,11 @@ configure_make(
         "libkrb5.so.3",
         "libkrb5support.so.0",
     ],
-    deps = [
-        "@openssl",
-    ],
+    toolchains = [":build_jobs"],
     visibility = [
         "//visibility:public",
+    ],
+    deps = [
+        "@openssl",
     ],
 )
