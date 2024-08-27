@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "base/vlog.h"
+#include "gtest/gtest.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
@@ -21,8 +22,14 @@
 #include "utils/directory_walker.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/sleep.hh>
 
 #include <absl/container/btree_map.h>
+
+#include <chrono>
+#include <numeric>
+
+using namespace std::chrono_literals;
 
 namespace {
 ss::logger cmp_testlog("cmp_testlog");
@@ -81,6 +88,8 @@ class CompactionFixtureTest
   , public redpanda_thread_fixture
   , public seastar_test {
 public:
+    using map_t = absl::btree_map<ss::sstring, ss::sstring>;
+
     ss::future<> SetUpAsync() override {
         test_local_cfg.get("election_timeout_ms").set_value(100ms);
         cluster::topic_properties props;
@@ -108,19 +117,27 @@ public:
       size_t num_segments,
       size_t cardinality,
       size_t batches_per_segment,
-      size_t records_per_batch = 1) {
+      size_t records_per_batch = 1,
+      size_t starting_value = 0,
+      bool produce_tombstones = false,
+      map_t* latest_kv = nullptr) {
         tests::kafka_produce_transport producer(co_await make_kafka_client());
         co_await producer.start();
 
         // Generate some segments.
-        size_t val_count = 0;
-        absl::btree_map<ss::sstring, ss::sstring> latest_kv;
+        size_t val_count = starting_value;
         for (size_t i = 0; i < num_segments; i++) {
             for (int r = 0; r < batches_per_segment; r++) {
                 auto kvs = tests::kv_t::sequence(
-                  val_count, records_per_batch, val_count, cardinality);
-                for (const auto& [k, v] : kvs) {
-                    latest_kv[k] = v;
+                  val_count,
+                  records_per_batch,
+                  val_count,
+                  cardinality,
+                  produce_tombstones);
+                if (latest_kv) {
+                    for (const auto& [k, v] : kvs) {
+                        latest_kv->insert_or_assign(k, v);
+                    }
                 }
                 co_await producer.produce_to_partition(
                   topic_name, model::partition_id(0), std::move(kvs));
@@ -130,6 +147,66 @@ public:
             co_await log->force_roll(ss::default_priority_class());
         }
     }
+
+    ss::future<> generate_tombstones(
+      size_t num_segments,
+      size_t cardinality,
+      size_t batches_per_segment,
+      size_t records_per_batch = 1,
+      size_t starting_value = 0,
+      map_t* latest_kv = nullptr) {
+        return generate_data(
+          num_segments,
+          cardinality,
+          batches_per_segment,
+          records_per_batch,
+          starting_value,
+          true,
+          latest_kv);
+    }
+
+    // Generates a random mixture of records (tombstones optionally included).
+    // Returns a map of the most recently produce k-v pair.
+    ss::future<> generate_random_assorted_data(
+      size_t num_segments,
+      size_t cardinality,
+      size_t batches_per_segment,
+      size_t records_per_batch = 1,
+      bool include_tombstones = false,
+      map_t* latest_kv = nullptr) {
+        tests::kafka_produce_transport producer(co_await make_kafka_client());
+        co_await producer.start();
+
+        // Generate some segments.
+        for (size_t s = 0; s < num_segments; ++s) {
+            for (size_t b = 0; b < batches_per_segment; ++b) {
+                std::vector<tests::kv_t> kvs;
+                kvs.reserve(records_per_batch);
+                for (size_t r = 0; r < records_per_batch; ++r) {
+                    const auto random_int = random_generators::get_int(
+                      cardinality);
+                    const auto key = ssx::sformat("key{}", random_int);
+                    const bool is_tombstone
+                      = include_tombstones
+                          ? random_generators::random_choice({false, true})
+                          : false;
+                    auto val = is_tombstone ? ""
+                                            : ssx::sformat("val{}", random_int);
+                    kvs.emplace_back(std::move(key), std::move(val));
+                }
+                if (latest_kv) {
+                    for (const auto& [k, v] : kvs) {
+                        latest_kv->insert_or_assign(k, v);
+                    }
+                }
+                co_await producer.produce_to_partition(
+                  topic_name, model::partition_id(0), std::move(kvs));
+            }
+            co_await log->flush();
+            co_await log->force_roll(ss::default_priority_class());
+        }
+    }
+
     ss::future<std::vector<tests::kv_t>>
     check_records(size_t cardinality, size_t max_duplicates) {
         tests::kafka_consume_transport consumer(co_await make_kafka_client());
@@ -223,6 +300,414 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
 
 INSTANTIATE_TEST_SUITE_P(
   DuplicatesPerKey, CompactionFixtureParamTest, ::testing::Values(1, 10, 100));
+
+TEST_F(CompactionFixtureTest, TestTombstones) {
+    auto duplicates_per_key = 2;
+    auto total_records = 10;
+    auto cardinality = total_records / duplicates_per_key;
+    auto num_segments = 5;
+    size_t record_batches_per_segment = total_records / num_segments;
+
+    generate_data(num_segments, cardinality, record_batches_per_segment).get();
+    // Generate a tombstone record for "key0".
+    generate_tombstones(1, 1, 1).get();
+
+    auto tombstone_retention_ms = 1000ms;
+
+    // Helper function to perform sliding window compaction.
+    auto do_sliding_window_compact = [tombstone_retention_ms](auto& log) {
+        // Compact, allowing the map to grow as large as we need.
+        ss::abort_source never_abort;
+        storage::compaction_config cfg(
+          log->segments().back()->offsets().get_base_offset(),
+          tombstone_retention_ms,
+          ss::default_priority_class(),
+          never_abort,
+          std::nullopt,
+          std::nullopt,
+          nullptr,
+          nullptr);
+        auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+        disk_log.sliding_window_compact(cfg).get();
+    };
+
+    auto num_tombstone_segments = 1;
+    auto total_segments = num_segments + num_tombstone_segments;
+
+    auto log_segment_count_before = log->segment_count();
+    // Sanity check we created the right number of segments.
+    // NOTE: ignore the active segment.
+    auto segment_count_before = log_segment_count_before - 1;
+    ASSERT_EQ(segment_count_before, total_segments);
+
+    // Perform first round of sliding window compaction.
+    do_sliding_window_compact(log);
+
+    // Another sanity check after compaction.
+    auto segment_count_after = log->segment_count() - 1;
+    ASSERT_EQ(total_segments, segment_count_after);
+
+    auto summary_after = dir_summary().get();
+    ASSERT_NO_FATAL_FAILURE(summary_after.check_clean(total_segments));
+
+    // The number of duplicates can't exceed the number of segments - 1: the
+    // latest closed segment should have no duplicates, and at worst, each
+    // preceding segment will have 1 duplicate (the last record).
+    {
+        auto consumed_kvs
+          = check_records(cardinality, total_segments - 1).get();
+        ASSERT_NO_FATAL_FAILURE();
+    }
+
+    // Every segment sans the active segment should have a
+    // clean_compact_timestamp set, since we fully indexed all of them.
+    int num_clean_before = 0;
+    for (const auto& seg : log->segments()) {
+        if (seg->index().has_clean_compact_timestamp()) {
+            ++num_clean_before;
+        }
+    }
+    ASSERT_EQ(num_clean_before, total_segments);
+
+    // Compacting again won't attempt again since the segments are marked as
+    // compacted.
+    auto segments_compacted = log->get_probe().get_segments_compacted();
+    do_sliding_window_compact(log);
+    auto segments_compacted_again = log->get_probe().get_segments_compacted();
+    ASSERT_EQ(segments_compacted, segments_compacted_again);
+
+    // Check that the clean_compact_timestamps got persisted in the index_state.
+    int num_clean_again = 0;
+    for (const auto& seg : log->segments()) {
+        if (seg->index().has_clean_compact_timestamp()) {
+            ++num_clean_again;
+        }
+    }
+    ASSERT_EQ(num_clean_again, num_clean_before);
+
+    // Consume again after restarting and ensure our assertions about
+    // duplicates are still valid.
+    restart(should_wipe::no);
+
+    wait_for_leader(ntp).get();
+    partition = app.partition_manager.local().get(ntp).get();
+    log = partition->log().get();
+
+    ASSERT_EQ(log->segment_count(), log_segment_count_before);
+
+    // Check that the clean_compact_timestamps got persisted in the index_state,
+    // even after a restart.
+    int num_clean_after = 0;
+    for (const auto& seg : log->segments()) {
+        if (seg->index().has_clean_compact_timestamp()) {
+            ++num_clean_after;
+        }
+    }
+    ASSERT_EQ(num_clean_after, num_clean_before);
+
+    // Sleep for tombstone.retention.ms time, so that the next time we attempt
+    // to compact the tombstone record will be eligible for deletion.
+    ss::sleep(tombstone_retention_ms).get();
+
+    // Flush and force roll the log, so that sliding window compaction can
+    // occur.
+    log->flush().get();
+    log->force_roll(ss::default_priority_class()).get();
+    do_sliding_window_compact(log);
+
+    {
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        consumer.start().get();
+        auto consumed_kvs = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                model::offset(0))
+                              .get();
+
+        // Assert there is no tombstone record left.
+        auto find_tombstone_record = [](const auto& kv) {
+            return kv.val.empty();
+        };
+
+        auto tombstone_it = std::find_if(
+          consumed_kvs.begin(), consumed_kvs.end(), find_tombstone_record);
+
+        // The tombstone should have been removed after second round of
+        // compaction post tombstone.retention.ms.
+        ASSERT_EQ(tombstone_it, consumed_kvs.end());
+
+        // Assert the "key0" value which was used for a tombstone record is not
+        // present. Redundant, sanity check.
+        auto find_key0_value = [](const auto& kv) { return kv.key == "key0"; };
+
+        auto key0_it = std::find_if(
+          consumed_kvs.begin(), consumed_kvs.end(), find_key0_value);
+
+        ASSERT_EQ(key0_it, consumed_kvs.end());
+    }
+}
+
+class CompactionFixtureTombstonesParamTest
+  : public CompactionFixtureTest
+  , public ::testing::WithParamInterface<size_t> {};
+
+TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
+    const auto num_segments = GetParam();
+
+    // Generate 1 tombstone records for each segment.
+    const auto num_tombstones = num_segments;
+    const auto batches_per_segment = 1;
+    const auto tombstones_per_batch = num_tombstones / batches_per_segment;
+
+    generate_tombstones(
+      num_segments, num_tombstones, batches_per_segment, tombstones_per_batch)
+      .get();
+
+    auto tombstone_retention_ms = 1000ms;
+
+    // Helper function to perform sliding window compaction.
+    auto do_sliding_window_compact = [tombstone_retention_ms](auto& log) {
+        // Compact, allowing the map to grow as large as we need.
+        ss::abort_source never_abort;
+        storage::compaction_config cfg(
+          log->segments().back()->offsets().get_base_offset(),
+          tombstone_retention_ms,
+          ss::default_priority_class(),
+          never_abort,
+          std::nullopt,
+          std::nullopt,
+          nullptr,
+          nullptr);
+        auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+        disk_log.sliding_window_compact(cfg).get();
+    };
+
+    // Perform first round of sliding window compaction.
+    do_sliding_window_compact(log);
+
+    {
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        consumer.start().get();
+        auto consumed_kvs = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                model::offset(0))
+                              .get();
+
+        ASSERT_NO_FATAL_FAILURE();
+
+        // Sanity check the number of records consumed.
+        ASSERT_EQ(consumed_kvs.size(), num_tombstones);
+
+        // Every record should be a tombstone without a value.
+        for (const auto& kv : consumed_kvs) {
+            ASSERT_EQ(kv.val, "");
+        }
+    }
+
+    // Sleep for tombstone.retention.ms time, so that the next time we attempt
+    // to compact the tombstone records will be eligible for deletion.
+    ss::sleep(tombstone_retention_ms).get();
+
+    // Generate one record, so that sliding window compaction can occur.
+    generate_data(1, 200, 1, 1, 100).get();
+    do_sliding_window_compact(log);
+
+    {
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        consumer.start().get();
+        auto consumed_kvs = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                model::offset(0))
+                              .get();
+
+        // Assert there is no tombstone record left.
+        auto find_tombstone_record = [](const auto& kv) {
+            return kv.val.empty();
+        };
+
+        auto tombstone_it = std::find_if(
+          consumed_kvs.begin(), consumed_kvs.end(), find_tombstone_record);
+
+        // The tombstones should have been removed after second round of
+        // compaction post tombstone.retention.ms.
+        ASSERT_EQ(tombstone_it, consumed_kvs.end());
+
+        // Assert that there was only one k-v record left in the log (the one
+        // generated to allow for sliding window compaction to occur).
+        ASSERT_EQ(consumed_kvs.size(), 1);
+        ASSERT_EQ(consumed_kvs[0].key, "key100");
+        ASSERT_EQ(consumed_kvs[0].val, "val100");
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  NumSegments,
+  CompactionFixtureTombstonesParamTest,
+  ::testing::Values(1, 10, 100));
+
+struct TombstonesRandomParamArgs {
+    static TombstonesRandomParamArgs create() {
+        static constexpr size_t max_segments = 100;
+        static constexpr size_t max_records = 1000;
+        static constexpr size_t max_cardinality = max_records;
+        static constexpr size_t max_batches_per_segment = 5;
+        return TombstonesRandomParamArgs{
+          .num_segments = random_generators::get_int(size_t{1}, max_segments),
+          .total_records = random_generators::get_int(size_t{1}, max_records),
+          .cardinality = random_generators::get_int(size_t{1}, max_cardinality),
+          .batches_per_segment = random_generators::get_int(
+            size_t{1}, max_batches_per_segment)};
+    }
+
+    size_t num_segments;
+    size_t total_records;
+    size_t cardinality;
+    size_t batches_per_segment;
+};
+
+class CompactionFixtureTombstonesRandomParamTest
+  : public CompactionFixtureTest
+  , public ::testing::WithParamInterface<
+      std::tuple<TombstonesRandomParamArgs, bool>> {};
+
+TEST_P(
+  CompactionFixtureTombstonesRandomParamTest,
+  TestTombstonesRandomDistribution) {
+    const auto [data_args, wait_for_retention_ms] = GetParam();
+    const auto [num_segments, total_records, cardinality, batches_per_segment]
+      = data_args;
+
+    const auto num_batches = num_segments * batches_per_segment;
+    // May not divide evenly.
+    const auto records_per_batch = std::max(
+      size_t{1}, total_records / num_batches);
+
+    map_t latest_kv_map;
+    generate_random_assorted_data(
+      num_segments,
+      cardinality,
+      batches_per_segment,
+      records_per_batch,
+      true,
+      &latest_kv_map)
+      .get();
+
+    auto num_tombstones_produced = std::accumulate(
+      latest_kv_map.begin(),
+      latest_kv_map.end(),
+      0,
+      [](size_t acc, const auto& p) { return acc + size_t{p.second.empty()}; });
+
+    auto num_records_produced = latest_kv_map.size() - num_tombstones_produced;
+
+    auto tombstone_retention_ms = wait_for_retention_ms ? 1000ms : 86400000ms;
+
+    // Helper function to perform sliding window compaction.
+    auto do_sliding_window_compact = [tombstone_retention_ms](auto& log) {
+        // Compact, allowing the map to grow as large as we need.
+        ss::abort_source never_abort;
+        storage::compaction_config cfg(
+          log->segments().back()->offsets().get_base_offset(),
+          tombstone_retention_ms,
+          ss::default_priority_class(),
+          never_abort,
+          std::nullopt,
+          std::nullopt,
+          nullptr,
+          nullptr);
+        auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+        disk_log.sliding_window_compact(cfg).get();
+    };
+
+    // Perform first round of sliding window compaction.
+    do_sliding_window_compact(log);
+
+    {
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        consumer.start().get();
+        auto consumed_kvs = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                model::offset(0))
+                              .get();
+        ASSERT_NO_FATAL_FAILURE();
+
+        ASSERT_EQ(consumed_kvs.size(), latest_kv_map.size());
+
+        // Assert the key consumed is in the latest_kv_map.
+        for (const auto& kv : consumed_kvs) {
+            ASSERT_TRUE(latest_kv_map.contains(kv.key));
+            ASSERT_EQ(kv.val, latest_kv_map[kv.key]);
+        }
+    }
+
+    // Maybe sleep for tombstone.retention.ms time, so that the next time we
+    // attempt to compact the tombstone records will be eligible for deletion.
+    if (wait_for_retention_ms) {
+        ss::sleep(tombstone_retention_ms).get();
+    }
+
+    // Generate one record, so that sliding window compaction can occur.
+    const auto num_extra_records = 1;
+    generate_data(
+      1, cardinality * 2, 1, 1, cardinality + 1, false, &latest_kv_map)
+      .get();
+    do_sliding_window_compact(log);
+
+    {
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        consumer.start().get();
+        auto consumed_kvs = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                model::offset(0))
+                              .get();
+
+        // Assert the key consumed is in the latest_kv_map.
+        for (const auto& kv : consumed_kvs) {
+            ASSERT_TRUE(latest_kv_map.contains(kv.key));
+            ASSERT_EQ(kv.val, latest_kv_map[kv.key]);
+        }
+
+        if (wait_for_retention_ms) {
+            // Assert there is no tombstone record left.
+            auto find_tombstone_record = [](const auto& kv) {
+                return kv.val.empty();
+            };
+
+            auto tombstone_it = std::find_if(
+              consumed_kvs.begin(), consumed_kvs.end(), find_tombstone_record);
+
+            // The tombstones should have been removed after second round of
+            // compaction post tombstone.retention.ms.
+            ASSERT_EQ(tombstone_it, consumed_kvs.end());
+            ASSERT_EQ(
+              consumed_kvs.size(), num_records_produced + num_extra_records);
+        } else {
+            ASSERT_EQ(
+              consumed_kvs.size(),
+              num_tombstones_produced + num_records_produced
+                + num_extra_records);
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  RandomDistribution,
+  CompactionFixtureTombstonesRandomParamTest,
+  ::testing::Combine(
+    ::testing::Values(
+      TombstonesRandomParamArgs::create(),
+      TombstonesRandomParamArgs::create(),
+      TombstonesRandomParamArgs::create()),
+    ::testing::Bool()));
 
 // Test where the key space doesn't fit in the offset map, forcing multiple
 // compactions.
