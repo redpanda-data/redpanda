@@ -381,6 +381,8 @@ ss::future<storage::index_state> do_copy_segment_data(
     auto old_broker_timestamp = seg->index().broker_timestamp();
     auto old_clean_compact_timestamp = seg->index().clean_compact_timestamp();
 
+    const std::optional<model::timestamp> tombstone_delete_horizon
+      = get_tombstone_delete_horizon(seg, cfg);
 
     // find out which offsets will survive compaction
     auto idx_path = seg->reader().path().to_compacted_index();
@@ -414,10 +416,16 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->reader().filename(),
       tmpname);
 
-    auto should_keep = [compacted_list = std::move(compacted_offsets)](
+    auto should_keep = [compacted_list = std::move(compacted_offsets),
+                        tombstone_delete_horizon = tombstone_delete_horizon](
                          const model::record_batch& b,
                          const model::record& r,
                          bool) {
+        // Potentially deal with tombstone record removal
+        if (should_remove_tombstone_record(r, tombstone_delete_horizon)) {
+            return ss::make_ready_future<bool>(false);
+        }
+
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
         return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
