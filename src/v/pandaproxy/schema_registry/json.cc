@@ -956,25 +956,24 @@ bool is_array_superset(
     };
 
     // check if the input is an array schema or a tuple schema
-    auto is_array = [](json_schema_dialect d, json::Value const& v) -> bool {
+    auto is_tuple = [](json_schema_dialect d, json::Value const& v) -> bool {
         auto tuple_items_it = v.FindMember(get_tuple_items_kw(d));
         // default for items is `{}` so it's not a tuple schema
         // v is a tuple schema if "items" is an array of schemas
-        auto is_tuple = tuple_items_it != v.MemberEnd()
-                        && tuple_items_it->value.IsArray();
-        return !is_tuple;
+        return tuple_items_it != v.MemberEnd()
+               && tuple_items_it->value.IsArray();
     };
 
-    auto older_is_array = is_array(ctx.older.dialect(), older);
-    auto newer_is_array = is_array(ctx.newer.dialect(), newer);
+    auto older_is_tuple = is_tuple(ctx.older.dialect(), older);
+    auto newer_is_tuple = is_tuple(ctx.newer.dialect(), newer);
 
-    if (older_is_array != newer_is_array) {
+    if (older_is_tuple != newer_is_tuple) {
         // one is a tuple and the other is not. not compatible
         return false;
     }
     // both are tuples or both are arrays
 
-    if (older_is_array) {
+    if (!older_is_tuple) {
         // both are array, only "items" is relevant and it's a schema
         // note that "additionalItems" can be defined, but it's
         // not used by validation because every element is validated against
