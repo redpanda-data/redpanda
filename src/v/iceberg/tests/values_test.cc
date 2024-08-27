@@ -241,6 +241,21 @@ TEST(ValuesTest, TestMapEquality) {
     ASSERT_NE(v_empty, v1);
 }
 
+TEST(ValuesTest, TestNestedValueEquality) {
+    value v1{std::make_unique<struct_value>()};
+    value v1_copy{std::make_unique<struct_value>()};
+    value v2{std::make_unique<list_value>()};
+    value v2_copy{std::make_unique<list_value>()};
+    value v3{std::make_unique<map_value>()};
+    value v3_copy{std::make_unique<map_value>()};
+    ASSERT_EQ(v1, v1_copy);
+    ASSERT_EQ(v2, v2_copy);
+    ASSERT_EQ(v3, v3_copy);
+    ASSERT_NE(v1, v2);
+    ASSERT_NE(v1, v3);
+    ASSERT_NE(v2, v3);
+}
+
 TEST(ValuesTest, TestPrimitiveTypesOStream) {
     EXPECT_STREQ("boolean(true)", fmt::to_string(boolean_value{true}).c_str());
     EXPECT_STREQ(
