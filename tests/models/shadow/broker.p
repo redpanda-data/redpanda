@@ -79,6 +79,16 @@ machine Broker {
       // to drive execution). scheduled processing for "later" captures the
       // non-determinism of a real system either having reached a maximum
       // latency, or accumulated a maximum number of bytes.
+      //
+      // In a real-world system a batching policy will exist. That could be
+      // "wait until 4mb have accumulated", or "wait at most 200ms", or "ask
+      // ChatGPT when enough batches have been accumulated". The point is that
+      // the batching policy should not affect correctness.
+      //
+      // When I talk about "capturing the non-determinism of a real system" what
+      // I mean is that the model uses a scheduling point to drive the policy of
+      // which produce requests are included in an L0d object, so the model
+      // itself captures a wide range of possible policies.
       if (sizeof(produce_requests) == 1) {
         send this, broker_commit_event;
       }
