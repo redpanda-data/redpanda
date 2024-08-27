@@ -303,10 +303,8 @@ public:
             // RRR sanity check.
             return std::nullopt;
         }
-        /*TODO(willem):
-          auto& cluster_default
-            = config::shard_local_cfg().tombstone_retention_ms();
-        */
+        auto& cluster_default
+          = config::shard_local_cfg().tombstone_retention_ms();
         if (_overrides) {
             // Tombstone deletion should not be enabled at the same time as
             // tiered storage.
@@ -327,16 +325,11 @@ public:
 
             // If the tristate holds an empty optional, fall back to cluster
             // default.
-            /*TODO(willem):
-              return cluster_default;
-             */
+            return cluster_default;
         }
         // Fall back to cluster default, since _overrides being nullptr signals
         // that remote.read and remote.write is disabled for this topic.
-        /*TODO(willem):
-          return cluster_default;
-         */
-        return std::nullopt;
+        return cluster_default;
     }
 
     std::optional<model::cleanup_policy_bitflags>

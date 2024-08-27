@@ -818,12 +818,9 @@ config_response_container_t make_topic_configs(
         topic_properties.delete_retention_ms,
         metadata_cache.get_default_delete_retention_ms()),
       include_synonyms,
-      /*TODO:
       maybe_make_documentation(
         include_documentation,
-        config::shard_local_cfg().tombstone_retention_ms.desc()),
-      */
-      std::nullopt);
+        config::shard_local_cfg().tombstone_retention_ms.desc()));
 
     constexpr std::string_view key_validation
       = "Enable validation of the schema id for keys on a record";

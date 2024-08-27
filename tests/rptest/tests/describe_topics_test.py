@@ -299,10 +299,9 @@ class DescribeTopicsTest(RedpandaTest):
             ConfigProperty(
                 config_type="LONG",
                 value="-1",
-                #TODO(willem): doc_string="The retention time for tombstone records in a compacted topic"
-                doc_string="",
-                #TODO(willem): remove DYNAMIC_TOPIC_CONFIG once cluster default is added
-                source_type="DYNAMIC_TOPIC_CONFIG")
+                doc_string=
+                "The retention time for tombstone records in a compacted topic. Cannot be enabled at the same time as any of `cloud_storage_enabled`, `cloud_storage_enable_remote_read`, or `cloud_storage_enable_remote_write`."
+            )
         }
 
         tp_spec = TopicSpec()

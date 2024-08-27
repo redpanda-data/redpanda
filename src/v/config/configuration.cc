@@ -874,7 +874,6 @@ configuration::configuration()
        .visibility = visibility::user},
       {},
       validate_connection_rate)
-
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",
@@ -945,6 +944,16 @@ configuration::configuration()
       "How often to trigger background compaction.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10s)
+  , tombstone_retention_ms(
+      *this,
+      "tombstone_retention_ms",
+      "The retention time for tombstone records in a compacted topic. Cannot "
+      "be enabled at the same time as any of `cloud_storage_enabled`, "
+      "`cloud_storage_enable_remote_read`, or "
+      "`cloud_storage_enable_remote_write`.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      validate_tombstone_retention_ms)
   , log_disable_housekeeping_for_tests(
       *this,
       "log_disable_housekeeping_for_tests",

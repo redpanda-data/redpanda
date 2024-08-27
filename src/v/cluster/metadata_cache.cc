@@ -321,8 +321,7 @@ metadata_cache::get_default_record_value_subject_name_strategy() const {
 
 std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_delete_retention_ms() const {
-    // TODO: return config::shard_local_cfg().tombstone_retention_ms();
-    return std::nullopt;
+    return config::shard_local_cfg().tombstone_retention_ms();
 }
 
 topic_properties metadata_cache::get_default_properties() const {
@@ -342,12 +341,8 @@ topic_properties metadata_cache::get_default_properties() const {
       get_default_retention_local_target_bytes()};
     tp.retention_local_target_ms = tristate<std::chrono::milliseconds>{
       get_default_retention_local_target_ms()};
-    /*TODO(willem):
     tp.delete_retention_ms = tristate<std::chrono::milliseconds>{
-    get_default_delete_retention_ms()};
-    */
-    tp.delete_retention_ms = tristate<std::chrono::milliseconds>{
-      disable_tristate};
+      get_default_delete_retention_ms()};
 
     return tp;
 }
