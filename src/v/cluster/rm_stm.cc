@@ -749,7 +749,7 @@ ss::future<> rm_stm::stop() {
     co_await raft::persisted_stm<>::stop();
 }
 
-ss::future<> rm_stm::start() { return persisted_stm::start(); }
+ss::future<> rm_stm::start() { return raft::persisted_stm<>::start(); }
 
 std::optional<int32_t>
 rm_stm::get_seq_number(model::producer_identity pid) const {
@@ -1255,7 +1255,7 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
 
 ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto current_insync_term = _insync_term;
-    auto ready = co_await persisted_stm::sync(timeout);
+    auto ready = co_await raft::persisted_stm<>::sync(timeout);
     if (ready) {
         if (current_insync_term != _insync_term) {
             _last_known_lso = model::offset{-1};
@@ -1935,7 +1935,8 @@ uint64_t rm_stm::get_local_snapshot_size() const {
       clusterlog.trace,
       "rm_stm: aborted snapshots size {}",
       abort_snapshots_size);
-    return persisted_stm::get_local_snapshot_size() + abort_snapshots_size;
+    return raft::persisted_stm<>::get_local_snapshot_size()
+           + abort_snapshots_size;
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
@@ -2016,7 +2017,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
         co_await _abort_snapshot_mgr.remove_snapshot(filename);
     }
     co_await _abort_snapshot_mgr.remove_partial_snapshots();
-    co_return co_await persisted_stm::remove_persistent_state();
+    co_return co_await raft::persisted_stm<>::remove_persistent_state();
 }
 
 ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {

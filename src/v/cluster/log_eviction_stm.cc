@@ -40,19 +40,19 @@ struct snapshot_data
 
 log_eviction_stm::log_eviction_stm(
   raft::consensus* raft, ss::logger& logger, storage::kvstore& kvstore)
-  : persisted_stm("log_eviction_stm.snapshot", logger, raft, kvstore) {}
+  : base_t("log_eviction_stm.snapshot", logger, raft, kvstore) {}
 
 ss::future<> log_eviction_stm::start() {
     ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
     ssx::spawn_with_gate(
       _gate, [this] { return handle_log_eviction_events(); });
-    return persisted_stm::start();
+    return base_t::start();
 }
 
 ss::future<> log_eviction_stm::stop() {
     _as.request_abort();
     _has_pending_truncation.broken();
-    co_await persisted_stm::stop();
+    co_await base_t::stop();
 }
 
 ss::future<> log_eviction_stm::handle_log_eviction_events() {
@@ -200,7 +200,7 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
       _log.debug,
       "Requesting raft snapshot with final offset: {}",
       truncation_point);
-    auto snapshot_data = co_await _raft->stm_manager()->take_snapshot(
+    auto snapshot_result = co_await _raft->stm_manager()->take_snapshot(
       truncation_point);
     // we need to check snapshot index again as it may already progressed after
     // snapshot is taken by stm_manager
@@ -214,8 +214,8 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
           truncation_point);
         co_return;
     }
-    co_await _raft->write_snapshot(
-      raft::write_snapshot_cfg(truncation_point, std::move(snapshot_data)));
+    co_await _raft->write_snapshot(raft::write_snapshot_cfg(
+      snapshot_result.last_included_offset, std::move(snapshot_result.data)));
 }
 
 kafka::offset log_eviction_stm::kafka_start_offset_override() {

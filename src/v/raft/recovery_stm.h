@@ -79,6 +79,7 @@ private:
       const follower_index_metadata& follower_metadata) const;
     bool is_recovery_finished();
     flush_after_append should_flush(model::offset) const;
+    bool is_snapshot_at_offset_supported() const;
     consensus* _ptr;
     vnode _node_id;
     model::offset _base_batch_offset;

@@ -159,13 +159,13 @@ concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
  * and uses it as a base for replaying the commands.
  */
 
-template<supported_stm_snapshot T = file_backed_stm_snapshot>
-class persisted_stm
-  : public raft::state_machine_base
+template<typename BaseT, supported_stm_snapshot T = file_backed_stm_snapshot>
+class persisted_stm_base
+  : public BaseT
   , public storage::snapshotable_stm {
 public:
     template<typename... Args>
-    explicit persisted_stm(
+    explicit persisted_stm_base(
       ss::sstring, ss::logger&, raft::consensus*, Args&&...);
 
     /**
@@ -262,6 +262,9 @@ private:
     T _snapshot_backend;
     model::offset _last_snapshot_offset;
 };
+
+template<supported_stm_snapshot T = file_backed_stm_snapshot>
+using persisted_stm = persisted_stm_base<state_machine_base, T>;
 /**
  * Helper to copy persisted_stm kvstore snapshot from the source kvstore to
  * target shard

@@ -18,8 +18,10 @@
 #include "raft/offset_monitor.h"
 
 namespace raft {
-
+using snapshot_at_offset_supported
+  = ss::bool_class<struct snapshot_at_offset_supported_tag>;
 class consensus;
+
 /**
  * State machine interface. The class provides an interface that must be
  * implemented to build state machine that can be registered in
@@ -82,6 +84,15 @@ public:
      */
     virtual ss::future<> remove_local_state() = 0;
 
+    /**
+     * Returns true if a state machine supports taking a snapshot at any offset.
+     * It the state machine allows taking snapshot at any applied offset the
+     * partition will support fast reconfigurations.
+     */
+    virtual snapshot_at_offset_supported supports_snapshot_at_offset() const {
+        return snapshot_at_offset_supported::yes;
+    }
+
 protected:
     /**
      *  Lifecycle is managed by state_machine_manager
@@ -102,6 +113,36 @@ protected:
 private:
     offset_monitor _waiters;
     model::offset _next{0};
+};
+
+/**
+ * This flavor of state machine base allows implementer to opt out from taking
+ * snapshot at arbitrary offset. This way a partition that the STM is based on
+ * will not support the fast partition movement mechanism. When implementing
+ * this state machine make sure to provide an external mechanism that will drive
+ * the snapshot creation.
+ */
+class no_at_offset_snapshot_stm_base : public state_machine_base {
+    /**
+     * Method that will be called whenever a raft snapshot is required
+     */
+    virtual ss::future<iobuf> take_snapshot() = 0;
+
+    snapshot_at_offset_supported supports_snapshot_at_offset() const final {
+        return snapshot_at_offset_supported::no;
+    }
+
+    ss::future<iobuf> take_snapshot(model::offset offset) final {
+        if (offset != last_applied_offset()) {
+            throw std::logic_error(fmt::format(
+              "State machine that do not support taking snapshot at arbitrary "
+              "offset can to take snapshot at requested offset: {}, current "
+              "last applied offset: {}",
+              offset,
+              last_applied_offset()));
+        }
+        return take_snapshot();
+    }
 };
 
 } // namespace raft

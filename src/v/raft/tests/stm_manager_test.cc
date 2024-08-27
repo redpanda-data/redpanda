@@ -316,9 +316,10 @@ TEST_F_CORO(state_machine_fixture, test_recovery_from_snapshot) {
         return n.raft()
           ->stm_manager()
           ->take_snapshot(snapshot_offset)
-          .then([raft = n.raft(), snapshot_offset](iobuf snapshot_data) {
+          .then([raft = n.raft(), snapshot_offset](
+                  state_machine_manager::snapshot_result snapshot_result) {
               return raft->write_snapshot(raft::write_snapshot_cfg(
-                snapshot_offset, std::move(snapshot_data)));
+                snapshot_offset, std::move(snapshot_result.data)));
           });
     });
 
@@ -554,5 +555,56 @@ TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
 
     for (auto& stm : stms) {
         ASSERT_EQ_CORO(stm->state, expected);
+    }
+}
+
+class non_fast_movable_kv
+  : public simple_kv_base<no_at_offset_snapshot_stm_base> {
+public:
+    static constexpr std::string_view name = "other_persited_kv_stm";
+    explicit non_fast_movable_kv(raft_node_instance& rn)
+      : simple_kv_base<no_at_offset_snapshot_stm_base>(rn) {}
+
+    ss::future<iobuf> take_snapshot() final {
+        co_return serde::to_iobuf(state);
+    }
+};
+
+TEST_F_CORO(state_machine_fixture, test_opt_out_from_snapshot_at_offset) {
+    create_nodes();
+    std::vector<ss::shared_ptr<simple_kv>> stms;
+    for (auto& [id, node] : nodes()) {
+        raft::state_machine_manager_builder builder;
+        builder.create_stm<simple_kv>(*node);
+        builder.create_stm<non_fast_movable_kv>(*node);
+
+        co_await node->init_and_start(all_vnodes(), std::move(builder));
+    }
+
+    for (auto& [_, node] : nodes()) {
+        ASSERT_FALSE_CORO(
+          node->raft()->stm_manager()->supports_snapshot_at_offset());
+    }
+
+    auto expected = co_await build_random_state(1000);
+
+    // take snapshots on all of the nodes
+    absl::flat_hash_map<model::node_id, model::offset> offsets;
+    for (auto& [id, node] : nodes()) {
+        auto o = co_await node->raft()->stm_manager()->take_snapshot().then(
+          [raft = node->raft()](
+            state_machine_manager::snapshot_result snapshot_data) {
+              return raft
+                ->write_snapshot(raft::write_snapshot_cfg(
+                  snapshot_data.last_included_offset,
+                  std::move(snapshot_data.data)))
+                .then([o = snapshot_data.last_included_offset] { return o; });
+          });
+        offsets[id] = o;
+    }
+
+    for (const auto& [id, n] : nodes()) {
+        ASSERT_EQ_CORO(
+          n->raft()->start_offset(), model::next_offset(offsets[id]));
     }
 }

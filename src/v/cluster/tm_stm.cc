@@ -64,7 +64,7 @@ tm_stm::tm_stm(
   , _feature_table(feature_table)
   , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
 
-ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
+ss::future<> tm_stm::start() { co_await raft::persisted_stm<>::start(); }
 
 uint8_t tm_stm::active_snapshot_version() { return tm_snapshot::version; }
 
@@ -179,7 +179,7 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
         co_return tm_stm::op_status::not_leader;
     }
 
-    auto ready = co_await persisted_stm::sync(timeout);
+    auto ready = co_await raft::persisted_stm<>::sync(timeout);
     if (!ready) {
         co_return tm_stm::op_status::unknown;
     }

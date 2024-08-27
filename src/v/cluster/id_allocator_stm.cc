@@ -41,14 +41,14 @@ id_allocator_stm::id_allocator_stm(ss::logger& logger, raft::consensus* c)
 
 id_allocator_stm::id_allocator_stm(
   ss::logger& logger, raft::consensus* c, config::configuration& cfg)
-  : persisted_stm(id_allocator_snapshot, logger, c)
+  : raft::persisted_stm<>(id_allocator_snapshot, logger, c)
   , _batch_size(cfg.id_allocator_batch_size.value())
   , _log_capacity(cfg.id_allocator_log_capacity.value()) {}
 
 ss::future<bool>
 id_allocator_stm::sync(model::timeout_clock::duration timeout) {
     auto term = _insync_term;
-    auto is_synced = co_await persisted_stm::sync(timeout);
+    auto is_synced = co_await raft::persisted_stm<>::sync(timeout);
     if (is_synced) {
         if (term != _insync_term) {
             _curr_id = _state;

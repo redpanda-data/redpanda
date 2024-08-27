@@ -64,6 +64,15 @@ concept StateMachineIterateFunc = requires(
  */
 class state_machine_manager final {
 public:
+    /**
+     * A result returned after taking a snapshot it contains a serde serialized
+     * snapshot data and last offset included into the snapshot.
+     */
+    struct snapshot_result {
+        iobuf data;
+        model::offset last_included_offset;
+    };
+
     // wait until at least offset is applied to all the state machines
     ss::future<> wait(
       model::offset,
@@ -75,13 +84,28 @@ public:
      * state i.e last snapshot index is derived from last_applied_offset. In
      * Redpanda we use different approach. Data eviction policy forces us to
      * allow state machines to take snapshot at arbitrary offsets.
+     *
+     * IMPORTANT: This API is only supported if all state machines support
+     * taking snapshots at arbitrary offset.
      */
-    ss::future<iobuf> take_snapshot(model::offset);
+    ss::future<snapshot_result> take_snapshot(model::offset);
+
+    /**
+     * If any of the state machines in the manager doesn't support fast
+     * reconfigurations this is the only API that the user is allowed to call,
+     * the take snapshot with offset other than _last_applied_offset will fail.
+     */
+    ss::future<snapshot_result> take_snapshot();
 
     ss::future<> start();
     ss::future<> stop();
 
     model::offset last_applied() const { return model::prev_offset(_next); }
+
+    snapshot_at_offset_supported supports_snapshot_at_offset() const {
+        return _supports_snapshot_at_offset;
+    }
+
     /**
      * Returns a pointer to specific type of state machine.
      *
@@ -192,6 +216,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     ss::scheduling_group _apply_sg;
+    snapshot_at_offset_supported _supports_snapshot_at_offset{true};
 };
 
 /**
