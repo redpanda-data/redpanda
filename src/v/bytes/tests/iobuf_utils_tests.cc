@@ -14,6 +14,8 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/hash/hash.h>
+
 SEASTAR_THREAD_TEST_CASE(test_reading_zero_bytes_empty_stream) {
     auto buf = iobuf();
     auto is = make_iobuf_input_stream(std::move(buf));
