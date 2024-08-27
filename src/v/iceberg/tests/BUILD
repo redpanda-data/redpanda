@@ -24,8 +24,11 @@ redpanda_test_cc_library(
     ],
     include_prefix = "iceberg/tests",
     deps = [
+        "//src/v/bytes:random",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/random:generators",
+        "//src/v/test_utils:random",
     ],
 )
 

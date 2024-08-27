@@ -13,10 +13,18 @@
 
 namespace iceberg::tests {
 
-// TODO: add random generation. For now, this just creates zero-values.
+enum class value_pattern {
+    zeros,
+    random,
+};
 struct value_spec {
+    value_pattern pattern{value_pattern::zeros};
+
     // Number of elements to include in list and map fields.
     size_t max_elements = 5;
+
+    // Max size of strings and bytes.
+    size_t max_strlen = 5;
 
     // If set, numeric primitives will have values based on this value.
     std::optional<int64_t> forced_num_val = std::nullopt;

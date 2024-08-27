@@ -8,8 +8,11 @@
 // by the Apache License, Version 2.0
 #include "iceberg/tests/value_generator.h"
 
+#include "bytes/random.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
+#include "random/generators.h"
+#include "test_utils/randoms.h"
 
 namespace iceberg::tests {
 
@@ -18,46 +21,108 @@ struct generating_primitive_value_visitor {
       : spec_(spec) {}
     const value_spec& spec_;
 
-    value operator()(const boolean_type&) { return boolean_value{false}; }
+    int64_t generate_numeric_val() const {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return 0;
+        case value_pattern::random:
+            return random_generators::get_int<int64_t>();
+        }
+    }
+
+    value operator()(const boolean_type&) {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return boolean_value{false};
+        case value_pattern::random:
+            return boolean_value{::tests::random_bool()};
+        }
+    }
     value operator()(const int_type&) {
-        return int_value{static_cast<int>(spec_.forced_num_val.value_or(0))};
+        return int_value{static_cast<int>(
+          spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
     value operator()(const long_type&) {
-        return long_value{spec_.forced_num_val.value_or(0)};
+        return long_value{
+          spec_.forced_num_val.value_or(generate_numeric_val())};
     }
     value operator()(const float_type&) {
-        return float_value{
-          static_cast<float>(spec_.forced_num_val.value_or(0))};
+        return float_value{static_cast<float>(
+          spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
     value operator()(const double_type&) {
-        return double_value{
-          static_cast<double>(spec_.forced_num_val.value_or(0))};
+        return double_value{static_cast<double>(
+          spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
     value operator()(const decimal_type&) {
-        return decimal_value{spec_.forced_num_val.value_or(0)};
+        return decimal_value{
+          spec_.forced_num_val.value_or(generate_numeric_val())};
     }
     value operator()(const date_type&) {
-        return date_value{static_cast<int>(spec_.forced_num_val.value_or(0))};
+        return date_value{static_cast<int>(
+          spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
     value operator()(const time_type&) {
-        return time_value{spec_.forced_num_val.value_or(0)};
+        return time_value{
+          spec_.forced_num_val.value_or(generate_numeric_val())};
     }
     value operator()(const timestamp_type&) {
-        return timestamp_value{spec_.forced_num_val.value_or(0)};
+        return timestamp_value{
+          spec_.forced_num_val.value_or(generate_numeric_val())};
     }
     value operator()(const timestamptz_type&) {
-        return timestamptz_value{spec_.forced_num_val.value_or(0)};
+        return timestamptz_value{
+          spec_.forced_num_val.value_or(generate_numeric_val())};
     }
-    value operator()(const string_type&) { return string_value{iobuf{}}; }
-    value operator()(const uuid_type&) { return uuid_value{uuid_t{}}; }
-    value operator()(const fixed_type&) { return fixed_value{iobuf{}}; }
-    value operator()(const binary_type&) { return binary_value{iobuf{}}; }
+    value operator()(const string_type&) {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return string_value{iobuf{}};
+        case value_pattern::random:
+            return string_value{
+              random_generators::make_iobuf(spec_.max_strlen)};
+        }
+    }
+    value operator()(const uuid_type&) {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return uuid_value{uuid_t{}};
+        case value_pattern::random:
+            return uuid_value{uuid_t::create()};
+        }
+    }
+    value operator()(const fixed_type& t) {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return fixed_value{iobuf{}};
+        case value_pattern::random:
+            return fixed_value{random_generators::make_iobuf(t.length)};
+        }
+    }
+    value operator()(const binary_type&) {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return binary_value{iobuf{}};
+        case value_pattern::random:
+            return binary_value{
+              random_generators::make_iobuf(spec_.max_strlen)};
+        }
+    }
 };
 
 struct generating_value_visitor {
     explicit generating_value_visitor(const value_spec& spec)
       : spec_(spec) {}
     const value_spec& spec_;
+
+    size_t generate_num_elements() const {
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return spec_.max_elements;
+        case value_pattern::random:
+            return random_generators::get_int<size_t>() % spec_.max_elements;
+        }
+    }
 
     value operator()(const primitive_type& t) {
         return std::visit(generating_primitive_value_visitor{spec_}, t);
@@ -71,7 +136,7 @@ struct generating_value_visitor {
     }
     value operator()(const list_type& t) {
         auto ret = std::make_unique<list_value>();
-        for (size_t i = 0; i < spec_.max_elements; i++) {
+        for (size_t i = 0; i < generate_num_elements(); i++) {
             ret->elements.emplace_back(
               make_value(spec_, t.element_field->type));
         }
@@ -79,7 +144,7 @@ struct generating_value_visitor {
     }
     value operator()(const map_type& t) {
         auto ret = std::make_unique<map_value>();
-        for (size_t i = 0; i < spec_.max_elements; i++) {
+        for (size_t i = 0; i < generate_num_elements(); i++) {
             kv_value kv{
               make_value(spec_, t.key_field->type),
               make_value(spec_, t.value_field->type)};
