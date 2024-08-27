@@ -366,6 +366,32 @@ std::ostream& operator<<(std::ostream& o, const struct_value& v) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const std::unique_ptr<struct_value>& v) {
+    if (!v) {
+        o << "struct{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const std::unique_ptr<list_value>& v) {
+    if (!v) {
+        o << "list{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
+std::ostream& operator<<(std::ostream& o, const std::unique_ptr<map_value>& v) {
+    if (!v) {
+        o << "map{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
 std::ostream& operator<<(std::ostream& o, const value& v) {
     std::visit(value_ostream_visitor{o}, v);
     return o;

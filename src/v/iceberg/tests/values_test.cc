@@ -9,6 +9,8 @@
 
 #include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
+#include "iceberg/tests/test_schemas.h"
+#include "iceberg/tests/value_generator.h"
 #include "iceberg/values.h"
 
 #include <gtest/gtest.h>
@@ -396,6 +398,15 @@ TEST(ValuesTest, TestMapOStream) {
       "map{(k=int(0), v=none), (k=int(0), v=int(1)), (k=int(0), v=none), "
       "(k=int(0), v=none), (k=int(0), v=none), ...}",
       fmt::to_string(val).c_str());
+}
+
+TEST(ValuesTest, TestValueOStream) {
+    auto schema_field_type = test_nested_schema_type();
+    auto zero_val = tests::make_value({.max_elements = 1}, schema_field_type);
+    EXPECT_STREQ(
+      "struct{string(\"\"), int(0), boolean(false), list{string(\"\"), }, "
+      "map{(k=string(\"\"), v=map{(k=string(\"\"), v=int(0)), }), }, ...}",
+      fmt::to_string(zero_val).c_str());
 }
 
 TEST(ValuesTest, TestHashContainerStructs) {

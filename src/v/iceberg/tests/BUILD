@@ -201,6 +201,8 @@ redpanda_cc_gtest(
         "values_test.cc",
     ],
     deps = [
+        ":test_schemas",
+        ":value_generator",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",
         "//src/v/iceberg:values",

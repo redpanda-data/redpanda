@@ -153,6 +153,9 @@ std::ostream& operator<<(std::ostream&, const primitive_value&);
 std::ostream& operator<<(std::ostream&, const struct_value&);
 std::ostream& operator<<(std::ostream&, const list_value&);
 std::ostream& operator<<(std::ostream&, const map_value&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<struct_value>&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<list_value>&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<map_value>&);
 std::ostream& operator<<(std::ostream&, const value&);
 
 size_t value_hash(const struct_value&);
