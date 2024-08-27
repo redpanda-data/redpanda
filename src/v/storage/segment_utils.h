@@ -258,6 +258,11 @@ inline bool is_compactible(const model::record_batch& b) {
 offset_delta_time should_apply_delta_time_offset(
   ss::sharded<features::feature_table>& feature_table);
 
+// Mark a segment as completed window compaction, and whether it is "clean" (in
+// which case the `clean_compact_timestamp` is set in the segment's index).
+void mark_segment_as_finished_window_compaction(
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp);
+
 template<typename Func>
 auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
     static_assert(
