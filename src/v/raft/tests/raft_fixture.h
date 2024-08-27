@@ -11,29 +11,21 @@
  */
 
 #pragma once
-
-#include "base/vassert.h"
-#include "bytes/iobuf.h"
 #include "bytes/random.h"
 #include "cluster/errc.h"
 #include "config/mock_property.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/errc.h"
 #include "raft/fwd.h"
-#include "raft/group_configuration.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
-#include "random/generators.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/test.h"
@@ -46,11 +38,7 @@
 #include <absl/container/node_hash_map.h>
 #include <boost/range/irange.hpp>
 
-#include <optional>
 #include <ranges>
-#include <system_error>
-#include <type_traits>
-
 namespace raft {
 
 static constexpr raft::group_id test_group(123);

@@ -13,7 +13,6 @@
 
 #include "bytes/iobuf_parser.h"
 #include "config/property.h"
-#include "config/throughput_control_group.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -28,11 +27,9 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/heartbeats.h"
 #include "raft/state_machine_manager.h"
-#include "raft/tests/raft_group_fixture.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -42,30 +39,9 @@
 #include "test_utils/async.h"
 #include "utils/prefix_logger.h"
 
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/circular_buffer.hh>
-#include <seastar/core/gate.hh>
-#include <seastar/core/io_priority_class.hh>
-#include <seastar/core/scheduling.hh>
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/timed_out_error.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/file.hh>
-#include <seastar/util/log.hh>
-#include <seastar/util/noncopyable_function.hh>
-
-#include <absl/container/flat_hash_set.h>
-#include <fmt/core.h>
-
-#include <algorithm>
-#include <chrono>
-#include <filesystem>
-#include <memory>
-#include <optional>
-#include <ranges>
-#include <stdexcept>
-#include <type_traits>
 
 namespace raft {
 
