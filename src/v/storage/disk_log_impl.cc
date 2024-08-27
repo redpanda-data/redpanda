@@ -560,7 +560,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     vlog(gclog.debug, "[{}] running sliding window compaction", config().ntp());
     auto segs = find_sliding_range(cfg, new_start_offset);
     if (segs.empty()) {
-        vlog(gclog.debug, "[{}] no more segments to compact", config().ntp());
+        vlog(
+          gclog.debug, "[{}] no segments in range to compact", config().ntp());
         co_return false;
     }
     bool has_self_compacted = false;
