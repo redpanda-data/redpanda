@@ -20,6 +20,10 @@ enum class value_pattern {
 struct value_spec {
     value_pattern pattern{value_pattern::zeros};
 
+    // Percentage of time (out of 100) optional fields will have null values
+    // generated for them.
+    int null_pct = 0;
+
     // Number of elements to include in list and map fields.
     size_t max_elements = 5;
 

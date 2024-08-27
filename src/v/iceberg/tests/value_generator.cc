@@ -124,13 +124,27 @@ struct generating_value_visitor {
         }
     }
 
+    bool should_null(const nested_field_ptr& field) const {
+        if (field->required) {
+            return false;
+        }
+        if (spec_.null_pct <= 0) {
+            return false;
+        }
+        auto null_pct = std::min(spec_.null_pct, 100);
+        return random_generators::get_int(0, 100) <= null_pct;
+    }
+
     value operator()(const primitive_type& t) {
         return std::visit(generating_primitive_value_visitor{spec_}, t);
     }
     value operator()(const struct_type& t) {
         auto ret = std::make_unique<struct_value>();
         for (const auto& f : t.fields) {
-            ret->fields.emplace_back(make_value(spec_, f->type));
+            ret->fields.emplace_back(
+              should_null(f)
+                ? std::nullopt
+                : std::make_optional<value>(make_value(spec_, f->type)));
         }
         return ret;
     }
@@ -138,7 +152,10 @@ struct generating_value_visitor {
         auto ret = std::make_unique<list_value>();
         for (size_t i = 0; i < generate_num_elements(); i++) {
             ret->elements.emplace_back(
-              make_value(spec_, t.element_field->type));
+              should_null(t.element_field)
+                ? std::nullopt
+                : std::make_optional<value>(
+                  make_value(spec_, t.element_field->type)));
         }
         return ret;
     }
@@ -147,7 +164,9 @@ struct generating_value_visitor {
         for (size_t i = 0; i < generate_num_elements(); i++) {
             kv_value kv{
               make_value(spec_, t.key_field->type),
-              make_value(spec_, t.value_field->type)};
+              should_null(t.value_field) ? std::nullopt
+                                         : std::make_optional<value>(make_value(
+                                           spec_, t.value_field->type))};
             ret->kvs.emplace_back(std::move(kv));
         }
         return ret;
