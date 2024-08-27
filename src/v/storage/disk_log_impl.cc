@@ -645,13 +645,18 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (cfg.asrc) {
             cfg.asrc->check();
         }
+        // A segment is considered "clean" if it has been fully indexed (all
+        // keys are de-duplicated)
+        const bool is_clean_compacted = seg->offsets().get_base_offset()
+                                        >= idx_start_offset;
         if (seg->offsets().get_base_offset() > map.max_offset()) {
             // The map was built from newest to oldest segments within this
             // sliding range. If we see a new segment whose offsets are all
             // higher than those indexed, it may be because the segment is
             // entirely comprised of non-data batches. Mark it as compacted so
             // we can progress through compactions.
-            seg->mark_as_finished_windowed_compaction();
+            internal::mark_segment_as_finished_window_compaction(
+              seg, is_clean_compacted);
             vlog(
               gclog.debug,
               "[{}] treating segment as compacted, offsets fall above highest "
@@ -663,8 +668,14 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         }
         if (!seg->may_have_compactible_records()) {
             // All data records are already compacted away. Skip to avoid a
-            // needless rewrite.
-            seg->mark_as_finished_windowed_compaction();
+            // needless rewrite. But, still flush index in case we are clean
+            // compacted to persist clean_compact_timestamp
+            internal::mark_segment_as_finished_window_compaction(
+              seg, is_clean_compacted);
+            if (is_clean_compacted) {
+                co_await seg->index().flush();
+            }
+
             vlog(
               gclog.trace,
               "[{}] treating segment as compacted, either all non-data "
@@ -673,6 +684,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
               seg->filename());
             continue;
         }
+
         // TODO: implement a segment replacement strategy such that each term
         // tries to write only one segment (or more if the term had a large
         // amount of data), rather than replacing N segments with N segments.
@@ -758,11 +770,15 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         seg->index().swap_index_state(std::move(new_idx));
         seg->force_set_commit_offset_from_index();
         seg->release_batch_cache_index();
+
+        // Mark the segment as completed window compaction, and possibly set the
+        // clean_compact_timestamp in it's index.
+        internal::mark_segment_as_finished_window_compaction(
+          seg, is_clean_compacted);
+
         co_await seg->index().flush();
         co_await ss::rename_file(
           cmp_idx_tmpname.string(), cmp_idx_name.string());
-
-        seg->mark_as_finished_windowed_compaction();
         _probe->segment_compacted();
         _probe->add_compaction_removed_bytes(
           ssize_t(size_before) - ssize_t(size_after));
@@ -774,7 +790,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         vlog(
           gclog.debug, "[{}] Final compacted segment {}", config().ntp(), seg);
     }
+
     _last_compaction_window_start_offset = idx_start_offset;
+
     co_return true;
 }
 

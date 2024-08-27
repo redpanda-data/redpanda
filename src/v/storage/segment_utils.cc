@@ -1122,4 +1122,12 @@ offset_delta_time should_apply_delta_time_offset(
       && feature_table.local().is_active(features::feature::node_isolation)};
 }
 
+void mark_segment_as_finished_window_compaction(
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp) {
+    seg->mark_as_finished_windowed_compaction();
+    if (set_clean_compact_timestamp) {
+        seg->index().maybe_set_clean_compact_timestamp(model::timestamp::now());
+    }
+}
+
 } // namespace storage::internal
