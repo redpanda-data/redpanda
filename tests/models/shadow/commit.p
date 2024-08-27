@@ -110,20 +110,20 @@ machine CommitProtocol {
   // contained in the L0d object. The append_to_request index maps append
   // requests to the request's source batch in the L0d object.
   fun append_placeholders() {
-    var offset: int;
+    var batch_idx: int;
     var request: produce_request;
 
-    while (offset < sizeof(object)) {
-      append_to_object[request_id] = offset;
-      request = requests[object_to_request[offset]];
+    while (batch_idx < sizeof(object)) {
+      append_to_object[request_id] = batch_idx;
+      request = requests[object_to_request[batch_idx]];
 
       send request.partition, append_request_event, (
         source = this,
         request_id = request_id,
-        batch = (L0d_object_id = object_id, L0d_offset = offset));
+        batch = (L0d_object_id = object_id, L0d_offset = batch_idx));
 
       request_id = request_id + 1;
-      offset = offset + 1;
+      batch_idx = batch_idx + 1;
     }
   }
 }
