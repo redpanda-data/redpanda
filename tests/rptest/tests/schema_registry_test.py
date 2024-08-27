@@ -996,6 +996,34 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.json()["id"] == 1
 
     @cluster(num_nodes=3)
+    def test_post_subjects_subject_versions_metadata_ruleset(self):
+        """
+        Verify posting a schema with metatada and ruleSet
+        These are not supported, but if they're null, we let it pass.
+        """
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug("Dump the schema with null metadata and ruleSet")
+        schema_1_data = json.dumps({
+            "schema": schema1_def,
+            "metadata": None,
+            "ruleSet": None
+        })
+
+        self.logger.debug("Posting schema as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Retrieving schema")
+        result_raw = self._post_subjects_subject(subject=f"{topic}-key",
+                                                 data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+    @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
         """
         Verify posting a schema
