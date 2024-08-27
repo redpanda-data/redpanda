@@ -21,6 +21,7 @@ rp_test(
     test_schemas.cc
     transform_utils_test.cc
     values_test.cc
+    values_avro_test.cc
     value_generator.cc
   LIBRARIES
     Avro::avro
