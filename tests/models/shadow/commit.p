@@ -49,7 +49,11 @@ machine CommitProtocol {
       var offset: int;
       var request: produce_request;
 
-      // map the partition append response back the original produce request
+      // map the partition append response back the original produce request.
+      // first the placeholder append request is mapped back to its respective
+      // batch expressed as an offset within the L0d object. This offset is then
+      // mapped back to the originating produce request using the
+      // `object_to_request` shuffle index.
       offset = object_to_request[append_to_object[response.request_id]];
       request = requests[offset];
 
@@ -63,6 +67,16 @@ machine CommitProtocol {
   // object may have any ordering as long as the object_to_request mapping
   // maintains the property that for each offset in the object, the value of
   // object_to_request[offset] is the offset of the source request.
+  //
+  // More detail about object_to_request: currently the order of batches in the
+  // L0d offset is the same as the ordering of their respective produce requests
+  // in the `requests` sequence, which means that only the `offset` is necessary
+  // to correlate items between the data structures. This means that currently
+  // `object_to_request` is effectively an identify function. However in general
+  // this ordering need not hold and we may  want to model other organizations
+  // of data in the L0d object. The `object_to_request` map allows the freedom
+  // to organize L0d contents by providing an index from object offset back to
+  // the original request index. See `append_response_event` handler for use.
   fun build_L0d() {
     var offset: int;
     var request: produce_request;
