@@ -212,7 +212,7 @@ ss::future<index_state> deduplicate_segment(
             !compaction_placeholder_enabled
             && (is_last_batch && is_last_record_in_batch)) {
               vlog(
-                stlog.trace,
+                gclog.trace,
                 "retaining last record: {} of segment from batch: {}",
                 r,
                 b.header());

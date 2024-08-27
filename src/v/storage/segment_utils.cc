@@ -554,7 +554,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     auto write_lock_holder = co_await s->write_lock();
     if (segment_generation != s->get_generation_id()) {
         vlog(
-          stlog.debug,
+          gclog.debug,
           "segment generation mismatch current generation: {}, previous "
           "generation: {}, skipping compaction",
           s->get_generation_id(),
