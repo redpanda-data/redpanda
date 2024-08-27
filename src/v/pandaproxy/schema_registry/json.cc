@@ -1132,50 +1132,35 @@ bool is_object_pattern_properties_superset(
 bool is_object_required_superset(
   context const& ctx, json::Value const& older, json::Value const& newer) {
     // to pass the check, a required property from newer has to be present in
-    // older, or if new it needs to be without a default value note that:
+    // older, or if new it needs to have a default value.
+    // note that:
     // 1. we check only required properties that are in both newer["properties"]
     // and older["properties"]
     // 2. there is no explicit check that older has an open content model
     //    there might be a property name outside of (1) that could be rejected
-    //    by older, if older["additionalProperties"] is false
+    //    by update, if update["additionalProperties"] is false
 
     auto older_req = get_array_or_empty(older, "required");
     auto newer_req = get_array_or_empty(newer, "required");
     auto older_props = get_object_or_empty(ctx.older, older, "properties");
     auto newer_props = get_object_or_empty(ctx.newer, newer, "properties");
 
-    // TODO O(n^2) lookup that can be a set_intersection
-    auto newer_props_in_older = older_props
-                                | std::views::transform([&](auto& n_v) {
-                                      return newer_props.FindMember(n_v.name);
-                                  })
-                                | std::views::filter(
-                                  [end = newer_props.end()](auto it) {
-                                      return it != end;
-                                  });
-    // intersections of older["properties"] and newer["properties"]
-    for (auto prop_it : newer_props_in_older) {
-        auto& [name, newer_schema] = *prop_it;
+    // TODO O(n^2) lookup that can be a set_intersection.
+    auto older_req_in_both_properties
+      = older_req | std::views::filter([&](json::Value const& o) {
+            return newer_props.HasMember(o) && older_props.HasMember(o);
+        });
 
-        auto older_is_required = std::ranges::find(older_req, name)
-                                 != older_req.end();
-        auto newer_is_required = std::ranges::find(newer_req, name)
-                                 != newer_req.end();
-        if (older_is_required && !newer_is_required) {
-            // required property not present in newer, not compatible
-            return false;
-        }
-
-        if (!older_is_required && newer_is_required) {
-            if (newer_schema.HasMember("default")) {
-                // newer required property with a default makes newer
-                // incompatible
-                return false;
-            }
-        }
-    }
-
-    return true;
+    // for each element:
+    // in older.required? | in newer.required? | result
+    //       yes          |        yes         |  yes
+    //       yes          |         no         |  if it has "default" in older
+    //       no           |        yes         |  yes
+    return std::ranges::all_of(
+      older_req_in_both_properties, [&](json::Value const& o) {
+          return std::ranges::find(newer_req, o) != newer_req.End()
+                 || older_props[o].HasMember("default");
+      });
 }
 
 bool is_object_dependencies_superset(
