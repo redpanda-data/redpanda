@@ -119,8 +119,8 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
                                     topic_name, model::partition_id(0), next)
                                   .get();
         BOOST_REQUIRE(!consumed_records.empty());
-        for (const auto& [k, v] : consumed_records) {
-            BOOST_REQUIRE_EQUAL(k, ssx::sformat("key{}", next()));
+        for (const auto& kv : consumed_records) {
+            BOOST_REQUIRE_EQUAL(kv.key, ssx::sformat("key{}", next()));
             next += model::offset(1);
         }
     }

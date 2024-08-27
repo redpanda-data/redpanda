@@ -76,11 +76,16 @@ kafka_produce_transport::produce_partition_requests(
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
         kafka::produce_request::partition partition;
-        for (auto& [k, v] : records) {
+        for (auto& kv : records) {
+            const auto& k = kv.key;
+            const auto& v_opt = kv.val;
             iobuf key_buf;
             key_buf.append(k.data(), k.size());
-            iobuf val_buf;
-            val_buf.append(v.data(), v.size());
+            std::optional<iobuf> val_buf;
+            if (v_opt.has_value()) {
+                const auto& v = v_opt.value();
+                val_buf = iobuf::from({v.data(), v.size()});
+            }
             builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
         }
         if (ts.has_value()) {
@@ -169,10 +174,15 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
                 auto& records_for_partition = ret[partition.partition_index];
                 for (auto& r : records) {
                     iobuf_const_parser key_buf(r.key());
-                    iobuf_const_parser val_buf(r.value());
-                    records_for_partition.emplace_back(kv_t{
-                      key_buf.read_string(key_buf.bytes_left()),
-                      val_buf.read_string(val_buf.bytes_left())});
+                    auto key_str = key_buf.read_string(key_buf.bytes_left());
+                    if (r.is_tombstone()) {
+                        records_for_partition.emplace_back(key_str);
+                    } else {
+                        iobuf_const_parser val_buf(r.value());
+                        auto val_str = val_buf.read_string(
+                          val_buf.bytes_left());
+                        records_for_partition.emplace_back(key_str, val_str);
+                    }
                 }
             }
         }
