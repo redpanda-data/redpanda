@@ -40,6 +40,9 @@ test tcMultiPartitionProduce [main=MultiPartitionProduceTest]:
   assert ProduceRequestResponse in
   (union System, { MultiPartitionProduceTest });
 
+// This test case should not normally be run when checking the model. It is not
+// expected to pass nor fail, but rather it is used as a tool for debugging and
+// development. See `SelectStorageConfiguration` for more information.
 test tcFindConfiguration [main=MultiPartitionProduceTest]:
   assert ProduceRequestResponse, SelectStorageConfiguration in
   (union System, { MultiPartitionProduceTest });

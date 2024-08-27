@@ -26,7 +26,13 @@ spec ProduceRequestResponse observes produce_request_event, produce_response_eve
   }
 }
 
-// Find a schedule that has a particular storage configuration.
+// This monitor is expected to end in a hot state, by design. It's intended to
+// be used not to check a correctness property, but rather as a tool for finding
+// execution schedules of interest, which I've found to be useful in debugging
+// and development. To use this monitor, describe the configuration of interest
+// by modifying the `target` map below (see "set-target-configuration"). Note
+// that in general the target configuration needs to be co-designed with the
+// main test harness. For example, 2 produced batches, 1 object with 2 batches.
 spec SelectStorageConfiguration observes monitor_storage_event {
   var objects: map[int, L0d_object];
 
@@ -61,10 +67,13 @@ spec SelectStorageConfiguration observes monitor_storage_event {
       }
     }
 
-    // look for a schedule with 2 objects containing 4 batches each, and 2
-    // objects containing 1 batch each, for a total of 10 batches.
+    // set-target-configuration
+    //
+    // example: find an execution schedule with 2 objects containing 4 batches
+    // each, and 2 objects containing 1 batch each, for a total of 10 batches.
     target[4] = 2;
     target[1] = 2;
+
     return sizes == target;
   }
 }
