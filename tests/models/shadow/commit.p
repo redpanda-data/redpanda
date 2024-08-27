@@ -78,12 +78,12 @@ machine CommitProtocol {
   // to organize L0d contents by providing an index from object offset back to
   // the original request index. See `append_response_event` handler for use.
   fun build_L0d() {
-    var offset: int;
+    var request_idx: int;
     var request: produce_request;
-    while (offset < sizeof(requests)) {
-      object += (sizeof(object), requests[offset].batch_id);
-      object_to_request += (sizeof(object_to_request), offset);
-      offset = offset + 1;
+    while (request_idx < sizeof(requests)) {
+      object += (sizeof(object), requests[request_idx].batch_id);
+      object_to_request += (sizeof(object_to_request), request_idx);
+      request_idx = request_idx + 1;
     }
   }
 
