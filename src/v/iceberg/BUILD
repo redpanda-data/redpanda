@@ -125,6 +125,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_entry",
+    hdrs = [
+        "manifest_entry.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition_key",
+        ":values",
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition",
     hdrs = [
         "partition.h",
