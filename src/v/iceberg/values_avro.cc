@@ -177,4 +177,173 @@ struct_to_avro(const struct_value& v, const avro::NodePtr& avro_schema) {
     return datum;
 }
 
+namespace {
+
+struct primitive_value_parsing_visitor {
+    explicit primitive_value_parsing_visitor(const avro::GenericDatum& data)
+      : data_(data) {}
+    const avro::GenericDatum& data_;
+
+    // Throws if data_'s type does not match the input type.
+    void maybe_throw_wrong_type(const avro::Type& type) const {
+        if (data_.type() != type) {
+            throw std::invalid_argument(fmt::format(
+              "Expected {} type but got {}",
+              avro::toString(type),
+              avro::toString(data_.type())));
+        }
+    }
+
+    value operator()(const boolean_type&) {
+        maybe_throw_wrong_type(avro::AVRO_BOOL);
+        return boolean_value{data_.value<bool>()};
+    }
+    value operator()(const int_type&) {
+        maybe_throw_wrong_type(avro::AVRO_INT);
+        return int_value{data_.value<int>()};
+    }
+    value operator()(const long_type&) {
+        maybe_throw_wrong_type(avro::AVRO_LONG);
+        return long_value{data_.value<long>()};
+    }
+    value operator()(const float_type&) {
+        maybe_throw_wrong_type(avro::AVRO_FLOAT);
+        return float_value{data_.value<float>()};
+    }
+    value operator()(const double_type&) {
+        maybe_throw_wrong_type(avro::AVRO_DOUBLE);
+        return double_value{data_.value<double>()};
+    }
+    value operator()(const date_type&) {
+        maybe_throw_wrong_type(avro::AVRO_INT);
+        return date_value{data_.value<int32_t>()};
+    }
+    value operator()(const time_type&) {
+        maybe_throw_wrong_type(avro::AVRO_LONG);
+        return time_value{data_.value<int64_t>()};
+    }
+    value operator()(const timestamp_type&) {
+        maybe_throw_wrong_type(avro::AVRO_LONG);
+        return timestamp_value{data_.value<int64_t>()};
+    }
+    value operator()(const timestamptz_type&) {
+        maybe_throw_wrong_type(avro::AVRO_LONG);
+        return timestamptz_value{data_.value<int64_t>()};
+    }
+    value operator()(const string_type&) {
+        maybe_throw_wrong_type(avro::AVRO_STRING);
+        return string_value{iobuf::from(data_.value<std::string>())};
+    }
+    value operator()(const fixed_type&) {
+        throw std::invalid_argument("XXX fixed not implemented");
+    }
+    value operator()(const uuid_type&) {
+        throw std::invalid_argument("XXX uuid not implemented");
+    }
+    value operator()(const binary_type&) {
+        maybe_throw_wrong_type(avro::AVRO_BYTES);
+        const auto& v = data_.value<std::vector<uint8_t>>();
+        iobuf b;
+        b.append(v.data(), v.size());
+        return binary_value{std::move(b)};
+    }
+    value operator()(const decimal_type&) {
+        throw std::invalid_argument("XXX decimal not implemented");
+    }
+};
+
+struct value_parsing_visitor {
+    explicit value_parsing_visitor(const avro::GenericDatum& data)
+      : data_(data) {}
+    const avro::GenericDatum& data_;
+
+    value operator()(const primitive_type& t) {
+        return std::visit(primitive_value_parsing_visitor{data_}, t);
+    }
+    value operator()(const list_type& t) {
+        if (data_.type() != avro::AVRO_ARRAY) {
+            throw std::invalid_argument(
+              fmt::format("Expected array: {}", avro::toString(data_.type())));
+        }
+        auto v = std::make_unique<list_value>();
+        const auto& array = data_.value<avro::GenericArray>();
+        for (const auto& d : array.value()) {
+            v->elements.emplace_back(val_from_avro(
+              d, t.element_field->type, t.element_field->required));
+        }
+        return v;
+    }
+    value operator()(const struct_type& t) {
+        if (data_.type() != avro::AVRO_RECORD) {
+            throw std::invalid_argument(
+              fmt::format("Expected record: {}", avro::toString(data_.type())));
+        }
+        auto v = std::make_unique<struct_value>();
+        const auto& record = data_.value<avro::GenericRecord>();
+        if (t.fields.size() != record.fieldCount()) {
+            throw std::invalid_argument(fmt::format(
+              "Expected key-value record of size {}: {}",
+              t.fields.size(),
+              record.fieldCount()));
+        }
+        for (size_t i = 0; i < t.fields.size(); i++) {
+            v->fields.emplace_back(val_from_avro(
+              record.fieldAt(i), t.fields[i]->type, t.fields[i]->required));
+        }
+        return v;
+    }
+    value operator()(const map_type& t) {
+        if (data_.type() != avro::AVRO_ARRAY) {
+            throw std::invalid_argument(fmt::format(
+              "Expected map array: {}", avro::toString(data_.type())));
+        }
+        auto v = std::make_unique<map_value>();
+        const auto& array = data_.value<avro::GenericArray>();
+        for (const auto& d : array.value()) {
+            const auto& kv_record = d.value<avro::GenericRecord>();
+            if (kv_record.fieldCount() != 2) {
+                throw std::invalid_argument(fmt::format(
+                  "Expected key-value record of size 2: {}",
+                  kv_record.fieldCount()));
+            }
+            const auto& k_record = kv_record.fieldAt(0);
+            const auto& v_record = kv_record.fieldAt(1);
+            kv_value kv_val{
+              .key = std::move(*val_from_avro(
+                k_record, t.key_field->type, t.key_field->required)),
+              .val = val_from_avro(
+                v_record, t.value_field->type, t.value_field->required),
+            };
+            v->kvs.emplace_back(std::move(kv_val));
+        }
+        return v;
+    }
+};
+
+} // namespace
+
+std::optional<value> val_from_avro(
+  const avro::GenericDatum& d,
+  const field_type& expected_type,
+  field_required required) {
+    if (required) {
+        if (d.isUnion()) {
+            throw std::invalid_argument(fmt::format(
+              "Unexpected union for required field: {}",
+              avro::toString(d.type())));
+        }
+        return std::visit(value_parsing_visitor{d}, expected_type);
+    }
+    if (!d.isUnion()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected union for non-required field: {}",
+          avro::toString(d.type())));
+    }
+    // NOTE: type() on a union unwraps the union type.
+    if (d.type() == avro::AVRO_NULL) {
+        return std::nullopt;
+    }
+    return std::visit(value_parsing_visitor{d}, expected_type);
+}
+
 } // namespace iceberg

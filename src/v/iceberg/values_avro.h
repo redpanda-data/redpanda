@@ -13,6 +13,10 @@
 
 #include <avro/Node.hh>
 
+namespace avro {
+class GenericDatum;
+} // namespace avro
+
 namespace iceberg {
 
 // Serializes the given struct value with the given struct type as an Avro
@@ -23,5 +27,11 @@ namespace iceberg {
 // implemented yet.
 avro::GenericDatum
 struct_to_avro(const struct_value& v, const avro::NodePtr& avro_schema);
+
+// Parses the givn Avro datum and returns the corresponding value.
+std::optional<value> val_from_avro(
+  const avro::GenericDatum& d,
+  const field_type& expected_type,
+  field_required required);
 
 } // namespace iceberg
