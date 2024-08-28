@@ -42,8 +42,8 @@ func TestStripFlagset(t *testing.T) {
 		expStripped []string
 	}{
 		{
-			args:        []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2"},
-			expKept:     []string{"-f", "foo", "finalarg", "finalarg2"},
+			args:        []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "--version", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2", "-r", "--finalUnknown"},
+			expKept:     []string{"--version", "-f", "foo", "finalarg", "finalarg2", "-r", "--finalUnknown"},
 			expStripped: []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug"},
 		},
 	} {
