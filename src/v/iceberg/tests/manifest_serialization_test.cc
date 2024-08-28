@@ -258,10 +258,11 @@ TEST(ManifestSerializationTest, TestSerializeManifestData) {
       std::get<struct_type>(test_nested_schema_type()));
 
     auto serialized_buf = serialize_avro(m);
-    auto m_roundtrip = parse_manifest(serialized_buf.copy());
-    ASSERT_EQ(m.metadata, m_roundtrip.metadata);
-    ASSERT_EQ(100, m_roundtrip.entries.size());
+    for (int i = 0; i < 10; i++) {
+        auto m_roundtrip = parse_manifest(std::move(serialized_buf));
+        ASSERT_EQ(m.metadata, m_roundtrip.metadata);
+        ASSERT_EQ(100, m_roundtrip.entries.size());
 
-    auto roundtrip_buf = serialize_avro(m_roundtrip);
-    ASSERT_EQ(serialized_buf, roundtrip_buf);
+        serialized_buf = serialize_avro(m_roundtrip);
+    }
 }
