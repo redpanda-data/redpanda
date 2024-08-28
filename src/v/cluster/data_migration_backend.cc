@@ -523,7 +523,7 @@ ss::future<errc> backend::do_topic_work(
     vassert(
       sought_state == state::finished,
       "only ->finished state transition requires topic work");
-    // todo: unmount first
+    // unmount first
     auto unmount_res = co_await retry_loop(
       rcn, [this, &nt, &rcn] { return unmount_topic(nt, rcn); });
     if (unmount_res == errc::topic_not_exists) {
@@ -534,6 +534,7 @@ ss::future<errc> backend::do_topic_work(
         vlog(dm_log.warn, "failed to unmount topic {}: {}", nt, unmount_res);
         co_return unmount_res;
     }
+    // delete
     co_return co_await retry_loop(rcn, [this, &nt, &rcn] {
         return _topics_frontend.delete_topic_after_migration(
           nt, rcn.get_deadline());

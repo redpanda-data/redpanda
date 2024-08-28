@@ -65,8 +65,6 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
  * ┌─────▼────┐
  * │ finished │
  * └──────────┘
- *
- *
  */
 enum class state {
     planned,

@@ -32,7 +32,6 @@
 
 namespace cluster::data_migrations {
 
-// TODO: add configuration property
 worker::worker(
   model::node_id self,
   partition_leaders_table& leaders_table,
