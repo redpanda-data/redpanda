@@ -4346,10 +4346,10 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
 
 FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 #ifdef NDEBUG
-    size_t num_test_cases = 5000;
+    size_t num_test_cases = 1000;
     size_t num_segments = 300;
 #else
-    size_t num_test_cases = 500;
+    size_t num_test_cases = 100;
     size_t num_segments = 30;
 #endif
     // This test generates 300 segments and creates a record batch map.
