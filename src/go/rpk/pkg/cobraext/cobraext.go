@@ -106,6 +106,9 @@ func StripFlags(args []string, fs *pflag.FlagSet, long []string, short []string)
 			if f == nil || !strip {
 				inFlag = len(kv) == 1
 				keep = append(keep, arg) // either we are keeping this flag, or it is not in our flag set so we cannot strip it
+				if i+1 < len(args) && strings.HasPrefix(args[i+1], "-") {
+					inFlag = false
+				}
 				continue
 			}
 
