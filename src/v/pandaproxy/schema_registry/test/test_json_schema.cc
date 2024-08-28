@@ -458,14 +458,6 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "object", "properties": {"aaaa": {"type": "string"}}})",
     .reader_is_compatible_with_writer = false,
   },
-  // object checks: patternProperties need to be compatible
-  {
-    .reader_schema
-    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}}})",
-    .writer_schema
-    = R"({"type": "object", "patternProperties": {"^a": {"type": "number"}}})",
-    .reader_is_compatible_with_writer = false,
-  },
   // object checks: dependencies removed
   {
     .reader_schema = R"(
@@ -1218,6 +1210,34 @@ static constexpr auto compatibility_test_cases = std::to_array<
             "items": false
         })",
 
+    .reader_is_compatible_with_writer = true,
+  },
+  // object: "patternProperties" is not involved in compat checks
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "patternProperties": {
+    "^a": {
+      "type": "boolean"
+    },
+    "^b": {
+      "type": "integer"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "patternProperties": {
+    "^a": {
+      "type": "null"
+    },
+    "^c": {
+      "type": "string"
+    }
+  }
+})",
     .reader_is_compatible_with_writer = true,
   },
 });
