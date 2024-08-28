@@ -21,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shared_ptr.hh>
 
 namespace cluster::data_migrations {
 
@@ -87,6 +88,14 @@ private:
         state sought_state;
         errc ec;
     };
+    class topic_scoped_work_state {
+        ss::abort_source _as;
+
+    public:
+        retry_chain_node rcn;
+        topic_scoped_work_state();
+    };
+    using tsws_lwptr_t = ss::lw_shared_ptr<topic_scoped_work_state>;
 
 private:
     /* loop management */
@@ -116,11 +125,14 @@ private:
     ss::future<errc> do_topic_work(
       const model::topic_namespace& nt,
       state sought_state,
-      const inbound_topic_work_info& itwi);
+      const inbound_topic_work_info& itwi,
+      tsws_lwptr_t tsws_lwptr);
     ss::future<errc> do_topic_work(
       const model::topic_namespace& nt,
       state sought_state,
-      const outbound_topic_work_info& otwi);
+      const outbound_topic_work_info& otwi,
+      tsws_lwptr_t tsws_lwptr);
+    void abort_all_topic_work();
     /* topic work helpers */
     ss::future<errc> create_topic(
       const model::topic_namespace& local_nt,
@@ -265,6 +277,8 @@ private:
 
     chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
     chunked_vector<topic_work_result> _topic_work_results;
+    chunked_hash_map<model::topic_namespace, tsws_lwptr_t>
+      _active_topic_work_states; // no null pointers on scheduling points
 
     model::node_id _self;
     migrations_table& _table;
