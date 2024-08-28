@@ -17525,7 +17525,7 @@
     "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "y9h5L2NtWbogyWSOJgqnUaU50MTPWAW+waelXSirMVg=",
-        "usagesDigest": "0WfL6NdG8mlekoTYr0fwcmDznysoY3G9ft36/b+Sq3k=",
+        "usagesDigest": "AUgFAfKkb3e0rjuc2BTIOHvkGc7MgukGJLWXFYHeBVg=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -17540,10 +17540,8 @@
               "exec_arch": "",
               "exec_os": "",
               "llvm_mirror": "",
-              "llvm_version": "",
-              "llvm_versions": {
-                "": "17.0.6"
-              },
+              "llvm_version": "17.0.6",
+              "llvm_versions": {},
               "netrc": "",
               "sha256": {
                 "linux-aarch64": "259da3d332e2080ecfe5a059dedb8f485f0b20e6ed2e3880bc5a5b57084f4036",
@@ -17570,10 +17568,8 @@
               "exec_arch": "",
               "exec_os": "",
               "llvm_mirror": "",
-              "llvm_version": "",
-              "llvm_versions": {
-                "": "18.1.8"
-              },
+              "llvm_version": "18.1.8",
+              "llvm_versions": {},
               "netrc": "",
               "sha256": {
                 "linux-aarch64": "95223a9fd35a2cfea2582b34519bbf65ff6bed498a378eb545a9d4fb8ee5a832",

@@ -119,9 +119,7 @@ CXX_STANDARD = "c++20"
 llvm.toolchain(
     name = "llvm_17_toolchain",
     cxx_standard = {"": CXX_STANDARD},
-    llvm_versions = {
-        "": "17.0.6",
-    },
+    llvm_version = "17.0.6",
     sha256 = {
         "linux-aarch64": "259da3d332e2080ecfe5a059dedb8f485f0b20e6ed2e3880bc5a5b57084f4036",
         "linux-x86_64": "2c06b2acb362a10b9e7ac3b0aebdccd710a5329d9c7ee46c10889fdf00a41b9f",
@@ -138,9 +136,7 @@ register_toolchains("@llvm_17_toolchain//:all")
 llvm.toolchain(
     name = "llvm_18_toolchain",
     cxx_standard = {"": CXX_STANDARD},
-    llvm_versions = {
-        "": "18.1.8",
-    },
+    llvm_version = "18.1.8",
     sha256 = {
         "linux-aarch64": "95223a9fd35a2cfea2582b34519bbf65ff6bed498a378eb545a9d4fb8ee5a832",
         "linux-x86_64": "f79565afd6f5d270c10a11cbe4d4b59ecf807df29051af2b479daf4524aa9c73",
