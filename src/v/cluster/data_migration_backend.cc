@@ -504,6 +504,21 @@ ss::future<errc> backend::do_topic_work(
         co_return co_await retry_loop(
           rcn, [this, &nt, &rcn] { return confirm_mount_topic(nt, rcn); });
     }
+    case state::cancelled: {
+        // attempt to unmount first
+        auto unmount_res = co_await unmount_topic(nt, rcn);
+        if (unmount_res != errc::success) {
+            vlog(
+              dm_log.warn, "failed to unmount topic {}: {}", nt, unmount_res);
+        }
+        // drop topic in any case
+        auto drop_res = co_await delete_topic(nt, rcn);
+        if (drop_res != errc::success) {
+            vlog(dm_log.warn, "failed to drop topic {}: {}", nt, drop_res);
+            co_return drop_res;
+        }
+        co_return errc::success;
+    }
     default:
         vassert(
           false,
@@ -519,26 +534,34 @@ ss::future<errc> backend::do_topic_work(
   const outbound_topic_work_info&,
   tsws_lwptr_t tsws) {
     auto& rcn = tsws->rcn;
-    // this assert is in accordance to the logic in get_work_scope
-    vassert(
-      sought_state == state::finished,
-      "only ->finished state transition requires topic work");
-    // unmount first
-    auto unmount_res = co_await retry_loop(
-      rcn, [this, &nt, &rcn] { return unmount_topic(nt, rcn); });
-    if (unmount_res == errc::topic_not_exists) {
-        vlog(dm_log.warn, "topic {} does not exist, ignoring", nt, unmount_res);
+    // this switch should be in accordance to the logic in get_work_scope
+    switch (sought_state) {
+    case state::finished: {
+        // unmount first
+        auto unmount_res = co_await unmount_topic(nt, rcn);
+        if (unmount_res != errc::success) {
+            vlog(
+              dm_log.warn, "failed to unmount topic {}: {}", nt, unmount_res);
+            co_return unmount_res;
+        }
+        // delete
+        co_return co_await delete_topic(nt, rcn);
+    }
+    case state::cancelled: {
+        // Noop, we have it here only because reconciliation logic requires
+        // either topic or partition work. The topic is unmounted and deleted in
+        // cut_over state, which cannot be cancelled. So if we are here we only
+        // need to lift topic restrictions, which is performed by
+        // migrated_resources.
         co_return errc::success;
     }
-    if (unmount_res != errc::success) {
-        vlog(dm_log.warn, "failed to unmount topic {}: {}", nt, unmount_res);
-        co_return unmount_res;
+    default:
+        vassert(
+          false,
+          "unknown topic work requested when transitioning outbound migration "
+          "state to {}",
+          sought_state);
     }
-    // delete
-    co_return co_await retry_loop(rcn, [this, &nt, &rcn] {
-        return _topics_frontend.delete_topic_after_migration(
-          nt, rcn.get_deadline());
-    });
 }
 
 void backend::abort_all_topic_work() {
@@ -668,11 +691,33 @@ ss::future<errc> backend::confirm_mount_topic(
     co_return errc::topic_operation_error;
 }
 
+ss::future<errc>
+backend::delete_topic(const model::topic_namespace& nt, retry_chain_node& rcn) {
+    return retry_loop(rcn, [this, &nt, &rcn]() {
+        return _topics_frontend
+          .delete_topic_after_migration(nt, rcn.get_deadline())
+          .then([&nt](errc ec) {
+              if (ec == errc::topic_not_exists) {
+                  vlog(dm_log.warn, "topic {} missing, ignoring", nt);
+                  return errc::success;
+              }
+              return ec;
+          });
+    });
+}
+
 ss::future<errc> backend::unmount_topic(
+  const model::topic_namespace& nt, retry_chain_node& rcn) {
+    return retry_loop(
+      rcn, [this, &nt, &rcn] { return do_unmount_topic(nt, rcn); });
+}
+
+ss::future<errc> backend::do_unmount_topic(
   const model::topic_namespace& nt, retry_chain_node& rcn) {
     auto cfg = _topic_table.get_topic_cfg(nt);
     if (!cfg) {
-        co_return errc::topic_not_exists;
+        vlog(dm_log.warn, "topic {} missing, ignoring", nt);
+        co_return errc::success;
     }
     auto umnt_res = co_await _topic_mount_handler->unmount_topic(*cfg, rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
@@ -1360,6 +1405,8 @@ backend::work_scope backend::get_work_scope(
         return {state::executed, false, true};
     case state::cut_over:
         return {state::finished, false, true};
+    case state::canceling:
+        return {state::cancelled, false, true};
     default:
         return {{}, false, false};
     };
@@ -1375,6 +1422,8 @@ backend::work_scope backend::get_work_scope(
         return {state::executed, true, false};
     case state::cut_over:
         return {state::finished, false, true};
+    case state::canceling:
+        return {state::cancelled, false, true};
     default:
         return {{}, false, false};
     };

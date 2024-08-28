@@ -144,7 +144,11 @@ private:
     ss::future<errc> confirm_mount_topic(
       const model::topic_namespace& nt, retry_chain_node& rcn);
     ss::future<errc>
+    delete_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
     unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
+    do_unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
 
     /* communication with partition workers */
     void start_partition_work(
