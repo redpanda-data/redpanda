@@ -268,18 +268,22 @@ private:
     };
     absl::flat_hash_map<id, advance_info> _advance_requests;
     chunked_vector<topic_table_delta> _unprocessed_deltas;
+    chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
 
-    /* Node-local data */
+    /* Node-local data for partition-scoped work */
     using topic_work_state_t
       = chunked_hash_map<model::partition_id, replica_work_state>;
     chunked_hash_map<model::topic_namespace, topic_work_state_t>
       _local_work_states;
-
-    chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
+    /*
+     * Topic-scoped work states for starting/stopping and disallowing concurrent
+     * work on the same topic: similar to data_migrations::worker
+     */
     chunked_vector<topic_work_result> _topic_work_results;
     chunked_hash_map<model::topic_namespace, tsws_lwptr_t>
       _active_topic_work_states; // no null pointers on scheduling points
 
+    /* Refs to services etc */
     model::node_id _self;
     migrations_table& _table;
     frontend& _frontend;
