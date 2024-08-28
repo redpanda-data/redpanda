@@ -277,13 +277,18 @@ void members_table::fill_snapshot(controller_snapshot& controller_snap) {
           controller_snapshot_parts::members_t::node_t{
             .broker = md.broker, .state = md.state});
     }
+    snap.version = _version;
 }
 
 void members_table::apply_snapshot(
   model::offset snap_offset, const controller_snapshot& controller_snap) {
-    _version = model::revision_id(snap_offset);
-
     const auto& snap = controller_snap.members;
+
+    // if version is present in snapshot use it, otherwise fallback to old
+    // behavior
+    _version = snap.version != model::revision_id{}
+                 ? snap.version
+                 : model::revision_id(snap_offset);
 
     // update the list of brokers
 
