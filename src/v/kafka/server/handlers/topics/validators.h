@@ -14,6 +14,7 @@
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 
@@ -341,6 +342,32 @@ struct write_caching_configs_validator {
     static bool is_valid(const creatable_topic& c) {
         return validate_write_caching(c) && validate_flush_ms(c)
                && validate_flush_bytes(c);
+    }
+};
+
+struct tombstone_retention_ms_validator {
+    static constexpr const char* error_message
+      = "Unsupported tombstone_retention_ms configuration, cannot be enabled "
+        "at the same time as repanda.remote.read or redpanda.remote.write.";
+    static constexpr const auto config_name
+      = topic_property_tombstone_retention_ms;
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        const auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+        bool tombstone_retention_ms
+          = (config_entries.find(topic_property_tombstone_retention_ms) != end);
+
+        auto shadow_indexing_mode = get_shadow_indexing_mode(config_entries);
+        // Cannot set tombstone_retention_ms at the same time as any tiered
+        // storage properties.
+        if (
+          tombstone_retention_ms
+          && shadow_indexing_mode != model::shadow_indexing_mode::disabled) {
+            return false;
+        }
+        return true;
     }
 };
 

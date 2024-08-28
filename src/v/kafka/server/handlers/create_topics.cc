@@ -67,7 +67,8 @@ static constexpr auto supported_configs = std::to_array(
    topic_property_initial_retention_local_target_ms,
    topic_property_write_caching,
    topic_property_flush_ms,
-   topic_property_flush_bytes});
+   topic_property_flush_bytes,
+   topic_property_tombstone_retention_ms});
 
 bool is_supported(std::string_view name) {
     return std::any_of(
@@ -92,7 +93,8 @@ using validators = make_validator_types<
   subject_name_strategy_validator,
   replication_factor_must_be_greater_or_equal_to_minimum,
   vcluster_id_validator,
-  write_caching_configs_validator>;
+  write_caching_configs_validator,
+  tombstone_retention_ms_validator>;
 
 static void
 append_topic_configs(request_context& ctx, create_topics_response& response) {

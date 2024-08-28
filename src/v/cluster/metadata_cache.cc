@@ -22,6 +22,7 @@
 #include "model/namespace.h"
 #include "model/timestamp.h"
 #include "storage/types.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
@@ -318,6 +319,11 @@ metadata_cache::get_default_record_value_subject_name_strategy() const {
     return pandaproxy::schema_registry::subject_name_strategy::topic_name;
 }
 
+std::optional<std::chrono::milliseconds>
+metadata_cache::get_default_tombstone_retention_ms() const {
+    return config::shard_local_cfg().tombstone_retention_ms();
+}
+
 topic_properties metadata_cache::get_default_properties() const {
     topic_properties tp;
     tp.compression = {get_default_compression()};
@@ -335,6 +341,7 @@ topic_properties metadata_cache::get_default_properties() const {
       get_default_retention_local_target_bytes()};
     tp.retention_local_target_ms = tristate<std::chrono::milliseconds>{
       get_default_retention_local_target_ms()};
+    tp.tombstone_retention_ms = get_default_tombstone_retention_ms();
 
     return tp;
 }

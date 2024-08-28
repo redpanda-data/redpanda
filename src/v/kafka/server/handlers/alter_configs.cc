@@ -77,7 +77,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 26,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 27,
       "If you added a property, please decide on it's default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -274,6 +274,15 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   cfg.value,
                   kafka::config_resource_operation::set,
                   flush_bytes_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_tombstone_retention_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.tombstone_retention_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  tombstone_retention_ms_validator{},
+                  true);
                 continue;
             }
 

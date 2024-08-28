@@ -300,6 +300,15 @@ create_topic_properties_update(
                   flush_bytes_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_tombstone_retention_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.tombstone_retention_ms,
+                  cfg.value,
+                  op,
+                  tombstone_retention_ms_validator{},
+                  true);
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(
@@ -355,6 +364,7 @@ inline std::string_view map_config_name(std::string_view input) {
       .match("log.message.timestamp.type", "log_message_timestamp_type")
       .match("log.compression.type", "log_compression_type")
       .match("log.roll.ms", "log_segment_ms")
+      .match("delete.retention.ms", "tombstone_retention_ms")
       .default_match(input);
 }
 

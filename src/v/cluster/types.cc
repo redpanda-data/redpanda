@@ -1176,7 +1176,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.initial_retention_local_target_ms,
       t.write_caching,
       t.flush_ms,
-      t.flush_bytes);
+      t.flush_bytes,
+      t.tombstone_retention_ms);
 }
 
 cluster::incremental_topic_updates
@@ -1309,6 +1310,14 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
                              .from(in);
         updates.flush_bytes
           = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
+    }
+
+    if (
+      version <= cluster::incremental_topic_updates::
+        version_with_tombstone_retention_ms) {
+        updates.tombstone_retention_ms = adl<cluster::property_update<
+          std::optional<std::chrono::milliseconds>>>{}
+                                           .from(in);
     }
 
     return updates;

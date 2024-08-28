@@ -100,7 +100,7 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::cleanup_policy_bitflags> ||
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
-        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
+        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> ||
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode>;
 
@@ -743,6 +743,25 @@ config_response_container_t make_topic_configs(
               return ssx::sformat("{}", (*property)());
           });
     }
+
+    // Also considered a sticky property, override should always govern topic
+    // config's value.
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      topic_property_tombstone_retention_ms,
+      metadata_cache.get_default_tombstone_retention_ms().value_or(
+        std::chrono::milliseconds{-1}),
+      topic_property_tombstone_retention_ms,
+      topic_properties.tombstone_retention_ms.has_value()
+        ? topic_properties.tombstone_retention_ms
+        : std::make_optional<std::chrono::milliseconds>(-1),
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().tombstone_retention_ms.desc()),
+      &describe_as_string<std::chrono::milliseconds>,
+      /*hide_default_override=*/true);
 
     constexpr std::string_view key_validation
       = "Enable validation of the schema id for keys on a record";

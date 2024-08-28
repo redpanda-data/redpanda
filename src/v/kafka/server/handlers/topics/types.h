@@ -62,6 +62,8 @@ static constexpr std::string_view topic_property_write_caching
 
 static constexpr std::string_view topic_property_flush_ms = "flush.ms";
 static constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
+static constexpr std::string_view topic_property_tombstone_retention_ms
+  = "tombstone.retention.ms";
 
 // Server side schema id validation
 static constexpr std::string_view topic_property_record_key_schema_id_validation
@@ -143,5 +145,45 @@ to_cluster_type(const creatable_topic& t);
 std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);
+
+// Either parse configuration or return nullopt
+inline std::optional<bool>
+get_bool_value(const config_map_t& config, std::string_view key) {
+    if (auto it = config.find(key); it != config.end()) {
+        return string_switch<std::optional<bool>>(it->second)
+          .match("true", true)
+          .match("false", false)
+          .default_match(std::nullopt);
+    }
+    return std::nullopt;
+}
+
+inline model::shadow_indexing_mode
+get_shadow_indexing_mode(const config_map_t& config) {
+    auto arch_enabled = get_bool_value(config, topic_property_remote_write);
+    auto si_enabled = get_bool_value(config, topic_property_remote_read);
+
+    // If topic properties are missing, patch them with the cluster config.
+    if (!arch_enabled) {
+        arch_enabled
+          = config::shard_local_cfg().cloud_storage_enable_remote_write();
+    }
+
+    if (!si_enabled) {
+        si_enabled
+          = config::shard_local_cfg().cloud_storage_enable_remote_read();
+    }
+
+    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
+    if (*arch_enabled) {
+        mode = model::shadow_indexing_mode::archival;
+    }
+    if (*si_enabled) {
+        mode = mode == model::shadow_indexing_mode::archival
+                 ? model::shadow_indexing_mode::full
+                 : model::shadow_indexing_mode::fetch;
+    }
+    return mode;
+}
 
 } // namespace kafka

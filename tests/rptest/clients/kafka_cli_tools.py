@@ -242,7 +242,10 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         assert configs is not None, "didn't find Configs: section"
 
         def maybe_int(key: str, value: str):
-            if key in ["retention_ms", "retention_bytes", 'segment_bytes']:
+            if key in [
+                    "retention_ms", "retention_bytes", 'segment_bytes',
+                    'tombstone_retention_ms'
+            ]:
                 return int(value)
             return value
 

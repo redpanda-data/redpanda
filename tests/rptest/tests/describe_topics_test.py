@@ -247,6 +247,13 @@ class DescribeTopicsTest(RedpandaTest):
                 "Max not flushed bytes per partition. If configured threshold is reached "
                 "log will automatically be flushed even though it wasn't explicitly "
                 "requested"),
+            "tombstone.retention.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="-1",
+                doc_string=
+                "The retention time for tombstone records in a compacted topic",
+                source_type="DYNAMIC_TOPIC_CONFIG"),
         }
 
         tp_spec = TopicSpec()

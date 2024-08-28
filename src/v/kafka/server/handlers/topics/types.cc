@@ -21,6 +21,7 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "strings/string_switch.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -103,46 +104,6 @@ get_string_value(const config_map_t& config, std::string_view key) {
         return it->second;
     }
     return std::nullopt;
-}
-
-// Either parse configuration or return nullopt
-static std::optional<bool>
-get_bool_value(const config_map_t& config, std::string_view key) {
-    if (auto it = config.find(key); it != config.end()) {
-        return string_switch<std::optional<bool>>(it->second)
-          .match("true", true)
-          .match("false", false)
-          .default_match(std::nullopt);
-    }
-    return std::nullopt;
-}
-
-static model::shadow_indexing_mode
-get_shadow_indexing_mode(const config_map_t& config) {
-    auto arch_enabled = get_bool_value(config, topic_property_remote_write);
-    auto si_enabled = get_bool_value(config, topic_property_remote_read);
-
-    // If topic properties are missing, patch them with the cluster config.
-    if (!arch_enabled) {
-        arch_enabled
-          = config::shard_local_cfg().cloud_storage_enable_remote_write();
-    }
-
-    if (!si_enabled) {
-        si_enabled
-          = config::shard_local_cfg().cloud_storage_enable_remote_read();
-    }
-
-    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
-    if (*arch_enabled) {
-        mode = model::shadow_indexing_mode::archival;
-    }
-    if (*si_enabled) {
-        mode = mode == model::shadow_indexing_mode::archival
-                 ? model::shadow_indexing_mode::full
-                 : model::shadow_indexing_mode::fetch;
-    }
-    return mode;
 }
 
 // Special case for options where Kafka allows -1
@@ -250,6 +211,17 @@ to_cluster_type(const creatable_topic& t) {
 
     cfg.properties.flush_bytes = get_config_value<size_t>(
       config_entries, topic_property_flush_bytes);
+
+    cfg.properties.tombstone_retention_ms
+      = get_duration_value<std::chrono::milliseconds>(
+        config_entries, topic_property_tombstone_retention_ms);
+
+    // Attempt to set tombstone_retention_ms with the cluster default, if it
+    // does not have an assigned value.
+    if (!cfg.properties.tombstone_retention_ms.has_value()) {
+        cfg.properties.tombstone_retention_ms
+          = config::shard_local_cfg().tombstone_retention_ms();
+    }
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};

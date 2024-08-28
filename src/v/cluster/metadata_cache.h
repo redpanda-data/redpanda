@@ -202,6 +202,8 @@ public:
     bool get_default_record_value_schema_id_validation() const;
     pandaproxy::schema_registry::subject_name_strategy
     get_default_record_value_subject_name_strategy() const;
+    std::optional<std::chrono::milliseconds>
+    get_default_tombstone_retention_ms() const;
 
     topic_properties get_default_properties() const;
     std::optional<partition_assignment>

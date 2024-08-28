@@ -39,6 +39,7 @@ class TopicSpec:
     PROPERTY_WRITE_CACHING = "write.caching"
     PROPERTY_FLUSH_MS = "flush.ms"
     PROPERTY_FLUSH_BYTES = "flush.bytes"
+    PROPERTY_TOMBSTONE_RETENTION_MS = "tombstone.retention.ms"
 
     class CompressionTypes(str, Enum):
         """
@@ -120,7 +121,8 @@ class TopicSpec:
         | None = None,
             initial_retention_local_target_bytes: int | None = None,
             initial_retention_local_target_ms: int | None = None,
-            virtual_cluster_id: str | None = None):
+            virtual_cluster_id: str | None = None,
+            tombstone_retention_ms: int | None = None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -146,6 +148,7 @@ class TopicSpec:
         self.initial_retention_local_target_bytes = initial_retention_local_target_bytes
         self.initial_retention_local_target_ms = initial_retention_local_target_ms
         self.virtual_cluster_id = virtual_cluster_id
+        self.tombstone_retention_ms = tombstone_retention_ms
 
     def __str__(self):
         return self.name
