@@ -1,4 +1,4 @@
-module github.com/redpanda-data/wasm-transform-testdata
+module github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/testdata
 
 go 1.20
 

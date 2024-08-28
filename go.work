@@ -1,0 +1,8 @@
+go 1.23.0
+
+use (
+	./src/go/kreq-gen
+	./src/transform-sdk/go/transform
+	./src/transform-sdk/go/transform/internal/testdata
+	./src/transform-sdk/tests
+)
