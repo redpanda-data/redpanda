@@ -7,11 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/json.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/test/compatibility_common.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/sstring.hh>
@@ -23,11 +25,15 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+using incompat_t = pps::json_incompatibility_type;
+using incompatibility = pps::json_incompatibility;
 
 bool check_compatible(
   const pps::json_schema_definition& reader_schema,
   const pps::json_schema_definition& writer_schema) {
-    return pps::check_compatible(reader_schema, writer_schema).is_compat;
+    auto res = pps::check_compatible(
+      reader_schema, writer_schema, pps::verbose::yes);
+    return res.is_compat;
 }
 
 struct store_fixture {
@@ -306,141 +312,155 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
 struct compatibility_test_case {
     std::string_view reader_schema;
     std::string_view writer_schema;
-    bool reader_is_compatible_with_writer;
+    std::vector<incompatibility> compat_result;
     bool expected_exception = false;
 };
 
-static constexpr auto compatibility_test_cases = std::to_array<
-  compatibility_test_case>({
+static const auto compatibility_test_cases = std::to_array<compatibility_test_case>({
   //***** not compatible section *****
   // atoms
   {
     .reader_schema = "false",
     .writer_schema = "true",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::type_changed}},
   },
   // not allowed promotion
   {
     .reader_schema = R"({"type": "integer"})",
     .writer_schema = R"({"type": "number"})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::type_narrowed}},
   },
   {
     .reader_schema = R"({"type": ["integer", "string"]})",
     .writer_schema = R"({"type": ["number", "string"]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::type_narrowed}},
   },
   // not allowed new types
   {
     .reader_schema = R"({"type": "integer"})",
     .writer_schema = R"({})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::type_narrowed}},
   },
   {
     .reader_schema = R"({"type": "boolean"})",
     .writer_schema = R"({"type": ["boolean", "null"]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::type_narrowed}},
   },
   // not allowed numeric evolutions
   {
     .reader_schema = R"({"type": "number", "minimum": 11.2})",
     .writer_schema = R"({"type": "number", "maximum": 30})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/minimum", incompat_t::minimum_added}},
   },
   {
     .reader_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.199})",
     .writer_schema = R"({"type": "integer", "minimum": 1.1, "maximum": 3.2})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/maximum", incompat_t::maximum_decreased}},
   },
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10})",
     .writer_schema = R"({"type": "number", "multipleOf": 21})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/multipleOf", incompat_t::multiple_of_changed}},
   },
-  {
-    .reader_schema = R"({"type": "number", "multipleOf": 20})",
-    .writer_schema = R"({"type": "number", "multipleOf": 10})",
-    .reader_is_compatible_with_writer = false,
+  {.reader_schema = R"({"type": "number", "multipleOf": 20})",
+  .writer_schema = R"({"type": "number", "multipleOf": 10})",
+  .compat_result = {
+      // TODO: should be multiple_of_expanded
+    {"#/multipleOf", incompat_t::multiple_of_changed}}, 
   },
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
     .writer_schema = R"({"type": "number", "multipleOf": 20.2001})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/multipleOf", incompat_t::multiple_of_changed}},
+  },
+  {
+    .reader_schema = R"({"type": "number", "multipleOf": 20})",
+    .writer_schema = R"({"type": "number"})",
+    .compat_result = {{"#/multipleOf", incompat_t::multiple_of_added}},
   },
   {
     .reader_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
     .writer_schema = R"({"type": "number", "maximum": 10})",
-    .reader_is_compatible_with_writer = false,
+    // Note: this is incorrectly accepted as compatible by the reference impl
+    .compat_result = {{"#/exclusiveMaximum", incompat_t::exclusive_maximum_added}},
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
     .writer_schema = R"({"type": "number"})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/exclusiveMaximum", incompat_t::exclusive_maximum_added}},
   },
   {
     .reader_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": true})",
     .writer_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": 10})",
-    .reader_is_compatible_with_writer = false,
     .expected_exception = true,
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
     .writer_schema = R"({"type": "number", "exclusiveMinimum": 9})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{ "#/exclusiveMinimum", incompat_t::exclusive_minimum_increased}},
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMaximum": 9})",
     .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/exclusiveMaximum", incompat_t::exclusive_maximum_decreased}},
   },
   // string checks
   {
     .reader_schema = R"({"type": "string", "minLength": 2})",
     .writer_schema = R"({"type": "string", "minLength": 1})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/minLength", incompat_t::min_length_increased}},
   },
   // string + pattern check: reader regex is a superset of writer regex, but
   // the rules specify to reject this
   {
     .reader_schema = R"({"type": "string", "pattern": "^test +"})",
     .writer_schema = R"({"type": "string", "pattern": "^test  +"})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/pattern", incompat_t::pattern_changed}},
+  },
+  // string + pattern check: pattern removed
+  {
+    .reader_schema = R"({"type": "string", "pattern": "^test +"})",
+    .writer_schema = R"({"type": "string"})",
+    .compat_result = {{"#/pattern", incompat_t::pattern_added}},
   },
   // enum checks
   {
     .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
     .writer_schema = R"({"type": "integer", "enum": [4, 1, 3]})",
-    .reader_is_compatible_with_writer = false,
+    // Note: this is reported as combined_type_subschemas_changed by the reference impl
+    .compat_result = {{"#/enum",incompat_t::enum_array_changed}},
   },
   // objects checks: size increase is not allowed
   {
-    .reader_schema
-    = R"({"type": "object", "minProperties": 2, "maxProperties": 10})",
+    .reader_schema = R"({"type": "object", "minProperties": 2, "maxProperties": 10})",
     .writer_schema = R"({"type": "object", "maxProperties": 11})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {
+      {"#/minProperties", incompat_t::min_properties_added},
+      {"#/maxProperties", incompat_t::max_properties_decreased},
+    },
   },
   // objects checks: additional properties not compatible
   {
     .reader_schema = R"({"type": "object", "additionalProperties": false})",
     .writer_schema
     = R"({"type": "object", "additionalProperties": {"type": "string"}})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/additionalProperties", incompat_t::additional_properties_removed}},
   },
   {
     .reader_schema
     = R"({"type": "object", "additionalProperties": {"type": "string"}})",
     .writer_schema = R"({"type": "object" })",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/additionalProperties", incompat_t::additional_properties_narrowed}},
   },
   // object checks: new properties not compatible for a closed reader
   {
     .reader_schema = R"({"type": "object", "additionalProperties": false})",
     .writer_schema
     = R"({"type": "object", "properties": {"a": {"type": "null"}}, "additionalProperties": false})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/properties/a", incompat_t::property_removed_from_closed_content_model}},
   },
   // object checks: existing properties need to be compatible
   {
@@ -448,7 +468,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "object", "properties": {"aaaa": {"type": "integer"}}})",
     .writer_schema
     = R"({"type": "object", "properties": {"aaaa": {"type": "string"}}})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/properties/aaaa", incompat_t::type_changed}},
   },
   // object checks: new properties need to be compatible
   {
@@ -456,7 +476,21 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}}})",
     .writer_schema
     = R"({"type": "object", "properties": {"aaaa": {"type": "string"}}})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {
+      {"#/properties/aaaa", incompat_t::type_changed},
+      {"#/properties/aaaa", incompat_t::property_removed_not_covered_by_partially_open_content_model}
+    },
+  },
+  // object checks: new properties need to be compatible with all old patternProperties
+  {
+    .reader_schema
+    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}, "^b": {"type": "string"}, "^b": {"type": "integer"}}})",
+    .writer_schema
+    = R"({"type": "object", "properties": {"bbbb": {"type": "string"}}})",
+    .compat_result = {
+      {"#/properties/bbbb", incompat_t::type_changed},
+      {"#/properties/bbbb", incompat_t::property_removed_not_covered_by_partially_open_content_model}
+    },
   },
   // object checks: dependencies removed
   {
@@ -466,7 +500,10 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "dependencies": {"a": ["b"], "b": ["a"]}
 })",
     .writer_schema = R"({"type": "object"})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {
+      {"#/dependencies/a", incompat_t::dependency_array_added},
+      {"#/dependencies/b", incompat_t::dependency_array_added},
+    },
   },
   // object checks: dependencies missing members
   {
@@ -480,7 +517,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "type": "object",
   "dependencies": {"a": ["b"]}
 })",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/dependencies/b", incompat_t::dependency_array_added}},
   },
   // object checks: dependencies missing value in string array
   {
@@ -494,7 +531,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "type": "object",
   "dependencies": {"a": ["b"]}
 })",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/dependencies/a", incompat_t::dependency_array_extended}},
   },
   // object checks: dependencies incompatible schemas
   {
@@ -508,7 +545,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "type": "object",
   "dependencies": {"a": {"type": "number"}}
 })",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/dependencies/a", incompat_t::type_narrowed}},
   },
   // object checks: dependency "a" changed from array to object
   {
@@ -522,7 +559,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "type": "object",
   "dependencies": {"a": {"type": "number"}}
 })",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/dependencies/a", incompat_t::dependency_array_added}},
   },
   // object checks: dependency "a" changed from object to array
   {
@@ -536,31 +573,62 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "type": "object",
   "dependencies": {"a": ["b"]}
 })",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/dependencies/a", incompat_t::dependency_schema_added}},
+  },
+  // object checks: dependency "a" changed from array to object
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"]}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": {"type": "number"}}
+})",
+    .compat_result = {{"#/dependencies/a", incompat_t::dependency_array_added}},
+  },
+  // object checks: dependency "a" changed from object to array
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": {"type": "number"}}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"]}
+})",
+    .compat_result = {{"#/dependencies/a", incompat_t::dependency_schema_added}},
   },
   // array checks: size increase is not allowed
   {
     .reader_schema = R"({"type": "array", "minItems": 2, "maxItems": 10})",
     .writer_schema = R"({"type": "array", "maxItems": 11})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {
+      {"#/minItems", incompat_t::min_items_added},
+      {"#/maxItems", incompat_t::max_items_decreased},
+    },
   },
   // array checks: uniqueItems must be compatible
   {
     .reader_schema = R"({"type": "array", "uniqueItems": true})",
     .writer_schema = R"({"type": "array"})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/uniqueItems", incompat_t::unique_items_added}},
   },
   // array checks: "items" = schema must be superset
   {
     .reader_schema = R"({"type": "array", "items": {"type": "boolean"}})",
     .writer_schema = R"({"type": "array", "items": {"type": "integer"}})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/items", incompat_t::type_changed}},
   },
   // array checks: "items": array schema should be compatible
   {
     .reader_schema = R"({"type": "array", "items": [{"type":"boolean"}]})",
     .writer_schema = R"({"type": "array", "items": [{"type":"integer"}]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/items/0", incompat_t::type_changed}},
   },
   // array checks: "items": array schema additionalItems should be compatible
   {
@@ -568,7 +636,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "array", "additionalItems": {"type": "boolean"}, "items": [{"type":"boolean"}]})",
     .writer_schema
     = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/additionalItems", incompat_t::type_changed}},
   },
   // array checks: "items": array schema extra elements should be compatible
   {
@@ -576,21 +644,27 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}]})",
     .writer_schema
     = R"({"type": "array", "additionalItems": false, "items": [{"type":"boolean"}, {"type": "number"}]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {
+      {"#/items/1", incompat_t::type_narrowed},
+      {"#/items/1", incompat_t::item_removed_not_covered_by_partially_open_content_model},
+    },
   },
   {
     .reader_schema
     = R"({"type": "array", "additionalItems": {"type": "number"}, "items": [{"type":"boolean"}, {"type": "integer"}]})",
     .writer_schema
     = R"({"type": "array", "additionalItems": {"type": "number"}, "items": [{"type":"boolean"}]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {
+      {"#/items/1", incompat_t::type_narrowed},
+      {"#/items/1", incompat_t::item_added_not_covered_by_partially_open_content_model},
+    },
   },
   // combinators: "not" is required on both schema
   {
     .reader_schema
     = R"({"not": {"type": ["string", "integer", "number", "object", "array", "null"]}})",
     .writer_schema = R"({"type": "boolean"})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::type_changed}},
   },
   // combinators: "not" subschema has to get less strict
   {
@@ -598,36 +672,37 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": ["integer", "number"], "not": {"type": "number"}})",
     .writer_schema
     = R"({"type": ["integer", "number"], "not": {"type": "integer"}})",
-    .reader_is_compatible_with_writer = false,
+    // Note: this is reported as combined_type_changed at '#/' by the reference impl
+    .compat_result = {{"#/not", incompat_t::not_type_extended}},
   },
   // positive combinators: multiple combs
   {
     .reader_schema = R"({"type": "integer", "oneOf": [true], "anyOf": [true]})",
     .writer_schema = R"({"type": "integer"})",
-    .reader_is_compatible_with_writer = false,
     .expected_exception = true,
   },
   // positive combinators: mismatch of type
   {
     .reader_schema = R"({"type": "integer", "anyOf": [true]})",
     .writer_schema = R"({"type": "integer"})",
-    .reader_is_compatible_with_writer = false,
+    // Note: this is reported as type_changed by the reference impl
+    .compat_result = {{"#/", incompat_t::combined_type_changed}},
   },
   // positive combinators: mismatch of size
   {
     .reader_schema = R"({"allOf": [true, false]})",
     .writer_schema = R"({"allOf": [true]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::product_type_extended}},
   },
   {
     .reader_schema = R"({"anyOf": [true]})",
     .writer_schema = R"({"anyOf": [true, false]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::sum_type_narrowed}},
   },
   {
     .reader_schema = R"({"oneOf": [true]})",
     .writer_schema = R"({"oneOf": [true, false]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::sum_type_narrowed}},
   },
   // positive combinators: subschema mismatch
   {
@@ -636,120 +711,165 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_schema = R"({"oneOf": [{"type":"number"}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"oneOf": [{"type":"number", "multipleOf": 10}, {"type": "number", "multipleOf": 1.1}]})",
-    .reader_is_compatible_with_writer = false,
+    // Note: this is reported as combined_type_changed by the reference impl
+    .compat_result = {{"#/", incompat_t::combined_type_subschemas_changed}},
   },
+  // object checks: removing a required property not ok if didn't have a default value
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {"type": "integer"}
+  },
+  "required": ["a"]
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {"type": "integer"}
+  }
+})",
+    .compat_result = {{"#/required/a", incompat_t::required_attribute_added}},
+  },
+  // Both type-specific and combined checks fail
+  {
+    .reader_schema = R"(
+{
+  "type": ["number", "object"],
+  "minimum": 20,
+  "minProperties": 10,
+  "oneOf": [
+    { "multipleOf": 10 },
+    { "multipleOf": 3 }
+  ]
+})",
+    .writer_schema = R"(
+{
+  "type": ["number", "object"],
+  "minimum": 10,
+  "oneOf": [
+    { "multipleOf": 5 },
+    { "multipleOf": 3 }
+  ]
+})",
+    // Note: the reference implementation only reports combined_type_subschemas_changed here
+    .compat_result = {{"#/minimum", incompat_t::minimum_increased}, {"#/minProperties", incompat_t::min_properties_added}, {"#/", incompat_t::combined_type_subschemas_changed}},
+  },
+
   //***** compatible section *****
   // atoms
   {
     .reader_schema = "true",
     .writer_schema = "false",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // same type
   {
     .reader_schema = R"({"type": "boolean"})",
     .writer_schema = R"({"type": "boolean"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "null"})",
     .writer_schema = R"({"type": "null"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // restrict types
   {
     .reader_schema = R"({"type": ["null", "boolean"]})",
     .writer_schema = R"({"type": "null"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": ["number", "boolean"], "minimum": 10.2})",
     .writer_schema = R"({"type": ["integer", "boolean"], "minimum": 11})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // numeric checks
   {
     .reader_schema = R"({"type": "number"})",
     .writer_schema
     = R"({"type": "number", "minimum": 11, "exclusiveMinimum": true})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number"})",
     .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema
     = R"({"type": "number", "maximum": 10, "exclusiveMaximum": false})",
     .writer_schema = R"({"type": "number", "maximum": 10})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
     .writer_schema = R"({"type": "number", "exclusiveMinimum": 10})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMinimum": 10})",
     .writer_schema = R"({"type": "number", "exclusiveMinimum": 11})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
     .writer_schema = R"({"type": "number", "exclusiveMaximum": 10})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "exclusiveMaximum": 10})",
     .writer_schema = R"({"type": "number", "exclusiveMaximum": 8})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number"})",
     .writer_schema = R"({"type": "number", "maximum": 11})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "minimum": 1.1, "maximum": 4})",
     .writer_schema = R"({"type": "number", "minimum": 1.1, "maximum": 3.2})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10})",
     .writer_schema = R"({"type": "number", "multipleOf": 20})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "multipleOf": 10.1})",
     .writer_schema = R"({"type": "number", "multipleOf": 20.2})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "number", "multipleOf": 1.1})",
     .writer_schema = R"({"type": "number", "multipleOf": 3.3})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // string checks
   {
     .reader_schema = R"({"type": "string", "minLength": 0})",
     .writer_schema = R"({"type": "string"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "string"})",
     .writer_schema = R"({"type": "string", "minLength": 1, "maxLength": 10})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "string", "minLength": 1})",
     .writer_schema = R"({"type": "string", "minLength": 2})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"type": "string", "pattern": "^test"})",
     .writer_schema = R"({"type": "string", "pattern": "^test"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // metadata is ignored
   {
@@ -757,13 +877,13 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"title": "myschema", "description": "this is my schema", "default": true, "type": "boolean"})",
     .writer_schema
     = R"({"title": "MySchema", "description": "this schema is mine", "default": false, "type": "boolean"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // enum checks
   {
     .reader_schema = R"({"type": "integer", "enum": [1, 2, 4]})",
     .writer_schema = R"({"type": "integer", "enum": [4, 1]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"(
@@ -776,7 +896,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "type": "object",
   "additionalProperties": false
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // objects checks:
   // - size decrease
@@ -818,7 +938,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   "required": ["aaaa", "cccc"],
   "dependencies": {"a": ["b", "c", "d"], "b": {"type": "integer"}, "d": ["a"]}
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // object checks: a new required property is ok if it has a default value
   {
@@ -844,19 +964,19 @@ static constexpr auto compatibility_test_cases = std::to_array<
     "a"
   ]
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // array checks: same
   {
     .reader_schema = R"({"type": "array"})",
     .writer_schema = R"({"type": "array"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // array checks: uniqueItems explicit value to false
   {
     .reader_schema = R"({"type": "array", "uniqueItems": false})",
     .writer_schema = R"({"type": "array"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // array checks:
   // - size decrease
@@ -890,7 +1010,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     ],
     "additionalItems": {"type": "integer"}
   })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // array checks: excess elements are absorbed by additionalItems
   {
@@ -919,7 +1039,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   ],
   "additionalItems": false
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"(
@@ -947,7 +1067,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     "type": "integer"
   }
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"(
@@ -973,7 +1093,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
   ],
   "additionalItems": false
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // array checks: prefixItems/items are compatible across drafts
   {
@@ -998,7 +1118,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
             ],
             "additionalItems": false
         })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({
@@ -1022,7 +1142,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
             "items": false
         })",
 
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // combinators: "not"
   {
@@ -1030,7 +1150,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"type": "integer", "not": {"type": "integer", "minimum": 10}})",
     .writer_schema
     = R"({"type": "integer", "not": {"type": "integer", "minimum": 5}})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // positive combinators
   {
@@ -1038,7 +1158,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"oneOf": [{"type":"number", "multipleOf": 3}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"oneOf": [{"type":"boolean"}, {"type": "number", "multipleOf": 9}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // positive combinators special case: only writer has a combinator
   {
@@ -1050,61 +1170,61 @@ static constexpr auto compatibility_test_cases = std::to_array<
                 {"type": "object", "properties": {"d": {"type": "array"}}}
             ]
         })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // positive combinators single schema cases: the actual combinator does not
   // matter
   {
     .reader_schema = R"({"anyOf": [{"type": "number"}]})",
     .writer_schema = R"({"oneOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"allOf": [{"type": "number"}]})",
     .writer_schema = R"({"oneOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"oneOf": [{"type": "number"}]})",
     .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"allOf": [{"type": "number"}]})",
     .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"anyOf": [{"type": "number"}]})",
     .writer_schema = R"({"allOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"oneOf": [{"type": "number"}]})",
     .writer_schema = R"({"allOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // positive combinators older is single schema, newer is allOf
   {
     .reader_schema = R"({"oneOf": [{"type": "number"}]})",
     .writer_schema = R"({"allOf": [{"type": "integer"}, {"type": "string"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"anyOf": [{"type": "number"}]})",
     .writer_schema = R"({"allOf": [{"type": "integer"}, {"type": "string"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // positive combinators older is oneOf, newer is single schema
   {
     .reader_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
     .writer_schema = R"({"allOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
     .writer_schema = R"({"anyOf": [{"type": "integer"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // positive combinators special cases: anyOf in reader can be compared with
   // the other
@@ -1115,21 +1235,21 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     // smoke test smaller reader is not compatible
     .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
     .writer_schema
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::sum_type_narrowed}},
   },
   {
     // smoke test bigger reader is  compatible
     .reader_schema
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
     .writer_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     // oneOf in writer can only be smaller or equal
@@ -1137,21 +1257,21 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"oneOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     // oneOf in writer can only be smaller or equal
     .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
     .writer_schema
     = R"({"oneOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
-    .reader_is_compatible_with_writer = false,
+    .compat_result = {{"#/", incompat_t::sum_type_narrowed}},
   },
   {
     // oneOf in writer can only be smaller or equal
     .reader_schema
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
     .writer_schema = R"({"oneOf": [{"type": "number"}, {"type": "string"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     // allOf in writer can be compatible with any cardinality
@@ -1159,40 +1279,40 @@ static constexpr auto compatibility_test_cases = std::to_array<
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
     .writer_schema
     = R"({"allOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     // allOf in writer can be compatible with any cardinality
     .reader_schema = R"({"anyOf": [{"type": "number"}, {"type": "string"}]})",
     .writer_schema
     = R"({"allOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     // allOf in writer can be compatible with any cardinality
     .reader_schema
     = R"({"anyOf": [{"type": "number"}, {"type": "string"}, {"type": "boolean"}]})",
     .writer_schema = R"({"allOf": [{"type": "number"}, {"type": "string"}]})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // dialects
   {
     .reader_schema = R"({"$schema": "http://json-schema.org/draft-06/schema"})",
     .writer_schema
     = R"({"$schema": "http://json-schema.org/draft-06/schema#"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // different dialects
   {
     .reader_schema = R"({"$schema": "http://json-schema.org/draft-04/schema"})",
     .writer_schema
     = R"({"$schema": "http://json-schema.org/draft-06/schema#"})",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({"$schema": "http://json-schema.org/draft-04/schema"})",
     .writer_schema = "true",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // array checks: prefixItems/items are compatible across drafts, unspecified
   // schema
@@ -1216,7 +1336,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
             ],
             "additionalItems": false
         })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   {
     .reader_schema = R"({
@@ -1238,7 +1358,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
             "items": false
         })",
 
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
   // object: "patternProperties" is not involved in compat checks
   {
@@ -1266,7 +1386,7 @@ static constexpr auto compatibility_test_cases = std::to_array<
     }
   }
 })",
-    .reader_is_compatible_with_writer = true,
+    .compat_result = {},
   },
 });
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
@@ -1285,7 +1405,7 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
           "reader: {}, writer: {}, is compatible: {}",
           data.reader_schema,
           data.writer_schema,
-          data.reader_is_compatible_with_writer)) {
+          data.compat_result.empty())) {
             try {
                 // sanity check that each schema is compatible with itself
                 BOOST_CHECK_MESSAGE(
@@ -1304,11 +1424,20 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
                     data.writer_schema));
 
                 // check compatibility (or not) reader->writer
+                auto expected = [&data] {
+                    pps::raw_compatibility_result res{};
+                    for (auto inc : data.compat_result) {
+                        res.emplace<incompatibility>(inc);
+                    }
+                    return std::move(res)(pps::verbose::yes);
+                };
+
                 BOOST_CHECK_EQUAL(
-                  data.reader_is_compatible_with_writer,
-                  ::check_compatible(
+                  expected(),
+                  pps::check_compatible(
                     make_json_schema(data.reader_schema),
-                    make_json_schema(data.writer_schema)));
+                    make_json_schema(data.writer_schema),
+                    pps::verbose::yes));
             } catch (...) {
                 BOOST_CHECK_MESSAGE(
                   data.expected_exception,
