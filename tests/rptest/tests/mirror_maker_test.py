@@ -87,6 +87,18 @@ class MirrorMakerService(EndToEndTest):
         self.topic.partition_count = 1000 if self.redpanda.dedicated_nodes else 10
         self.source_client.create_topic(self.topic)
 
+        def topic_present():
+            td = self.source_client.describe_topic(self.topic.name)
+            return len(td.partitions) == self.topic.partition_count
+
+        wait_until(
+            topic_present,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=
+            f"Error waiting for topic {self.topic} to be present and ready",
+            retry_on_exc=True)
+
     def start_workload(self):
 
         self.consumer = VerifiableConsumer(
