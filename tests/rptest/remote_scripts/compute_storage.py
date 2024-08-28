@@ -18,6 +18,7 @@ from typing import Iterator
 # NB: SegmentReader is duplicated in si_utils.py for deployment reasons. If
 # making changes please adapt both.
 class SegmentReader:
+    stream: io.BytesIO
     HDR_FMT_RP = "<IiqbIhiqqqhii"
     HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
     Header = collections.namedtuple(
@@ -38,9 +39,14 @@ class SegmentReader:
             data = self.stream.read(records_size)
             if len(data) < records_size:
                 return None
-            assert len(
-                data
-            ) == records_size, f"data len is {len(data)} but the expected records size is {records_size}"
+
+            error_detail = {}
+            if len(data) != records_size:
+                error_detail["header"] = header
+                error_detail["current_pos"] = self.stream.tell()
+            assert len(data) == records_size, (
+                f"data len is {len(data)} but the expected records size is {records_size}, "
+                f"error detail={error_detail}")
             return header
         return None
 
