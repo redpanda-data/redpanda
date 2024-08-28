@@ -105,7 +105,12 @@ func StripFlags(args []string, fs *pflag.FlagSet, long []string, short []string)
 			_, strip := stripLong[k]
 			if f == nil || !strip {
 				inFlag = len(kv) == 1
-				keep = append(keep, arg) // either we are keeping this flag, or it is not in our flag set so we cannot strip it
+				// either we are keeping this flag, or it is not in our flag
+				// set, so we cannot strip it.
+				keep = append(keep, arg)
+				// If we are at this point is because the flag does not exist,
+				// and it's part of the plugin. If the next arg starts with
+				// '-' we will assume this flag is a boolean flag.
 				if i+1 < len(args) && strings.HasPrefix(args[i+1], "-") {
 					inFlag = false
 				}

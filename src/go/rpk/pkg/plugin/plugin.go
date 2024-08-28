@@ -126,6 +126,45 @@ type Plugin struct {
 // "_".
 func (p *Plugin) FullName() string { return strings.Join(p.Arguments, "_") }
 
+type uninstallOperation struct {
+	Path    string
+	Message string
+}
+
+// Uninstall uninstalls the plugin. To uninstall the shadowed plugins, use
+// removeShadows.
+func (p *Plugin) Uninstall(removeShadows bool) (ops []uninstallOperation, anyFailed bool) {
+	if err := os.Remove(p.Path); err != nil {
+		ops = append(ops, uninstallOperation{
+			Path:    p.Path,
+			Message: err.Error(),
+		})
+		anyFailed = true
+	} else {
+		ops = append(ops, uninstallOperation{
+			Path:    p.Path,
+			Message: "OK",
+		})
+	}
+	if removeShadows {
+		for _, shadowed := range p.ShadowedPaths {
+			if err := os.Remove(shadowed); err != nil {
+				ops = append(ops, uninstallOperation{
+					Path:    shadowed,
+					Message: fmt.Sprintf("Unable to remove shadowed plugin: %v", err),
+				})
+				anyFailed = true
+			} else {
+				ops = append(ops, uninstallOperation{
+					Path:    shadowed,
+					Message: "OK",
+				})
+			}
+		}
+	}
+	return
+}
+
 // Plugins is a handy alias for a slice of plugins.
 type Plugins []Plugin
 
