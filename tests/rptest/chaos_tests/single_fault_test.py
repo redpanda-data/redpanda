@@ -13,6 +13,7 @@ from time import sleep
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.failure_injector import FailureInjector
+from rptest.services.chaos.types import NoProgressError
 import rptest.services.chaos.workloads.all as workloads
 import rptest.services.chaos.faults.all as faults
 
@@ -33,6 +34,12 @@ class TimingConfig:
     oneoff_fault_recovery_s: int = 120
 
 
+@dataclasses.dataclass
+class CheckProgressDuringFaultConfig:
+    min_delta: int = 100
+    selector: str = "all"
+
+
 class SingleFaultTestBase(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,9 +47,11 @@ class SingleFaultTestBase(RedpandaTest):
     def run(self,
             workload: workloads.WorkloadServiceBase,
             fault: faults.FaultBase | None,
-            timings: TimingConfig = TimingConfig()):
+            timings: TimingConfig = TimingConfig(),
+            check_progress_during_fault: CheckProgressDuringFaultConfig
+            | None = None):
         try:
-            self._do_run(workload, fault, timings)
+            self._do_run(workload, fault, timings, check_progress_during_fault)
         finally:
             workload.stop_and_validate()
 
@@ -52,7 +61,8 @@ class SingleFaultTestBase(RedpandaTest):
                 self.redpanda.raise_on_crash()
 
     def _do_run(self, workload: workloads.WorkloadServiceBase,
-                fault: faults.FaultBase | None, timings: TimingConfig):
+                fault: faults.FaultBase | None, timings: TimingConfig,
+                check_progress_during_fault: CheckProgressDuringFaultConfig):
         if timings.warmup_s > 0:
             self.logger.info(f"warming up for {timings.warmup_s}s")
             sleep(timings.warmup_s)
@@ -100,6 +110,24 @@ class SingleFaultTestBase(RedpandaTest):
                 before_heal_info = {}
                 for node in workload.nodes:
                     before_heal_info[node.name] = workload.info(node)
+
+                if check_progress_during_fault is not None:
+                    results = []
+                    for node_name in before_heal_info.keys():
+                        delta = (before_heal_info[node_name].succeeded_ops -
+                                 after_fault_info[node_name].succeeded_ops)
+                        self.logger.debug(
+                            f"progress during fault for client node "
+                            f"{node_name}: {delta}")
+                        results.append(
+                            delta >= check_progress_during_fault.min_delta)
+                    selector = check_progress_during_fault.selector
+                    if selector not in ("all", "any"):
+                        raise Exception(f"unknown selector: {selector}")
+                    if selector == "all" and not all(results):
+                        raise NoProgressError("no progress during fault")
+                    elif selector == "any" and not any(results):
+                        raise NoProgressError("no progress during fault")
 
                 for node in workload.nodes:
                     workload.emit_event(node, "healing")
