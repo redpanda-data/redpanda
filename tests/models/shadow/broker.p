@@ -77,7 +77,7 @@ machine Broker {
       // if the pending set just transitioned to the non-empty state then ensure
       // that it is eventually processed (there may be no more produce requests
       // to drive execution). scheduled processing for "later" captures the
-      // non-determinism of a real system either having reached a maximum
+      // batch size non-determinism of a real system either having reached a maximum
       // latency, or accumulated a maximum number of bytes.
       //
       // In a real-world system a batching policy will exist. That could be
