@@ -555,7 +555,14 @@ static constexpr auto compatibility_test_cases = std::to_array<
     .reader_schema
     = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}]})",
     .writer_schema
-    = R"({"type": "array", "additionalItems": {"type": "integer"}, "items": [{"type":"boolean"}, {"type": "boolean"}]})",
+    = R"({"type": "array", "additionalItems": false, "items": [{"type":"boolean"}, {"type": "number"}]})",
+    .reader_is_compatible_with_writer = false,
+  },
+  {
+    .reader_schema
+    = R"({"type": "array", "additionalItems": {"type": "number"}, "items": [{"type":"boolean"}, {"type": "integer"}]})",
+    .writer_schema
+    = R"({"type": "array", "additionalItems": {"type": "number"}, "items": [{"type":"boolean"}]})",
     .reader_is_compatible_with_writer = false,
   },
   // combinators: "not" is required on both schema
@@ -863,6 +870,89 @@ static constexpr auto compatibility_test_cases = std::to_array<
     ],
     "additionalItems": {"type": "integer"}
   })",
+    .reader_is_compatible_with_writer = true,
+  },
+  // array checks: excess elements are absorbed by additionalItems
+  {
+    .reader_schema = R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "type": "boolean"
+    }
+  ],
+  "additionalItems": {
+    "type": "number"
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "type": "boolean"
+    },
+    {
+      "type": "integer"
+    }
+  ],
+  "additionalItems": false
+})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "type": "boolean"
+    },
+    {
+      "type": "number"
+    }
+  ],
+  "additionalItems": {"type": "number"}
+})",
+    .writer_schema = R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "type": "boolean"
+    }
+  ],
+  "additionalItems": {
+    "type": "integer"
+  }
+})",
+    .reader_is_compatible_with_writer = true,
+  },
+  {
+    .reader_schema = R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "type": "boolean"
+    },
+    {
+      "type": "number"
+    }
+  ],
+  "additionalItems": false
+})",
+    .writer_schema = R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "type": "boolean"
+    }
+  ],
+  "additionalItems": false
+})",
     .reader_is_compatible_with_writer = true,
   },
   // array checks: prefixItems/items are compatible across drafts
