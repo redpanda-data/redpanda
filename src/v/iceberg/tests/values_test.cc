@@ -9,6 +9,8 @@
 
 #include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
+#include "iceberg/tests/test_schemas.h"
+#include "iceberg/tests/value_generator.h"
 #include "iceberg/values.h"
 
 #include <gtest/gtest.h>
@@ -239,6 +241,21 @@ TEST(ValuesTest, TestMapEquality) {
     ASSERT_NE(v_empty, v1);
 }
 
+TEST(ValuesTest, TestNestedValueEquality) {
+    value v1{std::make_unique<struct_value>()};
+    value v1_copy{std::make_unique<struct_value>()};
+    value v2{std::make_unique<list_value>()};
+    value v2_copy{std::make_unique<list_value>()};
+    value v3{std::make_unique<map_value>()};
+    value v3_copy{std::make_unique<map_value>()};
+    ASSERT_EQ(v1, v1_copy);
+    ASSERT_EQ(v2, v2_copy);
+    ASSERT_EQ(v3, v3_copy);
+    ASSERT_NE(v1, v2);
+    ASSERT_NE(v1, v3);
+    ASSERT_NE(v2, v3);
+}
+
 TEST(ValuesTest, TestPrimitiveTypesOStream) {
     EXPECT_STREQ("boolean(true)", fmt::to_string(boolean_value{true}).c_str());
     EXPECT_STREQ(
@@ -396,6 +413,15 @@ TEST(ValuesTest, TestMapOStream) {
       "map{(k=int(0), v=none), (k=int(0), v=int(1)), (k=int(0), v=none), "
       "(k=int(0), v=none), (k=int(0), v=none), ...}",
       fmt::to_string(val).c_str());
+}
+
+TEST(ValuesTest, TestValueOStream) {
+    auto schema_field_type = test_nested_schema_type();
+    auto zero_val = tests::make_value({.max_elements = 1}, schema_field_type);
+    EXPECT_STREQ(
+      "struct{string(\"\"), int(0), boolean(false), list{string(\"\"), }, "
+      "map{(k=string(\"\"), v=map{(k=string(\"\"), v=int(0)), }), }, ...}",
+      fmt::to_string(zero_val).c_str());
 }
 
 TEST(ValuesTest, TestHashContainerStructs) {

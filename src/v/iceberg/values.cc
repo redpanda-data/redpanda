@@ -234,6 +234,32 @@ bool operator==(
     return *lhs == *rhs;
 }
 
+struct comparison_visitor {
+    explicit comparison_visitor(const value& lhs)
+      : lhs_(lhs) {}
+    const value& lhs_;
+
+    bool operator()(const primitive_value& rhs) {
+        return std::get<primitive_value>(lhs_) == rhs;
+    }
+    bool operator()(const std::unique_ptr<list_value>& rhs) {
+        return std::get<std::unique_ptr<list_value>>(lhs_) == rhs;
+    }
+    bool operator()(const std::unique_ptr<struct_value>& rhs) {
+        return std::get<std::unique_ptr<struct_value>>(lhs_) == rhs;
+    }
+    bool operator()(const std::unique_ptr<map_value>& rhs) {
+        return std::get<std::unique_ptr<map_value>>(lhs_) == rhs;
+    }
+};
+
+bool operator==(const value& lhs, const value& rhs) {
+    if (lhs.index() != rhs.index()) {
+        return false;
+    }
+    return std::visit(comparison_visitor{lhs}, rhs);
+}
+
 std::ostream& operator<<(std::ostream& o, const boolean_value& v) {
     o << fmt::format("boolean({})", v.val);
     return o;
@@ -364,6 +390,32 @@ std::ostream& operator<<(std::ostream& o, const struct_value& v) {
     }
     o << "}";
     return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const std::unique_ptr<struct_value>& v) {
+    if (!v) {
+        o << "struct{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const std::unique_ptr<list_value>& v) {
+    if (!v) {
+        o << "list{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
+std::ostream& operator<<(std::ostream& o, const std::unique_ptr<map_value>& v) {
+    if (!v) {
+        o << "map{nullptr}";
+        return o;
+    }
+    return o << *v;
 }
 
 std::ostream& operator<<(std::ostream& o, const value& v) {

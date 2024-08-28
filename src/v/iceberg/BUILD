@@ -4,14 +4,16 @@ load("//bazel/thirdparty:avro.bzl", "avro_cc_library")
 package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 avro_cc_library(
-    name = "manifest_file",
+    name = "manifest_file_gen",
+    class_name = "manifest_file",
     include_prefix = "iceberg",
     namespace = "iceberg::avrogen",
     schema = "avroschemas/manifest_file.schema.json",
 )
 
 avro_cc_library(
-    name = "manifest_entry",
+    name = "manifest_entry_gen",
+    class_name = "manifest_entry",
     include_prefix = "iceberg",
     namespace = "iceberg::avrogen",
     schema = "avroschemas/manifest_entry.schema.json",
@@ -86,7 +88,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":datatypes",
-        ":manifest_entry",
+        ":manifest_entry_gen",
         ":partition",
         ":schema",
         "//src/v/container:fragmented_vector",
@@ -108,7 +110,7 @@ redpanda_cc_library(
         ":datatypes_json",
         ":json_utils",
         ":manifest",
-        ":manifest_entry",
+        ":manifest_entry_gen",
         ":partition",
         ":schema",
         ":schema_json",
@@ -118,6 +120,22 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "//src/v/utils:named_type",
         "@avro",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "manifest_entry",
+    hdrs = [
+        "manifest_entry.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition_key",
+        ":values",
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/utils:named_type",
         "@seastar",
     ],
 )

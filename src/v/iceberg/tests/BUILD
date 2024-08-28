@@ -24,8 +24,11 @@ redpanda_test_cc_library(
     ],
     include_prefix = "iceberg/tests",
     deps = [
+        "//src/v/bytes:random",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/random:generators",
+        "//src/v/test_utils:random",
     ],
 )
 
@@ -72,8 +75,8 @@ redpanda_cc_gtest(
         "//src/v/iceberg:avro_utils",
         "//src/v/iceberg:manifest",
         "//src/v/iceberg:manifest_avro",
-        "//src/v/iceberg:manifest_entry",
-        "//src/v/iceberg:manifest_file",
+        "//src/v/iceberg:manifest_entry_gen",
+        "//src/v/iceberg:manifest_file_gen",
         "//src/v/iceberg:schema_json",
         "//src/v/test_utils:gtest",
         "//src/v/utils:file_io",
@@ -201,6 +204,8 @@ redpanda_cc_gtest(
         "values_test.cc",
     ],
     deps = [
+        ":test_schemas",
+        ":value_generator",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",
         "//src/v/iceberg:values",

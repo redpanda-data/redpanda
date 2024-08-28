@@ -169,7 +169,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "TMy4PlZ6gUhQm7zbM+I4lGWAfD2vbn9osHMiidDFBnA=",
+        "bzlTransitiveDigest": "7LKLCS0Lafr9yr6siqJGOOLGYr1Bp75aMy+sX6UKx64=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -370,9 +370,9 @@
             "ruleClassName": "http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:avro.BUILD",
-              "sha256": "a95c1b9517493d2e09d62a428ba7b4295c5cdb76eb07a0b2466f64a268486387",
-              "strip_prefix": "avro-b3d7efe3d8bc15e7a19ee349c51e14f8795b1515",
-              "url": "https://github.com/redpanda-data/avro/archive/b3d7efe3d8bc15e7a19ee349c51e14f8795b1515.tar.gz",
+              "sha256": "f1a7d13b28ce5cc8812f26c705a6ea27b8bc63554d82d556c63b437da0338cf1",
+              "strip_prefix": "avro-e54bf712fce903652f3eab7a6c16264ac5d17285",
+              "url": "https://github.com/redpanda-data/avro/archive/e54bf712fce903652f3eab7a6c16264ac5d17285.tar.gz",
               "patches": [
                 "@@//bazel/thirdparty:avro-snappy-includes.patch"
               ],
