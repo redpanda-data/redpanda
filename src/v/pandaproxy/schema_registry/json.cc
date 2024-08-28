@@ -1015,21 +1015,32 @@ bool is_array_superset(
         return false;
     }
 
-    // no mismatching elements. two possible cases
-    // 1. older_tuple_schema.Size() >= newer_tuple_schema.Size() ->
-    // compatible (implies newer_it==end())
-    // 2. older_tuple_schema.Size() <  newer_tuple_schema.Size() -> check
-    // excess elements with older["additionalItems"]
+    // no mismatching elements, and they don't have the same size.
+    // To be compatible, excess elements needs to be compatible with the other
+    // "additionalItems" schema
 
     auto older_additional_schema = get_object_or_empty(
       ctx.older, older, get_additional_items_kw(ctx.older.dialect()));
+    if (!std::all_of(
+          newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
+              return is_superset(ctx, older_additional_schema, n);
+          })) {
+        // newer has excess elements that are not compatible with
+        // older["additionalItems"]
+        return false;
+    }
 
-    // check that all excess schemas are compatible with
-    // older["additionalItems"]
-    return std::all_of(
-      newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
-          return is_superset(ctx, older_additional_schema, n);
-      });
+    auto newer_additional_schema = get_object_or_empty(
+      ctx.newer, newer, get_additional_items_kw(ctx.newer.dialect()));
+    if (!std::all_of(
+          older_it, older_tuple_schema.end(), [&](json::Value const& o) {
+              return is_superset(ctx, o, newer_additional_schema);
+          })) {
+        // older has excess elements that are not compatible with
+        // newer["additionalItems"]
+        return false;
+    }
+    return true;
 }
 
 bool is_object_properties_superset(
