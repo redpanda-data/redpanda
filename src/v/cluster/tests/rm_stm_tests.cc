@@ -376,6 +376,52 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
 }
 
+FIXTURE_TEST(test_stale_begin_tx_fenced, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
+    stm.testing_only_disable_auto_abort();
+
+    stm.start().get0();
+
+    wait_for_confirmed_leader();
+    wait_for_meta_initialized();
+
+    auto tx_seq = model::tx_seq(10);
+    auto tx_seq_old = model::tx_seq(9);
+    auto tx_seq_new = model::tx_seq(11);
+    auto pid1 = model::producer_identity{1, 0};
+    auto timeout = std::chrono::milliseconds(
+      std::numeric_limits<int32_t>::max());
+
+    auto begin_tx = [&](model::tx_seq seq) {
+        return stm.begin_tx(pid1, seq, timeout, model::partition_id(0)).get0();
+    };
+
+    auto commit_tx = [&](model::tx_seq seq) {
+        return stm.commit_tx(pid1, tx_seq, timeout).get0();
+    };
+
+    // begin should succeed.
+    BOOST_REQUIRE(begin_tx(tx_seq));
+
+    // retry should succeed as it is idempotent
+    BOOST_REQUIRE(begin_tx(tx_seq));
+
+    // transaction already in progress, old sequence numbers are fenced
+    BOOST_REQUIRE_EQUAL(
+      begin_tx(tx_seq_old).error(), cluster::tx::errc::request_rejected);
+    // newer sequence numbers are rejected.
+    BOOST_REQUIRE_EQUAL(
+      begin_tx(tx_seq_new).error(), cluster::tx::errc::request_rejected);
+
+    // seal the transaction.
+    BOOST_REQUIRE_EQUAL(commit_tx(tx_seq_new), cluster::tx::errc::none);
+
+    // older sequence numbers are fenced
+    BOOST_REQUIRE_EQUAL(
+      begin_tx(tx_seq_old).error(), cluster::tx::errc::request_rejected);
+}
+
 // begin fences off old transactions
 FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
     create_stm_and_start_raft();
