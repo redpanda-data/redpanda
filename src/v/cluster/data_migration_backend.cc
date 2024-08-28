@@ -1437,6 +1437,9 @@ void backend::topic_reconciliation_state::clear() {
 
 backend::topic_scoped_work_state::topic_scoped_work_state()
   : _as()
-  , rcn(_as, ss::lowres_clock::time_point::max(), 2s) {}
+  , rcn(
+      _as,
+      ss::lowres_clock::now() + retry_chain_node::milliseconds_uint16_t::max(),
+      2s) {}
 
 } // namespace cluster::data_migrations
