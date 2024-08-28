@@ -37,6 +37,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
@@ -166,6 +167,7 @@ ss::future<> backend::start() {
 
 ss::future<> backend::stop() {
     vlog(dm_log.info, "backend stopping");
+    abort_all_topic_work();
     _mutex.broken();
     _sem.broken();
     _timer.cancel();
@@ -430,8 +432,15 @@ ss::future<> backend::schedule_topic_work(model::topic_namespace nt) {
 
 ss::future<backend::topic_work_result>
 backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
-    // todo: create an abort_source, save it in map, use in retry_loop, trigger
-    // where appropriate
+    auto [it, ins] = _active_topic_work_states.try_emplace(nt);
+    auto& tsws_lwptr_entry = it->second;
+    if (!ins) {
+        tsws_lwptr_entry->rcn.request_abort();
+        // and forget about it, only the dying fiber will hold it
+    }
+    auto tsws_lwptr = seastar::make_lw_shared<topic_scoped_work_state>();
+    tsws_lwptr_entry = tsws_lwptr;
+
     errc ec;
     try {
         vlog(
@@ -441,8 +450,10 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
           nt,
           tw.sought_state);
         ec = co_await std::visit(
-          [this, &nt, &tw](const auto& info) {
-              return do_topic_work(nt, tw.sought_state, info);
+          [this, &nt, &tw, tsws_lwptr = std::move(tsws_lwptr)](
+            const auto& info) mutable {
+              return do_topic_work(
+                nt, tw.sought_state, info, std::move(tsws_lwptr));
           },
           tw.info);
         vlog(
@@ -464,6 +475,7 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
           std::current_exception());
         ec = errc::topic_operation_error;
     }
+    _active_topic_work_states.erase(nt);
     co_return topic_work_result{
       .nt = std::move(nt),
       .migration = tw.migration_id,
@@ -475,9 +487,9 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
 ss::future<errc> backend::do_topic_work(
   const model::topic_namespace& nt,
   state sought_state,
-  const inbound_topic_work_info& itwi) {
-    ss::abort_source as;
-    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 2s};
+  const inbound_topic_work_info& itwi,
+  tsws_lwptr_t tsws) {
+    auto& rcn = tsws->rcn;
     // this switch should be in accordance to the logic in get_work_scope
     switch (sought_state) {
     case state::prepared:
@@ -504,13 +516,13 @@ ss::future<errc> backend::do_topic_work(
 ss::future<errc> backend::do_topic_work(
   const model::topic_namespace& nt,
   state sought_state,
-  const outbound_topic_work_info&) {
+  const outbound_topic_work_info&,
+  tsws_lwptr_t tsws) {
+    auto& rcn = tsws->rcn;
     // this assert is in accordance to the logic in get_work_scope
     vassert(
       sought_state == state::finished,
       "only ->finished state transition requires topic work");
-    ss::abort_source as;
-    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 2s};
     // todo: unmount first
     auto unmount_res = co_await retry_loop(
       rcn, [this, &nt, &rcn] { return unmount_topic(nt, rcn); });
@@ -526,6 +538,13 @@ ss::future<errc> backend::do_topic_work(
         return _topics_frontend.delete_topic_after_migration(
           nt, rcn.get_deadline());
     });
+}
+
+void backend::abort_all_topic_work() {
+    for (auto& [nt, tsws] : _active_topic_work_states) {
+        tsws->rcn.request_abort();
+    }
+    _active_topic_work_states.clear();
 }
 
 ss::future<errc> backend::create_topic(
@@ -727,6 +746,8 @@ ss::future<> backend::handle_raft0_leadership_update() {
         wakeup();
     } else {
         vlog(dm_log.debug, "stepping down as a coordinator");
+        // stop topic-scoped work
+        abort_all_topic_work();
         // stop coordinating
         for (auto& [id, mrstate] : _migration_states) {
             co_await ssx::async_for_each(
@@ -999,6 +1020,13 @@ void backend::drop_migration_reconciliation_rstate(
     for (const auto& [nt, tstate] : topics) {
         clear_tstate_belongings(nt, tstate);
         _local_work_states.erase(nt);
+
+        auto it = _active_topic_work_states.find(nt);
+        if (it != _active_topic_work_states.end()) {
+            it->second->rcn.request_abort();
+            _active_topic_work_states.erase(it);
+        }
+
         _topic_migration_map.erase(nt);
     }
     _migration_states.erase(rs_it);
@@ -1355,5 +1383,9 @@ void backend::topic_reconciliation_state::clear() {
     topic_scoped_work_needed = false;
     topic_scoped_work_done = false;
 }
+
+backend::topic_scoped_work_state::topic_scoped_work_state()
+  : _as()
+  , rcn(_as, ss::lowres_clock::time_point::max(), 2s) {}
 
 } // namespace cluster::data_migrations
