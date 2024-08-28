@@ -783,12 +783,13 @@ ss::future<> backend::handle_migration_update(id id) {
           "migration {} old sought state is {}",
           id,
           old_mrstate.scope.sought_state);
-        if (
-          !new_maybe_metadata || new_state >= old_mrstate.scope.sought_state) {
-            vlog(
-              dm_log.debug, "dropping migration {} reconciliation state", id);
-            drop_migration_reconciliation_rstate(old_it);
-        }
+        vassert(
+          !new_maybe_metadata || new_state >= old_mrstate.scope.sought_state,
+          "migration state went from seeking {} back to {}",
+          old_mrstate.scope.sought_state,
+          new_state);
+        vlog(dm_log.debug, "dropping migration {} reconciliation state", id);
+        drop_migration_reconciliation_rstate(old_it);
     }
     // create new state if needed
     if (new_maybe_metadata) {
