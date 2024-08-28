@@ -3,7 +3,7 @@ A script that computes all the files (and optionally their sizes) in the data di
 
 Useful in tests if you want to know what files exist on a node or if they are a specific size.
 """
-
+import time
 from pathlib import Path
 import sys
 import json
@@ -28,13 +28,23 @@ class SegmentReader:
 
     def __init__(self, stream):
         self.stream = stream
+        self.read_failures = 0
 
     def read_batch(self):
+        reset_pos = self.stream.tell()
         data = self.stream.read(self.HEADER_SIZE)
         if len(data) == self.HEADER_SIZE:
             header = self.Header(*struct.unpack(self.HDR_FMT_RP, data))
             if all(map(lambda v: v == 0, header)):
                 return None
+
+            if header.batch_size == 0 and self.read_failures < 15:
+                time.sleep(2)
+                self.read_failures += 1
+                self.stream.seek(reset_pos, 0)
+                return self.read_batch()
+            self.read_failures = 0
+
             records_size = header.batch_size - self.HEADER_SIZE
             data = self.stream.read(records_size)
             if len(data) < records_size:
