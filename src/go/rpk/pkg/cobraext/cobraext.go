@@ -191,13 +191,13 @@ func StripFlags(args []string, fs *pflag.FlagSet, long []string, short []string)
 // some flags in args. The flagset should be received from *inside* a cobra
 // command, where persistent and non-persistent flags from all parents are
 // merged. For repeated flags, only the last value is returned.
-func LongFlagValue(args []string, fs *pflag.FlagSet, flag string) string {
+func LongFlagValue(args []string, fs *pflag.FlagSet, flag, shorthand string) string {
 	nop := new(nopValue)
 	dup := pflag.NewFlagSet("dup", pflag.ContinueOnError)
 	dup.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
 
 	var f string
-	dup.StringVar(&f, flag, "", "")
+	dup.StringVarP(&f, flag, shorthand, "", "")
 	added := dup.Lookup(flag)
 	fs.VisitAll(func(f *pflag.Flag) {
 		if f.Name != flag {
