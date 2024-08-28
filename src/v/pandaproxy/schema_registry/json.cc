@@ -1111,35 +1111,6 @@ bool is_object_properties_superset(
     return true;
 }
 
-bool is_object_pattern_properties_superset(
-  context const& ctx, json::Value const& older, json::Value const& newer) {
-    // check that every pattern property in newer["patternProperties"]
-    // appears in older["patternProperties"] and is compatible with the schema
-
-    // "patternProperties" is a map of <pattern, schema>
-    auto newer_pattern_properties = get_object_or_empty(
-      ctx.newer, newer, "patternProperties");
-    auto older_pattern_properties = get_object_or_empty(
-      ctx.older, older, "patternProperties");
-
-    // TODO O(n^2) lookup
-    for (auto const& [pattern, schema] : newer_pattern_properties) {
-        // search for pattern in older_pattern_properties and check schemas
-        auto older_pp_it = older_pattern_properties.FindMember(pattern);
-        if (older_pp_it == older_pattern_properties.MemberEnd()) {
-            // pattern not in older["patternProperties"], not compatible
-            return false;
-        }
-
-        if (!is_superset(ctx, older_pp_it->value, schema)) {
-            // not compatible
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool is_object_required_superset(
   context const& ctx, json::Value const& older, json::Value const& newer) {
     // to pass the check, a required property from newer has to be present in
@@ -1250,10 +1221,14 @@ bool is_object_superset(
         // newer)
         return false;
     }
-    if (!is_object_pattern_properties_superset(ctx, older, newer)) {
-        // pattern properties checks are not compatible
-        return false;
-    }
+
+    // note: to match the behavior of the legacy software,
+    // ```
+    // if(!is_object_pattern_properties_superset(ctx, older, newer))
+    //   return false;
+    // ```
+    // is omitted
+
     if (!is_object_required_superset(ctx, older, newer)) {
         // required properties are not compatible
         return false;
