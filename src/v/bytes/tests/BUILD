@@ -39,6 +39,7 @@ redpanda_cc_btest(
         "//src/v/bytes:iostream",
         "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/hash",
         "@seastar//:testing",
     ],
 )
