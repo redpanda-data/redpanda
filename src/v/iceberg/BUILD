@@ -156,6 +156,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_list_avro",
+    srcs = [
+        "manifest_list_avro.cc",
+    ],
+    hdrs = [
+        "manifest_list_avro.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:manifest_file_gen",
+        "//src/v/strings:string_switch",
+        "@avro",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest_list",
+        "//src/v/bytes:iobuf",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition",
     hdrs = [
         "partition.h",

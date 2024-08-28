@@ -15,6 +15,8 @@
 #include "iceberg/manifest_avro.h"
 #include "iceberg/manifest_entry.avrogen.h"
 #include "iceberg/manifest_file.avrogen.h"
+#include "iceberg/manifest_list.h"
+#include "iceberg/manifest_list_avro.h"
 #include "iceberg/schema_json.h"
 #include "iceberg/tests/test_schemas.h"
 #include "utils/file_io.h"
@@ -28,16 +30,14 @@
 
 using namespace iceberg;
 
-using avrogen::manifest_entry;
-using avrogen::manifest_file;
-
 namespace {
 
 // Returns true if the trivial, non-union type fields match between the two
 // manifest entries.
 // TODO: define a manifest_entry struct that isn't tied to Avro codegen, that
 // has a trivial operator==.
-bool trivial_fields_eq(const manifest_entry& lhs, const manifest_entry& rhs) {
+bool trivial_fields_eq(
+  const avrogen::manifest_entry& lhs, const avrogen::manifest_entry& rhs) {
     return lhs.status == rhs.status
            && lhs.data_file.content == rhs.data_file.content
            && lhs.data_file.file_format == rhs.data_file.file_format
@@ -50,7 +50,7 @@ bool trivial_fields_eq(const manifest_entry& lhs, const manifest_entry& rhs) {
 } // anonymous namespace
 
 TEST(ManifestSerializationTest, TestManifestEntry) {
-    manifest_entry entry;
+    avrogen::manifest_entry entry;
     entry.status = 1;
     entry.data_file.content = 2;
     entry.data_file.file_path = "path/to/file";
@@ -78,14 +78,14 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
-    manifest_entry dentry;
+    avrogen::manifest_entry dentry;
     avro::decode(*decoder, dentry);
 
     EXPECT_TRUE(trivial_fields_eq(entry, dentry));
 }
 
 TEST(ManifestSerializationTest, TestManyManifestEntries) {
-    manifest_entry entry;
+    avrogen::manifest_entry entry;
     entry.status = 1;
     entry.data_file.content = 2;
     entry.data_file.file_path = "path/to/file";
@@ -118,14 +118,42 @@ TEST(ManifestSerializationTest, TestManyManifestEntries) {
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
     for (int i = 0; i < 1024; i++) {
-        manifest_entry dentry;
+        avrogen::manifest_entry dentry;
         avro::decode(*decoder, dentry);
         EXPECT_TRUE(trivial_fields_eq(entry, dentry));
     }
 }
 
+TEST(ManifestSerializationTest, TestManifestList) {
+    manifest_list l;
+    for (int i = 0; i < 1024; ++i) {
+        manifest_file file;
+        file.manifest_path = "path/to/file";
+        file.partition_spec_id = partition_spec::id_t{1};
+        file.content = manifest_file_content::data;
+        file.seq_number = sequence_number{3};
+        file.min_seq_number = sequence_number{4};
+        file.added_snapshot_id = snapshot_id{5};
+        file.added_files_count = 6;
+        file.existing_files_count = 7;
+        file.deleted_files_count = 8;
+        file.added_rows_count = 9;
+        file.existing_rows_count = 10;
+        file.deleted_rows_count = 11;
+        l.files.emplace_back(std::move(file));
+    }
+
+    auto buf = serialize_avro(l);
+    for (int i = 0; i < 10; ++i) {
+        auto roundtrip_l = parse_manifest_list(std::move(buf));
+        ASSERT_EQ(1024, roundtrip_l.files.size());
+        ASSERT_EQ(roundtrip_l, l);
+        buf = serialize_avro(roundtrip_l);
+    }
+}
+
 TEST(ManifestSerializationTest, TestManifestFile) {
-    manifest_file manifest;
+    avrogen::manifest_file manifest;
     manifest.manifest_path = "path/to/file";
     manifest.partition_spec_id = 1;
     manifest.content = 2;
@@ -158,7 +186,7 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
-    manifest_file dmanifest;
+    avrogen::manifest_file dmanifest;
     avro::decode(*decoder, dmanifest);
 
     EXPECT_EQ(manifest.manifest_path, dmanifest.manifest_path);
@@ -179,8 +207,8 @@ TEST(ManifestSerializationTest, TestManifestFile) {
 }
 
 TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
-    const auto& manifest_file_schema = manifest_file::valid_schema();
-    manifest_file manifest;
+    const auto& manifest_file_schema = avrogen::manifest_file::valid_schema();
+    avrogen::manifest_file manifest;
     manifest.manifest_path = "path/to/file";
     manifest.partition_spec_id = 1;
     manifest.content = 2;
@@ -204,7 +232,7 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     auto out = std::make_unique<avro_iobuf_ostream>(
       4_KiB, &bufs, &bytes_streamed);
     {
-        avro::DataFileWriter<manifest_file> writer(
+        avro::DataFileWriter<avrogen::manifest_file> writer(
           std::move(out),
           manifest_file_schema,
           16_KiB,
@@ -221,9 +249,9 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
         buf.append(std::move(b));
     }
     auto in = std::make_unique<avro_iobuf_istream>(buf.copy());
-    avro::DataFileReader<manifest_file> reader(
+    avro::DataFileReader<avrogen::manifest_file> reader(
       std::move(in), manifest_file_schema);
-    manifest_file dmanifest;
+    avrogen::manifest_file dmanifest;
     reader.read(dmanifest);
     EXPECT_STREQ(reader.getMetadata("f1")->c_str(), f1);
     EXPECT_STREQ(reader.getMetadata("f2")->c_str(), f2);
