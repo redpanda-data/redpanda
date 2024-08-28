@@ -258,6 +258,13 @@ inline bool is_compactible(const model::record_batch& b) {
 offset_delta_time should_apply_delta_time_offset(
   ss::sharded<features::feature_table>& feature_table);
 
+// Returns true iff the record `r` is a tombstone, and the timestamp returned by
+// `now()` is past the `tombstone_delete_horizon` timestamp (in the case it has
+// a value). Returns false in all other cases.
+bool should_remove_tombstone_record(
+  const model::record& r,
+  std::optional<model::timestamp> tombstone_delete_horizon);
+
 // Mark a segment as completed window compaction, and whether it is "clean" (in
 // which case the `clean_compact_timestamp` is set in the segment's index).
 void mark_segment_as_finished_window_compaction(

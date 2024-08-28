@@ -1130,4 +1130,18 @@ void mark_segment_as_finished_window_compaction(
     }
 }
 
+bool should_remove_tombstone_record(
+  const model::record& r,
+  std::optional<model::timestamp> tombstone_delete_horizon) {
+    if (!r.is_tombstone()) {
+        return false;
+    }
+
+    if (!tombstone_delete_horizon.has_value()) {
+        return false;
+    }
+
+    return (model::timestamp::now() > tombstone_delete_horizon.value());
+}
+
 } // namespace storage::internal
