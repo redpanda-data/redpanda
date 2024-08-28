@@ -11,5 +11,7 @@ go_library(
 go_binary(
     name = "identity",
     embed = [":identity_lib"],
+    goarch = "wasm",
+    goos = "wasip1",
     visibility = ["//src/transform-sdk/go/transform:__subpackages__"],
 )

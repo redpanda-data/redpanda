@@ -10,5 +10,7 @@ go_library(
 go_binary(
     name = "setup-panic",
     embed = [":setup-panic_lib"],
+    goarch = "wasm",
+    goos = "wasip1",
     visibility = ["//src/transform-sdk/go/transform:__subpackages__"],
 )

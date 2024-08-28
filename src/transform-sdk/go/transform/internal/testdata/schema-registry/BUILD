@@ -15,5 +15,7 @@ go_library(
 go_binary(
     name = "schema-registry",
     embed = [":schema-registry_lib"],
+    goarch = "wasm",
+    goos = "wasip1",
     visibility = ["//src/transform-sdk/go/transform:__subpackages__"],
 )

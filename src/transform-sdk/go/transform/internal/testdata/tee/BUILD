@@ -11,5 +11,7 @@ go_library(
 go_binary(
     name = "tee",
     embed = [":tee_lib"],
+    goarch = "wasm",
+    goos = "wasip1",
     visibility = ["//src/transform-sdk/go/transform:__subpackages__"],
 )
