@@ -155,6 +155,15 @@ public:
     template<typename T, typename... Args>
     requires std::constructible_from<T, Args&&...>
              && std::convertible_to<T, schema_incompatibility>
+    static auto of(Args&&... args) {
+        raw_compatibility_result res;
+        res.emplace<T>(std::forward<Args>(args)...);
+        return res;
+    }
+
+    template<typename T, typename... Args>
+    requires std::constructible_from<T, Args&&...>
+             && std::convertible_to<T, schema_incompatibility>
     auto emplace(Args&&... args) {
         return _errors.emplace_back(
           std::in_place_type<T>, std::forward<Args>(args)...);
