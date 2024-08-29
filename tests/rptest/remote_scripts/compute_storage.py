@@ -28,7 +28,7 @@ class SegmentReader:
 
     def __init__(self, stream):
         self.stream = stream
-        self.tolerate_partial_reads = 10
+        self.tolerate_partial_reads = 5
         self.sleep_between_read_attempts = 0.5
         self.partial_reads = 0
 
@@ -129,7 +129,8 @@ def compute_size_for_file(file: Path, calc_md5: bool):
 
                 f.seek(0)
                 data = f.read()
-                reader = SegmentReader(io.BytesIO(data))
+                f.seek(0)
+                reader = SegmentReader(f)
                 return md5_for_bytes(calc_md5,
                                      data), sum(h.batch_size for h in reader)
     else:
