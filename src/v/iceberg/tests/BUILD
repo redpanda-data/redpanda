@@ -217,6 +217,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "table_metadata_json_test",
+    timeout = "short",
+    srcs = [
+        "table_metadata_json_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "transform_json_test",
     timeout = "short",
     srcs = [
