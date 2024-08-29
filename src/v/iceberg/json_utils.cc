@@ -121,6 +121,32 @@ int64_t parse_required_i64(const json::Value& v, const char* member_name) {
     return int_json.GetInt64();
 }
 
+std::optional<int32_t>
+parse_optional_i32(const json::Value& v, const char* member_name) {
+    const auto json = parse_optional(v, member_name);
+    if (!json.has_value()) {
+        return std::nullopt;
+    }
+    if (!json->get().IsInt()) {
+        throw std::invalid_argument(
+          fmt::format("Expected integer for field '{}'", member_name));
+    }
+    return json->get().GetInt();
+}
+
+std::optional<int64_t>
+parse_optional_i64(const json::Value& v, const char* member_name) {
+    const auto json = parse_optional(v, member_name);
+    if (!json.has_value()) {
+        return std::nullopt;
+    }
+    if (!json->get().IsInt64()) {
+        throw std::invalid_argument(
+          fmt::format("Expected int64 for field '{}'", member_name));
+    }
+    return json->get().GetInt64();
+}
+
 bool parse_required_bool(const json::Value& v, const char* member_name) {
     const auto& bool_json = parse_required(v, member_name);
     if (!bool_json.IsBool()) {
