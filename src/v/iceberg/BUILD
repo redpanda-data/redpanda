@@ -193,6 +193,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partition_json",
+    srcs = [
+        "partition_json.cc",
+    ],
+    hdrs = [
+        "partition_json.h",
+    ],
+    implementation_deps = [
+        ":json_utils",
+        ":transform_json",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition",
+        "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition_key",
     srcs = [
         "partition_key.cc",

@@ -36,6 +36,7 @@ v_cc_library(
     manifest_list_avro.cc
     partition_key.cc
     partition_key_type.cc
+    partition_json.cc
     schema.cc
     schema_json.cc
     snapshot_json.cc
