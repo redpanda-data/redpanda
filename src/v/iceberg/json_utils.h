@@ -21,6 +21,7 @@ parse_required(const json::Value& v, const char* member_name);
 ss::sstring parse_required_str(const json::Value& v, const char* member_name);
 
 int32_t parse_required_i32(const json::Value& v, const char* member_name);
+int64_t parse_required_i64(const json::Value& v, const char* member_name);
 
 bool parse_required_bool(const json::Value& v, const char* member_name);
 

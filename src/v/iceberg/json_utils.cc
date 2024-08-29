@@ -60,6 +60,15 @@ int32_t parse_required_i32(const json::Value& v, const char* member_name) {
     return int_json.GetInt();
 }
 
+int64_t parse_required_i64(const json::Value& v, const char* member_name) {
+    const auto& int_json = parse_required(v, member_name);
+    if (!int_json.IsInt64()) {
+        throw std::invalid_argument(
+          fmt::format("Expected int64 for field '{}'", member_name));
+    }
+    return int_json.GetInt64();
+}
+
 bool parse_required_bool(const json::Value& v, const char* member_name) {
     const auto& bool_json = parse_required(v, member_name);
     if (!bool_json.IsBool()) {
