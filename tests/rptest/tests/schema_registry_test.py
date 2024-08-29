@@ -2073,7 +2073,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert schema.json()["schemaType"] == protocol.name
 
     @cluster(num_nodes=4)
-    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
+    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF, SchemaType.JSON],
             client_type=[SerdeClientType.Python],
             validate_schema_id=[True],
             subject_name_strategy=list(TopicSpec.SubjectNameStrategyCompat),
