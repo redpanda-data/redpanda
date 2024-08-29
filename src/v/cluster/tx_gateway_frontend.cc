@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <utility>
 
 namespace cluster {
 using namespace std::chrono_literals;
@@ -47,11 +48,11 @@ using namespace std::chrono_literals;
 template<typename Func>
 static auto with(
   ss::shared_ptr<tm_stm> stm,
-  kafka::transactional_id tx_id,
+  const kafka::transactional_id& tx_id,
   const std::string_view name,
   Func&& func) noexcept {
     return stm->lock_tx(tx_id, name)
-      .then([stm, tx_id, func = std::forward<Func>(func)](auto units) mutable {
+      .then([stm, func = std::forward<Func>(func)](auto units) mutable {
           return ss::futurize_invoke(std::forward<Func>(func))
             .finally([units = std::move(units)] {});
       });
@@ -60,7 +61,7 @@ static auto with(
 template<typename Func>
 static auto with_free(
   ss::shared_ptr<tm_stm> stm,
-  kafka::transactional_id tx_id,
+  const kafka::transactional_id& tx_id,
   const std::string_view name,
   Func&& func) noexcept {
     auto units = stm->try_lock_tx(tx_id, name);
@@ -127,10 +128,10 @@ tx_gateway_frontend::do_route_globally(model::ntp tx_ntp, T&& request) {
     auto leader = leader_opt.value();
 
     if (leader == _self) {
-        co_return co_await do_route_locally(tx_ntp, std::move(request));
+        co_return co_await do_route_locally(tx_ntp, std::forward<T>(request));
     }
 
-    co_return co_await do_dispatch(leader, std::move(request));
+    co_return co_await do_dispatch(leader, std::forward<T>(request));
 }
 
 template<typename T>
@@ -150,7 +151,8 @@ tx_gateway_frontend::do_dispatch(model::node_id target, T&& request) {
         ss::this_shard_id(),
         target,
         timeout,
-        [request = std::move(request)](tx_gateway_client_protocol cp) mutable {
+        [request = std::forward<T>(request)](
+          tx_gateway_client_protocol cp) mutable {
             return send(cp, std::move(request));
         })
       .then(&rpc::get_ctx_data<typename T::reply>)
@@ -185,7 +187,7 @@ tx_gateway_frontend::do_route_locally(model::ntp tx_ntp, T&& request) {
     co_return co_await container().invoke_on(
       *shard,
       _ssg,
-      [tm = tx_ntp.tp.partition, request = std::move(request)](
+      [tm = tx_ntp.tp.partition, request = std::forward<T>(request)](
         tx_gateway_frontend& self) -> ss::future<typename T::reply> {
           if (self._gate.is_closed()) {
               return ss::make_ready_future<typename T::reply>(
@@ -265,7 +267,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.bind())
   , _transactions_enabled(config::shard_local_cfg().enable_transactions.value())
-  , _max_transactions_per_coordinator(max_transactions_per_coordinator) {
+  , _max_transactions_per_coordinator(
+      std::move(max_transactions_per_coordinator)) {
     /**
      * do not start expriry timer when transactions are disabled
      */
@@ -1175,12 +1178,12 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
       -> ss::future<add_partitions_tx_reply> {
           return ss::with_gate(
             self._gate,
-            [request = std::move(request), timeout, tm, &self]()
-              -> ss::future<add_partitions_tx_reply> {
+            [request = std::move(request), timeout, tm, &self]() mutable
+            -> ss::future<add_partitions_tx_reply> {
                 return self.with_stm(
                   tm,
                   [request = std::move(request), timeout, &self](
-                    checked<ss::shared_ptr<tm_stm>, tx::errc> r) {
+                    checked<ss::shared_ptr<tm_stm>, tx::errc> r) mutable {
                       if (!r) {
                           return ss::make_ready_future<add_partitions_tx_reply>(
                             make_add_partitions_error_response(
@@ -1509,12 +1512,12 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
         tx_gateway_frontend& self) mutable -> ss::future<add_offsets_tx_reply> {
           return ss::with_gate(
             self._gate,
-            [request = std::move(request), timeout, tm, &self]()
-              -> ss::future<add_offsets_tx_reply> {
+            [request = std::move(request), timeout, tm, &self]() mutable
+            -> ss::future<add_offsets_tx_reply> {
                 return self.with_stm(
                   tm,
                   [request = std::move(request), timeout, &self](
-                    checked<ss::shared_ptr<tm_stm>, tx::errc> r) {
+                    checked<ss::shared_ptr<tm_stm>, tx::errc> r) mutable {
                       if (!r) {
                           return ss::make_ready_future<add_offsets_tx_reply>(
                             add_offsets_tx_reply{.error_code = r.error()});
@@ -1649,13 +1652,14 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
         tx_gateway_frontend& self) mutable -> ss::future<end_tx_reply> {
           return ss::with_gate(
             self._gate,
-            [request = std::move(request), timeout, tm, &self]()
-              -> ss::future<end_tx_reply> {
+            [request = std::move(request), timeout, tm, &self]() mutable
+            -> ss::future<end_tx_reply> {
                 return self.with_stm(
                   tm,
                   [request = std::move(request), timeout, &self](
-                    checked<ss::shared_ptr<tm_stm>, tx::errc> r) {
-                      return self.do_end_txn(r, std::move(request), timeout);
+                    checked<ss::shared_ptr<tm_stm>, tx::errc> r) mutable {
+                      return self.do_end_txn(
+                        std::move(r), std::move(request), timeout);
                   });
             });
       });
@@ -2116,13 +2120,13 @@ ss::future<tx_gateway_frontend::op_result_t> tx_gateway_frontend::commit_data(
     while (0 < retries--) {
         std::vector<ss::future<commit_group_tx_reply>> gfs;
         gfs.reserve(tx.groups.size());
-        for (auto group : tx.groups) {
+        for (const auto& group : tx.groups) {
             gfs.push_back(_rm_group_proxy->commit_group_tx(
               group.group_id, tx.pid, tx.tx_seq, timeout));
         }
         std::vector<ss::future<commit_tx_reply>> cfs;
         cfs.reserve(tx.partitions.size());
-        for (auto rm : tx.partitions) {
+        for (const auto& rm : tx.partitions) {
             cfs.push_back(_rm_partition_frontend.local().commit_tx(
               rm.ntp, tx.pid, tx.tx_seq, timeout));
         }
@@ -2252,13 +2256,13 @@ ss::future<tx_gateway_frontend::op_result_t> tx_gateway_frontend::abort_data(
     while (0 < retries--) {
         std::vector<ss::future<abort_tx_reply>> pfs;
         pfs.reserve(tx.partitions.size());
-        for (auto rm : tx.partitions) {
+        for (const auto& rm : tx.partitions) {
             pfs.push_back(_rm_partition_frontend.local().abort_tx(
               rm.ntp, tx.pid, tx.tx_seq, timeout));
         }
         std::vector<ss::future<abort_group_tx_reply>> gfs;
         gfs.reserve(tx.groups.size());
-        for (auto group : tx.groups) {
+        for (const auto& group : tx.groups) {
             gfs.push_back(_rm_group_proxy->abort_group_tx(
               group.group_id, tx.pid, tx.tx_seq, timeout));
         }
@@ -2528,7 +2532,7 @@ void tx_gateway_frontend::expire_old_txs() {
     });
 }
 
-ss::future<> tx_gateway_frontend::expire_old_txs(model::ntp tx_ntp) {
+ss::future<> tx_gateway_frontend::expire_old_txs(const model::ntp& tx_ntp) {
     auto shard = _shard_table.local().shard_for(tx_ntp);
 
     if (!shard) {
@@ -2559,7 +2563,7 @@ ss::future<> tx_gateway_frontend::expire_old_txs(model::ntp tx_ntp) {
 
 ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
     auto tx_ids = stm->get_expired_txs();
-    for (auto tx_id : tx_ids) {
+    for (const auto& tx_id : tx_ids) {
         co_await expire_old_tx(stm, tx_id);
     }
 }
