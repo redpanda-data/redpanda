@@ -25,4 +25,7 @@ int64_t parse_required_i64(const json::Value& v, const char* member_name);
 
 bool parse_required_bool(const json::Value& v, const char* member_name);
 
+std::string_view
+extract_between(char start_ch, char end_ch, std::string_view s);
+
 } // namespace iceberg

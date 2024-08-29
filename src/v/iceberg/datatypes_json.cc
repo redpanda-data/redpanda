@@ -20,17 +20,6 @@
 namespace iceberg {
 
 namespace {
-std::string_view
-extract_between(char start_ch, char end_ch, const std::string_view& s) {
-    auto start_pos = s.find(start_ch);
-    auto end_pos = s.find(end_ch, start_pos);
-
-    if (start_pos != std::string::npos && end_pos != std::string::npos) {
-        return s.substr(start_pos + 1, end_pos - start_pos - 1);
-    }
-    throw std::invalid_argument(
-      fmt::format("Missing wrappers '{}' or '{}' in {}", start_ch, end_ch, s));
-}
 
 decimal_type parse_decimal(std::string_view type_str) {
     auto ps_str = extract_between('(', ')', type_str);

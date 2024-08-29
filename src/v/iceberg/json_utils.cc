@@ -78,4 +78,16 @@ bool parse_required_bool(const json::Value& v, const char* member_name) {
     return bool_json.GetBool();
 }
 
+std::string_view
+extract_between(char start_ch, char end_ch, std::string_view s) {
+    auto start_pos = s.find(start_ch);
+    auto end_pos = s.find(end_ch, start_pos);
+
+    if (start_pos != std::string::npos && end_pos != std::string::npos) {
+        return s.substr(start_pos + 1, end_pos - start_pos - 1);
+    }
+    throw std::invalid_argument(
+      fmt::format("Missing wrappers '{}' or '{}' in {}", start_ch, end_ch, s));
+}
+
 } // namespace iceberg
