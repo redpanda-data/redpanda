@@ -66,6 +66,8 @@ struct uuid_struct
     std::optional<uuid_t> opt2;
     std::vector<uuid_t> vec;
     std::vector<std::optional<uuid_t>> opt_vec;
+
+    auto serde_fields() { return std::tie(single, opt1, opt2, vec, opt_vec); }
 };
 
 template<typename map_t>
