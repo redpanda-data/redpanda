@@ -28,7 +28,9 @@ class SegmentReader:
 
     def __init__(self, stream):
         self.stream = stream
-        self.read_failures = 0
+        self.tolerate_partial_reads = 10
+        self.sleep_between_read_attempts = 0.5
+        self.partial_reads = 0
 
     def read_batch(self):
         reset_pos = self.stream.tell()
@@ -38,12 +40,14 @@ class SegmentReader:
             if all(map(lambda v: v == 0, header)):
                 return None
 
-            if header.batch_size == 0 and self.read_failures < 15:
-                time.sleep(2)
-                self.read_failures += 1
+            # Not all fields of the header are 0, but the batch size is 0. Retry reading the segment
+            # from re-wound offset after a delay, in case we caught the batch mid-write.
+            if header.batch_size == 0 and self.partial_reads < self.tolerate_partial_reads:
+                time.sleep(self.sleep_between_read_attempts)
+                self.partial_reads += 1
                 self.stream.seek(reset_pos, 0)
                 return self.read_batch()
-            self.read_failures = 0
+            self.partial_reads = 0
 
             records_size = header.batch_size - self.HEADER_SIZE
             data = self.stream.read(records_size)
