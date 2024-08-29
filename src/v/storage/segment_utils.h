@@ -258,6 +258,14 @@ inline bool is_compactible(const model::record_batch& b) {
 offset_delta_time should_apply_delta_time_offset(
   ss::sharded<features::feature_table>& feature_table);
 
+// Optionally returns the timestamp past which a tombstone may be removed.
+// This returns a value iff the segment `s` has been marked as cleanly
+// compacted, and the compaction_config has a value assigned for
+// `tombstone_retention_ms`. In all other cases, `std::nullopt` is returned,
+// indicating that tombstone records will not be removed if encountered.
+std::optional<model::timestamp> get_tombstone_delete_horizon(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
+
 // Returns true iff the record `r` is a tombstone, and the timestamp returned by
 // `now()` is past the `tombstone_delete_horizon` timestamp (in the case it has
 // a value). Returns false in all other cases.
