@@ -42,6 +42,30 @@ parse_required(const json::Value& v, const char* member_name) {
     return iter->value;
 }
 
+json::Value::ConstArray
+parse_required_array(const json::Value& v, const char* member_name) {
+    const auto& array_json = parse_required(v, member_name);
+    if (!array_json.IsArray()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected array for field '{}': {}",
+          member_name,
+          array_json.GetType()));
+    }
+    return array_json.GetArray();
+}
+
+json::Value::ConstObject
+parse_required_object(const json::Value& v, const char* member_name) {
+    const auto& obj_json = parse_required(v, member_name);
+    if (!obj_json.IsObject()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected object for field '{}': {}",
+          member_name,
+          obj_json.GetType()));
+    }
+    return obj_json.GetObject();
+}
+
 ss::sstring parse_required_str(const json::Value& v, const char* member_name) {
     const auto& str_json = parse_required(v, member_name);
     if (!str_json.IsString()) {

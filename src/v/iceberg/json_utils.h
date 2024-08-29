@@ -18,6 +18,11 @@ parse_optional(const json::Value& v, const char* member_name);
 const json::Value&
 parse_required(const json::Value& v, const char* member_name);
 
+json::Value::ConstArray
+parse_required_array(const json::Value& v, const char* member_name);
+json::Value::ConstObject
+parse_required_object(const json::Value& v, const char* member_name);
+
 ss::sstring parse_required_str(const json::Value& v, const char* member_name);
 
 int32_t parse_required_i32(const json::Value& v, const char* member_name);
