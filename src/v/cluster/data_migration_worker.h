@@ -29,7 +29,11 @@ namespace cluster::data_migrations {
  */
 class worker : public ss::peering_sharded_service<worker> {
 public:
-    worker(model::node_id self, partition_leaders_table&, ss::abort_source&);
+    worker(
+      model::node_id,
+      partition_leaders_table&,
+      partition_manager&,
+      ss::abort_source&);
     ss::future<> stop();
 
     ss::future<errc>
@@ -61,7 +65,7 @@ private:
     using managed_ntp_it = managed_ntps_map_t::iterator;
     using managed_ntp_cit = managed_ntps_map_t::const_iterator;
 
-    void handle_operation_result(
+    ss::future<> handle_operation_result(
       model::ntp ntp, id migration_id, state desired_state, errc ec);
     void handle_leadership_update(const model::ntp& ntp, bool is_leader);
     void unmanage_ntp(managed_ntp_cit it, errc result);
@@ -75,10 +79,11 @@ private:
     ss::future<errc> do_work(
       const model::ntp& ntp,
       state sought_state,
-      const outbound_partition_work_info& pwi);
+      const outbound_partition_work_info&);
 
     model::node_id _self;
     partition_leaders_table& _leaders_table;
+    partition_manager& _partition_manager;
     ss::abort_source& _as;
     std::chrono::milliseconds _operation_timeout;
 

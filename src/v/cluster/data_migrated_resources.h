@@ -37,8 +37,7 @@ public:
      * It the topic is not being migrated the method returns a
      * migrated_resource_state::non_restricted.
      */
-    migrated_resource_state
-    get_topic_state(const model::topic_namespace&) const;
+    migrated_resource_state get_topic_state(model::topic_namespace_view) const;
     /**
      * Returns current state of the consumer group that is being migrated.
      * It the group is not being migrated the method returns a
@@ -66,7 +65,12 @@ private:
 
     friend migrations_table;
 
-    chunked_hash_map<model::topic_namespace, resource_metadata> _topics;
+    chunked_hash_map<
+      model::topic_namespace,
+      resource_metadata,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
+      _topics;
     chunked_hash_map<consumer_group, resource_metadata> _groups;
 };
 } // namespace cluster::data_migrations

@@ -33,15 +33,15 @@ struct produce_request final {
     using api_type = produce_api;
     using partition = partition_produce_data;
     using topic = topic_produce_data;
+    using topics = chunked_vector<topic>;
+    using topic_cit = topics::const_iterator;
 
     produce_request_data data;
 
     produce_request() = default;
 
     produce_request(
-      std::optional<ss::sstring> t_id,
-      int16_t acks,
-      chunked_vector<produce_request::topic> topics) {
+      std::optional<ss::sstring> t_id, int16_t acks, topics topics) {
         if (t_id) {
             data.transactional_id = transactional_id(std::move(*t_id));
         }

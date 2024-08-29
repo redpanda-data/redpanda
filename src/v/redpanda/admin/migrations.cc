@@ -58,8 +58,9 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
         ss::httpd::migration_json::inbound_topic inbound_tp;
         inbound_tp.source_topic = to_admin_type(inbound_t.source_topic_name);
         if (inbound_t.alias) {
-            inbound_tp.alias = to_admin_type(inbound_t.source_topic_name);
+            inbound_tp.alias = to_admin_type(*inbound_t.alias);
         }
+        migration.topics.push(inbound_tp);
     }
     for (auto& cg : idm.groups) {
         migration.consumer_groups.push(cg);
