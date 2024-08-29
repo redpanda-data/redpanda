@@ -1130,6 +1130,20 @@ void mark_segment_as_finished_window_compaction(
     }
 }
 
+std::optional<model::timestamp> get_tombstone_delete_horizon(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
+    std::optional<model::timestamp> tombstone_delete_horizon = {};
+    const auto& tombstone_retention_ms_opt = cfg.tombstone_retention_ms;
+    if (
+      seg->index().has_clean_compact_timestamp()
+      && tombstone_retention_ms_opt.has_value()) {
+        tombstone_delete_horizon = model::timestamp(
+          seg->index().clean_compact_timestamp()->value()
+          + cfg.tombstone_retention_ms->count());
+    }
+    return tombstone_delete_horizon;
+}
+
 bool should_remove_tombstone_record(
   const model::record& r,
   std::optional<model::timestamp> tombstone_delete_horizon) {
