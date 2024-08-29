@@ -43,6 +43,8 @@ struct record_batch_entry_body
 
     // The term of the record batch.
     model::term_id term;
+
+    auto serde_fields() { return std::tie(record_batch_header, records, term); }
 };
 
 // Container for the deserialized bytes from an entry. Note that this isn't an
