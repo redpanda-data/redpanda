@@ -199,6 +199,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "transform_json_test",
+    timeout = "short",
+    srcs = [
+        "transform_json_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:transform",
+        "//src/v/iceberg:transform_json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "transform_utils_test",
     timeout = "short",
     srcs = [

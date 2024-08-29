@@ -350,6 +350,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "transform_json",
+    srcs = [
+        "transform_json.cc",
+    ],
+    hdrs = [
+        "transform_json.h",
+    ],
+    implementation_deps = [
+        ":json_utils",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":transform",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "transform_utils",
     srcs = [
         "transform_utils.cc",
