@@ -291,6 +291,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "snapshot",
+    hdrs = [
+        "snapshot.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest_entry",
+        ":schema",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "time_transform_visitor",
     srcs = [
         "time_transform_visitor.cc",
