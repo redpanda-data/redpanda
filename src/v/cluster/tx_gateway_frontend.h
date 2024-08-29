@@ -269,7 +269,7 @@ private:
       process_locally(ss::shared_ptr<tm_stm>, try_abort_request);
 
     void expire_old_txs();
-    ss::future<> expire_old_txs(model::ntp);
+    ss::future<> expire_old_txs(const model::ntp&);
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
     ss::future<> expire_old_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
     ss::future<tx::errc> do_expire_old_tx(

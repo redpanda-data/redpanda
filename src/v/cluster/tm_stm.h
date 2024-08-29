@@ -320,7 +320,7 @@ public:
     ss::future<txlock_unit> lock_tx(kafka::transactional_id, std::string_view);
 
     std::optional<txlock_unit>
-      try_lock_tx(kafka::transactional_id, std::string_view);
+    try_lock_tx(const kafka::transactional_id&, std::string_view);
 
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
