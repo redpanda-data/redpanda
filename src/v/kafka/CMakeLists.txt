@@ -72,6 +72,7 @@ v_cc_library(
 
 add_subdirectory(client)
 add_subdirectory(server/tests)
+add_subdirectory(utils)
 
 set_source_files_properties(
     server/group.cc # too big => negative impact on minimal rebuilds for unity

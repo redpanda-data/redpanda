@@ -11,6 +11,7 @@
 
 #include "bytes/iobuf.h"
 #include "gmock/gmock.h"
+#include "kafka/utils/txn_reader.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -19,7 +20,6 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
-#include "transform/txn_reader.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -33,7 +33,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace transform {
+namespace kafka {
 namespace {
 
 struct begin_txn {};
@@ -539,4 +539,4 @@ INSTANTIATE_TEST_SUITE_P(
     [](const auto& test) { return test.param.name; });
 
 } // namespace
-} // namespace transform
+} // namespace kafka
