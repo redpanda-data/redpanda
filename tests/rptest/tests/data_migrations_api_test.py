@@ -6,6 +6,9 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import random
+import threading
+import time
 from typing import Callable
 import typing
 from requests.exceptions import ConnectionError
@@ -14,7 +17,7 @@ from rptest.services.admin import Admin, MigrationAction
 from rptest.services.admin import OutboundDataMigration, InboundDataMigration, NamespacedTopic, InboundTopic
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, SISettings
 from ducktape.utils.util import wait_until
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.services.redpanda import SISettings
@@ -25,6 +28,39 @@ from rptest.tests.e2e_finjector import Finjector
 from rptest.clients.rpk import RpkTool
 from ducktape.mark import matrix
 import requests
+
+
+class TransferLeadersBackgroundThread:
+    def __init__(self, redpanda: RedpandaServiceBase, topic: str):
+        self.redpanda = redpanda
+        self.logger = redpanda.logger
+        self.stop_ev = threading.Event()
+        self.topic = topic
+        self.admin = Admin(self.redpanda)
+        self.thread = threading.Thread(target=lambda: self._loop())
+        self.thread.daemon = True
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self.stop_ev.set()
+
+    def _loop(self):
+        while not self.stop_ev.is_set():
+            partitions = self.admin.get_partitions(namespace="kafka",
+                                                   topic=self.topic)
+            partition = random.choice(partitions)
+            p_id = partition['partition_id']
+            self.logger.info(f"Transferring leadership of {self.topic}/{p_id}")
+            try:
+                self.admin.partition_transfer_leadership(namespace="kafka",
+                                                         topic=self.topic,
+                                                         partition=p_id)
+            except Exception as e:
+                self.logger.info(
+                    f"error transferring leadership of {self.topic}/{p_id} - {e}"
+                )
 
 
 class DataMigrationsApiTest(RedpandaTest):
@@ -330,8 +366,9 @@ class DataMigrationsApiTest(RedpandaTest):
                     topic=topic, key="test-key", msg='test-msg'))
 
     @cluster(num_nodes=4)
-    @matrix(use_alias=[True, False])
-    def test_migrated_topic_data_integrity(self, use_alias):
+    @matrix(use_alias=[True, False], transfer_leadership=[True, False])
+    def test_migrated_topic_data_integrity(self, use_alias,
+                                           transfer_leadership):
         workload_topic = TopicSpec(partition_count=32)
 
         self.client().create_topic(workload_topic)
@@ -341,6 +378,10 @@ class DataMigrationsApiTest(RedpandaTest):
         wait_until(lambda: producer.produce_status.acked > self.msg_count,
                    timeout_sec=60,
                    backoff_sec=1)
+        if transfer_leadership:
+            tl_thread = TransferLeadersBackgroundThread(
+                self.redpanda, workload_topic.name)
+            tl_thread.start()
         admin = Admin(self.redpanda)
         workload_ns_topic = NamespacedTopic(workload_topic.name)
         out_migration = OutboundDataMigration(topics=[workload_ns_topic],
@@ -409,7 +450,8 @@ class DataMigrationsApiTest(RedpandaTest):
                                    assert_topic_present=False)
 
         admin.delete_data_migration(out_migration_id)
-
+        if transfer_leadership:
+            tl_thread.stop()
         # attach topic back
         inbound_topic_name = "aliased-workload-topic" if use_alias else workload_topic.name
         alias = None
@@ -493,5 +535,7 @@ class DataMigrationsApiTest(RedpandaTest):
         )
         consumer.wait()
         consumer.stop()
+        if transfer_leadership:
+            tl_thread.stop()
         self.redpanda.si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "missing_segments"})
