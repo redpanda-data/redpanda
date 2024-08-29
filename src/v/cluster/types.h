@@ -563,7 +563,7 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<6>,
+      serde::version<7>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
@@ -573,6 +573,7 @@ struct incremental_topic_updates
     static constexpr int8_t version_with_schema_id_validation = -6;
     static constexpr int8_t version_with_initial_retention = -7;
     static constexpr int8_t version_with_write_caching = -8;
+    static constexpr int8_t version_with_iceberg_property = -9;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
@@ -581,7 +582,8 @@ struct incremental_topic_updates
     // -6 - topic updates with schema id validation
     // -7 - topic updates with initial retention
     // -8 - write caching properties
-    static constexpr int8_t version = version_with_write_caching;
+    // -9 - iceberg enablement properties
+    static constexpr int8_t version = version_with_iceberg_property;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -622,6 +624,9 @@ struct incremental_topic_updates
     property_update<std::optional<model::write_caching_mode>> write_caching;
     property_update<std::optional<std::chrono::milliseconds>> flush_ms;
     property_update<std::optional<size_t>> flush_bytes;
+    property_update<bool> iceberg_enabled{
+      storage::ntp_config::default_iceberg_enabled,
+      incremental_update_operation::none};
 
     auto serde_fields() {
         return std::tie(
@@ -650,7 +655,8 @@ struct incremental_topic_updates
           initial_retention_local_target_ms,
           write_caching,
           flush_ms,
-          flush_bytes);
+          flush_bytes,
+          iceberg_enabled);
     }
 
     friend std::ostream&

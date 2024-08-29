@@ -479,6 +479,7 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
       std::nullopt,
       std::nullopt,
       std::nullopt,
+      false,
     };
 
     auto random_initial_revision_id

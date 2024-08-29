@@ -246,6 +246,12 @@ class DescribeTopicsTest(RedpandaTest):
                 "Max not flushed bytes per partition. If configured threshold is reached "
                 "log will automatically be flushed even though it wasn't explicitly "
                 "requested"),
+            "iceberg.enabled":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="false",
+                doc_string=
+                "Iceberg format translation enabled on this topic if true."),
         }
 
         tp_spec = TopicSpec()

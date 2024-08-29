@@ -127,6 +127,8 @@ def read_topic_properties_serde(rdr: Reader, version):
             'remote_label': rdr.read_optional(read_remote_label_serde),
             'topic_namespace_override': rdr.read_optional(read_topic_namespace)
         }
+    if version >= 10:
+        topic_properties |= {'iceberg_enabled': rdr.read_bool()}
 
     return topic_properties
 
@@ -142,7 +144,7 @@ def read_topic_config(rdr: Reader, version):
         'replication_factor':
         rdr.read_int16(),
         'properties':
-        rdr.read_envelope(read_topic_properties_serde, max_version=9),
+        rdr.read_envelope(read_topic_properties_serde, max_version=10),
     }
     if version < 1:
         # see https://github.com/redpanda-data/redpanda/pull/6613
@@ -284,10 +286,12 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 'flush_ms': rdr.read_optional(Reader.read_int64),
                 'flush_bytes': rdr.read_optional(Reader.read_int64)
             }
+        if version >= 7:
+            incr_obj |= {'iceberg_enabled': rdr.read_bool()}
 
         return incr_obj
 
-    return rdr.read_envelope(incr_topic_upd, max_version=6)
+    return rdr.read_envelope(incr_topic_upd, max_version=7)
 
 
 def read_create_partitions_serde(rdr: Reader):

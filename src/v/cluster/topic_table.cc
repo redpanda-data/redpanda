@@ -947,9 +947,12 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       updated_properties.write_caching, overrides.write_caching);
     incremental_update(updated_properties.flush_ms, overrides.flush_ms);
     incremental_update(updated_properties.flush_bytes, overrides.flush_bytes);
+    incremental_update(
+      updated_properties.iceberg_enabled,
+      overrides.iceberg_enabled,
+      storage::ntp_config::default_iceberg_enabled);
 
     auto& properties = tp->second.get_configuration().properties;
-
     // no configuration change, no need to generate delta
     if (updated_properties == properties) {
         co_return errc::success;

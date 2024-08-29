@@ -300,6 +300,14 @@ create_topic_properties_update(
                   flush_bytes_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_iceberg_enabled) {
+                parse_and_set_bool(
+                  update.properties.iceberg_enabled,
+                  cfg.value,
+                  op,
+                  storage::ntp_config::default_iceberg_enabled);
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(
