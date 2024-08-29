@@ -2523,6 +2523,29 @@ struct partition_manifest_serde
     std::optional<model::offset> _last_scrubbed_offset;
     model::producer_id _highest_producer_id;
     model::offset _applied_offset;
+
+    auto serde_fields() {
+        return std::tie(
+          _ntp,
+          _rev,
+          _segments_serialized,
+          _replaced,
+          _last_offset,
+          _start_offset,
+          _last_uploaded_compacted_offset,
+          _insync_offset,
+          _cloud_log_size_bytes,
+          _archive_start_offset,
+          _archive_start_offset_delta,
+          _archive_clean_offset,
+          _start_kafka_offset,
+          archive_size_bytes,
+          _spillover_manifests_serialized,
+          _last_partition_scrub,
+          _last_scrubbed_offset,
+          _highest_producer_id,
+          _applied_offset);
+    }
 };
 
 static_assert(
