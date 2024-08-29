@@ -38,6 +38,7 @@ v_cc_library(
     partition_key_type.cc
     schema.cc
     schema_json.cc
+    snapshot_json.cc
     struct_accessor.cc
     time_transform_visitor.cc
     transform.cc

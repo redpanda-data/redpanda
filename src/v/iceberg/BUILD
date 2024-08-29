@@ -304,6 +304,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "snapshot_json",
+    srcs = [
+        "snapshot_json.cc",
+    ],
+    hdrs = [
+        "snapshot_json.h",
+    ],
+    implementation_deps = [
+        ":json_utils",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":snapshot",
+        "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
     name = "time_transform_visitor",
     srcs = [
         "time_transform_visitor.cc",

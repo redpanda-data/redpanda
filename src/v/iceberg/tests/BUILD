@@ -169,6 +169,21 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "snapshot_json_test",
+    timeout = "short",
+    srcs = [
+        "snapshot_json_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:snapshot",
+        "//src/v/iceberg:snapshot_json",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "struct_accessor_test",
     timeout = "short",
     srcs = [
