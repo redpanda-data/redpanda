@@ -303,7 +303,8 @@ tm_stm::update_transaction_status(
 ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::finish_transaction(
   model::term_id expected_term,
   kafka::transactional_id tx_id,
-  tx_status completed_status) {
+  tx_status completed_status,
+  bool bump_producer_epoch) {
     vassert(
       completed_status == tx_status::completed_commit
         || completed_status == tx_status::completed_abort,
@@ -333,6 +334,15 @@ ss::future<checked<tx_metadata, tm_stm::op_status>> tm_stm::finish_transaction(
           tx_id,
           err.value());
         co_return tm_stm::op_status::conflict;
+    }
+    if (bump_producer_epoch) {
+        tx.pid.epoch++;
+        tx.last_pid.epoch = model::no_producer_epoch;
+        vlog(
+          _ctx_log.debug,
+          "[tx_id={}] bumping transaction producer id epoch. New pid: {}",
+          tx_id,
+          tx.pid);
     }
 
     co_return co_await update_tx(tx, expected_term);

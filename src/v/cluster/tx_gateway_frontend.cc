@@ -2105,8 +2105,16 @@ tx_gateway_frontend::maybe_progress_transaction(
                           ? tx_status::completed_commit
                           : tx_status::completed_abort;
 
+    /**
+     * If the transaction was aborted internally i.e. expired an epoch bump is
+     * required to force producer to initialize a new session. After the epoch
+     * bump the producer will be fenced as the coordinator validates the
+     * producer epoch on every transaction state update.
+     */
+    const bool needs_epoch_bump = tx.status
+                                  == tx_status::preparing_internal_abort;
     auto finish_result = co_await stm->finish_transaction(
-      expected_term, tx.id, final_status);
+      expected_term, tx.id, final_status, needs_epoch_bump);
 
     if (!finish_result.has_value()) {
         vlog(
