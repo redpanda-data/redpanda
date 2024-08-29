@@ -303,6 +303,9 @@ public:
 
     ss::sstring name() const;
 
+    // retrieve "title" property from the schema, used to form the record name
+    std::optional<ss::sstring> title() const;
+
 private:
     pimpl _impl;
 };
