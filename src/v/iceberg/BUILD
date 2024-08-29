@@ -112,6 +112,7 @@ redpanda_cc_library(
         ":manifest",
         ":manifest_entry_gen",
         ":partition",
+        ":partition_json",
         ":schema",
         ":schema_json",
         "//src/v/base",

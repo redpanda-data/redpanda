@@ -14,6 +14,7 @@
 #include "iceberg/datatypes_json.h"
 #include "iceberg/json_utils.h"
 #include "iceberg/manifest.h"
+#include "iceberg/partition_json.h"
 #include "iceberg/schema.h"
 #include "iceberg/schema_json.h"
 #include "strings/string_switch.h"
@@ -77,31 +78,22 @@ struct partition_spec_strs {
 };
 partition_spec partition_spec_from_str(const partition_spec_strs& strs) {
     auto spec_id = std::stoi(strs.spec_id_str);
-    json::Document parsed_spec;
-    parsed_spec.Parse(strs.fields_json_str);
-    if (!parsed_spec.IsObject()) {
+    json::Document parsed_spec_json;
+    parsed_spec_json.Parse(strs.fields_json_str);
+    auto parsed_spec = parse_partition_spec(parsed_spec_json);
+    if (parsed_spec.spec_id() != spec_id) {
         throw std::invalid_argument(fmt::format(
-          "'partition-spec' metadata has type '{}' instead of object",
-          parsed_spec.GetType()));
+          "Mismatched partition spec id {} vs {}",
+          spec_id,
+          parsed_spec.spec_id()));
     }
-    auto spec_spec_id = parse_required_i32(parsed_spec, "spec-id");
-    if (spec_spec_id != spec_id) {
-        throw std::invalid_argument(fmt::format(
-          "Mismatched partition spec id {} vs {}", spec_id, spec_spec_id));
-    }
-    return partition_spec{
-      .spec_id = partition_spec::id_t{spec_id},
-      // TODO: implement me!
-      .fields = {},
-    };
+    return parsed_spec;
 }
-partition_spec_strs partition_spec_to_str(const partition_spec& spec) {
-    partition_spec_strs strs;
-    strs.spec_id_str = fmt::format("{}", spec.spec_id());
-    // TODO: implement me!
-    strs.fields_json_str = fmt::format(
-      "{{\"spec-id\":{},\"fields\":[]}}", spec.spec_id());
-    return strs;
+ss::sstring partition_spec_to_str(const partition_spec& spec) {
+    json::StringBuffer spec_buf;
+    json::Writer<json::StringBuffer> w_spec(spec_buf);
+    rjson_serialize(w_spec, spec);
+    return spec_buf.GetString();
 }
 
 std::map<std::string, std::string>
@@ -110,8 +102,8 @@ metadata_to_map(const manifest_metadata& meta) {
     return {
       {"schema", schema_to_json_str(meta.schema)},
       {"content", std::string{content_type_to_str(meta.manifest_content_type)}},
-      {"partition-spec", partition_spec_strs.fields_json_str},
-      {"partition-spec-id", partition_spec_strs.spec_id_str},
+      {"partition-spec", partition_spec_to_str(meta.partition_spec)},
+      {"partition-spec-id", fmt::to_string(meta.partition_spec.spec_id())},
       {"format-version", std::string{format_to_str(meta.format_version)}}};
 }
 // TODO: make DataFileReader::getMetadata const!
