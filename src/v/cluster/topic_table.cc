@@ -48,7 +48,12 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           errc::topic_already_exists);
     }
 
-    if (_migrated_resources.is_already_migrated(cmd.key)) {
+    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    if (
+      !cmd.value.cfg.is_migrated
+      && migration_state
+           != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(clusterlog.debug, "topic {} already migrated", cmd.key);
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
     }
@@ -104,15 +109,16 @@ ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
 
-    co_return do_local_delete(cmd.key, offset);
+    co_return do_local_delete(cmd.key, offset, false);
 }
 
-std::error_code
-topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
+std::error_code topic_table::do_local_delete(
+  model::topic_namespace nt, model::offset offset, bool ignore_migration) {
     auto const migration_state = _migrated_resources.get_topic_state(nt);
     if (
-      migration_state
-      != data_migrations::migrated_resource_state::non_restricted) {
+      !ignore_migration
+      && migration_state
+           != data_migrations::migrated_resource_state::non_restricted) {
         return errc::resource_is_being_migrated;
     }
     if (auto tp = _topics.find(nt); tp != _topics.end()) {
@@ -186,14 +192,13 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
         }
     }
 
-    if (
-      soft_del.mode == topic_lifecycle_transition_mode::pending_gc
-      || soft_del.mode == topic_lifecycle_transition_mode::oneshot_delete) {
-        return ss::make_ready_future<std::error_code>(
-          do_local_delete(soft_del.topic.nt, offset));
-    } else {
-        return ss::make_ready_future<std::error_code>(errc::success);
+    if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
+        return ssx::now<std::error_code>(errc::success);
     }
+    return ssx::now(do_local_delete(
+      soft_del.topic.nt,
+      offset,
+      soft_del.mode == topic_lifecycle_transition_mode::delete_migrated));
 }
 
 ss::future<std::error_code>

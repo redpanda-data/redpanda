@@ -662,6 +662,7 @@ struct instance_generator<cluster::topic_configuration> {
         tc.tp_ns = model::random_topic_namespace();
         tc.partition_count = random_generators::get_int<int32_t>();
         tc.replication_factor = random_generators::get_int<int16_t>();
+        tc.is_migrated = tests::random_bool();
         tc.properties = instance_generator<cluster::topic_properties>::random();
         return tc;
     }
@@ -671,11 +672,13 @@ struct instance_generator<cluster::topic_configuration> {
           {model::ns(""),
            model::topic(""),
            std::numeric_limits<int32_t>::max(),
-           std::numeric_limits<int16_t>::max()},
+           std::numeric_limits<int16_t>::max(),
+           std::numeric_limits<bool>::max()},
           {model::ns(""),
            model::topic(""),
            std::numeric_limits<int32_t>::min(),
-           std::numeric_limits<int16_t>::min()}};
+           std::numeric_limits<int16_t>::min(),
+           std::numeric_limits<bool>::min()}};
     }
 };
 

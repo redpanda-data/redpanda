@@ -245,13 +245,13 @@ TEST_F_CORO(data_migration_table_fixture, test_crud_operations) {
     EXPECT_EQ(notifications.back(), id_1);
 
     validate_group_resource_state(
-      {{"g-1", data_migrations::migrated_resource_state::restricted},
-       {"g-2", data_migrations::migrated_resource_state::restricted}});
+      {{"g-1", data_migrations::migrated_resource_state::metadata_locked},
+       {"g-2", data_migrations::migrated_resource_state::metadata_locked}});
 
     validate_topic_resource_state(
-      {{"t-1", data_migrations::migrated_resource_state::restricted},
-       {"t-2", data_migrations::migrated_resource_state::restricted},
-       {"t-3", data_migrations::migrated_resource_state::restricted}});
+      {{"t-1", data_migrations::migrated_resource_state::metadata_locked},
+       {"t-2", data_migrations::migrated_resource_state::metadata_locked},
+       {"t-3", data_migrations::migrated_resource_state::metadata_locked}});
 
     // create migration with the same id, this should fail
     r = co_await table->apply_update(
@@ -277,11 +277,11 @@ TEST_F_CORO(data_migration_table_fixture, test_crud_operations) {
             .groups = create_groups({"g-3", "g-4"})}}));
 
     validate_group_resource_state(
-      {{"g-3", data_migrations::migrated_resource_state::blocked},
-       {"g-4", data_migrations::migrated_resource_state::blocked}});
+      {{"g-3", data_migrations::migrated_resource_state::metadata_locked},
+       {"g-4", data_migrations::migrated_resource_state::metadata_locked}});
 
     validate_topic_resource_state(
-      {{"in-t-1", data_migrations::migrated_resource_state::blocked}});
+      {{"in-t-1", data_migrations::migrated_resource_state::metadata_locked}});
 
     EXPECT_EQ(r, cluster::errc::success);
     EXPECT_EQ(notifications.back(), id_2);
@@ -513,15 +513,15 @@ TEST_F_CORO(data_migration_table_fixture, test_resource_validation) {
     EXPECT_TRUE(r.has_value());
 
     validate_group_resource_state({
-      {"gr-1", data_migrations::migrated_resource_state::restricted},
-      {"gr-2", data_migrations::migrated_resource_state::restricted},
-      {"gr-3", data_migrations::migrated_resource_state::restricted},
+      {"gr-1", data_migrations::migrated_resource_state::metadata_locked},
+      {"gr-2", data_migrations::migrated_resource_state::metadata_locked},
+      {"gr-3", data_migrations::migrated_resource_state::metadata_locked},
     });
 
     validate_topic_resource_state({
-      {"topic-1", data_migrations::migrated_resource_state::restricted},
-      {"topic-2", data_migrations::migrated_resource_state::restricted},
-      {"topic-3", data_migrations::migrated_resource_state::restricted},
+      {"topic-1", data_migrations::migrated_resource_state::metadata_locked},
+      {"topic-2", data_migrations::migrated_resource_state::metadata_locked},
+      {"topic-3", data_migrations::migrated_resource_state::metadata_locked},
     });
 
     /**
@@ -535,6 +535,7 @@ TEST_F_CORO(data_migration_table_fixture, test_resource_validation) {
     r = co_await try_create_migration(idm_with_alias.copy());
     EXPECT_TRUE(r.has_value());
     validate_topic_resource_state({
-      {"alias-of-topic-1", data_migrations::migrated_resource_state::blocked},
+      {"alias-of-topic-1",
+       data_migrations::migrated_resource_state::metadata_locked},
     });
 }

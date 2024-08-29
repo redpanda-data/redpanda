@@ -878,6 +878,9 @@ enum class topic_lifecycle_transition_mode : uint8_t {
     // Legacy-style deletion, where we attempt to delete local data and drop
     // the topic entirely from the topic table in one step.
     oneshot_delete = 2,
+
+    // Local-only delete for migrated-from topics
+    delete_migrated = 3
 };
 
 struct nt_lifecycle_marker

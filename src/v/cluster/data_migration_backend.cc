@@ -10,47 +10,97 @@
  */
 #include "cluster/data_migration_backend.h"
 
+#include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_manifest_downloader.h"
+#include "cloud_storage/topic_mount_handler.h"
 #include "cluster/partition_leaders_table.h"
 #include "config/node_config.h"
 #include "data_migration_frontend.h"
 #include "data_migration_types.h"
 #include "data_migration_worker.h"
+#include "errc.h"
 #include "fwd.h"
 #include "logger.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
+#include "topic_configuration.h"
+#include "topic_table.h"
+#include "topics_frontend.h"
 #include "types.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sleep.hh>
 
 #include <chrono>
+#include <exception>
+#include <memory>
 #include <optional>
 #include <ranges>
 
 using namespace std::chrono_literals;
 
 namespace cluster::data_migrations {
+namespace {
+template<class TryFunc>
+ss::future<errc> retry_loop(retry_chain_node& rcn, TryFunc&& try_func) {
+    while (true) {
+        errc ec;
+        try {
+            ec = co_await try_func();
+            if (
+              ec == cluster::errc::success
+              || ec == cluster::errc::shutting_down) {
+                co_return ec;
+            }
+        } catch (...) {
+            vlog(
+              cluster::data_migrations::dm_log.warn,
+              "caught exception in retry loop: {}",
+              std::current_exception());
+            ec = errc::topic_operation_error;
+        }
+        if (auto perm = rcn.retry(); perm.is_allowed) {
+            co_await ss::sleep_abortable(perm.delay, *perm.abort_source);
+        } else {
+            co_return ec;
+        }
+    }
+}
+
+} // namespace
 
 backend::backend(
   migrations_table& table,
   frontend& frontend,
   ss::sharded<worker>& worker,
   partition_leaders_table& leaders_table,
+  topics_frontend& topics_frontend,
   topic_table& topic_table,
   shard_table& shard_table,
+  std::optional<std::reference_wrapper<cloud_storage::remote>>
+    cloud_storage_api,
   ss::abort_source& as)
   : _self(*config::node().node_id())
   , _table(table)
   , _frontend(frontend)
   , _worker(worker)
   , _leaders_table(leaders_table)
+  , _topics_frontend(topics_frontend)
   , _topic_table(topic_table)
   , _shard_table(shard_table)
+  , _cloud_storage_api(cloud_storage_api)
   , _as(as) {}
 
-void backend::start() {
+ss::future<> backend::start() {
+    vlog(dm_log.info, "backend starting");
     vassert(
       ss::this_shard_id() == data_migrations_shard, "Called on wrong shard");
 
@@ -66,10 +116,7 @@ void backend::start() {
                   _gate, [this]() { return handle_raft0_leadership_update(); });
             }
         });
-    _table_notification_id = _table.register_notification([this](id id) {
-        ssx::spawn_with_gate(
-          _gate, [this, id]() { return handle_migration_update(id); });
-    });
+
     _topic_table_notification_id = _topic_table.register_delta_notification(
       [this](topic_table::delta_range_t deltas) {
           _unprocessed_deltas.reserve(
@@ -88,10 +135,37 @@ void backend::start() {
           handle_shard_update(ntp, g, shard);
       });
 
-    ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+    if (_cloud_storage_api) {
+        _table_notification_id = _table.register_notification([this](id id) {
+            ssx::spawn_with_gate(
+              _gate, [this, id]() { return handle_migration_update(id); });
+        });
+
+        // process those that were already there when we subscribed
+        for (auto id : _table.get_migrations()) {
+            co_await handle_migration_update(id);
+        }
+
+        auto maybe_bucket = cloud_storage::configuration::get_bucket_config()();
+        vassert(
+          maybe_bucket, "cloud_storage_api active but no bucket configured");
+        cloud_storage_clients::bucket_name bucket{*maybe_bucket};
+        _topic_mount_handler
+          = std::make_unique<cloud_storage::topic_mount_handler>(
+            bucket, *_cloud_storage_api);
+
+        ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+
+        vlog(dm_log.info, "backend started");
+    } else {
+        vlog(
+          dm_log.info,
+          "backend not started as cloud_storage_api is not available");
+    }
 }
 
 ss::future<> backend::stop() {
+    vlog(dm_log.info, "backend stopping");
     _mutex.broken();
     _sem.broken();
     _timer.cancel();
@@ -99,19 +173,21 @@ ss::future<> backend::stop() {
     _topic_table.unregister_delta_notification(_topic_table_notification_id);
     _leaders_table.unregister_leadership_change_notification(
       model::controller_ntp, _plt_raft0_leadership_notification_id);
-    _table.unregister_notification(_table_notification_id);
+    if (_cloud_storage_api) {
+        _table.unregister_notification(_table_notification_id);
+    }
     co_await _worker.invoke_on_all(&worker::stop);
     co_await _gate.close();
-    vlog(dm_log.debug, "backend stopped");
+    vlog(dm_log.info, "backend stopped");
 }
 
 ss::future<> backend::loop_once() {
+    co_await _sem.wait(_as);
+    _sem.consume(_sem.available_units());
     {
         auto units = co_await _mutex.get_units(_as);
         co_await work_once();
     }
-    co_await _sem.wait(_as);
-    _sem.consume(_sem.available_units());
 }
 
 ss::future<> backend::work_once() {
@@ -189,7 +265,7 @@ ss::future<> backend::work_once() {
 
     // defer RPC retries and topic work
     // todo: configure timeout
-    auto new_deadline = now + 5s;
+    auto new_deadline = now + 2s;
     for (const auto& node_id : rpc_responses | std::views::keys) {
         if (_node_states.contains(node_id)) {
             _nodes_to_retry.try_emplace(node_id, new_deadline);
@@ -266,7 +342,7 @@ void backend::mark_migration_step_done_for_ntp(
                 }
             }
             rs_parts.erase(rs_part_it);
-            rs.erase_tstate_if_done(rs_topic_it);
+            erase_tstate_if_done(rs, rs_topic_it);
         }
     }
 }
@@ -278,17 +354,18 @@ void backend::mark_migration_step_done_for_nt(
     if (rs_topic_it != rs_topics.end()) {
         auto& tstate = rs_topic_it->second;
         tstate.topic_scoped_work_done = true;
-        rs.erase_tstate_if_done(rs_topic_it);
+        erase_tstate_if_done(rs, rs_topic_it);
     }
 }
 
-void backend::migration_reconciliation_state::erase_tstate_if_done(
-  topic_map_t::iterator it) {
+void backend::erase_tstate_if_done(
+  migration_reconciliation_state& mrstate, topic_map_t::iterator it) {
     auto& tstate = it->second;
     if (
       tstate.outstanding_partitions.empty()
       && (!tstate.topic_scoped_work_needed || tstate.topic_scoped_work_done)) {
-        outstanding_topics.erase(it);
+        _topic_migration_map.erase(it->first);
+        mrstate.outstanding_topics.erase(it);
     }
 }
 
@@ -353,6 +430,8 @@ ss::future<> backend::schedule_topic_work(model::topic_namespace nt) {
 
 ss::future<backend::topic_work_result>
 backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
+    // todo: create an abort_source, save it in map, use in retry_loop, trigger
+    // where appropriate
     errc ec;
     try {
         vlog(
@@ -362,16 +441,18 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
           nt,
           tw.sought_state);
         ec = co_await std::visit(
-          [this, &nt, &tw](auto& info) {
+          [this, &nt, &tw](const auto& info) {
               return do_topic_work(nt, tw.sought_state, info);
           },
           tw.info);
         vlog(
           dm_log.debug,
-          "completed topic work on migration {} nt {} towards state: {}",
+          "completed topic work on migration {} nt {} towards state: {}, "
+          "result={}",
           tw.migration_id,
           nt,
-          tw.sought_state);
+          tw.sought_state,
+          ec);
     } catch (...) {
         vlog(
           dm_log.warn,
@@ -392,26 +473,193 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
 }
 
 ss::future<errc> backend::do_topic_work(
-  model::topic_namespace nt, state sought_state, inbound_topic_work_info itwi) {
-    // this assert is in accordance to the logic in get_work_scope
-    vassert(false, "no state transition needs inbound topic work");
-    std::ignore = nt;
-    std::ignore = sought_state;
-    std::ignore = itwi;
+  const model::topic_namespace& nt,
+  state sought_state,
+  const inbound_topic_work_info& itwi) {
+    ss::abort_source as;
+    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 2s};
+    // this switch should be in accordance to the logic in get_work_scope
+    switch (sought_state) {
+    case state::prepared:
+        co_return co_await retry_loop(rcn, [this, &nt, &itwi, &rcn] {
+            return create_topic(
+              nt, itwi.source, itwi.cloud_storage_location, rcn);
+        });
+    case state::executed:
+        co_return co_await retry_loop(
+          rcn, [this, &nt, &rcn] { return prepare_mount_topic(nt, rcn); });
+    case state::finished: {
+        co_return co_await retry_loop(
+          rcn, [this, &nt, &rcn] { return confirm_mount_topic(nt, rcn); });
+    }
+    default:
+        vassert(
+          false,
+          "unknown topic work requested when transitioning inbound migration "
+          "state to {}",
+          sought_state);
+    }
 }
 
 ss::future<errc> backend::do_topic_work(
-  model::topic_namespace nt,
+  const model::topic_namespace& nt,
   state sought_state,
-  outbound_topic_work_info otwi) {
+  const outbound_topic_work_info&) {
     // this assert is in accordance to the logic in get_work_scope
     vassert(
       sought_state == state::finished,
       "only ->finished state transition requires topic work");
-    std::ignore = nt;
-    std::ignore = otwi;
-    co_await ss::sleep(5s);
-    co_return errc::success;
+    ss::abort_source as;
+    retry_chain_node rcn{as, ss::lowres_clock::time_point::max(), 2s};
+    // todo: unmount first
+    auto unmount_res = co_await retry_loop(
+      rcn, [this, &nt, &rcn] { return unmount_topic(nt, rcn); });
+    if (unmount_res == errc::topic_not_exists) {
+        vlog(dm_log.warn, "topic {} does not exist, ignoring", nt, unmount_res);
+        co_return errc::success;
+    }
+    if (unmount_res != errc::success) {
+        vlog(dm_log.warn, "failed to unmount topic {}: {}", nt, unmount_res);
+        co_return unmount_res;
+    }
+    co_return co_await retry_loop(rcn, [this, &nt, &rcn] {
+        return _topics_frontend.delete_topic_after_migration(
+          nt, rcn.get_deadline());
+    });
+}
+
+ss::future<errc> backend::create_topic(
+  const model::topic_namespace& local_nt,
+  const std::optional<model::topic_namespace>& original_nt,
+  const std::optional<cloud_storage_location>& storage_location,
+  retry_chain_node& rcn) {
+    // download manifest
+    const auto& bucket_prop = cloud_storage::configuration::get_bucket_config();
+    auto maybe_bucket = bucket_prop.value();
+    if (!maybe_bucket) {
+        co_return errc::topic_operation_error;
+    }
+    cloud_storage::topic_manifest_downloader tmd(
+      cloud_storage_clients::bucket_name{*maybe_bucket},
+      storage_location ? std::make_optional(storage_location->hint)
+                       : std::nullopt,
+      original_nt.value_or(local_nt),
+      _cloud_storage_api->get()); // checked in frontend::data_migrations_active
+    // todo: is it correct to rely on it checked in frontend?
+    // todo: configure timeout and backoff
+    auto backoff = std::chrono::duration_cast<model::timestamp_clock::duration>(
+      rcn.get_backoff());
+    cloud_storage::topic_manifest tm;
+    auto download_res = co_await tmd.download_manifest(
+      rcn, rcn.get_deadline(), backoff, &tm);
+    if (
+      !download_res.has_value()
+      || download_res.assume_value()
+           != cloud_storage::find_topic_manifest_outcome::success) {
+        vlog(
+          dm_log.warn,
+          "failed to download manifest for topic {}: {}",
+          original_nt.value_or(local_nt),
+          download_res);
+        co_return errc::topic_operation_error;
+    }
+    auto maybe_cfg = tm.get_topic_config();
+    if (!maybe_cfg) {
+        co_return errc::topic_invalid_config;
+    }
+    cluster::topic_configuration topic_to_create_cfg(
+      local_nt.ns,
+      local_nt.tp,
+      maybe_cfg->partition_count,
+      maybe_cfg->replication_factor);
+    auto& topic_properties = topic_to_create_cfg.properties;
+    auto manifest_props = maybe_cfg->properties;
+
+    topic_properties.compression = manifest_props.compression;
+    topic_properties.cleanup_policy_bitflags
+      = manifest_props.cleanup_policy_bitflags;
+    topic_properties.compaction_strategy = manifest_props.compaction_strategy;
+
+    topic_properties.retention_bytes = manifest_props.retention_bytes;
+    topic_properties.retention_duration = manifest_props.retention_duration;
+    topic_properties.retention_local_target_bytes
+      = manifest_props.retention_local_target_bytes;
+
+    topic_properties.remote_topic_namespace_override
+      = manifest_props.remote_topic_namespace_override
+          ? manifest_props.remote_topic_namespace_override
+          : original_nt;
+
+    topic_properties.remote_topic_properties.emplace(
+      tm.get_revision(), maybe_cfg->partition_count);
+    topic_properties.shadow_indexing = {model::shadow_indexing_mode::full};
+    topic_properties.recovery = true;
+    topic_properties.remote_label = manifest_props.remote_label;
+
+    topic_to_create_cfg.is_migrated = true;
+    custom_assignable_topic_configuration_vector cfg_vector;
+    cfg_vector.push_back(
+      custom_assignable_topic_configuration(std::move(topic_to_create_cfg)));
+    auto ct_res = co_await _topics_frontend.create_topics(
+      std::move(cfg_vector), rcn.get_deadline());
+    auto ec = ct_res[0].ec;
+    if (ec == errc::topic_already_exists) {
+        // make topic creation idempotent
+        vlog(dm_log.info, "topic {} already exists, fine", ct_res[0].tp_ns);
+        co_return errc::success;
+    }
+    if (ec != errc::success) {
+        vlog(dm_log.warn, "failed to create topic {}: {}", ct_res[0].tp_ns, ec);
+    }
+    co_return ec;
+}
+
+ss::future<errc> backend::prepare_mount_topic(
+  const model::topic_namespace& nt, retry_chain_node& rcn) {
+    auto cfg = _topic_table.get_topic_cfg(nt);
+    if (!cfg) {
+        co_return errc::topic_not_exists;
+    }
+    vlog(dm_log.info, "trying to prepare mount topic, cfg={}", *cfg);
+    auto mnt_res = co_await _topic_mount_handler->prepare_mount_topic(
+      *cfg, rcn);
+    if (mnt_res == cloud_storage::topic_mount_result::mount_manifest_exists) {
+        co_return errc::success;
+    }
+    vlog(dm_log.warn, "failed to prepare mount topic {}: {}", nt, mnt_res);
+    co_return errc::topic_operation_error;
+}
+
+ss::future<errc> backend::confirm_mount_topic(
+  const model::topic_namespace& nt, retry_chain_node& rcn) {
+    auto cfg = _topic_table.get_topic_cfg(nt);
+    if (!cfg) {
+        co_return errc::topic_not_exists;
+    }
+    vlog(dm_log.info, "trying to confirm mount topic, cfg={}", *cfg);
+    auto mnt_res = co_await _topic_mount_handler->confirm_mount_topic(
+      *cfg, rcn);
+    if (
+      mnt_res
+      != cloud_storage::topic_mount_result::mount_manifest_not_deleted) {
+        co_return errc::success;
+    }
+    vlog(dm_log.warn, "failed to confirm mount topic {}: {}", nt, mnt_res);
+    co_return errc::topic_operation_error;
+}
+
+ss::future<errc> backend::unmount_topic(
+  const model::topic_namespace& nt, retry_chain_node& rcn) {
+    auto cfg = _topic_table.get_topic_cfg(nt);
+    if (!cfg) {
+        co_return errc::topic_not_exists;
+    }
+    auto umnt_res = co_await _topic_mount_handler->unmount_topic(*cfg, rcn);
+    if (umnt_res == cloud_storage::topic_unmount_result::success) {
+        co_return errc::success;
+    }
+    vlog(dm_log.warn, "failed to unmount topic {}: {}", nt, umnt_res);
+    co_return errc::topic_operation_error;
 }
 
 void backend::to_advance_if_done(
@@ -455,6 +703,11 @@ void backend::spawn_advances() {
 
 ss::future<> backend::handle_raft0_leadership_update() {
     auto units = co_await _mutex.get_units(_as);
+    vlog(
+      dm_log.trace,
+      "_is_raft0_leader={}, _is_coordinator={}",
+      _is_raft0_leader,
+      _is_coordinator);
     if (_is_raft0_leader == _is_coordinator) {
         co_return;
     }
@@ -487,8 +740,9 @@ ss::future<> backend::handle_raft0_leadership_update() {
 }
 
 ss::future<> backend::handle_migration_update(id id) {
-    auto units = co_await _mutex.get_units(_as);
     vlog(dm_log.debug, "received data migration {} notification", id);
+    auto units = co_await _mutex.get_units(_as);
+    vlog(dm_log.debug, "lock acquired for data migration {} notification", id);
 
     bool need_wakeup = false;
 
@@ -546,6 +800,14 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
         co_return;
     }
     auto migration_id = it->second;
+
+    if (
+      delta.type == topic_table_delta_type::added
+      || delta.type == topic_table_delta_type::removed) {
+        // it can be only ourselves, as partition changes are not allowed when
+        // the topic migration is in one of the states tracked here
+        co_return;
+    }
 
     // coordination
     vassert(
@@ -641,10 +903,9 @@ backend::check_ntp_states_locally(check_ntp_states_request&& req) {
         auto maybe_rwstate = get_replica_work_state(ntp_req.ntp);
         if (!maybe_rwstate) {
             vlog(
-              dm_log.warn,
+              dm_log.debug,
               "migration_id={} got RPC to move ntp {} to state {}, but "
-              "missing "
-              "partition state for it",
+              "missing partition state for it",
               ntp_req.migration,
               ntp_req.ntp,
               ntp_req.state);
@@ -891,7 +1152,7 @@ inbound_partition_work_info backend::get_partition_work_info(
                  .idx_in_migration;
     auto& inbound_topic = im.topics[idx];
     return {
-      .alias = inbound_topic.alias,
+      .source = inbound_topic.source_topic_name,
       .cloud_storage_location = inbound_topic.cloud_storage_location};
 }
 
@@ -918,7 +1179,9 @@ inbound_topic_work_info backend::get_topic_work_info(
                  .idx_in_migration;
     auto& inbound_topic = im.topics[idx];
     return {
-      .alias = inbound_topic.alias,
+      .source = inbound_topic.alias
+                  ? std::make_optional(inbound_topic.source_topic_name)
+                  : std::nullopt,
       .cloud_storage_location = inbound_topic.cloud_storage_location};
 }
 
@@ -1057,7 +1320,11 @@ backend::work_scope backend::get_work_scope(
   const migration_metadata& metadata) {
     switch (metadata.state) {
     case state::preparing:
-        return {state::prepared, true, false};
+        return {state::prepared, false, true};
+    case state::executing:
+        return {state::executed, false, true};
+    case state::cut_over:
+        return {state::finished, false, true};
     default:
         return {{}, false, false};
     };

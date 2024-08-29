@@ -83,6 +83,8 @@ public:
     ss::future<std::vector<topic_result>> delete_topics(
       std::vector<model::topic_namespace>, model::timeout_clock::time_point);
 
+    ss::future<errc> delete_topic_after_migration(
+      model::topic_namespace, model::timeout_clock::time_point);
     /**
      * In contrast to simple delete topics this method may use RPC to forward
      * delete topics request to controller.
@@ -237,8 +239,10 @@ private:
       allocation_units::pointer,
       model::timeout_clock::time_point);
 
-    ss::future<topic_result>
-      do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);
+    ss::future<topic_result> do_delete_topic(
+      model::topic_namespace,
+      model::timeout_clock::time_point,
+      bool migrated_away);
 
     ss::future<std::vector<topic_result>> dispatch_create_to_leader(
       model::node_id,

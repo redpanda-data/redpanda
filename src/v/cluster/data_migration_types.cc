@@ -82,11 +82,13 @@ std::ostream& operator<<(std::ostream& o, migrated_replica_status status) {
 std::ostream& operator<<(std::ostream& o, migrated_resource_state state) {
     switch (state) {
     case migrated_resource_state::non_restricted:
-        return o << "non-restricted";
-    case migrated_resource_state::restricted:
+        return o << "non_restricted";
+    case migrated_resource_state::metadata_locked:
         return o << "restricted";
-    case migrated_resource_state::blocked:
-        return o << "blocked";
+    case migrated_resource_state::read_only:
+        return o << "read_only";
+    case migrated_resource_state::fully_blocked:
+        return o << "fully_blocked";
     }
 }
 

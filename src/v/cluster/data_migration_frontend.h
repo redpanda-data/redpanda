@@ -26,6 +26,7 @@ public:
 
     frontend(
       model::node_id,
+      bool,
       migrations_table&,
       ss::sharded<features::feature_table>&,
       ss::sharded<controller_stm>&,
@@ -63,12 +64,13 @@ private:
       typename DispatchFunc,
       typename ProcessFunc,
       typename ReplyMapperFunc>
-    auto process_or_dispatch(
-      Request,
-      can_dispatch_to_leader,
-      DispatchFunc,
-      ProcessFunc,
-      ReplyMapperFunc);
+    ss::future<std::invoke_result_t<ReplyMapperFunc, result<Reply>>>
+      process_or_dispatch(
+        Request,
+        can_dispatch_to_leader,
+        DispatchFunc,
+        ProcessFunc,
+        ReplyMapperFunc);
 
     inline void validate_migration_shard() const {
         vassert(
@@ -80,6 +82,7 @@ private:
 
 private:
     model::node_id _self;
+    bool _cloud_storage_api_initialized;
     migrations_table& _table;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<controller_stm>& _controller;
