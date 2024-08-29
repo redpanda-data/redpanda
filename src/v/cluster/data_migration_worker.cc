@@ -173,6 +173,11 @@ ss::future<> worker::handle_operation_result(
 
 void worker::handle_leadership_update(const model::ntp& ntp, bool is_leader) {
     auto it = _managed_ntps.find(ntp);
+    vlog(
+      dm_log.info,
+      "got leadership update regarding ntp={}, is_leader={}",
+      ntp,
+      is_leader);
     if (it == _managed_ntps.end() || it->second.is_leader == is_leader) {
         return;
     }
@@ -275,6 +280,11 @@ ss::future<errc> worker::do_work(
 
 void worker::spawn_work_if_leader(managed_ntp_it it) {
     vassert(!it->second.is_running, "work already running");
+    vlog(
+      dm_log.info,
+      "attempting to spawn work for ntp={}, is_leader={}",
+      it->first,
+      it->second.is_leader);
     if (!it->second.is_leader) {
         return;
     }
