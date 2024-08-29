@@ -505,11 +505,23 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             err_msg="Transactions are still running, expected to be expired.")
 
         try:
+            producer.produce(self.input_t.name,
+                             'test-post-expire',
+                             'test-post-expire',
+                             partition=0,
+                             on_delivery=self.on_delivery)
+            producer.flush()
+            assert False, "tx is expected to be expired"
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
+
+        try:
             producer.commit_transaction()
             assert False, "tx is expected to be expired"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
+            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
 
     @cluster(num_nodes=3)
     def graceful_leadership_transfer_test(self):
