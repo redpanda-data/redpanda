@@ -54,6 +54,20 @@ parse_required_array(const json::Value& v, const char* member_name) {
     return array_json.GetArray();
 }
 
+std::optional<json::Value::ConstArray>
+parse_optional_array(const json::Value& v, const char* member_name) {
+    const auto json = parse_optional(v, member_name);
+    if (!json.has_value()) {
+        return std::nullopt;
+    }
+    const auto& val = json.value().get();
+    if (!val.IsArray()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected array for field '{}': {}", member_name, val.GetType()));
+    }
+    return val.GetArray();
+}
+
 json::Value::ConstObject
 parse_required_object(const json::Value& v, const char* member_name) {
     const auto& obj_json = parse_required(v, member_name);
@@ -64,6 +78,20 @@ parse_required_object(const json::Value& v, const char* member_name) {
           obj_json.GetType()));
     }
     return obj_json.GetObject();
+}
+
+std::optional<json::Value::ConstObject>
+parse_optional_object(const json::Value& v, const char* member_name) {
+    const auto json = parse_optional(v, member_name);
+    if (!json.has_value()) {
+        return std::nullopt;
+    }
+    const auto& val = json.value().get();
+    if (!val.IsObject()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected object for field '{}': {}", member_name, val.GetType()));
+    }
+    return val.GetObject();
 }
 
 ss::sstring parse_required_str(const json::Value& v, const char* member_name) {
