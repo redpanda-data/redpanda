@@ -25,6 +25,7 @@ from confluent_kafka.serialization import StringDeserializer, StringSerializer
 from confluent_kafka.schema_registry import SchemaRegistryClient, topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
 from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer, ProtobufSerializer
+from confluent_kafka.schema_registry.json_schema import JSONSerializer, JSONDeserializer
 
 import payload_pb2
 
@@ -32,6 +33,7 @@ import payload_pb2
 class SchemaType(IntEnum):
     AVRO = 1
     PROTOBUF = 2
+    JSON = 3
 
 
 ProtobuPayloadClasses = {
@@ -95,6 +97,57 @@ AvroSchemas = {
     "com.redpanda.CompressiblePayload": AVRO_SCHEMA_COMPRESSIBLE_PAYLOAD
 }
 
+JsonSchemas = {
+    "com.redpanda.Payload":
+    json.dumps({
+        "title": "com.redpanda.Payload",
+        "type": "object",
+        "properties": {
+            "val": {
+                "type": "integer"
+            }
+        }
+    }),
+    "com.redpanda.A.B.C.D.NestedPayload":
+    json.dumps({
+        "title": "com.redpanda.A.B.C.D.NestedPayload",
+        "type": "object",
+        "properties": {
+            "val": {
+                "type": "integer"
+            }
+        }
+    }),
+    "com.redpanda.CompressiblePayload":
+    json.dumps({
+        "title": "com.redpanda.CompressiblePayload",
+        "type": "object",
+        "properties": {
+            "val": {
+                "type": "integer"
+            },
+            "message": {
+                "type": "string"
+            }
+        }
+    })
+}
+
+
+class JsonPayload(OrderedDict):
+    def __init__(self, val: int):
+        super().__init__([('val', int)])
+        self['val'] = val
+        self['message'] = '*' * 1024
+
+    @property
+    def val(self):
+        return self['val']
+
+    @property
+    def message(self):
+        return self['message']
+
 
 def make_protobuf_payload(payload_class, val: int):
     p = payload_class()
@@ -142,6 +195,7 @@ class SerdeClient:
         self.group = group
         self.protobuf_payload_class = ProtobuPayloadClasses[payload_class]
         self.avro_schema = AvroSchemas[payload_class]
+        self.json_schema = JsonSchemas[payload_class]
         self.compression_type = compression_type
 
         self.produced = 0
@@ -161,6 +215,8 @@ class SerdeClient:
         if skip_known_types is not None:
             self.proto_serde_config['skip.known.types'] = skip_known_types
 
+        self.json_serde_config = serde_config.copy()
+
         self.security_config = security_config
 
     def _make_serializer(self):
@@ -171,7 +227,11 @@ class SerdeClient:
                            conf=self.avro_serde_config),
             SchemaType.PROTOBUF:
             ProtobufSerializer(self.protobuf_payload_class, self.sr_client,
-                               self.proto_serde_config)
+                               self.proto_serde_config),
+            SchemaType.JSON:
+            JSONSerializer(self.json_schema,
+                           schema_registry_client=self.sr_client,
+                           conf=self.json_serde_config)
         }[self.schema_type]
 
     def _make_deserializer(self):
@@ -182,7 +242,11 @@ class SerdeClient:
                              from_dict=lambda d, _: AvroPayload(d['val'])),
             SchemaType.PROTOBUF:
             ProtobufDeserializer(self.protobuf_payload_class,
-                                 {'use.deprecated.format': False})
+                                 {'use.deprecated.format': False}),
+            SchemaType.JSON:
+            JSONDeserializer(self.json_schema,
+                             schema_registry_client=self.sr_client,
+                             from_dict=lambda d, _: JsonPayload(d['val'])),
         }[self.schema_type]
 
     def _make_payload(self, val: int):
@@ -190,7 +254,9 @@ class SerdeClient:
             SchemaType.AVRO:
             AvroPayload(val),
             SchemaType.PROTOBUF:
-            make_protobuf_payload(self.protobuf_payload_class, val)
+            make_protobuf_payload(self.protobuf_payload_class, val),
+            SchemaType.JSON:
+            JsonPayload(val),
         }[self.schema_type]
 
     def _get_security_options(self):
