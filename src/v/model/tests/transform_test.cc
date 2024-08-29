@@ -209,6 +209,7 @@ struct legacy_transform_offset_options_2
       : serde::
           envelope<latest_offset, serde::version<0>, serde::compat_version<0>> {
         bool operator==(const latest_offset&) const = default;
+        auto serde_fields() { return std::tie(); }
     };
     serde::variant<latest_offset, model::timestamp> position;
     bool operator==(const legacy_transform_offset_options_2&) const = default;
