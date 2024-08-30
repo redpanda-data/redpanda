@@ -604,10 +604,22 @@ class ShardPlacementTest(PreallocNodesTest):
                 node_id = self.redpanda.node_id(n)
                 shard_counts = self.get_shard_counts_by_topic(
                     shard_map, node_id)
+
+                total_counts = None
                 for topic in topics:
                     topic_counts = shard_counts[topic]
+
+                    if total_counts is None:
+                        total_counts = topic_counts
+                    else:
+                        for s, c in enumerate(topic_counts):
+                            total_counts[s] += c
+
                     if max(topic_counts) - min(topic_counts) > 1:
                         return False
+
+                if max(total_counts) - min(total_counts) > 1:
+                    return False
 
             return (True, shard_map)
 
