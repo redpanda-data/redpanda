@@ -574,19 +574,8 @@ class ShardPlacementTest(PreallocNodesTest):
 
         self.redpanda.start(nodes=joiner_nodes)
 
-        def node_rebalance_finished():
-            in_progress = admin.list_reconfigurations(node=seed_nodes[0])
-            if len(in_progress) > 0:
-                return False
-
-            for n in joiner_nodes:
-                num_partitions = len(admin.get_partitions(node=n))
-                if num_partitions < 5:
-                    return False
-
-            return True
-
-        wait_until(node_rebalance_finished, timeout_sec=60, backoff_sec=2)
+        self.redpanda.wait_node_add_rebalance_finished(joiner_nodes,
+                                                       admin=admin)
         self.logger.info("node rebalance finished")
 
         def shard_rebalance_finished():
