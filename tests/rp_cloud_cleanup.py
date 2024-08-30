@@ -383,6 +383,21 @@ class CloudCleanup():
 
         return
 
+    def _delete_eks(self, eks_name):
+        """Delete eks cluster and wait for actual deletion
+        """
+        start = time.time()
+        r = self.provider.delete_eks_cluster(eks_name)
+        now = time.time()
+        # 180 sec timeout
+        while (now - start) < 180:
+            r = self.provider.get_eks_by_name(eks_name)
+            if r['State'] == 'deleted':
+                break
+            time.sleep(10)
+        _elapsed = time.time() - start
+        self.log.info(f"-> EKS {eks_name} deleted, {_elapsed:.2f}s")
+
     def _delete_nat(self, nat):
         """
             Function releases EIP and deletes NAT
@@ -530,6 +545,13 @@ class CloudCleanup():
                                 f"skipped: network '{cloud_net['id']}' exists")
             return fvpcs
 
+        def get_eks_clusters(vpcs):
+            _eks_clusters = []
+            for vpc in vpcs:
+                _eks_clusters.append(
+                    self.provider.get_eks_by_vpc_id(vpc['VpcId']))
+            return _eks_clusters
+
         if self.config.provider == "GCP":
             self.log.warning(
                 "Network resources cleaning not yet supported for GCP")
@@ -554,7 +576,10 @@ class CloudCleanup():
         uuid = uuids[self.config.api_url]
         nat_filtered = filter_nats(nats)
         vpc_filtered = filter_vpcs(vpcs)
+        eks_clusters = get_eks_clusters(vpcs)
 
+        self.log.info(f"# {len(eks_clusters)} EKS clusters "
+                      f"for {self.config.api_url}")
         self.log.info(f"# {len(nat_filtered)} orphaned NATs "
                       f"for {self.config.api_url}")
         self.log.info(f"# {len(vpc_filtered)} orphaned VPCs "
@@ -564,6 +589,8 @@ class CloudCleanup():
         # Due to RPS limiter on AWS side, please, do not use >5
         pool = ThreadPoolExecutor(max_workers=5)
         self.log.info("\n\n# Cleaning up")
+        self._pooled_delete(pool, "EKS Clusters", self._delete_eks,
+                            eks_clusters)
         self._pooled_delete(pool, "NAT Gateways", self._delete_nat,
                             nat_filtered)
         # VPC deletion will only work if public IPs are not mapped
