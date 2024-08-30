@@ -16,12 +16,12 @@
 namespace iceberg {
 
 std::optional<std::reference_wrapper<const json::Value>>
-parse_optional(const json::Value& v, const char* member_name) {
+parse_optional(const json::Value& v, std::string_view member_name) {
     if (!v.IsObject()) {
         throw std::invalid_argument(
           fmt::format("Expected JSON object to parse field '{}'", member_name));
     }
-    auto iter = v.FindMember(member_name);
+    auto iter = v.FindMember(member_name.data());
     if (iter == v.MemberEnd()) {
         return std::nullopt;
     }
@@ -29,12 +29,12 @@ parse_optional(const json::Value& v, const char* member_name) {
 }
 
 const json::Value&
-parse_required(const json::Value& v, const char* member_name) {
+parse_required(const json::Value& v, std::string_view member_name) {
     if (!v.IsObject()) {
         throw std::invalid_argument(
           fmt::format("Expected JSON object to parse field '{}'", member_name));
     }
-    auto iter = v.FindMember(member_name);
+    auto iter = v.FindMember(member_name.data());
     if (iter == v.MemberEnd()) {
         throw std::invalid_argument(
           fmt::format("No member named '{}'", member_name));
@@ -43,7 +43,7 @@ parse_required(const json::Value& v, const char* member_name) {
 }
 
 json::Value::ConstArray
-parse_required_array(const json::Value& v, const char* member_name) {
+parse_required_array(const json::Value& v, std::string_view member_name) {
     const auto& array_json = parse_required(v, member_name);
     if (!array_json.IsArray()) {
         throw std::invalid_argument(fmt::format(
@@ -55,7 +55,7 @@ parse_required_array(const json::Value& v, const char* member_name) {
 }
 
 std::optional<json::Value::ConstArray>
-parse_optional_array(const json::Value& v, const char* member_name) {
+parse_optional_array(const json::Value& v, std::string_view member_name) {
     const auto json = parse_optional(v, member_name);
     if (!json.has_value()) {
         return std::nullopt;
@@ -69,7 +69,7 @@ parse_optional_array(const json::Value& v, const char* member_name) {
 }
 
 json::Value::ConstObject
-parse_required_object(const json::Value& v, const char* member_name) {
+parse_required_object(const json::Value& v, std::string_view member_name) {
     const auto& obj_json = parse_required(v, member_name);
     if (!obj_json.IsObject()) {
         throw std::invalid_argument(fmt::format(
@@ -81,7 +81,7 @@ parse_required_object(const json::Value& v, const char* member_name) {
 }
 
 std::optional<json::Value::ConstObject>
-parse_optional_object(const json::Value& v, const char* member_name) {
+parse_optional_object(const json::Value& v, std::string_view member_name) {
     const auto json = parse_optional(v, member_name);
     if (!json.has_value()) {
         return std::nullopt;
@@ -94,7 +94,8 @@ parse_optional_object(const json::Value& v, const char* member_name) {
     return val.GetObject();
 }
 
-ss::sstring parse_required_str(const json::Value& v, const char* member_name) {
+ss::sstring
+parse_required_str(const json::Value& v, std::string_view member_name) {
     const auto& str_json = parse_required(v, member_name);
     if (!str_json.IsString()) {
         throw std::invalid_argument(
@@ -103,7 +104,7 @@ ss::sstring parse_required_str(const json::Value& v, const char* member_name) {
     return str_json.GetString();
 }
 
-int32_t parse_required_i32(const json::Value& v, const char* member_name) {
+int32_t parse_required_i32(const json::Value& v, std::string_view member_name) {
     const auto& int_json = parse_required(v, member_name);
     if (!int_json.IsInt()) {
         throw std::invalid_argument(
@@ -112,7 +113,7 @@ int32_t parse_required_i32(const json::Value& v, const char* member_name) {
     return int_json.GetInt();
 }
 
-int64_t parse_required_i64(const json::Value& v, const char* member_name) {
+int64_t parse_required_i64(const json::Value& v, std::string_view member_name) {
     const auto& int_json = parse_required(v, member_name);
     if (!int_json.IsInt64()) {
         throw std::invalid_argument(
@@ -122,7 +123,7 @@ int64_t parse_required_i64(const json::Value& v, const char* member_name) {
 }
 
 std::optional<int32_t>
-parse_optional_i32(const json::Value& v, const char* member_name) {
+parse_optional_i32(const json::Value& v, std::string_view member_name) {
     const auto json = parse_optional(v, member_name);
     if (!json.has_value()) {
         return std::nullopt;
@@ -135,7 +136,7 @@ parse_optional_i32(const json::Value& v, const char* member_name) {
 }
 
 std::optional<int64_t>
-parse_optional_i64(const json::Value& v, const char* member_name) {
+parse_optional_i64(const json::Value& v, std::string_view member_name) {
     const auto json = parse_optional(v, member_name);
     if (!json.has_value()) {
         return std::nullopt;
@@ -147,7 +148,7 @@ parse_optional_i64(const json::Value& v, const char* member_name) {
     return json->get().GetInt64();
 }
 
-bool parse_required_bool(const json::Value& v, const char* member_name) {
+bool parse_required_bool(const json::Value& v, std::string_view member_name) {
     const auto& bool_json = parse_required(v, member_name);
     if (!bool_json.IsBool()) {
         throw std::invalid_argument(
