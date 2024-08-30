@@ -207,6 +207,8 @@ struct copy_target
   : serde::envelope<copy_target, serde::version<0>, serde::compat_version<0>> {
     ss::sstring bucket;
 
+    auto serde_fields() { return std::tie(bucket); }
+
     friend bool operator==(const copy_target&, const copy_target&) = default;
     friend std::ostream& operator<<(std::ostream&, const copy_target&);
 };

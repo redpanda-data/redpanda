@@ -27,6 +27,8 @@ struct node_status_metadata
 
     model::node_id node_id;
 
+    auto serde_fields() { return std::tie(node_id); }
+
     friend std::ostream&
     operator<<(std::ostream& o, const node_status_metadata& nsm) {
         fmt::print(o, "{{node_id:{}}}", nsm.node_id);
@@ -43,6 +45,8 @@ struct node_status_request
 
     node_status_metadata sender_metadata;
 
+    auto serde_fields() { return std::tie(sender_metadata); }
+
     friend std::ostream&
     operator<<(std::ostream& o, const node_status_request& r) {
         fmt::print(o, "{{sender_metadata: {}}}", r.sender_metadata);
@@ -56,6 +60,8 @@ struct node_status_reply
     using rpc_adl_exempt = std::true_type;
 
     node_status_metadata replier_metadata;
+
+    auto serde_fields() { return std::tie(replier_metadata); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const node_status_reply& r) {

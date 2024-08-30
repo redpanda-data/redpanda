@@ -3136,6 +3136,8 @@ struct controller_committed_offset_request
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+
+    auto serde_fields() { return std::tie(); }
 };
 
 struct controller_committed_offset_reply

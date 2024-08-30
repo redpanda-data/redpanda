@@ -35,6 +35,10 @@ struct prefix_truncate_record
 
     // May not be empty.
     kafka::offset kafka_start_offset{};
+
+    auto serde_fields() {
+        return std::tie(rp_start_offset, kafka_start_offset);
+    }
 };
 
 } // namespace cluster
