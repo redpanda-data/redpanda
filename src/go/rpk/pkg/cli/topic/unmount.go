@@ -111,6 +111,7 @@ Key Points:
 			out.MaybeDie(err, "unable to execute migration %v", err)
 			err = checkMigrationActionAndAdvanceState(ctx, resp.ID, adm, rpadmin.MigrationActionFinish, rpadmin.MigrationStatusFinished, timeout)
 			out.MaybeDie(err, "unable to finish migration %v", err)
+			out.Die("migration completed successfully")
 		},
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "Timeout for the unmount process to finish")
@@ -124,13 +125,16 @@ type migrationClient interface {
 }
 
 func checkMigrationActionAndAdvanceState(ctx context.Context, id int, adm migrationClient, doingAction rpadmin.MigrationAction, desiredStatus rpadmin.MigrationStatus, timeout time.Duration) error {
+	fmt.Printf("Starting migration action: %s\n", doingAction)
 	if err := adm.ExecuteMigration(ctx, id, doingAction); err != nil {
 		return fmt.Errorf("unable to execute migration: %w", err)
 	}
+	fmt.Printf("Migration action %s initiated successfully\n", doingAction)
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	fmt.Printf("Waiting for migration to reach %s status\n", desiredStatus)
 	for {
 		select {
 		case <-ticker.C:
@@ -139,6 +143,7 @@ func checkMigrationActionAndAdvanceState(ctx context.Context, id int, adm migrat
 				return fmt.Errorf("unable to get migration state: %w", err)
 			}
 			if m.State == desiredStatus.String() {
+				fmt.Printf("Migration successfully reached %s status\n", desiredStatus)
 				return nil
 			}
 			fmt.Printf("Current migration state: %s\n", m.State)
