@@ -164,6 +164,15 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "chunk_cache",
+    hdrs = [
+        "chunk_cache.h",
+        "segment_appender_chunk.h",
+    ],
+    include_prefix = "storage",
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -204,7 +213,6 @@ redpanda_cc_library(
         "api.h",
         "backlog_controller.h",
         "batch_consumer_utils.h",
-        "chunk_cache.h",
         "compacted_index.h",
         "compacted_index_chunk_reader.h",
         "compacted_index_reader.h",
@@ -245,7 +253,6 @@ redpanda_cc_library(
         "scoped_file_tracker.h",
         "segment.h",
         "segment_appender.h",
-        "segment_appender_chunk.h",
         "segment_deduplication_utils.h",
         "segment_index.h",
         "segment_reader.h",
@@ -266,6 +273,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":batch_cache",
+        ":chunk_cache",
         ":compaction",
         ":index_state",
         ":key_offset_map",

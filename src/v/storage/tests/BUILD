@@ -48,6 +48,7 @@ redpanda_cc_btest(
         "//src/v/config",
         "//src/v/random:generators",
         "//src/v/storage",
+        "//src/v/storage:chunk_cache",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@fmt",
