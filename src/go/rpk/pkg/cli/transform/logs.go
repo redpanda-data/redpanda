@@ -56,7 +56,7 @@ func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 Data transform's STDOUT and STDERR are captured during runtime and written to 
 an internally managed topic _redpanda.transform_logs.
-This command ouputs logs for a single transform over a period of time and 
+This command outputs logs for a single transform over a period of time and 
 printing them to STDOUT. The logs can be printed in various formats.
 
 By default, only logs that have been emitted are displayed.
