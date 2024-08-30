@@ -113,7 +113,7 @@ def compute_size_for_file(file: Path, calc_md5: bool):
             return md5_for_bytes(calc_md5,
                                  data), sum(h.batch_size for h in reader)
         else:
-            # if the large page is not a null page this is a properly closed and
+            # if the last page is not a null page this is a properly closed and
             # truncated segment and hence we can just use filesize otherwise
             # compute the size of the segment
             with file.open('rb') as f:
