@@ -66,11 +66,11 @@ struct topic_configuration
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
-    int32_t partition_count;
+    int32_t partition_count{0};
     // using signed integer because Kafka protocol defines it as signed int
-    int16_t replication_factor;
+    int16_t replication_factor{0};
     // bypass migration restrictions
-    bool is_migrated;
+    bool is_migrated{false};
 
     topic_properties properties;
 
