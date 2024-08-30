@@ -12,3 +12,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "schema_protobuf",
+    srcs = [
+        "schema_protobuf.cc",
+    ],
+    hdrs = [
+        "schema_protobuf.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":conversion_outcome",
+        "//src/v/iceberg:datatypes",
+        "@fmt",
+        "@protobuf",
+        "@seastar",
+    ],
+)

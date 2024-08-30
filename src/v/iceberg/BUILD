@@ -55,6 +55,7 @@ redpanda_cc_library(
         "datatypes.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/container:fragmented_vector",
@@ -598,6 +599,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
