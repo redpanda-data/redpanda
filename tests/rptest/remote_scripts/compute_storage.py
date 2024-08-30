@@ -3,7 +3,7 @@ A script that computes all the files (and optionally their sizes) in the data di
 
 Useful in tests if you want to know what files exist on a node or if they are a specific size.
 """
-
+import time
 from pathlib import Path
 import sys
 import json
@@ -27,13 +27,28 @@ class SegmentReader:
 
     def __init__(self, stream):
         self.stream = stream
+        self.max_partial_reads_tolerated = 5
+        self.sleep_between_read_retries_sec = 0.5
+        self.partial_reads = 0
 
     def read_batch(self):
+        pos_before_hdr = self.stream.tell()
         data = self.stream.read(self.HEADER_SIZE)
         if len(data) == self.HEADER_SIZE:
             header = self.Header(*struct.unpack(self.HDR_FMT_RP, data))
             if all(map(lambda v: v == 0, header)):
                 return None
+
+            # The segment may be written to while this script is running. In this case the batch
+            # may be partially written. If so try to rewind to the position before header, and do
+            # another read (upto max_partial_reads_tolerated times) of the same batch.
+            if header.batch_size == 0 and self.partial_reads < self.max_partial_reads_tolerated:
+                self.partial_reads += 1
+                time.sleep(self.sleep_between_read_retries_sec)
+                self.stream.seek(pos_before_hdr)
+                return self.read_batch()
+            self.partial_reads = 0
+
             records_size = header.batch_size - self.HEADER_SIZE
             data = self.stream.read(records_size)
             if len(data) < records_size:
@@ -109,7 +124,12 @@ def compute_size_for_file(file: Path, calc_md5: bool):
 
                 f.seek(0)
                 data = f.read()
-                reader = SegmentReader(io.BytesIO(data))
+
+                # Pass the file handle directly to segment reader. Since we sometimes want to rewind
+                # and re-read the stream, passing a static view of data is not useful, we want the
+                # current data on disk.
+                f.seek(0)
+                reader = SegmentReader(f)
                 return md5_for_bytes(calc_md5,
                                      data), sum(h.batch_size for h in reader)
     else:
