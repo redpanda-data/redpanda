@@ -1,0 +1,24 @@
+#!/bin/bash
+set -e
+
+this_dir="$(realpath $(dirname "$0"))"
+image=plang
+
+if which docker >/dev/null 2>&1; then
+  docker=docker
+elif which podman >/dev/null 2>&1; then
+  docker=podman
+else
+  echo "neither docker nor podman was found"
+  exit 1
+fi
+
+${docker} build -t ${image} ${this_dir}
+
+${docker} run \
+  --volume ${PWD}:${PWD}:rw,z \
+  --workdir ${PWD} \
+  --rm \
+  --tty \
+  ${image} \
+  p ${*}
