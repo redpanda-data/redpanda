@@ -1,3 +1,5 @@
+set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
 rp_test(
     UNIT_TEST
     GTEST
@@ -39,5 +41,20 @@ rp_test(
     v::model_test_utils
     v::iceberg_test_utils
   LABELS storage
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  USE_CWD
+  BINARY_NAME schema_protobuf
+  SOURCES schema_protobuf_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake
+    v::iceberg_test_utils
+  INPUT_FILES
+    "${testdata_dir}/iceberg_ready_test_messages_edition2023.proto"
   ARGS "-- -c 1"
 )
