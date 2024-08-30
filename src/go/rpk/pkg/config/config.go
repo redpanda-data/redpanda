@@ -88,10 +88,18 @@ func CheckExitCloudAdmin(p *RpkProfile) {
 }
 
 // CheckExitServerlessAdmin exits if the profile has FromCloud=true and the
-// cluster is a Serverless cluster
+// cluster is a Serverless cluster.
 func CheckExitServerlessAdmin(p *RpkProfile) {
 	if p.FromCloud && p.CloudCluster.IsServerless() {
 		out.Die("This admin API based command is not supported on Redpanda Cloud serverless clusters.")
+	}
+}
+
+// CheckExitNotServerlessAdmin exits if the profile has FromCloud=true and the
+// cluster is NOT a Serverless cluster.
+func CheckExitNotServerlessAdmin(p *RpkProfile) {
+	if p.FromCloud && !p.CloudCluster.IsServerless() {
+		out.Die("This admin API based command is not supported on Redpanda Cloud clusters.")
 	}
 }
 
