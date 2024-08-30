@@ -165,11 +165,32 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "chunk_cache",
+    srcs = [
+        "chunk_cache.cc",
+    ],
     hdrs = [
         "chunk_cache.h",
         "segment_appender_chunk.h",
     ],
+    implementation_deps = [
+        "//src/v/config",
+        "//src/v/resource_mgmt:memory_groups",
+        "@boost//:iterator",
+    ],
     include_prefix = "storage",
+    visibility = [
+        "//src/v/storage/tests:__pkg__",
+        # TODO(bazel) chunk cache could probably be instantiated in
+        # log_manager.cc instead of in redpanda::application.
+        "//src/v/redpanda:__pkg__",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(
