@@ -11,7 +11,7 @@ import dataclasses
 import sys
 from time import sleep
 import random
-from collections.abc import Callable
+from typing import Any, Callable
 
 from ducktape.mark import matrix
 
@@ -49,8 +49,24 @@ class CheckProgressDuringFaultConfig:
 
 
 class SingleFaultTestBase(RedpandaTest):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self,
+                 *args,
+                 extra_rp_conf: dict[str, Any] | None = None,
+                 **kwargs):
+        full_extra_rp_conf = {
+            # We are going to disrupt consumer group partitions and tx coordinator
+            # partitions in these tests. It is easier to have just 1 partition than trying
+            # to find the relevant one among many.
+            "group_topic_partitions": 1,
+            "transaction_coordinator_partitions": 1,
+            # Disable leader balancer to avoid additional disruptions
+            # not introduced by the test scenario.
+            "enable_leader_balancer": False,
+        }
+        if extra_rp_conf is not None:
+            full_extra_rp_conf |= extra_rp_conf
+
+        super().__init__(*args, extra_rp_conf=full_extra_rp_conf, **kwargs)
 
     def run(self,
             workload: workloads.WorkloadServiceBase,
