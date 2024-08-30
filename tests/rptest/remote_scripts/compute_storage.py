@@ -53,9 +53,9 @@ class SegmentReader:
             data = self.stream.read(records_size)
             if len(data) < records_size:
                 return None
-            assert len(
-                data
-            ) == records_size, f"data len is {len(data)} but the expected records size is {records_size}"
+            assert len(data) == records_size, (
+                f"data len is {len(data)} but the expected records size is {records_size}, "
+                f"parsed header: {header}")
             return header
         return None
 
