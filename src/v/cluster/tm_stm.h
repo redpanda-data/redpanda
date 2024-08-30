@@ -255,7 +255,8 @@ public:
     ss::future<checked<tx_metadata, tm_stm::op_status>> finish_transaction(
       model::term_id expected_term,
       kafka::transactional_id tx_id,
-      tx_status completed_status);
+      tx_status completed_status,
+      bool bump_producer_epoch = false);
     ss::future<tm_stm::op_status> add_partitions(
       model::term_id,
       kafka::transactional_id,
@@ -320,7 +321,7 @@ public:
     ss::future<txlock_unit> lock_tx(kafka::transactional_id, std::string_view);
 
     std::optional<txlock_unit>
-      try_lock_tx(kafka::transactional_id, std::string_view);
+    try_lock_tx(const kafka::transactional_id&, std::string_view);
 
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
