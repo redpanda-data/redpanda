@@ -216,6 +216,25 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "record_batch_utils",
+    srcs = [
+        "record_batch_utils.cc",
+    ],
+    hdrs = [
+        "record_batch_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/reflection:adl",
+    ],
+    include_prefix = "storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -239,7 +258,6 @@ redpanda_cc_library(
         "parser.cc",
         "probe.cc",
         "readers_cache.cc",
-        "record_batch_utils.cc",
         "segment.cc",
         "segment_appender.cc",
         "segment_deduplication_utils.cc",
@@ -291,7 +309,6 @@ redpanda_cc_library(
         "probe.h",
         "readers_cache.h",
         "readers_cache_probe.h",
-        "record_batch_utils.h",
         "scoped_file_tracker.h",
         "segment.h",
         "segment_appender.h",
@@ -320,6 +337,7 @@ redpanda_cc_library(
         ":key_offset_map",
         ":parser_utils",
         ":record_batch_builder",
+        ":record_batch_utils",
         ":resources",
         "//src/v/base",
         "//src/v/bytes",
