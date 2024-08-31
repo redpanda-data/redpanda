@@ -12,8 +12,8 @@
 #pragma once
 #include "base/seastarx.h"
 #include "base/units.h"
-#include "config/configuration.h"
 #include "container/intrusive_list_helpers.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/aligned_buffer.hh>
