@@ -194,6 +194,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "resources",
+    srcs = [
+        "storage_resources.cc",
+    ],
+    hdrs = [
+        "storage_resources.h",
+    ],
+    implementation_deps = [
+        ":chunk_cache",
+        ":logger",
+        "@seastar",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:adjustable_semaphore",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -227,7 +249,6 @@ redpanda_cc_library(
         "segment_utils.cc",
         "snapshot.cc",
         "spill_key_index.cc",
-        "storage_resources.cc",
         "types.cc",
     ],
     hdrs = [
@@ -281,7 +302,6 @@ redpanda_cc_library(
         "segment_utils.h",
         "snapshot.h",
         "spill_key_index.h",
-        "storage_resources.h",
         "translating_reader.h",
         "types.h",
         "version.h",
@@ -300,6 +320,7 @@ redpanda_cc_library(
         ":key_offset_map",
         ":parser_utils",
         ":record_batch_builder",
+        ":resources",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
