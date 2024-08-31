@@ -235,6 +235,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "segment_appender",
+    srcs = [
+        "segment_appender.cc",
+    ],
+    hdrs = [
+        "segment_appender.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/config",
+        "//src/v/reflection:adl",
+        "@fmt",
+    ],
+    include_prefix = "storage",
+    deps = [
+        ":chunk_cache",
+        ":config",
+        ":record_batch_utils",
+        ":resources",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -259,7 +288,6 @@ redpanda_cc_library(
         "probe.cc",
         "readers_cache.cc",
         "segment.cc",
-        "segment_appender.cc",
         "segment_deduplication_utils.cc",
         "segment_index.cc",
         "segment_reader.cc",
@@ -311,7 +339,6 @@ redpanda_cc_library(
         "readers_cache_probe.h",
         "scoped_file_tracker.h",
         "segment.h",
-        "segment_appender.h",
         "segment_deduplication_utils.h",
         "segment_index.h",
         "segment_reader.h",
@@ -339,6 +366,7 @@ redpanda_cc_library(
         ":record_batch_builder",
         ":record_batch_utils",
         ":resources",
+        ":segment_appender",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

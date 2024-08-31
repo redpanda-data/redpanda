@@ -51,6 +51,7 @@ redpanda_cc_btest(
         "//src/v/storage",
         "//src/v/storage:chunk_cache",
         "//src/v/storage:resources",
+        "//src/v/storage:segment_appender",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@fmt",
