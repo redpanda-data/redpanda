@@ -194,6 +194,76 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "resources",
+    srcs = [
+        "storage_resources.cc",
+    ],
+    hdrs = [
+        "storage_resources.h",
+    ],
+    implementation_deps = [
+        ":chunk_cache",
+        ":logger",
+        "@seastar",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:adjustable_semaphore",
+    ],
+)
+
+redpanda_cc_library(
+    name = "record_batch_utils",
+    srcs = [
+        "record_batch_utils.cc",
+    ],
+    hdrs = [
+        "record_batch_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/reflection:adl",
+    ],
+    include_prefix = "storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
+    name = "segment_appender",
+    srcs = [
+        "segment_appender.cc",
+    ],
+    hdrs = [
+        "segment_appender.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/config",
+        "//src/v/reflection:adl",
+        "@fmt",
+    ],
+    include_prefix = "storage",
+    deps = [
+        ":chunk_cache",
+        ":config",
+        ":record_batch_utils",
+        ":resources",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -217,9 +287,7 @@ redpanda_cc_library(
         "parser.cc",
         "probe.cc",
         "readers_cache.cc",
-        "record_batch_utils.cc",
         "segment.cc",
-        "segment_appender.cc",
         "segment_deduplication_utils.cc",
         "segment_index.cc",
         "segment_reader.cc",
@@ -227,7 +295,6 @@ redpanda_cc_library(
         "segment_utils.cc",
         "snapshot.cc",
         "spill_key_index.cc",
-        "storage_resources.cc",
         "types.cc",
     ],
     hdrs = [
@@ -270,10 +337,8 @@ redpanda_cc_library(
         "probe.h",
         "readers_cache.h",
         "readers_cache_probe.h",
-        "record_batch_utils.h",
         "scoped_file_tracker.h",
         "segment.h",
-        "segment_appender.h",
         "segment_deduplication_utils.h",
         "segment_index.h",
         "segment_reader.h",
@@ -281,7 +346,6 @@ redpanda_cc_library(
         "segment_utils.h",
         "snapshot.h",
         "spill_key_index.h",
-        "storage_resources.h",
         "translating_reader.h",
         "types.h",
         "version.h",
@@ -300,6 +364,9 @@ redpanda_cc_library(
         ":key_offset_map",
         ":parser_utils",
         ":record_batch_builder",
+        ":record_batch_utils",
+        ":resources",
+        ":segment_appender",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

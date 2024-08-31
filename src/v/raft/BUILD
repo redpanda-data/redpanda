@@ -130,6 +130,7 @@ redpanda_cc_library(
         "//src/v/ssx:sformat",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
+        "//src/v/storage:record_batch_utils",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:delta_for",
         "//src/v/utils:expiring_promise",

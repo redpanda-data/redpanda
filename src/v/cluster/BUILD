@@ -639,6 +639,7 @@ redpanda_cc_library(
         "//src/v/storage",
         "//src/v/storage:parser_utils",
         "//src/v/storage:record_batch_builder",
+        "//src/v/storage:record_batch_utils",
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
         "//src/v/utils:auto_fmt",

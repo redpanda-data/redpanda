@@ -11,10 +11,13 @@
 
 #include "storage_resources.h"
 
+#include "base/seastarx.h"
 #include "base/vlog.h"
 #include "config/configuration.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
+
+#include <seastar/core/smp.hh>
 
 namespace {
 uint64_t per_shard_target_replay_bytes(uint64_t global_target_replay_bytes) {
