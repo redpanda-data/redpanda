@@ -22,7 +22,9 @@
 #include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 
 #include <fmt/ostream.h>
@@ -32,7 +34,6 @@
 
 namespace cluster::data_migrations {
 
-// TODO: add configuration property
 worker::worker(
   model::node_id self,
   partition_leaders_table& leaders_table,
@@ -79,6 +80,8 @@ worker::perform_partition_work(model::ntp&& ntp, partition_work&& work) {
         ntp_state.promise = ss::make_lw_shared<ss::promise<errc>>();
         ntp_state.is_running = false;
         ntp_state.work = std::move(work);
+        ntp_state.as->request_abort();
+        ntp_state.as = ss::make_lw_shared<ss::abort_source>();
     }
 
     spawn_work_if_leader(it);
@@ -101,7 +104,8 @@ worker::ntp_state::ntp_state(
   notification_id_type leadership_subscription)
   : is_leader(is_leader)
   , work(std::move(work))
-  , leadership_subscription(leadership_subscription) {}
+  , leadership_subscription(leadership_subscription)
+  , as(ss::make_lw_shared<ss::abort_source>()) {}
 
 ss::future<> worker::handle_operation_result(
   model::ntp ntp, id migration_id, state sought_state, errc ec) {
@@ -118,8 +122,24 @@ ss::future<> worker::handle_operation_result(
 
         // todo: configure sleep time, make it abortable from
         // worker::abort_partition_work
-        co_await ss::sleep_abortable(1s, _as);
+        auto it = _managed_ntps.find(ntp);
+        if (
+          it == _managed_ntps.end()
+          || it->second.work.migration_id != migration_id
+          || it->second.work.sought_state != sought_state) {
+            vlog(
+              dm_log.debug,
+              "as part of migration {}, partition work for moving ntp {} to "
+              "state {} is done with result {}, but not needed anymore",
+              migration_id,
+              std::move(ntp),
+              sought_state,
+              ec);
+            co_return;
+        }
+        co_await ss::sleep_abortable(1s, *it->second.as);
     }
+    bool should_retry = ec != errc::success && ec != errc::shutting_down;
     auto it = _managed_ntps.find(ntp);
     if (
       it == _managed_ntps.end() || it->second.work.migration_id != migration_id
@@ -127,15 +147,15 @@ ss::future<> worker::handle_operation_result(
         vlog(
           dm_log.debug,
           "as part of migration {}, partition work for moving ntp {} to state "
-          "{} is done with result {}, but not needed anymore",
+          "{} was about to {}, but not needed anymore",
           migration_id,
           std::move(ntp),
           sought_state,
-          ec);
+          ec,
+          should_retry ? "retry" : "complete");
         co_return;
     }
-    if (ec != errc::success && ec != errc::shutting_down) {
-        // any other errors deemed retryable
+    if (should_retry) {
         it->second.is_running = false;
         vlog(
           dm_log.info,
@@ -153,6 +173,11 @@ ss::future<> worker::handle_operation_result(
 
 void worker::handle_leadership_update(const model::ntp& ntp, bool is_leader) {
     auto it = _managed_ntps.find(ntp);
+    vlog(
+      dm_log.info,
+      "got leadership update regarding ntp={}, is_leader={}",
+      ntp,
+      is_leader);
     if (it == _managed_ntps.end() || it->second.is_leader == is_leader) {
         return;
     }
@@ -166,6 +191,7 @@ void worker::unmanage_ntp(managed_ntp_cit it, errc result) {
     _leaders_table.unregister_leadership_change_notification(
       it->second.leadership_subscription);
     it->second.promise->set_value(result);
+    it->second.as->request_abort();
     _managed_ntps.erase(it);
 }
 
@@ -254,6 +280,11 @@ ss::future<errc> worker::do_work(
 
 void worker::spawn_work_if_leader(managed_ntp_it it) {
     vassert(!it->second.is_running, "work already running");
+    vlog(
+      dm_log.info,
+      "attempting to spawn work for ntp={}, is_leader={}",
+      it->first,
+      it->second.is_leader);
     if (!it->second.is_leader) {
         return;
     }

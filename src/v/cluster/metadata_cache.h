@@ -123,6 +123,9 @@ public:
     std::optional<model::rack_id> get_node_rack_id(model::node_id) const;
 
     bool should_reject_writes() const;
+
+    /// Check whether migrations block topic writes/reads
+    bool should_reject_reads(model::topic_namespace_view) const;
     bool should_reject_writes(model::topic_namespace_view) const;
 
     bool contains(model::topic_namespace_view, model::partition_id) const;
