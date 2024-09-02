@@ -54,6 +54,7 @@ v_cc_library(
     admin/kafka.cc
     admin/util.cc
     admin/migrations.cc
+    admin/topics.cc
     admin/data_migration_utils.cc
     cli_parser.cc
     application.cc

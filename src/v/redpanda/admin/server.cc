@@ -408,6 +408,7 @@ void admin_server::configure_admin_routes() {
     register_shadow_indexing_routes();
     register_wasm_transform_routes();
     register_data_migration_routes();
+    register_topic_routes();
     /**
      * Special REST apis active only in recovery mode
      */

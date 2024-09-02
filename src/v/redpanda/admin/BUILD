@@ -143,6 +143,7 @@ redpanda_cc_library(
         "recovery.cc",
         "security.cc",
         "server.cc",
+        "topics.cc",
         "transaction.cc",
         "transform.cc",
         "usage.cc",
