@@ -505,7 +505,7 @@ const model::term_id expected_archiver_term{91};
 const model::term_id expected_segment_term{81};
 const model::offset expected_applied_offset{10};
 const model::offset expected_next_uploaded_offset{101};
-[[maybe_unused]] const model::offset expected_read_write_fence{45};
+const model::offset expected_read_write_fence{45};
 const model::offset expected_insync_offset{55};
 const model::producer_id expected_producer_id{1234};
 const size_t expected_read_buffer_size = 4096;
@@ -1277,6 +1277,386 @@ TEST_CORO(archiver_operations_impl_test, no_term_for_offset) {
     auto res = co_await ops->find_upload_candidates(rtc, arg);
     ASSERT_TRUE_CORO(res.has_error());
     ASSERT_TRUE_CORO(res.error() == error_outcome::offset_not_found);
+}
+
+// Uploads set of segments with one failed upload
+ss::future<> test_archiver_schedule_upload_full_cycle(
+  std::vector<upload_result> segment_upload_results,
+  std::vector<upload_result> tx_upload_results,
+  std::vector<upload_result> ix_upload_results,
+  bool tx_manifest,
+  bool inline_manifest,
+  upload_result inline_manifest_result = upload_result::success) {
+    scoped_config cfg;
+    cfg.get("storage_read_buffer_size").set_value(expected_read_buffer_size);
+    cfg.get("cloud_storage_segment_size_target")
+      .set_value(std::make_optional<size_t>(expected_target_size));
+    cfg.get("cloud_storage_segment_size_min")
+      .set_value(std::make_optional<size_t>(expected_min_size));
+    cfg.get("cloud_storage_bucket")
+      .set_value(std::make_optional(expected_bucket));
+
+    size_t expected_total_bytes = 0;
+    size_t expected_put_requests = 0;
+    auto remote = ss::make_shared<remote_mock>();
+    auto pm = ss::make_shared<partition_manager_mock>();
+    auto builder = ss::make_shared<upload_builder_mock>();
+    auto partition = ss::make_shared<partition_mock>();
+
+    // Make uploads
+    std::deque<archival::reconciled_upload_candidate_ptr> segments;
+    model::offset last_offset;
+
+    for (size_t upl_ix = 0; upl_ix < segment_upload_results.size(); upl_ix++) {
+        auto sg_upl_res = segment_upload_results.at(upl_ix);
+        auto tx_upl_res = tx_upload_results.at(upl_ix);
+        auto ix_upl_res = ix_upload_results.at(upl_ix);
+
+        model::offset expected_base = model::next_offset(last_offset);
+        model::offset expected_last = expected_base + model::offset(100);
+        last_offset = expected_last;
+
+        auto payload = expected_data_payload(expected_base, expected_last);
+
+        auto sd = segment_desc{
+          .base = payload.batches.front().base,
+          .last = payload.batches.back().last,
+          .base_delta = model::offset_delta(0),
+          .last_delta = model::offset_delta(0),
+          .base_ts = payload.batches.front().ts_base,
+          .last_ts = payload.batches.back().ts_last,
+        };
+
+        auto index_payload = expected_index_payload(
+          model::offset_delta(0), payload.batches);
+
+        auto sup = make_upload(sd, payload.size, std::move(payload.stream));
+
+        auto key = expected_manifest.generate_segment_path(
+          sup->meta, null_path_provider);
+
+        auto segm = ss::make_lw_shared<reconciled_upload_candidate>(
+          expected_ntp.to_ntp(),
+          std::move(sup->payload),
+          sup->size_bytes,
+          sup->meta,
+          fragmented_vector<model::tx_range>());
+
+        if (tx_manifest) {
+            fragmented_vector<model::tx_range> expected_tx_range;
+            expected_tx_range.push_back(model::tx_range(
+              model::producer_identity(1234, 44),
+              expected_base,
+              expected_last));
+
+            segm->tx = expected_tx_range.copy();
+
+            // Set tx-manifest expectation
+            cloud_storage::tx_range_manifest tx_manifest(
+              key, expected_tx_range.copy());
+            std::stringstream str;
+            tx_manifest.serialize(str);
+            auto tx_str = str.str();
+            bytes tx_payload;
+            tx_payload.resize(tx_str.size());
+            std::memcpy(tx_payload.data(), tx_str.data(), tx_str.size());
+            expected_total_bytes += tx_manifest.estimate_serialized_size();
+            expected_put_requests++;
+
+            remote->expect_upload_manifest(
+              expected_bucket,
+              key().native() + ".tx",
+              std::move(tx_payload),
+              tx_upl_res);
+        }
+
+        segments.emplace_back(std::move(segm));
+
+        // Expect index upload
+        expected_total_bytes += index_payload.content.size();
+        expected_put_requests++;
+        remote->expect_upload_stream(
+          expected_bucket,
+          key().native() + ".index",
+          index_payload.content.size(),
+          index_payload.content,
+          cloud_storage::upload_type::segment_index,
+          ix_upl_res);
+
+        // Expect segment upload
+        expected_total_bytes += payload.content.size();
+        expected_put_requests++;
+        remote->expect_upload_stream(
+          expected_bucket,
+          key().native(),
+          payload.size,
+          payload.content,
+          cloud_storage::upload_type::object,
+          sg_upl_res);
+    }
+
+    if (inline_manifest) {
+        auto sds = co_await expected_manifest.serialize();
+        iobuf bin_manifest;
+        auto out_str = make_iobuf_ref_output_stream(bin_manifest);
+        co_await ss::copy(sds.stream, out_str);
+        auto expected_manifest_upload = iobuf_to_bytes(bin_manifest);
+        auto m_key = expected_manifest.get_manifest_path(null_path_provider);
+
+        // The upload code path uses this value as an estimate instead of the
+        // real thing.
+        auto size_estimate = expected_manifest.estimate_serialized_size();
+        expected_total_bytes += size_estimate;
+        expected_put_requests++;
+        remote->expect_upload_manifest(
+          expected_bucket,
+          m_key().native(),
+          expected_manifest_upload,
+          inline_manifest_result);
+    }
+
+    partition->expect_manifest(
+      expected_manifest,
+      // One to kickoff the upload, one per segment + one call to upload
+      // the manifest
+      1 + static_cast<int>(inline_manifest));
+
+    pm->expect_get_partition(partition);
+
+    reconciled_upload_candidates_list inp(
+      expected_ntp.to_ntp(), std::move(segments), expected_read_write_fence);
+
+    auto ops = detail::make_archiver_operations_api(
+      remote, pm, builder, c_expected_bucket);
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 1ms);
+
+    auto res = co_await ops->schedule_uploads(
+      rtc, std::move(inp), inline_manifest);
+
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(res.value().num_bytes_sent, expected_total_bytes);
+    ASSERT_EQ_CORO(res.value().num_put_requests, expected_put_requests);
+    if (inline_manifest_result == upload_result::success && inline_manifest) {
+        ASSERT_EQ_CORO(
+          res.value().manifest_clean_offset,
+          expected_manifest.get_insync_offset());
+    } else {
+        ASSERT_EQ_CORO(res.value().manifest_clean_offset, model::offset{});
+    }
+    ASSERT_EQ_CORO(res.value().read_write_fence, expected_read_write_fence);
+    ASSERT_EQ_CORO(res.value().results.size(), segment_upload_results.size());
+    for (size_t i = 0; i < segment_upload_results.size(); i++) {
+        auto s = segment_upload_results.at(i);
+        auto t = tx_upload_results.at(i);
+        ASSERT_EQ_CORO(res.value().results.at(i), std::max(s, t));
+    }
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_1_segment_no_tx_no_manifest) {
+    std::vector<upload_result> success = {upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, false, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_2_segment_no_tx_no_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success, upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, false, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_4_segment_no_tx_no_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+      upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, false, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_1_segment_tx_no_manifest) {
+    std::vector<upload_result> success = {upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_2_segment_tx_no_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success, upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_4_segment_tx_no_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+      upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, false);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_1_segment_no_tx_manifest) {
+    std::vector<upload_result> success = {upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, false, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_2_segment_no_tx_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success, upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, false, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_4_segment_no_tx_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+      upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, false, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_1_segment_tx_manifest) {
+    std::vector<upload_result> success = {upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_2_segment_tx_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success, upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_4_segment_tx_manifest) {
+    std::vector<upload_result> success = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+      upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_1_segment_segment_failed) {
+    std::vector<upload_result> success = {upload_result::success};
+    std::vector<upload_result> failure = {upload_result::failed};
+    co_await test_archiver_schedule_upload_full_cycle(
+      failure, success, success, true, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_2_segment_segment_failed) {
+    std::vector<upload_result> success = {
+      upload_result::success, upload_result::success};
+    std::vector<upload_result> failure = {
+      upload_result::success, upload_result::failed};
+    co_await test_archiver_schedule_upload_full_cycle(
+      failure, success, success, true, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_4_segment_segment_failed) {
+    std::vector<upload_result> success = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+      upload_result::success};
+    std::vector<upload_result> failure = {
+      upload_result::failed,
+      upload_result::success,
+      upload_result::failed,
+      upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      failure, success, success, true, true);
+}
+
+TEST_CORO(archiver_operations_impl_test, schedule_uploads_1_segment_tx_failed) {
+    std::vector<upload_result> success = {upload_result::success};
+    std::vector<upload_result> failure = {upload_result::failed};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, failure, success, true, true);
+}
+
+TEST_CORO(archiver_operations_impl_test, schedule_uploads_2_segment_tx_failed) {
+    std::vector<upload_result> success = {
+      upload_result::success, upload_result::success};
+    std::vector<upload_result> failure = {
+      upload_result::success, upload_result::failed};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, failure, success, true, true);
+}
+
+TEST_CORO(archiver_operations_impl_test, schedule_uploads_4_segment_tx_failed) {
+    std::vector<upload_result> success = {
+      upload_result::success,
+      upload_result::success,
+      upload_result::success,
+      upload_result::success};
+    std::vector<upload_result> failure = {
+      upload_result::failed,
+      upload_result::success,
+      upload_result::failed,
+      upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, failure, success, true, true);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test,
+  schedule_uploads_1_segment_inline_manifest_failed) {
+    std::vector<upload_result> success = {upload_result::success};
+    co_await test_archiver_schedule_upload_full_cycle(
+      success, success, success, true, true, upload_result::failed);
+}
+
+TEST_CORO(
+  archiver_operations_impl_test, schedule_uploads_randomized_failure_test) {
+    auto get_random_upload_result = []() {
+        auto result = upload_result::success;
+        auto r = random_generators::get_int(3);
+        if (r == 0) {
+            result = upload_result::cancelled;
+        } else if (r == 1) {
+            result = upload_result::failed;
+        } else if (r == 2) {
+            result = upload_result::timedout;
+        }
+        return result;
+    };
+    for (int i = 0; i < 100; i++) {
+        auto sz = random_generators::get_int(10);
+        std::vector<upload_result> segm;
+        std::vector<upload_result> tx;
+        std::vector<upload_result> ix;
+        for (int j = 0; j < sz; j++) {
+            segm.push_back(get_random_upload_result());
+            tx.push_back(get_random_upload_result());
+            ix.push_back(get_random_upload_result());
+        }
+        co_await test_archiver_schedule_upload_full_cycle(
+          segm, tx, ix, true, true, get_random_upload_result());
+    }
 }
 
 } // namespace archival
