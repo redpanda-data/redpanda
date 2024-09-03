@@ -91,7 +91,7 @@ public:
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->second.definition.share()};
+        return {it->second.definition.copy()};
     }
 
     ///\brief Return the id of the schema, if it already exists.
