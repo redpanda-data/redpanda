@@ -1617,6 +1617,17 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 message in m for m in msgs
             ), f"Expected to find an instance of '{message}', got {msgs}"
 
+        self.logger.debug(
+            "Check post incompatible schema error message (expect verbose messages)"
+        )
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=incompatible_data)
+
+        assert result_raw.status_code == 409
+        msg = result_raw.json()["message"]
+        for message in ["oldSchemaVersion", "oldSchema", "compatibility"]:
+            assert message in msg, f"Expected to find an instance of '{message}', got {msgs}"
+
     @cluster(num_nodes=3)
     def test_delete_subject(self):
         """
