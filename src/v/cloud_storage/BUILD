@@ -163,6 +163,7 @@ redpanda_cc_library(
         "//src/v/utils:mutex",
         "//src/v/utils:named_type",
         "//src/v/utils:retry_chain_node",
+        "//src/v/utils:stream_provider",
         "//src/v/utils:stream_utils",
         "//src/v/utils:to_string",
         "//src/v/utils:token_bucket",

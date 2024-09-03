@@ -413,6 +413,7 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:notification_list",
         "//src/v/utils:prefix_logger",
+        "//src/v/utils:stream_provider",
         "//src/v/utils:to_string",
         "//src/v/utils:tracking_allocator",
         "//src/v/utils:tristate",

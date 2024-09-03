@@ -17,6 +17,7 @@
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/util/defer.hh>
 
@@ -48,7 +49,7 @@ cloud_storage::lazy_abort_source always_continue([]() { return std::nullopt; });
 remote::reset_input_stream make_reset_fn(const iobuf& segment_bytes) {
     return [&segment_bytes] {
         auto out = iobuf_deep_copy(segment_bytes);
-        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(
+        return ss::make_ready_future<std::unique_ptr<stream_provider>>(
           std::make_unique<storage::segment_reader_handle>(
             make_iobuf_input_stream(std::move(out))));
     };

@@ -661,6 +661,7 @@ redpanda_cc_library(
         "//src/v/utils:retry_chain_node",
         "//src/v/utils:rwlock",
         "//src/v/utils:stable_iterator",
+        "//src/v/utils:stream_provider",
         "//src/v/utils:stream_utils",
         "//src/v/utils:to_string",
         "//src/v/utils:token_bucket",

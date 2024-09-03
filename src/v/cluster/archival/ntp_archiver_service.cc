@@ -45,6 +45,7 @@
 #include "storage/parser.h"
 #include "utils/human.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 #include "utils/stream_utils.h"
 
 #include <seastar/core/abort_source.hh>
@@ -1210,7 +1211,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     // This struct wraps a stream object and exposes the stream_provider
     // interface for compatibility with the remote object API.
-    struct stream_wrapper final : public storage::stream_provider {
+    struct stream_wrapper final : public stream_provider {
         std::optional<ss::input_stream<char>> stream;
 
         stream_wrapper(const stream_wrapper&) = delete;
@@ -1240,7 +1241,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     std::optional<ss::input_stream<char>> stream_state = std::move(stream);
     auto reset_func = [this, candidate, &stream_state] {
-        using provider_t = std::unique_ptr<storage::stream_provider>;
+        using provider_t = std::unique_ptr<stream_provider>;
         // On first attempt to upload, the stream-ref passed in is used.
         if (stream_state.has_value()) {
             auto f = ss::make_ready_future<provider_t>(

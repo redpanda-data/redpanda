@@ -25,6 +25,7 @@
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -189,7 +190,7 @@ public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
     using reset_input_stream = ss::noncopyable_function<
-      ss::future<std::unique_ptr<storage::stream_provider>>()>;
+      ss::future<std::unique_ptr<stream_provider>>()>;
 
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation

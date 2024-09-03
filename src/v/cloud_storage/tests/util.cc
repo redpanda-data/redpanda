@@ -13,6 +13,7 @@
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/defer.hh>
@@ -987,8 +988,7 @@ void reupload_compacted_segments(
             bb.resize(body.size());
             std::memcpy(bb.data(), body.data(), body.size());
             auto reset_stream = [body = std::move(bb)] {
-                return ss::make_ready_future<
-                  std::unique_ptr<storage::stream_provider>>(
+                return ss::make_ready_future<std::unique_ptr<stream_provider>>(
                   std::make_unique<storage::segment_reader_handle>(
                     make_iobuf_input_stream(bytes_to_iobuf(body))));
             };
