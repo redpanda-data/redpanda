@@ -84,13 +84,14 @@ tm_stm::get_tx(kafka::transactional_id tx_id) {
         vlog(
           txlog.info,
           "[tx_id={}] error syncing state machine for getting transaction - {}",
+          tx_id,
           r.error());
         co_return r.error();
     }
 
     auto tx_opt = find_tx(tx_id);
     if (!tx_opt) {
-        vlog(txlog.trace, "[tx_id= {}] transaction state not found", tx_id);
+        vlog(txlog.trace, "[tx_id={}] transaction state not found", tx_id);
         co_return tm_stm::op_status::not_found;
     }
     co_return tx_opt.value();
@@ -393,7 +394,8 @@ tm_stm::reset_transaction_state(tx_metadata& tx) {
     if (!tx.is_finished()) {
         vlog(
           _ctx_log.warn,
-          "[tx_id={}] unable to reset transaction state that is not finished");
+          "[tx_id={}] unable to reset transaction state that is not finished",
+          tx.id);
         return tm_stm::op_status::conflict;
     }
 
