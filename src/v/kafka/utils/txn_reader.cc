@@ -34,7 +34,7 @@
 #include <ranges>
 #include <vector>
 
-namespace transform {
+namespace kafka {
 
 namespace {
 
@@ -224,4 +224,4 @@ read_committed_reader::do_load_slice(
     co_return co_await _underlying->do_load_slice(deadline);
 }
 
-} // namespace transform
+} // namespace kafka

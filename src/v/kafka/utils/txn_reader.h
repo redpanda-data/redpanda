@@ -23,7 +23,7 @@
 
 #include <memory>
 
-namespace transform {
+namespace kafka {
 
 // An interface for computing what transactions are aborted within a given range
 // of a partition.
@@ -77,4 +77,4 @@ private:
     std::unique_ptr<model::record_batch_reader::impl> _underlying;
 };
 
-} // namespace transform
+} // namespace kafka
