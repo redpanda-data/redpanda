@@ -73,7 +73,8 @@ func newPrometheusConfigCmd(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "prometheus-config",
 		Short: "Generate the Prometheus configuration to scrape Redpanda nodes",
 		Long:  prometheusHelpText,
-		Run: func(cmd *cobra.Command, args []string) {
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
 			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 

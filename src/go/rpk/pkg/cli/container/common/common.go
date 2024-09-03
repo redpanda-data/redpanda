@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/image"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -199,7 +201,7 @@ func CreateNetwork(c Client) (string, error) {
 	args.Add("name", redpandaNetwork)
 	networks, err := c.NetworkList(
 		ctx,
-		types.NetworkListOptions{Filters: args},
+		network.ListOptions{Filters: args},
 	)
 	if err != nil {
 		return "", err
@@ -213,7 +215,7 @@ func CreateNetwork(c Client) (string, error) {
 
 	fmt.Printf("Creating network %s\n", redpandaNetwork)
 	resp, err := c.NetworkCreate(
-		ctx, redpandaNetwork, types.NetworkCreate{
+		ctx, redpandaNetwork, network.CreateOptions{
 			Driver: "bridge",
 			IPAM: &network.IPAM{
 				Driver: "default",
@@ -377,11 +379,11 @@ func CreateNode(
 	}, nil
 }
 
-func PullImage(c Client, image string) error {
-	fmt.Printf("Pulling image: %s\n", image)
+func PullImage(c Client, img string) error {
+	fmt.Printf("Pulling image: %s\n", img)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
+	res, err := c.ImagePull(ctx, img, image.PullOptions{})
 	if res != nil {
 		defer res.Close()
 		buf := bytes.Buffer{}
@@ -394,12 +396,12 @@ func PullImage(c Client, image string) error {
 	return ctx.Err()
 }
 
-func CheckIfImgPresent(c Client, image string) (bool, error) {
+func CheckIfImgPresent(c Client, img string) (bool, error) {
 	ctx, _ := DefaultCtx()
 	filters := filters.NewArgs(
-		filters.Arg("reference", image),
+		filters.Arg("reference", img),
 	)
-	imgs, err := c.ImageList(ctx, types.ImageListOptions{
+	imgs, err := c.ImageList(ctx, image.ListOptions{
 		Filters: filters,
 	})
 	if err != nil {
@@ -430,7 +432,7 @@ func getHostPort(
 
 func nodeIP(c Client, netID string, id uint) (string, error) {
 	ctx, _ := DefaultCtx()
-	networkResource, err := c.NetworkInspect(ctx, netID, types.NetworkInspectOptions{})
+	networkResource, err := c.NetworkInspect(ctx, netID, network.InspectOptions{})
 	if err != nil {
 		return "", err
 	}

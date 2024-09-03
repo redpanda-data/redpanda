@@ -10,6 +10,7 @@
 package gcp
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -41,7 +42,7 @@ func (*GcpVendor) Init() (vendor.InitializedVendor, error) {
 }
 
 func (v *InitializedGcpVendor) VMType() (string, error) {
-	t, err := v.client.Get("instance/machine-type")
+	t, err := v.client.GetWithContext(context.Background(), "instance/machine-type")
 	if err != nil {
 		return "", err
 	}
@@ -60,7 +61,7 @@ func available(client *metadata.Client, timeout time.Duration) bool {
 	result := make(chan bool)
 
 	go func(c *metadata.Client, res chan<- bool) {
-		_, err := c.ProjectID()
+		_, err := c.ProjectIDWithContext(context.Background())
 		res <- err == nil
 	}(client, result)
 

@@ -65,7 +65,7 @@ To filter for specific topics, use --topics. You can additionally filter by
 partitions with --partitions.
 `,
 
-		Run: func(cmd *cobra.Command, txnIDs []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]describeProducersResponse{}); ok {
 				out.Exit(h)

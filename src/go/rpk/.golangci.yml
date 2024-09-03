@@ -7,8 +7,7 @@ run:
 # those tools ever.
 issues:
   exclude-use-default: false
-  new-from-rev: HEAD
-  
+
 # We opt out of all suggested linters and manually pick what we want.
 # Please do not use enable-all.
 linters:

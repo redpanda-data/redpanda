@@ -34,7 +34,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
-		Run: func(cmd *cobra.Command, args []string) {
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
 			timeout += duration
 			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
