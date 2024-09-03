@@ -1151,9 +1151,7 @@ ss::future<> backend::reconcile_topic(
                           vlog(
                             dm_log.debug,
                             "tracking ntp {} transition towards state {} as "
-                            "part "
-                            "of "
-                            "migration {}",
+                            "part of migration {}",
                             ntp,
                             scope.sought_state,
                             migration);
@@ -1313,8 +1311,7 @@ void backend::start_partition_work(
                     vlog(
                       dm_log.trace,
                       "as part of migration {} worker on shard {} has "
-                      "advanced "
-                      "ntp {} to state {}",
+                      "advanced ntp {} to state {}",
                       rwstate.migration_id,
                       rwstate.shard,
                       ntp,

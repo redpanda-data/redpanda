@@ -335,8 +335,8 @@ frontend::do_update_migration_state(id id, state state) {
           dm_log.warn,
           "migration {} cannot be transitioned from state {} to {}",
           id,
-          state,
-          cur_state);
+          cur_state,
+          state);
         co_return errc::invalid_data_migration_state;
     }
     ec = co_await replicate_and_wait(

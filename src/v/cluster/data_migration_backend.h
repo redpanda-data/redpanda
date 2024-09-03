@@ -126,12 +126,12 @@ private:
       const model::topic_namespace& nt,
       state sought_state,
       const inbound_topic_work_info& itwi,
-      tsws_lwptr_t tsws_lwptr);
+      tsws_lwptr_t tsws);
     ss::future<errc> do_topic_work(
       const model::topic_namespace& nt,
       state sought_state,
       const outbound_topic_work_info& otwi,
-      tsws_lwptr_t tsws_lwptr);
+      tsws_lwptr_t tsws);
     void abort_all_topic_work();
     /* topic work helpers */
     ss::future<errc> create_topic(
