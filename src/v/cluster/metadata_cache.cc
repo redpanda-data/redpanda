@@ -152,6 +152,11 @@ bool metadata_cache::should_reject_writes() const {
            == storage::disk_space_alert::degraded;
 }
 
+bool metadata_cache::should_reject_reads(model::topic_namespace_view tp) const {
+    return _migrated_resources.local().get_topic_state(tp)
+           >= data_migrations::migrated_resource_state::fully_blocked;
+}
+
 bool metadata_cache::should_reject_writes(
   model::topic_namespace_view tp) const {
     return _migrated_resources.local().get_topic_state(tp)

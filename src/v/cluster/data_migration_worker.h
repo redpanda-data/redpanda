@@ -18,6 +18,7 @@
 #include "errc.h"
 #include "model/fundamental.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -49,6 +50,7 @@ private:
         notification_id_type leadership_subscription;
         ss::lw_shared_ptr<ss::promise<errc>> promise
           = ss::make_lw_shared<ss::promise<errc>>();
+        ss::lw_shared_ptr<seastar::abort_source> as;
 
         ntp_state(const ntp_state&) = delete;
         ntp_state& operator=(const ntp_state&) = delete;
@@ -70,6 +72,7 @@ private:
     void handle_leadership_update(const model::ntp& ntp, bool is_leader);
     void unmanage_ntp(managed_ntp_cit it, errc result);
     void spawn_work_if_leader(managed_ntp_it it);
+
     // also resulting future cannot throw when co_awaited
     ss::future<errc> do_work(managed_ntp_cit it) noexcept;
     ss::future<errc> do_work(

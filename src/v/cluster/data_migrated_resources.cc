@@ -47,12 +47,12 @@ migrated_resource_state get_resource_state<inbound_migration>(state state) {
     case state::preparing:
     case state::prepared:
     case state::canceling:
-    case state::cancelled:
     case state::executing:
     case state::executed:
     case state::cut_over:
         return migrated_resource_state::fully_blocked;
     case state::finished:
+    case state::cancelled:
         return migrated_resource_state::non_restricted;
     }
 }
@@ -63,15 +63,15 @@ migrated_resource_state get_resource_state<outbound_migration>(state state) {
     case state::planned:
     case state::preparing:
     case state::prepared:
-    case state::canceling:
-    case state::cancelled:
         return migrated_resource_state::metadata_locked;
     case state::executing:
     case state::executed:
+    case state::canceling:
         return migrated_resource_state::read_only;
     case state::cut_over:
         return migrated_resource_state::fully_blocked;
     case state::finished:
+    case state::cancelled:
         return migrated_resource_state::non_restricted;
     }
 }

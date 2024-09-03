@@ -21,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shared_ptr.hh>
 
 namespace cluster::data_migrations {
 
@@ -87,6 +88,14 @@ private:
         state sought_state;
         errc ec;
     };
+    class topic_scoped_work_state {
+        ss::abort_source _as;
+
+    public:
+        retry_chain_node rcn;
+        topic_scoped_work_state();
+    };
+    using tsws_lwptr_t = ss::lw_shared_ptr<topic_scoped_work_state>;
 
 private:
     /* loop management */
@@ -116,11 +125,14 @@ private:
     ss::future<errc> do_topic_work(
       const model::topic_namespace& nt,
       state sought_state,
-      const inbound_topic_work_info& itwi);
+      const inbound_topic_work_info& itwi,
+      tsws_lwptr_t tsws_lwptr);
     ss::future<errc> do_topic_work(
       const model::topic_namespace& nt,
       state sought_state,
-      const outbound_topic_work_info& otwi);
+      const outbound_topic_work_info& otwi,
+      tsws_lwptr_t tsws_lwptr);
+    void abort_all_topic_work();
     /* topic work helpers */
     ss::future<errc> create_topic(
       const model::topic_namespace& local_nt,
@@ -132,7 +144,11 @@ private:
     ss::future<errc> confirm_mount_topic(
       const model::topic_namespace& nt, retry_chain_node& rcn);
     ss::future<errc>
+    delete_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
     unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
+    do_unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
 
     /* communication with partition workers */
     void start_partition_work(
@@ -177,7 +193,7 @@ private:
       topic_reconciliation_state& tstate,
       id migration,
       work_scope scope,
-      bool schedule_local_work);
+      bool schedule_local_partition_work);
 
     std::optional<std::reference_wrapper<replica_work_state>>
     get_replica_work_state(const model::ntp& ntp);
@@ -256,15 +272,22 @@ private:
     };
     absl::flat_hash_map<id, advance_info> _advance_requests;
     chunked_vector<topic_table_delta> _unprocessed_deltas;
+    chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
 
-    /* Node-local data */
+    /* Node-local data for partition-scoped work */
     using topic_work_state_t
       = chunked_hash_map<model::partition_id, replica_work_state>;
-    chunked_hash_map<model::topic_namespace, topic_work_state_t> _work_states;
-
-    chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
+    chunked_hash_map<model::topic_namespace, topic_work_state_t>
+      _local_work_states;
+    /*
+     * Topic-scoped work states for starting/stopping and disallowing concurrent
+     * work on the same topic: similar to data_migrations::worker
+     */
     chunked_vector<topic_work_result> _topic_work_results;
+    chunked_hash_map<model::topic_namespace, tsws_lwptr_t>
+      _active_topic_work_states; // no null pointers on scheduling points
 
+    /* Refs to services etc */
     model::node_id _self;
     migrations_table& _table;
     frontend& _frontend;
