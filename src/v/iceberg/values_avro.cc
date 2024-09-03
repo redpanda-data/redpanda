@@ -14,6 +14,7 @@
 #include <avro/Generic.hh>
 #include <avro/GenericDatum.hh>
 #include <avro/Node.hh>
+#include <avro/Types.hh>
 
 namespace iceberg {
 
@@ -27,20 +28,83 @@ avro::GenericDatum
 val_to_avro(const std::optional<value>&, const avro::NodePtr&);
 avro::GenericDatum base_val_to_avro(const value&, const avro::NodePtr&);
 
+// Throws an exception if the given types don't match.
+void maybe_throw_wrong_type(
+  const avro::Type& expected, const avro::Type& actual) {
+    if (expected != actual) {
+        throw std::invalid_argument(fmt::format(
+          "Expected {} type but got {}",
+          avro::toString(expected),
+          avro::toString(actual)));
+    }
+}
+
+// Throws an exception if the given schema isn't valid for the given type.
+void maybe_throw_invalid_schema(
+  const avro::NodePtr& actual_schema, const avro::Type& expected_type) {
+    if (!actual_schema) {
+        throw std::invalid_argument(fmt::format(
+          "Unexpected null schema, expected {} type!",
+          avro::toString(expected_type)));
+    }
+    const auto& actual_type = actual_schema->type();
+    maybe_throw_wrong_type(expected_type, actual_type);
+}
 // XXX: need to figure out how to correctly instantiate avro::GenericFixed to
 // support the unimplemented fields. Or move to an impl that uses iobufs. Throw
 // for now.
 struct primitive_value_avro_visitor {
-    template<typename ValueT>
-    avro::GenericDatum operator()(const ValueT& v) {
+    explicit primitive_value_avro_visitor(const avro::NodePtr& avro_schema)
+      : avro_schema_(avro_schema) {}
+
+    // Expected to match with the value on which the caller is calling
+    // operator().
+    const avro::NodePtr& avro_schema_;
+
+    avro::GenericDatum operator()(const boolean_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_BOOL);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const int_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_INT);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const long_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_LONG);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const float_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_FLOAT);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const double_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_DOUBLE);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const date_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_INT);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const time_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_LONG);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const timestamp_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_LONG);
+        return {v.val};
+    }
+    avro::GenericDatum operator()(const timestamptz_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_LONG);
         return {v.val};
     }
     avro::GenericDatum operator()(const string_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_STRING);
         const auto size_bytes = v.val.size_bytes();
         iobuf_const_parser buf(v.val);
         return {buf.read_string(size_bytes)};
     }
     avro::GenericDatum operator()(const binary_value& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_BYTES);
         std::vector<uint8_t> data;
         auto bytes = iobuf_to_bytes(v.val);
         data.resize(bytes.size());
@@ -69,12 +133,13 @@ struct value_avro_visitor {
     const avro::NodePtr& avro_schema_;
 
     avro::GenericDatum operator()(const primitive_value& v) {
-        return std::visit(primitive_value_avro_visitor{}, v);
+        return std::visit(primitive_value_avro_visitor{avro_schema_}, v);
     }
     avro::GenericDatum operator()(const std::unique_ptr<struct_value>& v) {
         return struct_to_avro(*v, avro_schema_);
     }
     avro::GenericDatum operator()(const std::unique_ptr<list_value>& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_ARRAY);
         if (avro_schema_->leaves() != 1) {
             throw std::invalid_argument(
               fmt::format("Expected 1 leaf: {}", avro_schema_->leaves()));
@@ -88,9 +153,15 @@ struct value_avro_visitor {
         return datum;
     }
     avro::GenericDatum operator()(const std::unique_ptr<map_value>& v) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_ARRAY);
+        if (avro_schema_->leaves() != 1) {
+            throw std::invalid_argument(
+              fmt::format("Expected 1 leaf: {}", avro_schema_->leaves()));
+        }
         avro::GenericDatum datum(avro_schema_);
         auto& m = datum.value<avro::GenericArray>();
         const auto& kv_schema = avro_schema_->leafAt(0);
+        maybe_throw_invalid_schema(kv_schema, avro::AVRO_RECORD);
         // Map Avro schemas are generated by Redpanda as an array of key-value
         // records.
         if (kv_schema->leaves() != 2) {
@@ -152,13 +223,7 @@ val_to_avro(const std::optional<value>& val, const avro::NodePtr& avro_schema) {
 
 avro::GenericDatum
 struct_to_avro(const struct_value& v, const avro::NodePtr& avro_schema) {
-    if (!avro_schema) {
-        throw std::invalid_argument("Null schema for struct val!");
-    }
-    if (avro_schema->type() != avro::AVRO_RECORD) {
-        throw std::invalid_argument(fmt::format(
-          "Avro schema has type {}", avro::toString(avro_schema->type())));
-    }
+    maybe_throw_invalid_schema(avro_schema, avro::AVRO_RECORD);
     avro::GenericDatum datum(avro_schema);
     auto& record = datum.value<avro::GenericRecord>();
     if (record.fieldCount() != v.fields.size()) {
@@ -184,54 +249,44 @@ struct primitive_value_parsing_visitor {
       : data_(data) {}
     const avro::GenericDatum& data_;
 
-    // Throws if data_'s type does not match the input type.
-    void maybe_throw_wrong_type(const avro::Type& type) const {
-        if (data_.type() != type) {
-            throw std::invalid_argument(fmt::format(
-              "Expected {} type but got {}",
-              avro::toString(type),
-              avro::toString(data_.type())));
-        }
-    }
-
     value operator()(const boolean_type&) {
-        maybe_throw_wrong_type(avro::AVRO_BOOL);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_BOOL);
         return boolean_value{data_.value<bool>()};
     }
     value operator()(const int_type&) {
-        maybe_throw_wrong_type(avro::AVRO_INT);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_INT);
         return int_value{data_.value<int>()};
     }
     value operator()(const long_type&) {
-        maybe_throw_wrong_type(avro::AVRO_LONG);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_LONG);
         return long_value{data_.value<long>()};
     }
     value operator()(const float_type&) {
-        maybe_throw_wrong_type(avro::AVRO_FLOAT);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_FLOAT);
         return float_value{data_.value<float>()};
     }
     value operator()(const double_type&) {
-        maybe_throw_wrong_type(avro::AVRO_DOUBLE);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_DOUBLE);
         return double_value{data_.value<double>()};
     }
     value operator()(const date_type&) {
-        maybe_throw_wrong_type(avro::AVRO_INT);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_INT);
         return date_value{data_.value<int32_t>()};
     }
     value operator()(const time_type&) {
-        maybe_throw_wrong_type(avro::AVRO_LONG);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_LONG);
         return time_value{data_.value<int64_t>()};
     }
     value operator()(const timestamp_type&) {
-        maybe_throw_wrong_type(avro::AVRO_LONG);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_LONG);
         return timestamp_value{data_.value<int64_t>()};
     }
     value operator()(const timestamptz_type&) {
-        maybe_throw_wrong_type(avro::AVRO_LONG);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_LONG);
         return timestamptz_value{data_.value<int64_t>()};
     }
     value operator()(const string_type&) {
-        maybe_throw_wrong_type(avro::AVRO_STRING);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_STRING);
         return string_value{iobuf::from(data_.value<std::string>())};
     }
     value operator()(const fixed_type&) {
@@ -241,7 +296,7 @@ struct primitive_value_parsing_visitor {
         throw std::invalid_argument("XXX uuid not implemented");
     }
     value operator()(const binary_type&) {
-        maybe_throw_wrong_type(avro::AVRO_BYTES);
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_BYTES);
         const auto& v = data_.value<std::vector<uint8_t>>();
         iobuf b;
         b.append(v.data(), v.size());
@@ -261,10 +316,7 @@ struct value_parsing_visitor {
         return std::visit(primitive_value_parsing_visitor{data_}, t);
     }
     value operator()(const list_type& t) {
-        if (data_.type() != avro::AVRO_ARRAY) {
-            throw std::invalid_argument(
-              fmt::format("Expected array: {}", avro::toString(data_.type())));
-        }
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_ARRAY);
         auto v = std::make_unique<list_value>();
         const auto& array = data_.value<avro::GenericArray>();
         for (const auto& d : array.value()) {
@@ -274,10 +326,7 @@ struct value_parsing_visitor {
         return v;
     }
     value operator()(const struct_type& t) {
-        if (data_.type() != avro::AVRO_RECORD) {
-            throw std::invalid_argument(
-              fmt::format("Expected record: {}", avro::toString(data_.type())));
-        }
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_RECORD);
         auto v = std::make_unique<struct_value>();
         const auto& record = data_.value<avro::GenericRecord>();
         if (t.fields.size() != record.fieldCount()) {
@@ -293,13 +342,11 @@ struct value_parsing_visitor {
         return v;
     }
     value operator()(const map_type& t) {
-        if (data_.type() != avro::AVRO_ARRAY) {
-            throw std::invalid_argument(fmt::format(
-              "Expected map array: {}", avro::toString(data_.type())));
-        }
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_ARRAY);
         auto v = std::make_unique<map_value>();
         const auto& array = data_.value<avro::GenericArray>();
         for (const auto& d : array.value()) {
+            maybe_throw_wrong_type(d.type(), avro::AVRO_RECORD);
             const auto& kv_record = d.value<avro::GenericRecord>();
             if (kv_record.fieldCount() != 2) {
                 throw std::invalid_argument(fmt::format(
