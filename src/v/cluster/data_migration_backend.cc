@@ -167,8 +167,8 @@ ss::future<> backend::start() {
 
 ss::future<> backend::stop() {
     vlog(dm_log.info, "backend stopping");
-    abort_all_topic_work();
     _mutex.broken();
+    co_await abort_all_topic_work();
     _sem.broken();
     _timer.cancel();
     _shard_table.unregister_delta_notification(_shard_notification_id);
@@ -432,14 +432,32 @@ ss::future<> backend::schedule_topic_work(model::topic_namespace nt) {
 
 ss::future<backend::topic_work_result>
 backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
-    auto [it, ins] = _active_topic_work_states.try_emplace(nt);
-    auto& tsws_lwptr_entry = it->second;
-    if (!ins) {
-        tsws_lwptr_entry->rcn.request_abort();
-        // and forget about it, only the dying fiber will hold it
+    auto tsws = ss::make_lw_shared<topic_scoped_work_state>();
+    while (true) {
+        auto [it, ins] = _active_topic_work_states.try_emplace(nt);
+        it->second = tsws;
+        if (ins) {
+            break;
+        }
+        tsws->rcn().request_abort();
+        // waiting for existing work to complete and delete its entry
+        vlog(
+          dm_log.info,
+          "waiting for older topic work on migration {} nt {} towards state "
+          "{} to complete",
+          tw.migration_id,
+          nt,
+          tw.sought_state);
+        auto old_ec = co_await tsws->future();
+        vlog(
+          dm_log.info,
+          "older topic work on migration {} nt {} towards state {} completed "
+          "with {}",
+          tw.migration_id,
+          nt,
+          tw.sought_state,
+          old_ec);
     }
-    auto tsws_lwptr = seastar::make_lw_shared<topic_scoped_work_state>();
-    tsws_lwptr_entry = tsws_lwptr;
 
     errc ec;
     try {
@@ -450,10 +468,8 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
           nt,
           tw.sought_state);
         ec = co_await std::visit(
-          [this, &nt, &tw, tsws_lwptr = std::move(tsws_lwptr)](
-            const auto& info) mutable {
-              return do_topic_work(
-                nt, tw.sought_state, info, std::move(tsws_lwptr));
+          [this, &nt, &tw, tsws = std::move(tsws)](const auto& info) mutable {
+              return do_topic_work(nt, tw.sought_state, info, std::move(tsws));
           },
           tw.info);
         vlog(
@@ -475,7 +491,12 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
           std::current_exception());
         ec = errc::topic_operation_error;
     }
-    _active_topic_work_states.erase(nt);
+
+    auto it = _active_topic_work_states.find(nt);
+    vassert(it != _active_topic_work_states.end(), "tsws {} disappeared", nt);
+    it->second->set_value(ec);
+    _active_topic_work_states.erase(it);
+
     co_return topic_work_result{
       .nt = std::move(nt),
       .migration = tw.migration_id,
@@ -489,7 +510,7 @@ ss::future<errc> backend::do_topic_work(
   state sought_state,
   const inbound_topic_work_info& itwi,
   tsws_lwptr_t tsws) {
-    auto& rcn = tsws->rcn;
+    auto& rcn = tsws->rcn();
     // this switch should be in accordance to the logic in get_work_scope
     switch (sought_state) {
     case state::prepared:
@@ -533,7 +554,7 @@ ss::future<errc> backend::do_topic_work(
   state sought_state,
   const outbound_topic_work_info&,
   tsws_lwptr_t tsws) {
-    auto& rcn = tsws->rcn;
+    auto& rcn = tsws->rcn();
     // this switch should be in accordance to the logic in get_work_scope
     switch (sought_state) {
     case state::finished: {
@@ -564,11 +585,13 @@ ss::future<errc> backend::do_topic_work(
     }
 }
 
-void backend::abort_all_topic_work() {
+ss::future<> backend::abort_all_topic_work() {
     for (auto& [nt, tsws] : _active_topic_work_states) {
-        tsws->rcn.request_abort();
+        tsws->rcn().request_abort();
     }
-    _active_topic_work_states.clear();
+    while (!_active_topic_work_states.empty()) {
+        co_await _active_topic_work_states.begin()->second->future();
+    }
 }
 
 ss::future<errc> backend::create_topic(
@@ -793,7 +816,7 @@ ss::future<> backend::handle_raft0_leadership_update() {
     } else {
         vlog(dm_log.debug, "stepping down as a coordinator");
         // stop topic-scoped work
-        abort_all_topic_work();
+        co_await abort_all_topic_work();
         // stop coordinating
         for (auto& [id, mrstate] : _migration_states) {
             co_await ssx::async_for_each(
@@ -834,7 +857,7 @@ ss::future<> backend::handle_migration_update(id id) {
           old_mrstate.scope.sought_state,
           new_state);
         vlog(dm_log.debug, "dropping migration {} reconciliation state", id);
-        drop_migration_reconciliation_rstate(old_it);
+        co_await drop_migration_reconciliation_rstate(old_it);
     }
     // create new state if needed
     if (new_maybe_metadata) {
@@ -1065,17 +1088,25 @@ void backend::clear_tstate_belongings(
     _topic_work_to_retry.erase(nt);
 }
 
-void backend::drop_migration_reconciliation_rstate(
+ss::future<> backend::drop_migration_reconciliation_rstate(
   migration_reconciliation_states_t::const_iterator rs_it) {
     const auto& topics = rs_it->second.outstanding_topics;
     for (const auto& [nt, tstate] : topics) {
         clear_tstate_belongings(nt, tstate);
-        _local_work_states.erase(nt);
-
+        auto topic_work_it = _local_work_states.find(nt);
+        if (topic_work_it != _local_work_states.end()) {
+            auto& topic_work_state = topic_work_it->second;
+            co_await ssx::async_for_each(
+              topic_work_state, [this, &nt](auto& partition_local_work_entry) {
+                  auto& [partition_id, rwstate] = partition_local_work_entry;
+                  if (rwstate.shard) {
+                      stop_partition_work(nt, partition_id, rwstate);
+                  }
+              });
+        }
         auto it = _active_topic_work_states.find(nt);
         if (it != _active_topic_work_states.end()) {
-            it->second->rcn.request_abort();
-            _active_topic_work_states.erase(it);
+            it->second->rcn().request_abort();
         }
 
         _topic_migration_map.erase(nt);
@@ -1442,9 +1473,23 @@ void backend::topic_reconciliation_state::clear() {
 
 backend::topic_scoped_work_state::topic_scoped_work_state()
   : _as()
-  , rcn(
+  , _rcn(
       _as,
       ss::lowres_clock::now() + retry_chain_node::milliseconds_uint16_t::max(),
       2s) {}
+
+backend::topic_scoped_work_state::~topic_scoped_work_state() {
+    vassert(_promise.available(), "Cannot drop state for a running work");
+}
+
+retry_chain_node& backend::topic_scoped_work_state::rcn() { return _rcn; }
+
+void backend::topic_scoped_work_state::set_value(errc ec) {
+    _promise.set_value(ec);
+}
+
+ss::future<errc> backend::topic_scoped_work_state::future() {
+    return _promise.get_shared_future();
+}
 
 } // namespace cluster::data_migrations
