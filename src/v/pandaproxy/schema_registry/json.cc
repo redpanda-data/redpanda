@@ -689,8 +689,16 @@ bool is_additional_superset(
         case additional_field_for::object:
             return "additionalProperties";
         case additional_field_for::array:
-            return d == json_schema_dialect::draft202012 ? "items"
-                                                         : "additionalItems";
+            using enum json_schema_dialect;
+            switch (d) {
+            case draft4:
+            case draft6:
+            case draft7:
+            case draft201909:
+                return "additionalItems";
+            case draft202012:
+                return "items";
+            }
         }
     };
 
@@ -934,32 +942,49 @@ bool is_array_superset(
     // in draft 2020, "prefixItems" is used to represent tuples instead of an
     // overloaded "items"
     constexpr static auto get_tuple_items_kw = [](json_schema_dialect d) {
-        if (d == json_schema_dialect::draft202012) {
+        using enum json_schema_dialect;
+        switch (d) {
+        case draft4:
+        case draft6:
+        case draft7:
+        case draft201909:
+            return "items";
+        case draft202012:
             return "prefixItems";
         }
-        return "items";
+    };
+    constexpr static auto get_additional_items_kw = [](json_schema_dialect d) {
+        using enum json_schema_dialect;
+        switch (d) {
+        case draft4:
+        case draft6:
+        case draft7:
+        case draft201909:
+            return "additionalItems";
+        case draft202012:
+            return "items";
+        }
     };
 
     // check if the input is an array schema or a tuple schema
-    auto is_array = [](json_schema_dialect d, json::Value const& v) -> bool {
+    auto is_tuple = [](json_schema_dialect d, json::Value const& v) -> bool {
         auto tuple_items_it = v.FindMember(get_tuple_items_kw(d));
         // default for items is `{}` so it's not a tuple schema
         // v is a tuple schema if "items" is an array of schemas
-        auto is_tuple = tuple_items_it != v.MemberEnd()
-                        && tuple_items_it->value.IsArray();
-        return !is_tuple;
+        return tuple_items_it != v.MemberEnd()
+               && tuple_items_it->value.IsArray();
     };
 
-    auto older_is_array = is_array(ctx.older.dialect(), older);
-    auto newer_is_array = is_array(ctx.newer.dialect(), newer);
+    auto older_is_tuple = is_tuple(ctx.older.dialect(), older);
+    auto newer_is_tuple = is_tuple(ctx.newer.dialect(), newer);
 
-    if (older_is_array != newer_is_array) {
+    if (older_is_tuple != newer_is_tuple) {
         // one is a tuple and the other is not. not compatible
         return false;
     }
     // both are tuples or both are arrays
 
-    if (older_is_array) {
+    if (!older_is_tuple) {
         // both are array, only "items" is relevant and it's a schema
         // note that "additionalItems" can be defined, but it's
         // not used by validation because every element is validated against
@@ -1001,25 +1026,32 @@ bool is_array_superset(
         return false;
     }
 
-    // no mismatching elements. two possible cases
-    // 1. older_tuple_schema.Size() >= newer_tuple_schema.Size() ->
-    // compatible (implies newer_it==end())
-    // 2. older_tuple_schema.Size() <  newer_tuple_schema.Size() -> check
-    // excess elements with older["additionalItems"]
+    // no mismatching elements, and they don't have the same size.
+    // To be compatible, excess elements needs to be compatible with the other
+    // "additionalItems" schema
 
     auto older_additional_schema = get_object_or_empty(
-      ctx.older,
-      older,
-      ctx.older.dialect() == json_schema_dialect::draft202012
-        ? "items"
-        : "additionalItems");
+      ctx.older, older, get_additional_items_kw(ctx.older.dialect()));
+    if (!std::all_of(
+          newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
+              return is_superset(ctx, older_additional_schema, n);
+          })) {
+        // newer has excess elements that are not compatible with
+        // older["additionalItems"]
+        return false;
+    }
 
-    // check that all excess schemas are compatible with
-    // older["additionalItems"]
-    return std::all_of(
-      newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
-          return is_superset(ctx, older_additional_schema, n);
-      });
+    auto newer_additional_schema = get_object_or_empty(
+      ctx.newer, newer, get_additional_items_kw(ctx.newer.dialect()));
+    if (!std::all_of(
+          older_it, older_tuple_schema.end(), [&](json::Value const& o) {
+              return is_superset(ctx, o, newer_additional_schema);
+          })) {
+        // older has excess elements that are not compatible with
+        // newer["additionalItems"]
+        return false;
+    }
+    return true;
 }
 
 bool is_object_properties_superset(
@@ -1090,82 +1122,38 @@ bool is_object_properties_superset(
     return true;
 }
 
-bool is_object_pattern_properties_superset(
-  context const& ctx, json::Value const& older, json::Value const& newer) {
-    // check that every pattern property in newer["patternProperties"]
-    // appears in older["patternProperties"] and is compatible with the schema
-
-    // "patternProperties" is a map of <pattern, schema>
-    auto newer_pattern_properties = get_object_or_empty(
-      ctx.newer, newer, "patternProperties");
-    auto older_pattern_properties = get_object_or_empty(
-      ctx.older, older, "patternProperties");
-
-    // TODO O(n^2) lookup
-    for (auto const& [pattern, schema] : newer_pattern_properties) {
-        // search for pattern in older_pattern_properties and check schemas
-        auto older_pp_it = older_pattern_properties.FindMember(pattern);
-        if (older_pp_it == older_pattern_properties.MemberEnd()) {
-            // pattern not in older["patternProperties"], not compatible
-            return false;
-        }
-
-        if (!is_superset(ctx, older_pp_it->value, schema)) {
-            // not compatible
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool is_object_required_superset(
   context const& ctx, json::Value const& older, json::Value const& newer) {
     // to pass the check, a required property from newer has to be present in
-    // older, or if new it needs to be without a default value note that:
+    // older, or if new it needs to have a default value.
+    // note that:
     // 1. we check only required properties that are in both newer["properties"]
     // and older["properties"]
     // 2. there is no explicit check that older has an open content model
     //    there might be a property name outside of (1) that could be rejected
-    //    by older, if older["additionalProperties"] is false
+    //    by update, if update["additionalProperties"] is false
 
     auto older_req = get_array_or_empty(older, "required");
     auto newer_req = get_array_or_empty(newer, "required");
     auto older_props = get_object_or_empty(ctx.older, older, "properties");
     auto newer_props = get_object_or_empty(ctx.newer, newer, "properties");
 
-    // TODO O(n^2) lookup that can be a set_intersection
-    auto newer_props_in_older = older_props
-                                | std::views::transform([&](auto& n_v) {
-                                      return newer_props.FindMember(n_v.name);
-                                  })
-                                | std::views::filter(
-                                  [end = newer_props.end()](auto it) {
-                                      return it != end;
-                                  });
-    // intersections of older["properties"] and newer["properties"]
-    for (auto prop_it : newer_props_in_older) {
-        auto& [name, newer_schema] = *prop_it;
+    // TODO O(n^2) lookup that can be a set_intersection.
+    auto older_req_in_both_properties
+      = older_req | std::views::filter([&](json::Value const& o) {
+            return newer_props.HasMember(o) && older_props.HasMember(o);
+        });
 
-        auto older_is_required = std::ranges::find(older_req, name)
-                                 != older_req.end();
-        auto newer_is_required = std::ranges::find(newer_req, name)
-                                 != newer_req.end();
-        if (older_is_required && !newer_is_required) {
-            // required property not present in newer, not compatible
-            return false;
-        }
-
-        if (!older_is_required && newer_is_required) {
-            if (newer_schema.HasMember("default")) {
-                // newer required property with a default makes newer
-                // incompatible
-                return false;
-            }
-        }
-    }
-
-    return true;
+    // for each element:
+    // in older.required? | in newer.required? | result
+    //       yes          |        yes         |  yes
+    //       yes          |         no         |  if it has "default" in older
+    //       no           |        yes         |  yes
+    return std::ranges::all_of(
+      older_req_in_both_properties, [&](json::Value const& o) {
+          return std::ranges::find(newer_req, o) != newer_req.End()
+                 || older_props[o].HasMember("default");
+      });
 }
 
 bool is_object_dependencies_superset(
@@ -1244,10 +1232,14 @@ bool is_object_superset(
         // newer)
         return false;
     }
-    if (!is_object_pattern_properties_superset(ctx, older, newer)) {
-        // pattern properties checks are not compatible
-        return false;
-    }
+
+    // note: to match the behavior of the legacy software,
+    // ```
+    // if(!is_object_pattern_properties_superset(ctx, older, newer))
+    //   return false;
+    // ```
+    // is omitted
+
     if (!is_object_required_superset(ctx, older, newer)) {
         // required properties are not compatible
         return false;
