@@ -386,6 +386,8 @@ public:
      */
     module_builder& add_function(std::string name, native_function);
 
+    module_builder& add_object(std::string name, object_builder obj);
+
     /** Build this module and make it available in this context. */
     std::expected<std::monostate, exception> build(JSContext* ctx);
 
@@ -393,6 +395,7 @@ private:
     std::string _name;
 
     std::unordered_map<std::string, native_function> _exports;
+    std::unordered_map<std::string, object_builder> _objects;
 };
 
 /**
@@ -474,8 +477,14 @@ private:
         native_function func;
     };
 
+    struct named_object_data {
+        std::unique_ptr<std::string> name;
+        object_export_data data;
+    };
+
     struct context_state {
         std::vector<named_native_function> named_functions;
+        std::vector<named_object_data> named_objects;
         // For each module, the functions that are defined for it.
         std::unordered_map<JSModuleDef*, std::vector<JSCFunctionListEntry>>
           module_functions;

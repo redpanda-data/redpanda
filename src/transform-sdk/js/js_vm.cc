@@ -599,11 +599,17 @@ module_builder::add_function(std::string name, native_function func) {
     return *this;
 }
 
+module_builder&
+module_builder::add_object(std::string name, object_builder obj) {
+    _objects.emplace(std::move(name), std::move(obj));
+    return *this;
+}
+
 std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
     auto* ctx_state = static_cast<runtime::context_state*>(
       JS_GetContextOpaque(ctx));
     std::vector<JSCFunctionListEntry> entries;
-    entries.reserve(_exports.size());
+    entries.reserve(_exports.size() + _objects.size());
     for (auto& [name, func] : _exports) {
         auto my_magic = static_cast<int16_t>(ctx_state->named_functions.size());
         runtime::named_native_function& function
@@ -644,6 +650,29 @@ std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
                     }
                     return JS_Throw(ctx, result.error().val.raw_dup());
                 }}}}});
+    }
+
+    for (auto& [name, builder] : _objects) {
+        auto obj_data = builder.build(ctx);
+        if (!obj_data.has_value()) {
+            return std::unexpected(obj_data.error());
+        }
+        const auto& obj = ctx_state->named_objects.emplace_back(
+          std::make_unique<std::string>(name), std::move(obj_data).value());
+        // TODO(oren): any properties? configurable, etc?
+        constexpr int prop_flags = 0;
+        entries.push_back(JSCFunctionListEntry{
+          .name = obj.name->c_str(),
+          .prop_flags = prop_flags,
+          .def_type = JS_DEF_OBJECT,
+          .magic = 0 /* not used  */,
+          .u = {
+            .prop_list = {
+              .tab = obj.data.properties.data(),
+              .len = static_cast<int32_t>(obj.data.properties.size()),
+            }
+          },
+        });
     }
 
     JSModuleDef* mod = JS_NewCModule(
