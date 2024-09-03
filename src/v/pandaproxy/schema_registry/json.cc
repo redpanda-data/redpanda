@@ -156,6 +156,17 @@ json_schema_definition::refs() const {
 
 ss::sstring json_schema_definition::name() const { return {_impl->name}; };
 
+std::optional<ss::sstring> json_schema_definition::title() const {
+    if (!_impl->ctx.doc.IsObject()) {
+        return std::nullopt;
+    }
+    auto it = _impl->ctx.doc.FindMember("title");
+    if (it == _impl->ctx.doc.MemberEnd()) {
+        return std::nullopt;
+    }
+
+    return ss::sstring{it->value.GetString(), it->value.GetStringLength()};
+}
 namespace {
 
 std::string_view as_string_view(json::Value const& v) {

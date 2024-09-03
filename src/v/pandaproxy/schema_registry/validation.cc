@@ -20,6 +20,7 @@
 #include "model/timeout_clock.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
+#include "pandaproxy/schema_registry/json.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/schema_id_cache.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -106,7 +107,7 @@ ss::future<std::optional<ss::sstring>> get_record_name(
   canonical_schema_definition schema,
   std::optional<std::vector<int32_t>>& offsets) {
     if (sns == subject_name_strategy::topic_name) {
-        // Result is succesfully nothing
+        // Result is successfully nothing
         co_return "";
     }
 
@@ -129,8 +130,11 @@ ss::future<std::optional<ss::sstring>> get_record_name(
         }
         co_return std::move(r).assume_value();
     } break;
-    case schema_type::json:
-        break;
+    case schema_type::json: {
+        auto s = co_await make_json_schema_definition(
+          store, {subject("r"), {std::move(schema).raw(), schema_type}});
+        co_return s.title();
+    } break;
     }
     co_return std::nullopt;
 }
