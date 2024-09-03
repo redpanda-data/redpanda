@@ -807,6 +807,11 @@ std::expected<std::monostate, qjs::exception> initial_native_modules(
           }
           return encode_schema_id_impl(ctx, args[0], args[1]);
       });
+
+    qjs::object_builder schema_format;
+    schema_format.add_i32("Avro", 0).add_i32("Protobuf", 1).add_i32("JSON", 2);
+    sr_mod.add_object("SchemaFormat", std::move(schema_format));
+
     return runtime->add_module(std::move(mod))
       .and_then([runtime, &sr_mod](std::monostate) {
           return runtime->add_module(std::move(sr_mod));
