@@ -62,7 +62,7 @@ The --var flag can be repeated to specify multiple variables like so:
   rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ
 `,
 		Args: cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitServerlessAdmin(p)
@@ -120,7 +120,7 @@ The --var flag can be repeated to specify multiple variables like so:
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 
 				err = cl.Transform.DeployTransform(cmd.Context(), publicapi.DeployTransformRequest{
-					Metadata:   adminApiToDataplaneMetadata(t),
+					Metadata:   adminAPIToDataplaneMetadata(t),
 					WasmBinary: wasm,
 				})
 				out.MaybeDie(err, "unable to deploy transform to Cloud Cluster: %v", err)
@@ -299,7 +299,7 @@ func mapToEnvVars(env map[string]string) (vars []adminapi.EnvironmentVariable) {
 	return
 }
 
-func adminApiToDataplaneMetadata(m adminapi.TransformMetadata) *dataplanev1alpha1.DeployTransformRequest {
+func adminAPIToDataplaneMetadata(m adminapi.TransformMetadata) *dataplanev1alpha1.DeployTransformRequest {
 	var envs []*dataplanev1alpha1.TransformMetadata_EnvironmentVariable
 	for _, e := range m.Environment {
 		envs = append(envs, &dataplanev1alpha1.TransformMetadata_EnvironmentVariable{

@@ -84,11 +84,11 @@ func formatType(t any, includeTypeName bool) (string, error) {
 			return nil
 
 		case reflect.Pointer:
-			fmt.Fprintf(sb, "*")
+			fmt.Fprint(sb, "*")
 			return walk(typ.Elem())
 
 		case reflect.Slice, reflect.Array:
-			fmt.Fprintf(sb, "[]")
+			fmt.Fprint(sb, "[]")
 			return walk(typ.Elem())
 
 		case reflect.Map:
@@ -103,12 +103,12 @@ func formatType(t any, includeTypeName bool) (string, error) {
 			fmt.Fprintf(sb, "%s", typ.Name())
 		}
 
-		fmt.Fprintf(sb, "{\n")
-		defer fmt.Fprintf(sb, spaces()+"}")
+		fmt.Fprint(sb, "{\n")
+		defer fmt.Fprint(sb, spaces()+"}")
 
 		_, seen := types[typ]
 		if seen {
-			fmt.Fprintf(sb, spaces()+"CYCLE")
+			fmt.Fprint(sb, spaces()+"CYCLE")
 			return nil // a cycle is fine, all types known in this cycle so far are valid
 		}
 		types[typ] = struct{}{}

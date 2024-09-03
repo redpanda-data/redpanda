@@ -58,7 +58,7 @@ Available tuners:
 
 To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 `, strings.Join(factory.AvailableTuners(), "\n  - ")),
-		Args: func(cmd *cobra.Command, args []string) error {
+		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("requires the list of elements to tune")
 			}
@@ -75,7 +75,7 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 			}
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, args []string) {
 			if !tunerParamsEmpty(&tunerParams) && p.ConfigFlag != "" {
 				out.Die("use either tuner params or redpanda config file")
 			}

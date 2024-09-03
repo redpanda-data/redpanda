@@ -197,6 +197,9 @@ func GetState(c Client, nodeID uint, isConsole bool) (*NodeState, error) {
 		config.DefaultSchemaRegPort,
 		containerJSON,
 	)
+	if err != nil {
+		return nil, err
+	}
 	hostConsolePort, err := getHostPort(
 		config.DefaultConsolePort,
 		containerJSON,
@@ -229,7 +232,7 @@ func CreateNetwork(c Client, subnet, gateway string) (string, error) {
 	args.Add("name", redpandaNetwork)
 	networks, err := c.NetworkList(
 		ctx,
-		types.NetworkListOptions{Filters: args},
+		network.ListOptions{Filters: args},
 	)
 	if err != nil {
 		return "", err
@@ -243,7 +246,7 @@ func CreateNetwork(c Client, subnet, gateway string) (string, error) {
 
 	fmt.Printf("Creating network %q\n", redpandaNetwork)
 	resp, err := c.NetworkCreate(
-		ctx, redpandaNetwork, types.NetworkCreate{
+		ctx, redpandaNetwork, network.CreateOptions{
 			Driver: "bridge",
 			IPAM: &network.IPAM{
 				Driver: "default",
@@ -399,11 +402,11 @@ func CreateNode(
 	}, nil
 }
 
-func PullImage(c Client, image string) error {
-	fmt.Printf("Pulling image: %s\n", image)
+func PullImage(c Client, img string) error {
+	fmt.Printf("Pulling image: %s\n", img)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
+	res, err := c.ImagePull(ctx, img, image.PullOptions{})
 	if res != nil {
 		defer res.Close()
 		buf := bytes.Buffer{}
@@ -525,7 +528,7 @@ func getHostPort(
 
 func nodeIP(c Client, netID string, id uint) (string, error) {
 	ctx, _ := DefaultCtx()
-	networkResource, err := c.NetworkInspect(ctx, netID, types.NetworkInspectOptions{})
+	networkResource, err := c.NetworkInspect(ctx, netID, network.InspectOptions{})
 	if err != nil {
 		return "", err
 	}

@@ -150,7 +150,7 @@ Start a three-broker cluster, selecting the Admin API port for each broker:
 			configKvs := collectFlags(os.Args, "--set")
 			isRestarted, err := startCluster(c, nodes, checkBrokers, retries, image, consoleImage, pull, cPorts, configKvs, subnet, gateway)
 			if err != nil {
-				if errors.As(err, &portInUseErr{}) {
+				if errors.As(err, &portInUseError{}) {
 					out.Die("unable to start cluster: %v\nYou may select different ports to start the cluster using our listener flags. Check '--help' text for more information", err)
 				}
 				out.Die("unable to start cluster: %v", common.WrapIfConnErr(err))
@@ -802,7 +802,7 @@ func verifyPortsInUse(cPorts clusterPorts) error {
 			server, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
 			// if it fails then the port might be in use
 			if err != nil {
-				return portInUseErr{p, listener}
+				return portInUseError{p, listener}
 			}
 			server.Close()
 		}
@@ -826,12 +826,12 @@ func verifyPortsInUse(cPorts clusterPorts) error {
 	return check([]uint{cPorts.consolePort}, "console")
 }
 
-type portInUseErr struct {
+type portInUseError struct {
 	port     uint
 	listener string
 }
 
-func (p portInUseErr) Error() string {
+func (p portInUseError) Error() string {
 	return fmt.Sprintf("%v port %v already in use", p.listener, p.port)
 }
 

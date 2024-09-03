@@ -31,7 +31,7 @@ then you never need the plugin again. You can uninstall to save a small bit of
 disk space.
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			pluginDir, err := plugin.DefaultBinPath()
 			out.MaybeDie(err, "unable to determine managed plugin path: %w", err)
 			byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")

@@ -44,7 +44,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 }
 
 // parsePrincipal returns the prefix, and principal. If no prefix is present,
-// returns User:
+// returns 'User'.
 func parsePrincipal(p string) (principalType string, name string) {
 	if strings.HasPrefix(p, userPrefix) {
 		return "User", strings.TrimPrefix(p, userPrefix)
@@ -52,7 +52,7 @@ func parsePrincipal(p string) (principalType string, name string) {
 	return "User", p
 }
 
-// parseRoleMembers parses a --principal flag to a []adminapi.RoleMember
+// parseRoleMembers parses a --principal flag to a []adminapi.RoleMember.
 func parseRoleMember(principals []string) []adminapi.RoleMember {
 	var members []adminapi.RoleMember
 	for _, p := range principals {

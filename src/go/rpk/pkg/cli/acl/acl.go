@@ -24,22 +24,22 @@ import (
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := newacl.NewCommand(fs, p)
 	cmd.Hidden = true
-	cmd.PreRun = func(cmd *cobra.Command, args []string) {
+	cmd.PreRun = func(_ *cobra.Command, _ []string) {
 		zap.L().Sugar().Warn("this command is deprecated; use 'rpk security acl' instead")
 	}
 	for _, children := range cmd.Commands() {
-		children.PreRun = func(cmd *cobra.Command, args []string) {
+		children.PreRun = func(cmd *cobra.Command, _ []string) {
 			zap.L().Sugar().Warnf("this command is deprecated; use 'rpk security acl %v' instead", cmd.Name())
 		}
 	}
 
 	userCmd := newuser.NewCommand(fs, p)
 	userCmd.Hidden = true
-	userCmd.PreRun = func(cmd *cobra.Command, args []string) {
+	userCmd.PreRun = func(_ *cobra.Command, _ []string) {
 		zap.L().Sugar().Warnf("this command is deprecated; use 'rpk security user' instead")
 	}
 	for _, children := range userCmd.Commands() {
-		children.PreRun = func(cmd *cobra.Command, args []string) {
+		children.PreRun = func(cmd *cobra.Command, _ []string) {
 			zap.L().Sugar().Warnf("this command is deprecated; use 'rpk security user %v' instead", cmd.Name())
 		}
 	}

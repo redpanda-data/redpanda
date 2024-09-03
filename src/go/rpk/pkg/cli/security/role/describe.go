@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/types"
 )
 
-type roleACl struct {
+type roleACL struct {
 	Principal           string `json:"principal,omitempty" yaml:"principal,omitempty"`
 	Host                string `json:"host,omitempty" yaml:"host,omitempty"`
 	ResourceType        string `json:"resource_type,omitempty" yaml:"resource_type,omitempty"`
@@ -34,7 +34,7 @@ type roleACl struct {
 }
 
 type describeResponse struct {
-	Permissions []roleACl             `json:"permissions" yaml:"permissions"`
+	Permissions []roleACL             `json:"permissions" yaml:"permissions"`
 	Members     []adminapi.RoleMember `json:"members" yaml:"members"`
 }
 
@@ -123,7 +123,7 @@ func describeAndPrintRole(ctx context.Context, admCl *adminapi.AdminAPI, kafkaAd
 	}
 	described := describeResponse{
 		Members:     members,
-		Permissions: describedToRoleAcl(results),
+		Permissions: describedToRoleACL(results),
 	}
 
 	// Print according to format
@@ -172,11 +172,11 @@ func describeAndPrintRole(ctx context.Context, admCl *adminapi.AdminAPI, kafkaAd
 	return nil
 }
 
-func describedToRoleAcl(results kadm.DescribeACLsResults) []roleACl {
-	ret := []roleACl{}
+func describedToRoleACL(results kadm.DescribeACLsResults) []roleACL {
+	ret := []roleACL{}
 	for _, f := range results {
 		for _, d := range f.Described {
-			ret = append(ret, roleACl{
+			ret = append(ret, roleACL{
 				Principal:           d.Principal,
 				Host:                d.Host,
 				ResourceType:        d.Type.String(),
