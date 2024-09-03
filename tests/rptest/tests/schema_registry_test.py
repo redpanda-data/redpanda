@@ -21,7 +21,7 @@ import socket
 
 from confluent_kafka.schema_registry import SchemaRegistryClient, topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy, Schema, SchemaRegistryError, SchemaReference
 from confluent_kafka.serialization import (MessageField, SerializationContext)
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import parametrize, matrix, ok_to_fail_fips
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -3835,6 +3835,7 @@ class SchemaRegistryLicenseTest(RedpandaTest):
         )
 
     @cluster(num_nodes=3)
+    @ok_to_fail_fips  # See NOTE below
     @parametrize(mode=SchemaIdValidationMode.REDPANDA)
     @parametrize(mode=SchemaIdValidationMode.COMPAT)
     def test_license_nag(self, mode):
@@ -3844,6 +3845,8 @@ class SchemaRegistryLicenseTest(RedpandaTest):
 
         self.logger.debug("Ensuring no license nag")
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        # NOTE: This assertion will FAIL if running in FIPS mode because
+        # being in FIPS mode will trigger the license nag
         assert not self._has_license_nag()
 
         self.logger.debug("Setting cluster config")
