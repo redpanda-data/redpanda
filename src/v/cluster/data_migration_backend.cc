@@ -908,7 +908,10 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
             if (rwstate_it != topic_work_state.end()) {
                 auto& rwstate = rwstate_it->second;
                 if (rwstate.shard) {
-                    stop_partition_work(delta.ntp, rwstate);
+                    stop_partition_work(
+                      model::topic_namespace_view{delta.ntp},
+                      delta.ntp.tp.partition,
+                      rwstate);
                 }
                 topic_work_state.erase(rwstate_it);
                 if (topic_work_state.empty()) {
@@ -1036,7 +1039,8 @@ void backend::update_partition_shard(
       new_shard);
     if (new_shard != rwstate.shard) {
         if (rwstate.shard) {
-            stop_partition_work(ntp, rwstate);
+            stop_partition_work(
+              model::topic_namespace_view{ntp}, ntp.tp.partition, rwstate);
         }
         rwstate.shard = new_shard;
         if (new_shard) {
@@ -1163,7 +1167,8 @@ ss::future<> backend::reconcile_topic(
                             rwstate.sought_state != scope.sought_state
                             || rwstate.migration_id != migration) {
                               if (it->second.shard) {
-                                  stop_partition_work(ntp, rwstate);
+                                  stop_partition_work(
+                                    nt, assignment.id, rwstate);
                               }
                               rwstate = {migration, *scope.sought_state};
                           }
@@ -1337,20 +1342,23 @@ void backend::start_partition_work(
 }
 
 void backend::stop_partition_work(
-  const model::ntp& ntp, const backend::replica_work_state& rwstate) {
+  model::topic_namespace_view nt,
+  model::partition_id partition_id,
+  const backend::replica_work_state& rwstate) {
     vlog(
       dm_log.info,
       "while working on migration {}, asking worker on shard "
-      "{} to stop trying to advance ntp {} to state {}",
+      "{} to stop trying to advance ntp {}/{} to state {}",
       rwstate.migration_id,
       rwstate.shard,
-      ntp,
+      nt,
+      partition_id,
       rwstate.sought_state);
-    ssx::spawn_with_gate(_gate, [this, &rwstate, &ntp]() {
+    ssx::spawn_with_gate(_gate, [this, &rwstate, &nt, &partition_id]() {
         return _worker.invoke_on(
           *rwstate.shard,
           &worker::abort_partition_work,
-          model::ntp{ntp},
+          model::ntp{nt.ns, nt.tp, partition_id},
           rwstate.migration_id,
           rwstate.sought_state);
     });
