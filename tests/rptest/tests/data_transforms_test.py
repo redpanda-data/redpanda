@@ -544,8 +544,11 @@ class DataTransformsTest(BaseDataTransformsTest):
         '''
         input_topic = self.topics[0]
         output_topic = self.topics[1]
-        with expect_exception(RpkException,
-                              lambda e: print(e) or "Bad offset" in str(e)):
+
+        with expect_exception(
+                RpkException,
+                lambda e: print(e) or "bad offset" in str(e).lower(
+                )):  # rpk returns 'bad offset', RP Admin returns 'Bad offset'.
             self._deploy_wasm(name="identity-xform",
                               input_topic=input_topic,
                               output_topic=output_topic,

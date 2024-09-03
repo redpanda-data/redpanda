@@ -17,7 +17,7 @@ import (
 	"fmt"
 )
 
-type packageJson struct {
+type packageJSON struct {
 	Name            string            `json:"name"`
 	Type            string            `json:"type"`
 	Private         bool              `json:"private"`
@@ -26,8 +26,8 @@ type packageJson struct {
 	DevDependencies map[string]string `json:"devDependencies"`
 }
 
-func WasmPackageJson(name string, typescript bool) string {
-	pkg := packageJson{
+func WasmPackageJSON(name string, typescript bool) string {
+	pkg := packageJSON{
 		Name:    name,
 		Private: true,
 		Type:    "module",

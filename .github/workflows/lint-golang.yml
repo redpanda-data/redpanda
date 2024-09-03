@@ -27,10 +27,10 @@ jobs:
         go-version: stable
 
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v4
+      uses: golangci/golangci-lint-action@v6
       with:
         version: latest
-        args: --timeout 5m
+        args: --timeout 10m --verbose
         working-directory: src/go/rpk/
 
     - name: Install gofumpt
