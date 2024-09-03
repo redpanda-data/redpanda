@@ -82,7 +82,10 @@ struct test_msg1
 };
 
 struct test_msg1_imcompatible
-  : serde::envelope<test_msg1, serde::version<5>, serde::compat_version<5>> {
+  : serde::envelope<
+      test_msg1_imcompatible,
+      serde::version<5>,
+      serde::compat_version<5>> {
     bool operator==(const test_msg1_imcompatible&) const = default;
 
     test_msg0 _m;
@@ -708,10 +711,8 @@ SEASTAR_THREAD_TEST_CASE(serde_checksum_update) {
 }
 
 struct old_cs
-  : public serde::checksum_envelope<
-      old_no_cs,
-      serde::version<3>,
-      serde::compat_version<2>> {
+  : public serde::
+      checksum_envelope<old_cs, serde::version<3>, serde::compat_version<2>> {
     bool operator==(const old_cs&) const = default;
 
     std::vector<test_msg1_new_manual> data_;
@@ -719,7 +720,7 @@ struct old_cs
 };
 struct new_no_cs
   : public serde::
-      envelope<new_cs, serde::version<4>, serde::compat_version<3>> {
+      envelope<new_no_cs, serde::version<4>, serde::compat_version<3>> {
     bool operator==(const new_no_cs& other) const {
         return data_ == other.data_;
     }
@@ -757,8 +758,10 @@ SEASTAR_THREAD_TEST_CASE(serde_checksum_update_1) {
 }
 
 struct serde_fields_test_struct
-  : serde::
-      envelope<test_msg1_new, serde::version<10>, serde::compat_version<5>> {
+  : serde::envelope<
+      serde_fields_test_struct,
+      serde::version<10>,
+      serde::compat_version<5>> {
     serde_fields_test_struct() = default;
     explicit serde_fields_test_struct(int a)
       : _a{a}
