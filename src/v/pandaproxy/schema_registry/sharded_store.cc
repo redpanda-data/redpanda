@@ -197,14 +197,15 @@ sharded_store::get_schema_version(subject_schema schema) {
     // Check compatibility of the schema
     if (!v_id.has_value() && !versions.empty()) {
         auto compat = co_await is_compatible(
-          versions.back().version, schema.schema.share());
-        if (!compat) {
+          versions.back().version, schema.schema.share(), verbose::yes);
+        if (!compat.is_compat) {
             throw exception(
               error_code::schema_incompatible,
               fmt::format(
                 "Schema being registered is incompatible with an earlier "
-                "schema for subject \"{}\"",
-                sub));
+                "schema for subject \"{}\", details: [{}]",
+                sub,
+                fmt::join(compat.messages, ", ")));
         }
     }
     co_return has_schema_result{s_id, v_id};
@@ -816,7 +817,7 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
             version_messages.emplace_back(
               fmt::format("{{oldSchema: '{}'}}", to_string(old_valid.raw())));
             version_messages.emplace_back(
-              fmt::format("{{compatibility: {}}}", compat));
+              fmt::format("{{compatibility: '{}'}}", compat));
         }
 
         result.messages.reserve(
