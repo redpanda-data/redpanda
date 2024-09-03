@@ -31,7 +31,7 @@ func DeprecatedCmd(name string, args int) *cobra.Command {
 		Use:   name,
 		Short: "This command has been deprecated.",
 		Args:  cobra.ExactArgs(args),
-		Run:   func(cmd *cobra.Command, args []string) {},
+		Run:   func(_ *cobra.Command, _ []string) {},
 	}
 }
 

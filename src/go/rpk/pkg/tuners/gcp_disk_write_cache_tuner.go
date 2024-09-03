@@ -73,9 +73,7 @@ func tuneWriteCache(
 	if err != nil {
 		return NewTuneError(err)
 	}
-	err = executor.Execute(
-		commands.NewWriteFileCmd(fs, featureFile, disk.CachePolicyWriteThrough))
-
+	err = executor.Execute(commands.NewWriteFileCmd(fs, featureFile, disk.CachePolicyWriteThrough))
 	if err != nil {
 		return NewTuneError(err)
 	}

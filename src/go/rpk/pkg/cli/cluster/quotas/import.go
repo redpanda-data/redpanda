@@ -72,7 +72,8 @@ Import client quotas from a file:
 Import client quotas from a string:
   rpk cluster quotas import --from '{"quotas":...}'
 `,
-		Run: func(cmd *cobra.Command, args []string) {
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]quotasDiff{}); ok {
 				out.Exit(h)

@@ -138,7 +138,7 @@ Remove quota (producer_byte_rate) from client ID 'foo':
 				})
 			}
 
-			request := []kadm.AlterClientQuotaEntry{{entity, operations}}
+			request := []kadm.AlterClientQuotaEntry{{Entity: entity, Ops: operations}}
 			var altered kadm.AlteredClientQuotas
 			if dry {
 				zap.L().Sugar().Debug("dry run: this result will not alter the client quotas")

@@ -149,7 +149,7 @@ var xflags = map[string]xflag{
 		"kafka_api.tls.enabled",
 		"true",
 		xkindProfile,
-		func(v string, y *RpkYaml) error {
+		func(_ string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
 			mkKafkaTLS(&p.KafkaAPI)
 			return nil
@@ -244,7 +244,7 @@ var xflags = map[string]xflag{
 		"admin_api.tls.enabled",
 		"false",
 		xkindProfile,
-		func(v string, y *RpkYaml) error {
+		func(_ string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
 			mkAdminTLS(&p.AdminAPI)
 			return nil
@@ -307,7 +307,7 @@ var xflags = map[string]xflag{
 		"schema_registry.tls.enabled",
 		"false",
 		xkindProfile,
-		func(v string, y *RpkYaml) error {
+		func(_ string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
 			mkSchemaRegistryTLS(&p.SR)
 			return nil
@@ -834,7 +834,7 @@ func (p *Params) InstallFormatFlag(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
 
 	pf.StringVar(&p.Formatter.Kind, "format", "text", fmt.Sprintf("Output format (%v)", strings.Join((&OutFormatter{}).SupportedFormats(), ",")))
-	cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return (&OutFormatter{}).SupportedFormats(), cobra.ShellCompDirectiveNoSpace
 	})
 }
