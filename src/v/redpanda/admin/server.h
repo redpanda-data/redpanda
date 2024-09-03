@@ -431,6 +431,7 @@ private:
     void register_wasm_transform_routes();
     void register_recovery_mode_routes();
     void register_data_migration_routes();
+    void register_topic_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -655,6 +656,12 @@ private:
       execute_migration_action(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       delete_migration(std::unique_ptr<ss::http::request>);
+
+    // Topic routes
+    ss::future<ss::json::json_return_type>
+      mount_topics(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      unmount_topics(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,
