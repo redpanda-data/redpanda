@@ -16,6 +16,7 @@ rp_test(
     partition_test.cc
     schema_json_test.cc
     schema_test.cc
+    snapshot_json_test.cc
     struct_accessor_test.cc
     test_schemas.cc
     transform_utils_test.cc
