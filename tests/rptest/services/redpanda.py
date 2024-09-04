@@ -5151,6 +5151,62 @@ class RedpandaService(RedpandaServiceBase):
         else:
             return None
 
+    def wait_node_add_rebalance_finished(self,
+                                         new_nodes,
+                                         admin=None,
+                                         min_partitions=5,
+                                         progress_timeout=30,
+                                         timeout=300,
+                                         backoff=2):
+        """Waits until the rebalance triggered by adding new nodes is finished."""
+
+        new_node_names = [n.name for n in new_nodes]
+
+        if admin is None:
+            admin = Admin(self)
+        started_at = time.monotonic()
+        last_reconfiguring = set()
+        last_bytes_moved = 0
+        last_update = started_at
+
+        while True:
+            time.sleep(backoff)
+
+            if time.monotonic() - last_update > progress_timeout:
+                raise TimeoutError(
+                    f"rebalance after adding nodes {new_node_names} "
+                    "stopped making progress")
+
+            if time.monotonic() - started_at > timeout:
+                raise TimeoutError(
+                    f"rebalance after adding nodes {new_node_names} "
+                    "timed out")
+
+            cur_reconfiguring = set()
+            cur_bytes_moved = 0
+            for p in admin.list_reconfigurations():
+                cur_reconfiguring.add(
+                    f"{p['ns']}/{p['topic']}/{p['partition']}")
+                cur_bytes_moved += p['bytes_moved']
+
+            if (cur_reconfiguring != last_reconfiguring
+                    or cur_bytes_moved != last_bytes_moved):
+                last_update = time.monotonic()
+
+            last_reconfiguring = cur_reconfiguring
+            last_bytes_moved = cur_bytes_moved
+
+            if len(cur_reconfiguring) > 0:
+                continue
+
+            partition_counts = [
+                len(admin.get_partitions(node=n)) for n in new_nodes
+            ]
+            if any(pc < min_partitions for pc in partition_counts):
+                continue
+
+            return
+
 
 def make_redpanda_service(context: TestContext,
                           num_brokers: int | None,
