@@ -19,6 +19,7 @@
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
 #include "model/record_batch_types.h"
+#include "utils/lazy_abort_source.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/defer.hh>
@@ -32,8 +33,7 @@
 
 namespace cloud_storage {
 
-static cloud_storage::lazy_abort_source always_continue{
-  []() { return std::nullopt; }};
+static lazy_abort_source always_continue{[]() { return std::nullopt; }};
 
 inline ss::logger test_util_log("test_util"); // NOLINT
 

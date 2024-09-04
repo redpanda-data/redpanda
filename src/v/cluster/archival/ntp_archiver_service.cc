@@ -44,6 +44,7 @@
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "utils/human.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_provider.h"
 #include "utils/stream_utils.h"
@@ -1205,7 +1206,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
-    auto lazy_abort_source = cloud_storage::lazy_abort_source{
+    auto lazy_abort = lazy_abort_source{
       [this]() { return upload_should_abort(); },
     };
 
@@ -1268,7 +1269,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           candidate.content_length,
           std::move(reset_func),
           fib,
-          lazy_abort_source);
+          lazy_abort);
     } catch (const ss::gate_closed_exception&) {
         response = cloud_storage::upload_result::cancelled;
     } catch (const ss::abort_requested_exception&) {

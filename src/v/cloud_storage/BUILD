@@ -159,6 +159,7 @@ redpanda_cc_library(
         "//src/v/utils:delta_for",
         "//src/v/utils:directory_walker",
         "//src/v/utils:human",
+        "//src/v/utils:lazy_abort_source",
         "//src/v/utils:log_hist",
         "//src/v/utils:mutex",
         "//src/v/utils:named_type",

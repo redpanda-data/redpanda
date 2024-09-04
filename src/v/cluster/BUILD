@@ -651,6 +651,7 @@ redpanda_cc_library(
         "//src/v/utils:fixed_string",
         "//src/v/utils:hdr_hist",
         "//src/v/utils:human",
+        "//src/v/utils:lazy_abort_source",
         "//src/v/utils:move_canary",
         "//src/v/utils:moving_average",
         "//src/v/utils:mutex",

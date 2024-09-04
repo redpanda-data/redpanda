@@ -24,6 +24,7 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_provider.h"
 
@@ -37,27 +38,6 @@
 namespace cloud_storage {
 
 class materialized_resources;
-
-/// \brief Predicate required to continue operation
-///
-/// Describes a predicate to be evaluated before starting an expensive
-/// operation, or to be evaluated when an operation has failed, to find
-/// the reason for failure
-struct lazy_abort_source {
-    /// Predicate to be evaluated before an operation. Evaluates to true when
-    /// the operation should be aborted, false otherwise.
-    using predicate_t = ss::noncopyable_function<std::optional<ss::sstring>()>;
-
-    lazy_abort_source(predicate_t predicate)
-      : _predicate{std::move(predicate)} {}
-
-    bool abort_requested();
-    ss::sstring abort_reason() const;
-
-private:
-    ss::sstring _abort_reason;
-    predicate_t _predicate;
-};
 
 static constexpr ss::shard_id auth_refresh_shard_id = 0;
 

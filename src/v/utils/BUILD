@@ -604,6 +604,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "lazy_abort_source",
+    hdrs = [
+        "lazy_abort_source.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "queue_depth_control",
     hdrs = [
         "queue_depth_control.h",

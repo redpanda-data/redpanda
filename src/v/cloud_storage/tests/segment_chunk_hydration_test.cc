@@ -17,6 +17,7 @@
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/stream_provider.h"
 
 #include <seastar/util/defer.hh>
@@ -44,7 +45,7 @@ namespace views = std::views;
 
 namespace {
 ss::abort_source never_abort;
-cloud_storage::lazy_abort_source always_continue([]() { return std::nullopt; });
+lazy_abort_source always_continue([]() { return std::nullopt; });
 
 remote::reset_input_stream make_reset_fn(const iobuf& segment_bytes) {
     return [&segment_bytes] {

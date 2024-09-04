@@ -32,6 +32,7 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/tmp_dir.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_provider.h"
 
@@ -86,8 +87,7 @@ static constexpr std::string_view plural_delete_error = R"json(
     </Error>
 </DeleteResult>)json";
 
-static cloud_storage::lazy_abort_source always_continue{
-  []() { return std::nullopt; }};
+static lazy_abort_source always_continue{[]() { return std::nullopt; }};
 
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};

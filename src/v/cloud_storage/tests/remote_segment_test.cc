@@ -24,6 +24,7 @@
 #include "model/timeout_clock.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_provider.h"
 
@@ -52,9 +53,7 @@ namespace {
 remote_path_provider path_provider(std::nullopt, std::nullopt);
 } // namespace
 
-static cloud_storage::lazy_abort_source always_continue([]() {
-    return std::nullopt;
-});
+static lazy_abort_source always_continue([]() { return std::nullopt; });
 
 /**
  * Helper: generate a function suitable for passing to upload_segment(),

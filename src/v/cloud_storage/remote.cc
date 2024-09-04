@@ -1527,18 +1527,6 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     co_return upload_result::timedout;
 }
 
-ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }
-
-bool lazy_abort_source::abort_requested() {
-    auto maybe_abort = _predicate();
-    if (maybe_abort.has_value()) {
-        _abort_reason = *maybe_abort;
-        return true;
-    } else {
-        return false;
-    }
-}
-
 ss::future<>
 remote::propagate_credentials(cloud_roles::credentials credentials) {
     return container().invoke_on_all(
