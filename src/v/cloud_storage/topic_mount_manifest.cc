@@ -60,13 +60,9 @@ void topic_mount_manifest::from_iobuf(iobuf in) {
 /// Serialize manifest object
 ///
 /// \return asynchronous input_stream with the serialized json
-ss::future<serialized_data_stream> topic_mount_manifest::serialize() const {
-    auto serialized = serde::to_iobuf(
-      topic_mount_manifest_state{.label = _source_label, .tp_ns = _tp_ns});
-    const size_t size_bytes = serialized.size_bytes();
-    co_return serialized_data_stream{
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
+ss::future<iobuf> topic_mount_manifest::serialize_buf() const {
+    return ss::make_ready_future<iobuf>(serde::to_iobuf(
+      topic_mount_manifest_state{.label = _source_label, .tp_ns = _tp_ns}));
 }
 
 /// Manifest object name in S3

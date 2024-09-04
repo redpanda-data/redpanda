@@ -443,7 +443,7 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    ss::future<serialized_data_stream> serialize() const override;
+    ss::future<iobuf> serialize_buf() const override;
 
     /// Serialize manifest object
     ///

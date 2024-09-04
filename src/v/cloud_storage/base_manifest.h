@@ -11,6 +11,8 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -56,7 +58,8 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    virtual ss::future<serialized_data_stream> serialize() const = 0;
+    virtual ss::future<serialized_data_stream> serialize() const;
+    virtual ss::future<iobuf> serialize_buf() const = 0;
 
     /// Get manifest type
     virtual manifest_type get_manifest_type() const = 0;

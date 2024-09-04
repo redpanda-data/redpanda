@@ -1355,7 +1355,7 @@ ss::future<> test_archiver_schedule_upload_full_cycle(
             cloud_storage::tx_range_manifest tx_manifest(
               key, expected_tx_range.copy());
             std::stringstream str;
-            tx_manifest.serialize(str);
+            tx_manifest.serialize_ostream(str);
             auto tx_str = str.str();
             bytes tx_payload;
             tx_payload.resize(tx_str.size());
