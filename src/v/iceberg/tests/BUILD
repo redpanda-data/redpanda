@@ -67,6 +67,9 @@ redpanda_cc_gtest(
     srcs = [
         "manifest_serialization_test.cc",
     ],
+    data = [
+        "testdata/nested_manifest.avro",
+    ],
     deps = [
         ":test_schemas",
         "//src/v/base",
@@ -81,6 +84,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:manifest_list_avro",
         "//src/v/iceberg:schema_json",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:runfiles",
         "//src/v/utils:file_io",
         "@avro",
         "@googletest//:gtest",

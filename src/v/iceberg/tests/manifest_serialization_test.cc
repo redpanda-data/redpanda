@@ -19,6 +19,7 @@
 #include "iceberg/manifest_list_avro.h"
 #include "iceberg/schema_json.h"
 #include "iceberg/tests/test_schemas.h"
+#include "test_utils/runfiles.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -273,8 +274,13 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
 }
 
 TEST(ManifestSerializationTest, TestSerializeManifestData) {
+    auto manifest_path = test_utils::get_runfile_path(
+      "src/v/iceberg/tests/testdata/nested_manifest.avro");
+    if (!manifest_path.has_value()) {
+        manifest_path = "nested_manifest.avro";
+    }
     auto orig_buf = iobuf{
-      ss::util::read_entire_file("nested_manifest.avro").get0()};
+      ss::util::read_entire_file(manifest_path.value()).get0()};
     auto m = parse_manifest(orig_buf.copy());
     ASSERT_EQ(100, m.entries.size());
     ASSERT_EQ(m.metadata.manifest_content_type, manifest_content_type::data);
