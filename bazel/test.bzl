@@ -119,6 +119,7 @@ def redpanda_cc_gtest(
         timeout,
         srcs = [],
         deps = [],
+        data = [],
         args = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = False,
@@ -127,6 +128,7 @@ def redpanda_cc_gtest(
         srcs = srcs,
         deps = deps,
         custom_args = args,
+        data = data,
     )
 
 def redpanda_cc_btest(

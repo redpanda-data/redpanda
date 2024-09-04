@@ -58,3 +58,24 @@ redpanda_test_cc_library(
         "@abseil-cpp//absl/container:node_hash_set",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "runfiles",
+    srcs = [
+        "runfiles.cc",
+    ],
+    hdrs = [
+        "runfiles.h",
+    ],
+    implementation_deps = [
+        "@bazel_tools//tools/cpp/runfiles",
+        "@fmt",
+    ],
+    include_prefix = "test_utils",
+    # TODO(bazel) when cmake build is removed then this can be removed, and its
+    # associated used in runfiles.cc.
+    local_defines = [
+        "BAZEL_TEST=1",
+    ],
+    visibility = ["//visibility:public"],
+)
