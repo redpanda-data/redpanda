@@ -51,6 +51,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "io_result",
+    srcs = [
+        "io_result.cc",
+    ],
+    hdrs = [
+        "io_result.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
     name = "logger",
     hdrs = [
         "logger.h",

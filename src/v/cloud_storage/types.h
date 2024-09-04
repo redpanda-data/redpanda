@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cloud_io/io_result.h"
 #include "cloud_io/transfer_details.h"
 #include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
@@ -66,21 +67,6 @@ enum class segment_name_format : int16_t {
 };
 
 std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
-
-enum class [[nodiscard]] download_result : int32_t {
-    success,
-    notfound,
-    timedout,
-    failed,
-};
-
-enum class [[nodiscard]] upload_result : int32_t {
-    success,
-    timedout,
-    failed,
-    cancelled,
-};
-
 enum class manifest_version : int32_t {
     v1 = 1,
     v2 = 2,
@@ -93,10 +79,6 @@ enum class tx_range_manifest_version : int32_t {
     current_version = v1,
     compat_version = v1,
 };
-
-std::ostream& operator<<(std::ostream& o, const download_result& r);
-
-std::ostream& operator<<(std::ostream& o, const upload_result& r);
 
 struct offset_range {
     kafka::offset begin;

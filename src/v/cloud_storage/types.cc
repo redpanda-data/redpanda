@@ -83,42 +83,6 @@ std::ostream& operator<<(std::ostream& o, const segment_name_format& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const download_result& r) {
-    switch (r) {
-    case download_result::success:
-        o << "{success}";
-        break;
-    case download_result::notfound:
-        o << "{key_not_found}";
-        break;
-    case download_result::timedout:
-        o << "{timed_out}";
-        break;
-    case download_result::failed:
-        o << "{failed}";
-        break;
-    };
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const upload_result& r) {
-    switch (r) {
-    case upload_result::success:
-        o << "{success}";
-        break;
-    case upload_result::timedout:
-        o << "{timed_out}";
-        break;
-    case upload_result::failed:
-        o << "{failed}";
-        break;
-    case upload_result::cancelled:
-        o << "{cancelled}";
-        break;
-    };
-    return o;
-}
-
 std::ostream&
 operator<<(std::ostream& o, const spillover_manifest_path_components& c) {
     fmt::print(
