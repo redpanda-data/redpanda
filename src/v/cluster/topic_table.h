@@ -656,6 +656,15 @@ private:
     std::error_code validate_force_reconfigurable_partition(
       const ntp_with_majority_loss&) const;
 
+    // Validation for the final property configuration from a
+    // update_topic_properties_cmd application. Allows user to perform
+    // validations that depend on more than one topic property.
+    //
+    // Returns true if the configured topic_properties is valid, and false
+    // otherwise.
+    bool
+    topic_multi_property_validation(const topic_properties& properties) const;
+
     underlying_t _topics;
     lifecycle_markers_t _lifecycle_markers;
     disabled_partitions_t _disabled_partitions;
