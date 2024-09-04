@@ -518,35 +518,11 @@ configuration::get_bucket_config() {
 }
 
 std::ostream& operator<<(std::ostream& os, upload_type upload) {
-    switch (upload) {
-        using enum cloud_storage::upload_type;
-    case object:
-        return os << "object";
-    case segment_index:
-        return os << "segment-index";
-    case manifest:
-        return os << "manifest";
-    case group_offsets_snapshot:
-        return os << "group-offsets-snapshot";
-    case download_result_file:
-        return os << "download-result-file";
-    case remote_lifecycle_marker:
-        return os << "remote-lifecycle-marker";
-    case inventory_configuration:
-        return os << "inventory-configuration";
-    }
+    return os << to_string(upload);
 }
 
 std::ostream& operator<<(std::ostream& os, download_type download) {
-    switch (download) {
-        using enum cloud_storage::download_type;
-    case object:
-        return os << "object";
-    case segment_index:
-        return os << "segment-index";
-    case inventory_report_manifest:
-        return os << "inventory-report-manifest";
-    }
+    return os << to_string(download);
 }
 
 void transfer_details::on_success(remote_probe& probe) {
