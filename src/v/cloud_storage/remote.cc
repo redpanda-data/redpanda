@@ -76,12 +76,14 @@ remote::remote(
   : _pool(clients)
   , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
   , _materialized(std::make_unique<materialized_resources>())
+  , _io_resources(std::make_unique<cloud_io::io_resources>())
   , _probe(
       remote_metrics_disabled(static_cast<bool>(
         std::visit([](auto&& cfg) { return cfg.disable_metrics; }, conf))),
       remote_metrics_disabled(static_cast<bool>(std::visit(
         [](auto&& cfg) { return cfg.disable_public_metrics; }, conf))),
-      *_materialized)
+      *_materialized,
+      *_io_resources)
   , _azure_shared_key_binding(
       config::shard_local_cfg().cloud_storage_azure_shared_key.bind())
   , _cloud_storage_backend{
@@ -158,11 +160,13 @@ ss::future<> remote::start() {
     }
 
     co_await _materialized->start();
+    co_await _io_resources->start();
 }
 
 ss::future<> remote::stop() {
     cst_log.debug("Stopping remote...");
     _as.request_abort();
+    co_await _io_resources->stop();
     co_await _materialized->stop();
     co_await _gate.close();
     co_await _auth_refresh_bg_op.stop();
@@ -707,7 +711,7 @@ ss::future<download_result> remote::download_stream(
 
     ssx::semaphore_units hu;
     if (acquire_hydration_units) {
-        hu = co_await _materialized->get_hydration_units(1);
+        hu = co_await _io_resources->get_hydration_units(1);
     }
 
     auto lease = co_await [this, &fib] {
@@ -736,7 +740,7 @@ ss::future<download_result> remote::download_stream(
                 boost::beast::http::field::content_length));
             try {
                 auto underlying_st = resp.value()->as_input_stream();
-                auto throttled_st = _materialized->throttle_download(
+                auto throttled_st = _io_resources->throttle_download(
                   std::move(underlying_st), _as);
                 uint64_t content_length = co_await cons_str(
                   length, std::move(throttled_st));

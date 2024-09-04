@@ -59,6 +59,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::bytes
+    v::cloud_io
     v::http
     v::cluster_topic_properties
     v::cloud_storage_clients

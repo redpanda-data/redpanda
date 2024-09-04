@@ -122,6 +122,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
+        "//src/v/cloud_io:io_resources",
         "//src/v/cloud_roles",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster:nt_revision",

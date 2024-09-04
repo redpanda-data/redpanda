@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_io/io_resources.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/configuration.h"
@@ -574,6 +575,7 @@ private:
     ss::abort_source _as;
     auth_refresh_bg_op _auth_refresh_bg_op;
     std::unique_ptr<materialized_resources> _materialized;
+    std::unique_ptr<cloud_io::io_resources> _io_resources;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;

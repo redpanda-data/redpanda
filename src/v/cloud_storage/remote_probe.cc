@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_probe.h"
 
+#include "cloud_io/io_resources.h"
 #include "cloud_storage/materialized_resources.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
@@ -22,7 +23,8 @@ namespace cloud_storage {
 remote_probe::remote_probe(
   remote_metrics_disabled disabled,
   remote_metrics_disabled public_disabled,
-  materialized_resources& ms) {
+  materialized_resources& ms,
+  const cloud_io::io_resources& io) {
     namespace sm = ss::metrics;
 
     if (!disabled) {
@@ -209,7 +211,7 @@ remote_probe::remote_probe(
               .aggregate({sm::shard_label}),
             sm::make_gauge(
               "partition_readers",
-              [&ms] { return ms.current_ongoing_hydrations(); },
+              [&io] { return io.current_ongoing_hydrations(); },
               sm::description(
                 "Number of partition reader instances (number of current "
                 "fetch/timequery requests reading from tiered storage)"))
