@@ -820,9 +820,9 @@ ss::future<download_result> remote::download_index(
          .bucket = bucket,
          .key = cloud_storage_clients::object_key{index_path},
          .parent_rtc = parent,
-         .success_cb = [](auto& probe) { probe.index_download(); },
-         .failure_cb = [](auto& probe) { probe.failed_index_download(); },
-         .backoff_cb = [](auto& probe) { probe.download_backoff(); }},
+         .success_cb = [this]() { _probe.index_download(); },
+         .failure_cb = [this]() { _probe.failed_index_download(); },
+         .backoff_cb = [this]() { _probe.download_backoff(); }},
        .type = download_type::segment_index,
        .payload = buffer});
     if (dl_result == download_result::success) {
@@ -863,7 +863,7 @@ remote::download_object(cloud_storage::download_request download_request) {
               = co_await cloud_storage_clients::util::drain_response_stream(
                 resp.value());
             download_request.payload.append_fragments(std::move(buffer));
-            transfer_details.on_success(_probe);
+            transfer_details.on_success();
             co_return download_result::success;
         }
 
@@ -878,7 +878,7 @@ remote::download_object(cloud_storage::download_request download_request) {
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            transfer_details.on_backoff(_probe);
+            transfer_details.on_backoff();
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
@@ -892,7 +892,7 @@ remote::download_object(cloud_storage::download_request download_request) {
             break;
         }
     }
-    transfer_details.on_failure(_probe);
+    transfer_details.on_failure();
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -1480,7 +1480,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           upload_request.accept_no_content_response);
 
         if (res) {
-            transfer_details.on_success(_probe);
+            transfer_details.on_success();
             co_return upload_result::success;
         }
 
@@ -1495,7 +1495,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
               transfer_details.bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            transfer_details.on_backoff(_probe);
+            transfer_details.on_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
@@ -1509,7 +1509,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
         }
     }
 
-    transfer_details.on_failure(_probe);
+    transfer_details.on_failure();
     if (!result) {
         vlog(
           ctxlog.warn,

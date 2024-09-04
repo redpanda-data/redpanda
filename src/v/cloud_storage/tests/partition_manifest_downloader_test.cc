@@ -111,7 +111,7 @@ public:
         std::ostream os(&obuf);
         pm.serialize_json(os);
         upload_request json_req{
-            .transfer_details = transfer_details{
+            .transfer_details = {
                 .bucket = bucket_name,
                   .key = cloud_storage_clients::object_key{prefixed_partition_manifest_json_path(test_ntp, test_rev)},
                   .parent_rtc = retry,

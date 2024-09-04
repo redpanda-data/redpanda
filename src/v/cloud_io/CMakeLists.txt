@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     auth_refresh_bg_op.cc
     io_resources.cc
+    transfer_details.cc
   DEPS
     Seastar::seastar
     v::config)

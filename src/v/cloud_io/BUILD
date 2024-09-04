@@ -57,3 +57,21 @@ redpanda_cc_library(
     ],
     include_prefix = "cloud_io",
 )
+
+redpanda_cc_library(
+    name = "transfer_details",
+    srcs = [
+        "transfer_details.cc",
+    ],
+    hdrs = [
+        "transfer_details.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_storage_clients",
+        "//src/v/utils:log_hist",
+        "//src/v/utils:retry_chain_node",
+        "@seastar",
+    ],
+)

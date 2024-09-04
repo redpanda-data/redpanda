@@ -125,7 +125,7 @@ public:
         auto hashed_path = prefixed_topic_manifest_json_path(
           tm.get_topic_config()->tp_ns);
         upload_request json_req{
-            .transfer_details = transfer_details{
+            .transfer_details = {
                 .bucket = bucket_name,
                   .key = cloud_storage_clients::object_key{hashed_path},
                   .parent_rtc = retry,

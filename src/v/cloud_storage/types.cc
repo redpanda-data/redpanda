@@ -41,14 +41,6 @@ cloud_storage_clients::default_overrides get_default_overrides() {
     return overrides;
 }
 
-void run_callback(
-  std::optional<cloud_storage::probe_callback_t>& cb,
-  cloud_storage::remote_probe& probe) {
-    if (cb.has_value()) {
-        cb.value()(probe);
-    }
-}
-
 } // namespace
 
 namespace cloud_storage {
@@ -523,16 +515,6 @@ std::ostream& operator<<(std::ostream& os, upload_type upload) {
 
 std::ostream& operator<<(std::ostream& os, download_type download) {
     return os << to_string(download);
-}
-
-void transfer_details::on_success(remote_probe& probe) {
-    run_callback(success_cb, probe);
-}
-void transfer_details::on_failure(remote_probe& probe) {
-    run_callback(failure_cb, probe);
-}
-void transfer_details::on_backoff(remote_probe& probe) {
-    run_callback(backoff_cb, probe);
 }
 
 std::ostream& operator<<(std::ostream& os, existence_check_type head) {
