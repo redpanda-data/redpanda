@@ -4,6 +4,7 @@ v_cc_library(
     auth_refresh_bg_op.cc
     io_resources.cc
     io_result.cc
+    remote.cc
     transfer_details.cc
   DEPS
     Seastar::seastar

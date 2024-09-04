@@ -12,6 +12,7 @@
 
 #include "cloud_io/auth_refresh_bg_op.h"
 #include "cloud_io/io_resources.h"
+#include "cloud_io/remote.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/configuration.h"
@@ -249,6 +250,18 @@ public:
       lazy_abort_source& lazy_abort_source,
       std::optional<size_t> max_retries = std::nullopt);
 
+    /// \brief Upload segment index to the pre-defined S3 location
+    ///
+    /// \param bucket is a bucket name
+    /// \param manifest is the index to upload
+    /// \param key is the remote object name
+    /// \return future that returns success code
+    ss::future<upload_result> upload_index(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key,
+      const offset_index& index,
+      retry_chain_node& parent);
+
     /// \brief Download segment from S3
     ///
     /// The method downloads the segment while tolerating some errors. It can
@@ -470,6 +483,9 @@ public:
     ss::abort_source& as() { return _as; }
 
 private:
+    cloud_io::remote& io() { return _io; }
+    const cloud_io::remote& io() const { return _io; }
+
     template<
       typename FailedUploadMetricFn,
       typename SuccessfulUploadMetricFn,
@@ -528,22 +544,19 @@ private:
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);
+    std::function<void(size_t)>
+    make_notify_cb(api_activity_type t, retry_chain_node& retry);
 
     ss::sharded<cloud_storage_clients::client_pool>& _pool;
     ss::gate _gate;
     ss::abort_source _as;
-    cloud_io::auth_refresh_bg_op _auth_refresh_bg_op;
+    cloud_io::remote _io;
     std::unique_ptr<materialized_resources> _materialized;
-    std::unique_ptr<cloud_io::io_resources> _io_resources;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;
 
     intrusive_list<event_filter, &event_filter::_hook> _filters;
-
-    config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
-
-    model::cloud_storage_backend _cloud_storage_backend;
 };
 
 } // namespace cloud_storage

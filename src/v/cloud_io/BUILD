@@ -71,6 +71,43 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "remote",
+    srcs = [
+        "remote.cc",
+    ],
+    hdrs = [
+        "remote.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_io:logger",
+        "//src/v/resource_mgmt:io_priority",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:semaphore",
+        "@boost//:beast",
+        "@boost//:lexical_cast",
+        "@boost//:range",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":auth_refresh_bg_op",
+        ":io_resources",
+        ":io_result",
+        ":transfer_details",
+        "//src/v/base",
+        "//src/v/cloud_roles",
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/utils:lazy_abort_source",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/utils:stream_provider",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "transfer_details",
     srcs = [
         "transfer_details.cc",
