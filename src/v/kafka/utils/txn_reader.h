@@ -8,22 +8,23 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#pragma once
 
-#include "kafka/server/fwd.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "ssx/sformat.h"
-#include "storage/fwd.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/shared_ptr.hh>
 
-#include <absl/container/btree_map.h>
-#include <fmt/ostream.h>
-
 #include <memory>
 
+namespace storage {
+class offset_translator_state;
+}
+
 namespace kafka {
+
+class partition_proxy;
 
 // An interface for computing what transactions are aborted within a given range
 // of a partition.

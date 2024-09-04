@@ -8,16 +8,16 @@ redpanda_cc_library(
     hdrs = [
         "txn_reader.h",
     ],
-    include_prefix = "kafka/utils",
-    visibility = ["//visibility:public"],
-    deps = [
+    implementation_deps = [
         "//src/v/kafka/server",
-        "//src/v/model",
-        "//src/v/ssx:future_util",
-        "//src/v/ssx:sformat",
         "//src/v/storage",
         "@abseil-cpp//absl/container:btree",
         "@fmt",
+    ],
+    include_prefix = "kafka/utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/model",
         "@seastar",
     ],
 )
