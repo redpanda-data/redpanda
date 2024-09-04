@@ -1009,49 +1009,35 @@ bool is_array_superset(
       = older[get_tuple_items_kw(ctx.older.dialect())].GetArray();
     auto newer_tuple_schema
       = newer[get_tuple_items_kw(ctx.newer.dialect())].GetArray();
-    // find the first pair of schemas that do not match
-    auto [older_it, newer_it] = std::ranges::mismatch(
-      older_tuple_schema,
-      newer_tuple_schema,
-      [&ctx](auto const& older, auto const& newer) {
-          return is_superset(ctx, older, newer);
-      });
-
-    if (
-      older_it != older_tuple_schema.end()
-      && newer_it != newer_tuple_schema.end()) {
-        // if both iterators are not end iterators, they are pointing to a
-        // pair of elements where is_superset(*older_it, *newer_it)==false,
-        // not compatible
-        return false;
+    auto older_it = older_tuple_schema.begin();
+    auto newer_it = newer_tuple_schema.begin();
+    for (; older_it != older_tuple_schema.end()
+           && newer_it != newer_tuple_schema.end();
+         ++older_it, ++newer_it) {
+        if (!is_superset(ctx, *older_it, *newer_it)) {
+            return false;
+        }
     }
 
     // no mismatching elements, and they don't have the same size.
     // To be compatible, excess elements needs to be compatible with the other
     // "additionalItems" schema
-
     auto older_additional_schema = get_object_or_empty(
       ctx.older, older, get_additional_items_kw(ctx.older.dialect()));
-    if (!std::all_of(
-          newer_it, newer_tuple_schema.end(), [&](json::Value const& n) {
-              return is_superset(ctx, older_additional_schema, n);
-          })) {
-        // newer has excess elements that are not compatible with
-        // older["additionalItems"]
-        return false;
-    }
-
     auto newer_additional_schema = get_object_or_empty(
       ctx.newer, newer, get_additional_items_kw(ctx.newer.dialect()));
-    if (!std::all_of(
-          older_it, older_tuple_schema.end(), [&](json::Value const& o) {
-              return is_superset(ctx, o, newer_additional_schema);
-          })) {
-        // older has excess elements that are not compatible with
-        // newer["additionalItems"]
-        return false;
-    }
-    return true;
+
+    // newer_has_more: true if newer has excess elements, false if older has
+    // excess elements
+    auto newer_has_more = newer_it != newer_tuple_schema.end();
+    auto excess_begin = newer_has_more ? newer_it : older_it;
+    auto excess_end = newer_has_more ? newer_tuple_schema.end()
+                                     : older_tuple_schema.end();
+
+    return std::all_of(excess_begin, excess_end, [&](json::Value const& e) {
+        return newer_has_more ? is_superset(ctx, older_additional_schema, e)
+                              : is_superset(ctx, e, newer_additional_schema);
+    });
 }
 
 bool is_object_properties_superset(
