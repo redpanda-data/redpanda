@@ -16,3 +16,28 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "reconciler",
+    srcs = [
+        "reconciler.cc",
+    ],
+    hdrs = [
+        "reconciler.h",
+    ],
+    include_prefix = "cloud_topics/reconciler",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":range_batch_consumer",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/cluster",
+        "//src/v/cluster:notification",
+        "//src/v/kafka/server",
+        "//src/v/kafka/utils:txn_reader",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "@abseil-cpp//absl/container:node_hash_map",
+        "@seastar",
+    ],
+)
