@@ -10,6 +10,7 @@ v_cc_library(
   SRCS
     gtest_main.cc
     gtest_utils.cc
+    runfiles.cc
   DEPS Seastar::seastar Seastar::seastar_testing GTest::gtest GTest::gmock v::bytes_random)
 
 add_subdirectory(tests)
