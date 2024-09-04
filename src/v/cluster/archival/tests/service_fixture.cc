@@ -214,7 +214,6 @@ archiver_fixture::get_configurations() {
     cconf.client_config = s3conf;
     cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
     cconf.connection_limit = archival::connection_limit(2);
-    cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
     cconf.cloud_credentials_source
       = model::cloud_credentials_source::config_file;
     return std::make_tuple(

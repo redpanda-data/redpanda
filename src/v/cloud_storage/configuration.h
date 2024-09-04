@@ -19,8 +19,6 @@ struct configuration {
     cloud_storage_clients::client_configuration client_config;
     /// Number of simultaneous client uploads
     connection_limit connection_limit;
-    /// Disable metrics in the remote
-    remote_metrics_disabled metrics_disabled;
     /// The S3 bucket or ABS container to use
     cloud_storage_clients::bucket_name bucket_name;
 

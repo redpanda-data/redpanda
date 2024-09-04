@@ -354,11 +354,10 @@ std::ostream& operator<<(std::ostream& o, const anomalies& a) {
 std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
-      "{{connection_limit: {}, client_config: {}, metrics_disabled: {}, "
+      "{{connection_limit: {}, client_config: {}, "
       "bucket_name: {}, cloud_credentials_source: {}}}",
       cfg.connection_limit,
       cfg.client_config,
-      cfg.metrics_disabled,
       cfg.bucket_name,
       cfg.cloud_credentials_source);
     return o;
@@ -438,8 +437,6 @@ ss::future<configuration> configuration::get_s3_config() {
       .client_config = std::move(s3_conf),
       .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
-      .metrics_disabled = remote_metrics_disabled(
-        static_cast<bool>(disable_metrics)),
       .bucket_name = bucket_name,
       .cloud_credentials_source = cloud_credentials_source,
     };
@@ -501,8 +498,6 @@ ss::future<configuration> configuration::get_abs_config() {
       .client_config = std::move(abs_conf),
       .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
-      .metrics_disabled = remote_metrics_disabled(
-        static_cast<bool>(disable_metrics)),
       .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_azure_container,
         "cloud_storage_azure_container")),
