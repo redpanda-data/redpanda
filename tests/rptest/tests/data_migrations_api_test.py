@@ -168,6 +168,15 @@ class DataMigrationsApiTest(RedpandaTest):
             f"Expected migration with id {migration_id} is not present")
         return migration_id
 
+    def wait_partitions_disappear(self, topics: list[TopicSpec]):
+        # we may be unlucky to query a slow node
+        wait_until(
+            lambda: all(self.client().describe_topic(t.name).partitions == []
+                        for t in topics),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Failed waiting for partitions to disappear")
+
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
         self.finjector = Finjector(self.redpanda, self.test_context)
@@ -221,12 +230,8 @@ class DataMigrationsApiTest(RedpandaTest):
                                            ['cut_over', 'finished'])
             self.wait_for_migration_states(out_migration_id, ['finished'])
 
-            # we may be unlucky to query a slow node
-            wait_until(lambda: all(self.client().describe_topic(t.name).
-                                   partitions == [] for t in topics),
-                       timeout_sec=30,
-                       backoff_sec=1,
-                       err_msg=f"Failed waiting for partitions to disappear")
+            self.wait_partitions_disappear(topics)
+
             # in
             #alias=None if i == 0 else NamespacedTopic(f"topic-{i}-alias"))
             inbound_topics = [
