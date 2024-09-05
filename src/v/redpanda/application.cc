@@ -1979,6 +1979,14 @@ void application::wire_up_redpanda_services(
       &shadow_index_cache,
       &partition_manager);
 
+    construct_service(
+      _reconciler,
+      &partition_manager,
+      &cloud_io,
+      cloud_storage_clients::bucket_name(
+        config::shard_local_cfg().cloud_storage_bucket().value()))
+      .get();
+
     // group membership
     syschecks::systemd_message("Creating kafka group manager").get();
     construct_service(
@@ -3067,6 +3075,9 @@ void application::start_runtime_services(
     }
 
     space_manager->start().get();
+    _reconciler
+      .invoke_on_all(&experimental::cloud_topics::reconciler::reconciler::start)
+      .get();
 }
 
 /**

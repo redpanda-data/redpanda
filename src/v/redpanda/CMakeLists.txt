@@ -76,6 +76,7 @@ v_cc_library(
     v::transform
     v::version 
     v::wasm
+    v::cloud_topics_reconciler
   )
 
 add_subdirectory(tests)
