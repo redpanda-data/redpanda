@@ -103,6 +103,7 @@ add_subdirectory(wasm)
 add_subdirectory(transform)
 add_subdirectory(net)
 add_subdirectory(rpc)
+add_subdirectory(debug_bundle)
 
 # libraries
 add_subdirectory(test_utils)
