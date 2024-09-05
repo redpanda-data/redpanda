@@ -1693,3 +1693,21 @@ class Admin:
 
         path = f"migrations/{migration_id}"
         return self._request("DELETE", path, node=node)
+
+    def unmount_topics(self,
+                       topics: list[NamespacedTopic],
+                       node: Optional[ClusterNode] = None):
+        path = "topics/unmount"
+        return self._request("POST",
+                             path,
+                             node=node,
+                             json={"topics": [t.as_dict() for t in topics]})
+
+    def mount_topics(self,
+                     topics: list[InboundTopic],
+                     node: Optional[ClusterNode] = None):
+        path = "topics/mount"
+        return self._request("POST",
+                             path,
+                             node=node,
+                             json={"topics": [t.as_dict() for t in topics]})
