@@ -3,7 +3,7 @@ A script that computes all the files (and optionally their sizes) in the data di
 
 Useful in tests if you want to know what files exist on a node or if they are a specific size.
 """
-
+import time
 from pathlib import Path
 import sys
 import json
@@ -18,6 +18,7 @@ from typing import Iterator
 # NB: SegmentReader is duplicated in si_utils.py for deployment reasons. If
 # making changes please adapt both.
 class SegmentReader:
+    stream: io.BytesIO
     HDR_FMT_RP = "<IiqbIhiqqqhii"
     HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
     Header = collections.namedtuple(
@@ -27,20 +28,39 @@ class SegmentReader:
 
     def __init__(self, stream):
         self.stream = stream
+        self.tolerate_partial_reads = 5
+        self.sleep_between_read_attempts = 0.5
+        self.partial_reads = 0
 
     def read_batch(self):
+        reset_pos = self.stream.tell()
         data = self.stream.read(self.HEADER_SIZE)
         if len(data) == self.HEADER_SIZE:
             header = self.Header(*struct.unpack(self.HDR_FMT_RP, data))
             if all(map(lambda v: v == 0, header)):
                 return None
+
+            # Not all fields of the header are 0, but the batch size is 0. Retry reading the segment
+            # from re-wound offset after a delay, in case we caught the batch mid-write.
+            if header.batch_size == 0 and self.partial_reads < self.tolerate_partial_reads:
+                time.sleep(self.sleep_between_read_attempts)
+                self.partial_reads += 1
+                self.stream.seek(reset_pos, 0)
+                return self.read_batch()
+            self.partial_reads = 0
+
             records_size = header.batch_size - self.HEADER_SIZE
             data = self.stream.read(records_size)
             if len(data) < records_size:
                 return None
-            assert len(
-                data
-            ) == records_size, f"data len is {len(data)} but the expected records size is {records_size}"
+
+            error_detail = {}
+            if len(data) != records_size:
+                error_detail["header"] = header
+                error_detail["current_pos"] = self.stream.tell()
+            assert len(data) == records_size, (
+                f"data len is {len(data)} but the expected records size is {records_size}, "
+                f"error detail={error_detail}")
             return header
         return None
 
@@ -109,7 +129,8 @@ def compute_size_for_file(file: Path, calc_md5: bool):
 
                 f.seek(0)
                 data = f.read()
-                reader = SegmentReader(io.BytesIO(data))
+                f.seek(0)
+                reader = SegmentReader(f)
                 return md5_for_bytes(calc_md5,
                                      data), sum(h.batch_size for h in reader)
     else:
@@ -144,6 +165,14 @@ def compute_size(data_dir: Path, sizes: bool, calculate_md5: bool,
                             # It's valid to have a segment deleted
                             # at anytime
                             continue
+                        except AssertionError as e:
+                            if print_flat:
+                                raise e
+                            return {
+                                "parse_failed": True,
+                                "segment": str(segment),
+                                "error": str(e)
+                            }
                     part_output[segment.name] = seg_output
                 topic_output[partition.name] = part_output
             ns_output[topic.name] = topic_output
