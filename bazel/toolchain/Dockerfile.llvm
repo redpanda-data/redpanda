@@ -3,7 +3,9 @@ FROM ubuntu:jammy AS build
 RUN apt update
 RUN apt upgrade -y
 RUN apt install -y git curl python3 cmake ninja-build wget lsb-release software-properties-common gnupg
-RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+ADD --chmod=755 https://apt.llvm.org/llvm.sh /
+ARG SYSTEM_CLANG_VERSION=19
+RUN /llvm.sh ${SYSTEM_CLANG_VERSION}
 
 ARG TARGETARCH
 ADD --chmod=755 https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-${TARGETARCH} /usr/bin/bazel
@@ -16,8 +18,8 @@ ARG LLVM_VERSION=17.0.6
 
 RUN git clone --branch llvmorg-${LLVM_VERSION} --single-branch https://github.com/llvm/llvm-project.git
 
-ENV CC=clang-18
-ENV CXX=clang++-18
+ENV CC=clang-${SYSTEM_CLANG_VERSION}
+ENV CXX=clang++-${SYSTEM_CLANG_VERSION}
 
 ARG MAX_LINKER_JOBS=0
 ARG MAX_COMPILER_JOBS=0
@@ -75,7 +77,7 @@ cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \\
   -DLIBCXX_ABI_VERSION=2 \\
   -DLLVM_ENABLE_LIBCXX=ON \\
   -DLLVM_STATIC_LINK_CXX_STDLIB=ON \\
-  -DLLVM_ENABLE_LTO=Thin \\
+  -DLLVM_ENABLE_LTO=On \\
   "\$@"
 
 retry -- ninja -C "\$BUILD_DIR"
@@ -128,7 +130,7 @@ RUN bazel clean --expunge
 WORKDIR /opt
 
 # Merge profile data
-RUN llvm-profdata-18 merge -output=/tmp/profdata.prof /tmp/clang-pgo-data/*.profraw
+RUN llvm-profdata-${SYSTEM_CLANG_VERSION} merge -output=/tmp/profdata.prof /tmp/clang-pgo-data/*.profraw
 
 # Rebuild clang toolchain with profile data this time
 RUN /opt/build.sh \
