@@ -16,7 +16,6 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
-#include "model/timestamp.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
@@ -25,13 +24,10 @@
 
 #include <absl/container/btree_set.h>
 
-#include <algorithm>
 #include <functional>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <ranges>
 #include <vector>
 
 namespace kafka {
