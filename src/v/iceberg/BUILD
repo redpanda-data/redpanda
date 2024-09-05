@@ -112,6 +112,7 @@ redpanda_cc_library(
         ":manifest",
         ":manifest_entry_gen",
         ":partition",
+        ":partition_json",
         ":schema",
         ":schema_json",
         "//src/v/base",
@@ -189,6 +190,26 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/utils:named_type",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_json",
+    srcs = [
+        "partition_json.cc",
+    ],
+    hdrs = [
+        "partition_json.h",
+    ],
+    implementation_deps = [
+        ":json_utils",
+        ":transform_json",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition",
+        "//src/v/json",
     ],
 )
 
@@ -347,6 +368,26 @@ redpanda_cc_library(
         "transform.h",
     ],
     include_prefix = "iceberg",
+)
+
+redpanda_cc_library(
+    name = "transform_json",
+    srcs = [
+        "transform_json.cc",
+    ],
+    hdrs = [
+        "transform_json.h",
+    ],
+    implementation_deps = [
+        ":json_utils",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":transform",
+        "//src/v/base",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(

@@ -93,6 +93,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "partition_json_test",
+    timeout = "short",
+    srcs = [
+        "partition_json_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:partition_json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "partition_test",
     timeout = "short",
     srcs = [
@@ -197,6 +211,20 @@ redpanda_cc_gtest(
         ":test_schemas",
         ":value_generator",
         "//src/v/iceberg:struct_accessor",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "transform_json_test",
+    timeout = "short",
+    srcs = [
+        "transform_json_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:transform",
+        "//src/v/iceberg:transform_json",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

@@ -36,12 +36,14 @@ v_cc_library(
     manifest_list_avro.cc
     partition_key.cc
     partition_key_type.cc
+    partition_json.cc
     schema.cc
     schema_json.cc
     snapshot_json.cc
     struct_accessor.cc
     time_transform_visitor.cc
     transform.cc
+    transform_json.cc
     transform_utils.cc
     values.cc
   DEPS

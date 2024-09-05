@@ -273,6 +273,43 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     EXPECT_EQ(manifest.deleted_rows_count, dmanifest.deleted_rows_count);
 }
 
+TEST(ManifestSerializationTest, TestMetadataWithPartitionSpec) {
+    schema s{
+      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+      .schema_id = schema::id_t{12},
+      .identifier_field_ids = {nested_field::id_t{1}},
+    };
+    partition_spec p{
+      .spec_id = partition_spec::id_t{8},
+        .fields = {
+            partition_field{
+              .source_id = nested_field::id_t{2},
+              .field_id = partition_field::id_t{1000},
+              .name = "p0",
+              .transform = bucket_transform{10},
+            },
+        },
+    };
+    manifest_metadata meta{
+      .schema = std::move(s),
+      .partition_spec = std::move(p),
+      .format_version = format_version::v1,
+      .manifest_content_type = manifest_content_type::data,
+    };
+    manifest m{
+      .metadata = std::move(meta),
+      .entries = {},
+    };
+    auto serialized_buf = serialize_avro(m);
+    for (int i = 0; i < 10; i++) {
+        auto m_roundtrip = parse_manifest(std::move(serialized_buf));
+        ASSERT_EQ(m.metadata, m_roundtrip.metadata);
+        ASSERT_EQ(0, m_roundtrip.entries.size());
+
+        serialized_buf = serialize_avro(m_roundtrip);
+    }
+}
+
 TEST(ManifestSerializationTest, TestSerializeManifestData) {
     auto manifest_path = test_utils::get_runfile_path(
       "src/v/iceberg/tests/testdata/nested_manifest.avro");
