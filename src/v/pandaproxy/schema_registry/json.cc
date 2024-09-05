@@ -626,7 +626,7 @@ bool is_numeric_property_value_superset(
           json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
 
         if (it == v.MemberEnd()) {
-            return default_value;
+            return std::nullopt;
         }
 
         // Gate on values that can't be represented with doubles.
@@ -649,20 +649,23 @@ bool is_numeric_property_value_superset(
 
     auto older_value = get_value(older);
     auto newer_value = get_value(newer);
-    if (older_value == newer_value) {
-        // either both not set or with the same value
-        return true;
-    }
 
     if (older_value.has_value() && newer_value.has_value()) {
-        return std::invoke(
-          std::forward<VPred>(value_predicate), *older_value, *newer_value);
+        if (!std::invoke(
+              std::forward<VPred>(value_predicate),
+              *older_value,
+              *newer_value)) {
+            return false;
+        }
+    } else if (older_value.has_value()) {
+        if (!default_value.has_value() || *older_value != *default_value) {
+            // Non-default value was removed
+            return false;
+        }
     }
 
-    // (relevant only if default_value is not used)
-    // only one is set. if older is not set then newer has a value that is more
-    // restrictive, so older is a superset of newer
-    return !older_value.has_value();
+    // Value only in newer or neither
+    return true;
 }
 
 enum class additional_field_for { object, array };
