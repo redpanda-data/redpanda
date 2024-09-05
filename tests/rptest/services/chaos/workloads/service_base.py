@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import requests
-import signal
+import sys
 import os
 from enum import Enum
 from abc import ABC, abstractmethod
@@ -86,7 +86,17 @@ class WorkloadServiceBase(ABC, Service):
         kwargs["timeout"] = timeout_sec
         url = self._remote_url(node, path)
         self.logger.debug(f"dispatching {verb} {url}")
-        r = requests.request(verb, url, **kwargs)
+        existing_exc = sys.exc_info()[1]
+        try:
+            r = requests.request(verb, url, **kwargs)
+        except requests.RequestException as e:
+            # Request exceptions (e.g. timeouts) come with a long context chain and
+            # one of those exceptions has the __suppress_context__ attribute set to True.
+            # This is not nice because the original context corresponding to existing_exc
+            # (e.g. a test error) will not not be printed. To avoid that, throw out
+            # all requests exceptions from the context chain.
+            e.__context__ = existing_exc
+            raise
         if r.status_code != 200:
             raise Exception(f"unexpected status code: {r.status_code}")
         return r
