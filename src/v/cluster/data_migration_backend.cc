@@ -867,6 +867,12 @@ ss::future<> backend::handle_migration_update(id id) {
         vlog(dm_log.debug, "dropping migration {} reconciliation state", id);
         co_await drop_migration_reconciliation_rstate(old_it);
     }
+    // delete old advance requests
+    if (auto it = _advance_requests.find(id); it != _advance_requests.end()) {
+        if (!new_state || it->second.sought_state <= new_state) {
+            _advance_requests.erase(it);
+        }
+    }
     // create new state if needed
     if (new_maybe_metadata) {
         const auto& new_metadata = new_maybe_metadata->get();
@@ -875,14 +881,13 @@ ss::future<> backend::handle_migration_update(id id) {
             vlog(
               dm_log.debug, "creating migration {} reconciliation state", id);
             auto new_it = _migration_states.emplace_hint(old_it, id, scope);
-            co_await reconcile_migration(new_it->second, new_metadata);
+            if (scope.topic_work_needed || scope.partition_work_needed) {
+                co_await reconcile_migration(new_it->second, new_metadata);
+            } else {
+                // yes it is done as there is nothing to do
+                to_advance_if_done(new_it);
+            }
             need_wakeup = true;
-        }
-    }
-    // delete old advance requests
-    if (auto it = _advance_requests.find(id); it != _advance_requests.end()) {
-        if (!new_state || it->second.sought_state <= new_state) {
-            _advance_requests.erase(it);
         }
     }
 
@@ -918,6 +923,11 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
       delta.type,
       migration_id);
     auto& mrstate = _migration_states.find(migration_id)->second;
+    if (
+      !mrstate.scope.partition_work_needed
+      && !mrstate.scope.topic_work_needed) {
+        co_return;
+    }
     auto& tstate = mrstate.outstanding_topics[nt];
     clear_tstate_belongings(nt, tstate);
     tstate.clear();
@@ -1434,7 +1444,34 @@ backend::get_work_scope(const migration_metadata& metadata) {
     return std::visit(
       [&metadata](const auto& migration) {
           migration_direction_tag<std::decay_t<decltype(migration)>> tag;
-          return get_work_scope(tag, metadata);
+          auto scope = get_work_scope(tag, metadata);
+          if (migration.auto_advance && !scope.sought_state) {
+              switch (metadata.state) {
+              case state::planned:
+                  scope.sought_state = state::preparing;
+                  break;
+              case state::prepared:
+                  scope.sought_state = state::executing;
+                  break;
+              case state::executed:
+                  scope.sought_state = state::cut_over;
+                  break;
+              case state::finished:
+              case state::cancelled:
+                  // final states
+                  break;
+              case state::preparing:
+              case state::executing:
+              case state::cut_over:
+              case state::canceling:
+                  vassert(
+                    false,
+                    "Work scope not found for migration {} transient state {}",
+                    metadata.id,
+                    metadata.state);
+              }
+          }
+          return scope;
       },
       metadata.migration);
 }
