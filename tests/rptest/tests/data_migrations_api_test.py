@@ -119,7 +119,9 @@ class DataMigrationsApiTest(RedpandaTest):
         for n in self.redpanda.nodes:
             try:
                 map = self.get_migrations_map(n)
-                if migration_id in map and predicate(map[migration_id]):
+                self.logger.debug(f"migrations on node {n.name}: {map}")
+                if predicate(map[migration_id] if migration_id in
+                             map else None):
                     success_cnt += 1
                 else:
                     return False
@@ -129,7 +131,8 @@ class DataMigrationsApiTest(RedpandaTest):
 
     def wait_for_migration_states(self, id: int, states: list[str]):
         def migration_in_one_of_states():
-            return self.on_all_live_nodes(id, lambda m: m["state"] in states)
+            return self.on_all_live_nodes(
+                id, lambda m: m is not None and m["state"] in states)
 
         wait_until(
             migration_in_one_of_states,
@@ -138,6 +141,46 @@ class DataMigrationsApiTest(RedpandaTest):
             err_msg=
             f"Failed waiting for migration {id} to reach on of {states} states"
         )
+
+    def wait_migration_appear(self, migration_id):
+        def migration_is_present(id: int):
+            return self.on_all_live_nodes(id, lambda m: m is not None)
+
+        wait_until(
+            lambda: migration_is_present(migration_id),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg=f"Expected migration with id {migration_id} is present")
+
+    def wait_migration_disappear(self, migration_id):
+        def migration_is_absent(id: int):
+            return self.on_all_live_nodes(id, lambda m: m is None)
+
+        wait_until(
+            lambda: migration_is_absent(migration_id),
+            timeout_sec=90,
+            backoff_sec=2,
+            err_msg=f"Expected migration with id {migration_id} is absent")
+
+    def wait_partitions_appear(self, topics: list[TopicSpec]):
+        # we may be unlucky to query a slow node
+        def topic_has_all_partitions(t: TopicSpec):
+            return t.partition_count == \
+                    len(self.client().describe_topic(t.name).partitions)
+
+        wait_until(lambda: all(topic_has_all_partitions(t) for t in topics),
+                   timeout_sec=90,
+                   backoff_sec=1,
+                   err_msg=f"Failed waiting for partitions to appear")
+
+    def wait_partitions_disappear(self, topics: list[TopicSpec]):
+        # we may be unlucky to query a slow node
+        wait_until(
+            lambda: all(self.client().describe_topic(t.name).partitions == []
+                        for t in topics),
+            timeout_sec=90,
+            backoff_sec=1,
+            err_msg=f"Failed waiting for partitions to disappear")
 
     def create_and_wait(self, migration: InboundDataMigration
                         | OutboundDataMigration):
@@ -160,22 +203,8 @@ class DataMigrationsApiTest(RedpandaTest):
             self.logger.info(f"create migration failed "
                              f"but migration {migration_id} present: {e}")
 
-        def migration_is_present(id: int):
-            return self.on_all_live_nodes(id, lambda m: True)
-
-        wait_until(
-            lambda: migration_is_present(migration_id), 30, 2,
-            f"Expected migration with id {migration_id} is not present")
+        self.wait_migration_appear(migration_id)
         return migration_id
-
-    def wait_partitions_disappear(self, topics: list[TopicSpec]):
-        # we may be unlucky to query a slow node
-        wait_until(
-            lambda: all(self.client().describe_topic(t.name).partitions == []
-                        for t in topics),
-            timeout_sec=30,
-            backoff_sec=1,
-            err_msg=f"Failed waiting for partitions to disappear")
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
@@ -281,6 +310,63 @@ class DataMigrationsApiTest(RedpandaTest):
                 self.logger.info(
                     f'topic {t.name} is {self.client().describe_topic(t.name)}'
                 )
+
+        # todo: fix rp_storage_tool to use overridden topic names
+        self.redpanda.si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest", "missing_segments"})
+
+    @cluster(num_nodes=3)
+    def test_higher_level_migration_api(self):
+        topics = [TopicSpec(partition_count=3) for i in range(5)]
+
+        for t in topics:
+            self.client().create_topic(t)
+
+        with Finjector(self.redpanda, self.scale).finj_thread():
+            # out
+            outbound_topics = [NamespacedTopic(t.name) for t in topics]
+            reply = self.admin.unmount_topics(outbound_topics).json()
+            self.logger.info(f"create migration reply: {reply}")
+            out_migration_id = reply["id"]
+
+            self.logger.info('waiting for partitions be deleted')
+            self.wait_partitions_disappear(topics)
+            self.logger.info('waiting for migration to be deleted')
+            self.wait_migration_disappear(out_migration_id)
+
+            migrations_map = self.get_migrations_map()
+            self.logger.info(f"migrations: {migrations_map}")
+            assert len(
+                migrations_map) == 0, "There should be no data migrations"
+
+            # in
+            inbound_topics = [
+                InboundTopic(NamespacedTopic(t.name),
+                             alias=\
+                                None if i == 0
+                                else NamespacedTopic(f"{t.name}-alias"))
+                for i, t in enumerate(topics[:3])
+            ]
+            inbound_topics_spec = [
+                TopicSpec(name=(it.alias or it.src_topic).topic,
+                          partition_count=3) for it in inbound_topics
+            ]
+            reply = self.admin.mount_topics(inbound_topics).json()
+            self.logger.info(f"create migration reply: {reply}")
+            in_migration_id = reply["id"]
+
+            self.logger.info('waiting for partitions to come back')
+            self.wait_partitions_appear(inbound_topics_spec)
+            self.logger.info('waiting for migration to be deleted')
+            self.wait_migration_disappear(in_migration_id)
+            for t in topics:
+                self.logger.info(
+                    f'topic {t.name} is {self.client().describe_topic(t.name)}'
+                )
+            migrations_map = self.get_migrations_map()
+            self.logger.info(f"migrations: {migrations_map}")
+            assert len(
+                migrations_map) == 0, "There should be no data migrations"
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(
