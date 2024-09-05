@@ -291,6 +291,13 @@ class SingleTopicTest(SingleFaultTestBase):
             TopicSpec(name="topic1", replication_factor=3, partition_count=1)
         ]
 
+        # TODO(ztlpn) We need this because of an RPC bug that causes the isolated
+        # node to be flooded with outdated RPCs once the network is healed.
+        # Remove after the bug is fixed.
+        for n in self.redpanda.nodes:
+            self.redpanda.set_extra_node_conf(
+                n, {"memory_allocation_warning_threshold": 2**20 + 1})
+
     def prepare(self, workload: workloads.WorkloadServiceBase,
                 timings: TimingConfig):
         admin = Admin(self.redpanda)
