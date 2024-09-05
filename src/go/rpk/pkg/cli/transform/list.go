@@ -67,7 +67,7 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 `,
 		Aliases: []string{"ls"},
 		Args:    cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if detailed {
 				if h, ok := f.Help([]detailedTransformMetadata{}); ok {

@@ -177,7 +177,7 @@ func createWatFromJavaScript(code []byte) string {
 	encoded := hex.EncodeToString(code)
 	escaped := strings.Builder{}
 	escaped.Grow(len(code) * 3)
-	// WebAssembly text format expects each escaped hex character (two ascii letters) to be preceeded by a backslash.
+	// WebAssembly text format expects each escaped hex character (two ascii letters) to be preceded by a backslash.
 	// So that hex a hex string where encoded = "deedbeef", escaped = "\de\ed\be\ef"
 	// See the spec here: https://webassembly.github.io/spec/core/text/values.html#text-string
 	for i := 0; i < len(encoded); i += 2 {
@@ -219,11 +219,11 @@ func buildJavaScript(ctx context.Context, fs afero.Fs, cfg project.Config) error
 		return err
 	}
 	wasmMerge := path.Join(bpRoot, "bin", "wasm-merge")
-	jsVmWasm := path.Join(bpRoot, "bin", "redpanda_js_transform")
+	jsVMWasm := path.Join(bpRoot, "bin", "redpanda_js_transform")
 	cmd = exec.CommandContext(
 		ctx,
 		wasmMerge,
-		jsVmWasm,
+		jsVMWasm,
 		"js_vm",
 		"dist/source.wat",
 		"redpanda_js_provider",

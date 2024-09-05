@@ -52,7 +52,7 @@ in earlier versions of redpanda, but are now managed via Redpanda's
 central configuration store (and via 'rpk cluster config edit').
 `,
 		Args: cobra.NoArgs,
-		Run: func(cmd *cobra.Command, propertyNames []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			p := cfg.VirtualProfile()

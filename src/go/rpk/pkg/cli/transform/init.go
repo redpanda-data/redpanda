@@ -221,7 +221,7 @@ func generateManifest(p transformProject) (map[string][]genFile, error) {
 		return map[string][]genFile{
 			p.Path: {
 				genFile{name: project.ConfigFileName, content: string(rpConfig)},
-				genFile{name: "package.json", content: template.WasmPackageJson(p.Name, false)},
+				genFile{name: "package.json", content: template.WasmPackageJSON(p.Name, false)},
 				genFile{name: "README.md", content: template.WasmJavaScriptReadme(false)},
 				genFile{name: "esbuild.js", content: template.WasmEsbuildFile(p.Name, false)},
 			},
@@ -233,7 +233,7 @@ func generateManifest(p transformProject) (map[string][]genFile, error) {
 		return map[string][]genFile{
 			p.Path: {
 				genFile{name: project.ConfigFileName, content: string(rpConfig)},
-				genFile{name: "package.json", content: template.WasmPackageJson(p.Name, true)},
+				genFile{name: "package.json", content: template.WasmPackageJSON(p.Name, true)},
 				genFile{name: "README.md", content: template.WasmJavaScriptReadme(true)},
 				genFile{name: "tsconfig.json", content: template.WasmTsConfig()},
 				genFile{name: "esbuild.js", content: template.WasmEsbuildFile(p.Name, true)},

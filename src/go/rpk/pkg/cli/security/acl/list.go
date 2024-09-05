@@ -49,7 +49,7 @@ resource names:
   * "literal" returns exact name matches
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help(&aclListOutput{}); ok {
 				out.Exit(h)

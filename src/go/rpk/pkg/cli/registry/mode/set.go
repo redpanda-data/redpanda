@@ -85,7 +85,7 @@ Set the schema registry mode to READWRITE in subjects foo and bar
 	cmd.Flags().BoolVar(&global, "global", false, "Set the global schema registry mode in addition to subject modes")
 	cmd.Flags().StringVar(&modeFlag, "mode", "", fmt.Sprintf("Schema registry mode to set. Supported values: %v (case insensitive)", strings.Join(supportedModes, ", ")))
 	cmd.MarkFlagRequired("mode")
-	cmd.RegisterFlagCompletionFunc("mode", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cmd.RegisterFlagCompletionFunc("mode", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return supportedModes, cobra.ShellCompDirectiveDefault
 	})
 	return cmd

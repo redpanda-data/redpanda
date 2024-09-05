@@ -56,7 +56,7 @@ func newLogsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 Data transform's STDOUT and STDERR are captured during runtime and written to 
 an internally managed topic _redpanda.transform_logs.
-This command ouputs logs for a single transform over a period of time and 
+This command outputs logs for a single transform over a period of time and 
 printing them to STDOUT. The logs can be printed in various formats.
 
 By default, only logs that have been emitted are displayed.
@@ -67,7 +67,7 @@ FILTERING
 The --head and --tail flags are mutually exclusive and limit the number of log
 entries from the beginning or end of the range, respectively.
 
-The --since and --until flags definate a time range. Use one of both flags to
+The --since and --until flags define a time range. Use one of both flags to
 limit the log output to a desired period of time.
 
 Both flags accept values in the following formats:
@@ -95,7 +95,7 @@ For example,
 
 The following command reads logs between noon and 1pm on March 12th:
 
-    rpk transform logs my-tranform --since=2024-03-12T12:00:00Z --until=2024-03-12T13:00:00Z
+    rpk transform logs my-transform --since=2024-03-12T12:00:00Z --until=2024-03-12T13:00:00Z
 
 FORMATTING
 
@@ -335,7 +335,7 @@ func (c *clientLogSource) PollFetches(ctx context.Context) (RecordIter, error) {
 	if fetches.IsClientClosed() {
 		return nil, kgo.ErrClientClosed
 	}
-	fetches.EachError(func(t string, p int32, err error) {
+	fetches.EachError(func(_ string, _ int32, err error) {
 		fmt.Fprintf(os.Stderr, "ERR: %v\n", err)
 	})
 	return fetches.RecordIter(), nil

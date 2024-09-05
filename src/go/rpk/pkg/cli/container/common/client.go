@@ -23,8 +23,8 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// Defines an interface with the functions from Docker's *client.Client that are
-// used, to make it possible to test the code that uses it.
+// Client defines an interface with the functions from Docker's *client.Client
+// that are used, to make it possible to test the code that uses it.
 type Client interface {
 	Close() error
 
@@ -84,21 +84,21 @@ type Client interface {
 	NetworkCreate(
 		ctx context.Context,
 		name string,
-		options types.NetworkCreate,
-	) (types.NetworkCreateResponse, error)
+		options network.CreateOptions,
+	) (network.CreateResponse, error)
 
 	NetworkRemove(ctx context.Context, networkID string) error
 
 	NetworkList(
 		ctx context.Context,
-		options types.NetworkListOptions,
-	) ([]types.NetworkResource, error)
+		options network.ListOptions,
+	) ([]network.Inspect, error)
 
 	NetworkInspect(
 		ctx context.Context,
 		networkID string,
-		options types.NetworkInspectOptions,
-	) (types.NetworkResource, error)
+		options network.InspectOptions,
+	) (network.Inspect, error)
 
 	IsErrNotFound(err error) bool
 

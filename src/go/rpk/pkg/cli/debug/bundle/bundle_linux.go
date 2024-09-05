@@ -649,7 +649,6 @@ func saveNTPDrift(ps *stepParams) step {
 				zap.L().Sugar().Debugf("Retrying (%d retries left)", retries-n)
 			}),
 		)
-
 		if err != nil {
 			return fmt.Errorf("error querying '%s': %w", host, err)
 		}
