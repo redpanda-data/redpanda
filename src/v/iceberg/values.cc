@@ -18,6 +18,22 @@ namespace iceberg {
 
 namespace {
 
+struct primitive_copying_visitor {
+    template<typename PrimitiveT>
+    primitive_value operator()(const PrimitiveT& v) const {
+        return v;
+    }
+    primitive_value operator()(const string_value& v) const {
+        return string_value{v.val.copy()};
+    }
+    primitive_value operator()(const fixed_value& v) const {
+        return fixed_value{v.val.copy()};
+    }
+    primitive_value operator()(const binary_value& v) const {
+        return binary_value{v.val.copy()};
+    }
+};
+
 struct primitive_hashing_visitor {
     size_t operator()(const boolean_value& v) const {
         return std::hash<bool>()(v.val);
@@ -111,6 +127,10 @@ void ostream_val_ptr(std::ostream& o, const std::optional<value>& v) {
 }
 
 } // namespace
+
+primitive_value make_copy(const primitive_value& v) {
+    return std::visit(primitive_copying_visitor{}, v);
+}
 
 struct primitive_value_comparison_visitor {
     template<typename T, typename U>

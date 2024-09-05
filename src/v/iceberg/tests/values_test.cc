@@ -446,3 +446,11 @@ TEST(ValuesTest, TestHashContainer) {
     }
     ASSERT_EQ(expected_size, vs.size());
 }
+
+TEST(ValuesTest, TestPrimitivesCopy) {
+    auto vals = unique_values_primitive_types();
+    for (const auto& v : vals) {
+        auto v_copy = make_copy(std::get<primitive_value>(v));
+        ASSERT_EQ(v, value{std::move(v_copy)});
+    }
+}
