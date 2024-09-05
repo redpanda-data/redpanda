@@ -7,8 +7,8 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/testcontainers/testcontainers-go v0.33.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.33.0
-	github.com/twmb/franz-go v1.17.0
-	github.com/twmb/franz-go/pkg/kadm v1.12.0
+	github.com/twmb/franz-go v1.17.1
+	github.com/twmb/franz-go/pkg/kadm v1.13.0
 )
 
 require (
@@ -67,14 +67,14 @@ require (
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.8.0 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.8.0 // indirect
-	github.com/twmb/franz-go/pkg/sr v1.0.1
+	github.com/twmb/franz-go/pkg/sr v1.1.0
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.53.0 // indirect
 	go.opentelemetry.io/otel v1.28.0 // indirect
 	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	go.opentelemetry.io/otel/trace v1.28.0 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/mod v0.19.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
