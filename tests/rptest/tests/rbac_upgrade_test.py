@@ -8,6 +8,8 @@
 
 import time
 
+from ducktape.mark import ok_to_fail_fips
+
 from rptest.services.admin import Admin, Role, RoleMember
 from rptest.util import wait_until_result
 from rptest.tests.redpanda_test import RedpandaTest
@@ -42,6 +44,7 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         return self.redpanda.search_log_any("Enterprise feature(s).*")
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @ok_to_fail_fips  # See NOTE below
     def test_rbac_migration(self):
         # Create some users to add to the default role
         self.admin.create_user("alice")
@@ -76,5 +79,7 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
             err_msg="Timeout waiting for default role to be created")
 
         # Verify that we don't get a license nag for the default role
+        # NOTE: This assertion will FAIL if running in FIPS mode because
+        # being in FIPS mode will trigger the license nag
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
         assert not self._has_license_nag()
