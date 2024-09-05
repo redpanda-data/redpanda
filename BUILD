@@ -1,4 +1,4 @@
-load("@gazelle//:def.bzl", "gazelle")
+load("@gazelle//:def.bzl", "gazelle", "gazelle_test")
 
 # gazelle:prefix github.com/redpanda-data/redpanda
 # TODO(bazel): Build RPK with bazel
@@ -10,3 +10,10 @@ load("@gazelle//:def.bzl", "gazelle")
 # We prefer BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
 gazelle(name = "gazelle")
+
+gazelle_test(
+    name = "gazelle_test",
+    # TODO(bazel): support this attribute
+    # size = "small",
+    workspace = "//:BUILD",
+)

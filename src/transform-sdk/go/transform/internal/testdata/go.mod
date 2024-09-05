@@ -7,4 +7,6 @@ require (
 	github.com/redpanda-data/redpanda/src/transform-sdk/go/transform v0.0.1
 )
 
+require github.com/stretchr/testify v1.9.0 // indirect
+
 replace github.com/redpanda-data/redpanda/src/transform-sdk/go/transform => ../../
