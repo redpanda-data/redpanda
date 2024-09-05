@@ -294,6 +294,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "schema_avro",
+    srcs = [
+        "schema_avro.cc",
+    ],
+    hdrs = [
+        "schema_avro.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        "@avro",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_json",
     srcs = [
         "schema_json.cc",
@@ -469,5 +485,24 @@ redpanda_cc_library(
         "@abseil-cpp//absl/numeric:int128",
         "@boost//:container_hash",
         "@fmt",
+    ],
+)
+
+redpanda_cc_library(
+    name = "values_avro",
+    srcs = [
+        "values_avro.cc",
+    ],
+    hdrs = [
+        "values_avro.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":values",
+        "@avro",
     ],
 )

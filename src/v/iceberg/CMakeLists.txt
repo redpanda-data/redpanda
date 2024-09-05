@@ -38,6 +38,7 @@ v_cc_library(
     partition_key_type.cc
     partition_json.cc
     schema.cc
+    schema_avro.cc
     schema_json.cc
     snapshot_json.cc
     struct_accessor.cc
@@ -47,6 +48,7 @@ v_cc_library(
     transform_json.cc
     transform_utils.cc
     values.cc
+    values_avro.cc
   DEPS
     Avro::avro
     v::bytes

@@ -14,6 +14,7 @@ rp_test(
     partition_key_test.cc
     partition_key_type_test.cc
     partition_test.cc
+    schema_avro_test.cc
     schema_json_test.cc
     schema_test.cc
     snapshot_json_test.cc
@@ -23,6 +24,7 @@ rp_test(
     transform_json_test.cc
     transform_utils_test.cc
     values_test.cc
+    values_avro_test.cc
     value_generator.cc
   LIBRARIES
     Avro::avro
