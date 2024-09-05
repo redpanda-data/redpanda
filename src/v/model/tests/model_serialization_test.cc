@@ -10,7 +10,6 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "serde/serde.h"
 #include "test_utils/rpc.h"
 
 #include <seastar/testing/thread_test_case.hh>
