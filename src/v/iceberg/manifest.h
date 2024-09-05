@@ -9,7 +9,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
-#include "iceberg/manifest_entry.avrogen.h"
+#include "iceberg/manifest_entry.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
 
@@ -37,17 +37,8 @@ struct manifest_metadata {
 
 struct manifest {
     manifest_metadata metadata;
-
-    // TODO: the manifest_entry is code-generated with avrogencpp, which is
-    // restrictive for a few reasons:
-    // - there is no built-in comparator
-    // - comparators are difficult to implement since the generated code makes
-    //   heavy use of std::any in Avro union types
-    // - the manifest_entry r102 (partition) field is incomplete, as it depends
-    //   on runtime partitioning and can't be statically generated
-    // Rather than using these generated structs, write explicit structs to
-    // represent the entries, and only use the Avro structs for serialization.
-    chunked_vector<avrogen::manifest_entry> entries;
+    chunked_vector<manifest_entry> entries;
+    friend bool operator==(const manifest&, const manifest&) = default;
 };
 
 } // namespace iceberg

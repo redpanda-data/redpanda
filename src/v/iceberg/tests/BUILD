@@ -123,6 +123,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:manifest_file_gen",
         "//src/v/iceberg:manifest_list",
         "//src/v/iceberg:manifest_list_avro",
+        "//src/v/iceberg:partition_key_type",
         "//src/v/iceberg:schema_json",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:runfiles",

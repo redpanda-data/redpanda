@@ -52,6 +52,7 @@ struct data_file {
     // - split_offsets
     // - equality_ids
     // - sort_order_ids
+    friend bool operator==(const data_file&, const data_file&) = default;
 };
 
 enum class manifest_entry_status {
@@ -69,6 +70,8 @@ struct manifest_entry {
     std::optional<sequence_number> sequence_number;
     std::optional<file_sequence_number> file_sequence_number;
     data_file data_file;
+    friend bool operator==(const manifest_entry&, const manifest_entry&)
+      = default;
 };
 
 } // namespace iceberg
