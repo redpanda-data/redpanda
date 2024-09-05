@@ -38,6 +38,28 @@ partition_key partition_key::create(
     return partition_key{std::move(ret_val)};
 }
 
+partition_key partition_key::copy() const {
+    auto ret_val = std::make_unique<struct_value>();
+    for (const auto& partition_field : val->fields) {
+        if (!partition_field.has_value()) {
+            ret_val->fields.emplace_back(std::nullopt);
+            continue;
+        }
+        // Partition keys should only be comprised of primitive values, per the
+        // partitioning transformations defined by the Iceberg spec.
+        const auto& partition_val = partition_field.value();
+        if (!std::holds_alternative<primitive_value>(partition_val)) {
+            throw std::invalid_argument(fmt::format(
+              "Partition key holds unexpected non-primitive value: {}",
+              partition_val));
+        }
+        // NOTE: primitive values all have default copy constructors.
+        ret_val->fields.emplace_back(
+          make_copy(std::get<primitive_value>(partition_val)));
+    }
+    return partition_key{std::move(ret_val)};
+}
+
 bool operator==(const partition_key& lhs, const partition_key& rhs) {
     return lhs.val == rhs.val;
 }
