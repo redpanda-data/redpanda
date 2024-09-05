@@ -2029,12 +2029,8 @@ struct partition_manifest::serialization_cursor {
     bool epilogue_done{false};
 };
 
-ss::future<serialized_data_stream> partition_manifest::serialize() const {
-    auto serialized = to_iobuf();
-    size_t size_bytes = serialized.size_bytes();
-    co_return serialized_data_stream{
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
+ss::future<iobuf> partition_manifest::serialize_buf() const {
+    return ss::make_ready_future<iobuf>(to_iobuf());
 }
 
 void partition_manifest::serialize_json(std::ostream& out) const {

@@ -99,8 +99,6 @@ struct archival_metadata_stm_base_fixture
             [port = httpd_port_number()](cloud_storage::configuration& cfg) {
                 cfg.bucket_name = cloud_storage_clients::bucket_name(
                   "panda-bucket");
-                cfg.metrics_disabled
-                  = cloud_storage::remote_metrics_disabled::yes;
                 cfg.connection_limit = cloud_storage::connection_limit(10);
                 cfg.client_config = get_s3_configuration(port);
             })

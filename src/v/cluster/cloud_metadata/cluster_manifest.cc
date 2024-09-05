@@ -102,8 +102,7 @@ void cluster_metadata_manifest::load_from_json(const rapidjson::Document& doc) {
     }
 }
 
-ss::future<cloud_storage::serialized_data_stream>
-cluster_metadata_manifest::serialize() const {
+ss::future<iobuf> cluster_metadata_manifest::serialize_buf() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -114,10 +113,7 @@ cluster_metadata_manifest::serialize() const {
           "could not serialize tx range manifest {}",
           get_manifest_path()));
     }
-    size_t size_bytes = serialized.size_bytes();
-    co_return cloud_storage::serialized_data_stream{
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
+    co_return serialized;
 }
 
 void cluster_metadata_manifest::to_json(std::ostream& out) const {

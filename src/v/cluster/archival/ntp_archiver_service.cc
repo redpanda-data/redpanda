@@ -44,7 +44,9 @@
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "utils/human.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 #include "utils/stream_utils.h"
 
 #include <seastar/core/abort_source.hh>
@@ -1204,13 +1206,13 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
-    auto lazy_abort_source = cloud_storage::lazy_abort_source{
+    auto lazy_abort = lazy_abort_source{
       [this]() { return upload_should_abort(); },
     };
 
     // This struct wraps a stream object and exposes the stream_provider
     // interface for compatibility with the remote object API.
-    struct stream_wrapper final : public storage::stream_provider {
+    struct stream_wrapper final : public stream_provider {
         std::optional<ss::input_stream<char>> stream;
 
         stream_wrapper(const stream_wrapper&) = delete;
@@ -1240,7 +1242,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     std::optional<ss::input_stream<char>> stream_state = std::move(stream);
     auto reset_func = [this, candidate, &stream_state] {
-        using provider_t = std::unique_ptr<storage::stream_provider>;
+        using provider_t = std::unique_ptr<stream_provider>;
         // On first attempt to upload, the stream-ref passed in is used.
         if (stream_state.has_value()) {
             auto f = ss::make_ready_future<provider_t>(
@@ -1267,7 +1269,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           candidate.content_length,
           std::move(reset_func),
           fib,
-          lazy_abort_source);
+          lazy_abort);
     } catch (const ss::gate_closed_exception&) {
         response = cloud_storage::upload_result::cancelled;
     } catch (const ss::abort_requested_exception&) {

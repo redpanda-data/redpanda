@@ -476,7 +476,7 @@ ss::future<upload_result> remote::upload_controller_snapshot(
   retry_chain_node& parent,
   lazy_abort_source& lazy_abort_source) {
     auto reset_str = [&file] {
-        using provider_t = std::unique_ptr<storage::stream_provider>;
+        using provider_t = std::unique_ptr<stream_provider>;
         ss::file_input_stream_options opts;
         return ss::make_ready_future<provider_t>(
           std::make_unique<storage::segment_reader_handle>(
@@ -1525,18 +1525,6 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           upload_type);
     }
     co_return upload_result::timedout;
-}
-
-ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }
-
-bool lazy_abort_source::abort_requested() {
-    auto maybe_abort = _predicate();
-    if (maybe_abort.has_value()) {
-        _abort_reason = *maybe_abort;
-        return true;
-    } else {
-        return false;
-    }
 }
 
 ss::future<>

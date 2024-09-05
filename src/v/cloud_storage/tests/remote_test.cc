@@ -32,7 +32,9 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/tmp_dir.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/future.hh>
@@ -85,8 +87,7 @@ static constexpr std::string_view plural_delete_error = R"json(
     </Error>
 </DeleteResult>)json";
 
-static cloud_storage::lazy_abort_source always_continue{
-  []() { return std::nullopt; }};
+static lazy_abort_source always_continue{[]() { return std::nullopt; }};
 
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
@@ -185,8 +186,7 @@ TEST_P(all_types_remote_fixture, test_upload_segment) { // NOLINT
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -213,8 +213,7 @@ TEST_P(
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -240,8 +239,7 @@ TEST_P(all_types_remote_fixture, test_upload_segment_timeout) { // NOLINT
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -264,8 +262,7 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -340,7 +337,7 @@ TEST_P(all_types_remote_fixture, test_download_segment_range) {
             bucket_name,
             path,
             manifest_payload.size(),
-            []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+            []() -> ss::future<std::unique_ptr<stream_provider>> {
                 iobuf out;
                 out.append(manifest_payload.data(), manifest_payload.size());
                 co_return std::make_unique<storage::segment_reader_handle>(
@@ -393,8 +390,7 @@ TEST_P(all_types_remote_fixture, test_segment_exists) { // NOLINT
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -438,8 +434,7 @@ TEST_P(all_types_remote_fixture, test_segment_delete) { // NOLINT
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -1172,8 +1167,7 @@ TEST_P(
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(
@@ -1261,8 +1255,7 @@ TEST_P(
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
     uint64_t clen = manifest_payload.size();
-    auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
         co_return std::make_unique<storage::segment_reader_handle>(

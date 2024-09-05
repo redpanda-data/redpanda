@@ -30,7 +30,7 @@ public:
 
     ss::future<> update(ss::input_stream<char> is) override;
 
-    ss::future<serialized_data_stream> serialize() const override;
+    ss::future<iobuf> serialize_buf() const override;
 
     const remote_label& get_source_label() const { return _source_label; }
 

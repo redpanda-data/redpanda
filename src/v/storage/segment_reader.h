@@ -18,6 +18,7 @@
 #include "storage/fs_utils.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -32,12 +33,6 @@
 namespace storage {
 
 class segment_reader;
-
-struct stream_provider {
-    virtual ss::input_stream<char> take_stream() = 0;
-    virtual ss::future<> close() = 0;
-    virtual ~stream_provider() = default;
-};
 
 /**
  * A segment reader handle confers the right to use a file descriptor

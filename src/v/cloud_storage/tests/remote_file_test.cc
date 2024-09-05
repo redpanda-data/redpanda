@@ -16,6 +16,7 @@
 #include "cloud_storage/tests/cache_test_fixture.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "test_utils/fixture.h"
+#include "utils/lazy_abort_source.h"
 
 #include <seastar/core/seastar.hh>
 #include <seastar/testing/test_case.hh>
@@ -26,7 +27,7 @@
 namespace {
 
 ss::abort_source never_abort;
-cloud_storage::lazy_abort_source always_continue{[]() { return std::nullopt; }};
+lazy_abort_source always_continue{[]() { return std::nullopt; }};
 constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
 

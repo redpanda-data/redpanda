@@ -24,7 +24,9 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -36,27 +38,6 @@
 namespace cloud_storage {
 
 class materialized_resources;
-
-/// \brief Predicate required to continue operation
-///
-/// Describes a predicate to be evaluated before starting an expensive
-/// operation, or to be evaluated when an operation has failed, to find
-/// the reason for failure
-struct lazy_abort_source {
-    /// Predicate to be evaluated before an operation. Evaluates to true when
-    /// the operation should be aborted, false otherwise.
-    using predicate_t = ss::noncopyable_function<std::optional<ss::sstring>()>;
-
-    lazy_abort_source(predicate_t predicate)
-      : _predicate{std::move(predicate)} {}
-
-    bool abort_requested();
-    ss::sstring abort_reason() const;
-
-private:
-    ss::sstring _abort_reason;
-    predicate_t _predicate;
-};
 
 static constexpr ss::shard_id auth_refresh_shard_id = 0;
 
@@ -189,7 +170,7 @@ public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
     using reset_input_stream = ss::noncopyable_function<
-      ss::future<std::unique_ptr<storage::stream_provider>>()>;
+      ss::future<std::unique_ptr<stream_provider>>()>;
 
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation

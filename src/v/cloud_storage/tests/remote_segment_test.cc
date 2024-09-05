@@ -24,7 +24,9 @@
 #include "model/timeout_clock.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -51,9 +53,7 @@ namespace {
 remote_path_provider path_provider(std::nullopt, std::nullopt);
 } // namespace
 
-static cloud_storage::lazy_abort_source always_continue([]() {
-    return std::nullopt;
-});
+static lazy_abort_source always_continue([]() { return std::nullopt; });
 
 /**
  * Helper: generate a function suitable for passing to upload_segment(),
@@ -62,7 +62,7 @@ static cloud_storage::lazy_abort_source always_continue([]() {
 remote::reset_input_stream make_reset_fn(iobuf& segment_bytes) {
     return [&segment_bytes] {
         auto out = iobuf_deep_copy(segment_bytes);
-        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(
+        return ss::make_ready_future<std::unique_ptr<stream_provider>>(
           std::make_unique<storage::segment_reader_handle>(
             make_iobuf_input_stream(std::move(out))));
     };

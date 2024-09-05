@@ -295,6 +295,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "stream_provider",
+    hdrs = [
+        "stream_provider.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "stream_utils",
     hdrs = [
         "stream_utils.h",
@@ -589,6 +601,18 @@ redpanda_cc_library(
         "ema.h",
     ],
     include_prefix = "utils",
+)
+
+redpanda_cc_library(
+    name = "lazy_abort_source",
+    hdrs = [
+        "lazy_abort_source.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(

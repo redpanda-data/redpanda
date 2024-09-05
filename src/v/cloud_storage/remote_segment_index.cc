@@ -345,7 +345,7 @@ struct offset_index_header
     }
 };
 
-iobuf offset_index::to_iobuf() {
+iobuf offset_index::to_iobuf() const {
     offset_index_header hdr{
       .min_file_pos_step = _min_file_pos_step,
       .num_elements = _pos,

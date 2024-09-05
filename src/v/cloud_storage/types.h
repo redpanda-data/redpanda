@@ -390,9 +390,40 @@ enum class upload_type {
     inventory_configuration,
 };
 
+constexpr std::string_view to_string(upload_type t) {
+    switch (t) {
+        using enum upload_type;
+    case object:
+        return "object";
+    case segment_index:
+        return "segment-index";
+    case manifest:
+        return "manifest";
+    case group_offsets_snapshot:
+        return "group-offsets-snapshot";
+    case download_result_file:
+        return "download-result-file";
+    case remote_lifecycle_marker:
+        return "remote-lifecycle-marker";
+    case inventory_configuration:
+        return "inventory-configuration";
+    }
+}
 std::ostream& operator<<(std::ostream&, upload_type);
 
 enum class download_type { object, segment_index, inventory_report_manifest };
+
+constexpr std::string_view to_string(download_type t) {
+    switch (t) {
+        using enum download_type;
+    case object:
+        return "object";
+    case segment_index:
+        return "segment-index";
+    case inventory_report_manifest:
+        return "inventory-report-manifest";
+    }
+}
 
 std::ostream& operator<<(std::ostream&, download_type);
 
