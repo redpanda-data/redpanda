@@ -510,6 +510,34 @@ static constexpr auto compatibility_test_cases = std::to_array<
 })",
     .reader_is_compatible_with_writer = false,
   },
+  // object checks: dependency "a" changed from array to object
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"]}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": {"type": "number"}}
+})",
+    .reader_is_compatible_with_writer = false,
+  },
+  // object checks: dependency "a" changed from object to array
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": {"type": "number"}}
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "dependencies": {"a": ["b"]}
+})",
+    .reader_is_compatible_with_writer = false,
+  },
   // array checks: size increase is not allowed
   {
     .reader_schema = R"({"type": "array", "minItems": 2, "maxItems": 10})",

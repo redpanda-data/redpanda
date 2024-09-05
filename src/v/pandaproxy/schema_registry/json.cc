@@ -1153,45 +1153,56 @@ bool is_object_dependencies_superset(
     // older string array needs to be a subset of newer string array.
     // older schema needs to be compatible with newer schema
 
-    auto [maybe_skip, older_p, newer_p] = extract_property_and_gate_check(
-      older, newer, "dependencies");
-    if (maybe_skip.has_value()) {
-        return maybe_skip.value();
-    }
-    // older and newer have "dependencies"
+    auto older_p = get_object_or_empty(ctx.older, older, "dependencies");
+    auto newer_p = get_object_or_empty(ctx.newer, newer, "dependencies");
 
     // all dependencies in older need to carry over in newer, and need to be
     // compatible
     // TODO: n^2 search
     return std::ranges::all_of(
-      older_p->GetObject(),
-      [&ctx,
-       newer_dep = newer_p->GetObject()](json::Value::Member const& older_dep) {
-          auto n_it = newer_dep.FindMember(older_dep.name);
-          if (n_it == newer_dep.MemberEnd()) {
-              // dependency definition removed, not compatible
-              return false;
-          }
-
-          // check that the dependency values for this name are compatible
+      older_p, [&](json::Value::Member const& older_dep) {
           auto const& o = older_dep.value;
-          auto const& n = n_it->value;
+          auto n_it = newer_p.FindMember(older_dep.name);
 
-          if (o.IsArray() && n.IsArray()) {
+          if (o.IsObject()) {
+              if (n_it == newer_p.MemberEnd()) {
+                  return false;
+              }
+
+              auto const& n = n_it->value;
+
+              if (!n.IsObject()) {
+                  return false;
+              }
+
+              // schemas: o and n needs to be compatible
+              return is_superset(ctx, o, n);
+          } else if (o.IsArray()) {
+              if (n_it == newer_p.MemberEnd()) {
+                  return false;
+              }
+
+              auto const& n = n_it->value;
+
+              if (!n.IsArray()) {
+                  return false;
+              }
               // string array: n needs to be a a superset of o
               // TODO: n^2 search
-              return std::ranges::all_of(
+              bool n_superset_of_o = std::ranges::all_of(
                 o.GetArray(), [n_array = n.GetArray()](json::Value const& p) {
                     return std::ranges::find(n_array, p) != n_array.End();
                 });
+              if (!n_superset_of_o) {
+                  return false;
+              }
+              return true;
+          } else {
+              throw as_exception(invalid_schema(fmt::format(
+                "dependencies can only be an array or an object for valid "
+                "schemas but it was: {}",
+                pj{o})));
           }
-
-          if (o.IsObject() && n.IsObject()) {
-              // schemas: o and n needs to be compatible
-              return is_superset(ctx, o, n);
-          }
-
-          return false;
       });
 }
 
