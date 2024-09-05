@@ -66,6 +66,7 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
     for (auto& cg : idm.groups) {
         migration.consumer_groups.push(cg);
     }
+    migration.auto_advance = idm.auto_advance;
     ret.migration = migration;
     return ret;
 }
@@ -87,6 +88,7 @@ ss::httpd::migration_json::outbound_migration_state to_admin_type(
     for (auto& cg : odm.groups) {
         migration.consumer_groups.push(cg);
     }
+    migration.auto_advance = odm.auto_advance;
     ret.migration = migration;
     return ret;
 }

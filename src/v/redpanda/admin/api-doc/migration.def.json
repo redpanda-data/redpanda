@@ -42,6 +42,10 @@
         },
         "copy_to": {
             "type": "bucket_configuration"
+        },
+        "auto_advance": {
+            "type": "boolean",
+            "description": "If set, migration does not need manual actions to progress"
         }
     }
 },
@@ -66,6 +70,10 @@
             "items": {
                 "type": "string"
             }
+        },
+        "auto_advance": {
+            "type": "boolean",
+            "description": "If set, migration does not need manual actions to progress"
         }
     },
     "required": [
@@ -81,7 +89,7 @@
         },
         "alias": {
             "description": "Name of the topic in the destination cluster",
-            "type":  "namespaced_topic"
+            "type": "namespaced_topic"
         }
     }
 },

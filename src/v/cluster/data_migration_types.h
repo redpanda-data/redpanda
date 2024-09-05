@@ -176,13 +176,15 @@ struct inbound_topic
  */
 struct inbound_migration
   : serde::
-      envelope<inbound_migration, serde::version<0>, serde::compat_version<0>> {
+      envelope<inbound_migration, serde::version<1>, serde::compat_version<0>> {
     chunked_vector<inbound_topic> topics;
     chunked_vector<consumer_group> groups;
+    // run the migration through stages without explicit user action
+    bool auto_advance = false;
 
     inbound_migration copy() const;
 
-    auto serde_fields() { return std::tie(topics, groups); }
+    auto serde_fields() { return std::tie(topics, groups, auto_advance); }
 
     friend bool operator==(const inbound_migration&, const inbound_migration&)
       = default;
@@ -218,7 +220,7 @@ struct copy_target
 struct outbound_migration
   : serde::envelope<
       outbound_migration,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     // topics which ownership should be released
     chunked_vector<model::topic_namespace> topics;
@@ -227,10 +229,14 @@ struct outbound_migration
     // optional target where the data should be copied to in the process of
     // migration
     std::optional<copy_target> copy_to;
+    // run the migration through stages without explicit user action
+    bool auto_advance = false;
 
     outbound_migration copy() const;
 
-    auto serde_fields() { return std::tie(topics, groups, copy_to); }
+    auto serde_fields() {
+        return std::tie(topics, groups, copy_to, auto_advance);
+    }
 
     friend bool operator==(const outbound_migration&, const outbound_migration&)
       = default;

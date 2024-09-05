@@ -37,12 +37,18 @@ data_migration copy_migration(const data_migration& migration) {
 }
 
 inbound_migration inbound_migration::copy() const {
-    return inbound_migration{.topics = topics.copy(), .groups = groups.copy()};
+    return inbound_migration{
+      .topics = topics.copy(),
+      .groups = groups.copy(),
+      .auto_advance = auto_advance};
 }
 
 outbound_migration outbound_migration::copy() const {
     return outbound_migration{
-      .topics = topics.copy(), .groups = groups.copy(), .copy_to = copy_to};
+      .topics = topics.copy(),
+      .groups = groups.copy(),
+      .copy_to = copy_to,
+      .auto_advance = auto_advance};
 }
 
 std::ostream& operator<<(std::ostream& o, state state) {
@@ -114,19 +120,21 @@ std::ostream& operator<<(std::ostream& o, const copy_target& t) {
 std::ostream& operator<<(std::ostream& o, const inbound_migration& dm) {
     fmt::print(
       o,
-      "{{topics: {}, consumer_groups: {}}}",
+      "{{topics: {}, consumer_groups: {}, auto_advance: {}}}",
       fmt::join(dm.topics, ", "),
-      fmt::join(dm.groups, ", "));
+      fmt::join(dm.groups, ", "),
+      dm.auto_advance);
     return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const outbound_migration& dm) {
     fmt::print(
       o,
-      "{{topics: {}, consumer_groups: {}, copy_to: {}}}",
+      "{{topics: {}, consumer_groups: {}, copy_to: {}, auto_advance: {}}}",
       fmt::join(dm.topics, ", "),
       fmt::join(dm.groups, ", "),
-      dm.copy_to);
+      dm.copy_to,
+      dm.auto_advance);
     return o;
 }
 
