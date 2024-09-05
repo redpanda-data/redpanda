@@ -179,8 +179,6 @@ class DataMigrationsApiTest(RedpandaTest):
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
-        self.finjector = Finjector(self.redpanda, self.test_context)
-
         topics = [TopicSpec(partition_count=3) for i in range(5)]
 
         for t in topics:
@@ -233,7 +231,6 @@ class DataMigrationsApiTest(RedpandaTest):
             self.wait_partitions_disappear(topics)
 
             # in
-            #alias=None if i == 0 else NamespacedTopic(f"topic-{i}-alias"))
             inbound_topics = [
                 InboundTopic(NamespacedTopic(t.name),
                              alias=\
