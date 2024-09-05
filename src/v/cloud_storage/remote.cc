@@ -71,11 +71,9 @@ namespace cloud_storage {
 using namespace std::chrono_literals;
 
 remote::remote(
-  ss::sharded<cloud_storage_clients::client_pool>& clients,
-  const cloud_storage_clients::client_configuration& conf,
-  model::cloud_credentials_source cloud_credentials_source)
-  : _pool(clients)
-  , _io(_pool, conf, cloud_credentials_source)
+  ss::sharded<cloud_io::remote>& io,
+  const cloud_storage_clients::client_configuration& conf)
+  : _io(io)
   , _materialized(std::make_unique<materialized_resources>())
   , _probe(
       remote_metrics_disabled(static_cast<bool>(
@@ -83,29 +81,23 @@ remote::remote(
       remote_metrics_disabled(static_cast<bool>(std::visit(
         [](auto&& cfg) { return cfg.disable_public_metrics; }, conf))),
       *_materialized,
-      _io.resources()) {}
+      _io.local().resources()) {}
 
-remote::remote(
-  ss::sharded<cloud_storage_clients::client_pool>& pool,
-  const configuration& conf)
-  : remote(pool, conf.client_config, conf.cloud_credentials_source) {}
+remote::remote(ss::sharded<cloud_io::remote>& io, const configuration& conf)
+  : remote(io, conf.client_config) {}
 
 remote::~remote() {
     // This is declared in the .cc to avoid header trying to
     // link with destructors for unique_ptr wrapped members
 }
 
-ss::future<> remote::start() {
-    co_await _io.start();
-    co_await _materialized->start();
-}
+ss::future<> remote::start() { co_await _materialized->start(); }
 
 ss::future<> remote::stop() {
     cst_log.debug("Stopping remote...");
     _as.request_abort();
     co_await _materialized->stop();
     co_await _gate.close();
-    co_await _io.stop();
     cst_log.debug("Stopped remote...");
 }
 

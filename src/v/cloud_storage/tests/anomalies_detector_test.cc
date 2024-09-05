@@ -240,13 +240,20 @@ public:
                  }))
           .get();
 
-        _remote
+        _io
           .start(
             std::ref(_pool),
             ss::sharded_parameter(
               [this] { return get_client_configuration(); }),
             ss::sharded_parameter(
               [] { return model::cloud_credentials_source::config_file; }))
+          .get();
+        _io.invoke_on_all([](cloud_io::remote& io) { return io.start(); })
+          .get();
+        _remote
+          .start(std::ref(_io), ss::sharded_parameter([this] {
+                     return get_client_configuration();
+                 }))
           .get();
 
         _remote
@@ -259,6 +266,7 @@ public:
             _pool.local().shutdown_connections();
         }
         _remote.stop().get();
+        _io.stop().get();
         _pool.stop().get();
     }
 
@@ -497,6 +505,7 @@ private:
     retry_chain_logger _rtc_logger;
 
     ss::sharded<cloud_storage_clients::client_pool> _pool;
+    ss::sharded<cloud_io::remote> _io;
     ss::sharded<cloud_storage::remote> _remote;
 
     cloud_storage::partition_manifest _stm_manifest;

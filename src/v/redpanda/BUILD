@@ -16,6 +16,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_io:remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",

@@ -70,11 +70,19 @@ struct cloud_storage_fixture : s3_imposter_fixture {
           .get();
 
         pool.start(10, ss::sharded_parameter([this] { return conf; })).get();
-        api
+        cloud_io
           .start(
             std::ref(pool),
             ss::sharded_parameter([this] { return conf; }),
             ss::sharded_parameter([] { return config_file; }))
+          .get();
+        cloud_io
+          .invoke_on_all(
+            [](cloud_io::remote& cloud_io) { return cloud_io.start(); })
+          .get();
+        api
+          .start(
+            std::ref(cloud_io), ss::sharded_parameter([this] { return conf; }))
           .get();
         api
           .invoke_on_all([](cloud_storage::remote& api) { return api.start(); })
@@ -86,6 +94,7 @@ struct cloud_storage_fixture : s3_imposter_fixture {
             pool.local().shutdown_connections();
         }
         api.stop().get();
+        cloud_io.stop().get();
         pool.stop().get();
         cache.stop().get();
         tmp_directory.remove().get();
@@ -99,5 +108,6 @@ struct cloud_storage_fixture : s3_imposter_fixture {
     ss::tmp_dir tmp_directory;
     ss::sharded<cloud_storage::cache> cache;
     ss::sharded<cloud_storage_clients::client_pool> pool;
+    ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<remote> api;
 };

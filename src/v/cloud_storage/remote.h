@@ -144,9 +144,8 @@ public:
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
     remote(
-      ss::sharded<cloud_storage_clients::client_pool>& clients,
-      const cloud_storage_clients::client_configuration& conf,
-      model::cloud_credentials_source cloud_credentials_source);
+      ss::sharded<cloud_io::remote>& io,
+      const cloud_storage_clients::client_configuration& conf);
 
     ~remote() override;
 
@@ -154,8 +153,7 @@ public:
     ///
     /// \param conf is an archival configuration
     explicit remote(
-      ss::sharded<cloud_storage_clients::client_pool>& pool,
-      const configuration& conf);
+      ss::sharded<cloud_io::remote>& io, const configuration& conf);
 
     /// \brief Start the remote
     ss::future<> start();
@@ -483,8 +481,8 @@ public:
     ss::abort_source& as() { return _as; }
 
 private:
-    cloud_io::remote& io() { return _io; }
-    const cloud_io::remote& io() const { return _io; }
+    cloud_io::remote& io() { return _io.local(); }
+    const cloud_io::remote& io() const { return _io.local(); }
 
     template<
       typename FailedUploadMetricFn,
@@ -547,10 +545,9 @@ private:
     std::function<void(size_t)>
     make_notify_cb(api_activity_type t, retry_chain_node& retry);
 
-    ss::sharded<cloud_storage_clients::client_pool>& _pool;
+    ss::sharded<cloud_io::remote>& _io;
     ss::gate _gate;
     ss::abort_source _as;
-    cloud_io::remote _io;
     std::unique_ptr<materialized_resources> _materialized;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
