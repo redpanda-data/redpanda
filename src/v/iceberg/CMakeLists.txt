@@ -41,6 +41,7 @@ v_cc_library(
     schema_json.cc
     snapshot_json.cc
     struct_accessor.cc
+    table_metadata_json.cc
     time_transform_visitor.cc
     transform.cc
     transform_json.cc

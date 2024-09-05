@@ -346,6 +346,49 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_metadata",
+    hdrs = [
+        "table_metadata.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest",
+        ":manifest_entry",
+        ":partition",
+        ":schema",
+        ":snapshot",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/utils:named_type",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_metadata_json",
+    srcs = [
+        "table_metadata_json.cc",
+    ],
+    hdrs = [
+        "table_metadata_json.h",
+    ],
+    implementation_deps = [
+        ":json_utils",
+        ":partition_json",
+        ":schema_json",
+        ":snapshot",
+        ":snapshot_json",
+        ":transform_json",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":table_metadata",
+        "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
     name = "time_transform_visitor",
     srcs = [
         "time_transform_visitor.cc",
