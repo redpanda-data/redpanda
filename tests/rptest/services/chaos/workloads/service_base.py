@@ -61,7 +61,6 @@ class WorkloadServiceBase(ABC, Service):
         super().__init__(ctx, num_nodes=num_nodes)
 
         self._remote_port = 8080
-        self._pids = dict()
         self._node_states = dict()
         self._brokers_str = brokers_str
 
@@ -89,10 +88,8 @@ class WorkloadServiceBase(ABC, Service):
         return r
 
     def _is_alive(self, node):
-        pid = self._pids.get(node.name)
-        if pid is None:
-            return False
-        return node.account.exists(f"/proc/{pid}")
+        pids = node.account.java_pids(f"{self.java_module_name}\.App")
+        return len(pids) > 0
 
     def _is_ready(self, node):
         try:
@@ -111,20 +108,17 @@ class WorkloadServiceBase(ABC, Service):
     def start_node(self, node, timeout_sec=10):
         self.logger.info(
             f"{self.who_am_i()}: starting worker on node {node.name}")
+        assert not self._is_alive(node)
 
         node.account.mkdirs(self.PERSISTENT_ROOT)
 
         cmd = f"java -cp /opt/verifiers/verifiers.jar io.vectorized.chaos.{self.java_module_name}.App"
-        assert node.name not in self._pids
-
         wrapped_cmd = f"nohup {cmd} > {self.SYSTEM_LOG_PATH} 2>&1 & echo $!"
 
         pid_str = node.account.ssh_output(wrapped_cmd, timeout_sec=10)
         self.logger.debug(
             f"spawned {self.who_am_i()} node={node.name} pid={pid_str} port={self._remote_port}"
         )
-        pid = int(pid_str.strip())
-        self._pids[node.name] = pid
 
         # Wait for the status endpoint to respond.
         wait_until(
@@ -134,12 +128,6 @@ class WorkloadServiceBase(ABC, Service):
             err_msg=
             f"{self.who_am_i()}: worker failed to become ready within {timeout_sec} sec",
             retry_on_exc=False)
-
-        # Because the above command was run with `nohup` we can't be sure that
-        # it is the one who actually replied to the `await_ready` calls.
-        # Check that the PID we just launched is still running as a confirmation
-        # that it is the one.
-        assert self._is_alive(node)
 
         # load the workload config
         workload_config = {
@@ -156,11 +144,12 @@ class WorkloadServiceBase(ABC, Service):
 
         self._node_states[node.name] = NodeState.INITIALIZED
 
-    def stop_node(self, node, timeout_sec=10):
-        pid = self._pids.get(node.name)
-        if pid is None:
-            return
+    def _kill(self, node, clean_shutdown):
+        node.account.kill_java_processes(f"{self.java_module_name}\.App",
+                                         clean_shutdown=clean_shutdown,
+                                         allow_fail=True)
 
+    def stop_node(self, node, timeout_sec=10):
         self.logger.info(
             f"{self.who_am_i()}: stopping worker on node {node.name}")
 
@@ -170,12 +159,8 @@ class WorkloadServiceBase(ABC, Service):
             self.logger.warn(
                 f"{self.who_am_i()}: failed to stop workload on {node.name}")
 
-        try:
-            self.logger.debug(f"terminating pid {pid} on {node.name}")
-            node.account.signal(pid, signal.SIGTERM, allow_fail=False)
-        except RemoteCommandError as e:
-            if b"No such process" not in e.msg:
-                raise
+        self.logger.debug(f"terminating worker on {node.name}")
+        self._kill(node, clean_shutdown=True)
 
         try:
             wait_until(lambda: not self._is_alive(node),
@@ -185,16 +170,12 @@ class WorkloadServiceBase(ABC, Service):
         except TimeoutError:
             self.logger.warn(f"{self.who_am_i()}: process on {node.name} "
                              f"failed to stop within {timeout_sec} sec")
-            node.account.signal(pid, signal.SIGKILL, allow_fail=True)
-
-        del self._pids[node.name]
+            self._kill(node, clean_shutdown=False)
 
     def clean_node(self, node):
         self.logger.info(
             f"{self.who_am_i()}: cleaning worker node {node.name}")
-        node.account.kill_java_processes(f"{self.java_module_name}\.App",
-                                         clean_shutdown=False,
-                                         allow_fail=True)
+        self._kill(node, clean_shutdown=False)
         node.account.remove(self.PERSISTENT_ROOT, allow_fail=True)
 
     ### workload management
