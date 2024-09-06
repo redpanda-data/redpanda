@@ -1,10 +1,11 @@
 load("@bazel_skylib//rules:common_settings.bzl", "int_flag")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
-# Make this build faster by setting `build --@krb5//:build_jobs=4` in user.bazelrc
+# Make this build faster by setting `build --@krb5//:build_jobs=8` in user.bazelrc
+# if you have the cores to spare
 int_flag(
     name = "build_jobs",
-    build_setting_default = 1,
+    build_setting_default = 4,
     make_variable = "BUILD_JOBS",
 )
 
