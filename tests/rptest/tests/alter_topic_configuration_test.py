@@ -299,6 +299,80 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         assert altered_output["redpanda.remote.write"] == "true"
 
     @cluster(num_nodes=3)
+    def test_overrides_remove_and_cluster_defaults(self):
+        """
+           Make sure that the shadow indexing properties correctly utilize
+           cluster defaults when `alter-config --delete` calls are made.
+           Historical context: https://github.com/redpanda-data/redpanda/issues/7451
+        """
+        rpk = RpkTool(self.redpanda)
+
+        def set_and_assert_cluster_config(prop, value):
+            rpk.cluster_config_set(prop, value)
+            assert rpk.cluster_config_get(prop) == value
+
+        set_and_assert_cluster_config('cloud_storage_enable_remote_write',
+                                      'true')
+        set_and_assert_cluster_config('cloud_storage_enable_remote_read',
+                                      'true')
+
+        topic = self.topics[0]
+
+        def describe_topic_property(prop):
+            describe_topic_output = rpk.describe_topic_configs(topic.name)
+            topic_prop_output = describe_topic_output.get(prop, None)
+            assert topic_prop_output is not None
+            return topic_prop_output
+
+        def expect_topic_property(prop, expected_value, expected_source):
+            value, source = describe_topic_property(prop)
+            assert value == expected_value
+            assert source == expected_source
+
+        # Value is true due to cluster default at topic creation time.
+        # Source is `DEFAULT_CONFIG` thanks to our internal override.
+        expect_topic_property('redpanda.remote.read', 'true', 'DEFAULT_CONFIG')
+
+        # Now, set the cluster default for remote read to false.
+        set_and_assert_cluster_config('cloud_storage_enable_remote_read',
+                                      'false')
+
+        # Value should still be true, but source is now dynamic.
+        expect_topic_property('redpanda.remote.read', 'true',
+                              'DYNAMIC_TOPIC_CONFIG')
+
+        # Alter the topic config with --delete.
+        rpk.delete_topic_config(topic.name, 'redpanda.remote.read')
+
+        # Assert that the reported value is now false
+        # and source type is back to DEFAULT_CONFIG.
+        expect_topic_property('redpanda.remote.read', 'false',
+                              'DEFAULT_CONFIG')
+
+        # Now, set the cluster default for remote write to false.
+        set_and_assert_cluster_config('cloud_storage_enable_remote_write',
+                                      'false')
+        expect_topic_property('redpanda.remote.write', 'true',
+                              'DYNAMIC_TOPIC_CONFIG')
+
+        # Alter the topic config with --delete.
+        rpk.delete_topic_config(topic.name, 'redpanda.remote.write')
+
+        expect_topic_property('redpanda.remote.write', 'false',
+                              'DEFAULT_CONFIG')
+
+        # Set cluster defaults back to true, topics should not follow.
+        set_and_assert_cluster_config('cloud_storage_enable_remote_write',
+                                      'true')
+        set_and_assert_cluster_config('cloud_storage_enable_remote_read',
+                                      'true')
+
+        expect_topic_property('redpanda.remote.read', 'false',
+                              'DYNAMIC_TOPIC_CONFIG')
+        expect_topic_property('redpanda.remote.write', 'false',
+                              'DYNAMIC_TOPIC_CONFIG')
+
+    @cluster(num_nodes=3)
     def test_topic_manifest_reupload(self):
         bucket_view = BucketView(self.redpanda)
         initial = wait_until_result(
