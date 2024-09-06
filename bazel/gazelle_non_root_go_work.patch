@@ -1,0 +1,22 @@
+diff --git a/internal/bzlmod/go_mod.bzl b/internal/bzlmod/go_mod.bzl
+index 5baed71..26f8c66 100644
+--- a/internal/bzlmod/go_mod.bzl
++++ b/internal/bzlmod/go_mod.bzl
+@@ -27,6 +27,17 @@ def _validate_go_version(path, state, tokens, line_no):
+         fail("{}:{}: unexpected token '{}' after '{}'".format(path, line_no, tokens[2], tokens[1]))
+
+ def use_spec_to_label(repo_name, use_directive):
++    # Strip all leading ../ assuming they point into the existing repo
++    if use_directive.startswith("../"):
++        segments = []
++        done = False
++        for segment in use_directive.split("/"):
++            if not done and segment == "..":
++                continue
++            segments.append(segment)
++            done = True
++        use_directive = "/".join(segments)
++
+     if use_directive.startswith("../") or "/../" in use_directive or use_directive.endswith("/.."):
+         fail("go.work use directive: '{}' contains '..' which is not currently supported.".format(use_directive))
+
