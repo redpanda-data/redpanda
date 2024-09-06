@@ -14,3 +14,23 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "debug_bundle_service_test",
+    timeout = "short",
+    srcs = [
+        "debug_bundle_service_test.cc",
+    ],
+    data = [":rpk-shim.sh"],
+    env = {
+        "RPK_SHIM": "$(rootpath :rpk-shim.sh)",
+    },
+    deps = [
+        "//src/v/config",
+        "//src/v/debug_bundle",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
