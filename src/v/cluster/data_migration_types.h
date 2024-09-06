@@ -76,6 +76,7 @@ enum class state {
     finished,
     canceling,
     cancelled,
+    deleted // a migration cannot use it
 };
 std::ostream& operator<<(std::ostream& o, state);
 

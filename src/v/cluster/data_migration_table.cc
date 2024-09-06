@@ -50,8 +50,9 @@ bool migrations_table::is_valid_state_transition(state current, state target) {
      * in other way than deleting migration object
      **/
     case state::cancelled:
-        [[fallthrough]];
     case state::finished:
+        [[fallthrough]];
+    case state::deleted:
         return false;
     }
 }

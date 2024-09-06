@@ -127,6 +127,7 @@ private:
     check_ntp_states_locally(check_ntp_states_request&& req);
     void
     to_advance_if_done(migration_reconciliation_states_t::const_iterator it);
+    ss::future<> advance(id migration_id, state sought_state);
     void spawn_advances();
 
     /* topic work */

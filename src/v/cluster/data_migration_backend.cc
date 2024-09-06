@@ -772,27 +772,34 @@ void backend::to_advance_if_done(
     }
 }
 
+ss::future<> backend::advance(id migration_id, state sought_state) {
+    std::error_code ec;
+    if (sought_state == state::deleted) {
+        ec = co_await _frontend.remove_migration(migration_id);
+    } else {
+        ec = co_await _frontend.update_migration_state(
+          migration_id, sought_state);
+    }
+    vlogl(
+      dm_log,
+      (ec == make_error_code(errc::success)) ? ss::log_level::debug
+                                             : ss::log_level::warn,
+      "request to advance migration {} into state {} has "
+      "been processed with error code {}",
+      migration_id,
+      sought_state,
+      ec);
+}
+
 void backend::spawn_advances() {
     for (auto& [migration_id, advance_info] : _advance_requests) {
         if (advance_info.sent) {
             continue;
         }
         advance_info.sent = true;
-        auto& sought_state = advance_info.sought_state;
+        auto sought_state = advance_info.sought_state;
         ssx::spawn_with_gate(_gate, [this, migration_id, sought_state]() {
-            return _frontend.update_migration_state(migration_id, sought_state)
-              .then([migration_id, sought_state](std::error_code ec) {
-                  vlogl(
-                    dm_log,
-                    (ec == make_error_code(errc::success))
-                      ? ss::log_level::debug
-                      : ss::log_level::warn,
-                    "request to advance migration {} into state {} has "
-                    "been processed with error code {}",
-                    migration_id,
-                    sought_state,
-                    ec);
-              });
+            return advance(migration_id, sought_state);
         });
     }
 }
@@ -1457,9 +1464,15 @@ backend::get_work_scope(const migration_metadata& metadata) {
                   scope.sought_state = state::cut_over;
                   break;
               case state::finished:
-              case state::cancelled:
-                  // final states
+                  scope.sought_state = state::deleted;
                   break;
+              case state::cancelled:
+                  // An auto-advance migration can only be cancelled manually if
+                  // it got stuck. Let's not deleted it automatically in case
+                  // we'd like to investigate how it happened.
+                  break;
+              case state::deleted:
+                  vassert(false, "A migration cannot be in a deleted state");
               case state::preparing:
               case state::executing:
               case state::cut_over:

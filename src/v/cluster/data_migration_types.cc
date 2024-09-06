@@ -71,6 +71,8 @@ std::ostream& operator<<(std::ostream& o, state state) {
         return o << "canceling";
     case state::cancelled:
         return o << "cancelled";
+    case state::deleted:
+        return o << "deleted";
     }
 }
 
