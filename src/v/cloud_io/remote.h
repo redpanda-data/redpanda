@@ -113,10 +113,10 @@ public:
     /// \param download_request holds a reference to an iobuf in the `payload`
     /// field which will hold the downloaded object if the download was
     /// successful
-    ss::future<cloud_storage::download_result>
+    ss::future<download_result>
     download_object(download_request download_request);
 
-    ss::future<cloud_storage::download_result> object_exists(
+    ss::future<download_result> object_exists(
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
@@ -128,7 +128,7 @@ public:
     ///
     /// \param path is a full S3 object path
     /// \param bucket is a name of the S3 bucket
-    ss::future<cloud_storage::upload_result> delete_object(transfer_details);
+    ss::future<upload_result> delete_object(transfer_details);
 
     /// \brief Delete multiple objects from S3
     ///
@@ -147,7 +147,7 @@ public:
              && std::same_as<
                std::ranges::range_value_t<R>,
                cloud_storage_clients::object_key>
-    ss::future<cloud_storage::upload_result> delete_objects(
+    ss::future<upload_result> delete_objects(
       const cloud_storage_clients::bucket_name& bucket,
       R keys,
       retry_chain_node& parent,
@@ -187,15 +187,14 @@ public:
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
-    ss::future<cloud_storage::upload_result>
-    upload_object(upload_request upload_request);
+    ss::future<upload_result> upload_object(upload_request upload_request);
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.
     seastar::gate& gate() { return _gate; };
     ss::abort_source& as() { return _as; }
 
-    ss::future<cloud_storage::upload_result> upload_stream(
+    ss::future<upload_result> upload_stream(
       transfer_details transfer_details,
       uint64_t content_length,
       const reset_input_stream& reset_str,
@@ -203,7 +202,7 @@ public:
       const std::string_view stream_label,
       std::optional<size_t> max_retries);
 
-    ss::future<cloud_storage::download_result> download_stream(
+    ss::future<download_result> download_stream(
       transfer_details transfer_details,
       const try_consume_stream& cons_str,
       const std::string_view stream_label,
@@ -217,7 +216,7 @@ public:
              && std::same_as<
                std::ranges::range_value_t<R>,
                cloud_storage_clients::object_key>
-    ss::future<cloud_storage::upload_result> delete_objects_sequentially(
+    ss::future<upload_result> delete_objects_sequentially(
       const cloud_storage_clients::bucket_name& bucket,
       R keys,
       retry_chain_node& parent,
@@ -227,7 +226,7 @@ public:
     /// backend limits.
     ///
     /// \pre the number of keys is <= delete_objects_max_keys
-    ss::future<cloud_storage::upload_result> delete_object_batch(
+    ss::future<upload_result> delete_object_batch(
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<cloud_storage_clients::object_key> keys,
       retry_chain_node& parent,

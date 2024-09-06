@@ -12,8 +12,7 @@
 #include <cstdint>
 #include <iostream>
 
-// TODO: move into cloud_io namespace.
-namespace cloud_storage {
+namespace cloud_io {
 
 enum class [[nodiscard]] download_result : int32_t {
     success,
@@ -31,4 +30,4 @@ enum class [[nodiscard]] upload_result : int32_t {
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 std::ostream& operator<<(std::ostream& o, const upload_result& r);
 
-} // namespace cloud_storage
+} // namespace cloud_io

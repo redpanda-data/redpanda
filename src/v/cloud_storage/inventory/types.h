@@ -23,7 +23,6 @@ class retry_chain_node;
 
 namespace cloud_storage {
 class cloud_storage_api;
-enum class upload_result;
 } // namespace cloud_storage
 
 namespace cloud_storage::inventory {
