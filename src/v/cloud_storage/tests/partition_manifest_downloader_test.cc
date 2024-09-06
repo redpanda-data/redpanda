@@ -64,11 +64,14 @@ class PartitionManifestDownloaderTest
 public:
     void SetUp() override {
         pool_.start(10, ss::sharded_parameter([this] { return conf; })).get();
-        remote_
+        io_
           .start(
             std::ref(pool_),
             ss::sharded_parameter([this] { return conf; }),
             ss::sharded_parameter([] { return config_file; }))
+          .get();
+        remote_
+          .start(std::ref(io_), ss::sharded_parameter([this] { return conf; }))
           .get();
         // Tests will use the remote API, no hard coded responses.
         set_expectations_and_listen({});
@@ -76,7 +79,9 @@ public:
 
     void TearDown() override {
         pool_.local().shutdown_connections();
+        io_.local().request_stop();
         remote_.stop().get();
+        io_.stop().get();
         pool_.stop().get();
     }
 
@@ -111,7 +116,7 @@ public:
         std::ostream os(&obuf);
         pm.serialize_json(os);
         upload_request json_req{
-            .transfer_details = transfer_details{
+            .transfer_details = {
                 .bucket = bucket_name,
                   .key = cloud_storage_clients::object_key{prefixed_partition_manifest_json_path(test_ntp, test_rev)},
                   .parent_rtc = retry,
@@ -126,6 +131,7 @@ public:
 
 protected:
     ss::sharded<cloud_storage_clients::client_pool> pool_;
+    ss::sharded<cloud_io::remote> io_;
     ss::sharded<remote> remote_;
 };
 

@@ -11,6 +11,7 @@
 
 #include "base/vlog.h"
 #include "cli_parser.h"
+#include "cloud_io/remote.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/configuration.h"
 #include "cloud_storage/inventory/inv_ops.h"
@@ -324,6 +325,9 @@ void application::shutdown() {
           .invoke_on_all(
             &cloud_storage_clients::client_pool::shutdown_connections)
           .get();
+    }
+    if (cloud_io.local_is_initialized()) {
+        cloud_io.invoke_on_all(&cloud_io::remote::request_stop).get();
     }
 
     // Stop all partitions before destructing the subsystems (transaction
@@ -1556,8 +1560,18 @@ void application::wire_up_redpanda_services(
             }))
           .get();
         construct_service(
-          cloud_storage_api,
+          cloud_io,
           std::ref(cloud_storage_clients),
+          ss::sharded_parameter(
+            [&cloud_configs] { return cloud_configs.local().client_config; }),
+          ss::sharded_parameter([&cloud_configs] {
+              return cloud_configs.local().cloud_credentials_source;
+          }))
+          .get();
+        cloud_io.invoke_on_all(&cloud_io::remote::start).get();
+        construct_service(
+          cloud_storage_api,
+          std::ref(cloud_io),
           ss::sharded_parameter(
             [&cloud_configs] { return cloud_configs.local(); }))
           .get();

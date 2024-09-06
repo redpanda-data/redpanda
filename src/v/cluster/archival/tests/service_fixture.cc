@@ -87,17 +87,23 @@ archiver_fixture::archiver_fixture()
       [cfg = remote_cfg] { return cfg.client_config; });
     auto sharded_cloud_conf = ss::sharded_parameter(
       [cfg = remote_cfg] { return cfg; });
+    auto sharded_creds_source = ss::sharded_parameter(
+      [cfg = remote_cfg] { return cfg.cloud_credentials_source; });
     pool.start(remote_cfg.connection_limit(), sharded_client_conf).get();
+    io.start(std::ref(pool), sharded_client_conf, sharded_creds_source).get();
+    io.local().start().get();
 
     // Init remote api
-    remote.start(std::ref(pool), sharded_cloud_conf).get();
+    remote.start(std::ref(io), sharded_cloud_conf).get();
     remote.local().start().get();
 }
 
 archiver_fixture::~archiver_fixture() {
     config::shard_local_cfg().cloud_storage_enabled.set_value(false);
     pool.local().shutdown_connections();
+    io.local().request_stop();
     remote.stop().get();
+    io.stop().get();
     pool.stop().get();
 }
 

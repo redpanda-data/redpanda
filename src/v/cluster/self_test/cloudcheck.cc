@@ -224,10 +224,8 @@ cloud_storage::upload_request cloudcheck::make_upload_request(
   const cloud_storage_clients::object_key& key,
   iobuf payload,
   retry_chain_node& rtc) {
-    cloud_storage::transfer_details transfer_details{
-      .bucket = bucket, .key = key, .parent_rtc = rtc};
     cloud_storage::upload_request upload_request(
-      std::move(transfer_details),
+      {.bucket = bucket, .key = key, .parent_rtc = rtc},
       cloud_storage::upload_type::object,
       std::move(payload));
     return upload_request;
@@ -238,10 +236,8 @@ cloud_storage::download_request cloudcheck::make_download_request(
   const cloud_storage_clients::object_key& key,
   iobuf& payload,
   retry_chain_node& rtc) {
-    cloud_storage::transfer_details transfer_details{
-      .bucket = bucket, .key = key, .parent_rtc = rtc};
     cloud_storage::download_request download_request(
-      std::move(transfer_details),
+      {.bucket = bucket, .key = key, .parent_rtc = rtc},
       cloud_storage::download_type::object,
       std::ref(payload));
     return download_request;

@@ -41,14 +41,6 @@ cloud_storage_clients::default_overrides get_default_overrides() {
     return overrides;
 }
 
-void run_callback(
-  std::optional<cloud_storage::probe_callback_t>& cb,
-  cloud_storage::remote_probe& probe) {
-    if (cb.has_value()) {
-        cb.value()(probe);
-    }
-}
-
 } // namespace
 
 namespace cloud_storage {
@@ -88,42 +80,6 @@ std::ostream& operator<<(std::ostream& o, const segment_name_format& r) {
         o << "{v3}";
         break;
     }
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const download_result& r) {
-    switch (r) {
-    case download_result::success:
-        o << "{success}";
-        break;
-    case download_result::notfound:
-        o << "{key_not_found}";
-        break;
-    case download_result::timedout:
-        o << "{timed_out}";
-        break;
-    case download_result::failed:
-        o << "{failed}";
-        break;
-    };
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const upload_result& r) {
-    switch (r) {
-    case upload_result::success:
-        o << "{success}";
-        break;
-    case upload_result::timedout:
-        o << "{timed_out}";
-        break;
-    case upload_result::failed:
-        o << "{failed}";
-        break;
-    case upload_result::cancelled:
-        o << "{cancelled}";
-        break;
-    };
     return o;
 }
 
@@ -523,16 +479,6 @@ std::ostream& operator<<(std::ostream& os, upload_type upload) {
 
 std::ostream& operator<<(std::ostream& os, download_type download) {
     return os << to_string(download);
-}
-
-void transfer_details::on_success(remote_probe& probe) {
-    run_callback(success_cb, probe);
-}
-void transfer_details::on_failure(remote_probe& probe) {
-    run_callback(failure_cb, probe);
-}
-void transfer_details::on_backoff(remote_probe& probe) {
-    run_callback(backoff_cb, probe);
 }
 
 std::ostream& operator<<(std::ostream& os, existence_check_type head) {

@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include "cloud_io/auth_refresh_bg_op.h"
+#include "cloud_io/io_resources.h"
+#include "cloud_io/remote.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/configuration.h"
@@ -40,48 +43,6 @@ namespace cloud_storage {
 class materialized_resources;
 
 static constexpr ss::shard_id auth_refresh_shard_id = 0;
-
-/// Helper class to start the background operations to periodically refresh
-/// authentication. Selects the implementation for fetch based on the
-/// cloud_credentials_source property.
-class auth_refresh_bg_op {
-public:
-    auth_refresh_bg_op(
-      ss::gate& gate,
-      ss::abort_source& as,
-      cloud_storage_clients::client_configuration client_conf,
-      model::cloud_credentials_source cloud_credentials_source);
-
-    /// Helper to decide if credentials will be regularly fetched from
-    /// infrastructure APIs or loaded once from config file.
-    bool is_static_config() const;
-
-    /// Builds a set of static AWS compatible credentials, reading values from
-    /// the S3 configuration passed to us.
-    cloud_roles::credentials build_static_credentials() const;
-
-    /// Start a background refresh operation, accepting a callback which is
-    /// called with newly fetched credentials periodically. The operation is
-    /// started on auth_refresh_shard_id and credentials are copied to other
-    /// shards using the callback.
-    void maybe_start_auth_refresh_op(
-      cloud_roles::credentials_update_cb_t credentials_update_cb);
-
-    cloud_storage_clients::client_configuration get_client_config() const;
-    void set_client_config(cloud_storage_clients::client_configuration conf);
-
-    ss::future<> stop();
-
-private:
-    void do_start_auth_refresh_op(
-      cloud_roles::credentials_update_cb_t credentials_update_cb);
-
-    ss::gate& _gate;
-    ss::abort_source& _as;
-    cloud_storage_clients::client_configuration _client_conf;
-    model::cloud_credentials_source _cloud_credentials_source;
-    std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
-};
 
 enum class api_activity_type {
     segment_upload,
@@ -183,9 +144,8 @@ public:
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
     remote(
-      ss::sharded<cloud_storage_clients::client_pool>& clients,
-      const cloud_storage_clients::client_configuration& conf,
-      model::cloud_credentials_source cloud_credentials_source);
+      ss::sharded<cloud_io::remote>& io,
+      const cloud_storage_clients::client_configuration& conf);
 
     ~remote() override;
 
@@ -193,8 +153,7 @@ public:
     ///
     /// \param conf is an archival configuration
     explicit remote(
-      ss::sharded<cloud_storage_clients::client_pool>& pool,
-      const configuration& conf);
+      ss::sharded<cloud_io::remote>& io, const configuration& conf);
 
     /// \brief Start the remote
     ss::future<> start();
@@ -288,6 +247,18 @@ public:
       retry_chain_node& parent,
       lazy_abort_source& lazy_abort_source,
       std::optional<size_t> max_retries = std::nullopt);
+
+    /// \brief Upload segment index to the pre-defined S3 location
+    ///
+    /// \param bucket is a bucket name
+    /// \param manifest is the index to upload
+    /// \param key is the remote object name
+    /// \return future that returns success code
+    ss::future<upload_result> upload_index(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key,
+      const offset_index& index,
+      retry_chain_node& parent);
 
     /// \brief Download segment from S3
     ///
@@ -510,6 +481,9 @@ public:
     ss::abort_source& as() { return _as; }
 
 private:
+    cloud_io::remote& io() { return _io.local(); }
+    const cloud_io::remote& io() const { return _io.local(); }
+
     template<
       typename FailedUploadMetricFn,
       typename SuccessfulUploadMetricFn,
@@ -568,21 +542,18 @@ private:
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);
+    std::function<void(size_t)>
+    make_notify_cb(api_activity_type t, retry_chain_node& retry);
 
-    ss::sharded<cloud_storage_clients::client_pool>& _pool;
+    ss::sharded<cloud_io::remote>& _io;
     ss::gate _gate;
     ss::abort_source _as;
-    auth_refresh_bg_op _auth_refresh_bg_op;
     std::unique_ptr<materialized_resources> _materialized;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;
 
     intrusive_list<event_filter, &event_filter::_hook> _filters;
-
-    config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
-
-    model::cloud_storage_backend _cloud_storage_backend;
 };
 
 } // namespace cloud_storage
