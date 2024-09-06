@@ -882,6 +882,11 @@ class RolePersistenceTest(RBACTestBase):
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
+        # Wait for the cluster to elect a controller leader after the restart
+        self.redpanda.wait_until(self.redpanda.healthy,
+                                 timeout_sec=30,
+                                 backoff_sec=1)
+
         admin = self.superuser_admin
 
         names = [
