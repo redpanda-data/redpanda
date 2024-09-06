@@ -30,7 +30,6 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//bazel:gazelle_pr_1909.patch",
-        "//bazel:gazelle_pr_1914.patch",
     ],
 )
 

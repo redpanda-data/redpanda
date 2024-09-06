@@ -3,8 +3,8 @@ go 1.23.0
 
 // Everything we build with Bazel goes here.
 use (
-	../../src/go/kreq-gen
-	../../src/transform-sdk/go/transform
-	../../src/transform-sdk/go/transform/internal/testdata
-	../../src/transform-sdk/tests
+	src/go/kreq-gen
+	src/transform-sdk/go/transform
+	src/transform-sdk/go/transform/internal/testdata
+	src/transform-sdk/tests
 )
