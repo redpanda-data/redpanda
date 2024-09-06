@@ -358,6 +358,7 @@ struct compat_check<cluster::topic_properties> {
         json_write(flush_ms);
         json_write(flush_bytes);
         json_write(remote_topic_namespace_override);
+        json_write(tombstone_retention_ms);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -394,6 +395,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(flush_ms);
         json_read(flush_bytes);
         json_read(remote_topic_namespace_override);
+        json_read(tombstone_retention_ms);
         return obj;
     }
 
@@ -425,6 +427,7 @@ struct compat_check<cluster::topic_properties> {
         obj.flush_bytes = std::nullopt;
         obj.flush_ms = std::nullopt;
         obj.remote_topic_namespace_override = std::nullopt;
+        obj.tombstone_retention_ms = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -507,6 +510,7 @@ struct compat_check<cluster::topic_configuration> {
         obj.properties.write_caching = std::nullopt;
         obj.properties.flush_bytes = std::nullopt;
         obj.properties.flush_ms = std::nullopt;
+        obj.properties.tombstone_retention_ms = std::nullopt;
 
         obj.properties.mpx_virtual_cluster_id = std::nullopt;
 

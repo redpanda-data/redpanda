@@ -127,6 +127,10 @@ def read_topic_properties_serde(rdr: Reader, version):
             'remote_label': rdr.read_optional(read_remote_label_serde),
             'topic_namespace_override': rdr.read_optional(read_topic_namespace)
         }
+    if version >= 10:
+        topic_properties |= {
+            'tombstone_retention_ms': rdr.read_optional(Reader.read_int64)
+        }
 
     return topic_properties
 
@@ -142,7 +146,7 @@ def read_topic_config(rdr: Reader, version):
         'replication_factor':
         rdr.read_int16(),
         'properties':
-        rdr.read_envelope(read_topic_properties_serde, max_version=9),
+        rdr.read_envelope(read_topic_properties_serde, max_version=10),
     }
     if version < 1:
         # see https://github.com/redpanda-data/redpanda/pull/6613

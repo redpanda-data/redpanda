@@ -55,7 +55,7 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .write_caching = properties.write_caching,
             .flush_ms = properties.flush_ms,
             .flush_bytes = properties.flush_bytes,
-          });
+            .tombstone_retention_ms = properties.tombstone_retention_ms});
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),

@@ -1698,6 +1698,24 @@ void config_multi_property_validation(
         errors[ss::sstring(name)] = ssx::sformat(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
+
+    // For simplicity's sake, cloud storage read/write permissions cannot be
+    // enabled at the same time as tombstone_retention_ms at the cluster level,
+    // to avoid the case in which topics are created with TS read/write
+    // permissions and bugs are encountered later with tombstone removal.
+    if (
+      (updated_config.cloud_storage_enabled()
+       || updated_config.cloud_storage_enable_remote_read()
+       || updated_config.cloud_storage_enable_remote_write())
+      && updated_config.tombstone_retention_ms().has_value()) {
+        errors["cloud_storage_enabled"] = ssx::sformat(
+          "cannot have {} set at the same time as any of {}, {}, {} at the "
+          "cluster level",
+          updated_config.tombstone_retention_ms.name(),
+          updated_config.cloud_storage_enabled.name(),
+          updated_config.cloud_storage_enable_remote_read.name(),
+          updated_config.cloud_storage_enable_remote_write.name());
+    }
 }
 } // namespace
 

@@ -275,8 +275,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           collection_threshold,
           _config.retention_bytes(),
           current_log.handle->stm_manager()->max_collectible_offset(),
-          /*TODO: current_log.handle->config().tombstone_retention_ms()*/
-          std::nullopt,
+          current_log.handle->config().tombstone_retention_ms(),
           _config.compaction_priority,
           _abort_source,
           std::move(ntp_sanitizer_cfg),

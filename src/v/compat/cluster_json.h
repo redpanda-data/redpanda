@@ -625,6 +625,7 @@ inline void rjson_serialize(
     write_exceptional_member_type(w, "write_caching", tps.write_caching);
     write_member(w, "flush_bytes", tps.flush_bytes);
     write_member(w, "flush_ms", tps.flush_ms);
+    write_member(w, "tombstone_retention_ms", tps.tombstone_retention_ms);
     w.EndObject();
 }
 
@@ -695,6 +696,7 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "write_caching", obj.write_caching);
     read_member(rd, "flush_bytes", obj.flush_bytes);
     read_member(rd, "flush_ms", obj.flush_ms);
+    read_member(rd, "tombstone_retention_ms", obj.tombstone_retention_ms);
 }
 
 inline void rjson_serialize(

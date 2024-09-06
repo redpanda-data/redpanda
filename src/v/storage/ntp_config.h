@@ -77,6 +77,10 @@ public:
         std::optional<std::chrono::milliseconds> flush_ms;
         std::optional<size_t> flush_bytes;
 
+        // Should not be enabled at the same time as any other tiered storage
+        // properties.
+        std::optional<std::chrono::milliseconds> tombstone_retention_ms;
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -286,6 +290,29 @@ public:
           std::numeric_limits<size_t>::max());
         return _overrides ? _overrides->flush_bytes.value_or(cluster_default)
                           : cluster_default;
+    }
+
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
+        if (_overrides) {
+            // Sanity check, tombstone deletion should not be enabled at the
+            // same time as tiered storage.
+            if (
+              _overrides->shadow_indexing_mode.has_value()
+              && _overrides->shadow_indexing_mode.value()
+                   != model::shadow_indexing_mode::disabled) {
+                std::cout << "SI enabled, Returning nullopt from "
+                             "tombstone_retention_ms\n";
+                return std::nullopt;
+            }
+            if (_overrides->tombstone_retention_ms.has_value()) {
+                std::cout << "Returning "
+                          << _overrides->tombstone_retention_ms.value()
+                          << "from tombstone_retention_ms\n";
+                return _overrides->tombstone_retention_ms.value();
+            }
+        }
+        std::cout << "Returning nullopt from tombstone_retention_ms\n";
+        return std::nullopt;
     }
 
     std::optional<model::cleanup_policy_bitflags>
