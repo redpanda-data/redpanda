@@ -197,77 +197,78 @@ struct retry_permit {
 /// The leaf node receives a pointer to a parent node (leaf or root).
 /// It can also receive its own timeout value and backoff interval. The
 /// timeout value have to be smaller that the one of the parent node.
-class retry_chain_node {
+template<class Clock = ss::lowres_clock>
+class basic_retry_chain_node {
 public:
+    using clock = Clock;
+    using duration = typename clock::duration;
+    using time_point = typename clock::time_point;
     using milliseconds_uint16_t
       = std::chrono::duration<uint16_t, std::chrono::milliseconds::period>;
 
     // No default constructor: we always need an abort source.
-    retry_chain_node() = delete;
+    basic_retry_chain_node() = delete;
 
     /// Create a head of the chain without backoff but with abort_source
-    explicit retry_chain_node(ss::abort_source& as);
+    explicit basic_retry_chain_node(ss::abort_source& as);
     /// Creates a head with the provided abort_source, deadline, and
     /// backoff granularity.
-    retry_chain_node(
+    basic_retry_chain_node(
+      ss::abort_source& as, time_point deadline, duration initial_backoff);
+    basic_retry_chain_node(
       ss::abort_source& as,
-      ss::lowres_clock::time_point deadline,
-      ss::lowres_clock::duration initial_backoff);
-    retry_chain_node(
-      ss::abort_source& as,
-      ss::lowres_clock::time_point deadline,
-      ss::lowres_clock::duration initial_backoff,
+      time_point deadline,
+      duration initial_backoff,
       retry_strategy retry_strategy);
-    retry_chain_node(
+    basic_retry_chain_node(
+      ss::abort_source& as, duration timeout, duration initial_backoff);
+    basic_retry_chain_node(
       ss::abort_source& as,
-      ss::lowres_clock::duration timeout,
-      ss::lowres_clock::duration initial_backoff);
-    retry_chain_node(
-      ss::abort_source& as,
-      ss::lowres_clock::duration timeout,
-      ss::lowres_clock::duration initial_backoff,
+      duration timeout,
+      duration initial_backoff,
       retry_strategy retry_strategy);
     /// Create a node attached to the parent.
     /// The node will share the time budget and backoff granularity with
     /// the parent.
     /// This isn't a copy c-tor!
-    explicit retry_chain_node(retry_chain_node* parent);
-    retry_chain_node(retry_strategy retry_strategy, retry_chain_node* parent);
+    explicit basic_retry_chain_node(basic_retry_chain_node* parent);
+    basic_retry_chain_node(
+      retry_strategy retry_strategy, basic_retry_chain_node* parent);
     /// Create a node attached to the parent.
     /// The node will share the time budget with the parent.
     /// The initial backoff can be set explicitly.
-    retry_chain_node(
-      ss::lowres_clock::duration initial_backoff, retry_chain_node* parent);
-    retry_chain_node(
-      ss::lowres_clock::duration initial_backoff,
+    basic_retry_chain_node(
+      duration initial_backoff, basic_retry_chain_node* parent);
+    basic_retry_chain_node(
+      duration initial_backoff,
       retry_strategy retry_strategy,
-      retry_chain_node* parent);
+      basic_retry_chain_node* parent);
     /// Create a node attached to the parent.
     /// The initial backoff and deadline can be set explicitly.
-    retry_chain_node(
-      ss::lowres_clock::time_point deadline,
-      ss::lowres_clock::duration initial_backoff,
-      retry_chain_node* parent);
-    retry_chain_node(
-      ss::lowres_clock::time_point deadline,
-      ss::lowres_clock::duration initial_backoff,
+    basic_retry_chain_node(
+      time_point deadline,
+      duration initial_backoff,
+      basic_retry_chain_node* parent);
+    basic_retry_chain_node(
+      time_point deadline,
+      duration initial_backoff,
       retry_strategy retry_strategy,
-      retry_chain_node* parent);
-    retry_chain_node(
-      ss::lowres_clock::duration timeout,
-      ss::lowres_clock::duration initial_backoff,
-      retry_chain_node* parent);
-    retry_chain_node(
-      ss::lowres_clock::duration timeout,
-      ss::lowres_clock::duration initial_backoff,
+      basic_retry_chain_node* parent);
+    basic_retry_chain_node(
+      duration timeout,
+      duration initial_backoff,
+      basic_retry_chain_node* parent);
+    basic_retry_chain_node(
+      duration timeout,
+      duration initial_backoff,
       retry_strategy retry_strategy,
-      retry_chain_node* parent);
+      basic_retry_chain_node* parent);
     /// D-tor (performs some validaton steps and can fail)
-    ~retry_chain_node();
-    retry_chain_node(const retry_chain_node&) = delete;
-    retry_chain_node& operator=(const retry_chain_node&) = delete;
-    retry_chain_node(retry_chain_node&&) = delete;
-    retry_chain_node& operator=(retry_chain_node&&) = delete;
+    ~basic_retry_chain_node();
+    basic_retry_chain_node(const basic_retry_chain_node&) = delete;
+    basic_retry_chain_node& operator=(const basic_retry_chain_node&) = delete;
+    basic_retry_chain_node(basic_retry_chain_node&&) = delete;
+    basic_retry_chain_node& operator=(basic_retry_chain_node&&) = delete;
 
     /// Generate formatted log prefix in the following format:
     /// [fiber42~3~1|2|100ms] where 'fiber42~3~1' is a unique fiber id
@@ -297,7 +298,7 @@ public:
 
     /// Return true if both retry chains share the same
     /// root.
-    bool same_root(const retry_chain_node& other) const;
+    bool same_root(const basic_retry_chain_node& other) const;
 
     /// \brief Request retry
     ///
@@ -325,19 +326,19 @@ public:
     void check_abort() const;
 
     /// Return backoff duration that should be used before the next retry
-    ss::lowres_clock::duration get_backoff() const;
+    duration get_backoff() const;
 
     /// Return polling interval
-    ss::lowres_clock::duration get_poll_interval() const;
+    duration get_poll_interval() const;
 
     /// Return timeout value (time interval before the deadline)
-    ss::lowres_clock::duration get_timeout() const;
+    duration get_timeout() const;
 
     /// Return deadline time
-    ss::lowres_clock::time_point get_deadline() const;
+    time_point get_deadline() const;
 
     /// Return root node of the retry chain
-    const retry_chain_node* get_root() const;
+    const basic_retry_chain_node* get_root() const;
 
 private:
     void format(std::back_insert_iterator<fmt::memory_buffer>& bii) const;
@@ -350,8 +351,8 @@ private:
 
     /// Fetch parent of the node
     /// Method returns nullptr if root
-    retry_chain_node* get_parent();
-    const retry_chain_node* get_parent() const;
+    basic_retry_chain_node* get_parent();
+    const basic_retry_chain_node* get_parent() const;
 
     /// Fetch abort source of the node
     /// Method returns nullptr if not root
@@ -371,22 +372,26 @@ private:
     /// Initial backoff value
     milliseconds_uint16_t _backoff;
     /// Deadline for retry attempts
-    ss::lowres_clock::time_point _deadline;
+    time_point _deadline;
     /// optional parent node or (if root) abort source for all fibers
-    std::variant<retry_chain_node*, ss::abort_source*> _parent;
+    std::variant<basic_retry_chain_node*, ss::abort_source*> _parent;
 };
 
+using retry_chain_node = basic_retry_chain_node<ss::lowres_clock>;
+
 /// Logger that adds context from retry_chain_node to the output
-class retry_chain_logger final {
+template<class Clock>
+class basic_retry_chain_logger final {
 public:
     /// Make logger that adds retry_chain_node id to every message
-    retry_chain_logger(ss::logger& log, retry_chain_node& node)
+    basic_retry_chain_logger(
+      ss::logger& log, basic_retry_chain_node<Clock>& node)
       : _log(log)
       , _node(node) {}
     /// Make logger that adds retry_chain_node id and custom string
     /// to every message
-    retry_chain_logger(
-      ss::logger& log, retry_chain_node& node, ss::sstring context)
+    basic_retry_chain_logger(
+      ss::logger& log, basic_retry_chain_node<Clock>& node, ss::sstring context)
       : _log(log)
       , _node(node)
       , _ctx(std::move(context)) {}
@@ -437,6 +442,8 @@ private:
       ss::noncopyable_function<void(ss::logger&, ss::log_level)>) const;
 
     ss::logger& _log;
-    const retry_chain_node& _node;
+    const basic_retry_chain_node<Clock>& _node;
     std::optional<ss::sstring> _ctx;
 };
+
+using retry_chain_logger = basic_retry_chain_logger<ss::lowres_clock>;
