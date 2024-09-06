@@ -12,6 +12,7 @@ from ducktape.utils.util import wait_until
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
@@ -319,3 +320,56 @@ class DescribeTopicsTest(RedpandaTest):
             prop = properties[name]
             assert doc_string == prop.doc_string
             assert len(empty_line) == 0
+
+    @cluster(num_nodes=3)
+    def test_describe_topics_sticky_properties(self):
+        """Sticky properties are those defined as using the cluster config
+           default value at topic creation time, but still indicate SOURCE
+           as `DEFAULT_CONFIG` instead of `DYNAMIC_TOPIC_CONFIG`. Furthermore,
+           they do not fall back on the cluster default at any point.
+           Currently, this trait is found in `redpanda.remote.read` and
+           `redpanda.remote.write`.
+           Historical context: https://github.com/redpanda-data/redpanda/issues/7451
+        """
+        rpk = RpkTool(self.redpanda)
+
+        rpk.cluster_config_set('cloud_storage_enable_remote_read', False)
+
+        # Create topic using the default value of `cloud_storage_enable_remote_read=false`
+        tp_spec = TopicSpec()
+        self.client().create_topic([tp_spec])
+
+        describe_topic_output = rpk.describe_topic_configs(tp_spec.name)
+        remote_read_output = describe_topic_output.get('redpanda.remote.read',
+                                                       None)
+        assert remote_read_output is not None
+
+        value, source = remote_read_output
+
+        # Value is false due to cluster default at topic creation time.
+        assert value == 'false'
+
+        # Source is `DEFAULT_CONFIG` thanks to our internal override.
+        assert source == 'DEFAULT_CONFIG'
+
+        # Now, set the cluster default to true.
+        rpk.cluster_config_set('cloud_storage_enable_remote_read', True)
+        assert rpk.cluster_config_get(
+            'cloud_storage_enable_remote_read') == 'true'
+
+        # Alter the topic config with --delete.
+        rpk.delete_topic_config(tp_spec.name, 'redpanda.remote.read')
+
+        # Describe the topic again.
+        describe_topic_output = rpk.describe_topic_configs(tp_spec.name)
+        remote_read_output = describe_topic_output.get('redpanda.remote.read',
+                                                       None)
+        assert remote_read_output is not None
+
+        value, source = remote_read_output
+
+        # Assert that the reported value is still false, and we don't fall back to the cluster default.
+        assert value == 'false'
+
+        # Source type is no longer DEFAULT_CONFIG.
+        assert source == 'DYNAMIC_TOPIC_CONFIG'

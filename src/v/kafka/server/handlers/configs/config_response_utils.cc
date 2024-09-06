@@ -634,6 +634,9 @@ config_response_container_t make_topic_configs(
       &describe_as_string<std::chrono::milliseconds>);
 
     // Shadow indexing properties
+    // These are "sticky" properties and do not use the cluster default after
+    // topic creation. The override should always govern the topic config's
+    // value.
     add_topic_config_if_requested(
       config_keys,
       result,
@@ -643,7 +646,7 @@ config_response_container_t make_topic_configs(
       topic_property_remote_read,
       topic_properties.shadow_indexing.has_value() ? std::make_optional(
         model::is_fetch_enabled(*topic_properties.shadow_indexing))
-                                                   : std::nullopt,
+                                                   : std::make_optional(false),
       include_synonyms,
       maybe_make_documentation(
         include_documentation,
@@ -660,7 +663,7 @@ config_response_container_t make_topic_configs(
       topic_property_remote_write,
       topic_properties.shadow_indexing.has_value() ? std::make_optional(
         model::is_archival_enabled(*topic_properties.shadow_indexing))
-                                                   : std::nullopt,
+                                                   : std::make_optional(false),
       include_synonyms,
       maybe_make_documentation(
         include_documentation,
