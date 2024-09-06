@@ -95,6 +95,7 @@ using primitive_value = std::variant<
   binary_value,
   decimal_value>;
 bool operator==(const primitive_value&, const primitive_value&);
+primitive_value make_copy(const primitive_value&);
 
 struct struct_value;
 struct list_value;

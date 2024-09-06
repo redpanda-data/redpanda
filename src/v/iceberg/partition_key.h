@@ -34,6 +34,8 @@ struct partition_key {
       const struct_value& source_struct,
       const struct_accessor::ids_accessor_map_t& accessors,
       const partition_spec& spec);
+
+    partition_key copy() const;
 };
 bool operator==(const partition_key&, const partition_key&);
 
