@@ -4258,6 +4258,13 @@ class RedpandaService(RedpandaServiceBase):
             conf.update(
                 dict(http_authentication=self._security.http_authentication))
 
+        # Only override `rpk_path` if not already provided
+        if (cur_ver == RedpandaInstaller.HEAD
+                or cur_ver >= (24, 3, 1)) and 'rpk_path' not in conf:
+            # Introduced rpk_path to v24.3
+            rpk_path = f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
+            conf.update(dict(rpk_path=rpk_path))
+
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
             self.logger.info(

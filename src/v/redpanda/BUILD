@@ -23,6 +23,7 @@ redpanda_cc_library(
         "//src/v/compression",
         "//src/v/config",
         "//src/v/crypto",
+        "//src/v/debug_bundle",
         "//src/v/features",
         "//src/v/finjector",
         "//src/v/kafka/client",
