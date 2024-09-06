@@ -76,7 +76,10 @@ TEST(FindSlidingRangeTest, TestCollectSegments) {
     for (int start = 0; start < 30; start += 5) {
         for (int end = start; end < 30; end += 5) {
             compaction_config cfg(
-              model::offset{end}, ss::default_priority_class(), never_abort);
+              model::offset{end},
+              std::nullopt,
+              ss::default_priority_class(),
+              never_abort);
             auto segs = disk_log.find_sliding_range(cfg, model::offset{start});
             if (end - start < 10) {
                 // If the compactible range isn't a full segment, we can't
@@ -98,7 +101,10 @@ TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
     compaction_config cfg(
-      model::offset{30}, ss::default_priority_class(), never_abort);
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(3, segs.size());
     ASSERT_EQ(segs.front()->offsets().get_base_offset(), model::offset{0});
@@ -129,7 +135,10 @@ TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
     compaction_config cfg(
-      model::offset{30}, ss::default_priority_class(), never_abort);
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
     // Even though these segments don't have compactible records, they should
     // be collected. E.g., they should still be self compacted to rebuild
@@ -164,7 +173,10 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
     auto& disk_log = b.get_disk_log_impl();
     auto& segs = disk_log.segments();
     compaction_config cfg(
-      model::offset{30}, ss::default_priority_class(), never_abort);
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
     probe pb;
 
     feature_table.start().get();
@@ -237,7 +249,10 @@ TEST(BuildOffsetMap, TestBuildMapWithMissingCompactedIndex) {
     auto& disk_log = b.get_disk_log_impl();
     auto& segs = disk_log.segments();
     compaction_config cfg(
-      model::offset{30}, ss::default_priority_class(), never_abort);
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
     for (const auto& s : segs) {
         auto idx_path = s->path().to_compacted_index();
         ASSERT_FALSE(ss::file_exists(idx_path.string()).get());
@@ -279,7 +294,10 @@ TEST(DeduplicateSegmentsTest, TestBadReader) {
 
     // Build an offset map for our log.
     compaction_config cfg(
-      model::offset{0}, ss::default_priority_class(), never_abort);
+      model::offset{0},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
     simple_key_offset_map all_segs_map(50);
     auto map_start_offset = build_offset_map(
                               cfg,

@@ -174,6 +174,7 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -239,6 +240,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -281,6 +283,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -300,6 +303,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     generate_data(1, cardinality, records_per_segment).get();
     storage::compaction_config new_cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -348,6 +352,7 @@ TEST_F(CompactionFixtureTest, TestCompactWithNonDataBatches) {
       = disk_log.get_probe().get_segments_compacted();
     storage::compaction_config new_cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt);
@@ -435,6 +440,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
     // when reading.
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt,
@@ -493,6 +499,7 @@ TEST_F(CompactionFixtureTest, TestReadFilledGapsWithTerms) {
 
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       never_abort,
       std::nullopt,

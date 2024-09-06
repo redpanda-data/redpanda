@@ -77,6 +77,7 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
       model::timestamp::min(),
       std::nullopt,
       first_log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     first_log->housekeeping(conf).get();
@@ -125,6 +126,7 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
       model::timestamp::min(),
       std::nullopt,
       new_log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     new_log->housekeeping(conf2).get();
@@ -197,6 +199,7 @@ FIXTURE_TEST(compact_transactions_and_replicate, compaction_multinode_test) {
       model::timestamp::min(),
       std::nullopt,
       first_log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     first_log->housekeeping(conf).get();
@@ -225,6 +228,7 @@ FIXTURE_TEST(compact_transactions_and_replicate, compaction_multinode_test) {
       model::timestamp::min(),
       std::nullopt,
       new_log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     new_log->housekeeping(conf2).get();

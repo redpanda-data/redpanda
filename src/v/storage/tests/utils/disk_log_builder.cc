@@ -119,7 +119,8 @@ ss::future<> disk_log_builder::truncate(model::offset o) {
 
 ss::future<> disk_log_builder::gc(
   model::timestamp collection_upper_bound,
-  std::optional<size_t> max_partition_retention_size) {
+  std::optional<size_t> max_partition_retention_size,
+  std::optional<std::chrono::milliseconds> tombstone_retention_ms) {
     ss::abort_source as;
     auto eviction_future = get_log()->monitor_eviction(as);
 
@@ -128,6 +129,7 @@ ss::future<> disk_log_builder::gc(
         collection_upper_bound,
         max_partition_retention_size,
         model::offset::max(),
+        tombstone_retention_ms,
         ss::default_priority_class(),
         _abort_source))
       .get();

@@ -465,6 +465,7 @@ struct gc_config {
 struct compaction_config {
     compaction_config(
       model::offset max_collect_offset,
+      std::optional<std::chrono::milliseconds> tombstone_ret_ms,
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
@@ -472,6 +473,7 @@ struct compaction_config {
       hash_key_offset_map* key_map = nullptr,
       scoped_file_tracker::set_t* to_clean = nullptr)
       : max_collectible_offset(max_collect_offset)
+      , tombstone_retention_ms(tombstone_ret_ms)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
       , key_offset_map_max_keys(max_keys)
@@ -482,6 +484,19 @@ struct compaction_config {
     // Cannot delete or compact past this offset (i.e. for unresolved txn
     // records): that is, only offsets <= this may be compacted.
     model::offset max_collectible_offset;
+
+    // The retention time for tombstones. Tombstone removal occurs only for
+    // "clean" compacted segments past the tombstone deletion horizon timestamp,
+    // which is a segment's clean_compact_timestamp + tombstone_retention_ms.
+    // This means tombstones take at least two rounds of compaction to remove a
+    // tombstone: at least one pass to make a segment clean, and another pass
+    // some time after tombstone.retention.ms to remove tombstones.
+    //
+    // Tombstone removal is only supported for topics with remote writes
+    // disabled. As a result, this field will only have a value for compaction
+    // ran on non-archival topics.
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms;
+
     // priority for all IO in compaction
     ss::io_priority_class iopc;
     // use proxy fileops with assertions and/or failure injection
@@ -514,12 +529,19 @@ struct housekeeping_config {
       model::timestamp upper,
       std::optional<size_t> max_bytes_in_log,
       model::offset max_collect_offset,
+      std::optional<std::chrono::milliseconds> tombstone_retention_ms,
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
       hash_key_offset_map* key_map = nullptr)
       : compact(
-          max_collect_offset, p, as, std::move(san_cfg), std::nullopt, key_map)
+          max_collect_offset,
+          tombstone_retention_ms,
+          p,
+          as,
+          std::move(san_cfg),
+          std::nullopt,
+          key_map)
       , gc(upper, max_bytes_in_log) {}
 
     compaction_config compact;

@@ -511,6 +511,7 @@ struct compact_op final : opfuzz::op {
           model::timestamp::max(),
           std::nullopt,
           model::offset::max(),
+          std::nullopt,
           ss::default_priority_class(),
           *(ctx._as),
           storage::ntp_sanitizer_config{.sanitize_only = true});
