@@ -2,9 +2,10 @@ load("@bazel_skylib//rules:common_settings.bzl", "int_flag", "string_flag")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
 # Make this build faster by setting `build --@openssl//:build_jobs=16` in user.bazelrc
+# if you have the cores to spare.
 int_flag(
     name = "build_jobs",
-    build_setting_default = 1,
+    build_setting_default = 8,
     make_variable = "BUILD_JOBS",
 )
 
