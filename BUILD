@@ -13,7 +13,6 @@ gazelle(name = "gazelle")
 
 gazelle_test(
     name = "gazelle_test",
-    # TODO(bazel): support this attribute
-    # size = "small",
+    size = "small",
     workspace = "//:BUILD",
 )

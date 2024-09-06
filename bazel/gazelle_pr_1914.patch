@@ -1,10 +1,25 @@
+From 2ab11dba06ec83a72168326aeed92989c97732c5 Mon Sep 17 00:00:00 2001
+From: Tyler Rockwood <rockwood@redpanda.com>
+Date: Fri, 6 Sep 2024 16:29:20 +0000
+Subject: [PATCH] bzlmod/go_work: support relative paths
+
+We have a use case where we have multiple go modules in a single repo,
+but adding go.work breaks some existing tooling, if it's added to the
+root. We want to add it to another location like: bazel/thirdparty
+but then we need to support having entries in go.work that look like:
+`../../src/go/rpk`. This patch allows leading parent segments (..) in
+go.work files to support our use case.
+---
+ internal/bzlmod/go_mod.bzl | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
 diff --git a/internal/bzlmod/go_mod.bzl b/internal/bzlmod/go_mod.bzl
-index 5baed71..26f8c66 100644
+index 5baed71e9..329ec100c 100644
 --- a/internal/bzlmod/go_mod.bzl
 +++ b/internal/bzlmod/go_mod.bzl
 @@ -27,6 +27,17 @@ def _validate_go_version(path, state, tokens, line_no):
          fail("{}:{}: unexpected token '{}' after '{}'".format(path, line_no, tokens[2], tokens[1]))
-
+ 
  def use_spec_to_label(repo_name, use_directive):
 +    # Strip all leading ../ assuming they point into the existing repo
 +    if use_directive.startswith("../"):
@@ -19,4 +34,4 @@ index 5baed71..26f8c66 100644
 +
      if use_directive.startswith("../") or "/../" in use_directive or use_directive.endswith("/.."):
          fail("go.work use directive: '{}' contains '..' which is not currently supported.".format(use_directive))
-
+ 

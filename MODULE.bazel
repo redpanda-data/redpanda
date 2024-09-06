@@ -27,8 +27,11 @@ use_repo(
 bazel_dep(name = "gazelle", version = "0.38.0")
 single_version_override(
     module_name = "gazelle",
-    patches = ["//bazel:gazelle_non_root_go_work.patch"],
     patch_strip = 1,
+    patches = [
+        "//bazel:gazelle_pr_1909.patch",
+        "//bazel:gazelle_pr_1914.patch",
+    ],
 )
 
 bazel_dep(name = "abseil-cpp", version = "20240722.0")
