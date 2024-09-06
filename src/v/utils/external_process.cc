@@ -65,8 +65,7 @@ external_process::~external_process() {
 ss::future<ss::experimental::process::wait_status> external_process::wait() {
     auto guard = _gate.hold();
     if (_completed) {
-        throw std::system_error(
-          make_error_code(error_code::process_already_completed));
+        throw std::system_error(error_code::process_already_completed);
     }
 
     auto units = _wait_mutex.try_get_units();

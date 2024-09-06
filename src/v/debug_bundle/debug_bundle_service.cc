@@ -13,6 +13,7 @@
 
 #include "config/configuration.h"
 #include "debug_bundle/error.h"
+#include "debug_bundle/types.h"
 
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shard_id.hh>
@@ -61,4 +62,29 @@ ss::future<> debug_bundle_service::stop() {
     lg.debug("Service stopping");
     co_return;
 }
+
+ss::future<result<void>>
+debug_bundle_service::initiate_rpk_debug_bundle_collection(
+  uuid_t, debug_bundle_parameters) {
+    co_return error_info(error_code::internal_error, "Not yet implemented");
+}
+
+ss::future<result<void>> debug_bundle_service::cancel_rpk_debug_bundle(uuid_t) {
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
+ss::future<result<debug_bundle_status_data>>
+debug_bundle_service::rpk_debug_bundle_status() {
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
+ss::future<result<std::filesystem::path>>
+debug_bundle_service::rpk_debug_bundle_path() {
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
+ss::future<result<void>> debug_bundle_service::delete_rpk_debug_bundle() {
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
 } // namespace debug_bundle
