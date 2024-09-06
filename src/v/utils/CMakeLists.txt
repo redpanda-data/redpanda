@@ -15,6 +15,7 @@ v_cc_library(
     bottomless_token_bucket.cc
     log_hist.cc
     xid.cc
+    external_process.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram

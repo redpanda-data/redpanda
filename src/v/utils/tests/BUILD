@@ -505,3 +505,21 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "external_process_test",
+    timeout = "short",
+    srcs = [
+        "external_process_test.cc",
+    ],
+    data = [":handle-sigterm.sh"],
+    env = {
+        "HANDLE_SIGTERM_SCRIPT": "$(location :handle-sigterm.sh)",
+    },
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:external_process",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
