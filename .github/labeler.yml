@@ -8,7 +8,7 @@ k8s/tests:
 
 area/build:
 - changed-files:
-  - any-glob-to-any-file: ['cmake/**/*', '.github/**/*']
+  - any-glob-to-any-file: ['cmake/**/*', '.github/**/*', 'bazel/**/*', 'MODULE.bazel', '**/BUILD', '**/*.bzl']
 
 area/docs:
 - changed-files:
