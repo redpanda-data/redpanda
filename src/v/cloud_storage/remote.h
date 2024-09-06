@@ -124,9 +124,7 @@ public:
 /// download data. Also, it's responsible for maintaining
 /// correct naming in S3. The remote takes into account
 /// things like reconnects, backpressure and backoff.
-class remote
-  : public ss::peering_sharded_service<remote>
-  , public cloud_storage_api {
+class remote : public cloud_storage_api {
 public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -166,8 +164,6 @@ public:
     /// Return max number of concurrent requests that the object
     /// can perform.
     size_t concurrency() const;
-
-    model::cloud_storage_backend backend() const;
 
     bool is_batch_delete_supported() const;
     int delete_objects_max_keys() const;
@@ -477,68 +473,13 @@ public:
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.
-    seastar::gate& gate() { return _gate; };
-    ss::abort_source& as() { return _as; }
+    seastar::gate& gate() { return io().gate(); };
+    ss::abort_source& as() { return io().as(); }
 
 private:
     cloud_io::remote& io() { return _io.local(); }
     const cloud_io::remote& io() const { return _io.local(); }
 
-    template<
-      typename FailedUploadMetricFn,
-      typename SuccessfulUploadMetricFn,
-      typename UploadBackoffMetricFn>
-    ss::future<upload_result> upload_stream(
-      const cloud_storage_clients::bucket_name& bucket,
-      const remote_segment_path& segment_path,
-      uint64_t content_length,
-      const reset_input_stream& reset_str,
-      retry_chain_node& parent,
-      lazy_abort_source& lazy_abort_source,
-      const std::string_view stream_label,
-      api_activity_type event_type,
-      FailedUploadMetricFn failed_upload_metric,
-      SuccessfulUploadMetricFn successful_upload_metric,
-      UploadBackoffMetricFn upload_backoff_metric,
-      std::optional<size_t> max_retries);
-
-    template<
-      typename DownloadLatencyMeasurementFn,
-      typename FailedDownloadMetricFn,
-      typename DownloadBackoffMetricFn>
-    ss::future<download_result> download_stream(
-      const cloud_storage_clients::bucket_name& bucket,
-      const remote_segment_path& path,
-      const try_consume_stream& cons_str,
-      retry_chain_node& parent,
-      const std::string_view stream_label,
-      bool acquire_hydration_units,
-      DownloadLatencyMeasurementFn download_latency_measurement,
-      FailedDownloadMetricFn failed_download_metric,
-      DownloadBackoffMetricFn download_backoff_metric,
-      std::optional<cloud_storage_clients::http_byte_range> byte_range
-      = std::nullopt);
-
-    template<typename R>
-    requires std::ranges::range<R>
-             && std::same_as<
-               std::ranges::range_value_t<R>,
-               cloud_storage_clients::object_key>
-    ss::future<upload_result> delete_objects_sequentially(
-      const cloud_storage_clients::bucket_name& bucket,
-      R keys,
-      retry_chain_node& parent);
-
-    /// Delete a single batch of keys. The batch size must not exceed the
-    /// backend limits.
-    ///
-    /// \pre the number of keys is <= delete_objects_max_keys
-    ss::future<upload_result> delete_object_batch(
-      const cloud_storage_clients::bucket_name& bucket,
-      std::vector<cloud_storage_clients::object_key> keys,
-      retry_chain_node& parent);
-
-    ss::future<> propagate_credentials(cloud_roles::credentials credentials);
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);
@@ -546,8 +487,6 @@ private:
     make_notify_cb(api_activity_type t, retry_chain_node& retry);
 
     ss::sharded<cloud_io::remote>& _io;
-    ss::gate _gate;
-    ss::abort_source _as;
     std::unique_ptr<materialized_resources> _materialized;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
