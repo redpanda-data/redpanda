@@ -83,6 +83,7 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -1424,6 +1425,10 @@ void application::wire_up_runtime_services(
     }
 
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
+
+    construct_service(
+      _debug_bundle_service, config::node().data_directory().path)
+      .get();
 
     configure_admin_server();
 }
@@ -3037,6 +3042,8 @@ void application::start_runtime_services(
             _await_controller_last_applied.value(), app_signal.abort_source())
           .get();
     }
+
+    _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();
 
     if (!config::node().admin().empty()) {
         _admin.invoke_on_all(&admin_server::start).get0();

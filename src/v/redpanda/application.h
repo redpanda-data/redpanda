@@ -27,6 +27,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "crypto/ossl_context_service.h"
+#include "debug_bundle/fwd.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
@@ -328,6 +329,7 @@ private:
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
     ss::sharded<resources::cpu_profiler> _cpu_profiler;
+    ss::sharded<debug_bundle::service> _debug_bundle_service;
 
     std::unique_ptr<cluster::node_isolation_watcher> _node_isolation_watcher;
 
