@@ -304,7 +304,9 @@ public:
     ss::future<> truncate(model::offset);
     ss::future<> gc(
       model::timestamp collection_upper_bound,
-      std::optional<size_t> max_partition_retention_size);
+      std::optional<size_t> max_partition_retention_size,
+      std::optional<std::chrono::milliseconds> tombstone_retention_ms
+      = std::nullopt);
     ss::future<usage_report> disk_usage(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);

@@ -112,6 +112,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
                       retention_timestamp,
                       100_MiB,
                       model::offset::max(),
+                      std::nullopt,
                       ss::default_priority_class(),
                       as,
                       storage::ntp_sanitizer_config{.sanitize_only = true}))

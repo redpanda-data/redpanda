@@ -167,6 +167,7 @@ public:
           model::timestamp::min(),
           std::nullopt,
           max_collect_offset,
+          std::nullopt,
           ss::default_priority_class(),
           as);
 

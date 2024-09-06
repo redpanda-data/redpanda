@@ -544,6 +544,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
             first_ts,
             100_MiB,
             model::offset::max(),
+            std::nullopt,
             ss::default_priority_class(),
             as,
             storage::ntp_sanitizer_config{.sanitize_only = true}))

@@ -197,9 +197,11 @@ std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
     fmt::print(
       o,
       "{{max_collectible_offset:{}, "
-      "should_sanitize:{}}}",
+      "should_sanitize:{}, "
+      "tombstone_retention_ms:{}}}",
       c.max_collectible_offset,
-      c.sanitizer_config);
+      c.sanitizer_config,
+      c.tombstone_retention_ms);
     return o;
 }
 

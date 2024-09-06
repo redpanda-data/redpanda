@@ -96,6 +96,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
       model::timestamp::min(),
       1,
       log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     partition->log()->housekeeping(housekeeping_conf).get();
@@ -516,6 +517,7 @@ TEST_P(CloudStorageEndToEndManualTest, TestTimequeryAfterArchivalGC) {
       model::timestamp::min(),
       1, // max_bytes_in_log
       log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     partition->log()->housekeeping(housekeeping_conf).get();
@@ -809,6 +811,7 @@ TEST_P(EndToEndFixture, TestCloudStorageTimequery) {
       model::timestamp::max(),
       0,
       log->stm_manager()->max_collectible_offset(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     partition->log()->housekeeping(housekeeping_conf).get();

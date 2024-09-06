@@ -107,6 +107,7 @@ public:
                       model::timestamp::now().value() - ret_duration.count()),
                     std::nullopt,
                     log->stm_manager()->max_collectible_offset(),
+                    std::nullopt,
                     ss::default_priority_class(),
                     dummy_as,
                   })
@@ -228,6 +229,7 @@ public:
           model::timestamp::min(),
           std::nullopt,
           model::offset::max(),
+          std::nullopt,
           ss::default_priority_class(),
           as);
         // Compacts until a single sealed segment remains, other than the

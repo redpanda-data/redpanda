@@ -674,6 +674,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
       model::to_timestamp(broker_t0 - (2 * broker_ts_sep)),
       std::nullopt,
       model::offset::min(), // should prevent compaction
+      std::nullopt,
       ss::default_priority_class(),
       as);
     auto before = disk_log->offsets();
@@ -688,6 +689,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
             model::to_timestamp(timestamp),
             std::nullopt,
             model::offset::max(),
+            std::nullopt,
             ss::default_priority_class(),
             as);
       };
@@ -761,6 +763,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       model::timestamp::min(),
       total_size + first_size,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     compact_and_prefix_truncate(*disk_log, ccfg_no_compact);
@@ -790,6 +793,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       model::timestamp::min(),
       max_size,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     compact_and_prefix_truncate(*disk_log, ccfg);
@@ -860,6 +864,7 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
       gc_ts,
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -969,6 +974,7 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
           model::timestamp::min(),
           1000,
           model::offset::max(),
+          std::nullopt,
           ss::default_priority_class(),
           as);
         return log->housekeeping(ccfg);
@@ -1150,6 +1156,7 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
       model::timestamp::min(),
       1,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
@@ -1311,6 +1318,7 @@ FIXTURE_TEST(compacted_log_truncation, storage_test_fixture) {
           model::timestamp::min(),
           std::nullopt,
           model::offset::max(),
+          std::nullopt,
           ss::default_priority_class(),
           as);
         log->flush().get0();
@@ -1376,6 +1384,7 @@ FIXTURE_TEST(
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     log->flush().get0();
@@ -1562,6 +1571,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
       model::timestamp::min(),
       50_KiB,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -1681,6 +1691,7 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -1749,6 +1760,7 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -1823,6 +1835,7 @@ FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -2020,6 +2033,7 @@ FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     /**
@@ -2354,6 +2368,7 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -2595,6 +2610,7 @@ FIXTURE_TEST(test_compacting_batches_of_different_types, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     auto before_compaction = compact_in_memory(log);
@@ -2836,6 +2852,7 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
                              model::timestamp::min(),
                              std::nullopt,
                              model::offset::max(),
+                             std::nullopt,
                              ss::default_priority_class(),
                              as))
                            .handle_exception_type(
@@ -2927,6 +2944,7 @@ FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
               model::timestamp::min(),
               std::nullopt,
               model::offset::max(),
+              std::nullopt,
               ss::default_priority_class(),
               as))
             .get();
@@ -3060,6 +3078,7 @@ FIXTURE_TEST(test_max_compact_offset, storage_test_fixture) {
       model::timestamp::max(), // no time-based deletion
       std::nullopt,
       max_compact_offset,
+      std::nullopt,
       ss::default_priority_class(),
       as);
     log->housekeeping(ccfg).get0();
@@ -3124,6 +3143,7 @@ FIXTURE_TEST(test_self_compaction_while_reader_is_open, storage_test_fixture) {
       model::timestamp::max(), // no time-based deletion
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     auto& segment = *(disk_log->segments().begin());
@@ -3178,6 +3198,7 @@ FIXTURE_TEST(test_simple_compaction_rebuild_index, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as);
 
@@ -3274,6 +3295,7 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
       model::timestamp::max(), // no time-based deletion
       std::nullopt,
       model::offset(args.max_compact_offs),
+      std::nullopt,
       ss::default_priority_class(),
       as);
     log->housekeeping(ccfg).get0();
@@ -3545,6 +3567,7 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
             model::timestamp::min(),
             cfg.retention_bytes(),
             model::offset::max(),
+            std::nullopt,
             ss::default_priority_class(),
             as));
 
@@ -3729,6 +3752,7 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
       model::timestamp::max(),
       1,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       abs};
 
@@ -4184,6 +4208,7 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       log->offsets().committed_offset,
+      std::nullopt,
       ss::default_priority_class(),
       as);
     log->housekeeping(h_cfg).get();
@@ -4387,6 +4412,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
       model::timestamp::min(),
       std::nullopt,
       log->offsets().committed_offset,
+      std::nullopt,
       ss::default_priority_class(),
       as);
     log->housekeeping(h_cfg).get();

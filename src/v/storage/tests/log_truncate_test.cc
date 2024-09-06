@@ -333,7 +333,7 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
 }
 
 FIXTURE_TEST(
-  test_truncate_whole_log_when_logs_are_garbadge_collected,
+  test_truncate_whole_log_when_logs_are_garbage_collected,
   storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     storage::log_manager mgr = make_log_manager(cfg);
@@ -364,6 +364,7 @@ FIXTURE_TEST(
         ts,
         std::nullopt,
         model::offset::max(),
+        std::nullopt,
         ss::default_priority_class(),
         as))
       .get0();
@@ -545,6 +546,7 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
       ts,
       std::nullopt,
       model::offset::max(),
+      std::nullopt,
       ss::default_priority_class(),
       as));
 
@@ -591,7 +593,7 @@ FIXTURE_TEST(test_concurrent_truncate_and_compaction, storage_test_fixture) {
     // leaving room for further windowed compaction.
     ss::abort_source as;
     compaction_config compaction_cfg(
-      model::offset::max(), ss::default_priority_class(), as);
+      model::offset::max(), std::nullopt, ss::default_priority_class(), as);
     auto& disk_log = *dynamic_cast<disk_log_impl*>(log.get());
     disk_log.adjacent_merge_compact(compaction_cfg).get();
     disk_log.adjacent_merge_compact(compaction_cfg).get();
@@ -608,7 +610,12 @@ FIXTURE_TEST(test_concurrent_truncate_and_compaction, storage_test_fixture) {
     auto ts = now();
     auto sleep_ms1 = random_generators::get_int(0, 100);
     housekeeping_config housekeeping_cfg(
-      ts, std::nullopt, model::offset::max(), ss::default_priority_class(), as);
+      ts,
+      std::nullopt,
+      model::offset::max(),
+      std::nullopt,
+      ss::default_priority_class(),
+      as);
     auto f1 = ss::sleep(sleep_ms1 * 1ms).then([&] {
         return log->housekeeping(housekeeping_cfg);
     });

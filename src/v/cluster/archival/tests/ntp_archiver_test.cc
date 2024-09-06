@@ -941,6 +941,7 @@ FIXTURE_TEST(
         model::timestamp::now(),
         std::nullopt,
         model::offset{999},
+        std::nullopt,
         ss::default_priority_class(),
         as))
       .get0();

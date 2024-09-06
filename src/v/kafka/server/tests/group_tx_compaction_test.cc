@@ -305,6 +305,7 @@ ss::future<> run_workload(
                 model::timestamp::max(),
                 std::nullopt,
                 log->stm_manager()->max_collectible_offset(),
+                std::nullopt,
                 ss::default_priority_class(),
                 dummy_as,
               })
