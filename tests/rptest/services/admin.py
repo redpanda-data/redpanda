@@ -262,12 +262,15 @@ class RoleMemberUpdateResponse:
 
 
 class NamespacedTopic:
-    def __init__(self, topic: str, namespace: str = "kafka"):
+    def __init__(self, topic: str, namespace: str | None = "kafka"):
         self.ns = namespace
         self.topic = topic
 
     def as_dict(self):
-        return {'ns': self.ns, 'topic': self.topic}
+        ret = {'topic': self.topic}
+        if self.ns is not None:
+            ret['ns'] = self.ns
+        return ret
 
     @classmethod
     def from_json(cls, body: bytes):
