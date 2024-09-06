@@ -27,11 +27,12 @@ using size_callback_t = ss::noncopyable_function<void(size_t)>;
 using latency_measurement_t = std::unique_ptr<log_hist_internal::measurement>;
 using latency_callback_t = ss::noncopyable_function<latency_measurement_t()>;
 
-struct transfer_details {
+template<class Clock>
+struct basic_transfer_details {
     cloud_storage_clients::bucket_name bucket;
     cloud_storage_clients::object_key key;
 
-    retry_chain_node& parent_rtc;
+    basic_retry_chain_node<Clock>& parent_rtc;
 
     std::optional<probe_callback_t> success_cb{std::nullopt};
     std::optional<size_callback_t> success_size_cb{std::nullopt};
@@ -52,5 +53,7 @@ struct transfer_details {
     void on_request(size_t attempt_num);
     latency_measurement_t scoped_latency_measurement();
 };
+
+using transfer_details = basic_transfer_details<ss::lowres_clock>;
 
 } // namespace cloud_io
