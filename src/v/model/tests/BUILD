@@ -89,3 +89,18 @@ redpanda_cc_btest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "record_batch_reader_test",
+    timeout = "short",
+    srcs = [
+        "record_batch_reader_test.cc",
+    ],
+    deps = [
+        ":random",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
