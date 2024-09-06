@@ -108,6 +108,7 @@ class LogPlayer:
         self.curr_state = dict()
         self.thread_type = dict()
         self.has_violation = False
+        self.measuring = False
         self.errors = 0
 
         self.ts_us = None
@@ -151,6 +152,12 @@ class LogPlayer:
         new_state = cmds[parts[2]]
 
         if new_state == State.EVENT:
+            if parts[3] == "measure" and not self.measuring:
+                # Reset errors when we start measuring so that we don't count
+                # errors (e.g. timeouts) that happened while we were setting
+                # the test up
+                self.measuring = True
+                self.errors = 0
             return
         if new_state == State.VIOLATION:
             self.has_violation = True
