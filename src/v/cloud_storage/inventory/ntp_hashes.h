@@ -32,6 +32,14 @@ class ntp_path_hashes {
 public:
     ntp_path_hashes(model::ntp ntp, std::filesystem::path hash_store_path);
 
+    ntp_path_hashes(const ntp_path_hashes&) = delete;
+    ntp_path_hashes& operator=(const ntp_path_hashes&) = delete;
+
+    ntp_path_hashes(ntp_path_hashes&&) noexcept;
+    ntp_path_hashes& operator=(ntp_path_hashes&&) = delete;
+
+    virtual ~ntp_path_hashes() = default;
+
     ss::future<bool> load_hashes();
 
     lookup_result exists(const remote_segment_path& path) const;
