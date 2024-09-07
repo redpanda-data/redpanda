@@ -230,7 +230,7 @@ ss::sstring iobuf_to_string(iobuf buf) {
 
 } // namespace
 
-class bucket_view_fixture : http_imposter_fixture {
+class bucket_view_fixture : public http_imposter_fixture {
 public:
     static constexpr auto host_name = "localhost";
     static constexpr auto port = 4447;
@@ -574,6 +574,7 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
         BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
         BOOST_REQUIRE(!result.detected.has_value());
         BOOST_REQUIRE(!result.last_scrubbed_offset.has_value());
+        BOOST_REQUIRE(result.detected.segment_existence_checked);
     }
 
     {
@@ -589,6 +590,7 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
         // manifest
         BOOST_REQUIRE_EQUAL(
           result.last_scrubbed_offset, get_stm_manifest().get_last_offset());
+        BOOST_REQUIRE(result.detected.segment_existence_checked);
     }
 }
 
@@ -617,6 +619,7 @@ FIXTURE_TEST(test_missing_segments, bucket_view_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       result.detected, flatten_partial_results(partial_results).detected);
+    BOOST_REQUIRE(result.detected.segment_existence_checked);
 }
 
 FIXTURE_TEST(test_segment_depth_limit, bucket_view_fixture) {
@@ -1309,4 +1312,67 @@ SEASTAR_THREAD_TEST_CASE(test_query_lookup_when_data_loaded_successfully) {
     BOOST_REQUIRE(q.is_inv_data_available);
     BOOST_REQUIRE(!q.should_lookup_in_cloud_storage(
       cloud_storage::remote_segment_path{test_path}));
+}
+
+namespace {
+
+bool is_call_to_check_for_segment(const http_test_utils::request_info ri) {
+    return ri.method == "HEAD" && ri.url.ends_with(".log.1");
+}
+
+} // namespace
+
+FIXTURE_TEST(test_no_calls_made_for_segment_checks, bucket_view_fixture) {
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+
+    init_view(
+      stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
+
+    write_hashes_to_disk({.skip_metas = {}}).get();
+
+    // 5 ops can manage a full scrub: 1 stm download, 2 HEAD checks for spill, 2
+    // downloads for spill
+    auto result = run_detector(archival::run_quota_t{5});
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    BOOST_REQUIRE(!result.detected.has_value());
+    BOOST_REQUIRE(!result.last_scrubbed_offset.has_value());
+
+    // No segments are checked using API calls
+    auto possible_calls_for_segment_check = get_requests(
+      is_call_to_check_for_segment);
+    BOOST_REQUIRE(possible_calls_for_segment_check.empty());
+    BOOST_REQUIRE(result.detected.segment_existence_checked);
+}
+
+FIXTURE_TEST(test_calls_made_when_segment_missing, bucket_view_fixture) {
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+
+    init_view(
+      stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
+
+    const auto& first_spill = get_spillover_manifests().at(0);
+    const auto& spill_segment = first_spill.begin();
+    remove_segment(first_spill, *spill_segment);
+
+    write_hashes_to_disk({.skip_metas = {*spill_segment}}).get();
+
+    auto result = run_detector(archival::run_quota_t{6});
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    BOOST_REQUIRE(result.detected.has_value());
+    const auto& missing_segs = result.detected.missing_segments;
+    BOOST_REQUIRE_EQUAL(missing_segs.size(), 1);
+    BOOST_REQUIRE(missing_segs.contains(*spill_segment));
+
+    auto possible_calls_for_segment_check = get_requests(
+      is_call_to_check_for_segment);
+    BOOST_REQUIRE_EQUAL(possible_calls_for_segment_check.size(), 1);
+    BOOST_REQUIRE(result.detected.segment_existence_checked);
+
+    auto path = first_spill.generate_segment_path(
+      *spill_segment, path_provider);
+    BOOST_REQUIRE_EQUAL(
+      fmt::format("/{}", path().native()),
+      possible_calls_for_segment_check[0].url);
 }
