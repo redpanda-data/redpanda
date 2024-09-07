@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "cloud_storage/base_manifest.h"
 #include "cloud_storage_clients/client.h"
 #include "config/configuration.h"
 #include "http/tests/registered_urls.h"
