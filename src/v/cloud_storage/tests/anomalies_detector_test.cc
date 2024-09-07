@@ -11,14 +11,18 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/inventory/utils.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
+#include "config/node_config.h"
+#include "hashing/xx.h"
 #include "http/tests/http_imposter.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/util/short_streams.hh>
 
@@ -1202,4 +1206,60 @@ BOOST_AUTO_TEST_CASE(test_anomalies_size_limit2) {
     }
     BOOST_REQUIRE_EQUAL(result.missing_segments.size(), 100);
     BOOST_REQUIRE_EQUAL(result.num_discarded_missing_segments, 180);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_should_make_api_call_when_inv_scrub_disabled) {
+    // If inventory scrub is disabled, the usage of query object implies that
+    // scrub is intentionally done without inventory data, so API calls should
+    // be enabled.
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(false);
+    auto q
+      = cloud_storage::existence_query_context::load(false, model::ntp{}).get();
+    BOOST_REQUIRE(!q.is_inv_data_available);
+    BOOST_REQUIRE(q.should_lookup_in_cloud_storage({}));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_should_not_make_api_call_when_inv_data_missing) {
+    // Inv. scrub is enabled but no data found on disk.  The intention behind
+    // using inventory data is to avoid API calls, so skip making calls because
+    // we will have to make one call for every segment.
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+    auto q
+      = cloud_storage::existence_query_context::load(false, model::ntp{}).get();
+    BOOST_REQUIRE(!q.is_inv_data_available);
+    BOOST_REQUIRE(!q.should_lookup_in_cloud_storage({}));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_should_make_api_call_when_inv_data_missing_and_override_set) {
+    // If override is set, make calls even if the data set is missing
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+    auto q
+      = cloud_storage::existence_query_context::load(true, model::ntp{}).get();
+    BOOST_REQUIRE(!q.is_inv_data_available);
+    BOOST_REQUIRE(q.should_lookup_in_cloud_storage({}));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_query_lookup_when_data_loaded_successfully) {
+    // The happy path - scrub enabled, data found on disk.
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+
+    model::ntp ntp{model::ns{"n"}, model::topic{"t"}, model::partition_id{0}};
+    constexpr std::string_view test_path{"t"};
+
+    cloud_storage::inventory::flush_ntp_hashes(
+      config::node_config().cloud_storage_inventory_hash_path(),
+      ntp,
+      {xxhash_64(test_path.data(), test_path.size())},
+      0)
+      .get();
+    auto q = cloud_storage::existence_query_context::load(false, ntp).get();
+
+    BOOST_REQUIRE(q.is_inv_data_available);
+    BOOST_REQUIRE(!q.should_lookup_in_cloud_storage(
+      cloud_storage::remote_segment_path{test_path}));
 }
