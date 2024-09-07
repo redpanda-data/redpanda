@@ -377,7 +377,7 @@ static void add_topic_config(
     // Wrap overrides in an optional because add_topic_config expects
     // optional<S> where S = tristate<T>
     std::optional<tristate<T>> override_value;
-    if (overrides.is_disabled() || overrides.has_optional_value()) {
+    if (overrides.is_engaged()) {
         override_value = std::make_optional(overrides);
     }
 

@@ -315,7 +315,7 @@ alter_topic_configuration(
 }
 
 static ss::future<chunked_vector<alter_configs_resource_response>>
-alter_broker_configuartion(chunked_vector<alter_configs_resource> resources) {
+alter_broker_configuration(chunked_vector<alter_configs_resource> resources) {
     return unsupported_broker_configuration<
       alter_configs_resource,
       alter_configs_resource_response>(
@@ -357,7 +357,7 @@ ss::future<response_ptr> alter_configs_handler::handle(
     futures.push_back(alter_topic_configuration(
       ctx, std::move(groupped.topic_changes), request.data.validate_only));
     futures.push_back(
-      alter_broker_configuartion(std::move(groupped.broker_changes)));
+      alter_broker_configuration(std::move(groupped.broker_changes)));
 
     auto ret = co_await ss::when_all_succeed(futures.begin(), futures.end());
     // include authorization errors

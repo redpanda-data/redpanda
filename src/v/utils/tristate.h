@@ -121,7 +121,7 @@ public:
             fmt::print(o, "{{{}}}", t.value());
             return o;
         }
-        return o << "{}";
+        return o << "{{nullopt}}";
     };
 
     std::optional<T>& get_optional() {
