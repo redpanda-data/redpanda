@@ -1631,7 +1631,7 @@ configuration::configuration()
       *this,
       "cloud_storage_enabled",
       "Enable archival storage",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , cloud_storage_enable_remote_read(
       *this,
