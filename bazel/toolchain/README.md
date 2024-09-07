@@ -23,3 +23,8 @@ Then build the docker image using buildx like so:
 ```
 docker buildx build --platform=linux/arm64 --build-arg "LLVM_VERSION=17.0.6" --file Dockerfile.llvm --output $PWD .
 ```
+
+### LTO Builds
+
+By default we build with PGO+LTO, but if PGO is causing issues (like on AArch64), we can choose a different build (resulting
+in a slower compiler) by adding the flag `--target=lto`. The current default target is `--target=pgo`
