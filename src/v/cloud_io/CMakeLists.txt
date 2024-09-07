@@ -10,3 +10,4 @@ v_cc_library(
     Seastar::seastar
     v::config)
 
+add_subdirectory(tests)
