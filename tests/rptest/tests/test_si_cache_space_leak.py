@@ -59,6 +59,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
             'segment_fallocation_step': 0x1000,
             'retention_local_target_bytes_default': self._segment_size,
             'retention_bytes': self._segment_size * 5,
+            'cloud_storage_cache_check_interval': 500,
         }
         super().__init__(test_context,
                          num_brokers=3,
