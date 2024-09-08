@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/inventory/ntp_hashes.h"
 #include "cloud_storage/remote_path_provider.h"
@@ -18,7 +17,6 @@
 #include "cloud_storage/types.h"
 #include "cluster/archival/run_quota.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/sstring.hh>
