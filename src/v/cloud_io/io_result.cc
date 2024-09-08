@@ -9,7 +9,7 @@
  */
 #include "cloud_io/io_result.h"
 
-namespace cloud_storage {
+namespace cloud_io {
 
 std::ostream& operator<<(std::ostream& o, const download_result& r) {
     switch (r) {
@@ -47,4 +47,4 @@ std::ostream& operator<<(std::ostream& o, const upload_result& r) {
     return o;
 }
 
-} // namespace cloud_storage
+} // namespace cloud_io

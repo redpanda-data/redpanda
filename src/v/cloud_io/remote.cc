@@ -184,7 +184,7 @@ int remote::delete_objects_max_keys() const {
     }
 }
 
-ss::future<cloud_storage::upload_result> remote::upload_stream(
+ss::future<upload_result> remote::upload_stream(
   transfer_details transfer_details,
   uint64_t content_length,
   const reset_input_stream& reset_str,
@@ -203,7 +203,7 @@ ss::future<cloud_storage::upload_result> remote::upload_stream(
       stream_label,
       transfer_details.key,
       content_length);
-    std::optional<cloud_storage::upload_result> result;
+    std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result
            && max_retries.value_or(1) > 0) {
         if (max_retries.has_value()) {
@@ -222,7 +222,7 @@ ss::future<cloud_storage::upload_result> remote::upload_stream(
               path,
               bucket);
             transfer_details.on_failure();
-            co_return cloud_storage::upload_result::cancelled;
+            co_return upload_result::cancelled;
         }
 
         auto reader_handle = co_await reset_str();
@@ -240,7 +240,7 @@ ss::future<cloud_storage::upload_result> remote::upload_stream(
 
         if (res) {
             transfer_details.on_success_size(content_length);
-            co_return cloud_storage::upload_result::success;
+            co_return upload_result::success;
         }
 
         lease.client->shutdown();
@@ -267,7 +267,7 @@ ss::future<cloud_storage::upload_result> remote::upload_stream(
             // not expected during upload
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::upload_result::failed;
+            result = upload_result::failed;
             break;
         }
     }
@@ -292,10 +292,10 @@ ss::future<cloud_storage::upload_result> remote::upload_stream(
           bucket,
           *result);
     }
-    co_return cloud_storage::upload_result::timedout;
+    co_return upload_result::timedout;
 }
 
-ss::future<cloud_storage::download_result> remote::download_stream(
+ss::future<download_result> remote::download_stream(
   transfer_details transfer_details,
   const try_consume_stream& cons_str,
   const std::string_view stream_label,
@@ -321,7 +321,7 @@ ss::future<cloud_storage::download_result> remote::download_stream(
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download {} {}", stream_label, path);
-    std::optional<cloud_storage::download_result> result;
+    std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         transfer_details.on_request(fib.retry_count());
 
@@ -342,7 +342,7 @@ ss::future<cloud_storage::download_result> remote::download_stream(
                 uint64_t content_length = co_await cons_str(
                   length, std::move(throttled_st));
                 transfer_details.on_success_size(content_length);
-                co_return cloud_storage::download_result::success;
+                co_return download_result::success;
             } catch (...) {
                 const auto ex = std::current_exception();
                 vlog(
@@ -375,10 +375,10 @@ ss::future<cloud_storage::download_result> remote::download_stream(
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::download_result::failed;
+            result = download_result::failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
-            result = cloud_storage::download_result::notfound;
+            result = download_result::notfound;
             break;
         }
     }
@@ -391,7 +391,7 @@ ss::future<cloud_storage::download_result> remote::download_stream(
           stream_label,
           bucket,
           path);
-        result = cloud_storage::download_result::timedout;
+        result = download_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
@@ -404,7 +404,7 @@ ss::future<cloud_storage::download_result> remote::download_stream(
     co_return *result;
 }
 
-ss::future<cloud_storage::download_result>
+ss::future<download_result>
 remote::download_object(download_request download_request) {
     auto guard = _gate.hold();
     auto& transfer_details = download_request.transfer_details;
@@ -420,7 +420,7 @@ remote::download_object(download_request download_request) {
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Downloading {} from {}", object_type, path);
 
-    std::optional<cloud_storage::download_result> result;
+    std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         download_request.transfer_details.on_request(fib.retry_count());
         auto resp = co_await lease.client->get_object(
@@ -433,7 +433,7 @@ remote::download_object(download_request download_request) {
                 resp.value());
             download_request.payload.append_fragments(std::move(buffer));
             transfer_details.on_success();
-            co_return cloud_storage::download_result::success;
+            co_return download_result::success;
         }
 
         lease.client->shutdown();
@@ -454,10 +454,10 @@ remote::download_object(download_request download_request) {
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::download_result::failed;
+            result = download_result::failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
-            result = cloud_storage::download_result::notfound;
+            result = download_result::notfound;
             break;
         }
     }
@@ -471,7 +471,7 @@ remote::download_object(download_request download_request) {
           bucket,
           object_type,
           path);
-        result = cloud_storage::download_result::timedout;
+        result = download_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
@@ -485,7 +485,7 @@ remote::download_object(download_request download_request) {
     co_return *result;
 }
 
-ss::future<cloud_storage::download_result> remote::object_exists(
+ss::future<download_result> remote::object_exists(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& path,
   retry_chain_node& parent,
@@ -496,7 +496,7 @@ ss::future<cloud_storage::download_result> remote::object_exists(
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Check {} {}", object_type, path);
-    std::optional<cloud_storage::download_result> result;
+    std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto resp = co_await lease.client->head_object(
           bucket, path, fib.get_timeout());
@@ -508,7 +508,7 @@ ss::future<cloud_storage::download_result> remote::object_exists(
               path,
               resp.value().object_size,
               resp.value().etag);
-            co_return cloud_storage::download_result::success;
+            co_return download_result::success;
         }
 
         // Error path
@@ -527,10 +527,10 @@ ss::future<cloud_storage::download_result> remote::object_exists(
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::download_result::failed;
+            result = download_result::failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
-            result = cloud_storage::download_result::notfound;
+            result = download_result::notfound;
             break;
         }
     }
@@ -542,7 +542,7 @@ ss::future<cloud_storage::download_result> remote::object_exists(
           bucket,
           object_type,
           path);
-        result = cloud_storage::download_result::timedout;
+        result = download_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
@@ -555,7 +555,7 @@ ss::future<cloud_storage::download_result> remote::object_exists(
     co_return *result;
 }
 
-ss::future<cloud_storage::upload_result>
+ss::future<upload_result>
 remote::delete_object(transfer_details transfer_details) {
     const auto& bucket = transfer_details.bucket;
     const auto& path = transfer_details.key;
@@ -566,19 +566,19 @@ remote::delete_object(transfer_details transfer_details) {
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete object {}", path);
-    std::optional<cloud_storage::upload_result> result;
+    std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         // NOTE: DeleteObject in S3 doesn't return an error
         // if the object doesn't exist. Because of that we're
-        // using 'cloud_storage::upload_result' type as a return type. No need
-        // to handle NoSuchKey error. The 'cloud_storage::upload_result'
+        // using 'upload_result' type as a return type. No need
+        // to handle NoSuchKey error. The 'upload_result'
         // represents any mutable operation.
         transfer_details.on_request(fib.retry_count());
         auto res = co_await lease.client->delete_object(
           bucket, path, fib.get_timeout());
 
         if (res) {
-            co_return cloud_storage::upload_result::success;
+            co_return upload_result::success;
         }
 
         lease.client->shutdown();
@@ -597,7 +597,7 @@ remote::delete_object(transfer_details transfer_details) {
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::upload_result::failed;
+            result = upload_result::failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
             vassert(
@@ -615,7 +615,7 @@ remote::delete_object(transfer_details transfer_details) {
           "DeleteObject {}, {}, backoff quota exceded, object not deleted",
           path,
           bucket);
-        result = cloud_storage::upload_result::timedout;
+        result = upload_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
@@ -632,7 +632,7 @@ requires std::ranges::range<R>
          && std::same_as<
            std::ranges::range_value_t<R>,
            cloud_storage_clients::object_key>
-ss::future<cloud_storage::upload_result> remote::delete_objects(
+ss::future<upload_result> remote::delete_objects(
   const cloud_storage_clients::bucket_name& bucket,
   R keys,
   retry_chain_node& parent,
@@ -642,7 +642,7 @@ ss::future<cloud_storage::upload_result> remote::delete_objects(
 
     if (keys.empty()) {
         vlog(ctxlog.info, "No keys to delete, returning");
-        co_return cloud_storage::upload_result::success;
+        co_return upload_result::success;
     }
 
     vlog(ctxlog.debug, "Deleting objects count {}", keys.size());
@@ -653,7 +653,7 @@ ss::future<cloud_storage::upload_result> remote::delete_objects(
     }
 
     const auto batches_to_delete = num_chunks(keys, delete_objects_max_keys());
-    std::vector<cloud_storage::upload_result> results;
+    std::vector<upload_result> results;
     results.reserve(batches_to_delete);
 
     co_await ss::max_concurrent_for_each(
@@ -691,15 +691,15 @@ ss::future<cloud_storage::upload_result> remote::delete_objects(
 
     if (results.empty()) {
         vlog(ctxlog.error, "No keys were deleted");
-        co_return cloud_storage::upload_result::failed;
+        co_return upload_result::failed;
     }
 
     co_return std::reduce(
       results.begin(),
       results.end(),
-      cloud_storage::upload_result::success,
+      upload_result::success,
       [](auto res_a, auto res_b) {
-          if (res_a != cloud_storage::upload_result::success) {
+          if (res_a != upload_result::success) {
               return res_a;
           }
 
@@ -707,7 +707,7 @@ ss::future<cloud_storage::upload_result> remote::delete_objects(
       });
 }
 
-ss::future<cloud_storage::upload_result> remote::delete_object_batch(
+ss::future<upload_result> remote::delete_object_batch(
   const cloud_storage_clients::bucket_name& bucket,
   std::vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent,
@@ -719,7 +719,7 @@ ss::future<cloud_storage::upload_result> remote::delete_object_batch(
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Deleting a batch of size {}", keys.size());
-    std::optional<cloud_storage::upload_result> result;
+    std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         req_cb(fib.retry_count());
         auto res = co_await lease.client->delete_objects(
@@ -735,10 +735,10 @@ ss::future<cloud_storage::upload_result> remote::delete_object_batch(
                   res.value().undeleted_keys.front().key,
                   res.value().undeleted_keys.front().reason);
 
-                co_return cloud_storage::upload_result::failed;
+                co_return upload_result::failed;
             }
 
-            co_return cloud_storage::upload_result::success;
+            co_return upload_result::success;
         }
 
         lease.client->shutdown();
@@ -757,7 +757,7 @@ ss::future<cloud_storage::upload_result> remote::delete_object_batch(
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::upload_result::failed;
+            result = upload_result::failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
             vassert(
@@ -777,7 +777,7 @@ ss::future<cloud_storage::upload_result> remote::delete_object_batch(
           "not deleted",
           keys.size(),
           bucket);
-        result = cloud_storage::upload_result::timedout;
+        result = upload_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
@@ -790,14 +790,14 @@ ss::future<cloud_storage::upload_result> remote::delete_object_batch(
     co_return *result;
 }
 
-template ss::future<cloud_storage::upload_result>
+template ss::future<upload_result>
 remote::delete_objects<std::vector<cloud_storage_clients::object_key>>(
   const cloud_storage_clients::bucket_name& bucket,
   std::vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent,
   std::function<void(size_t)>);
 
-template ss::future<cloud_storage::upload_result>
+template ss::future<upload_result>
 remote::delete_objects<std::deque<cloud_storage_clients::object_key>>(
   const cloud_storage_clients::bucket_name& bucket,
   std::deque<cloud_storage_clients::object_key> keys,
@@ -809,7 +809,7 @@ requires std::ranges::range<R>
          && std::same_as<
            std::ranges::range_value_t<R>,
            cloud_storage_clients::object_key>
-ss::future<cloud_storage::upload_result> remote::delete_objects_sequentially(
+ss::future<upload_result> remote::delete_objects_sequentially(
   const cloud_storage_clients::bucket_name& bucket,
   R keys,
   retry_chain_node& parent,
@@ -835,7 +835,7 @@ ss::future<cloud_storage::upload_result> remote::delete_objects_sequentially(
             .node = std::make_unique<retry_chain_node>(&parent)};
       });
 
-    std::vector<cloud_storage::upload_result> results;
+    std::vector<upload_result> results;
     results.reserve(key_nodes.size());
     auto fut = co_await ss::coroutine::as_future(ss::max_concurrent_for_each(
       key_nodes.begin(),
@@ -858,12 +858,12 @@ ss::future<cloud_storage::upload_result> remote::delete_objects_sequentially(
         } else {
             vlog(ctxlog.error, "Failed to delete keys: {}", eptr);
         }
-        co_return cloud_storage::upload_result::failed;
+        co_return upload_result::failed;
     }
 
     if (results.empty()) {
         vlog(ctxlog.error, "No keys were deleted");
-        co_return cloud_storage::upload_result::failed;
+        co_return upload_result::failed;
     }
 
     // This is not ideal, we lose all non-failures but the first one, but
@@ -872,9 +872,9 @@ ss::future<cloud_storage::upload_result> remote::delete_objects_sequentially(
     co_return std::reduce(
       results.begin(),
       results.end(),
-      cloud_storage::upload_result::success,
+      upload_result::success,
       [](auto res_a, auto res_b) {
-          if (res_a != cloud_storage::upload_result::success) {
+          if (res_a != upload_result::success) {
               return res_a;
           }
 
@@ -1002,8 +1002,7 @@ ss::future<list_result> remote::list_objects(
     co_return *result;
 }
 
-ss::future<cloud_storage::upload_result>
-remote::upload_object(upload_request upload_request) {
+ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     auto guard = _gate.hold();
 
     auto& transfer_details = upload_request.transfer_details;
@@ -1015,7 +1014,7 @@ remote::upload_object(upload_request upload_request) {
     auto path = cloud_storage_clients::object_key(transfer_details.key());
     auto upload_type = upload_request.display_str;
 
-    std::optional<cloud_storage::upload_result> result;
+    std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
@@ -1038,7 +1037,7 @@ remote::upload_object(upload_request upload_request) {
 
         if (res) {
             transfer_details.on_success();
-            co_return cloud_storage::upload_result::success;
+            co_return upload_result::success;
         }
 
         lease.client->shutdown();
@@ -1061,7 +1060,7 @@ remote::upload_object(upload_request upload_request) {
         case cloud_storage_clients::error_outcome::key_not_found:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
-            result = cloud_storage::upload_result::failed;
+            result = upload_result::failed;
             break;
         }
     }
@@ -1086,7 +1085,7 @@ remote::upload_object(upload_request upload_request) {
           *result,
           upload_type);
     }
-    co_return cloud_storage::upload_result::timedout;
+    co_return upload_result::timedout;
 }
 
 ss::future<>

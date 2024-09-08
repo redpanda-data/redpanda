@@ -34,6 +34,9 @@
 
 namespace cloud_storage {
 
+using upload_result = cloud_io::upload_result;
+using download_result = cloud_io::download_result;
+
 using remote_metrics_disabled
   = ss::bool_class<struct remote_metrics_disabled_tag>;
 
