@@ -104,7 +104,7 @@ std::optional<ss::sstring> tls_config::validate(const tls_config& c) {
 }
 
 std::ostream& operator<<(std::ostream& o, const config::p12_container& p) {
-    fmt::print(o, "{{ p12 file: {}, p12 password: REDACTED }}", p.p12_password);
+    fmt::print(o, "{{ p12 file: {}, p12 password: REDACTED }}", p.p12_path);
     return o;
 }
 
