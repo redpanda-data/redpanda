@@ -95,9 +95,7 @@ ss::future<> remote::start() { co_await _materialized->start(); }
 
 ss::future<> remote::stop() {
     cst_log.debug("Stopping remote...");
-    _as.request_abort();
     co_await _materialized->stop();
-    co_await _gate.close();
     cst_log.debug("Stopped remote...");
 }
 
