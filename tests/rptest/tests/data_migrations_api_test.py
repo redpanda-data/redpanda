@@ -134,6 +134,7 @@ class DataMigrationsApiTest(RedpandaTest):
             return self.on_all_live_nodes(
                 id, lambda m: m is not None and m["state"] in states)
 
+        self.logger.info(f'waiting for {" or ".join(states)}')
         wait_until(
             migration_in_one_of_states,
             timeout_sec=90,
@@ -238,21 +239,16 @@ class DataMigrationsApiTest(RedpandaTest):
 
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.prepare)
-            self.logger.info('waiting for preparing or prepared')
             self.wait_for_migration_states(out_migration_id,
                                            ['preparing', 'prepared'])
-            self.logger.info('waiting for prepared')
             self.wait_for_migration_states(out_migration_id, ['prepared'])
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.execute)
-            self.logger.info('waiting for executing or executed')
             self.wait_for_migration_states(out_migration_id,
                                            ['executing', 'executed'])
-            self.logger.info('waiting for executed')
             self.wait_for_migration_states(out_migration_id, ['executed'])
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.finish)
-            self.logger.info('waiting for cut_over or finished')
             self.wait_for_migration_states(out_migration_id,
                                            ['cut_over', 'finished'])
             self.wait_for_migration_states(out_migration_id, ['finished'])
@@ -287,21 +283,16 @@ class DataMigrationsApiTest(RedpandaTest):
 
             admin.execute_data_migration_action(in_migration_id,
                                                 MigrationAction.prepare)
-            self.logger.info('waiting for preparing or prepared')
             self.wait_for_migration_states(in_migration_id,
                                            ['preparing', 'prepared'])
-            self.logger.info('waiting for prepared')
             self.wait_for_migration_states(in_migration_id, ['prepared'])
             admin.execute_data_migration_action(in_migration_id,
                                                 MigrationAction.execute)
-            self.logger.info('waiting for executing or executed')
             self.wait_for_migration_states(in_migration_id,
                                            ['executing', 'executed'])
-            self.logger.info('waiting for executed')
             self.wait_for_migration_states(in_migration_id, ['executed'])
             admin.execute_data_migration_action(in_migration_id,
                                                 MigrationAction.finish)
-            self.logger.info('waiting for cut_over or finished')
             self.wait_for_migration_states(in_migration_id,
                                            ['cut_over', 'finished'])
             self.wait_for_migration_states(in_migration_id, ['finished'])
@@ -506,7 +497,6 @@ class DataMigrationsApiTest(RedpandaTest):
         admin = Admin(self.redpanda)
         admin.execute_data_migration_action(migration_id,
                                             MigrationAction.cancel)
-        self.logger.info('waiting for cancelled')
         self.wait_for_migration_states(migration_id, ['cancelled'])
         admin.delete_data_migration(migration_id)
 
@@ -718,7 +708,6 @@ class DataMigrationsApiTest(RedpandaTest):
                 admin.execute_data_migration_action(in_migration_id,
                                                     MigrationAction.finish)
 
-                self.logger.info('waiting for finished')
                 self.wait_for_migration_states(in_migration_id, ['finished'])
                 admin.delete_data_migration(in_migration_id)
                 # now the topic should be fully operational
