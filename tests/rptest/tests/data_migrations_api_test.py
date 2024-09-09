@@ -9,7 +9,8 @@
 import random
 import threading
 import time
-from typing import Callable
+from enum import Enum
+from typing import Callable, NamedTuple, Literal, List
 import typing
 from requests.exceptions import ConnectionError
 
@@ -66,6 +67,32 @@ class TransferLeadersBackgroundThread:
                 self.logger.info(
                     f"error transferring leadership of {self.topic}/{p_id} - {e}"
                 )
+
+
+class CancellationStage(NamedTuple):
+    dir: Literal['in', 'out']
+    stage: Literal['preparing', 'prepared', 'executing', 'executed']
+
+
+class TmtpdiParams(NamedTuple):
+    """parameters for test_migrated_topic_data_integrity"""
+    cancellation: CancellationStage | None
+    use_alias: bool
+
+
+def generate_tmptpdi_params() -> List[TmtpdiParams]:
+    cancellation_stages = [
+        CancellationStage(dir, stage)
+        for dir in typing.get_args(CancellationStage.dir)
+        for stage in typing.get_args(CancellationStage.stage)
+    ]
+    return [
+        TmtpdiParams(cancellation, use_alias)
+        for cancellation in [None] + cancellation_stages
+        for use_alias in (True, False)
+        # alias only affects inbound, pointless to vary if cancel earlier
+        if not use_alias or cancellation is None or cancellation.dir == 'in'
+    ]
 
 
 class DataMigrationsApiTest(RedpandaTest):
@@ -420,13 +447,10 @@ class DataMigrationsApiTest(RedpandaTest):
         self.assert_no_topics()
 
     @cluster(num_nodes=4, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
-    @matrix(use_alias=[True, False],
-            transfer_leadership=[True, False],
-            cancellation=[None] +
-            [(dir, stage) for dir in ('in', 'out')
-             for stage in ('preparing', 'prepared', 'executing', 'executed')])
-    def test_migrated_topic_data_integrity(self, use_alias,
-                                           transfer_leadership, cancellation):
+    @matrix(transfer_leadership=[True, False],
+            params=generate_tmptpdi_params())
+    def test_migrated_topic_data_integrity(self, transfer_leadership: bool,
+                                           params: TmtpdiParams):
         rpk = RpkTool(self.redpanda)
         self.redpanda.si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "missing_segments"})
@@ -449,7 +473,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.prepare)
-            if cancellation == ('out', 'preparing'):
+            if params.cancellation == CancellationStage('out', 'preparing'):
                 self.wait_for_migration_states(out_migration_id,
                                                ['preparing', 'prepared'])
                 return self.cancel_outbound(out_migration_id,
@@ -466,13 +490,13 @@ class DataMigrationsApiTest(RedpandaTest):
                                        metadata_locked=True,
                                        read_blocked=False,
                                        produce_blocked=False)
-            if cancellation == ('out', 'prepared'):
+            if params.cancellation == CancellationStage('out', 'prepared'):
                 return self.cancel_outbound(out_migration_id,
                                             workload_topic.name, producer)
 
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.execute)
-            if cancellation == ('out', 'executing'):
+            if params.cancellation == CancellationStage('out', 'executing'):
                 self.wait_for_migration_states(out_migration_id,
                                                ['executing', 'executed'])
                 return self.cancel_outbound(out_migration_id,
@@ -488,7 +512,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                        metadata_locked=True,
                                        read_blocked=False,
                                        produce_blocked=True)
-            if cancellation == ('out', 'executed'):
+            if params.cancellation == CancellationStage('out', 'executed'):
                 return self.cancel_outbound(out_migration_id,
                                             workload_topic.name, producer)
 
@@ -518,9 +542,9 @@ class DataMigrationsApiTest(RedpandaTest):
             admin.delete_data_migration(out_migration_id)
 
         # attach topic back
-        inbound_topic_name = "aliased-workload-topic" if use_alias else workload_topic.name
+        inbound_topic_name = "aliased-workload-topic" if params.use_alias else workload_topic.name
         alias = None
-        if use_alias:
+        if params.use_alias:
             alias = NamespacedTopic(topic=inbound_topic_name)
 
         in_tl_thread = TransferLeadersBackgroundThread(
@@ -547,7 +571,7 @@ class DataMigrationsApiTest(RedpandaTest):
                 admin.execute_data_migration_action(in_migration_id,
                                                     MigrationAction.prepare)
 
-                if cancellation == ('in', 'preparing'):
+                if params.cancellation == CancellationStage('in', 'preparing'):
                     cancellation = None
                     self.wait_for_migration_states(in_migration_id,
                                                    ['preparing', 'prepared'])
@@ -567,7 +591,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                            read_blocked=True,
                                            produce_blocked=True)
 
-                if cancellation == ('in', 'prepared'):
+                if params.cancellation == CancellationStage('in', 'prepared'):
                     cancellation = None
                     self.cancel_inbound(in_migration_id, inbound_topic_name)
                     continue
@@ -580,7 +604,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
                 admin.execute_data_migration_action(in_migration_id,
                                                     MigrationAction.execute)
-                if cancellation == ('in', 'executing'):
+                if params.cancellation == CancellationStage('in', 'executing'):
                     cancellation = None
                     self.wait_for_migration_states(in_migration_id,
                                                    ['executing', 'executed'])
@@ -598,7 +622,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                            metadata_locked=True,
                                            read_blocked=True,
                                            produce_blocked=True)
-                if cancellation == ('in', 'executed'):
+                if params.cancellation == CancellationStage('in', 'executed'):
                     cancellation = None
                     self.cancel_inbound(in_migration_id, inbound_topic_name)
                     continue
