@@ -32,8 +32,9 @@ namespace ranges = std::ranges;
 namespace views = std::views;
 
 namespace {
-// hash-string/ns/tp/partition_rev/.*
-const RE2 path_expr{"^[[:xdigit:]]+/(.*?)/(.*?)/(\\d+)_\\d+/.*?"};
+// hash-string/ns/tp/partition_rev/.* OR
+// cluster-uuid/ns/tp/partition_rev/.*
+const RE2 path_expr{"^[[:xdigit:]-]+/(.*?)/(.*?)/(\\d+)_\\d+/.*?"};
 
 // Holds hashes for a given NTP in memory before they will be flushed to disk.
 // One of these structures is held per NTP in a map keyed by the NTP itself.
