@@ -30,6 +30,10 @@ from ducktape.mark import matrix
 from contextlib import nullcontext
 import requests
 
+MIGRATION_LOG_ALLOW_LIST = [
+    'Error during log recovery: cloud_storage::missing_partition_exception',
+]
+
 
 class TransferLeadersBackgroundThread:
     def __init__(self, redpanda: RedpandaServiceBase, topic: str):
@@ -137,7 +141,7 @@ class DataMigrationsApiTest(RedpandaTest):
             f"Expected migration with id {migration_id} is not present")
         return migration_id
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
         self.finjector = Finjector(self.redpanda, self.test_context)
 
@@ -415,7 +419,7 @@ class DataMigrationsApiTest(RedpandaTest):
         self.cancel(migration_id, topic_name)
         self.assert_no_topics()
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     @matrix(use_alias=[True, False],
             transfer_leadership=[True, False],
             cancellation=[None] +
