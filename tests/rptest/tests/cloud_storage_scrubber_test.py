@@ -7,12 +7,15 @@
 # https: // github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 import collections
+import csv
+import gzip
 import itertools
 import json
 import random
 import re
 import time
 from dataclasses import dataclass
+from io import StringIO
 from typing import DefaultDict, Optional, Tuple
 
 from ducktape.mark import matrix
@@ -25,7 +28,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint, CloudStorageType
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
@@ -203,6 +206,9 @@ class CloudStorageScrubberTest(RedpandaTest):
                 # the deleted segment and remove the gap
                 "cloud_storage_enable_segment_merging": False,
                 "cloud_storage_spillover_manifest_size": None,
+                "cloud_storage_inventory_based_scrub_enabled": True,
+                "cloud_storage_inventory_self_managed_report_config": True,
+                "cloud_storage_inventory_report_check_interval_ms": 10000
             },
             si_settings=SISettings(
                 test_context,
@@ -214,6 +220,41 @@ class CloudStorageScrubberTest(RedpandaTest):
         self.bucket_name = self.si_settings.cloud_storage_bucket
         self.rpk = RpkTool(self.redpanda)
         self.expected_error_logs = []
+
+    def _produce_inventory_report(self):
+        data = StringIO()
+        writer = csv.writer(data)
+
+        # Change segment names before adding to data set. As the segment to be dropped is computed later,
+        # at this time its name is not known. If it is present in the data set, it will not be checked in
+        # the bucket and the anomaly will never be generated. This report simply exists as a sanity check
+        # that the scrubber works as expected when the inventory data set is empty. We do not altogether
+        # skip adding the segment, because we still want the data set to be present on disk, so that the
+        # scrubber loads the data and performs segment checks. The presence of the changed segment name
+        # causes the NTP hash dir to be created on disk.
+        # TODO add more assertions once metrics for scrubber run are added
+        for obj in self.cloud_storage_client.list_objects(self.bucket_name):
+            if "log" in obj.key:
+                writer.writerow([self.bucket_name, obj.key + "-change-name"])
+        self.cloud_storage_client.put_object(
+            self.si_settings.cloud_storage_bucket,
+            "report.gz",
+            gzip.compress(data.getvalue().encode()),
+            is_bytes=True)
+
+        root_path = f'redpanda_scrubber_inventory/{self.si_settings.cloud_storage_bucket}/redpanda_scrubber_inventory'
+
+        manifest_json_path = f'{root_path}/2099-09-09T11-11Z/manifest.json'
+        manifest_checksum_path = f'{root_path}/2099-09-09T11-11Z/manifest.checksum'
+
+        self.cloud_storage_client.put_object(
+            self.si_settings.cloud_storage_bucket, manifest_json_path,
+            """{"files": [{
+                "key": "report.gz"
+            }]}""")
+
+        self.cloud_storage_client.put_object(
+            self.si_settings.cloud_storage_bucket, manifest_checksum_path, '')
 
     def _produce(self):
         # Use a smaller working set for debug builds to keep the test timely
@@ -636,6 +677,11 @@ class CloudStorageScrubberTest(RedpandaTest):
 
         self._produce()
         self._assert_no_anomalies()
+
+        # Add an inv. report to the bucket. This will have some keys missing, but scrubbing
+        # should still proceed as expected because HTTP calls will be made when keys are not
+        # found in report.
+        self._produce_inventory_report()
 
         self._delete_spillover_manifest_and_await_anomaly(expected_anomalies)
         self._delete_segment_and_await_anomaly(expected_anomalies)
