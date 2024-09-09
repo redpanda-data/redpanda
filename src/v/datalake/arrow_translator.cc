@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "datalake/arrow_schema_translator.h"
+#include "datalake/arrow_translator.h"
 
 #include "container/fragmented_vector.h"
 #include "iceberg/datatypes.h"
