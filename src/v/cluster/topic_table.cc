@@ -801,9 +801,6 @@ void incremental_update(
         // It's guaranteed that the remove operation will only be
         // used with one of the 'drop_' flags.
         property = model::add_shadow_indexing_flag(*property, *override.value);
-        if (*property == model::shadow_indexing_mode::disabled) {
-            property = std::nullopt;
-        }
         return;
     case incremental_update_operation::set:
         // set new value

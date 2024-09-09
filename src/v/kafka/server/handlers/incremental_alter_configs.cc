@@ -49,7 +49,22 @@ static void parse_and_set_shadow_indexing_mode(
     switch (op) {
     case config_resource_operation::remove:
         simode.op = cluster::incremental_update_operation::remove;
-        simode.value = model::negate_shadow_indexing_flag(enabled_value);
+        switch (enabled_value) {
+        case model::shadow_indexing_mode::archival:
+            simode.value
+              = config::shard_local_cfg().cloud_storage_enable_remote_write()
+                  ? model::shadow_indexing_mode::archival
+                  : model::shadow_indexing_mode::drop_archival;
+            break;
+        case model::shadow_indexing_mode::fetch:
+            simode.value
+              = config::shard_local_cfg().cloud_storage_enable_remote_read()
+                  ? model::shadow_indexing_mode::fetch
+                  : model::shadow_indexing_mode::drop_fetch;
+            break;
+        default:
+            break;
+        }
         break;
     case config_resource_operation::set:
         simode.op = cluster::incremental_update_operation::set;
