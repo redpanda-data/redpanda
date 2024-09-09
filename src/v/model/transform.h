@@ -228,19 +228,7 @@ struct transform_metadata
     friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
 
     void serde_write(iobuf& out) const;
-
-    auto serde_fields() {
-        return std::tie(
-          name,
-          input_topic,
-          output_topics,
-          environment,
-          uuid,
-          source_ptr,
-          offset_options,
-          paused,
-          compression_mode);
-    }
+    void serde_read(iobuf_parser& in, const serde::header& h);
 };
 
 // A patch update for transform metadata.
