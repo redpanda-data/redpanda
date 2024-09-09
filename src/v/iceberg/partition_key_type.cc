@@ -83,4 +83,30 @@ partition_key_type partition_key_type::create(
     return {std::move(schema_struct)};
 }
 
+partition_key_type partition_key_type::copy() const {
+    auto ret_type = struct_type{};
+    ret_type.fields.reserve(type.fields.size());
+    for (const auto& partition_field : type.fields) {
+        if (!partition_field) {
+            ret_type.fields.emplace_back(nullptr);
+            continue;
+        }
+        // Partition keys should only be comprised of primitive types, per the
+        // partitioning transformations defined by the Iceberg spec.
+        const auto& partition_type = partition_field->type;
+        if (!std::holds_alternative<primitive_type>(partition_type)) {
+            throw std::invalid_argument(fmt::format(
+              "Partition key type holds unexpected non-primitive type: {}",
+              partition_type));
+        }
+        // NOTE: primitive types all have default copy constructors.
+        ret_type.fields.emplace_back(nested_field::create(
+          partition_field->id,
+          partition_field->name,
+          partition_field->required,
+          std::get<primitive_type>(partition_type)));
+    }
+    return partition_key_type{std::move(ret_type)};
+}
+
 } // namespace iceberg
