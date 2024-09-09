@@ -203,7 +203,7 @@ ss::future<> connection_context::start() {
 }
 
 ss::future<> connection_context::stop() {
-    if (_hook) {
+    if (_hook && is_linked()) {
         _hook.value().get().erase(_hook.value().get().iterator_to(*this));
     }
     if (conn) {
