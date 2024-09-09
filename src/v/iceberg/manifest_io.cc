@@ -14,6 +14,8 @@
 #include "iceberg/logger.h"
 #include "iceberg/manifest.h"
 #include "iceberg/manifest_avro.h"
+#include "iceberg/manifest_list.h"
+#include "iceberg/manifest_list_avro.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -82,6 +84,12 @@ manifest_io::download_manifest(const manifest_path& path) {
       path(), "iceberg::manifest", parse_manifest);
 }
 
+ss::future<checked<manifest_list, manifest_io::errc>>
+manifest_io::download_manifest_list(const manifest_list_path& path) {
+    return download_object<manifest_list>(
+      path(), "iceberg::manifest_list", parse_manifest_list);
+}
+
 template<typename T>
 ss::future<std::optional<manifest_io::errc>> manifest_io::upload_object(
   const std::filesystem::path& path,
@@ -127,7 +135,17 @@ ss::future<std::optional<manifest_io::errc>> manifest_io::upload_object(
 ss::future<std::optional<manifest_io::errc>>
 manifest_io::upload_manifest(const manifest_path& path, const manifest& m) {
     return upload_object<manifest>(
-      path(), m, "iceberg::manifest", serialize_avro);
+      path(), m, "iceberg::manifest", [](const manifest& m) {
+          return serialize_avro(m);
+      });
+}
+
+ss::future<std::optional<manifest_io::errc>> manifest_io::upload_manifest_list(
+  const manifest_list_path& path, const manifest_list& m) {
+    return upload_object<manifest_list>(
+      path(), m, "iceberg::manifest_list", [](const manifest_list& m) {
+          return serialize_avro(m);
+      });
 }
 
 } // namespace iceberg

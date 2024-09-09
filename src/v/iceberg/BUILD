@@ -151,8 +151,8 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":logger",
-        ":manifest",
         ":manifest_avro",
+        ":manifest_list_avro",
         "//src/v/bytes:iobuf",
         "//src/v/cloud_storage_clients",
         "//src/v/ssx:future_util",
@@ -161,6 +161,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":manifest",
+        ":manifest_list",
         "//src/v/base",
         "//src/v/cloud_io:remote",
         "//src/v/model",

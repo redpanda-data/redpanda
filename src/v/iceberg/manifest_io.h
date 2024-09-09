@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_io/remote.h"
 #include "iceberg/manifest.h"
+#include "iceberg/manifest_list.h"
 #include "model/fundamental.h"
 #include "utils/named_type.h"
 
@@ -23,6 +24,8 @@
 namespace iceberg {
 
 using manifest_path
+  = named_type<std::filesystem::path, struct manifest_path_tag>;
+using manifest_list_path
   = named_type<std::filesystem::path, struct manifest_path_tag>;
 
 class manifest_io {
@@ -45,9 +48,13 @@ public:
 
     ss::future<checked<manifest, errc>>
     download_manifest(const manifest_path& path);
+    ss::future<checked<manifest_list, errc>>
+    download_manifest_list(const manifest_list_path& path);
 
     ss::future<std::optional<errc>>
     upload_manifest(const manifest_path& path, const manifest&);
+    ss::future<std::optional<errc>>
+    upload_manifest_list(const manifest_list_path& path, const manifest_list&);
 
 private:
     template<typename T>
