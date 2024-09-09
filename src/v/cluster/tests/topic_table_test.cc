@@ -515,6 +515,52 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
 }
 
+FIXTURE_TEST(test_topic_update_shadow_indexing_ops, topic_table_fixture) {
+    auto& topics = table.local();
+    // Create a topic with defaults
+    auto create = make_create_topic_cmd("test_shadow_indexing", 1, 1);
+    auto tp_ns = create.value.cfg.tp_ns;
+    auto ec = topics.apply(create, model::offset{10}).get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+
+    // Default is std::nullopt.
+    auto cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE(!cfg->properties.shadow_indexing.has_value());
+
+    // Set fetch mode to enabled.
+    cluster::incremental_topic_updates update;
+    update.shadow_indexing.op = cluster::incremental_update_operation::set;
+    update.shadow_indexing.value.emplace(model::shadow_indexing_mode::fetch);
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, update},
+             model::offset{11})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+    cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE_EQUAL(
+      model::is_fetch_enabled(cfg->properties.shadow_indexing.value()), true);
+
+    // Disable fetch by issuing remove operation with drop_fetch, but still
+    // expect a value for shadow indexing mode.
+    update.shadow_indexing.op = cluster::incremental_update_operation::remove;
+    update.shadow_indexing.value.emplace(
+      model::shadow_indexing_mode::drop_fetch);
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, update},
+             model::offset{11})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+    cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE_EQUAL(
+      cfg->properties.shadow_indexing.value(),
+      model::shadow_indexing_mode::disabled);
+}
+
 FIXTURE_TEST(test_topic_table_iterator_basic, topic_table_fixture) {
     create_topics();
 
