@@ -31,6 +31,7 @@
 #include <seastar/util/defer.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/test/tools/old/interface.hpp>
 
 #include <optional>
 
@@ -713,6 +714,91 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "false", new_describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", new_describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", new_describe_resp);
+}
+
+FIXTURE_TEST(
+  test_incremental_alter_config_shadow_indexing_mode,
+  alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+
+    auto& cluster_config = lconf();
+    cluster_config.get("cloud_storage_enable_remote_read").set_value(false);
+    cluster_config.get("cloud_storage_enable_remote_write").set_value(false);
+
+    model::topic test_tp{"tapioca"};
+    create_topic(test_tp, 1);
+
+    const model::ntp ntp{model::kafka_namespace, test_tp, 0};
+    auto* partition = app.partition_manager.local().get(ntp).get();
+    auto* log = partition->log().get();
+
+    // Assert that topic property as described is false, and that this is also
+    // reflected in the partition's ntp_config.
+    auto describe_resp = describe_configs(test_tp);
+    assert_property_value(
+      test_tp, "redpanda.remote.read", "false", describe_resp);
+
+    const auto& ntp_config = log->config();
+    BOOST_REQUIRE(ntp_config.has_overrides());
+    auto shadow_indexing_mode = ntp_config.get_overrides().shadow_indexing_mode;
+    BOOST_REQUIRE(shadow_indexing_mode.has_value());
+    BOOST_REQUIRE(!model::is_fetch_enabled(shadow_indexing_mode.value()));
+    BOOST_REQUIRE(!model::is_archival_enabled(shadow_indexing_mode.value()));
+    BOOST_REQUIRE_EQUAL(
+      shadow_indexing_mode.value(), model::shadow_indexing_mode::disabled);
+
+    // Set cluster default to `true`.
+    cluster_config.get("cloud_storage_enable_remote_read").set_value(true);
+
+    // Sanity check that ntp_config didn't follow the cluster default.
+    shadow_indexing_mode = ntp_config.get_overrides().shadow_indexing_mode;
+    BOOST_REQUIRE(shadow_indexing_mode.has_value());
+    BOOST_REQUIRE(!model::is_fetch_enabled(shadow_indexing_mode.value()));
+    BOOST_REQUIRE(!model::is_archival_enabled(shadow_indexing_mode.value()));
+    BOOST_REQUIRE_EQUAL(
+      shadow_indexing_mode.value(), model::shadow_indexing_mode::disabled);
+
+    // Issue remove operation on topic property.
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      properties;
+    properties.emplace(
+      "redpanda.remote.read",
+      std::make_pair(std::nullopt, kafka::config_resource_operation::remove));
+
+    auto resp = incremental_alter_configs(
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
+
+    // --delete call will cause the configuration to default back to the cluster
+    // config, which is `true`.
+    describe_resp = describe_configs(test_tp);
+    assert_property_value(
+      test_tp, "redpanda.remote.read", "true", describe_resp);
+    BOOST_REQUIRE(ntp_config.has_overrides());
+    shadow_indexing_mode = ntp_config.get_overrides().shadow_indexing_mode;
+    BOOST_REQUIRE(shadow_indexing_mode.has_value());
+    BOOST_REQUIRE(model::is_fetch_enabled(shadow_indexing_mode.value()));
+    BOOST_REQUIRE(!model::is_archival_enabled(shadow_indexing_mode.value()));
+
+    // But, if we change the cluster config once more, we don't expect the ntp
+    // config to follow for these tiered storage properties, even though
+    // --delete was issued.
+    cluster_config.get("cloud_storage_enable_remote_read").set_value(false);
+
+    describe_resp = describe_configs(test_tp);
+    assert_property_value(
+      test_tp, "redpanda.remote.read", "true", describe_resp);
+    BOOST_REQUIRE(ntp_config.has_overrides());
+    shadow_indexing_mode = ntp_config.get_overrides().shadow_indexing_mode;
+    BOOST_REQUIRE(shadow_indexing_mode.has_value());
+    BOOST_REQUIRE(model::is_fetch_enabled(shadow_indexing_mode.value()));
+    BOOST_REQUIRE(!model::is_archival_enabled(shadow_indexing_mode.value()));
 }
 
 FIXTURE_TEST(
