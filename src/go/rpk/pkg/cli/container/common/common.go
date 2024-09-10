@@ -197,6 +197,9 @@ func GetState(c Client, nodeID uint, isConsole bool) (*NodeState, error) {
 		config.DefaultSchemaRegPort,
 		containerJSON,
 	)
+	if err != nil {
+		return nil, err
+	}
 	hostConsolePort, err := getHostPort(
 		config.DefaultConsolePort,
 		containerJSON,
@@ -229,7 +232,7 @@ func CreateNetwork(c Client, subnet, gateway string) (string, error) {
 	args.Add("name", redpandaNetwork)
 	networks, err := c.NetworkList(
 		ctx,
-		types.NetworkListOptions{Filters: args},
+		network.ListOptions{Filters: args},
 	)
 	if err != nil {
 		return "", err
@@ -243,7 +246,7 @@ func CreateNetwork(c Client, subnet, gateway string) (string, error) {
 
 	fmt.Printf("Creating network %q\n", redpandaNetwork)
 	resp, err := c.NetworkCreate(
-		ctx, redpandaNetwork, types.NetworkCreate{
+		ctx, redpandaNetwork, network.CreateOptions{
 			Driver: "bridge",
 			IPAM: &network.IPAM{
 				Driver: "default",
@@ -525,7 +528,7 @@ func getHostPort(
 
 func nodeIP(c Client, netID string, id uint) (string, error) {
 	ctx, _ := DefaultCtx()
-	networkResource, err := c.NetworkInspect(ctx, netID, types.NetworkInspectOptions{})
+	networkResource, err := c.NetworkInspect(ctx, netID, network.InspectOptions{})
 	if err != nil {
 		return "", err
 	}

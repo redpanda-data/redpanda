@@ -106,7 +106,7 @@ The STATE columns shows which state the group is in:
   - Empty: The group currently has no members.
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -117,7 +117,7 @@ The STATE columns shows which state the group is in:
 			normalizedFilterStates := make([]string, len(filterStates))
 			for i, state := range filterStates {
 				vsi := slices.IndexFunc(validStates, func(elem string) bool {
-					return strings.ToLower(elem) == strings.ToLower(state)
+					return strings.EqualFold(elem, state)
 				})
 
 				if vsi == -1 {
@@ -162,7 +162,7 @@ The STATE columns shows which state the group is in:
 
 	allValidStates := strings.Join(validStates, ", ")
 	cmd.Flags().StringSliceVarP(&filterStates, "states", "s", []string{}, fmt.Sprintf("Comma-separated list of group states to filter for. Possible states: [%s]", allValidStates))
-	cmd.RegisterFlagCompletionFunc("states", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cmd.RegisterFlagCompletionFunc("states", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return validStates, cobra.ShellCompDirectiveDefault
 	})
 	return cmd
@@ -192,7 +192,7 @@ automatically are cleaned up, such as when you create temporary groups for
 quick investigation or testing. This command helps you do that.
 `,
 		Args: cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 

@@ -75,8 +75,8 @@ type MockClient struct {
 	MockNetworkCreate func(
 		ctx context.Context,
 		name string,
-		options types.NetworkCreate,
-	) (types.NetworkCreateResponse, error)
+		options network.CreateOptions,
+	) (network.CreateResponse, error)
 
 	MockNetworkRemove func(
 		ctx context.Context,
@@ -85,14 +85,14 @@ type MockClient struct {
 
 	MockNetworkList func(
 		ctx context.Context,
-		options types.NetworkListOptions,
-	) ([]types.NetworkResource, error)
+		options network.ListOptions,
+	) ([]network.Inspect, error)
 
 	MockNetworkInspect func(
 		ctx context.Context,
 		networkID string,
-		options types.NetworkInspectOptions,
-	) (types.NetworkResource, error)
+		options network.InspectOptions,
+	) (network.Inspect, error)
 
 	MockIsErrNotFound func(err error) bool
 
@@ -193,12 +193,12 @@ func (c *MockClient) ContainerRemove(
 }
 
 func (c *MockClient) NetworkCreate(
-	ctx context.Context, name string, options types.NetworkCreate,
-) (types.NetworkCreateResponse, error) {
+	ctx context.Context, name string, options network.CreateOptions,
+) (network.CreateResponse, error) {
 	if c.MockNetworkCreate != nil {
 		return c.MockNetworkCreate(ctx, name, options)
 	}
-	return types.NetworkCreateResponse{}, nil
+	return network.CreateResponse{}, nil
 }
 
 func (c *MockClient) NetworkRemove(ctx context.Context, name string) error {
@@ -209,21 +209,21 @@ func (c *MockClient) NetworkRemove(ctx context.Context, name string) error {
 }
 
 func (c *MockClient) NetworkList(
-	ctx context.Context, options types.NetworkListOptions,
-) ([]types.NetworkResource, error) {
+	ctx context.Context, options network.ListOptions,
+) ([]network.Inspect, error) {
 	if c.MockNetworkList != nil {
 		return c.MockNetworkList(ctx, options)
 	}
-	return []types.NetworkResource{}, nil
+	return []network.Inspect{}, nil
 }
 
 func (c *MockClient) NetworkInspect(
-	ctx context.Context, networkID string, options types.NetworkInspectOptions,
-) (types.NetworkResource, error) {
+	ctx context.Context, networkID string, options network.InspectOptions,
+) (network.Inspect, error) {
 	if c.MockNetworkInspect != nil {
 		return c.MockNetworkInspect(ctx, networkID, options)
 	}
-	return types.NetworkResource{}, nil
+	return network.Inspect{}, nil
 }
 
 func (c *MockClient) IsErrNotFound(err error) bool {

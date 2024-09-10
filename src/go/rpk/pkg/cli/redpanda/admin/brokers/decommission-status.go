@@ -26,7 +26,7 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "decommission-status [BROKER ID]",
 		Short: "Show the progress of a node decommissioning",
-		Long: `Show the progrss of a node decommissioning.
+		Long: `Show the progress of a node decommissioning.
 
 When a node is being decommissioned, this command reports the decommissioning
 progress as follows, where PARTITION-SIZE is in bytes. Using -H, it prints the
