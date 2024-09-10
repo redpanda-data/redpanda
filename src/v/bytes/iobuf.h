@@ -152,10 +152,12 @@ public:
       , _verify_shard(x._verify_shard)
 #endif
     {
+        x.mutating_method_called();
         x._frags = container{};
         x._size = 0;
     }
     iobuf& operator=(iobuf&& x) noexcept {
+        mutating_method_called();
         if (this != &x) {
             this->~iobuf();
             new (this) iobuf(std::move(x));
@@ -339,6 +341,7 @@ private:
 };
 
 inline void iobuf::clear() {
+    mutating_method_called();
     _frags.clear_and_dispose(&details::dispose_io_fragment);
     _size = 0;
 }
@@ -382,6 +385,7 @@ inline void iobuf::mutating_method_called() const {
 }
 
 inline void iobuf::append(std::unique_ptr<fragment> f) {
+    mutating_method_called();
     if (!_frags.empty()) {
         _frags.back().trim();
     }
@@ -390,6 +394,7 @@ inline void iobuf::append(std::unique_ptr<fragment> f) {
     _frags.push_back(*f.release());
 }
 inline void iobuf::prepend(std::unique_ptr<fragment> f) {
+    mutating_method_called();
     _size += f->size();
     _frags.push_front(*f.release());
 }
@@ -414,6 +419,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 [[gnu::always_inline]] void inline iobuf::prepend(
   ss::temporary_buffer<char> b) {
+    mutating_method_called();
     if (unlikely(!b.size())) {
         return;
     }
@@ -431,6 +437,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 /// append src + len into storage
 [[gnu::always_inline]] void inline iobuf::append(
   const uint8_t* src, size_t len) {
+    mutating_method_called();
     // NOLINTNEXTLINE
     append(reinterpret_cast<const char*>(src), len);
 }
@@ -459,10 +466,10 @@ inline void iobuf::reserve_memory(size_t reservation) {
 
 /// appends the contents of buffer; might pack values into existing space
 [[gnu::always_inline]] inline void iobuf::append(ss::temporary_buffer<char> b) {
+    mutating_method_called();
     if (unlikely(!b.size())) {
         return;
     }
-    mutating_method_called();
     const size_t last_asz = last_allocation_size();
     // The following is a heuristic to decide between copying and zero-copy
     // append of the source buffer. The rule we apply is if the buffer we are
