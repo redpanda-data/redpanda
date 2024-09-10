@@ -416,6 +416,15 @@ ss::future<> ntp_archiver::upload_until_abort() {
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "upload loop error: {}", e);
           });
+
+        if (flush_in_progress()) {
+            vlog(
+              _rtclog.debug,
+              "Exited upload_until_term_change() loop, alerting flush "
+              "waiters.");
+            _flush_uploads_offset.reset();
+            _flush_cond.broadcast();
+        }
     }
 }
 
@@ -2742,7 +2751,9 @@ ss::future<wait_result> ntp_archiver::wait(model::offset o) {
     auto wait_issued_term = _start_term;
 
     while (!uploaded_and_clean_past_offset(o)) {
-        if (!_parent.is_leader() || wait_issued_term != _start_term) {
+        if (
+          !_parent.is_leader() || wait_issued_term != _start_term
+          || !flush_in_progress()) {
             vlog(
               _rtclog.debug,
               "Leadership was lost during flush operation in ntp_archiver");
