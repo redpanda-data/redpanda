@@ -204,9 +204,16 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if topicName == "" {
 					topicName = r.Topic
 				}
-				if tombstone && len(r.Value) == 0 {
-					r.Value = nil
+				if len(r.Value) == 0 {
+					if tombstone {
+						// `null` value
+						r.Value = nil
+					} else {
+						// empty byte-slice
+						r.Value = []byte{}
+					}
 				}
+
 				if defaultKeySerde != nil || isKeyTopicName {
 					keySerde := defaultKeySerde
 					if isKeyTopicName && keySerde == nil {
