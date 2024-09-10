@@ -297,7 +297,9 @@ ss::future<> audit_client::update_status(kafka::error_code errc) {
         }
     } else if (_last_errc == kafka::error_code::illegal_sasl_state) {
         /// The status changed from erraneous to anything else
-        if (errc != kafka::error_code::illegal_sasl_state) {
+        if (
+          errc != kafka::error_code::illegal_sasl_state
+          && errc != kafka::error_code::broker_not_available) {
             co_await _sink->update_auth_status(
               audit_sink::auth_misconfigured_t::no);
         }
