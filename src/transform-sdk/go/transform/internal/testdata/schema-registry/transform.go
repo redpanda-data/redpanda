@@ -19,8 +19,8 @@ import (
 	"os"
 
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/testdata/schema-registry/avro"
 	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/sr"
-	"github.com/redpanda-data/wasm-transform-testdata/schema-registry/avro"
 )
 
 var (
