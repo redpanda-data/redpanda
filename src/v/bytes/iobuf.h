@@ -40,15 +40,56 @@
  *
  * General sharing-mutation caveat:
  *
+ * iobuf has more complicated mutation and cross-shard sharing rules, compared
+ * to most other types such as int or std::string. The underlying cause in both
+ * cases is that two different iobuf objects may share one or more underlying
+ * buffers, and hence operations on one iobuf may be visible to the other.
+ *
  * Operations such as share(), copy() and appending an iobuf or other compatible
  * buffer type to an iobuf may be zero-copy, in the sense that some or all of
  * the payload bytes may be shared between multiple iobufs (or between an iobuf
  * and a compatible buffer type like ss::temporary_buffer<>). The sharing occurs
  * at the fragment level.
  *
- * Be careful when any zero-copy operations are used as iobuf
- * does not perform copy-on-write, Therefore changes will be visible to all
- * iobufs that share the backing fragments.
+ * We say that two or more iobuf objects which share fragments have "internal
+ * sharing" and between such iobufs the following restrictions apply:
+ *
+ * BYTE MUTATION CAVEAT
+ *
+ * You should not write into the bytes held by an iobuf if it is internally
+ * shared with another buffer, since the updates will potentially been seen
+ * by both iobufs.
+ *
+ * On the other hand, two iobufs that have internal sharing will behave
+ * independently with respect to "structural updates", which are all mutations
+ * except for writing into the buffer itself. For example, if one iobuf is
+ * created as a copy of another via share() method, they will have full internal
+ * sharing, but appending to one buffer will not been seen Be careful when any
+ * zero-copy operations are used as iobuf does not perform copy-on-write,
+ * Therefore changes will be visible to all iobufs that share the backing
+ * fragments.
+ *
+ * CROSS-SHARD SHARING CAVEAT
+ *
+ * Two iobufs which have internal sharing should not be accessed concurrently on
+ * different shards. Note that this is a much stronger condition than the usual
+ * thread-safety requirements for C++ objects since this applies to different
+ * objects with (potentially hidden) internal sharing, while the usual rules
+ * apply only to sharing of the _same_ object.
+ *
+ * More formally and slightly stricter than the above: every iobuf has an
+ * "origin" shard which cannot be changed and it must only be accessed on that
+ * shard: access from an other shard is an error which may or may not be
+ * detected. An iobuf's origin shard is set at construction, as documented
+ * in the method doc (for example, the default constructor sets the origin
+ * shard to the current one, while the move constructor inherits the origin
+ * shard from the source and so on).
+ *
+ * The only safe way to get the contents of an iobuf from one shard to another
+ * is to pass the iobuf to the other shard and then call copy() on it, which is
+ * specifically excepted from the above prohibition on access from another
+ * shard. This will return a deep copy of the buffer with its origin shard set
+ * to the shard the copy was performed on.
  */
 class iobuf {
     // Not a lightweight object.
@@ -88,6 +129,22 @@ public:
         // noexcept
     }
     ~iobuf() noexcept;
+
+    /**
+     * @brief Construct a new iobuf object by moving the source iobuf into it
+     *
+     * This leaves the source iobuf empty. Note that the origin shard for the
+     * newly constructed iobuf is the same as the source, so there is no viable
+     * way to move an iobuf from one shard to another: the target of the move
+     * will always have the same origin shard as the source, no matter where the
+     * moves happen, and so will not be accessible on the target shard (see the
+     * sharing-mutation caveat in the class comment for details on this
+     * restriction).
+     *
+     * Instead, to "move" an iobuf across shards you must copy() it on the
+     * target shard and then clear or destroy the source buffer on the source
+     * shard.
+     */
     iobuf(iobuf&& x) noexcept
       : _frags(std::move(x._frags))
       , _size(x._size)
@@ -132,8 +189,11 @@ public:
      * copy will be the same as this iobuf, but callers should not rely on the
      * precise details.
      *
-     * Since this call performs zero-copy operations, the sharing-mutation
-     * caveat in the class comment applies.
+     * Like almost all methods, this method must only be called on the origin
+     * shard of this iobuf. The returned iobuf will have the same origin, and so
+     * this method cannot be used to safely share iobufs across shards (see the
+     * sharing-mutation caveat in the class comment for details). Use copy() to
+     * move iobuf content from one shard to another.
      */
     iobuf share(size_t pos, size_t len);
 
@@ -143,8 +203,17 @@ public:
      * mutations to the payload bytes of this iobuf do not affected the returned
      * value or vice-versa.
      *
-     * Copying an iobuf is optimized for cases where the size of the resulting
-     * iobuf will not be increased (e.g. via iobuf::append).
+     * The returned iobuf is linearized, and is optimized is optimized for cases
+     * where the size of the resulting iobuf will not be increased (e.g. via
+     * iobuf::append). That is, the last fragment is sized relatively tightly
+     * the size of the data, rather having a lot of padding as it might if the
+     * same sequence of bytes were appended to an empty iobuf.
+     *
+     * Unlike most methods which create a new iobuf based on an existing one,
+     * this method sets the origin shard of the iobuf to the current shard, so
+     * it is safe to send an iobuf to another shard, then call copy on it and
+     * then access the copy on other shard. See the sharing-mutation caveat in
+     * the class comment for further details.
      */
     iobuf copy() const;
 
