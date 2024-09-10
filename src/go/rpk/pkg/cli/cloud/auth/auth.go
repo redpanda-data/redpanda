@@ -45,7 +45,7 @@ only use a single SSO based login.
 }
 
 func validAuths(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		cfg, err := p.Load(fs)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError

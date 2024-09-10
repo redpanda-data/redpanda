@@ -39,7 +39,7 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*sr.Client, error) {
 		}
 	}
 
-	opts := []sr.Opt{
+	opts := []sr.ClientOpt{
 		sr.URLs(urls...),
 		sr.UserAgent("rpk"),
 	}

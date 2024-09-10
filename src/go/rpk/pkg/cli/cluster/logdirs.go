@@ -69,7 +69,7 @@ where revision is a Redpanda internal concept.
 `,
 
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -213,7 +213,7 @@ where revision is a Redpanda internal concept.
 	cmd.Flags().StringVar(&aggregateInto, "aggregate-into", "", "If non-empty, what column to aggregate into starting from the partition column (broker, dir, topic)")
 	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the logdirs size in a human-readable form")
 
-	cmd.RegisterFlagCompletionFunc("aggregate-into", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cmd.RegisterFlagCompletionFunc("aggregate-into", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		opts := []string{"broker", "dir", "topic"}
 		return opts, cobra.ShellCompDirectiveDefault
 	})

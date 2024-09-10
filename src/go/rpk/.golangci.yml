@@ -1,13 +1,13 @@
 run:
   allow-parallel-runners: true
+  tests: false
 
 # golangci-lint by default ignores some staticcheck and vet raised issues that
 # are actually important to catch. The following ensures that we do not ignore
 # those tools ever.
 issues:
   exclude-use-default: false
-  new-from-rev: HEAD
-  
+
 # We opt out of all suggested linters and manually pick what we want.
 # Please do not use enable-all.
 linters:
@@ -28,7 +28,6 @@ linters:
     - durationcheck
     - errname
     - errorlint
-    - exportloopref
     - godot
     - gofmt
     - gofumpt
@@ -51,17 +50,9 @@ linters-settings:
 
   # If we want to opt out of a lint, we require an explanation.
   nolintlint:
-    allow-leading-space: true
     allow-unused: false
     require-explanation: true
     require-specific: true
-
-  # If gofumpt is run outside a module, it assumes Go 1.0 rather than the
-  # latest Go. We always want the latest formatting.
-  #
-  # https://github.com/mvdan/gofumpt/issues/137
-  gofumpt:
-    lang-version: "1.20"
 
   # Revive is yet another metalinter with a lot of useful lints. 
   # The below opts in to all the ones we would like to use.
@@ -69,8 +60,6 @@ linters-settings:
     ignore-generated-header: true
     severity: warning
     confidence: 0.8
-    error-code: 0
-    warning-code: 0
     rules:
       - name: atomic
       - name: blank-imports
