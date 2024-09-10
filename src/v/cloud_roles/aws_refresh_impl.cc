@@ -198,6 +198,7 @@ ss::future<api_response> aws_refresh_impl::fetch_instance_metadata_token() {
     token_request.insert(
       instance_metadata_token_headers::ttl_key,
       instance_metadata_token_headers::ttl_value);
+    // token_request.insert(boost::beast::http::field::content_length, "0");
     token_request.method(boost::beast::http::verb::put);
     token_request.target("/latest/api/token");
 
