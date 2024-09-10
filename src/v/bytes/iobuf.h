@@ -326,6 +326,12 @@ private:
     void create_new_fragment(size_t);
     size_t last_allocation_size() const;
 
+    /**
+     * Should be called before every mutating method in order to perform any
+     * consistency checks associated with mutating methods.
+     */
+    void mutating_method_called() const;
+
     container _frags;
     size_t _size{0};
     expression_in_debug_mode(oncore _verify_shard);
@@ -365,6 +371,16 @@ inline size_t iobuf::last_allocation_size() const {
     return _frags.empty() ? details::io_allocation_size::default_chunk_size
                           : _frags.back().capacity();
 }
+
+inline void iobuf::mutating_method_called() const {
+    // It is a bug to access an iobuf on any shard other than its "origin shard"
+    // (which may be different than the shard it was constructed on), so check
+    // that we aren't doing this in debug mode. This check should also apply to
+    // const methods, but currently we mostly only check this on mutating
+    // methods.
+    oncore_debug_verify(_verify_shard);
+}
+
 inline void iobuf::append(std::unique_ptr<fragment> f) {
     if (!_frags.empty()) {
         _frags.back().trim();
@@ -379,7 +395,7 @@ inline void iobuf::prepend(std::unique_ptr<fragment> f) {
 }
 
 inline void iobuf::create_new_fragment(size_t sz) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
     append(std::make_unique<fragment>(asz));
@@ -387,7 +403,7 @@ inline void iobuf::create_new_fragment(size_t sz) {
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
 inline void iobuf::reserve_memory(size_t reservation) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     if (auto b = available_bytes(); b < reservation) {
         if (b > 0) {
             _frags.back().trim();
@@ -404,7 +420,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     prepend(std::make_unique<fragment>(std::move(b)));
 }
 [[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     while (!b._frags.empty()) {
         b._frags.pop_back_and_dispose([this](fragment* f) {
             prepend(f->share());
@@ -420,7 +436,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 }
 
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     if (unlikely(size == 0)) {
         return;
     }
@@ -446,7 +462,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     if (unlikely(!b.size())) {
         return;
     }
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     const size_t last_asz = last_allocation_size();
     // The following is a heuristic to decide between copying and zero-copy
     // append of the source buffer. The rule we apply is if the buffer we are
@@ -474,7 +490,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(f->share());
@@ -484,7 +500,7 @@ inline void iobuf::append(iobuf o) {
 }
 
 inline void iobuf::append_fragments(iobuf o) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(std::make_unique<fragment>(f->share()));
@@ -494,17 +510,17 @@ inline void iobuf::append_fragments(iobuf o) {
 }
 /// used for iostreams
 inline void iobuf::pop_front() {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     _size -= _frags.front().size();
     _frags.pop_front_and_dispose(&details::dispose_io_fragment);
 }
 inline void iobuf::pop_back() {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     _size -= _frags.back().size();
     _frags.pop_back_and_dispose(&details::dispose_io_fragment);
 }
 inline void iobuf::trim_front(size_t n) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     while (!_frags.empty()) {
         auto& f = _frags.front();
         if (f.size() > n) {
@@ -517,7 +533,7 @@ inline void iobuf::trim_front(size_t n) {
     }
 }
 inline void iobuf::trim_back(size_t n) {
-    oncore_debug_verify(_verify_shard);
+    mutating_method_called();
     while (!_frags.empty()) {
         auto& f = _frags.back();
         if (f.size() > n) {
