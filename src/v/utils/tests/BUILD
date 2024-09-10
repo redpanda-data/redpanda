@@ -523,3 +523,17 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "hybrid_clock_gtest",
+    timeout = "short",
+    srcs = [
+        "hybrid_clock_gtest.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:hybrid_clock",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
