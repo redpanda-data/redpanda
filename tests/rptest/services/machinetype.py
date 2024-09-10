@@ -74,7 +74,6 @@ MachineTypeConfigs = {
     MachineTypeConfig(num_shards=3, memory=16 * GiB),
     MachineTypeName.IM4GN_8XLARGE:
     MachineTypeConfig(num_shards=31, memory=128 * GiB),
-
     MachineTypeName.M7GD_LARGE:
     MachineTypeConfig(num_shards=1, memory=8 * GiB),
     MachineTypeName.M7GD_XLARGE:
