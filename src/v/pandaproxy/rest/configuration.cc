@@ -27,13 +27,13 @@ configuration::configuration(const YAML::Node& cfg)
 
 configuration::configuration()
   : pandaproxy_api(
-    *this,
-    "pandaproxy_api",
-    "Rest API listen address and port",
-    {},
-    {config::rest_authn_endpoint{
-      .address = net::unresolved_address("0.0.0.0", 8082),
-      .authn_method = std::nullopt}})
+      *this,
+      "pandaproxy_api",
+      "Rest API listen address and port",
+      {},
+      {config::rest_authn_endpoint{
+        .address = net::unresolved_address("0.0.0.0", 8082),
+        .authn_method = std::nullopt}})
   , pandaproxy_api_tls(
       *this,
       "pandaproxy_api_tls",

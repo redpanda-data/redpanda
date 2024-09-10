@@ -35,6 +35,6 @@ jobs:
         -v $PWD:/redpanda ubuntu:noble \
         bash -c "cd /redpanda && \
           apt update && \
-          apt install -y git clang-format-16  && \
-          find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-16 -i -style=file -fallback-style=none"
+          apt install -y git clang-format-18  && \
+          find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-18 -i -style=file -fallback-style=none"
         git diff --exit-code

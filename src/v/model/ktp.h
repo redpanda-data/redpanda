@@ -87,8 +87,8 @@ public:
      */
     ktp(ss::sstring topic_name, int32_t partition_id)
       : ktp{
-        model::topic(std::move(topic_name)),
-        model::partition_id(partition_id)} {}
+          model::topic(std::move(topic_name)),
+          model::partition_id(partition_id)} {}
 
     /**
      * @brief Return the equivalent ntp object.
@@ -296,8 +296,8 @@ struct ktp_with_hash : public ktp {
      */
     ktp_with_hash(ss::sstring topic_name, int32_t partition_id)
       : ktp_with_hash{
-        model::topic(std::move(topic_name)),
-        model::partition_id(partition_id)} {}
+          model::topic(std::move(topic_name)),
+          model::partition_id(partition_id)} {}
 
     template<typename T>
     friend class std::hash; // std::hash needs _hash_code

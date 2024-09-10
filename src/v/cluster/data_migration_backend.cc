@@ -389,7 +389,7 @@ ss::future<> backend::send_rpc(model::node_id node_id) {
           ss::future<check_ntp_states_reply> reply
             = (_self == node_id) ? check_ntp_states_locally(std::move(req))
                                  : _frontend.check_ntp_states_on_foreign_node(
-                                   node_id, std::move(req));
+                                     node_id, std::move(req));
           return reply.then([node_id, this](check_ntp_states_reply&& reply) {
               vlog(
                 dm_log.debug, "got RPC response from {}: {}", node_id, reply);
@@ -815,7 +815,7 @@ ss::future<> backend::handle_migration_update(id id) {
 
     auto new_maybe_metadata = _table.get_migration(id);
     auto new_state = new_maybe_metadata ? std::make_optional<state>(
-                       new_maybe_metadata->get().state)
+                                            new_maybe_metadata->get().state)
                                         : std::nullopt;
     vlog(dm_log.debug, "migration {} new state is {}", id, new_state);
 

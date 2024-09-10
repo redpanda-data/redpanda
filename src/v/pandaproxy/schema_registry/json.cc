@@ -351,7 +351,7 @@ result<document_context> parse_json(iobuf buf) {
     auto jsoncons_schema = jsoncons::json::parse(is.istream());
     auto validation_res = dialect.has_value()
                             ? validate_json_schema(
-                              dialect.value(), jsoncons_schema)
+                                dialect.value(), jsoncons_schema)
                             : try_validate_json_schema(jsoncons_schema);
     if (validation_res.has_error()) {
         return validation_res.as_failure();

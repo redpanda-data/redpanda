@@ -93,7 +93,8 @@ public class AvroMessaging implements KafkaMessagingInterface {
   @Override
   public void produce(Logger log, Properties props, String topic, int count) {
     Schema schema = new Schema.Parser().parse(
-        "{\"type\": \"record\", \"name\": \"payload\", \"fields\": [{\"name\": \"val\", \"type\": \"int\"}]}");
+        "{\"type\": \"record\", \"name\": \"payload\", \"fields\": [{\"name\": "
+        + "\"val\", \"type\": \"int\"}]}");
 
     AtomicInteger produced = new AtomicInteger();
     log.debug("Avro schema: " + schema);

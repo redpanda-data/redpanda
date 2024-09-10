@@ -23,7 +23,7 @@ class kvstore_test_fixture {
 public:
     kvstore_test_fixture()
       : _test_dir(
-        ssx::sformat("kvstore_test_{}", random_generators::get_int(4000)))
+          ssx::sformat("kvstore_test_{}", random_generators::get_int(4000)))
       , _kv_config(prepare_store().get()) {
         _feature_table.start().get();
         _feature_table

@@ -253,7 +253,7 @@ transform_report::transform_report(transform_metadata meta)
 transform_report::transform_report(
   transform_metadata meta, absl::btree_map<model::partition_id, processor> map)
   : metadata(std::move(meta))
-  , processors(std::move(map)){};
+  , processors(std::move(map)) {};
 
 void transform_report::add(processor processor) {
     processors.insert_or_assign(processor.id, processor);

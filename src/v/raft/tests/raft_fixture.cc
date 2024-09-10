@@ -342,16 +342,16 @@ raft_node_instance::raft_node_instance(
   config::binding<std::chrono::milliseconds> election_timeout,
   config::binding<std::chrono::milliseconds> heartbeat_interval)
   : raft_node_instance(
-    id,
-    revision,
-    fmt::format(
-      "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)),
-    node_map,
-    feature_table,
-    std::move(leader_update_clb),
-    enable_longest_log_detection,
-    std::move(election_timeout),
-    std::move(heartbeat_interval)) {}
+      id,
+      revision,
+      fmt::format(
+        "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)),
+      node_map,
+      feature_table,
+      std::move(leader_update_clb),
+      enable_longest_log_detection,
+      std::move(election_timeout),
+      std::move(heartbeat_interval)) {}
 
 raft_node_instance::raft_node_instance(
   model::node_id id,

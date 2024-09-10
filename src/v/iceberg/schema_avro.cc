@@ -203,7 +203,7 @@ struct_type_to_avro(const struct_type& type, const ss::sstring& name) {
           field_ptr->required
             ? avro::GenericDatum()
             : avro::GenericDatum(
-              child_schema.root(), avro::GenericUnion(child_schema.root())));
+                child_schema.root(), avro::GenericUnion(child_schema.root())));
     }
     return avro_schema;
 }

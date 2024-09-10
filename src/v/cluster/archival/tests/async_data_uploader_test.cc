@@ -87,7 +87,7 @@ class async_data_uploader_fixture : public redpanda_thread_fixture {
 public:
     async_data_uploader_fixture()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}) {
+          redpanda_thread_fixture::init_cloud_storage_tag{}) {
         wait_for_controller_leadership().get();
     }
 

@@ -39,7 +39,8 @@ class controller_snapshot_reconciliation_fixture
 public:
     controller_snapshot_reconciliation_fixture()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
       , raft0(app.partition_manager.local().get(model::controller_ntp)->raft())
       , controller_stm(app.controller->get_controller_stm().local())
       , remote(app.cloud_storage_api.local())

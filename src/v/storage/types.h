@@ -436,15 +436,15 @@ struct log_reader_config {
       opt_abort_source_t as = std::nullopt,
       opt_client_address_t client_addr = std::nullopt)
       : log_reader_config(
-        start_offset,
-        max_offset,
-        0,
-        std::numeric_limits<size_t>::max(),
-        prio,
-        std::nullopt,
-        std::nullopt,
-        as,
-        std::move(client_addr)) {}
+          start_offset,
+          max_offset,
+          0,
+          std::numeric_limits<size_t>::max(),
+          prio,
+          std::nullopt,
+          std::nullopt,
+          as,
+          std::move(client_addr)) {}
 
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
 };
@@ -519,7 +519,7 @@ struct housekeeping_config {
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
       hash_key_offset_map* key_map = nullptr)
       : compact(
-        max_collect_offset, p, as, std::move(san_cfg), std::nullopt, key_map)
+          max_collect_offset, p, as, std::move(san_cfg), std::nullopt, key_map)
       , gc(upper, max_bytes_in_log) {}
 
     compaction_config compact;

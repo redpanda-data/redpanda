@@ -51,8 +51,8 @@ struct heartbeat_response final {
 
     explicit heartbeat_response(error_code error)
       : data({
-        .error_code = error,
-      }) {}
+          .error_code = error,
+        }) {}
 
     heartbeat_response(const heartbeat_request&, error_code error)
       : heartbeat_response(error) {}

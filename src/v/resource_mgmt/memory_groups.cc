@@ -56,7 +56,7 @@ system_memory_groups::system_memory_groups(
   compaction_memory_reservation compaction,
   bool wasm_enabled)
   : _compaction_reserved_memory(
-    compaction.reserved_bytes(total_available_memory))
+      compaction.reserved_bytes(total_available_memory))
   , _total_system_memory(total_available_memory - _compaction_reserved_memory)
   , _wasm_enabled(wasm_enabled) {}
 

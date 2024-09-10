@@ -542,8 +542,8 @@ struct compatibility_result {
 
 template<>
 struct fmt::formatter<pandaproxy::schema_registry::schema_reference> {
-    constexpr auto parse(fmt::format_parse_context& ctx)
-      -> decltype(ctx.begin()) {
+    constexpr auto
+    parse(fmt::format_parse_context& ctx) -> decltype(ctx.begin()) {
         auto it = ctx.begin();
         auto end = ctx.end();
         if (it != end && (*it == 'l' || *it == 'e')) {

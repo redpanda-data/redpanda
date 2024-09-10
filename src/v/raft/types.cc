@@ -128,7 +128,7 @@ replicate_stages::replicate_stages(
 replicate_stages::replicate_stages(raft::errc ec)
   : request_enqueued(ss::now())
   , replicate_finished(
-      ss::make_ready_future<result<replicate_result>>(make_error_code(ec))){};
+      ss::make_ready_future<result<replicate_result>>(make_error_code(ec))) {};
 
 void follower_index_metadata::reset() {
     last_dirty_log_index = model::offset{};

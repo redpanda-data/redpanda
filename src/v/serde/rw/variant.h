@@ -65,7 +65,7 @@ struct variant : public std::variant<Types...> {
     // Allow explicit conversion from std::variant
     explicit constexpr variant(type v) noexcept(
       std::is_nothrow_move_constructible_v<type>)
-      : type(std::move(v)){};
+      : type(std::move(v)) {};
 
     template<class T, class... Args>
     constexpr explicit variant(

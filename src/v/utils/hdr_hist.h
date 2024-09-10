@@ -111,7 +111,7 @@ public:
       int64_t min = 1,
       int32_t significant_figures = 1)
       : _hist(hist_internal::make_unique_hdr_histogram(
-        max_value, min, significant_figures))
+          max_value, min, significant_figures))
       , _first_discernible_value(min) {}
     hdr_hist(
       std::chrono::microseconds max_value, std::chrono::microseconds min_value)

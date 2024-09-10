@@ -36,17 +36,17 @@ using cache_item = std::pair<client_ptr, client_mu_ptr>;
 struct test_client_cache : public kafka_client_cache {
     explicit test_client_cache(size_t max_size)
       : kafka_client_cache(
-        to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
-        max_size,
-        1000ms) {
+          to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
+          max_size,
+          1000ms) {
         start().get();
     }
 
     test_client_cache(size_t max_size, std::chrono::milliseconds keep_alive)
       : kafka_client_cache(
-        to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
-        max_size,
-        keep_alive) {
+          to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
+          max_size,
+          keep_alive) {
         start().get();
     }
 

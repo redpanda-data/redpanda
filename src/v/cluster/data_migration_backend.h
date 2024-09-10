@@ -64,7 +64,7 @@ private:
       = chunked_hash_map<model::topic_namespace, topic_reconciliation_state>;
     struct migration_reconciliation_state {
         explicit migration_reconciliation_state(work_scope scope)
-          : scope(scope){};
+          : scope(scope) {};
         work_scope scope;
         topic_map_t outstanding_topics;
     };

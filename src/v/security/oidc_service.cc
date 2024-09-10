@@ -419,13 +419,13 @@ service::service(
   config::binding<ss::sstring> mapping,
   config::binding<std::chrono::seconds> keys_refresh_interval)
   : _impl{std::make_unique<impl>(
-    std::move(sasl_mechanisms),
-    std::move(http_authentication),
-    std::move(discovery_url),
-    std::move(token_audience),
-    std::move(clock_skew_tolerance),
-    std::move(mapping),
-    std::move(keys_refresh_interval))} {}
+      std::move(sasl_mechanisms),
+      std::move(http_authentication),
+      std::move(discovery_url),
+      std::move(token_audience),
+      std::move(clock_skew_tolerance),
+      std::move(mapping),
+      std::move(keys_refresh_interval))} {}
 
 service::~service() noexcept = default;
 

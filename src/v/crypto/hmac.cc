@@ -131,7 +131,7 @@ hmac_ctx::hmac_ctx(digest_type type, bytes_view key)
 
 hmac_ctx::hmac_ctx(digest_type type, std::string_view key)
   : _impl(
-    std::make_unique<impl>(type, internal::string_view_to_bytes_view(key))) {}
+      std::make_unique<impl>(type, internal::string_view_to_bytes_view(key))) {}
 
 hmac_ctx::~hmac_ctx() noexcept = default;
 hmac_ctx::hmac_ctx(hmac_ctx&&) noexcept = default;

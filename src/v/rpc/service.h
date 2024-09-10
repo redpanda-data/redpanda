@@ -43,8 +43,8 @@ struct service {
 class rpc_internal_body_parsing_exception : public net::parsing_exception {
 public:
     explicit rpc_internal_body_parsing_exception(const std::exception_ptr& e)
-      : _what(
-        ssx::sformat("Unable to parse received RPC request payload - {}", e)) {}
+      : _what(ssx::sformat(
+          "Unable to parse received RPC request payload - {}", e)) {}
 
     const char* what() const noexcept final { return _what.c_str(); }
 

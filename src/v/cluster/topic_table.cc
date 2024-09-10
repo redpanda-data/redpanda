@@ -64,9 +64,10 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     }
 
     std::optional<model::initial_revision_id> remote_revision
-      = cmd.value.cfg.properties.remote_topic_properties ? std::make_optional(
-          cmd.value.cfg.properties.remote_topic_properties->remote_revision)
-                                                         : std::nullopt;
+      = cmd.value.cfg.properties.remote_topic_properties
+          ? std::make_optional(
+              cmd.value.cfg.properties.remote_topic_properties->remote_revision)
+          : std::nullopt;
     auto md = topic_metadata_item{
       .metadata = topic_metadata(
         std::move(cmd.value), model::revision_id(offset()), remote_revision)};

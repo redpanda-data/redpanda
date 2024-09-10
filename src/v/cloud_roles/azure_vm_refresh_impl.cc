@@ -24,7 +24,7 @@ azure_vm_refresh_impl::azure_vm_refresh_impl(
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    std::move(address), std::move(region), as, retry_params) {}
+      std::move(address), std::move(region), as, retry_params) {}
 
 std::ostream& azure_vm_refresh_impl::print(std::ostream& os) const {
     fmt::print(os, "azure_vm_refresh_impl{{address:{}}}", address());

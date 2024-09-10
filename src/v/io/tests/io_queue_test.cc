@@ -49,9 +49,9 @@ struct queue_tester {
       size_t file_size,
       size_t num_io_ops)
       : queue(
-        storage,
-        std::move(path),
-        [this](io::page& page) noexcept { generator.handle_complete(page); })
+          storage,
+          std::move(path),
+          [this](io::page& page) noexcept { generator.handle_complete(page); })
       , generator(
           file_size,
           num_io_ops,

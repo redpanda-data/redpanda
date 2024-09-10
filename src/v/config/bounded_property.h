@@ -191,27 +191,27 @@ public:
       B<I> bounds,
       std::optional<legacy_default<T>> legacy = std::nullopt)
       : property<T>(
-        conf,
-        name,
-        desc,
-        meta,
-        def,
-        [this](T new_value) -> std::optional<ss::sstring> {
-            // Extract inner value if we are an optional<>,
-            // and pass through into numeric_bounds::validate
-            using outer_type = std::decay_t<T>;
-            if constexpr (reflection::is_std_optional<outer_type>) {
-                if (new_value.has_value()) {
-                    return _bounds.validate(new_value.value());
-                } else {
-                    // nullopt is always valid
-                    return std::nullopt;
-                }
-            } else {
-                return _bounds.validate(new_value);
-            }
-        },
-        legacy)
+          conf,
+          name,
+          desc,
+          meta,
+          def,
+          [this](T new_value) -> std::optional<ss::sstring> {
+              // Extract inner value if we are an optional<>,
+              // and pass through into numeric_bounds::validate
+              using outer_type = std::decay_t<T>;
+              if constexpr (reflection::is_std_optional<outer_type>) {
+                  if (new_value.has_value()) {
+                      return _bounds.validate(new_value.value());
+                  } else {
+                      // nullopt is always valid
+                      return std::nullopt;
+                  }
+              } else {
+                  return _bounds.validate(new_value);
+              }
+          },
+          legacy)
       , _bounds(bounds)
       , _example(generate_example()) {}
 

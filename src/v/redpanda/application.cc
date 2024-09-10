@@ -261,7 +261,7 @@ static void set_auditing_kafka_client_defaults(
 }
 
 application::application(ss::sstring logger_name)
-  : _log(std::move(logger_name)){};
+  : _log(std::move(logger_name)) {};
 
 application::~application() = default;
 
@@ -369,9 +369,10 @@ static void log_system_resources(
      */
     const size_t default_reserve_memory = std::max<size_t>(
       1536_MiB, 0.07 * total_mem);
-    auto reserve = cfg.contains("reserve-memory") ? ss::parse_memory_size(
-                     cfg["reserve-memory"].as<std::string>())
-                                                  : default_reserve_memory;
+    auto reserve = cfg.contains("reserve-memory")
+                     ? ss::parse_memory_size(
+                         cfg["reserve-memory"].as<std::string>())
+                     : default_reserve_memory;
     vlog(
       log.info,
       "System resources: {{ cpus: {}, available memory: {}, reserved memory: "

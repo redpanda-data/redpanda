@@ -31,15 +31,15 @@ using namespace std::chrono_literals;
 
 configuration::configuration()
   : log_segment_size(
-    *this,
-    "log_segment_size",
-    "Default log segment size in bytes for topics which do not set "
-    "segment.bytes",
-    {.needs_restart = needs_restart::no,
-     .example = "2147483648",
-     .visibility = visibility::tunable},
-    128_MiB,
-    {.min = 1_MiB})
+      *this,
+      "log_segment_size",
+      "Default log segment size in bytes for topics which do not set "
+      "segment.bytes",
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648",
+       .visibility = visibility::tunable},
+      128_MiB,
+      {.min = 1_MiB})
   , log_segment_size_min(
       *this,
       "log_segment_size_min",

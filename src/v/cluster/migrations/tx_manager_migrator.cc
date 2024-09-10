@@ -173,17 +173,17 @@ tx_manager_read_router::tx_manager_read_router(
   ss::sharded<partition_leaders_table>& leaders,
   const model::node_id node_id)
   : leader_router<
-    tx_manager_read_request,
-    tx_manager_read_reply,
-    tx_manager_read_handler>(
-    shard_table,
-    metadata_cache,
-    connection_cache,
-    leaders,
-    _handler,
-    node_id,
-    config::shard_local_cfg().metadata_dissemination_retries.value(),
-    config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
+      tx_manager_read_request,
+      tx_manager_read_reply,
+      tx_manager_read_handler>(
+      shard_table,
+      metadata_cache,
+      connection_cache,
+      leaders,
+      _handler,
+      node_id,
+      config::shard_local_cfg().metadata_dissemination_retries.value(),
+      config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _handler(partition_manager) {}
 
 tx_manager_replicate_router::tx_manager_replicate_router(
@@ -194,17 +194,17 @@ tx_manager_replicate_router::tx_manager_replicate_router(
   ss::sharded<partition_leaders_table>& leaders,
   const model::node_id node_id)
   : leader_router<
-    tx_manager_replicate_request,
-    tx_manager_replicate_reply,
-    tx_manager_replicate_handler>(
-    shard_table,
-    metadata_cache,
-    connection_cache,
-    leaders,
-    _handler,
-    node_id,
-    config::shard_local_cfg().metadata_dissemination_retries.value(),
-    config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
+      tx_manager_replicate_request,
+      tx_manager_replicate_reply,
+      tx_manager_replicate_handler>(
+      shard_table,
+      metadata_cache,
+      connection_cache,
+      leaders,
+      _handler,
+      node_id,
+      config::shard_local_cfg().metadata_dissemination_retries.value(),
+      config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _handler(partition_manager) {}
 
 ss::future<tx_manager_read_reply> tx_manager_read_handler::do_read(

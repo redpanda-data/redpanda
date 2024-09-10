@@ -46,7 +46,7 @@ static model::record_batch create_batch(
 struct base_fixture {
     base_fixture()
       : _test_dir(
-        fmt::format("test_{}", random_generators::gen_alphanum_string(6))) {
+          fmt::format("test_{}", random_generators::gen_alphanum_string(6))) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(

@@ -141,9 +141,9 @@ public:
         return lhs._value == rhs;
     }
 
-    friend auto
-    operator<=>(const base_named_type& lhs, const type& rhs) noexcept
-      -> std::strong_ordering {
+    friend auto operator<=>(
+      const base_named_type& lhs,
+      const type& rhs) noexcept -> std::strong_ordering {
         // roundabout way to cope with type when it does not provide <=>
         if constexpr (std::three_way_comparable_with<type, type>)
             return lhs._value <=> rhs;

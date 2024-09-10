@@ -934,8 +934,8 @@ void snc_quota_manager::update_balance_config() {
 } // namespace kafka
 
 struct parseless_formatter {
-    constexpr auto parse(fmt::format_parse_context& ctx)
-      -> decltype(ctx.begin()) {
+    constexpr auto
+    parse(fmt::format_parse_context& ctx) -> decltype(ctx.begin()) {
         return ctx.begin();
     }
 };

@@ -172,7 +172,7 @@ public:
         _config = cfg;
         _iterator.next_seg = _iterator.current_reader_seg;
         _expected_next = _config.fill_gaps ? std::make_optional<model::offset>(
-                           _config.start_offset)
+                                               _config.start_offset)
                                            : std::nullopt;
     };
 

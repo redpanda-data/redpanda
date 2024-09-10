@@ -181,28 +181,28 @@ public:
     // creates single node with default configuration
     redpanda_thread_fixture()
       : redpanda_thread_fixture(
-        model::node_id(1),
-        9092,
-        33145,
-        8082,
-        8081,
-        {},
-        ssx::sformat("test.dir_{}", time(0)),
-        std::nullopt,
-        true) {}
+          model::node_id(1),
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          ssx::sformat("test.dir_{}", time(0)),
+          std::nullopt,
+          true) {}
 
     // Restart the fixture with an existing data directory
     explicit redpanda_thread_fixture(std::filesystem::path existing_data_dir)
       : redpanda_thread_fixture(
-        model::node_id(1),
-        9092,
-        33145,
-        8082,
-        8081,
-        {},
-        existing_data_dir.string(),
-        std::nullopt,
-        true) {}
+          model::node_id(1),
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          existing_data_dir.string(),
+          std::nullopt,
+          true) {}
 
     struct init_cloud_storage_tag {};
 
@@ -213,18 +213,18 @@ public:
       cloud_storage_clients::s3_url_style url_style = default_url_style,
       model::node_id node_id = model::node_id(1))
       : redpanda_thread_fixture(
-        node_id,
-        9092,
-        33145,
-        8082,
-        8081,
-        {},
-        ssx::sformat("test.dir_{}", time(0)),
-        std::nullopt,
-        true,
-        get_s3_config(port, url_style),
-        get_archival_config(),
-        get_cloud_config(port, url_style)) {}
+          node_id,
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          ssx::sformat("test.dir_{}", time(0)),
+          std::nullopt,
+          true,
+          get_s3_config(port, url_style),
+          get_archival_config(),
+          get_cloud_config(port, url_style)) {}
 
     struct init_cloud_storage_no_archiver_tag {};
 
@@ -236,18 +236,18 @@ public:
       std::optional<uint16_t> port = std::nullopt,
       cloud_storage_clients::s3_url_style url_style = default_url_style)
       : redpanda_thread_fixture(
-        model::node_id(1),
-        9092,
-        33145,
-        8082,
-        8081,
-        {},
-        ssx::sformat("test.dir_{}", time(0)),
-        std::nullopt,
-        true,
-        get_s3_config(port, url_style),
-        get_archival_config(),
-        std::nullopt) {}
+          model::node_id(1),
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          ssx::sformat("test.dir_{}", time(0)),
+          std::nullopt,
+          true,
+          get_s3_config(port, url_style),
+          get_archival_config(),
+          std::nullopt) {}
 
     ~redpanda_thread_fixture() {
         shutdown();

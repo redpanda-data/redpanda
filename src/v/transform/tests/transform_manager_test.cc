@@ -191,16 +191,16 @@ class processor_tracker : public processor_factory {
           probe* p,
           memory_limits* ml)
           : processor(
-            id,
-            std::move(ntp),
-            std::move(meta),
-            ss::make_shared<testing::fake_wasm_engine>(),
-            [](auto, auto, auto) {},
-            std::make_unique<testing::fake_source>(),
-            make_sink(),
-            std::make_unique<testing::fake_offset_tracker>(),
-            p,
-            ml)
+              id,
+              std::move(ntp),
+              std::move(meta),
+              ss::make_shared<testing::fake_wasm_engine>(),
+              [](auto, auto, auto) {},
+              std::make_unique<testing::fake_source>(),
+              make_sink(),
+              std::make_unique<testing::fake_offset_tracker>(),
+              p,
+              ml)
           , _track_fn(std::move(cb)) {
             _track_fn(lifecycle_status::created);
         }

@@ -85,7 +85,7 @@ public:
 
     topic_key_type_handler()
       : ::json::
-        BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
+          BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
 
     bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};

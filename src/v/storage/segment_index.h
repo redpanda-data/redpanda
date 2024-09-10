@@ -64,8 +64,8 @@ struct time_based_retention_cfg {
     bool use_broker_time;
     bool use_escape_hatch_for_timestamps_in_the_future;
 
-    static auto make(features::feature_table const& ft)
-      -> time_based_retention_cfg {
+    static auto
+    make(features::feature_table const& ft) -> time_based_retention_cfg {
         return {
           .use_broker_time = ft.is_active(
             features::feature::broker_time_based_retention),

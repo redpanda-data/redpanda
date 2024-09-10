@@ -110,7 +110,10 @@ public class VerifiableProducer implements AutoCloseable {
         = ArgumentParsers.newArgumentParser("verifiable-producer")
               .defaultHelp(true)
               .description(
-                  "This tool produces increasing integers to the specified topic and prints JSON metadata to stdout on each \"send\" request, making externally visible which messages have been acked and which have not.");
+                  "This tool produces increasing integers to the specified "
+                  + "topic and prints JSON metadata to stdout on each \"send\" "
+                  + "request, making externally visible which messages have "
+                  + "been acked and which have not.");
 
     parser.addArgument("--topic")
         .action(store())
@@ -129,7 +132,8 @@ public class VerifiableProducer implements AutoCloseable {
         .metavar("HOST1:PORT1[,HOST2:PORT2[...]]")
         .dest("bootstrapServer")
         .help(
-            "REQUIRED: The server(s) to connect to. Comma-separated list of Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
+            "REQUIRED: The server(s) to connect to. Comma-separated list of "
+            + "Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
 
     connectionGroup.addArgument("--broker-list")
         .action(store())
@@ -138,7 +142,9 @@ public class VerifiableProducer implements AutoCloseable {
         .metavar("HOST1:PORT1[,HOST2:PORT2[...]]")
         .dest("brokerList")
         .help(
-            "DEPRECATED, use --bootstrap-server instead; ignored if --bootstrap-server is specified.  Comma-separated list of Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
+            "DEPRECATED, use --bootstrap-server instead; ignored if "
+            + "--bootstrap-server is specified.  Comma-separated list of "
+            + "Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
 
     parser.addArgument("--max-messages")
         .action(store())
@@ -148,7 +154,8 @@ public class VerifiableProducer implements AutoCloseable {
         .metavar("MAX-MESSAGES")
         .dest("maxMessages")
         .help(
-            "Produce this many messages. If -1, produce messages until the process is killed externally.");
+            "Produce this many messages. If -1, produce messages until the "
+            + "process is killed externally.");
 
     parser.addArgument("--throughput")
         .action(store())
@@ -157,7 +164,8 @@ public class VerifiableProducer implements AutoCloseable {
         .type(Integer.class)
         .metavar("THROUGHPUT")
         .help(
-            "If set >= 0, throttle maximum message throughput to *approximately* THROUGHPUT messages/sec.");
+            "If set >= 0, throttle maximum message throughput to "
+            + "*approximately* THROUGHPUT messages/sec.");
 
     parser.addArgument("--acks")
         .action(store())
@@ -167,7 +175,8 @@ public class VerifiableProducer implements AutoCloseable {
         .choices(0, 1, -1)
         .metavar("ACKS")
         .help(
-            "Acks required on each produced message. See Kafka docs on acks for details.");
+            "Acks required on each produced message. See Kafka docs on acks "
+            + "for details.");
 
     parser.addArgument("--producer.config")
         .action(store())
@@ -184,7 +193,8 @@ public class VerifiableProducer implements AutoCloseable {
         .metavar("CREATETIME")
         .dest("createTime")
         .help(
-            "Send messages with creation time starting at the arguments value, in milliseconds since epoch");
+            "Send messages with creation time starting at the arguments "
+            + "value, in milliseconds since epoch");
 
     parser.addArgument("--value-prefix")
         .action(store())
@@ -193,7 +203,8 @@ public class VerifiableProducer implements AutoCloseable {
         .metavar("VALUE-PREFIX")
         .dest("valuePrefix")
         .help(
-            "If specified, each produced value will have this prefix with a dot separator");
+            "If specified, each produced value will have this prefix with a "
+            + "dot separator");
 
     parser.addArgument("--repeating-keys")
         .action(store())
@@ -202,7 +213,9 @@ public class VerifiableProducer implements AutoCloseable {
         .metavar("REPEATING-KEYS")
         .dest("repeatingKeys")
         .help(
-            "If specified, each produced record will have a key starting at 0 increment by 1 up to the number specified (exclusive), then the key is set to 0 again");
+            "If specified, each produced record will have a key starting at "
+            + "0 increment by 1 up to the number specified (exclusive), then "
+            + "the key is set to 0 again");
 
     return parser;
   }

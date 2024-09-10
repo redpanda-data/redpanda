@@ -29,8 +29,9 @@ class named_semaphore
 public:
     named_semaphore(size_t count, seastar::sstring name)
       : seastar::
-        basic_semaphore<seastar::named_semaphore_exception_factory, Clock>(
-          count, seastar::named_semaphore_exception_factory{std::move(name)}) {}
+          basic_semaphore<seastar::named_semaphore_exception_factory, Clock>(
+            count,
+            seastar::named_semaphore_exception_factory{std::move(name)}) {}
 };
 
 using semaphore = named_semaphore<>;

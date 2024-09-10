@@ -142,8 +142,8 @@ class fixture
 public:
     fixture()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // This test will manually set expectations for list requests.
         set_search_on_get_list(false);
     }

@@ -26,7 +26,7 @@ class netcheck_unreachable_peer_exception final : public netcheck_exception {
 public:
     explicit netcheck_unreachable_peer_exception(model::node_id peer)
       : netcheck_exception(
-        fmt::format("Failed to reach peer with node_id: {}", peer)) {}
+          fmt::format("Failed to reach peer with node_id: {}", peer)) {}
 };
 
 void netcheck::validate_options(const netcheck_opts& opts) {

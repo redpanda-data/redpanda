@@ -192,8 +192,10 @@ public:
           subject_name_strategy::topic_name)} {}
 
     auto validate_field(
-      field field, model::topic topic, subject_name_strategy sns, iobuf buf)
-      -> ss::future<bool> {
+      field field,
+      model::topic topic,
+      subject_name_strategy sns,
+      iobuf buf) -> ss::future<bool> {
         iobuf_parser parser(std::move(buf));
 
         if (parser.bytes_left() < 5) {

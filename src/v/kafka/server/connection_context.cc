@@ -143,9 +143,9 @@ parse_virtual_connection_id(const kafka::request_header& header) {
           = header.client_id_buffer.size() == v_connection_id_size
               ? std::nullopt
               : std::make_optional<std::string_view>(
-                std::next(
-                  header.client_id_buffer.begin(), v_connection_id_size),
-                header.client_id_buffer.size() - v_connection_id_size),
+                  std::next(
+                    header.client_id_buffer.begin(), v_connection_id_size),
+                  header.client_id_buffer.size() - v_connection_id_size),
         };
     } catch (const invalid_xid& e) {
         throw invalid_virtual_connection_id(e.what());
@@ -346,7 +346,7 @@ ss::future<> connection_context::revoke_credentials(std::string_view name) {
     }
     auto msg = _sasl->mechanism().complete()
                  ? fmt::format(
-                   "Session for principal '{}' revoked", _sasl->principal())
+                     "Session for principal '{}' revoked", _sasl->principal())
                  : "Session for unknown client revoked";
     vlog(klog.info, "{}", msg);
     _server.sasl_probe().session_revoked();

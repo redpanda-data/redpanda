@@ -459,9 +459,9 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto req_data = rq.req->content_length == 0
                       ? std::vector<kafka::offset_commit_request_topic>()
                       : ppj::partition_offsets_request_to_offset_commit_request(
-                        co_await ppj::rjson_parse(
-                          std::move(rq.req),
-                          ppj::partition_offsets_request_handler()));
+                          co_await ppj::rjson_parse(
+                            std::move(rq.req),
+                            ppj::partition_offsets_request_handler()));
 
     std::for_each(req_data.begin(), req_data.end(), [](const auto& r) {
         validate_no_control(r.name(), parse::pp_parsing_error{r.name()});

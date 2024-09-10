@@ -43,7 +43,8 @@ class TopicRecoveryFixture
 public:
     TopicRecoveryFixture()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
       , bucket(cloud_storage_clients::bucket_name("test-bucket")) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
