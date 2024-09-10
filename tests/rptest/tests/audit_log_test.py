@@ -1677,8 +1677,9 @@ class AuditLogTestOauth(AuditLogTestBase):
         security = AuditLogTestSecurityConfig(
             user_creds=RedpandaServiceBase.SUPERUSER_CREDENTIALS)
         security.enable_sasl = True
-        security.sasl_mechanisms = ['SCRAM', 'OAUTHBEARER']
-        security.http_authentication = ['BASIC', 'OIDC']
+        security.sasl_mechanisms = ['SCRAM']
+        security.http_authentication = ['BASIC']
+        # We'll only enable Oath once keycloak is up and running
 
         self.keycloak = KeycloakService(test_context)
 
@@ -1705,11 +1706,18 @@ class AuditLogTestOauth(AuditLogTestBase):
             self.keycloak.clean_node(kc_node)
             assert False, f'Keycloak failed to start: {e}'
 
+        self.security.sasl_mechanisms += ['OAUTHBEARER']
+        self.security.http_authentication += ['OIDC']
+
         self._modify_cluster_config({
             'oidc_discovery_url':
             self.keycloak.get_discovery_url(kc_node),
             "oidc_token_audience":
-            self.token_audience
+            self.token_audience,
+            "sasl_mechanisms":
+            self.security.sasl_mechanisms,
+            "http_authentication":
+            self.security.http_authentication,
         })
 
         self.keycloak.admin.create_user('norma',
