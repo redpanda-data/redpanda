@@ -13,7 +13,6 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "test_utils/async.h"
