@@ -405,6 +405,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_requests",
+    hdrs = [
+        "table_requests.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition",
+        ":schema",
+        ":table_requirement",
+        ":table_update",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_requirement",
     hdrs = [
         "table_requirement.h",
