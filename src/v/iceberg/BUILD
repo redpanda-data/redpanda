@@ -405,6 +405,52 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_requests",
+    hdrs = [
+        "table_requests.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":partition",
+        ":schema",
+        ":table_requirement",
+        ":table_update",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_requirement",
+    hdrs = [
+        "table_requirement.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":partition",
+        ":schema",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_update",
+    hdrs = [
+        "table_update.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":schema",
+        ":snapshot",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
     name = "time_transform_visitor",
     srcs = [
         "time_transform_visitor.cc",
