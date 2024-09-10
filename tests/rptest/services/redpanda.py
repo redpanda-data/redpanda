@@ -159,6 +159,7 @@ CHAOS_LOG_ALLOW_LIST = [
 # without a corresponding mock service set up to return credentials
 IAM_ROLES_API_CALL_ALLOW_LIST = [
     re.compile(r'cloud_roles - .*api request failed'),
+    re.compile(r'cloud_roles - .*Failed to get IMDSv2 token'),
     re.compile(r'cloud_roles - .*failed during IAM credentials refresh:'),
 ]
 
