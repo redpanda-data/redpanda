@@ -1717,7 +1717,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         self._cc_config = context.globals[self.GLOBAL_CLOUD_CLUSTER_CONFIG]
 
         self._provider_config = {}
-        match get_cloud_provider():
+        match context.globals.get("cloud_provider"):
             case "aws" | "gcp":
                 self._provider_config.update({
                     'access_key':
