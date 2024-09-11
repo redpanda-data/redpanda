@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -544,26 +543,6 @@ func flagsFromConf(
 		flagsMap[smpFlag] = *y.Rpk.SMP
 	}
 	return flagsMap
-}
-
-func mergeFlags(
-	current map[string]interface{}, overrides []string,
-) map[string]interface{} {
-	overridesMap := map[string]string{}
-	for _, o := range overrides {
-		pattern := regexp.MustCompile(`[\s=]+`)
-		parts := pattern.Split(o, 2)
-		flagName := strings.ReplaceAll(parts[0], "--", "")
-		if len(parts) == 2 {
-			overridesMap[flagName] = parts[1]
-		} else {
-			overridesMap[flagName] = ""
-		}
-	}
-	for k, v := range overridesMap {
-		current[k] = v
-	}
-	return current
 }
 
 func setConfig(y *config.RedpandaYaml, configKvs []string) error {

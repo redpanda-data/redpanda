@@ -34,7 +34,7 @@ type CPUMasks interface {
 	GetNumberOfCores(mask string) (uint, error)
 	GetNumberOfPUs(mask string) (uint, error)
 	GetAllCpusMask() (string, error)
-	GetLogicalCoreIdsFromPhysCore(core uint) ([]uint, error)
+	GetLogicalCoreIDsFromPhysCore(core uint) ([]uint, error)
 	IsSupported() bool
 }
 
@@ -212,7 +212,7 @@ func (masks *cpuMasks) GetNumberOfPUs(mask string) (uint, error) {
 	return masks.hwloc.GetNumberOfPUs(mask)
 }
 
-func (masks *cpuMasks) GetLogicalCoreIdsFromPhysCore(
+func (masks *cpuMasks) GetLogicalCoreIDsFromPhysCore(
 	core uint,
 ) ([]uint, error) {
 	return masks.hwloc.GetPhysIntersection("PU", fmt.Sprintf("core:%d", core))

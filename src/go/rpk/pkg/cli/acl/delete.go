@@ -55,7 +55,7 @@ resource names:
   * "literal" returns exact name matches
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 

@@ -185,7 +185,7 @@ func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config, forCloud bool)
 
 	// Backoff is the default redpanda raft election timeout: this enables us
 	// to cleanly retry on 503s due to leadership changes in progress.
-	client.Backoff = func(retry int) time.Duration {
+	client.Backoff = func(_ int) time.Duration {
 		maxJitter := 100
 		delayMs := retryBackoffMs + rng(maxJitter)
 		return time.Duration(delayMs) * time.Millisecond

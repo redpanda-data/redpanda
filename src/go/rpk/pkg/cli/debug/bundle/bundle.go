@@ -74,7 +74,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "bundle",
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
 			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 

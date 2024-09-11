@@ -292,7 +292,8 @@ corresponding 'export' command.  This downloads the current cluster
 configuration, calculates the difference with the YAML file, and
 updates any properties that were changed.  If a property is removed
 from the YAML file, it is reset to its default value.  `,
-		Run: func(cmd *cobra.Command, args []string) {
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)

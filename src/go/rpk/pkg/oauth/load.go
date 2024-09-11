@@ -82,7 +82,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 
 			if inTests {
 				zap.L().Sugar().Debug("returning fake organization because cloudAPIURL is empty")
-				return cloudapi.Organization{cloudapi.NameID{
+				return cloudapi.Organization{NameID: cloudapi.NameID{
 					ID:   "no-url-org-id",
 					Name: "no-url-org",
 				}}, nil
@@ -280,7 +280,6 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 			check(yAct, &authAct)
 			check(yVir, &authVir)
 		}
-
 		// We always write the auth name / org / orgID and update the
 		// current auth. This is a no-op if check just above did stuff.
 
@@ -303,7 +302,6 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 
 		yVir.CurrentCloudAuthKind = authVir.Kind
 		yAct.CurrentCloudAuthKind = authVir.Kind // we use the virtual kind here -- clientID is updated below
-
 	}
 
 	// We avoid copying the client secret, but we do keep the client ID.

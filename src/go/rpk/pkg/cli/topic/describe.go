@@ -58,7 +58,7 @@ For example,
 `,
 
 		Args: cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, topicArg []string) {
+		Run: func(_ *cobra.Command, topicArg []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
