@@ -19,24 +19,23 @@
 
 namespace datalake {
 
-class struct_schema_converter;
+class struct_converter;
 
-class arrow_schema_translator {
+class arrow_translator {
 public:
-    explicit arrow_schema_translator(iceberg::struct_type&& schema);
+    explicit arrow_translator(iceberg::struct_type&& schema);
 
     // Wrap constructor to return optional on failure.
-    static std::optional<arrow_schema_translator>
+    static std::optional<arrow_translator>
     create(iceberg::struct_type&& schema) {
         try {
-            return std::make_optional<arrow_schema_translator>(
-              std::move(schema));
+            return std::make_optional<arrow_translator>(std::move(schema));
         } catch (...) {
             return std::nullopt;
         }
     }
 
-    ~arrow_schema_translator();
+    ~arrow_translator();
 
     std::shared_ptr<arrow::Schema> build_arrow_schema();
     void add_data(iceberg::value value);
@@ -50,6 +49,6 @@ private:
     iceberg::struct_type _schema;
 
     // Top-level struct that represents the whole schema.
-    std::unique_ptr<struct_schema_converter> _struct_converter;
+    std::unique_ptr<struct_converter> _struct_converter;
 };
 } // namespace datalake

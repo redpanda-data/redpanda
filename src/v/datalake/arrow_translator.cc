@@ -27,9 +27,9 @@
 #include <stdexcept>
 
 namespace datalake {
-class schema_converter_interface {
+class converter_interface {
 public:
-    virtual ~schema_converter_interface() noexcept = default;
+    virtual ~converter_interface() noexcept = default;
     // Return an Arrow field descriptor for this converter. This is needed both
     // for schema generation and for converters for compound types: list,
     // struct, map.
@@ -57,11 +57,11 @@ public:
 };
 
 template<typename ArrowType>
-class scalar_schema_converter : public schema_converter_interface {
+class scalar_converter : public converter_interface {
     using BuilderType = arrow::TypeTraits<ArrowType>::BuilderType;
 
 public:
-    explicit scalar_schema_converter(
+    explicit scalar_converter(
       const std::shared_ptr<arrow::DataType>& data_type,
       std::shared_ptr<BuilderType> builder);
 
@@ -80,9 +80,9 @@ private:
     std::shared_ptr<BuilderType> _builder;
 };
 
-class struct_schema_converter : public schema_converter_interface {
+class struct_converter : public converter_interface {
 public:
-    explicit struct_schema_converter(const iceberg::struct_type& schema);
+    explicit struct_converter(const iceberg::struct_type& schema);
 
     std::shared_ptr<arrow::Field>
     field(const std::string& name, iceberg::field_required required) override;
@@ -103,14 +103,13 @@ private:
     arrow::FieldVector _fields;
     std::shared_ptr<arrow::DataType> _arrow_data_type;
 
-    fragmented_vector<std::unique_ptr<schema_converter_interface>>
-      _child_converters;
+    fragmented_vector<std::unique_ptr<converter_interface>> _child_converters;
     std::shared_ptr<arrow::StructBuilder> _builder;
 };
 
-class list_schema_converter : public schema_converter_interface {
+class list_converter : public converter_interface {
 public:
-    explicit list_schema_converter(const iceberg::list_type& schema);
+    explicit list_converter(const iceberg::list_type& schema);
 
     std::shared_ptr<arrow::Field>
     field(const std::string& name, iceberg::field_required required) override;
@@ -125,13 +124,13 @@ public:
 private:
     std::shared_ptr<arrow::DataType> _arrow_data_type;
 
-    std::unique_ptr<schema_converter_interface> _child_converter;
+    std::unique_ptr<converter_interface> _child_converter;
     std::shared_ptr<arrow::ListBuilder> _builder;
 };
 
-class map_schema_converter : public schema_converter_interface {
+class map_converter : public converter_interface {
 public:
-    explicit map_schema_converter(const iceberg::map_type& schema);
+    explicit map_converter(const iceberg::map_type& schema);
 
     std::shared_ptr<arrow::Field>
     field(const std::string& name, iceberg::field_required required) override;
@@ -146,8 +145,8 @@ public:
 private:
     std::shared_ptr<arrow::DataType> _arrow_data_type;
 
-    std::unique_ptr<schema_converter_interface> _key_converter;
-    std::unique_ptr<schema_converter_interface> _value_converter;
+    std::unique_ptr<converter_interface> _key_converter;
+    std::unique_ptr<converter_interface> _value_converter;
     std::shared_ptr<arrow::MapBuilder> _builder;
 };
 
@@ -170,145 +169,142 @@ void append_or_throw(BuilderT& builder, const ValueT& val) {
     }
 }
 
-struct schema_converter_builder_visitor {
-    std::unique_ptr<schema_converter_interface>
+struct converter_builder_visitor {
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::struct_type& s) {
-        return std::make_unique<struct_schema_converter>(s);
+        return std::make_unique<struct_converter>(s);
     }
 
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::list_type& s) {
-        return std::make_unique<list_schema_converter>(s);
+        return std::make_unique<list_converter>(s);
     }
 
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::map_type& m) {
-        return std::make_unique<map_schema_converter>(m);
+        return std::make_unique<map_converter>(m);
     }
 
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::primitive_type& p) {
         return std::visit(*this, p);
     }
 
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::boolean_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::BooleanType>>(
+        return std::make_unique<scalar_converter<arrow::BooleanType>>(
           arrow::boolean(), std::make_shared<arrow::BooleanBuilder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::int_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::Int32Type>>(
+        return std::make_unique<scalar_converter<arrow::Int32Type>>(
           arrow::int32(), std::make_shared<arrow::Int32Builder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::long_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::Int64Type>>(
+        return std::make_unique<scalar_converter<arrow::Int64Type>>(
           arrow::int64(), std::make_shared<arrow::Int64Builder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::float_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::FloatType>>(
+        return std::make_unique<scalar_converter<arrow::FloatType>>(
           arrow::float32(), std::make_shared<arrow::FloatBuilder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::double_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::DoubleType>>(
+        return std::make_unique<scalar_converter<arrow::DoubleType>>(
           arrow::float64(), std::make_shared<arrow::DoubleBuilder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::decimal_type& t) {
         if (t.precision == 0) {
             return nullptr;
         }
-        return std::make_unique<scalar_schema_converter<arrow::Decimal128Type>>(
+        return std::make_unique<scalar_converter<arrow::Decimal128Type>>(
           arrow::decimal(t.precision, t.scale),
           std::make_shared<arrow::DecimalBuilder>(
             arrow::decimal(t.precision, t.scale)));
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::date_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::Date32Type>>(
+        return std::make_unique<scalar_converter<arrow::Date32Type>>(
           arrow::date32(), std::make_shared<arrow::Date32Builder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::time_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::Time64Type>>(
+        return std::make_unique<scalar_converter<arrow::Time64Type>>(
           arrow::time64(arrow::TimeUnit::MICRO),
           std::make_shared<arrow::Time64Builder>(
             arrow::time64(arrow::TimeUnit::MICRO),
             arrow::default_memory_pool()));
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::timestamp_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::TimestampType>>(
+        return std::make_unique<scalar_converter<arrow::TimestampType>>(
           arrow::timestamp(arrow::TimeUnit::MICRO),
           std::make_shared<arrow::TimestampBuilder>(
             arrow::timestamp(arrow::TimeUnit::MICRO),
             arrow::default_memory_pool()));
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::timestamptz_type& /*t*/) {
         // Iceberg timestamps are UTC
-        return std::make_unique<scalar_schema_converter<arrow::TimestampType>>(
+        return std::make_unique<scalar_converter<arrow::TimestampType>>(
           arrow::timestamp(arrow::TimeUnit::MICRO, "UTC"),
           std::make_shared<arrow::TimestampBuilder>(
             arrow::timestamp(arrow::TimeUnit::MICRO, "UTC"),
             arrow::default_memory_pool()));
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::string_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::StringType>>(
+        return std::make_unique<scalar_converter<arrow::StringType>>(
           arrow::utf8(), std::make_shared<arrow::StringBuilder>());
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::uuid_type& /*t*/) {
         // TODO: there's an arrow extension for a uuid logical type.
         // Under-the-hood it's stored as a fixed(16). Do we want to use the
         // logical type here?
-        return std::make_unique<
-          scalar_schema_converter<arrow::FixedSizeBinaryType>>(
+        return std::make_unique<scalar_converter<arrow::FixedSizeBinaryType>>(
           arrow::fixed_size_binary(16),
           std::make_shared<arrow::FixedSizeBinaryBuilder>(
             arrow::fixed_size_binary(16)));
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::fixed_type& t) {
-        return std::make_unique<
-          scalar_schema_converter<arrow::FixedSizeBinaryType>>(
+        return std::make_unique<scalar_converter<arrow::FixedSizeBinaryType>>(
           arrow::fixed_size_binary(static_cast<uint32_t>(t.length)),
           std::make_shared<arrow::FixedSizeBinaryBuilder>(
             arrow::fixed_size_binary(t.length)));
     }
-    std::unique_ptr<schema_converter_interface>
+    std::unique_ptr<converter_interface>
     operator()(const iceberg::binary_type& /*t*/) {
-        return std::make_unique<scalar_schema_converter<arrow::BinaryType>>(
+        return std::make_unique<scalar_converter<arrow::BinaryType>>(
           arrow::binary(), std::make_shared<arrow::BinaryBuilder>());
     }
 };
 
 template<typename ArrowType>
-scalar_schema_converter<ArrowType>::scalar_schema_converter(
+scalar_converter<ArrowType>::scalar_converter(
   const std::shared_ptr<arrow::DataType>& data_type,
   std::shared_ptr<BuilderType> builder)
   : _arrow_data_type{data_type}
   , _builder{builder} {}
 
 template<typename ArrowType>
-std::shared_ptr<arrow::Field> scalar_schema_converter<ArrowType>::field(
+std::shared_ptr<arrow::Field> scalar_converter<ArrowType>::field(
   const std::string& name, iceberg::field_required required) {
     return arrow::field(
       name, _arrow_data_type, required == iceberg::field_required::no);
 }
 
 template<typename ArrowType>
-std::shared_ptr<arrow::ArrayBuilder>
-scalar_schema_converter<ArrowType>::builder() {
+std::shared_ptr<arrow::ArrayBuilder> scalar_converter<ArrowType>::builder() {
     return _builder;
 };
 
 template<typename ArrowType>
-void scalar_schema_converter<ArrowType>::add_optional_data(
+void scalar_converter<ArrowType>::add_optional_data(
   const std::optional<iceberg::value>& maybe_value) {
     if (!maybe_value.has_value()) {
         auto status = _builder->AppendNull();
@@ -323,13 +319,13 @@ void scalar_schema_converter<ArrowType>::add_optional_data(
 }
 
 template<typename ArrowType>
-void scalar_schema_converter<ArrowType>::add_data(const iceberg::value& value) {
+void scalar_converter<ArrowType>::add_data(const iceberg::value& value) {
     add_primitive(get_or_throw<iceberg::primitive_value>(
       value, "Scalar converter got non-scalar data type"));
 }
 
 template<>
-void scalar_schema_converter<arrow::BooleanType>::add_primitive(
+void scalar_converter<arrow::BooleanType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::boolean_value>(
       prim_value, "Scalar converter expected a boolean");
@@ -337,7 +333,7 @@ void scalar_schema_converter<arrow::BooleanType>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::Int32Type>::add_primitive(
+void scalar_converter<arrow::Int32Type>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::int_value>(
       prim_value, "Scalar converter expected an int32");
@@ -345,7 +341,7 @@ void scalar_schema_converter<arrow::Int32Type>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::Int64Type>::add_primitive(
+void scalar_converter<arrow::Int64Type>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::long_value>(
       prim_value, "Scalar converter expected an int64");
@@ -353,7 +349,7 @@ void scalar_schema_converter<arrow::Int64Type>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::FloatType>::add_primitive(
+void scalar_converter<arrow::FloatType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::float_value>(
       prim_value, "Scalar converter expected a float");
@@ -361,7 +357,7 @@ void scalar_schema_converter<arrow::FloatType>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::DoubleType>::add_primitive(
+void scalar_converter<arrow::DoubleType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::double_value>(
       prim_value, "Scalar converter expected a double");
@@ -369,7 +365,7 @@ void scalar_schema_converter<arrow::DoubleType>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::Decimal128Type>::add_primitive(
+void scalar_converter<arrow::Decimal128Type>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::decimal_value>(
                  prim_value, "Scalar converter expected a decimal")
@@ -384,7 +380,7 @@ void scalar_schema_converter<arrow::Decimal128Type>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::Date32Type>::add_primitive(
+void scalar_converter<arrow::Date32Type>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::date_value>(
       prim_value, "Scalar converter expected a date");
@@ -392,7 +388,7 @@ void scalar_schema_converter<arrow::Date32Type>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::Time64Type>::add_primitive(
+void scalar_converter<arrow::Time64Type>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto val = get_or_throw<iceberg::time_value>(
       prim_value, "Scalar converter expected a time");
@@ -400,7 +396,7 @@ void scalar_schema_converter<arrow::Time64Type>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::TimestampType>::add_primitive(
+void scalar_converter<arrow::TimestampType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     if (std::holds_alternative<iceberg::timestamp_value>(prim_value)) {
         append_or_throw(
@@ -414,7 +410,7 @@ void scalar_schema_converter<arrow::TimestampType>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::StringType>::add_primitive(
+void scalar_converter<arrow::StringType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     auto& val = get_or_throw<iceberg::string_value>(
       prim_value, "Scalar converter expected a string");
@@ -432,7 +428,7 @@ void scalar_schema_converter<arrow::StringType>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::FixedSizeBinaryType>::add_primitive(
+void scalar_converter<arrow::FixedSizeBinaryType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     if (std::holds_alternative<iceberg::fixed_value>(prim_value)) {
         // TODO: This copies the entire string into a std::string.
@@ -463,7 +459,7 @@ void scalar_schema_converter<arrow::FixedSizeBinaryType>::add_primitive(
 }
 
 template<>
-void scalar_schema_converter<arrow::BinaryType>::add_primitive(
+void scalar_converter<arrow::BinaryType>::add_primitive(
   const iceberg::primitive_value& prim_value) {
     const auto& val = get_or_throw<iceberg::binary_value>(
                         prim_value, "Scalar converter expected a binary field")
@@ -481,14 +477,13 @@ void scalar_schema_converter<arrow::BinaryType>::add_primitive(
     }
 }
 
-struct_schema_converter::struct_schema_converter(
-  const iceberg::struct_type& schema) {
+struct_converter::struct_converter(const iceberg::struct_type& schema) {
     _fields.reserve(schema.fields.size());
     std::vector<std::shared_ptr<arrow::ArrayBuilder>> child_builders;
     child_builders.reserve(schema.fields.size());
     for (const auto& field : schema.fields) {
-        std::unique_ptr<schema_converter_interface> child = std::visit(
-          schema_converter_builder_visitor{}, field->type);
+        std::unique_ptr<converter_interface> child = std::visit(
+          converter_builder_visitor{}, field->type);
         if (!child) {
             // We shouldn't get here. The child should throw if it can't be
             // constructed correctly.
@@ -504,17 +499,17 @@ struct_schema_converter::struct_schema_converter(
       _arrow_data_type, arrow::default_memory_pool(), child_builders);
 }
 
-std::shared_ptr<arrow::Field> struct_schema_converter::field(
+std::shared_ptr<arrow::Field> struct_converter::field(
   const std::string& name, iceberg::field_required required) {
     return arrow::field(
       name, _arrow_data_type, required == iceberg::field_required::no);
 }
 
-std::shared_ptr<arrow::ArrayBuilder> struct_schema_converter::builder() {
+std::shared_ptr<arrow::ArrayBuilder> struct_converter::builder() {
     return _builder;
 };
 
-void struct_schema_converter::add_optional_data(
+void struct_converter::add_optional_data(
   const std::optional<iceberg::value>& maybe_value) {
     if (!maybe_value.has_value()) {
         // "Automatically appends an empty value to each child builder."
@@ -529,7 +524,7 @@ void struct_schema_converter::add_optional_data(
     }
 }
 
-void struct_schema_converter::add_data(const iceberg::value& value) {
+void struct_converter::add_data(const iceberg::value& value) {
     // 1. Call add_data on all children
     // 2. Call append on our builder
     const auto& struct_val
@@ -558,11 +553,9 @@ void struct_schema_converter::add_data(const iceberg::value& value) {
     }
 }
 
-arrow::FieldVector struct_schema_converter::get_field_vector() {
-    return _fields;
-}
+arrow::FieldVector struct_converter::get_field_vector() { return _fields; }
 
-std::shared_ptr<arrow::Array> struct_schema_converter::take_chunk() {
+std::shared_ptr<arrow::Array> struct_converter::take_chunk() {
     arrow::Result<std::shared_ptr<arrow::Array>> builder_result
       = _builder->Finish();
     if (!builder_result.status().ok()) {
@@ -573,9 +566,9 @@ std::shared_ptr<arrow::Array> struct_schema_converter::take_chunk() {
     return builder_result.ValueUnsafe();
 }
 
-list_schema_converter::list_schema_converter(const iceberg::list_type& schema) {
+list_converter::list_converter(const iceberg::list_type& schema) {
     _child_converter = std::visit(
-      schema_converter_builder_visitor{}, schema.element_field->type);
+      converter_builder_visitor{}, schema.element_field->type);
     if (!_child_converter) {
         _arrow_data_type = nullptr;
         // We shouldn't get here. The child should throw if it can't be
@@ -595,17 +588,17 @@ list_schema_converter::list_schema_converter(const iceberg::list_type& schema) {
       _arrow_data_type);
 }
 
-std::shared_ptr<arrow::Field> list_schema_converter::field(
+std::shared_ptr<arrow::Field> list_converter::field(
   const std::string& name, iceberg::field_required required) {
     return arrow::field(
       name, _arrow_data_type, required == iceberg::field_required::no);
 }
 
-std::shared_ptr<arrow::ArrayBuilder> list_schema_converter::builder() {
+std::shared_ptr<arrow::ArrayBuilder> list_converter::builder() {
     return _builder;
 };
 
-void list_schema_converter::add_optional_data(
+void list_converter::add_optional_data(
   const std::optional<iceberg::value>& maybe_value) {
     if (!maybe_value.has_value()) {
         // This represents adding a null list to the builder, rather than
@@ -621,7 +614,7 @@ void list_schema_converter::add_optional_data(
         return add_data(maybe_value.value());
     }
 }
-void list_schema_converter::add_data(const iceberg::value& value) {
+void list_converter::add_data(const iceberg::value& value) {
     if (std::holds_alternative<std::unique_ptr<iceberg::list_value>>(value)) {
         // List API is:
         // 1. Append elements to child
@@ -644,11 +637,11 @@ void list_schema_converter::add_data(const iceberg::value& value) {
     }
 }
 
-map_schema_converter::map_schema_converter(const iceberg::map_type& schema) {
+map_converter::map_converter(const iceberg::map_type& schema) {
     _key_converter = std::visit(
-      schema_converter_builder_visitor{}, schema.key_field->type);
+      converter_builder_visitor{}, schema.key_field->type);
     _value_converter = std::visit(
-      schema_converter_builder_visitor{}, schema.value_field->type);
+      converter_builder_visitor{}, schema.value_field->type);
     if (!_key_converter || !_value_converter) {
         _arrow_data_type = nullptr;
         // We shouldn't get here. The child should throw if it can't be
@@ -672,17 +665,17 @@ map_schema_converter::map_schema_converter(const iceberg::map_type& schema) {
       _value_converter->builder());
 }
 
-std::shared_ptr<arrow::Field> map_schema_converter::field(
+std::shared_ptr<arrow::Field> map_converter::field(
   const std::string& name, iceberg::field_required required) {
     return arrow::field(
       name, _arrow_data_type, required == iceberg::field_required::no);
 }
 
-std::shared_ptr<arrow::ArrayBuilder> map_schema_converter::builder() {
+std::shared_ptr<arrow::ArrayBuilder> map_converter::builder() {
     return _builder;
 };
 
-void map_schema_converter::add_optional_data(
+void map_converter::add_optional_data(
   const std::optional<iceberg::value>& maybe_value) {
     // The order of this is reversed from ListBuilder:
     // 1. Call Append on the parent builder to create a new slot
@@ -700,7 +693,7 @@ void map_schema_converter::add_optional_data(
     }
 }
 
-void map_schema_converter::add_data(const iceberg::value& value) {
+void map_converter::add_data(const iceberg::value& value) {
     const auto& map_val = *get_or_throw<std::unique_ptr<iceberg::map_value>>(
       value, "Got invalid type for map converter");
     auto status = _builder->Append();
@@ -715,21 +708,21 @@ void map_schema_converter::add_data(const iceberg::value& value) {
     }
 }
 
-arrow_schema_translator::arrow_schema_translator(iceberg::struct_type&& schema)
+arrow_translator::arrow_translator(iceberg::struct_type&& schema)
   : _schema(std::move(schema))
-  , _struct_converter(std::make_unique<struct_schema_converter>(_schema)) {}
+  , _struct_converter(std::make_unique<struct_converter>(_schema)) {}
 
-arrow_schema_translator::~arrow_schema_translator() = default;
+arrow_translator::~arrow_translator() = default;
 
-std::shared_ptr<arrow::Schema> arrow_schema_translator::build_arrow_schema() {
+std::shared_ptr<arrow::Schema> arrow_translator::build_arrow_schema() {
     return arrow::schema(_struct_converter->get_field_vector());
 }
 
-void arrow_schema_translator::add_data(iceberg::value value) {
+void arrow_translator::add_data(iceberg::value value) {
     _struct_converter->add_data(value);
 }
 
-std::shared_ptr<arrow::Array> arrow_schema_translator::take_chunk() {
+std::shared_ptr<arrow::Array> arrow_translator::take_chunk() {
     return _struct_converter->take_chunk();
 }
 } // namespace datalake

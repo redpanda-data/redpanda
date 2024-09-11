@@ -78,8 +78,7 @@ iceberg::struct_type test_schema(iceberg::field_required required) {
 }
 
 TEST(ArrowWriterTest, TranslatesSchemas) {
-    datalake::arrow_schema_translator writer(
-      test_schema(iceberg::field_required::no));
+    datalake::arrow_translator writer(test_schema(iceberg::field_required::no));
     auto schema = writer.build_arrow_schema();
     ASSERT_NE(schema, nullptr);
     std::string expected_schema = R"(test_bool: bool
@@ -103,7 +102,7 @@ test_map: map<string, int64>)";
 }
 
 TEST(ArrowWriterTest, TranslatesSchemasWithRequired) {
-    datalake::arrow_schema_translator writer(
+    datalake::arrow_translator writer(
       test_schema(iceberg::field_required::yes));
     auto schema = writer.build_arrow_schema();
     ASSERT_NE(schema, nullptr);
@@ -131,7 +130,7 @@ test_map: map<string, int64> not null)";
 std::string get_expected_translation_output();
 
 TEST(ArrowWriterTest, TranslatesData) {
-    datalake::arrow_schema_translator schema_translator(
+    datalake::arrow_translator schema_translator(
       test_schema(iceberg::field_required::no));
 
     for (int i = 0; i < 5; i++) {
@@ -148,7 +147,7 @@ TEST(ArrowWriterTest, TranslatesData) {
 }
 
 TEST(ArrowWriterTest, FailsOnNonStruct) {
-    datalake::arrow_schema_translator schema_translator(
+    datalake::arrow_translator schema_translator(
       test_schema(iceberg::field_required::no));
     iceberg::value not_a_struct = iceberg::int_value{5};
     EXPECT_THROW(
@@ -164,7 +163,7 @@ TEST(ArrowWriterTest, FailsOnWrongFieldCount) {
     schema.fields.emplace_back(nested_field::create(
       2, "test_bool_2", field_required::no, boolean_type{}));
 
-    datalake::arrow_schema_translator schema_translator(std::move(schema));
+    datalake::arrow_translator schema_translator(std::move(schema));
 
     std::unique_ptr<struct_value> too_little_data
       = std::make_unique<struct_value>();
@@ -195,7 +194,7 @@ TEST_P(RequiredFieldTest, DoRequiredFieldTest) {
     schema.fields.emplace_back(
       nested_field::create(2, "test_bool_2", params.required, boolean_type{}));
 
-    datalake::arrow_schema_translator schema_translator(std::move(schema));
+    datalake::arrow_translator schema_translator(std::move(schema));
 
     std::unique_ptr<struct_value> missing_field
       = std::make_unique<struct_value>();
@@ -246,7 +245,7 @@ TEST(ArrowWriterTest, BadSchema) {
       6, "test_decimal", field_required::yes, decimal_type{0, 16}));
 
     EXPECT_THROW(
-      datalake::arrow_schema_translator(std::move(input_schema)),
+      datalake::arrow_translator(std::move(input_schema)),
       std::invalid_argument);
 }
 
