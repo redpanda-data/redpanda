@@ -886,15 +886,10 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
     auto segments = std::vector<ss::lw_shared_ptr<segment>>(
       range.first, range.second);
 
-    bool all_window_compacted = true;
-    for (const auto& seg : segments) {
-        if (!seg->finished_windowed_compaction()) {
-            all_window_compacted = false;
-            break;
-        }
-    }
+    const bool all_window_compacted = std::ranges::all_of(
+      segments, &segment::finished_windowed_compaction);
 
-    auto all_segments_self_compacted = std::ranges::all_of(
+    const bool all_segments_self_compacted = std::ranges::all_of(
       segments, &segment::finished_self_compaction);
 
     if (unlikely(!all_segments_self_compacted)) {
