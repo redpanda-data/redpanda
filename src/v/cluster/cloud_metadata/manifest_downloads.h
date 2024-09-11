@@ -13,14 +13,13 @@
 #include "base/seastarx.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
 
 namespace cloud_storage {
 class remote;
 } // namespace cloud_storage
-
-class retry_chain_node;
 
 namespace cluster::cloud_metadata {
 

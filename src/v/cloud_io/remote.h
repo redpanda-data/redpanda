@@ -25,6 +25,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -33,19 +34,23 @@
 
 namespace cloud_io {
 
-struct upload_request {
-    transfer_details transfer_details;
+template<class Clock>
+struct basic_upload_request {
+    basic_transfer_details<Clock> transfer_details;
     std::string_view display_str;
     iobuf payload;
     bool accept_no_content_response{false};
 };
+using upload_request = basic_upload_request<ss::lowres_clock>;
 
-struct download_request {
-    transfer_details transfer_details;
+template<class Clock>
+struct basic_download_request {
+    basic_transfer_details<Clock> transfer_details;
     std::string_view display_str;
     iobuf& payload;
     bool expect_missing{false};
 };
+using download_request = basic_download_request<ss::lowres_clock>;
 using remote_path = named_type<ss::sstring, struct remote_path_tag>;
 
 using list_result = result<
@@ -60,6 +65,66 @@ using list_result = result<
 using try_consume_stream = ss::noncopyable_function<ss::future<uint64_t>(
   uint64_t, ss::input_stream<char>)>;
 
+template<class Clock = ss::lowres_clock>
+class remote_api {
+public:
+    using upload_request = basic_upload_request<Clock>;
+    using download_request = basic_download_request<Clock>;
+    using retry_chain_node = basic_retry_chain_node<Clock>;
+    using transfer_details = basic_transfer_details<Clock>;
+
+    remote_api() = default;
+    virtual ~remote_api() = default;
+    remote_api(const remote_api&) = delete;
+    remote_api(remote_api&&) = delete;
+    remote_api& operator=(const remote_api&) = delete;
+    remote_api& operator=(remote_api&&) = delete;
+
+    /// Functor that returns fresh input_stream object that can be used
+    /// to re-upload and will return all data that needs to be uploaded
+    using reset_input_stream = ss::noncopyable_function<
+      ss::future<std::unique_ptr<stream_provider>>()>;
+
+    /// \brief Download object small enough to fit in memory
+    /// \param download_request holds a reference to an iobuf in the `payload`
+    /// field which will hold the downloaded object if the download was
+    /// successful
+    virtual ss::future<download_result>
+    download_object(download_request download_request) = 0;
+
+    virtual ss::future<download_result> object_exists(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& path,
+      retry_chain_node& parent,
+      std::string_view object_type)
+      = 0;
+
+    /// \brief Upload small objects to bucket. Suitable for uploading simple
+    /// strings, does not check for leadership before upload like the segment
+    /// upload function.
+    virtual ss::future<upload_result>
+    upload_object(upload_request upload_request) = 0;
+
+    virtual ss::future<upload_result> upload_stream(
+      transfer_details transfer_details,
+      uint64_t content_length,
+      const reset_input_stream& reset_str,
+      lazy_abort_source& lazy_abort_source,
+      const std::string_view stream_label,
+      std::optional<size_t> max_retries)
+      = 0;
+
+    virtual ss::future<download_result> download_stream(
+      transfer_details transfer_details,
+      const try_consume_stream& cons_str,
+      const std::string_view stream_label,
+      bool acquire_hydration_units,
+      std::optional<cloud_storage_clients::http_byte_range> byte_range
+      = std::nullopt,
+      std::function<void(size_t)> throttle_metric_ms_cb = {})
+      = 0;
+};
+
 /// \brief Represents remote endpoint
 ///
 /// The `remote` is responsible for remote data
@@ -67,13 +132,10 @@ using try_consume_stream = ss::noncopyable_function<ss::future<uint64_t>(
 /// download data. Also, it's responsible for maintaining
 /// correct naming in S3. The remote takes into account
 /// things like reconnects, backpressure and backoff.
-class remote : public ss::peering_sharded_service<remote> {
+class remote final
+  : public remote_api<>
+  , public ss::peering_sharded_service<remote> {
 public:
-    /// Functor that returns fresh input_stream object that can be used
-    /// to re-upload and will return all data that needs to be uploaded
-    using reset_input_stream = ss::noncopyable_function<
-      ss::future<std::unique_ptr<stream_provider>>()>;
-
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation
     /// time, size in bytes, and etag.
@@ -89,7 +151,7 @@ public:
       const cloud_storage_clients::client_configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
 
-    ~remote();
+    ~remote() override;
 
     /// \brief Start the remote
     ss::future<> start();
@@ -114,13 +176,13 @@ public:
     /// field which will hold the downloaded object if the download was
     /// successful
     ss::future<download_result>
-    download_object(download_request download_request);
+    download_object(download_request download_request) override;
 
     ss::future<download_result> object_exists(
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      std::string_view object_type);
+      std::string_view object_type) override;
 
     /// \brief Delete object from S3
     ///
@@ -187,7 +249,8 @@ public:
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
-    ss::future<upload_result> upload_object(upload_request upload_request);
+    ss::future<upload_result>
+    upload_object(upload_request upload_request) override;
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.
@@ -200,7 +263,7 @@ public:
       const reset_input_stream& reset_str,
       lazy_abort_source& lazy_abort_source,
       const std::string_view stream_label,
-      std::optional<size_t> max_retries);
+      std::optional<size_t> max_retries) override;
 
     ss::future<download_result> download_stream(
       transfer_details transfer_details,
@@ -209,7 +272,7 @@ public:
       bool acquire_hydration_units,
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt,
-      std::function<void(size_t)> throttle_metric_ms_cb = {});
+      std::function<void(size_t)> throttle_metric_ms_cb = {}) override;
 
     template<typename R>
     requires std::ranges::range<R>
