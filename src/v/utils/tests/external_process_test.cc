@@ -86,10 +86,10 @@ TEST_CORO(external_process, echo_hi) {
 TEST_CORO(external_process, run_long_process) {
     using namespace std::chrono_literals;
 
+    auto start_time = std::chrono::high_resolution_clock::now();
     auto proc
       = co_await external_process::external_process::create_external_process(
-        {"/bin/sleep", "3"});
-    auto start_time = std::chrono::high_resolution_clock::now();
+        {"/bin/sleep", "10"});
     auto res = co_await proc->wait();
     auto end_time = std::chrono::high_resolution_clock::now();
     ASSERT_TRUE_CORO(
@@ -99,7 +99,7 @@ TEST_CORO(external_process, run_long_process) {
     EXPECT_GE(
       std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time)
         .count(),
-      3);
+      10);
 }
 
 TEST_CORO(external_process, run_long_process_and_terminate) {

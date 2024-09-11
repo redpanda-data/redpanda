@@ -36,7 +36,7 @@ def _redpanda_cc_test(
         srcs = [],
         deps = [],
         default_memory_gb = None,
-        default_cores = None,
+        cpu = None,
         extra_args = [],
         custom_args = [],
         tags = [],
@@ -53,7 +53,7 @@ def _redpanda_cc_test(
       srcs: test source files
       deps: test dependencies
       default_memory_gb: default seastar memory
-      default_cores: default seastar cores
+      cpu: default seastar cores
       extra_args: arguments from test wrappers
       custom_args: arguments from cc_test users
       tags: tags to attach to the cc_test target
@@ -73,12 +73,11 @@ def _redpanda_cc_test(
     if default_memory_gb and not has_flags(args, "-m", "--memory"):
         args.append("-m{}G".format(default_memory_gb))
 
-    # Use a fixed core count unless an explicit number of cores was requested.
-    # This can help (some what) with determinism across different node shapes.
-    # Additionally, using a smaller value can help speed up indvidiual tests as
-    # well as when multiple tests are running in parallel.
-    if default_cores and not has_flags(args, "-c", "--smp"):
-        args.append("-c{}".format(default_cores))
+    if has_flags(args, "-c", "--smp"):
+        fail("Use `cpu=N` test parameter instead of -c/--smp")
+
+    args.append("-c{}".format(cpu))
+    resource_tags = ["resources:cpu:{}".format(cpu)]
 
     # Google test / benchmarks don't understand the "--" protocol
     if args and dash_dash_protocol:
@@ -94,13 +93,13 @@ def _redpanda_cc_test(
         features = [
             "layering_check",
         ],
-        tags = tags,
+        tags = resource_tags + tags,
         env = env,
         target_compatible_with = target_compatible_with,
         data = data,
     )
 
-def _redpanda_cc_unit_test(**kwargs):
+def _redpanda_cc_unit_test(cpu, **kwargs):
     extra_args = [
         "--unsafe-bypass-fsync 1",
         "--default-log-level=trace",
@@ -109,7 +108,7 @@ def _redpanda_cc_unit_test(**kwargs):
     ]
     _redpanda_cc_test(
         default_memory_gb = 1,
-        default_cores = 4,
+        cpu = cpu or 4,
         extra_args = extra_args,
         **kwargs
     )
@@ -121,12 +120,14 @@ def redpanda_cc_gtest(
         deps = [],
         args = [],
         env = {},
+        cpu = None,
         data = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = False,
         name = name,
         timeout = timeout,
         srcs = srcs,
+        cpu = cpu,
         deps = deps,
         custom_args = args,
         env = env,
@@ -140,6 +141,7 @@ def redpanda_cc_btest(
         deps = [],
         args = [],
         env = {},
+        cpu = None,
         target_compatible_with = [],
         data = []):
     _redpanda_cc_unit_test(
@@ -148,6 +150,7 @@ def redpanda_cc_btest(
         timeout = timeout,
         srcs = srcs,
         deps = deps,
+        cpu = cpu,
         custom_args = args,
         env = env,
         target_compatible_with = target_compatible_with,
@@ -162,7 +165,7 @@ def redpanda_cc_bench(
         args = []):
     _redpanda_cc_test(
         dash_dash_protocol = False,
-        default_cores = 1,
+        cpu = 1,
         name = name,
         timeout = timeout,
         srcs = srcs,
