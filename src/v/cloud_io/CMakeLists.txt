@@ -8,6 +8,10 @@ v_cc_library(
     transfer_details.cc
   DEPS
     Seastar::seastar
-    v::config)
+    v::bytes
+    v::cloud_roles
+    v::cloud_storage_clients
+    v::config
+    v::utils)
 
 add_subdirectory(tests)
