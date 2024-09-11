@@ -319,6 +319,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "table_update_applier_test",
+    timeout = "short",
+    srcs = [
+        "table_update_applier_test.cc",
+    ],
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_update",
+        "//src/v/iceberg:table_update_applier",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "transform_utils_test",
     timeout = "short",
     srcs = [

@@ -542,6 +542,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_update_applier",
+    srcs = [
+        "table_update_applier.cc",
+    ],
+    hdrs = [
+        "table_update_applier.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":schema",
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:fragmented_vector",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":table_metadata",
+        ":table_update",
+    ],
+)
+
+redpanda_cc_library(
     name = "time_transform_visitor",
     srcs = [
         "time_transform_visitor.cc",
