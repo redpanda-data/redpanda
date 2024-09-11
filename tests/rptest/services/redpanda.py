@@ -836,8 +836,9 @@ class SISettings:
             conf[
                 'cloud_storage_max_throughput_per_shard'] = self.cloud_storage_max_throughput_per_shard
 
-        # Always run with scrubbing in testing.
-        conf['cloud_storage_enable_scrubbing'] = True
+        # Enable scrubbing in testing unless it was explicitly disabled.
+        if 'cloud_storage_enable_scrubbing' not in conf:
+            conf['cloud_storage_enable_scrubbing'] = True
 
         return conf
 
