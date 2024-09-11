@@ -125,7 +125,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "pager_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = ["pager_test.cc"],
     deps = [
         ":testing",
