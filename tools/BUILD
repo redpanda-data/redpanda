@@ -51,3 +51,14 @@ py_binary(
         "@python_deps//pyyaml",
     ],
 )
+
+sh_binary(
+    name = "clang_format",
+    srcs = ["clang_format.sh"],
+    args = [
+        "$(rootpath @llvm_18_toolchain//:clang-format)",
+    ],
+    data = [
+        "@llvm_18_toolchain//:clang-format",
+    ],
+)
