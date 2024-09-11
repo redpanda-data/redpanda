@@ -67,7 +67,7 @@ redpanda_cc_gtest(
     srcs = [
         "manifest_io_test.cc",
     ],
-    args = ["-c1"],
+    cpu = 1,
     deps = [
         ":test_schemas",
         "//src/v/bytes:iobuf",
