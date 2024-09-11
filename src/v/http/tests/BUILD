@@ -70,6 +70,8 @@ redpanda_cc_btest(
     srcs = [
         "http_imposter_test.cc",
     ],
+    # test assumes single core
+    args = ["-c1"],
     deps = [
         ":utils",
         "//src/v/bytes:iobuf_parser",
