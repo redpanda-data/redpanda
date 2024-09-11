@@ -46,31 +46,13 @@ from rptest.util import firewall_blocked
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import cloudv2_object_store_blocked
 from rptest.utils.test_mixins import PreallocNodesMixin
+from rptest.services.machinetype import get_machine_info
 
 KiB = 1024
 MiB = KiB * KiB
 GiB = KiB * MiB
 minutes = 60
 hours = 60 * minutes
-
-MachineTypeMemory = {
-    'i3en.large': 16 * GiB,
-    'i3en.xlarge': 32 * GiB,
-    'i3en.2xlarge': 64 * GiB,
-    'i3en.3xlarge': 96 * GiB,
-    'i3en.6xlarge': 192 * GiB,
-    'im4gn.large': 8 * GiB,
-    'im4gn.xlarge': 16 * GiB,
-    'im4gn.8xlarge': 128 * GiB,
-    'Standard_L8s_v3': 64 * GiB,
-    'Standard_L8as_v3': 64 * GiB,
-    'n2d-standard-2': 8 * GiB,
-    'n2d-standard-4': 16 * GiB,
-    'n2d-standard-16': 64 * GiB,
-    'n2-standard-2': 8 * GiB,
-    'n2-standard-4': 16 * GiB,
-    'n2-standard-8': 32 * GiB,
-}
 
 
 class HighThroughputTestTrafficGenerator:
@@ -258,8 +240,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._num_brokers = config_profile['nodes_count']
         self._cluster_config_log_segment_size = int(
             cluster_config['log_segment_size'])
-        self._memory_per_broker = MachineTypeMemory[
-            config_profile['machine_type']]
+        self._memory_per_broker = get_machine_info(
+            config_profile['machine_type']).memory
 
         tier_product = self.redpanda.get_product()
         assert tier_product, "Could not get product info"
