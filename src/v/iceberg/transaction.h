@@ -1,0 +1,61 @@
+// Copyright 2024 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+#pragma once
+
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
+#include "iceberg/action.h"
+#include "iceberg/schema.h"
+#include "iceberg/table_metadata.h"
+#include "iceberg/table_requirement.h"
+#include "iceberg/table_update.h"
+
+#include <seastar/core/future.hh>
+
+#include <variant>
+
+namespace iceberg {
+
+// Encapsulates updates to the table metadata. Updates to the table are not
+// persisted to the catalog until the transaction is committed, though metadata
+// may be written to object storage before then.
+//
+// This class is not thread safe: it is expected that methods are called one at
+// a time.
+class transaction {
+public:
+    using txn_outcome = checked<std::nullopt_t, action::errc>;
+    explicit transaction(table_metadata table)
+      : table_(std::move(table)) {}
+
+    // Sets the current schema, adding it to the table and assigning a new
+    // schema id if it doesn't exist. Note, the schema id is ignored, and one
+    // is assigned based on the state of the table.
+    ss::future<txn_outcome> set_schema(schema);
+
+    // TODO: we should have these return an error type when the transaction has
+    // run into an error.
+    const table_metadata& table() const { return table_; }
+    const updates_and_reqs& updates() const { return updates_; }
+
+private:
+    // Applies the given action to `table_`.
+    ss::future<txn_outcome> apply(std::unique_ptr<action>);
+
+    // Applies the given updates to the table metadata, validating the
+    // requirements.
+    txn_outcome update_metadata(updates_and_reqs);
+
+    // Table metadata off which to base this transaction.
+    table_metadata table_;
+
+    updates_and_reqs updates_;
+};
+
+} // namespace iceberg
