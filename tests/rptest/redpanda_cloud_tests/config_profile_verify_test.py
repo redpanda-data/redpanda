@@ -60,20 +60,15 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
 
     def _check_rp_config(self):
         confRes = self.redpanda.kubectl.exec(
-            "rpk redpanda admin config print --host 0")
+            'rpk redpanda admin config print --host 0')
         clusterConfig = json.loads(confRes)
-        self.logger.debug(
-            "asserting we got the config for the right cluster: expected rp-{}, actual: {}"
-            .format(self._clusterId, clusterConfig["cluster_id"]))
-        assert clusterConfig['cluster_id'] in (self._clusterId,
-                                               f'rp-{self._clusterId}')
+        assert clusterConfig['cluster_id'] in (
+            self._clusterId, f'rp-{self._clusterId}'
+        ), f'asserting we got the config for the right cluster: expected {self._clusterId} to contain {clusterConfig["cluster_id"]}'
 
         for k, v in self._configProfile["cluster_config"].items():
-            self.logger.debug(
-                "asserting cluster config key {} has expected value: {}  actual: {}"
-                .format(k, v, clusterConfig[k]))
-            if clusterConfig[k] != v and "{}".format(clusterConfig[k]) != v:
-                assert False
+            if clusterConfig[k] != v and f"{clusterConfig[k]}" != v:
+                assert False, f'asserting cluster config key {k} has expected value: {v}, actual: {clusterConfig[k]}'
 
     def _check_aws_nodes(self):
         cmd = self.redpanda.kubectl._ssh_prefix() + [
@@ -82,41 +77,37 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
                 self._clusterId),
             '--query="Reservations[0].Instances[*].InstanceType"'
         ]
-        res = subprocess.check_output(cmd)
-        resd = json.loads(res)
+        output = subprocess.check_output(cmd)
+        self.logger.debug(f'nodes: {output}')
+        nodes = json.loads(output)
 
-        self.logger.debug(
-            "asserting nodes_count: expected: {}, actual: {}".format(
-                self._configProfile['nodes_count'], len(resd)))
-        assert len(resd) == self._configProfile['nodes_count']
+        config_nodes_count = self._configProfile['nodes_count']
+        actual_nodes_count = len(nodes)
+        assert actual_nodes_count == config_nodes_count, f'asserting nodes_count: expected: {config_nodes_count}, actual: {actual_nodes_count}'
 
-        self.logger.debug(
-            "asserting machineType: expected: {}, actual: {}".format(
-                self._configProfile['machine_type'], resd[0]))
-        assert resd[0] == self._configProfile['machine_type']
+        config_machine_type = self._configProfile['machine_type']
+        actual_machine_type = nodes[0]
+        assert actual_machine_type == config_machine_type, f'asserting machineType: expected: {config_machine_type}, actual: {actual_machine_type}'
 
     def _check_azure_nodes(self):
-        # currently, we have to override the PATH for azure because
-        # az-cli is installed via snap and /snap/bin only appears in
-        # $PATH on *interactive* shells
+        jsonpath = '{..labels.node\\.kubernetes\\.io/instance-type}'
         cmd = self.redpanda.kubectl._ssh_prefix() + [
-            'env', 'PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin',
-            'az', 'aks', 'nodepool', 'list',
-            '--cluster-name', f'aks-rpcloud-{self._clusterId}',
-            '--resource-group', f'rg-rpcloud-{self._clusterId}',
-            '--query', "'[?starts_with(name,`redpanda`)].vmSize'",
-            '--output', 'json'
+            'kubectl', 'get', 'nodes',
+            '--selector', 'redpanda-node=true',
+            '--output', f'jsonpath-as-json="{jsonpath}"'
         ] # yapf: disable
 
-        res = subprocess.check_output(cmd)
-        resd = json.loads(res)
+        output = subprocess.check_output(cmd)
+        self.logger.debug(f'nodes: {output}')
+        nodes = json.loads(output)
 
-        nc = self._configProfile['nodes_count']
-        assert len(
-            resd) == nc, f"expected nodes_count: {nc}, actual: {len(resd)}"
+        config_nodes_count = self._configProfile['nodes_count']
+        actual_nodes_count = len(nodes)
+        assert actual_nodes_count == config_nodes_count, f"expected nodes_count: {config_nodes_count}, actual: {actual_nodes_count}"
 
-        mt = self._configProfile['machine_type']
-        assert resd[1] == mt, f"expected machineType: {mt}, actual: {resd[1]}"
+        config_machine_type = self._configProfile['machine_type']
+        actual_machine_type = nodes[0]
+        assert actual_machine_type == config_machine_type, f"expected machineType: {config_machine_type}, actual: {actual_machine_type}"
 
     def _check_gcp_nodes(self):
         cmd = self.redpanda.kubectl._ssh_prefix() + [
@@ -124,27 +115,25 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
             '"tags.items=redpanda-node tags.items=redpanda-{}"'.format(
                 self._clusterId), '--format="json(name,machineType,disks)"'
         ]
-        res = subprocess.check_output(cmd)
-        resd = json.loads(res)
+        output = subprocess.check_output(cmd)
+        self.logger.debug(f'nodes: {output}')
+        nodes = json.loads(output)
 
-        self.logger.debug(
-            "asserting machineType: expected: {}, actual: {}".format(
-                self._configProfile['machine_type'], resd[0]['machineType']))
-        assert resd[0]['machineType'].endswith(
-            self._configProfile['machine_type'])
+        config_nodes_count = self._configProfile['nodes_count']
+        actual_nodes_count = len(nodes)
+        assert actual_nodes_count == config_nodes_count, f"expected nodes_count: {config_nodes_count}, actual: {actual_nodes_count}"
 
-        self.logger.debug(
-            "asserting nodes_count: expected: {}, actual: {}".format(
-                self._configProfile['nodes_count'], len(resd)))
-        assert len(resd) == self._configProfile['nodes_count']
+        config_machine_type = self._configProfile['machine_type']
+        actual_machine_type = nodes[0]['machineType']
+        assert actual_machine_type.endswith(
+            config_machine_type
+        ), f"asserting machineType: expected: {config_machine_type}, actual: {actual_machine_type}"
+
         # check disks (we only do this for gcp as they are dynamically added to node)
-        for n in resd:
+        ssb = self._configProfile["storage_size_bytes"]
+        for n in nodes:
             disks = [disk for disk in n['disks'] if disk['type'] == "SCRATCH"]
             total = 0
             for d in disks:
                 total += int(d['diskSizeGb']) * 1024 * 1024 * 1024
-            self.logger.debug(
-                "asserting storage for redpanda node {}: expected: {}, actual: {}"
-                .format(n["name"], self._configProfile["storage_size_bytes"],
-                        total))
-            assert total == self._configProfile['storage_size_bytes']
+            assert total == ssb, f"asserting storage for redpanda node {n['name']}: expected: {ssb}, actual: {total}"
