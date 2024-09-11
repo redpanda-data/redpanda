@@ -78,6 +78,18 @@ rp_test(
     v::datalake_test_proto_cc_files
   INPUT_FILES
     "${testdata_dir}/iceberg_ready_test_messages_edition2023.proto"
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  GTEST
+  BINARY_NAME gtest_datalake_schema_registry
+  SOURCES schema_registry_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake
+  LABELS datalake
   ARGS "-- -c 1"
 )
 

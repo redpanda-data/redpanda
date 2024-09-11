@@ -11,6 +11,7 @@ v_cc_library(
     datalake_manager.cc
     parquet_writer.cc
     record_multiplexer.cc
+    schema_registry.cc
     schemaless_translator.cc
     schema_protobuf.cc
     protobuf_utils.cc
