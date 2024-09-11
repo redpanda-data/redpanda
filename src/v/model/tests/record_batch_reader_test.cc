@@ -14,8 +14,6 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-#include <vector>
-
 using namespace model; // NOLINT
 
 class consumer {
@@ -166,7 +164,14 @@ SEASTAR_THREAD_TEST_CASE(record_batch_sharing) {
       });
 
     BOOST_CHECK_EQUAL(v1.size(), v2.size());
-    for (auto i = 0; i < v1.size(); ++i) {
+    for (size_t i = 0; i < v1.size(); ++i) {
         BOOST_CHECK(v1[i] == v2[i]);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(empty_record_batch_reader) {
+    auto reader = make_empty_record_batch_reader();
+    auto data
+      = consume_reader_to_memory(std::move(reader), model::no_timeout).get();
+    BOOST_REQUIRE(data.empty());
 }
