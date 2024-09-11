@@ -208,6 +208,16 @@ archival_policy::lookup_result archival_policy::find_segment(
           start_offset);
         return {};
     }
+    if (start_offset > (*it)->offsets().get_committed_offset()) {
+        vlog(
+          archival_log.debug,
+          "Upload policy for {}: can't find candidate, found segment's "
+          "committed offset is less than start_offset {}: {}",
+          _ntp,
+          start_offset,
+          *it);
+        return {};
+    }
     // Invariant: it != set.end()
     bool closed = !(*it)->has_appender();
     bool below_flush_offset = flush_offset.has_value()
