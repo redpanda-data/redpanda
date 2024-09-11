@@ -978,7 +978,7 @@ SEASTAR_THREAD_TEST_CASE(post_method) {
     auto response = client
                       ->post(
                         "/echo",
-                        bytes_to_iobuf(bytes(httpd_server_reply)),
+                        iobuf::from(httpd_server_reply),
                         http::content_type::json)
                       .get();
 

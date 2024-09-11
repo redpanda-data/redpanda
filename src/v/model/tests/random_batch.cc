@@ -158,7 +158,7 @@ model::record_batch make_random_batch(record_batch_spec spec) {
         }
         if (spec.max_key_cardinality) {
             auto keystr = gen_alphanum_max_distinct(*spec.max_key_cardinality);
-            auto key = bytes_to_iobuf(keystr.c_str());
+            auto key = iobuf::from(keystr.c_str());
             rs.emplace_back(make_random_record(i, std::move(key)));
         } else {
             rs.emplace_back(make_random_record(i, sz));

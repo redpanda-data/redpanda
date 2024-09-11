@@ -532,8 +532,8 @@ void append_custom_timestamp_batches(
   model::timestamp base_ts) {
     auto current_ts = base_ts;
     for (int i = 0; i < batch_count; ++i) {
-        iobuf key = bytes_to_iobuf(bytes("key"));
-        iobuf value = bytes_to_iobuf(bytes("v"));
+        iobuf key = iobuf::from("key");
+        iobuf value = iobuf::from("v");
 
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
@@ -568,8 +568,8 @@ FIXTURE_TEST(
                                          model::timestamp base_ts) {
         auto current_ts = base_ts;
 
-        iobuf key = bytes_to_iobuf(bytes("key"));
-        iobuf value = bytes_to_iobuf(bytes("v"));
+        iobuf key = iobuf::from("key");
+        iobuf value = iobuf::from("v");
 
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
@@ -1204,7 +1204,7 @@ void append_single_record_batch(
         } else {
             key_str = "key";
         }
-        iobuf key = bytes_to_iobuf(bytes(key_str.c_str()));
+        iobuf key = iobuf::from(key_str.c_str());
         bytes val_bytes;
         if (val_size > 0) {
             val_bytes = random_generators::get_bytes(val_size);
@@ -2331,7 +2331,7 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
                 } else {
                     key_str = "key";
                 }
-                iobuf key = bytes_to_iobuf(bytes(key_str.c_str()));
+                iobuf key = iobuf::from(key_str.c_str());
                 bytes val_bytes = random_generators::get_bytes(1024);
 
                 iobuf value = bytes_to_iobuf(val_bytes);
@@ -3246,7 +3246,7 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
                           model::term_id term,
                           std::optional<int> segment_id = std::nullopt) {
         const auto key_str = ssx::sformat("key{}", segment_id.value_or(-1));
-        iobuf key = bytes_to_iobuf(bytes(key_str.data()));
+        iobuf key = iobuf::from(key_str.data());
         iobuf value = random_generators::make_iobuf(100);
 
         storage::record_batch_builder builder(

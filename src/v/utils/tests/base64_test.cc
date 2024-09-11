@@ -35,9 +35,9 @@ BOOST_AUTO_TEST_CASE(iobuf_type) {
         BOOST_REQUIRE_EQUAL(decoded, iobuf_to_bytes(input));
     };
 
-    encdec(bytes_to_iobuf(""), "");
-    encdec(bytes_to_iobuf("this is a string"), "dGhpcyBpcyBhIHN0cmluZw==");
-    encdec(bytes_to_iobuf("a"), "YQ==");
+    encdec(iobuf::from(""), "");
+    encdec(iobuf::from("this is a string"), "dGhpcyBpcyBhIHN0cmluZw==");
+    encdec(iobuf::from("a"), "YQ==");
 
     // test with multiple iobuf fragments
     iobuf buf;
