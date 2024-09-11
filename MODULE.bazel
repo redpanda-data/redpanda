@@ -99,10 +99,12 @@ use_repo(non_module_dependencies, "wasmtime")
 use_repo(non_module_dependencies, "xxhash")
 
 bazel_dep(name = "toolchains_llvm", version = "1.1.2")
-git_override(
+single_version_override(
     module_name = "toolchains_llvm",
-    commit = "a7ac0ad3e4ce01f5390e7413c4e06ac4baf1807d",
-    remote = "https://github.com/mmaslankaprv/toolchains_llvm",
+    patch_strip = 1,
+    patches = [
+        "//bazel:toolchains_llvm_pr_346.patch",
+    ],
 )
 
 # ====================================
