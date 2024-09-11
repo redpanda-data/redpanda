@@ -36,7 +36,11 @@ class RedpandaTestBase(ABC, Test):
         self.scale = Scale(test_context)
 
     def setUp(self):
-        self.__redpanda.start()
+        try:
+            self.__redpanda.start()
+        except:
+            self.__redpanda.decode_backtraces()
+            raise
         self._create_initial_topics()
 
     @abstractmethod
