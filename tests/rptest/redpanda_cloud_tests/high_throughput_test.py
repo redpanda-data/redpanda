@@ -216,7 +216,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     min_segment_size = 16 * MiB
     unavailable_timeout = 60
     # default message count to check
-    msg_count = 10000
+    msg_count = 100000
     # Default value
     msg_timeout = 120
 
