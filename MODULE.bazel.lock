@@ -172,7 +172,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "fU438cTtGjJPp21MDepoCwM6q+R9FY6EsRT1IwOhlxU=",
+        "bzlTransitiveDigest": "45KNLUphrxp8wvfiTQlp8CbqNl4+QlzCzIq2wb6lpYs=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -315,7 +315,13 @@
               "build_file": "@@//bazel/thirdparty:seastar.BUILD",
               "sha256": "eefe8af689aac287971738e4d97ed495c7a285a7fe18b1aa8bbbfe025b528e6c",
               "strip_prefix": "seastar-c21f48b4aced07a80308215f7d801503a223d9db",
-              "url": "https://github.com/redpanda-data/seastar/archive/c21f48b4aced07a80308215f7d801503a223d9db.tar.gz"
+              "url": "https://github.com/redpanda-data/seastar/archive/c21f48b4aced07a80308215f7d801503a223d9db.tar.gz",
+              "patches": [
+                "@@//bazel/thirdparty:seastar-fortify-source.patch"
+              ],
+              "patch_args": [
+                "-p1"
+              ]
             }
           },
           "jsoncons": {

@@ -170,6 +170,8 @@ def data_dependency():
         sha256 = "eefe8af689aac287971738e4d97ed495c7a285a7fe18b1aa8bbbfe025b528e6c",
         strip_prefix = "seastar-c21f48b4aced07a80308215f7d801503a223d9db",
         url = "https://github.com/redpanda-data/seastar/archive/c21f48b4aced07a80308215f7d801503a223d9db.tar.gz",
+        patches = ["//bazel/thirdparty:seastar-fortify-source.patch"],
+        patch_args = ["-p1"],
     )
 
     http_archive(

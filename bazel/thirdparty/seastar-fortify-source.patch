@@ -1,0 +1,9 @@
+diff --git a/src/core/thread.cc b/src/core/thread.cc
+index eb9b6d6c..6addbc25 100644
+--- a/src/core/thread.cc
++++ b/src/core/thread.cc
+@@ -1,3 +1,4 @@
++#undef _FORTIFY_SOURCE
+ /*
+  * This file is open source software, licensed to you under the terms
+  * of the Apache License, Version 2.0 (the "License").  See the NOTICE file
