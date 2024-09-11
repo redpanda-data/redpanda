@@ -8,7 +8,7 @@ redpanda_cc_gtest(
     ],
     # the death test doesn't seem to properly record or parse the expected
     # output when there are multiple reactor threads.
-    args = ["-c1"],
+    cpu = 1,
     deps = [
         "//src/v/base",
         "//src/v/compression",
@@ -21,13 +21,13 @@ redpanda_cc_gtest(
 
 redpanda_cc_btest(
     name = "zstd_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "zstd_tests.cc",
     ],
     # with the default core/memory settings each core doesn't have enough memory
     # for this test. by using one core it will have enough memory.
-    args = ["-c1"],
+    cpu = 1,
     deps = [
         "//src/v/base",
         "//src/v/compression",
