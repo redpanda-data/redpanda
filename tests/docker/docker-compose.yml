@@ -56,7 +56,6 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
           memory: '3000m'
     privileged: true
     pids_limit: 32768
