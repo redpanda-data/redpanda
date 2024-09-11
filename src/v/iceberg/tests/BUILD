@@ -62,6 +62,30 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "manifest_io_test",
+    timeout = "short",
+    srcs = [
+        "manifest_io_test.cc",
+    ],
+    args = ["-c1"],
+    deps = [
+        ":test_schemas",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io:transfer_details",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:manifest",
+        "//src/v/iceberg:manifest_io",
+        "//src/v/iceberg:manifest_list",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_chain_node",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "manifest_serialization_test",
     timeout = "short",
     srcs = [

@@ -10,6 +10,7 @@ rp_test(
   SOURCES
     datatypes_json_test.cc
     datatypes_test.cc
+    manifest_io_test.cc
     manifest_serialization_test.cc
     partition_key_test.cc
     partition_key_type_test.cc
@@ -33,6 +34,9 @@ rp_test(
     v::gtest_main
     v::iceberg
     v::utils
+    v::cloud_io
+    v::cloud_io_utils
+    v::s3_imposter
   INPUT_FILES
     "${testdata_dir}/nested_manifest.avro"
   ARGS "-- -c1"

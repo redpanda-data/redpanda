@@ -142,6 +142,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_io",
+    srcs = [
+        "manifest_io.cc",
+    ],
+    hdrs = [
+        "manifest_io.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":manifest_avro",
+        ":manifest_list_avro",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_storage_clients",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:retry_chain_node",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest",
+        ":manifest_list",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/model",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "manifest_list",
     hdrs = [
         "manifest_list.h",
