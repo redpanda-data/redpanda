@@ -13,6 +13,7 @@
 
 #include "config/configuration.h"
 #include "debug_bundle/error.h"
+#include "debug_bundle/types.h"
 
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shard_id.hh>
@@ -52,4 +53,54 @@ ss::future<> service::stop() {
     }
     lg.debug("Service stopping");
 }
+
+ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
+  uuid_t uuid, debug_bundle_parameters params) {
+    if (ss::this_shard_id() != service_shard) {
+        co_return co_await container().invoke_on(
+          service_shard,
+          [uuid, params = std::move(params)](service& s) mutable {
+              return s.initiate_rpk_debug_bundle_collection(
+                uuid, std::move(params));
+          });
+    }
+    co_return error_info(error_code::internal_error, "Not yet implemented");
+}
+
+ss::future<result<void>> service::cancel_rpk_debug_bundle(uuid_t uuid) {
+    if (ss::this_shard_id() != service_shard) {
+        co_return co_await container().invoke_on(
+          service_shard,
+          [uuid](service& s) { return s.cancel_rpk_debug_bundle(uuid); });
+    }
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
+ss::future<result<debug_bundle_status_data>>
+service::rpk_debug_bundle_status() {
+    if (ss::this_shard_id() != service_shard) {
+        co_return co_await container().invoke_on(service_shard, [](service& s) {
+            return s.rpk_debug_bundle_status();
+        });
+    }
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
+ss::future<result<std::filesystem::path>> service::rpk_debug_bundle_path() {
+    if (ss::this_shard_id() != service_shard) {
+        co_return co_await container().invoke_on(
+          service_shard, [](service& s) { return s.rpk_debug_bundle_path(); });
+    }
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
+ss::future<result<void>> service::delete_rpk_debug_bundle() {
+    if (ss::this_shard_id() != service_shard) {
+        co_return co_await container().invoke_on(service_shard, [](service& s) {
+            return s.delete_rpk_debug_bundle();
+        });
+    }
+    co_return error_info(error_code::debug_bundle_process_never_started);
+}
+
 } // namespace debug_bundle
