@@ -1759,9 +1759,9 @@ class RpkTool:
         out = self._execute(cmd)
         return json.loads(out)
 
-    def _run_connect(self, cmd):
+    def _run_connect(self, cmd, timeout=None):
         cmd = [self._rpk_binary(), "connect"] + cmd
-        return self._execute(cmd)
+        return self._execute(cmd, timeout=timeout)
 
     def install_connect(self, version="", force=False):
         cmd = ["install"]
@@ -1771,7 +1771,10 @@ class RpkTool:
         if force:
             cmd += ["--force"]
 
-        return self._run_connect(cmd)
+        # This command has a higher timeout than normal rpk
+        # commands as it downloads and install the RP Connect
+        # binary.
+        return self._run_connect(cmd, timeout=2 * DEFAULT_TIMEOUT)
 
     def uninstall_connect(self):
         cmd = ["uninstall"]

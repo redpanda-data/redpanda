@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/spf13/afero"
@@ -203,6 +205,7 @@ func UserPaths() []string {
 	defaultPath, err := DefaultBinPath()
 	pathList := filepath.SplitList(os.Getenv("PATH"))
 	if err != nil {
+		zap.L().Sugar().Warnf("Unable to get default plugin path: %v; using $PATH only", err)
 		// If there is an error getting the default bin path we will only look
 		// for the binary in the $PATH.
 		return pathList
