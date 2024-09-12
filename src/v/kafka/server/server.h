@@ -17,6 +17,7 @@
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_metadata_cache.h"
+#include "kafka/server/fetch_pid_controller.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"
@@ -213,6 +214,10 @@ public:
         return _handler_probes.get_probe(key);
     }
 
+    fetch_pid_controller& pid_controller() noexcept {
+        return _fetch_pid_controller;
+    }
+
     ssx::semaphore& memory_fetch_sem() noexcept { return _memory_fetch_sem; }
 
     ss::future<> revoke_credentials(std::string_view name);
@@ -234,6 +239,7 @@ private:
     ss::sharded<kafka::usage_manager>& _usage_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
+    kafka::fetch_pid_controller _fetch_pid_controller;
     kafka::fetch_session_cache _fetch_session_cache;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     bool _is_idempotence_enabled{false};

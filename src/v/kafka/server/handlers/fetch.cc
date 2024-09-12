@@ -45,6 +45,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/util/log.hh>
 
@@ -1009,19 +1010,37 @@ private:
  */
 class nonpolling_fetch_plan_executor final : public fetch_plan_executor::impl {
 public:
-    explicit nonpolling_fetch_plan_executor(bool debounce = false)
+    nonpolling_fetch_plan_executor()
       : _last_result_size(ss::smp::count, 0)
-      , _debounce(debounce)
       , _fetch_timeout{[this] { _has_progress.signal(); }} {}
 
     /**
      * Executes the supplied `plan` until `octx.should_stop_fetch` returns true.
      */
     ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
-        if (_debounce) {
+        auto fetch_read_strategy
+          = config::shard_local_cfg().fetch_read_strategy();
+        if (
+          fetch_read_strategy
+          == model::fetch_read_strategy::non_polling_with_debounce) {
             co_await ss::sleep(std::min(
               config::shard_local_cfg().fetch_reads_debounce_timeout(),
               octx.request.data.max_wait_ms));
+        }
+        // Ensure both fetch debounce and the fetch scheduling group are enabled
+        // before trying to apply any delay.
+        if (
+          fetch_read_strategy
+            == model::fetch_read_strategy::non_polling_with_pid
+          && config::shard_local_cfg().use_fetch_scheduler_group()) {
+            auto& pid = octx.rctx.server().local().pid_controller();
+            auto delay = pid.current_delay();
+            if (delay > 0s) {
+                // Avoid unneeded scheduling points in cases where delay is
+                // zero.
+                co_await ss::sleep(
+                  std::min(delay, octx.request.data.max_wait_ms));
+            }
         }
 
         if (!initialize_progress_conditions(octx)) {
@@ -1244,7 +1263,6 @@ private:
     // until all child tasks have been stopped and its safe to rethrow the
     // exception.
     std::exception_ptr _thrown_exception;
-    bool _debounce;
     ss::optimized_optional<ss::abort_source::subscription> _fetch_abort_sub;
     ss::timer<model::timeout_clock> _fetch_timeout;
 };
@@ -1468,18 +1486,13 @@ ss::future<> do_fetch(op_context& octx) {
               [&octx] { return fetch_topic_partitions(octx); });
         });
     } break;
-    case model::fetch_read_strategy::non_polling: {
-        auto planner = make_fetch_planner<simple_fetch_planner>();
-        auto fetch_plan = planner.create_plan(octx);
-
-        nonpolling_fetch_plan_executor executor;
-        co_await executor.execute_plan(octx, std::move(fetch_plan));
-    } break;
+    case model::fetch_read_strategy::non_polling:
+    case model::fetch_read_strategy::non_polling_with_pid:
     case model::fetch_read_strategy::non_polling_with_debounce: {
         auto planner = make_fetch_planner<simple_fetch_planner>();
         auto fetch_plan = planner.create_plan(octx);
 
-        nonpolling_fetch_plan_executor executor{true};
+        nonpolling_fetch_plan_executor executor;
         co_await executor.execute_plan(octx, std::move(fetch_plan));
     } break;
     default: {
