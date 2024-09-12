@@ -55,6 +55,10 @@ public:
     }
 
 private:
+    void apply_snapshot(
+      const std::vector<migration_metadata>& deleted,
+      const std::vector<std::reference_wrapper<migration_metadata>>& updated);
+
     void apply_update(const migration_metadata&);
     void apply_update(id, const inbound_migration&, state);
     void apply_update(id, const outbound_migration&, state);

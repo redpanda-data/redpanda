@@ -28,10 +28,16 @@ void remove_from_resources(
   const T& to_remove,
   chunked_hash_map<T, migrated_resources::resource_metadata, H, E>& resources) {
     auto it = std::as_const(resources).find(to_remove);
-    if (it != resources.cend()) {
-        vassert(
-          it->second.migration_id == id,
-          "removed migration must match migrated resource migration id");
+    // Although two !active! migrations cannot share a resource it is legit to
+    // encounter a resource still locked by another migration here:
+    // 1. Migration 0 is created and reaches a state where it locks topic T
+    // 2. We lose controller leadership
+    // 3. Migration 0 reaches finished state where it doesn't lock T any longer
+    // 4. Migration 1 involving T is created and reaches finished state as well
+    // 5. We receive a raft snapshot that includes (3) and (4)
+    // 6. We process (4) first, it tries to unblock T for migration 1: ignore!
+    // 7. Then we process (3), to unblock T for migration 0: do it
+    if (it != resources.cend() && it->second.migration_id == id) {
         resources.erase(it);
     }
 }
@@ -94,6 +100,38 @@ migrated_resources::get_group_state(const consumer_group& cg) const {
         return it->second.state;
     }
     return migrated_resource_state::non_restricted;
+}
+
+void migrated_resources::apply_snapshot(
+  const std::vector<migration_metadata>& deleted,
+  const std::vector<std::reference_wrapper<migration_metadata>>& updated) {
+    std::vector<std::reference_wrapper<migration_metadata>> updated_restricted;
+
+    // 1st pass: delete restrictions for deleted and unrestricted migrations
+    for (auto& migration_meta : deleted) {
+        remove_migration(migration_meta);
+    }
+    for (auto& migration_meta_ref : updated) {
+        auto& migration_meta = migration_meta_ref.get();
+        ss::visit(
+          migration_meta.migration,
+          [this, &migration_meta_ref, &migration_meta, &updated_restricted](
+            auto& migration) {
+              using migration_type = std::remove_cvref_t<decltype(migration)>;
+              auto target_state = get_resource_state<migration_type>(
+                migration_meta.state);
+              if (target_state == migrated_resource_state::non_restricted) {
+                  remove_migration(migration_meta);
+              } else {
+                  updated_restricted.push_back(migration_meta_ref);
+              }
+          });
+    }
+
+    // 2nd pass: update restricted
+    for (auto& migration_meta_ref : updated_restricted) {
+        apply_update(migration_meta_ref.get());
+    }
 }
 
 void migrated_resources::apply_update(
