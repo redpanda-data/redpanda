@@ -536,6 +536,7 @@ enum class fetch_read_strategy : uint8_t {
     polling = 0,
     non_polling = 1,
     non_polling_with_debounce = 2,
+    non_polling_with_pid = 3,
 };
 
 constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
@@ -546,6 +547,8 @@ constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
         return "non_polling";
     case fetch_read_strategy::non_polling_with_debounce:
         return "non_polling_with_debounce";
+    case fetch_read_strategy::non_polling_with_pid:
+        return "non_polling_with_pid";
     default:
         throw std::invalid_argument("unknown fetch_read_strategy");
     }

@@ -522,7 +522,11 @@ std::istream& operator>>(std::istream& i, fetch_read_strategy& strat) {
               .match(
                 fetch_read_strategy_to_string(
                   fetch_read_strategy::non_polling_with_debounce),
-                fetch_read_strategy::non_polling_with_debounce);
+                fetch_read_strategy::non_polling_with_debounce)
+              .match(
+                fetch_read_strategy_to_string(
+                  fetch_read_strategy::non_polling_with_pid),
+                fetch_read_strategy::non_polling_with_pid);
     return i;
 }
 

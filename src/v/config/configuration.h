@@ -213,6 +213,12 @@ struct configuration final : public config_store {
     deprecated_property rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     enum_property<model::fetch_read_strategy> fetch_read_strategy;
+    bounded_property<double, numeric_bounds> fetch_pid_p_coeff;
+    bounded_property<double, numeric_bounds> fetch_pid_i_coeff;
+    bounded_property<double, numeric_bounds> fetch_pid_d_coeff;
+    bounded_property<double, numeric_bounds>
+      fetch_pid_target_utilization_fraction;
+    property<std::chrono::milliseconds> fetch_pid_max_debounce_ms;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
     property<model::cleanup_policy_bitflags> log_cleanup_policy;
     enum_property<model::timestamp_type> log_message_timestamp_type;
