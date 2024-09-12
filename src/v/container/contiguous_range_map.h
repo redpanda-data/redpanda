@@ -144,8 +144,7 @@ public:
      * Determines if element comparing equal to given key exists in a map.
      */
     bool contains(KeyT key) const {
-        check_key(key);
-        return _values.size() > static_cast<size_t>(key)
+        return valid_key(key) && _values.size() > static_cast<size_t>(key)
                && _values[key].has_value();
     }
 
@@ -165,7 +164,10 @@ public:
      */
     template<typename... Args>
     std::pair<iterator, bool> emplace(KeyT key, Args&&... args) {
-        check_key(key);
+        if (!valid_key(key)) {
+            throw std::invalid_argument(
+              fmt::format("Invalid key {}, must be positive", key));
+        }
         /**
          * Inserting last element directly with emplace_back
          */
@@ -234,8 +236,7 @@ public:
      * element is not present in the map
      */
     iterator find(KeyT key) {
-        check_key(key);
-        if (static_cast<size_t>(key) < _values.size()) {
+        if (valid_key(key) && static_cast<size_t>(key) < _values.size()) {
             auto it = _values.begin() + static_cast<size_t>(key);
             if (it->has_value()) {
                 return iterator(this, it);
@@ -248,8 +249,7 @@ public:
      * element is not present in the map
      */
     const_iterator find(KeyT key) const {
-        check_key(key);
-        if (static_cast<size_t>(key) < _values.size()) {
+        if (valid_key(key) && static_cast<size_t>(key) < _values.size()) {
             auto it = _values.begin() + static_cast<size_t>(key);
             if (it->has_value()) {
                 return const_iterator(this, it);
@@ -259,12 +259,12 @@ public:
     }
     /**
      * Removes the element with given key from the map.
+     * Invalid keys are ignored.
      *
      * NOTE: it does not shrink the underlying data structure.
      */
     void erase(KeyT key) {
-        check_key(key);
-        if (static_cast<size_t>(key) < _values.size()) {
+        if (valid_key(key) && static_cast<size_t>(key) < _values.size()) {
             if (_values[static_cast<size_t>(key)].has_value()) {
                 _values[static_cast<size_t>(key)].reset();
                 --_size;
@@ -293,11 +293,9 @@ public:
     }
 
 private:
-    static void check_key(KeyT key) {
-        vassert(
-          key >= 0,
-          "contiguous_range_map keys must be positive. current key {}",
-          key);
+    static bool valid_key(KeyT key) {
+        // map keys must be positive.
+        return key >= 0;
     }
     underlying_t _values;
     // number of valid entries
