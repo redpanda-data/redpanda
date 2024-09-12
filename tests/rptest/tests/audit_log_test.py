@@ -464,6 +464,12 @@ class AuditLogTestBase(RedpandaTest):
         self._modify_cluster_config(
             {'audit_queue_max_buffer_size_per_shard': new_size})
 
+    def modify_audit_enabled(self, enabled: bool):
+        """
+        Modifies value of audit_enabled
+        """
+        self._modify_cluster_config({'audit_enabled': enabled})
+
     def modify_node_config(self, node, update_fn, skip_readiness_check=True):
         """Modifies the current node configuration, restarts the node for
         changes to take effect
@@ -1647,6 +1653,130 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         except TimeoutError:
             # Good!  Should not have seen any!
             pass
+
+
+class AuditLogTestInvalidConfigBase(AuditLogTestBase):
+    username = 'test'
+    password = 'test12345'
+    algorithm = 'SCRAM-SHA-256'
+    """
+    Tests situations where audit log client is not properly configured
+    """
+    def __init__(self,
+                 test_context,
+                 audit_log_config=AuditLogConfig(enabled=False,
+                                                 num_partitions=1,
+                                                 event_types=[]),
+                 log_config=LoggingConfig('info',
+                                          logger_levels={
+                                              'auditing': 'trace',
+                                              'kafka': 'trace',
+                                              'security': 'trace'
+                                          }),
+                 **kwargs):
+        self.test_context = test_context
+        # The 'none' below will cause the audit log client to not be configured properly
+        self._audit_log_client_config = redpanda.AuditLogConfig(
+            listener_port=9192, listener_authn_method='none')
+        self._audit_log_client_config.require_client_auth = False
+        self._audit_log_client_config.enable_broker_tls = False
+
+        super(AuditLogTestInvalidConfigBase, self).__init__(
+            test_context=test_context,
+            audit_log_config=audit_log_config,
+            log_config=log_config,
+            audit_log_client_config=self._audit_log_client_config,
+            **kwargs)
+
+    def setUp(self):
+        super().setUp()
+        self.admin.create_user(self.username, self.password, self.algorithm)
+        self.get_super_rpk().acl_create_allow_cluster(self.username, 'All')
+        # Following is important so the rest of ducktape functions correctly
+        self.modify_audit_excluded_principals(['admin'])
+        self.modify_audit_event_types(['authenticate'])
+        self.modify_audit_enabled(True)
+        # Waits for all audit clients to enter the same state where any attempt
+        # to enqueue an event will be rejected because the client is misconfigured
+        wait_until(lambda: self.redpanda.search_log_all(
+            'error_code: illegal_sasl_state'),
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Did not see illegal_sasl_state error message")
+
+
+class AuditLogTestInvalidConfig(AuditLogTestInvalidConfigBase):
+    def __init__(self, test_context):
+        super(AuditLogTestInvalidConfig, self).__init__(
+            test_context=test_context,
+            security=AuditLogTestSecurityConfig(user_creds=(self.username,
+                                                            self.password,
+                                                            self.algorithm)))
+
+    @ok_to_fail_fips
+    @cluster(num_nodes=4,
+             log_allow_list=[
+                 r'Failed to append authentication event to audit log',
+                 r'Failed to audit.*'
+             ])
+    def test_invalid_config(self):
+        """
+        Test validates that the topic is failed to get created if audit
+        system is not configured correctly.
+        """
+        try:
+            self.get_rpk().create_topic('test')
+            assert False, "Should not have created a topic"
+        except RpkException as e:
+            assert "audit system failure: BROKER_NOT_AVAILABLE" in str(
+                e
+            ), f'{str(e)} does not contain "audit system failure: BROKER_NOT_AVAILABLE"'
+
+
+class AuditLogTestInvalidConfigMTLS(AuditLogTestInvalidConfigBase):
+    """
+    Tests situations where audit log client is not properly configured and mTLS enabled
+    """
+    def __init__(self, test_context):
+        self.test_context = test_context
+        self.tls = tls.TLSCertManager(self.logger)
+        self.user_cert = self.tls.create_cert(socket.gethostname(),
+                                              common_name=self.username,
+                                              name='base_client')
+        self.admin_user_cert = self.tls.create_cert(
+            socket.gethostname(),
+            common_name=RedpandaServiceBase.SUPERUSER_CREDENTIALS[0],
+            name='admin_client')
+        self._security_config = AuditLogTestSecurityConfig(
+            admin_cert=self.admin_user_cert, user_cert=self.user_cert)
+        self._security_config.tls_provider = MTLSProvider(self.tls)
+        self._security_config.principal_mapping_rules = 'RULE:.*CN=(.*).*/$1/'
+
+        super(AuditLogTestInvalidConfigMTLS,
+              self).__init__(test_context=test_context,
+                             security=self._security_config)
+
+    @cluster(
+        num_nodes=4,
+        log_allow_list=[
+            r'Failed to append authentication event to audit log',
+            r'Failed to audit.*',
+            r'Failed to enqueue mTLS authentication event - audit log system error'
+        ])
+    def test_invalid_config_mtls(self):
+        """
+        Validates that mTLS authn is rejected when audit client is misconfigured.
+        Also ensures there is no segfault: https://redpandadata.atlassian.net/browse/CORE-7245
+        """
+        try:
+            self.get_rpk().create_topic('test')
+            assert False, "Should not have created a topic"
+        except RpkException as e:
+            pass
+
+        assert self.redpanda.search_log_any(
+            'Failed to enqueue mTLS authentication event - audit log system error'
+        )
 
 
 class AuditLogTestKafkaTlsApi(AuditLogTestBase):
