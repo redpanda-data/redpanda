@@ -137,6 +137,14 @@ ss::future<> backend::start() {
       });
 
     if (_cloud_storage_api) {
+        auto maybe_bucket = cloud_storage::configuration::get_bucket_config()();
+        vassert(
+          maybe_bucket, "cloud_storage_api active but no bucket configured");
+        cloud_storage_clients::bucket_name bucket{*maybe_bucket};
+        _topic_mount_handler
+          = std::make_unique<cloud_storage::topic_mount_handler>(
+            bucket, *_cloud_storage_api);
+
         _table_notification_id = _table.register_notification([this](id id) {
             ssx::spawn_with_gate(
               _gate, [this, id]() { return handle_migration_update(id); });
@@ -146,14 +154,6 @@ ss::future<> backend::start() {
         for (auto id : _table.get_migrations()) {
             co_await handle_migration_update(id);
         }
-
-        auto maybe_bucket = cloud_storage::configuration::get_bucket_config()();
-        vassert(
-          maybe_bucket, "cloud_storage_api active but no bucket configured");
-        cloud_storage_clients::bucket_name bucket{*maybe_bucket};
-        _topic_mount_handler
-          = std::make_unique<cloud_storage::topic_mount_handler>(
-            bucket, *_cloud_storage_api);
 
         ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
 
