@@ -355,6 +355,12 @@ class MigrationAction(Enum):
     cancel = "cancel"
 
 
+class EnterpriseLicenseStatus(Enum):
+    valid = "valid"
+    expired = "expired"
+    not_present = "not_present"
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -819,6 +825,9 @@ class Admin:
 
     def put_license(self, license):
         return self._request("PUT", "features/license", data=license)
+
+    def get_enterprise_features(self):
+        return self._request("GET", "features/enterprise")
 
     def get_loggers(self, node):
         """
