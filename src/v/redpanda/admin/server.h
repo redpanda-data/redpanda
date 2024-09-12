@@ -483,6 +483,8 @@ private:
       put_feature_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       put_license_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      get_enterprise_handler(std::unique_ptr<ss::http::request>);
 
     /// Broker routes
 
