@@ -25,6 +25,28 @@ def has_flags(args, *flags):
                 return True
     return False
 
+def parse_bytes(value):
+    """
+    Convert a string into bytes number. Does not respect SI standard.
+
+    Args:
+      value: "4MiB" or "1G" or "2MB"
+
+    Returns:
+      the number of bytes representing the string
+    """
+    for suffix in ["iB", "B"]:
+        if value.endswith(suffix):
+            value = value.removesuffix(suffix)
+            break
+    factor = 1
+    for (suffix, power) in [("G", 30), ("M", 20), ("K", 10)]:
+        if value.endswith(suffix):
+            factor = factor << power
+            value = value.removesuffix(suffix)
+            break
+    return int(value) * factor
+
 # TODO(bazel)
 # - Make log level configurable (e.g. CI)
 # - Set --overprovisioned in CI context
@@ -33,10 +55,10 @@ def _redpanda_cc_test(
         name,
         timeout,
         dash_dash_protocol,
+        memory,
+        cpu,
         srcs = [],
         deps = [],
-        default_memory_gb = None,
-        cpu = None,
         extra_args = [],
         custom_args = [],
         tags = [],
@@ -52,8 +74,8 @@ def _redpanda_cc_test(
       dash_dash_protocol: false for google test, true for boost test
       srcs: test source files
       deps: test dependencies
-      default_memory_gb: default seastar memory
-      cpu: default seastar cores
+      memory: seastar memory as a string ("1GB" or "512MiB" or "256M")
+      cpu: seastar cores
       extra_args: arguments from test wrappers
       custom_args: arguments from cc_test users
       tags: tags to attach to the cc_test target
@@ -68,16 +90,18 @@ def _redpanda_cc_test(
 
     args = common_args + extra_args + custom_args
 
-    # Unit tests should never need all of a node's memory. Unless an explicit
-    # size was requested, set a reasonable fixed value.
-    if default_memory_gb and not has_flags(args, "-m", "--memory"):
-        args.append("-m{}G".format(default_memory_gb))
-
+    if has_flags(args, "-m", "--memory"):
+        fail("Use `memory=\"XGiB\"` test parameter instead of -m/--memory")
     if has_flags(args, "-c", "--smp"):
         fail("Use `cpu=N` test parameter instead of -c/--smp")
 
+    args.append("-m{}".format(memory))
     args.append("-c{}".format(cpu))
-    resource_tags = ["resources:cpu:{}".format(cpu)]
+    resource_tags = [
+        "resources:cpu:{}".format(cpu),
+        # This is always defined in MiB for Bazel
+        "resources:memory:{}".format(parse_bytes(memory) / (1 << 20)),
+    ]
 
     # Google test / benchmarks don't understand the "--" protocol
     if args and dash_dash_protocol:
@@ -99,15 +123,17 @@ def _redpanda_cc_test(
         data = data,
     )
 
-def _redpanda_cc_unit_test(cpu, **kwargs):
+def _redpanda_cc_unit_test(cpu, memory, **kwargs):
     extra_args = [
         "--unsafe-bypass-fsync 1",
         "--default-log-level=trace",
         "--logger-log-level='io=debug'",
         "--logger-log-level='exception=debug'",
     ]
+
+    # TODO(bazel): What are the right defaults here?
     _redpanda_cc_test(
-        default_memory_gb = 1,
+        memory = memory or "1GiB",
         cpu = cpu or 4,
         extra_args = extra_args,
         **kwargs
@@ -121,6 +147,7 @@ def redpanda_cc_gtest(
         args = [],
         env = {},
         cpu = None,
+        memory = None,
         data = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = False,
@@ -128,6 +155,7 @@ def redpanda_cc_gtest(
         timeout = timeout,
         srcs = srcs,
         cpu = cpu,
+        memory = memory,
         deps = deps,
         custom_args = args,
         env = env,
@@ -142,6 +170,7 @@ def redpanda_cc_btest(
         args = [],
         env = {},
         cpu = None,
+        memory = None,
         target_compatible_with = [],
         data = []):
     _redpanda_cc_unit_test(
@@ -151,6 +180,7 @@ def redpanda_cc_btest(
         srcs = srcs,
         deps = deps,
         cpu = cpu,
+        memory = memory,
         custom_args = args,
         env = env,
         target_compatible_with = target_compatible_with,
@@ -162,10 +192,17 @@ def redpanda_cc_bench(
         timeout,
         srcs = [],
         deps = [],
-        args = []):
+        args = [],
+        env = {},
+        cpu = None,
+        memory = None,
+        data = []):
     _redpanda_cc_test(
         dash_dash_protocol = False,
-        cpu = 1,
+        cpu = cpu or 1,
+        memory = memory or "1GiB",
+        data = data,
+        env = env,
         name = name,
         timeout = timeout,
         srcs = srcs,
@@ -181,10 +218,16 @@ def redpanda_cc_btest_no_seastar(
         timeout,
         srcs = [],
         defines = [],
+        cpu = 1,
+        memory = "128MiB",
         deps = []):
     native.cc_test(
         name = name,
         timeout = timeout,
+        tags = [
+            "resources:cpu:{}".format(cpu),
+            "resources:memory:{}".format(parse_bytes(memory) / (2 << 20)),
+        ],
         srcs = srcs,
         defines = defines,
         deps = ["@boost//:test.so"] + deps,
