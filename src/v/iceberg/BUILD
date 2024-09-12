@@ -157,6 +157,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_entry_values",
+    srcs = [
+        "manifest_entry_values.cc",
+    ],
+    hdrs = [
+        "manifest_entry_values.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest_entry",
+        ":partition_key_type",
+        ":values",
+    ],
+)
+
+redpanda_cc_library(
     name = "manifest_io",
     srcs = [
         "manifest_io.cc",
