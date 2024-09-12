@@ -147,4 +147,27 @@
             "type": "inbound_migration"
         }
     }
+},
+"mount_configuration": {
+    "type": "object",
+    "required": [
+        "topics"
+    ],
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "inbound_topic"
+            },
+            "description": "List of topics to mount"
+        }
+    }
+},
+"migration_info": {
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "int"
+        }
+    }
 }
