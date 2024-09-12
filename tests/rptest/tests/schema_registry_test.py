@@ -199,6 +199,8 @@ message myrecord {
     ]
 }
 """,
+    json=r'{"type": "number"}',
+    json_incompat=r'{"type": "number", "multipleOf": 20}',
 )
 
 log_config = LoggingConfig('info',
@@ -1570,6 +1572,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     @parametrize(schemas=("avro", "avro_incompat", "AVRO"))
     @parametrize(schemas=("proto3", "proto3_incompat", "PROTOBUF"))
     @parametrize(schemas=("proto2", "proto2_incompat", "PROTOBUF"))
+    @parametrize(schemas=("json", "json_incompat", "JSON"))
     def test_compatibility_messages(self, schemas):
         """
         Verify compatibility messages
