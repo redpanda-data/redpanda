@@ -195,6 +195,11 @@ ss::future<> feature_manager::stop() {
 }
 
 bool feature_manager::license_required_feature_enabled() const {
+    return report_enterprise_features().any();
+}
+
+features::enterprise_feature_report
+feature_manager::report_enterprise_features() const {
     const auto& cfg = config::shard_local_cfg();
     const auto& node_cfg = config::node();
     auto has_gssapi = [&cfg]() {
@@ -205,7 +210,7 @@ bool feature_manager::license_required_feature_enabled() const {
         return config::oidc_is_enabled_kafka()
                || config::oidc_is_enabled_http();
     };
-    auto has_schma_id_validation = [&cfg]() {
+    auto has_schema_id_validation = [&cfg]() {
         return cfg.enable_schema_id_validation()
                != pandaproxy::schema_registry::schema_id_validation_mode::none;
     };
@@ -219,12 +224,27 @@ bool feature_manager::license_required_feature_enabled() const {
       = n_roles >= 2
         || (n_roles == 1 && !_role_store.local().contains(security::default_role));
 
-    return cfg.audit_enabled || cfg.cloud_storage_enabled
-           || cfg.partition_autobalancing_mode
-                == model::partition_autobalancing_mode::continuous
-           || cfg.core_balancing_continuous() || has_gssapi() || has_oidc()
-           || has_schma_id_validation() || has_non_default_roles
-           || fips_enabled();
+    features::enterprise_feature_report report;
+    report.set(
+      features::license_required_feature::audit_logging, cfg.audit_enabled());
+    report.set(
+      features::license_required_feature::cloud_storage,
+      cfg.cloud_storage_enabled());
+    report.set(
+      features::license_required_feature::partition_auto_balancing_continuous,
+      cfg.partition_autobalancing_mode()
+        == model::partition_autobalancing_mode::continuous);
+    report.set(
+      features::license_required_feature::core_balancing_continuous,
+      cfg.core_balancing_continuous());
+    report.set(features::license_required_feature::gssapi, has_gssapi());
+    report.set(features::license_required_feature::oidc, has_oidc());
+    report.set(
+      features::license_required_feature::schema_id_validation,
+      has_schema_id_validation());
+    report.set(features::license_required_feature::rbac, has_non_default_roles);
+    report.set(features::license_required_feature::fips, fips_enabled());
+    return report;
 }
 
 ss::future<> feature_manager::maybe_log_license_check_info() {

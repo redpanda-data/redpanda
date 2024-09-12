@@ -273,6 +273,7 @@ v_cc_library(
     v::cluster_topic_properties
     v::features
     v::version
+    v::enterprise_features
   )
 add_subdirectory(tests)
 add_subdirectory(cloud_metadata/tests)
