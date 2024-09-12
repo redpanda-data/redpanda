@@ -116,7 +116,8 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	}
 	steps = append(steps, []step{
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
-		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval, bp.cpuProfilerWait),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.cpuProfilerWait),
+		saveMetricsAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval, bp.metricsSampleCount),
 	}...)
 
 	for _, s := range steps {
@@ -331,7 +332,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 
 // saveSingleAdminAPICalls saves per-node admin API requests in the 'admin/'
 // directory of the bundle zip.
-func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval, profilerWait time.Duration) step {
+func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, profilerWait time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
 		var funcs []func() error
@@ -387,32 +388,73 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 					}
 					return requestAndSave(ctx, ps, fmt.Sprintf("admin/cpu_profile_%v.json", aName), f)
 				},
-				func() error {
-					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_metrics.txt", aName), cl.PrometheusMetrics)
-					if err != nil {
-						return err
-					}
-					select {
-					case <-time.After(metricsInterval):
-						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metrics.txt", aName), cl.PrometheusMetrics)
-					case <-ctx.Done():
-						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metrics.txt", aName), cl.PrometheusMetrics)
-					}
-				},
-				func() error {
-					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_public_metrics.txt", aName), cl.PublicMetrics)
-					if err != nil {
-						return err
-					}
-					select {
-					case <-time.After(metricsInterval):
-						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_public_metrics.txt", aName), cl.PublicMetrics)
-					case <-ctx.Done():
-						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_public_metrics.txt", aName), cl.PublicMetrics)
-					}
-				},
 			}
 			funcs = append(funcs, r...)
+		}
+
+		var grp multierror.Group
+		for _, f := range funcs {
+			grp.Go(f)
+		}
+		errs := grp.Wait()
+		if errs != nil {
+			rerrs = multierror.Append(rerrs, errs)
+		}
+		return rerrs.ErrorOrNil()
+	}
+}
+
+func saveMetricsAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval time.Duration, metricsSampleCount int) step {
+	return func() error {
+		var rerrs *multierror.Error
+		var funcs []func() error
+		for _, a := range adminAddresses {
+			a := a
+			p = &config.RpkProfile{
+				KafkaAPI: config.RpkKafkaAPI{
+					SASL: p.KafkaAPI.SASL,
+				},
+				AdminAPI: config.RpkAdminAPI{
+					Addresses: []string{a},
+					TLS:       p.AdminAPI.TLS,
+				},
+			}
+			cl, err := adminapi.NewClient(fs, p)
+			if err != nil {
+				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
+				continue
+			}
+
+			endpoints := map[string]func(context.Context) ([]byte, error){"metrics": cl.PrometheusMetrics, "public_metrics": cl.PublicMetrics}
+			aName := sanitizeName(a)
+			for endpointName, endpoint := range endpoints {
+				endpointPoller := func() error {
+					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_%s.txt", aName, endpointName), endpoint)
+					if err != nil {
+						return err
+					}
+					ticker := time.NewTicker(metricsInterval)
+					count := 1
+					for {
+						select {
+						case <-ticker.C:
+							err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t%d_%s.txt", aName, count, endpointName), endpoint)
+							if err != nil {
+								return err
+							}
+							count++
+							if count == metricsSampleCount {
+								ticker.Stop()
+								return nil
+							}
+						case <-ctx.Done():
+							return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t%d_%s.txt", aName, count, endpointName), endpoint)
+						}
+					}
+				}
+
+				funcs = append(funcs, endpointPoller)
+			}
 		}
 
 		var grp multierror.Group
