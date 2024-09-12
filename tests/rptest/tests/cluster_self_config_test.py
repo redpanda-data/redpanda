@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 import re
 
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import parametrize, matrix, ok_to_fail_fips
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -85,6 +85,8 @@ class ClusterSelfConfigTest(EndToEndTest):
 
             assert self_config_result and self_config_result in self_config_expected_results
 
+    # OCI only supports path-style requests, fips mode will always fail.
+    @ok_to_fail_fips
     @cluster(num_nodes=1)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
