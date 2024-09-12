@@ -2,19 +2,8 @@ name: Release rp-storage-tool
 
 on:
   push:
-    branches:
-      - dev
-      - 'v*'
     tags:
       - 'v*'
-  pull_request:
-    paths:
-      - 'tools/rp_storage_tool/**'
-      - 'tests/docker/Dockerfile'
-      - 'tests/docker/ducktape-deps/rust'
-      - 'tests/docker/ducktape-deps/rp-storage-tool'
-      - '.github/workflows/release-rp-storage-tool.yml'
-
 
 jobs:
   release-rp-storage-tool:
@@ -26,7 +15,7 @@ jobs:
           - release_for: linux-amd64
             os: ubuntu-latest
           - release_for: linux-arm64
-            os: ubuntu-latest-4-arm64
+            os: ubuntu-latest-2-arm64
     runs-on: ${{ matrix.platform.os }}
     steps:
       - name: configure aws credentials
