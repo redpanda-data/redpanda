@@ -136,6 +136,105 @@ private:
     Type _type;
 };
 
+enum class json_incompatibility_type {
+    type_narrowed = 0,
+    type_changed,
+    max_length_added,
+    max_length_decreased,
+    min_length_added,
+    min_length_increased,
+    pattern_added,
+    pattern_changed,
+    maximum_added,
+    maximum_decreased,
+    minimum_added,
+    minimum_increased,
+    exclusive_maximum_added,
+    exclusive_maximum_decreased,
+    exclusive_minimum_added,
+    exclusive_minimum_increased,
+    multiple_of_added,
+    multiple_of_expanded,
+    multiple_of_changed,
+    required_attribute_added,
+    max_properties_added,
+    max_properties_decreased,
+    min_properties_added,
+    min_properties_increased,
+    additional_properties_removed,
+    additional_properties_narrowed,
+    dependency_array_added,
+    dependency_array_extended,
+    dependency_array_changed,
+    dependency_schema_added,
+    property_added_to_open_content_model,
+    required_property_added_to_unopen_content_model,
+    property_removed_from_closed_content_model,
+    property_removed_not_covered_by_partially_open_content_model,
+    property_added_not_covered_by_partially_open_content_model,
+    reserved_property_removed,
+    reserved_property_conflicts_with_property,
+    max_items_added,
+    max_items_decreased,
+    min_items_added,
+    min_items_increased,
+    unique_items_added,
+    additional_items_removed,
+    additional_items_narrowed,
+    item_added_to_open_content_model,
+    item_removed_from_closed_content_model,
+    item_removed_not_covered_by_partially_open_content_model,
+    item_added_not_covered_by_partially_open_content_model,
+    enum_array_narrowed,
+    enum_array_changed,
+    combined_type_changed,
+    product_type_extended,
+    sum_type_extended,
+    sum_type_narrowed,
+    combined_type_subschemas_changed,
+    not_type_extended,
+    unknown,
+};
+
+/**
+ * json_incompatibility - A single incompatibility between JSON schemas.
+ *
+ * Encapsulates:
+ *   - the path to the location of the incompatibility in the _writer_ schema
+ *   - the type of incompatibility
+ *
+ * Primary interface is `describe`, which combines the contained info into
+ * a format string which can then be interpolated with identifying info for
+ * the reader and writer schemas in the request handler.
+ */
+class json_incompatibility {
+public:
+    using Type = json_incompatibility_type;
+    json_incompatibility(std::filesystem::path path, Type type)
+      : _path(std::move(path))
+      , _type(type) {}
+
+    ss::sstring describe() const;
+    Type type() const { return _type; }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const json_incompatibility& v);
+
+    friend bool
+    operator==(const json_incompatibility&, const json_incompatibility&)
+      = default;
+
+    // Helpful for unit testing
+    template<typename H>
+    friend H AbslHashValue(H h, const json_incompatibility& e) {
+        return H::combine(std::move(h), e._path.string(), e._type);
+    }
+
+private:
+    std::filesystem::path _path;
+    Type _type;
+};
+
 /**
  * raw_compatibility_result - A collection of unformatted proto or avro
  * incompatibilities. Its purpose is twofold:
@@ -146,11 +245,22 @@ private:
  *     incompatibilities into formatted error messages.
  */
 class raw_compatibility_result {
-    using schema_incompatibility
-      = std::variant<avro_incompatibility, proto_incompatibility>;
+    using schema_incompatibility = std::variant<
+      avro_incompatibility,
+      proto_incompatibility,
+      json_incompatibility>;
 
 public:
     raw_compatibility_result() = default;
+
+    template<typename T, typename... Args>
+    requires std::constructible_from<T, Args&&...>
+             && std::convertible_to<T, schema_incompatibility>
+    static auto of(Args&&... args) {
+        raw_compatibility_result res;
+        res.emplace<T>(std::forward<Args>(args)...);
+        return res;
+    }
 
     template<typename T, typename... Args>
     requires std::constructible_from<T, Args&&...>
