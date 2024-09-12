@@ -93,12 +93,13 @@ manifest_io::download_manifest_list(const manifest_list_path& path) {
 }
 
 template<typename T>
-ss::future<std::optional<manifest_io::errc>> manifest_io::upload_object(
+ss::future<checked<size_t, manifest_io::errc>> manifest_io::upload_object(
   const std::filesystem::path& path,
   const T& t,
   std::string_view display_str,
   ss::noncopyable_function<iobuf(const T&)> serialize) {
     auto buf = serialize(t);
+    auto uploaded_size_bytes = buf.size_bytes();
     retry_chain_node retry(
       io_.as(), ss::lowres_clock::duration{30s}, {}, retry_strategy::disallow);
     auto res = co_await ss::coroutine::as_future(io_.upload_object({
@@ -124,7 +125,7 @@ ss::future<std::optional<manifest_io::errc>> manifest_io::upload_object(
     switch (res.get()) {
         using enum cloud_io::upload_result;
     case success:
-        co_return std::nullopt;
+        co_return uploaded_size_bytes;
     case cancelled:
         co_return errc::shutting_down;
     case failed:
@@ -134,7 +135,7 @@ ss::future<std::optional<manifest_io::errc>> manifest_io::upload_object(
     }
 }
 
-ss::future<std::optional<manifest_io::errc>>
+ss::future<checked<size_t, manifest_io::errc>>
 manifest_io::upload_manifest(const manifest_path& path, const manifest& m) {
     return upload_object<manifest>(
       path(), m, "iceberg::manifest", [](const manifest& m) {
@@ -142,7 +143,8 @@ manifest_io::upload_manifest(const manifest_path& path, const manifest& m) {
       });
 }
 
-ss::future<std::optional<manifest_io::errc>> manifest_io::upload_manifest_list(
+ss::future<checked<size_t, manifest_io::errc>>
+manifest_io::upload_manifest_list(
   const manifest_list_path& path, const manifest_list& m) {
     return upload_object<manifest_list>(
       path(), m, "iceberg::manifest_list", [](const manifest_list& m) {

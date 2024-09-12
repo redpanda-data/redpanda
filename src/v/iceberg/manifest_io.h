@@ -52,9 +52,9 @@ public:
     ss::future<checked<manifest_list, errc>>
     download_manifest_list(const manifest_list_path& path);
 
-    ss::future<std::optional<errc>>
+    ss::future<checked<size_t, errc>>
     upload_manifest(const manifest_path& path, const manifest&);
-    ss::future<std::optional<errc>>
+    ss::future<checked<size_t, errc>>
     upload_manifest_list(const manifest_list_path& path, const manifest_list&);
 
 private:
@@ -65,7 +65,7 @@ private:
       ss::noncopyable_function<T(iobuf)>);
 
     template<typename T>
-    ss::future<std::optional<manifest_io::errc>> upload_object(
+    ss::future<checked<size_t, manifest_io::errc>> upload_object(
       const std::filesystem::path& path,
       const T&,
       std::string_view display_str,

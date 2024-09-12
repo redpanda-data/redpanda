@@ -72,8 +72,9 @@ TEST_F(ManifestIOTest, TestManifestRoundtrip) {
     ASSERT_EQ(dl_res.error(), manifest_io::errc::failed);
 
     // Now upload, then try again with success.
-    auto ul_err = io.upload_manifest(test_path, m).get();
-    ASSERT_FALSE(ul_err.has_value());
+    auto ul_res = io.upload_manifest(test_path, m).get();
+    ASSERT_TRUE(ul_res.has_value());
+    ASSERT_LT(0, ul_res.value());
 
     dl_res = io.download_manifest(test_path, empty_pk_type()).get();
     ASSERT_FALSE(dl_res.has_error());
@@ -109,7 +110,7 @@ TEST_F(ManifestIOTest, TestManifestListRoundtrip) {
 
     // Now upload, then try again with success.
     auto ul_err = io.upload_manifest_list(test_path, m).get();
-    ASSERT_FALSE(ul_err.has_value());
+    ASSERT_FALSE(ul_err.has_error());
 
     dl_res = io.download_manifest_list(test_path).get();
     ASSERT_FALSE(dl_res.has_error());
@@ -127,8 +128,8 @@ TEST_F(ManifestIOTest, TestShutdown) {
         ASSERT_EQ(dl_res.error(), manifest_io::errc::shutting_down);
 
         auto ul_err = io.upload_manifest(test_path, manifest{}).get();
-        ASSERT_TRUE(ul_err.has_value());
-        ASSERT_EQ(ul_err.value(), manifest_io::errc::shutting_down);
+        ASSERT_TRUE(ul_err.has_error());
+        ASSERT_EQ(ul_err.error(), manifest_io::errc::shutting_down);
     }
     {
         auto dl_res = io.download_manifest_list(test_path).get();
@@ -136,8 +137,8 @@ TEST_F(ManifestIOTest, TestShutdown) {
         ASSERT_EQ(dl_res.error(), manifest_io::errc::shutting_down);
 
         auto ul_err = io.upload_manifest_list(test_path, manifest_list{}).get();
-        ASSERT_TRUE(ul_err.has_value());
-        ASSERT_EQ(ul_err.value(), manifest_io::errc::shutting_down);
+        ASSERT_TRUE(ul_err.has_error());
+        ASSERT_EQ(ul_err.error(), manifest_io::errc::shutting_down);
     }
 }
 
