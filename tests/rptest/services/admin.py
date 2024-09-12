@@ -1165,7 +1165,8 @@ class Admin:
     def list_roles(self,
                    filter: Optional[str] = None,
                    principal: Optional[str] = None,
-                   principal_type: Optional[str] = None):
+                   principal_type: Optional[str] = None,
+                   node=None):
         params = {}
         if filter is not None:
             params['filter'] = filter
@@ -1173,7 +1174,7 @@ class Admin:
             params['principal'] = principal
         if principal_type is not None:
             params['principal_type'] = principal_type
-        return self._request("get", "security/roles", params=params)
+        return self._request("get", "security/roles", params=params, node=node)
 
     def update_role_members(self,
                             role: str,
