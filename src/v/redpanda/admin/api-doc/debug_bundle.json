@@ -1,0 +1,61 @@
+"/v1/debug/bundle": {
+  "post": {
+    "description": "Posting to this endpoint will trigger the start of an rpk debug bundle process.  If a process is already executing, this endpoint will return a 409 error.  If there is an issue with starting the process, this endpoint will return a 500 error.",
+    "summary": "Start an rpk debug bundle",
+    "operationId": "post_debug_bundle",
+    "consumes": [
+        "application/json"
+    ],
+    "parameters": [
+      {
+        "name": "config",
+        "in": "body",
+        "required": true,
+        "schema": {
+          "$ref": "#/definitions/bundle_start_config"
+        }
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/bundle_start_response"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "422": {
+        "description": "Format error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal server error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+}

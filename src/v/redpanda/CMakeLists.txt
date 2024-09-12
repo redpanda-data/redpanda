@@ -15,7 +15,8 @@ set(swags
   shadow_indexing
   transform 
   recovery 
-  migration)
+  migration
+  debug_bundle)
 
 set(swag_files)
 foreach(swag ${swags})
