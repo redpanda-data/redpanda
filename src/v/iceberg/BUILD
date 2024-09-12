@@ -142,6 +142,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_entry_type",
+    srcs = [
+        "manifest_entry_type.cc",
+    ],
+    hdrs = [
+        "manifest_entry_type.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":partition_key_type",
+    ],
+)
+
+redpanda_cc_library(
     name = "manifest_io",
     srcs = [
         "manifest_io.cc",
