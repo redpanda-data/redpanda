@@ -336,6 +336,10 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
 
     std::exception_ptr eptr;
     try {
+        co_await ctx->start();
+        // Must call start() to ensure `ctx` is inserted into the `_connections`
+        // list.  Otherwise if enqueing the audit message fails and `stop()` is
+        // called, this will result in a segfault.
         if (authn_method == config::broker_authn_method::mtls_identity) {
             auto authn_event = make_auth_event_options(mtls_state.value(), ctx);
             if (!ctx->server().audit_mgr().enqueue_authn_event(
@@ -345,7 +349,6 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
                   "system error");
             }
         }
-        co_await ctx->start();
         co_await ctx->process();
     } catch (...) {
         eptr = std::current_exception();
