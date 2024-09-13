@@ -183,6 +183,7 @@ std::unique_ptr<struct_value> data_file_to_value(const data_file& file) {
     ret->fields.emplace_back(std::nullopt);
     ret->fields.emplace_back(std::nullopt);
     ret->fields.emplace_back(std::nullopt);
+    ret->fields.emplace_back(std::nullopt);
     return ret;
 }
 
@@ -204,7 +205,8 @@ data_file data_file_from_value(struct_value v) {
     file.column_sizes = get_counts_map(std::move(fs[6]));
     file.value_counts = get_counts_map(std::move(fs[7]));
     file.null_value_counts = get_counts_map(std::move(fs[8]));
-    file.nan_value_counts = get_counts_map(std::move(fs[9]));
+    file.distinct_counts = get_counts_map(std::move(fs[9]));
+    file.nan_value_counts = get_counts_map(std::move(fs[10]));
     return file;
 }
 

@@ -15,7 +15,7 @@ namespace {
 struct_type data_file_type(partition_key_type partition_type) {
     struct_type r2_type;
     // TODO: somehow make this not a magic number.
-    r2_type.fields.reserve(16);
+    r2_type.fields.reserve(17);
     r2_type.fields.emplace_back(
       nested_field::create(134, "content", field_required::yes, int_type()));
     r2_type.fields.emplace_back(nested_field::create(
@@ -46,8 +46,12 @@ struct_type data_file_type(partition_key_type partition_type) {
       field_required::no,
       map_type::create(
         121, int_type(), 122, field_required::yes, long_type())));
-    // NOTE: distinct_counts(111) left out, since it doesn't seem widely
-    // adopted across implementations.
+    r2_type.fields.emplace_back(nested_field::create(
+      111,
+      "distinct_counts",
+      field_required::no,
+      map_type::create(
+        123, int_type(), 124, field_required::yes, long_type())));
     r2_type.fields.emplace_back(nested_field::create(
       137,
       "nan_value_counts",
