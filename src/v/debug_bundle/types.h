@@ -25,8 +25,8 @@
 #include <fmt/format.h>
 
 #include <chrono>
+#include <iosfwd>
 #include <optional>
-#include <ostream>
 #include <variant>
 namespace debug_bundle {
 
