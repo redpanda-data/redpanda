@@ -286,3 +286,74 @@ TEST_F_CORO(debug_bundle_service_started_fixture, status_no_run) {
       res.assume_error().code(),
       debug_bundle::error_code::debug_bundle_process_never_started);
 }
+
+TEST_F_CORO(debug_bundle_service_started_fixture, terminate_process) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_FALSE_CORO(res.has_failure()) << res.as_failure().error().message();
+
+    {
+        auto status = co_await _service.local().rpk_debug_bundle_status();
+        ASSERT_FALSE_CORO(status.has_failure())
+          << res.as_failure().error().message();
+
+        EXPECT_EQ(
+          status.assume_value().status,
+          debug_bundle::debug_bundle_status::running);
+    }
+
+    {
+        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
+          job_id);
+        ASSERT_FALSE_CORO(term_res.has_failure())
+          << term_res.as_failure().error().message();
+    }
+
+    {
+        auto status = co_await _service.local().rpk_debug_bundle_status();
+        ASSERT_FALSE_CORO(status.has_failure())
+          << res.as_failure().error().message();
+
+        EXPECT_EQ(
+          status.assume_value().status,
+          debug_bundle::debug_bundle_status::error);
+    }
+
+    {
+        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
+          job_id);
+        ASSERT_TRUE_CORO(term_res.has_failure());
+        EXPECT_EQ(
+          term_res.assume_error().code(),
+          debug_bundle::error_code::debug_bundle_process_not_running);
+    }
+}
+
+TEST_F_CORO(
+  debug_bundle_service_started_fixture, terminate_process_bad_job_id) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_FALSE_CORO(res.has_failure()) << res.as_failure().error().message();
+
+    {
+        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
+          debug_bundle::job_id_t(uuid_t::create()));
+        ASSERT_TRUE_CORO(term_res.has_failure());
+        EXPECT_EQ(
+          term_res.assume_error().code(),
+          debug_bundle::error_code::job_id_not_recognized);
+    }
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, termiate_never_ran) {
+    auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
+      debug_bundle::job_id_t(uuid_t::create()));
+    ASSERT_TRUE_CORO(term_res.has_failure());
+    EXPECT_EQ(
+      term_res.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_never_started);
+}

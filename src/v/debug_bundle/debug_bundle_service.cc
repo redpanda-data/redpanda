@@ -236,12 +236,41 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
 }
 
 ss::future<result<void>> service::cancel_rpk_debug_bundle(job_id_t job_id) {
+    auto hold = _gate.hold();
     if (ss::this_shard_id() != service_shard) {
         co_return co_await container().invoke_on(
           service_shard,
           [job_id](service& s) { return s.cancel_rpk_debug_bundle(job_id); });
     }
-    co_return error_info(error_code::debug_bundle_process_never_started);
+    auto units = co_await _process_control_mutex.get_units();
+    auto status = process_status();
+    if (!status.has_value()) {
+        co_return error_info(error_code::debug_bundle_process_never_started);
+    } else if (!is_running()) {
+        co_return error_info(error_code::debug_bundle_process_not_running);
+    }
+
+    vassert(
+      _rpk_process,
+      "_rpk_process should be populated if the process has been executed");
+
+    if (job_id != _rpk_process->_job_id) {
+        co_return error_info(error_code::job_id_not_recognized);
+    }
+
+    try {
+        co_await _rpk_process->_rpk_process->terminate(1s);
+    } catch (const std::system_error& e) {
+        if (
+          e.code() == external_process::error_code::process_already_completed) {
+            co_return error_info(error_code::debug_bundle_process_not_running);
+        }
+        co_return (error_info(error_code::internal_error, e.what()));
+    } catch (const std::exception& e) {
+        co_return error_info(error_code::internal_error, e.what());
+    }
+
+    co_return outcome::success();
 }
 
 ss::future<result<debug_bundle_status_data>>
