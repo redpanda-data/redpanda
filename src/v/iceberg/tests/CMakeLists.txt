@@ -2,6 +2,16 @@ find_package(Avro)
 
 set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 
+v_cc_library(
+  NAME iceberg_test_utils
+  HDRS
+    value_generator.h
+  SRCS
+    value_generator.cc
+  DEPS
+    v::iceberg
+)
+
 rp_test(
   UNIT_TEST
   GTEST
@@ -26,7 +36,6 @@ rp_test(
     transform_utils_test.cc
     values_test.cc
     values_avro_test.cc
-    value_generator.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams
@@ -37,6 +46,7 @@ rp_test(
     v::cloud_io
     v::cloud_io_utils
     v::s3_imposter
+    v::iceberg_test_utils
   INPUT_FILES
     "${testdata_dir}/nested_manifest.avro"
   ARGS "-- -c1"
