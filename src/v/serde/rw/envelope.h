@@ -30,6 +30,9 @@ concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
 };
 
 template<typename T>
+concept has_serde_fields = requires(T t) { t.serde_fields(); };
+
+template<typename T>
 requires is_envelope<std::decay_t<T>>
 void tag_invoke(
   tag_t<read_tag>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
@@ -61,6 +64,7 @@ void tag_invoke(
     }
 
     if constexpr (has_serde_read<Type>) {
+        static_assert(!has_serde_fields<Type>);
         t.serde_read(in, h);
     } else {
         envelope_for_each_field(t, [&](auto& f) {
@@ -104,6 +108,7 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
 
     auto const size_before = out.size_bytes();
     if constexpr (has_serde_write<Type>) {
+        static_assert(!has_serde_fields<Type>);
         t.serde_write(out);
     } else {
         envelope_for_each_field(
