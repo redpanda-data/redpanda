@@ -246,12 +246,28 @@ ss::future<result<void>> service::cancel_rpk_debug_bundle(job_id_t job_id) {
 
 ss::future<result<debug_bundle_status_data>>
 service::rpk_debug_bundle_status() {
+    auto hold = _gate.hold();
     if (ss::this_shard_id() != service_shard) {
         co_return co_await container().invoke_on(service_shard, [](service& s) {
             return s.rpk_debug_bundle_status();
         });
     }
-    co_return error_info(error_code::debug_bundle_process_never_started);
+    auto status = process_status();
+    if (!status.has_value()) {
+        co_return error_info(error_code::debug_bundle_process_never_started);
+    }
+
+    vassert(
+      _rpk_process,
+      "_rpk_process should be populated if the process has been executed");
+
+    co_return debug_bundle_status_data{
+      .job_id = _rpk_process->_job_id,
+      .status = status.value(),
+      .created_timestamp = _rpk_process->_created_time,
+      .file_name = _rpk_process->_output_file_path.filename().native(),
+      .cout = _rpk_process->_cout.copy(),
+      .cerr = _rpk_process->_cerr.copy()};
 }
 
 ss::future<result<std::filesystem::path>> service::rpk_debug_bundle_path() {
@@ -328,27 +344,26 @@ service::build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params) {
 }
 
 std::optional<debug_bundle_status> service::process_status() const {
-    if (_rpk_process) {
-        if (
-          _rpk_process->_rpk_process->is_running()
-          || !_rpk_process->_wait_result.has_value()) {
-            return debug_bundle_status::running;
-        } else if (_rpk_process->_wait_result.has_value()) {
-            return ss::visit(
-              _rpk_process->_wait_result.value(),
-              [](ss::experimental::process::wait_exited e) {
-                  if (e.exit_code == 0) {
-                      return debug_bundle_status::success;
-                  } else {
-                      return debug_bundle_status::error;
-                  }
-              },
-              [](ss::experimental::process::wait_signaled) {
-                  return debug_bundle_status::error;
-              });
-        }
+    if (_rpk_process == nullptr) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    if (
+      _rpk_process->_rpk_process->is_running()
+      || !_rpk_process->_wait_result.has_value()) {
+        return debug_bundle_status::running;
+    }
+    return ss::visit(
+      _rpk_process->_wait_result.value(),
+      [](ss::experimental::process::wait_exited e) {
+          if (e.exit_code == 0) {
+              return debug_bundle_status::success;
+          } else {
+              return debug_bundle_status::error;
+          }
+      },
+      [](ss::experimental::process::wait_signaled) {
+          return debug_bundle_status::error;
+      });
 }
 
 bool service::is_running() const {
