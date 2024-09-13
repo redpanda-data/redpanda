@@ -34,3 +34,20 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "enterprise_features",
+    srcs = [
+        "enterprise_features.cc",
+    ],
+    hdrs = [
+        "enterprise_features.h",
+    ],
+    include_prefix = "features",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:range",
+    ],
+)
