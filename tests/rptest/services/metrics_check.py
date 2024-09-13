@@ -11,6 +11,9 @@ import re
 
 from rptest.services.redpanda import MetricsEndpoint
 
+REJECTED_CONNECTIONS_METRIC = "vectorized_kafka_rpc_connections_rejected"
+ACTIVE_CONNECTIONS_METRIC = "vectorized_kafka_rpc_active_connections"
+
 
 class MetricCheckFailed(Exception):
     def __init__(self, metric, old_value, new_value):

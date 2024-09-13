@@ -21,6 +21,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.machinetype import get_machine_info
+from rptest.services.metrics_check import ACTIVE_CONNECTIONS_METRIC, REJECTED_CONNECTIONS_METRIC
 from rptest.utils.type_utils import rcast
 
 # pyright: strict
@@ -35,9 +36,6 @@ minutes = 60
 hours = 60 * minutes
 
 T = TypeVar('T')
-
-REJECTED_METRIC = "vectorized_kafka_rpc_connections_rejected_total"
-ACTIVE_METRIC = "vectorized_kafka_rpc_active_connections"
 
 
 def not_none(value: T | None) -> T:
@@ -751,7 +749,7 @@ class OMBValidationTest(RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     def _connection_count(self):
-        return self.redpanda.metric_sum(ACTIVE_METRIC)
+        return self.redpanda.metric_sum(ACTIVE_CONNECTIONS_METRIC)
 
     def _rejected_count(self):
-        return self.redpanda.metric_sum(REJECTED_METRIC)
+        return self.redpanda.metric_sum(REJECTED_CONNECTIONS_METRIC)

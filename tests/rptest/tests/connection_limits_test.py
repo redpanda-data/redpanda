@@ -14,11 +14,8 @@ from rptest.services.cluster import cluster
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.clients.types import TopicSpec
-from rptest.services.metrics_check import MetricCheck
+from rptest.services.metrics_check import MetricCheck, ACTIVE_CONNECTIONS_METRIC, REJECTED_CONNECTIONS_METRIC
 from rptest.util import expect_exception
-
-REJECTED_METRIC = "vectorized_kafka_rpc_connections_rejected_total"
-ACTIVE_METRIC = "vectorized_kafka_rpc_active_connections"
 
 
 class ConnectionLimitsTest(RedpandaTest):
@@ -32,8 +29,9 @@ class ConnectionLimitsTest(RedpandaTest):
         self.redpanda.set_cluster_config({"kafka_connections_max": 6})
 
         metrics = [
-            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {},
-                        sum) for n in self.redpanda.nodes
+            MetricCheck(self.logger, self.redpanda, n,
+                        REJECTED_CONNECTIONS_METRIC, {}, sum)
+            for n in self.redpanda.nodes
         ]
 
         # I happen to know that an `rpk topic consume` occupies three
@@ -48,7 +46,7 @@ class ConnectionLimitsTest(RedpandaTest):
             c.start()
 
         def connection_count():
-            return self.redpanda.metric_sum(ACTIVE_METRIC)
+            return self.redpanda.metric_sum(ACTIVE_CONNECTIONS_METRIC)
 
         # wait until the connection count reaches the expected number before starting the
         # producer, since otherwise the consumers and the producer race and the producer
@@ -78,7 +76,7 @@ class ConnectionLimitsTest(RedpandaTest):
             c.wait()
 
         assert any([
-            m.evaluate([(REJECTED_METRIC, lambda a, b: b > a)])
+            m.evaluate([(REJECTED_CONNECTIONS_METRIC, lambda a, b: b > a)])
             for m in metrics
         ])
 
@@ -91,8 +89,9 @@ class ConnectionLimitsTest(RedpandaTest):
         self.redpanda.set_cluster_config({"kafka_connections_max": 6})
 
         metrics = [
-            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {},
-                        sum) for n in self.redpanda.nodes
+            MetricCheck(self.logger, self.redpanda, n,
+                        REJECTED_CONNECTIONS_METRIC, {}, sum)
+            for n in self.redpanda.nodes
         ]
 
         producer = RpkProducer(self.test_context,
@@ -107,7 +106,7 @@ class ConnectionLimitsTest(RedpandaTest):
             producer.wait()
 
         assert all([
-            m.evaluate([(REJECTED_METRIC, lambda a, b: b == a)])
+            m.evaluate([(REJECTED_CONNECTIONS_METRIC, lambda a, b: b == a)])
             for m in metrics
         ])
 
