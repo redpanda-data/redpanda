@@ -132,7 +132,8 @@ INSTANTIATE_TEST_SUITE_P(
   }));
 
 TEST(Overflow, Long) {
-    bytes encoded(size_t(11), 0xff);
+    bytes encoded(bytes::initialized_later{}, size_t(11));
+    std::fill(encoded.begin(), encoded.end(), 0xff);
     auto p = iobuf_parser(bytes_to_iobuf(encoded));
     EXPECT_THROW(decode<int64_t>(&p), decode_exception);
     p = iobuf_parser(bytes_to_iobuf(encoded));

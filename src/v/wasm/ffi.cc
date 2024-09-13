@@ -45,7 +45,7 @@ void sizer::append(int64_t v) { _offset += vint::vint_size(v); }
 void sizer::append_byte(uint8_t) { ++_offset; }
 
 writer::writer(array<uint8_t> buf)
-  : _tmp(vint::max_length, 0)
+  : _tmp(bytes::initialized_zero{}, vint::max_length)
   , _output(buf) {}
 
 void writer::append_with_length(const iobuf& b) {

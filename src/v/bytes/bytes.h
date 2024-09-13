@@ -51,11 +51,12 @@ public:
     bytes(initialized_later, size_t size)
       : data_(size) {}
 
+    struct initialized_zero {};
+    bytes(initialized_zero, size_t size)
+      : data_(size, 0) {}
+
     bytes(const value_type* data, size_t size)
       : data_(data, data + size) {}
-
-    bytes(size_t size, value_type v)
-      : data_(size, v) {}
 
     bytes(const char* s)
       : data_(s, s + strlen(s)) {}

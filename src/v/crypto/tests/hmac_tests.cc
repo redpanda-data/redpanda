@@ -27,7 +27,8 @@ static const absl::flat_hash_map<crypto::digest_type, size_t> expected_sizes = {
 
 TEST(crypto_hmac, length) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    bytes fake_key(16, 'k');
+    bytes fake_key(bytes::initialized_later{}, 16);
+    std::fill(fake_key.begin(), fake_key.end(), 'k');
     for (auto&& [k, v] : expected_sizes) {
         EXPECT_EQ(crypto::hmac_ctx::size(k), v)
           << "Mismatch on HMAC size for digest type " << k;
