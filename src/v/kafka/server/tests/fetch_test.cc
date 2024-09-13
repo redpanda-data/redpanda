@@ -342,6 +342,39 @@ FIXTURE_TEST(fetch_response_iterator_test, redpanda_thread_fixture) {
     }
 };
 
+FIXTURE_TEST(fetch_non_existent, redpanda_thread_fixture) {
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    auto ntp = make_default_ntp(topic, pid);
+    auto log_config = make_default_config();
+    wait_for_controller_leadership().get0();
+    add_topic(model::topic_namespace_view(ntp)).get();
+    kafka::fetch_request non_existent_ntp;
+    non_existent_ntp.data.max_wait_ms = std::chrono::milliseconds(1000);
+    non_existent_ntp.data.topics.emplace_back(kafka::fetch_topic{
+      .name = topic,
+      .fetch_partitions = {{
+        .partition_index = model::partition_id{-1},
+        .current_leader_epoch = kafka::leader_epoch(0),
+        .fetch_offset = model::offset(0),
+      }}});
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto defer = ss::defer([&client] {
+        client.stop().then([&client] { client.shutdown(); }).get();
+    });
+    auto resp = client
+                  .dispatch(std::move(non_existent_ntp), kafka::api_version(6))
+                  .get0();
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE(resp.data.topics.at(0).errored());
+    BOOST_REQUIRE_EQUAL(resp.data.topics.at(0).partitions.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.topics.at(0).partitions.at(0).error_code,
+      kafka::error_code::unknown_topic_or_partition);
+}
+
 FIXTURE_TEST(fetch_empty, redpanda_thread_fixture) {
     // create a topic partition with some data
     model::topic topic("foo");
