@@ -48,6 +48,10 @@ public:
         config::binding<std::chrono::milliseconds> write_caching_flush_ms;
         config::binding<std::optional<size_t>> write_caching_flush_bytes;
         config::binding<bool> enable_longest_log_detection;
+        config::binding<std::optional<std::chrono::milliseconds>>
+          raft_replicate_batcher_linger_ms_mean;
+        config::binding<std::optional<std::chrono::milliseconds>>
+          raft_replicate_batcher_linger_ms_stddev;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -96,6 +100,8 @@ public:
     }
 
 private:
+    void flush_batcher_cache_all_groups();
+    void rearm_batcher_flusher();
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
 
@@ -127,6 +133,7 @@ private:
     ss::timer<> _metrics_timer;
     size_t _learners_gap_bytes{0};
     bool _is_ready;
+    ss::timer<ss::lowres_clock> _periodic_batcher_cache_flusher;
 };
 
 } // namespace raft

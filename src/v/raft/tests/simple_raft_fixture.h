@@ -89,7 +89,13 @@ struct simple_raft_fixture {
                   .write_caching_flush_bytes
                   = config::mock_binding<std::optional<size_t>>(std::nullopt),
                   .enable_longest_log_detection = config::mock_binding<bool>(
-                    true)};
+                    true),
+                  .raft_replicate_batcher_linger_ms_mean = config::mock_binding<
+                    std::optional<std::chrono::milliseconds>>(std::nullopt),
+                  .raft_replicate_batcher_linger_ms_stddev
+                  = config::mock_binding<
+                    std::optional<std::chrono::milliseconds>>(std::nullopt),
+                };
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

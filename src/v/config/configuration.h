@@ -207,6 +207,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> replicate_append_timeout_ms;
     property<std::chrono::milliseconds> recovery_append_timeout_ms;
     property<size_t> raft_replicate_batch_window_size;
+    property<std::optional<std::chrono::milliseconds>>
+      raft_replicate_batcher_linger_ms_mean;
+    property<std::optional<std::chrono::milliseconds>>
+      raft_replicate_batcher_linger_ms_stddev;
     property<size_t> raft_learner_recovery_rate;
     property<bool> raft_recovery_throttle_disable_dynamic_mode;
     property<std::optional<uint32_t>> raft_smp_max_non_local_requests;

@@ -128,11 +128,14 @@ public:
       model::record_batch_reader,
       replicate_options);
 
+    ss::future<> flush_sync(bool leader_transfer);
+
     ss::future<> flush(ssx::semaphore_units u, bool const transfer_flush);
 
     ss::future<> stop();
 
 private:
+    void maybe_flush_in_background();
     ss::future<> do_flush(
       std::vector<item_ptr>,
       append_entries_request,
@@ -168,7 +171,8 @@ private:
     // cause the _item_cache to grow without bound since the rate of
     // flush task execution can be lower than the rate at which new
     // items are added to the cache.
-    bool _flush_pending = false;
+    bool _flush_in_progress = false;
+    bool _is_user_topic = false;
 };
 
 } // namespace raft
