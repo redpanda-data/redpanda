@@ -16,6 +16,7 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <fmt/chrono.h>
+#include <fmt/core.h>
 
 namespace debug_bundle {
 std::ostream& operator<<(std::ostream& o, const special_date& d) {
@@ -37,6 +38,11 @@ std::istream& operator>>(std::istream& i, special_date& d) {
 
 std::ostream& operator<<(std::ostream& o, const debug_bundle_status& s) {
     return o << to_string_view(s);
+}
+
+std::ostream& operator<<(std::ostream& o, const partition_selection& p) {
+    fmt::print(o, "{}/{}/{}", p.tn.ns, p.tn.tp, fmt::join(p.partitions, ","));
+    return o;
 }
 } // namespace debug_bundle
 

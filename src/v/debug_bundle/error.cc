@@ -36,6 +36,8 @@ struct error_category final : std::error_category {
             return "job id not recognized";
         case error_code::debug_bundle_process_never_started:
             return "debug bundle process was never started";
+        case error_code::rpk_binary_not_present:
+            return "rpk binary not present";
         }
 
         return "(unknown error code)";

@@ -73,6 +73,8 @@ struct partition_selection {
     absl::btree_set<model::partition_id> partitions;
 };
 
+std::ostream& operator<<(std::ostream& o, const partition_selection& p);
+
 /// Parameters used to spawn rpk debug bundle
 struct debug_bundle_parameters {
     std::optional<debug_bundle_authn_options> authn_options;
@@ -107,8 +109,8 @@ struct debug_bundle_status_data {
     debug_bundle_status status;
     clock::time_point created_timestamp;
     ss::sstring file_name;
-    chunked_vector<ss::sstring> stdout;
-    chunked_vector<ss::sstring> stderr;
+    chunked_vector<ss::sstring> cout;
+    chunked_vector<ss::sstring> cerr;
 };
 } // namespace debug_bundle
 

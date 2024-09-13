@@ -27,7 +27,8 @@ enum class error_code : int {
     process_failed,
     internal_error,
     job_id_not_recognized,
-    debug_bundle_process_never_started
+    debug_bundle_process_never_started,
+    rpk_binary_not_present,
 };
 
 std::error_code make_error_code(error_code e) noexcept;
