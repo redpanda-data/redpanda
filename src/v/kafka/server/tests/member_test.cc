@@ -22,7 +22,7 @@
 namespace kafka {
 
 static const chunked_vector<member_protocol> test_protos = {
-  {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
+  {kafka::protocol_name("n0"), bytes::from_string("d0")}, {kafka::protocol_name("n1"), bytes::from_string("d1")}};
 
 static group_member get_member() {
     return group_member(
@@ -47,7 +47,7 @@ static join_group_response make_join_response() {
 }
 
 static sync_group_response make_sync_response() {
-    return sync_group_response(error_code::none, bytes("this is some bytes"));
+    return sync_group_response(error_code::none, bytes::from_string("this is some bytes"));
 }
 
 SEASTAR_THREAD_TEST_CASE(constructor) {
@@ -69,8 +69,8 @@ SEASTAR_THREAD_TEST_CASE(assignment) {
 
     BOOST_TEST(m.assignment() == bytes());
 
-    m.set_assignment(bytes("abc"));
-    BOOST_TEST(m.assignment() == bytes("abc"));
+    m.set_assignment(bytes::from_string("abc"));
+    BOOST_TEST(m.assignment() == bytes::from_string("abc"));
 
     m.clear_assignment();
     BOOST_TEST(m.assignment() == bytes());
@@ -166,7 +166,7 @@ SEASTAR_THREAD_TEST_CASE(output_stream) {
 SEASTAR_THREAD_TEST_CASE(member_serde) {
     // serialize a member's state to iobuf
     auto m0 = get_member();
-    m0.set_assignment(bytes("assignment"));
+    m0.set_assignment(bytes::from_string("assignment"));
     auto m0_state = m0.state().copy();
     iobuf m0_iobuf;
     auto writer = kafka::protocol::encoder(m0_iobuf);

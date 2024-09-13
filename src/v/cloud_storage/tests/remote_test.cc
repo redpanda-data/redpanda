@@ -1375,7 +1375,7 @@ TEST_P(all_types_remote_fixture, test_get_object) {
     ASSERT_EQ(last_request.url, "/" + url_base() + "p");
 
     ASSERT_TRUE(dl_res == download_result::success);
-    ASSERT_EQ(iobuf_to_bytes(buf), "p");
+    ASSERT_EQ(iobuf_to_bytes(buf), bytes::from_string("p"));
     ASSERT_TRUE(subscription.available());
     ASSERT_TRUE(subscription.get().type == api_activity_type::object_download);
 }

@@ -250,7 +250,7 @@ public:
     ss::future<result<partition_state_reply>>
     do_get_controller_partition_state(model::node_id id);
 
-    static const bytes invariants_key;
+    static bytes invariants_key();
 
 private:
     friend controller_probe;

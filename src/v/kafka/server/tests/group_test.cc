@@ -64,7 +64,7 @@ static group get() {
 }
 
 static const std::vector<member_protocol> test_group_protos = {
-  {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
+  {kafka::protocol_name("n0"), bytes::from_string("d0")}, {kafka::protocol_name("n1"), bytes::from_string("d1")}};
 
 static member_ptr get_group_member(
   ss::sstring id = "m",
@@ -243,13 +243,13 @@ SEASTAR_THREAD_TEST_CASE(add_missing_assignments) {
     BOOST_TEST(a[kafka::member_id("n")] == bytes());
 
     a.clear();
-    a[kafka::member_id("m")] = bytes("d1");
-    a[kafka::member_id("o")] = bytes("d2");
+    a[kafka::member_id("m")] = bytes::from_string("d1");
+    a[kafka::member_id("o")] = bytes::from_string("d2");
     g.add_missing_assignments(a);
     BOOST_TEST(a.size() == 3);
-    BOOST_TEST(a[kafka::member_id("m")] == bytes("d1"));
+    BOOST_TEST(a[kafka::member_id("m")] == bytes::from_string("d1"));
     BOOST_TEST(a[kafka::member_id("n")] == bytes());
-    BOOST_TEST(a[kafka::member_id("o")] == bytes("d2"));
+    BOOST_TEST(a[kafka::member_id("o")] == bytes::from_string("d2"));
 }
 
 SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
@@ -264,12 +264,12 @@ SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
     BOOST_TEST(m2->assignment() == bytes());
 
     assignments_type a;
-    a[kafka::member_id("m")] = bytes("d1");
-    a[kafka::member_id("n")] = bytes("d2");
+    a[kafka::member_id("m")] = bytes::from_string("d1");
+    a[kafka::member_id("n")] = bytes::from_string("d2");
     g.set_assignments(a);
 
-    BOOST_TEST(m->assignment() == bytes("d1"));
-    BOOST_TEST(m2->assignment() == bytes("d2"));
+    BOOST_TEST(m->assignment() == bytes::from_string("d1"));
+    BOOST_TEST(m2->assignment() == bytes::from_string("d2"));
 
     g.clear_assignments();
     BOOST_TEST(m->assignment() == bytes());
@@ -311,12 +311,12 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
 
     auto protos = std::vector<member_protocol>{
       {kafka::protocol_name("p0"), bytes()},
-      {kafka::protocol_name("p1"), bytes("foo")},
+      {kafka::protocol_name("p1"), bytes::from_string("foo")},
       {kafka::protocol_name("p2"), bytes()}};
     auto m0 = get_group_member("m", protos);
 
     protos = std::vector<member_protocol>{
-      {kafka::protocol_name("p1"), bytes("bar")},
+      {kafka::protocol_name("p1"), bytes::from_string("bar")},
       {kafka::protocol_name("p2"), bytes()},
       {kafka::protocol_name("p3"), bytes()}};
     auto m1 = get_group_member("n", protos);
@@ -332,8 +332,8 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
     for (auto& m : md) {
         conf[m.member_id] = m;
     }
-    BOOST_TEST(conf[kafka::member_id("m")].metadata == bytes("foo"));
-    BOOST_TEST(conf[kafka::member_id("n")].metadata == bytes("bar"));
+    BOOST_TEST(conf[kafka::member_id("m")].metadata == bytes::from_string("foo"));
+    BOOST_TEST(conf[kafka::member_id("n")].metadata == bytes::from_string("bar"));
 }
 
 SEASTAR_THREAD_TEST_CASE(select_protocol) {
@@ -430,7 +430,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      chunked_vector<member_protocol>{{kafka::protocol_name("n2"), "d0"}});
+      chunked_vector<member_protocol>{{kafka::protocol_name("n2"), bytes::from_string("d0")}});
     (void)g.add_member(m2);
 
     // n2 is not supported bc the first member doesn't support it

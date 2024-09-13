@@ -845,14 +845,14 @@ static json::validator make_broker_id_override_validator() {
 namespace {
 ss::future<> override_id_and_uuid(
   storage::kvstore& kvs, model::node_uuid uuid, model::node_id id) {
-    static const bytes node_uuid_key = "node_uuid";
+    static const auto node_uuid_key = bytes::from_string("node_uuid");
     co_await kvs.put(
       storage::kvstore::key_space::controller,
       node_uuid_key,
       serde::to_iobuf(uuid));
     auto invariants_iobuf = kvs.get(
       storage::kvstore::key_space::controller,
-      cluster::controller::invariants_key);
+      cluster::controller::invariants_key());
     if (invariants_iobuf) {
         auto invariants
           = reflection::from_iobuf<cluster::configuration_invariants>(
@@ -861,7 +861,7 @@ ss::future<> override_id_and_uuid(
 
         co_await kvs.put(
           storage::kvstore::key_space::controller,
-          cluster::controller::invariants_key,
+          cluster::controller::invariants_key(),
           reflection::to_iobuf(std::move(invariants)));
     }
 }

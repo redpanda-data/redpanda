@@ -40,6 +40,10 @@ public:
     using iterator = container_type::iterator;
     using const_iterator = container_type::const_iterator;
 
+    static bytes from_string(std::string_view s) {
+        return {s.begin(), s.end()};
+    }
+
     bytes() = default;
     bytes(const bytes&) = default;
     bytes& operator=(const bytes&) = default;
@@ -57,9 +61,6 @@ public:
 
     bytes(const value_type* data, size_t size)
       : data_(data, data + size) {}
-
-    bytes(const char* s)
-      : data_(s, s + strlen(s)) {}
 
     bytes(std::initializer_list<uint8_t> x)
       : data_(x) {}

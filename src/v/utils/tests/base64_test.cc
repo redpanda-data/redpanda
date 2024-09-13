@@ -15,11 +15,11 @@
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(bytes_type) {
-    auto encdec = [](const bytes& input, const auto expected) {
-        auto encoded = bytes_to_base64(input);
+    auto encdec = [](std::string_view input, std::string_view expected) {
+        auto encoded = bytes_to_base64(bytes::from_string(input));
         BOOST_REQUIRE_EQUAL(encoded, expected);
         auto decoded = base64_to_bytes(encoded);
-        BOOST_REQUIRE_EQUAL(decoded, input);
+        BOOST_REQUIRE_EQUAL(decoded, bytes::from_string(input));
     };
 
     encdec("", "");
@@ -66,9 +66,9 @@ BOOST_AUTO_TEST_CASE(test_base64_to_iobuf) {
 }
 
 BOOST_AUTO_TEST_CASE(base64_url_decode_test_basic) {
-    auto dec = [](std::string_view input, const bytes& expected) {
+    auto dec = [](std::string_view input, std::string_view expected) {
         auto decoded = base64url_to_bytes(input);
-        BOOST_REQUIRE_EQUAL(decoded, expected);
+        BOOST_REQUIRE_EQUAL(decoded, bytes::from_string(expected));
     };
 
     dec("UmVkcGFuZGEgUm9ja3M", "Redpanda Rocks");

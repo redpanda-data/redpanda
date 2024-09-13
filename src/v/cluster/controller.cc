@@ -93,7 +93,9 @@
 #include <optional>
 namespace cluster {
 
-const bytes controller::invariants_key{"configuration_invariants"};
+bytes controller::invariants_key() {
+    return bytes::from_string("configuration_invariants");
+}
 
 controller::controller(
   config_manager::preload_result&& config_preload,
@@ -582,7 +584,7 @@ ss::future<> controller::start(
           *config::node().node_id(), ss::smp::count);
         co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
-          invariants_key,
+          invariants_key(),
           reflection::to_iobuf(configuration_invariants{new_invariants}));
         conf_invariants = new_invariants;
         vlog(
@@ -1133,7 +1135,7 @@ controller::do_get_controller_partition_state(model::node_id target_node) {
 ss::future<configuration_invariants>
 controller::validate_configuration_invariants() {
     auto invariants_buf = _storage.local().kvs().get(
-      storage::kvstore::key_space::controller, invariants_key);
+      storage::kvstore::key_space::controller, invariants_key());
     vassert(
       config::node().node_id(),
       "Node id must be set before checking configuration invariants");
@@ -1145,7 +1147,7 @@ controller::validate_configuration_invariants() {
         // store configuration invariants
         co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
-          invariants_key,
+          invariants_key(),
           reflection::to_iobuf(configuration_invariants{current}));
         vlog(
           clusterlog.info,
@@ -1173,7 +1175,7 @@ controller::validate_configuration_invariants() {
         // the core count later decreases.
         co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
-          invariants_key,
+          invariants_key(),
           reflection::to_iobuf(configuration_invariants{current}));
         invariants = current;
         vlog(clusterlog.info, "updated configuration invariants: {}", current);

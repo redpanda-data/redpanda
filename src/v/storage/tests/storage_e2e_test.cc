@@ -1210,7 +1210,7 @@ void append_single_record_batch(
             val_bytes = random_generators::get_bytes(val_size);
         } else {
             ss::sstring v = ssx::sformat("v-{}", i);
-            val_bytes = bytes(v.c_str());
+            val_bytes = bytes::from_string(v.c_str());
         }
         iobuf value = bytes_to_iobuf(val_bytes);
         storage::record_batch_builder builder(
@@ -1550,7 +1550,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     static constexpr size_t batch_size = 1_KiB; // Size visible to Kafka API
     static constexpr size_t input_batch_count = 100;
 
-    append_exactly(log, input_batch_count, batch_size, "key")
+    append_exactly(log, input_batch_count, batch_size, bytes::from_string("key"))
       .get0(); // 100*1_KiB
 
     // Test becomes non-deterministic if we allow flush in background: flush
