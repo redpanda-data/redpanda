@@ -3267,6 +3267,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       100ms,
       {.min = 1ms})
+  , rpk_path(
+      *this,
+      "rpk_path",
+      "Path to RPK binary",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "/usr/bin/rpk")
   , oidc_discovery_url(
       *this,
       "oidc_discovery_url",

@@ -116,6 +116,11 @@ DEFAULT_LOG_ALLOW_LIST = [
     # lead to any test failure because the error is transient (AWS weather).
     re.compile(r"unexpected REST API error \"Internal Server Error\" detected"
                ),
+
+    # Redpanda upgrade tests will use the default location of rpk (/usr/bin/rpk)
+    # which is not present in typical CI runs, which results in the following
+    # error message from the debug bundle service
+    re.compile(r"Current specified RPK location"),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
@@ -4289,6 +4294,13 @@ class RedpandaService(RedpandaServiceBase):
             )
             conf.update(
                 dict(http_authentication=self._security.http_authentication))
+
+        # Only override `rpk_path` if not already provided
+        if (cur_ver == RedpandaInstaller.HEAD
+                or cur_ver >= (24, 3, 1)) and 'rpk_path' not in conf:
+            # Introduced rpk_path to v24.3
+            rpk_path = f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
+            conf.update(dict(rpk_path=rpk_path))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
