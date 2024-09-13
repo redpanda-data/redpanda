@@ -291,6 +291,20 @@ ss::future<> backend::work_once() {
           }
       });
 
+    // process/defer advance retries
+    auto advance_requests_to_retry = std::move(_advance_requests_to_retry);
+    for (const auto& [id, deadline] : advance_requests_to_retry) {
+        if (deadline <= now) {
+            auto it = _advance_requests.find(id);
+            if (it != _advance_requests.end()) {
+                it->second.sent = false;
+            }
+        } else { // re-enqueue
+            _advance_requests_to_retry.try_emplace(id, deadline);
+            next_tick = std::min(next_tick, deadline);
+        }
+    }
+
     // schedule fibers
     for (auto node_id : to_send_rpc) {
         _nodes_to_retry.erase(node_id);
@@ -750,17 +764,21 @@ void backend::spawn_advances() {
         auto& sought_state = advance_info.sought_state;
         ssx::spawn_with_gate(_gate, [this, migration_id, sought_state]() {
             return _frontend.update_migration_state(migration_id, sought_state)
-              .then([migration_id, sought_state](std::error_code ec) {
+              .then([this, migration_id, sought_state](std::error_code ec) {
+                  bool succeeded = ec == make_error_code(errc::success);
                   vlogl(
                     dm_log,
-                    (ec == make_error_code(errc::success))
-                      ? ss::log_level::debug
-                      : ss::log_level::warn,
+                    succeeded ? ss::log_level::debug : ss::log_level::warn,
                     "request to advance migration {} into state {} has "
                     "been processed with error code {}",
                     migration_id,
                     sought_state,
                     ec);
+                  if (_is_coordinator && !succeeded) {
+                      _advance_requests_to_retry.try_emplace(
+                        migration_id, model::timeout_clock::now() + 2s);
+                      wakeup();
+                  }
               });
         });
     }

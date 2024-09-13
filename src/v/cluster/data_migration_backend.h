@@ -271,6 +271,7 @@ private:
           : sought_state(sought_state) {}
     };
     absl::flat_hash_map<id, advance_info> _advance_requests;
+    chunked_hash_map<id, deadline_t> _advance_requests_to_retry;
     chunked_vector<topic_table_delta> _unprocessed_deltas;
     chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
 
