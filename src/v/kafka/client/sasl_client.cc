@@ -214,9 +214,8 @@ ss::future<> do_authenticate_scram512(
 ss::future<>
 do_authenticate_oauthbearer(shared_broker_t broker, ss::sstring token) {
     sasl_authenticate_request req;
-    req.data.auth_bytes = bytes::from_string("n,,\1auth=");
-    req.data.auth_bytes += bytes{token.cbegin(), token.cend()};
-    req.data.auth_bytes += bytes::from_string("\1\1");
+    req.data.auth_bytes = bytes::from_string(
+      fmt::format("n,,\1auth={}\1\1", token));
     auto res = co_await broker->dispatch(std::move(req));
     if (res.data.errored()) {
         throw broker_error{

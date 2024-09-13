@@ -101,11 +101,6 @@ public:
         std::copy_n(p, n, data_.begin() + prev_size);
     }
 
-    bytes& operator+=(const bytes& v) {
-        append(v.data(), v.size());
-        return *this;
-    }
-
     friend bool operator==(const bytes&, const bytes&) = default;
 
     friend bool operator<(const bytes& a, const bytes& b) {
