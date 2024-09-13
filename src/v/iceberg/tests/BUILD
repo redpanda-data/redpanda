@@ -62,6 +62,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "manifest_entry_type_test",
+    timeout = "short",
+    srcs = [
+        "manifest_entry_type_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:manifest_entry_type",
+        "//src/v/iceberg:partition_key_type",
+        "//src/v/iceberg:schema_avro",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "manifest_io_test",
     timeout = "short",
     srcs = [
@@ -106,6 +123,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:manifest_file_gen",
         "//src/v/iceberg:manifest_list",
         "//src/v/iceberg:manifest_list_avro",
+        "//src/v/iceberg:partition_key_type",
         "//src/v/iceberg:schema_json",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:runfiles",

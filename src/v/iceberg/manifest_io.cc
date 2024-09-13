@@ -78,10 +78,12 @@ ss::future<checked<T, manifest_io::errc>> manifest_io::download_object(
     }
 }
 
-ss::future<checked<manifest, manifest_io::errc>>
-manifest_io::download_manifest(const manifest_path& path) {
-    return download_object<manifest>(
-      path(), "iceberg::manifest", parse_manifest);
+ss::future<checked<manifest, manifest_io::errc>> manifest_io::download_manifest(
+  const manifest_path& path, const partition_key_type& pk_type) {
+    co_return co_await download_object<manifest>(
+      path(), "iceberg::manifest", [&pk_type](iobuf b) {
+          return parse_manifest(pk_type, std::move(b));
+      });
 }
 
 ss::future<checked<manifest_list, manifest_io::errc>>

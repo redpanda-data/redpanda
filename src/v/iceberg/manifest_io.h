@@ -13,6 +13,7 @@
 #include "cloud_io/remote.h"
 #include "iceberg/manifest.h"
 #include "iceberg/manifest_list.h"
+#include "iceberg/partition_key_type.h"
 #include "model/fundamental.h"
 #include "utils/named_type.h"
 
@@ -46,8 +47,8 @@ public:
       , bucket_(b) {}
     ~manifest_io() = default;
 
-    ss::future<checked<manifest, errc>>
-    download_manifest(const manifest_path& path);
+    ss::future<checked<manifest, errc>> download_manifest(
+      const manifest_path& path, const partition_key_type& pk_type);
     ss::future<checked<manifest_list, errc>>
     download_manifest_list(const manifest_list_path& path);
 

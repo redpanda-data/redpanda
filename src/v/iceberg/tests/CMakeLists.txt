@@ -20,6 +20,7 @@ rp_test(
   SOURCES
     datatypes_json_test.cc
     datatypes_test.cc
+    manifest_entry_type_test.cc
     manifest_io_test.cc
     manifest_serialization_test.cc
     partition_key_test.cc

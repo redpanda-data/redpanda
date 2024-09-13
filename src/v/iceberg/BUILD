@@ -88,7 +88,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":datatypes",
-        ":manifest_entry_gen",
+        ":manifest_entry",
         ":partition",
         ":schema",
         "//src/v/container:fragmented_vector",
@@ -110,11 +110,16 @@ redpanda_cc_library(
         ":datatypes_json",
         ":json_utils",
         ":manifest",
-        ":manifest_entry_gen",
+        ":manifest_entry",
+        ":manifest_entry_type",
+        ":manifest_entry_values",
         ":partition",
         ":partition_json",
+        ":partition_key_type",
         ":schema",
+        ":schema_avro",
         ":schema_json",
+        ":values_avro",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
@@ -142,6 +147,41 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_entry_type",
+    srcs = [
+        "manifest_entry_type.cc",
+    ],
+    hdrs = [
+        "manifest_entry_type.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":partition_key_type",
+    ],
+)
+
+redpanda_cc_library(
+    name = "manifest_entry_values",
+    srcs = [
+        "manifest_entry_values.cc",
+    ],
+    hdrs = [
+        "manifest_entry_values.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/strings:string_switch",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest_entry",
+        ":partition_key_type",
+        ":values",
+    ],
+)
+
+redpanda_cc_library(
     name = "manifest_io",
     srcs = [
         "manifest_io.cc",
@@ -162,6 +202,7 @@ redpanda_cc_library(
     deps = [
         ":manifest",
         ":manifest_list",
+        ":partition_key_type",
         "//src/v/base",
         "//src/v/cloud_io:remote",
         "//src/v/model",

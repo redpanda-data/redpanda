@@ -21,6 +21,8 @@
 using namespace iceberg;
 using namespace std::chrono_literals;
 
+partition_key_type empty_pk_type() { return partition_key_type{struct_type{}}; }
+
 class ManifestIOTest
   : public s3_imposter_fixture
   , public ::testing::Test {
@@ -65,7 +67,7 @@ TEST_F(ManifestIOTest, TestManifestRoundtrip) {
     // Missing manifest.
     auto io = manifest_io(remote(), bucket_name);
     auto test_path = manifest_path{"foo/bar/baz"};
-    auto dl_res = io.download_manifest(test_path).get();
+    auto dl_res = io.download_manifest(test_path, empty_pk_type()).get();
     ASSERT_TRUE(dl_res.has_error());
     ASSERT_EQ(dl_res.error(), manifest_io::errc::failed);
 
@@ -73,13 +75,10 @@ TEST_F(ManifestIOTest, TestManifestRoundtrip) {
     auto ul_err = io.upload_manifest(test_path, m).get();
     ASSERT_FALSE(ul_err.has_value());
 
-    dl_res = io.download_manifest(test_path).get();
+    dl_res = io.download_manifest(test_path, empty_pk_type()).get();
     ASSERT_FALSE(dl_res.has_error());
     const auto& m_roundtrip = dl_res.value();
-    ASSERT_EQ(m.metadata, m_roundtrip.metadata);
-    // TODO: once the manifest stop using avrogen:: types, compare the
-    // manifests directly.
-    ASSERT_EQ(0, m_roundtrip.entries.size());
+    ASSERT_EQ(m, m_roundtrip);
 }
 
 TEST_F(ManifestIOTest, TestManifestListRoundtrip) {
@@ -123,7 +122,7 @@ TEST_F(ManifestIOTest, TestShutdown) {
     sr->request_stop();
     auto io = manifest_io(remote(), bucket_name);
     {
-        auto dl_res = io.download_manifest(test_path).get();
+        auto dl_res = io.download_manifest(test_path, empty_pk_type()).get();
         ASSERT_TRUE(dl_res.has_error());
         ASSERT_EQ(dl_res.error(), manifest_io::errc::shutting_down);
 
@@ -158,7 +157,7 @@ TEST_F(ManifestIOTest, TestCorruptedDownload) {
     ASSERT_EQ(ul_res, cloud_io::upload_result::success);
     auto io = manifest_io(remote(), bucket_name);
     {
-        auto dl_res = io.download_manifest(test_path).get();
+        auto dl_res = io.download_manifest(test_path, empty_pk_type()).get();
         ASSERT_TRUE(dl_res.has_error());
         ASSERT_EQ(dl_res.error(), manifest_io::errc::failed);
     }

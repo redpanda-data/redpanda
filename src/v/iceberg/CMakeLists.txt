@@ -33,6 +33,8 @@ v_cc_library(
     json_utils.cc
     logger.cc
     manifest_avro.cc
+    manifest_entry_type.cc
+    manifest_entry_values.cc
     manifest_io.cc
     manifest_list_avro.cc
     partition_key.cc

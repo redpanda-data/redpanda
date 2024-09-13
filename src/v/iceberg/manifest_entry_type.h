@@ -8,13 +8,11 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "bytes/iobuf.h"
-#include "iceberg/manifest.h"
+#include "iceberg/datatypes.h"
 #include "iceberg/partition_key_type.h"
 
 namespace iceberg {
 
-iobuf serialize_avro(const manifest&);
-manifest parse_manifest(const partition_key_type&, iobuf);
+struct_type manifest_entry_type(partition_key_type partition_type);
 
 } // namespace iceberg
