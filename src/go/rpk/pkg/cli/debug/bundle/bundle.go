@@ -14,6 +14,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,14 +145,15 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.MaybeDie(err, "unable to parse label-selector flag: %v", err)
 				bp.labelSelector = labelsMap
 			}
-			// To execute the appropriate bundle we look for
-			// kubernetes_service_* env variables to identify if we are in a
-			// k8s environment.
-			host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
-			if len(host) == 0 || len(port) == 0 {
-				err = executeBundle(cmd.Context(), bp)
-			} else {
+			
+			if isK8sEnv() {
+				fmt.Println("Detected K8s env")
 				err = executeK8SBundle(cmd.Context(), bp)
+			} else {
+				if isDockerEnv(bp.fs) {
+					fmt.Println("Detected Docker env")
+				}
+				err = executeBundle(cmd.Context(), bp)
 			}
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 			if uploadURL != "" {
@@ -180,6 +183,43 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.DurationVar(&cpuProfilerWait, "cpu-profiler-wait", 30*time.Second, "For how long to collect samples for the CPU profiler (e.g. 30s, 1.5m). Must be higher than 15s")
 
 	return cmd
+}
+
+func isK8sEnv() bool {
+	// To execute the appropriate bundle we look for
+	// kubernetes_service_* env variables to identify if we are in a
+	// k8s environment.
+	host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
+	return !(len(host) == 0 || len(port) == 0)
+}
+
+func isDockerEnv(fs afero.Fs) bool {
+	// https://stackoverflow.com/a/20012536
+	bs, err := afero.ReadFile(fs, "/proc/1/cgroup")
+	if err != nil {
+		return false
+	}
+	s := string(bs[:])
+	if (strings.Contains(s, "docker") || strings.Contains(s, "lxm")) {
+		return true
+	}
+	return false
+}
+
+func getRedpandaPID(fs afero.Fs) int {
+	if isK8sEnv() || isDockerEnv(fs) {
+		return 1
+	}
+	cmd := exec.Command("pgrep", "redpanda")
+    stdout, err := cmd.Output()
+    if err != nil {
+        return 0
+    }
+	pid, err := strconv.Atoi(strings.TrimSpace(string(stdout)))
+	if err != nil {
+        return 0
+    }
+	return pid
 }
 
 // uploadBundle will send the file located in 'filepath' by issuing a PUT

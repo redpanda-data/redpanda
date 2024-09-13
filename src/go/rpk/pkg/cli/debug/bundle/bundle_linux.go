@@ -148,6 +148,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveMdstat(ps),
 		saveMountedFilesystems(ps),
 		saveNTPDrift(ps),
+		saveRedpandaProc(ps),
 		saveResourceUsageData(ps, bp.y),
 		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.cpuProfilerWait),
 		saveMetricsAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval, bp.metricsSampleCount),
@@ -575,6 +576,37 @@ func saveCmdLine(ps *stepParams) step {
 			return err
 		}
 		return writeFileToZip(ps, "proc/cmdline", bs)
+	}
+}
+
+func saveRedpandaProc(ps *stepParams) step {
+	return func() error {
+		pid := getRedpandaPID(ps.fs)
+		if pid == 0 {
+			return errors.New("Unable to locate Redpanda PID")
+		}
+		targets := []string{"cgroup", "cmdline", "limits", "sched", "stack", "status"}
+		var targetFuncs []func() error
+		for _, t := range targets {
+			targetFuncs = append(targetFuncs, func() error {
+				bs, err := afero.ReadFile(ps.fs, fmt.Sprintf("/proc/%d/%s", pid, t))
+				if err != nil {
+					return err
+				}
+				return writeFileToZip(ps, fmt.Sprintf("/proc/redpanda/%s", t), bs)
+			})
+			
+		}
+		var grp multierror.Group
+		var rerrs *multierror.Error
+		for _, f := range targetFuncs {
+			grp.Go(f)
+		}
+		errs := grp.Wait()
+		if errs != nil {
+			rerrs = multierror.Append(rerrs, errs)
+		}
+		return rerrs.ErrorOrNil()
 	}
 }
 
