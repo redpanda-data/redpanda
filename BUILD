@@ -1,8 +1,6 @@
 load("@gazelle//:def.bzl", "gazelle", "gazelle_test")
 
 # gazelle:prefix github.com/redpanda-data/redpanda
-# TODO(bazel): Build RPK with bazel
-# gazelle:exclude src/go/rpk
 # Exclude cmake based setup
 # gazelle:exclude vtools
 # gazelle:exclude vbuild
