@@ -30,6 +30,7 @@ TEST(SnapshotJsonSerde, TestSnapshot) {
         {
             "snapshot-id": 3051729675574597004,
             "parent-snapshot-id": 3051729675574597004,
+            "sequence-number": 10,
             "timestamp-ms": 1515100955770,
             "summary": {
                 "operation": "append",
@@ -45,6 +46,7 @@ TEST(SnapshotJsonSerde, TestSnapshot) {
     ASSERT_EQ(3051729675574597004, snap.id());
     ASSERT_TRUE(snap.parent_snapshot_id.has_value());
     ASSERT_EQ(3051729675574597004, snap.parent_snapshot_id.value());
+    ASSERT_EQ(10, snap.sequence_number());
     ASSERT_EQ(1515100955770, snap.timestamp_ms.value());
     ASSERT_EQ(snapshot_operation::append, snap.summary.operation);
     ASSERT_EQ(1, snap.summary.other.size());
@@ -66,6 +68,7 @@ TEST(SnapshotJsonSerde, TestSnapshotMissingOptionals) {
         {
             "snapshot-id": 3051729675574597004,
             "timestamp-ms": 1515100955770,
+            "sequence-number": 10,
             "summary": {
                 "operation": "append",
                 "foo": "bar"
@@ -78,6 +81,7 @@ TEST(SnapshotJsonSerde, TestSnapshotMissingOptionals) {
     const auto snap = parse_snapshot(parsed_orig_json);
     ASSERT_EQ(3051729675574597004, snap.id());
     ASSERT_FALSE(snap.parent_snapshot_id.has_value());
+    ASSERT_EQ(10, snap.sequence_number());
     ASSERT_EQ(1515100955770, snap.timestamp_ms.value());
     ASSERT_EQ(snapshot_operation::append, snap.summary.operation);
     ASSERT_EQ(1, snap.summary.other.size());
