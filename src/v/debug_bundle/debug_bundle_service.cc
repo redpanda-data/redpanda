@@ -55,23 +55,23 @@ ss::future<> service::stop() {
 }
 
 ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
-  uuid_t uuid, debug_bundle_parameters params) {
+  job_id_t job_id, debug_bundle_parameters params) {
     if (ss::this_shard_id() != service_shard) {
         co_return co_await container().invoke_on(
           service_shard,
-          [uuid, params = std::move(params)](service& s) mutable {
+          [job_id, params = std::move(params)](service& s) mutable {
               return s.initiate_rpk_debug_bundle_collection(
-                uuid, std::move(params));
+                job_id, std::move(params));
           });
     }
     co_return error_info(error_code::internal_error, "Not yet implemented");
 }
 
-ss::future<result<void>> service::cancel_rpk_debug_bundle(uuid_t uuid) {
+ss::future<result<void>> service::cancel_rpk_debug_bundle(job_id_t job_id) {
     if (ss::this_shard_id() != service_shard) {
         co_return co_await container().invoke_on(
           service_shard,
-          [uuid](service& s) { return s.cancel_rpk_debug_bundle(uuid); });
+          [job_id](service& s) { return s.cancel_rpk_debug_bundle(job_id); });
     }
     co_return error_info(error_code::debug_bundle_process_never_started);
 }

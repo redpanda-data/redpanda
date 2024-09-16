@@ -24,6 +24,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/security",
+        "//src/v/utils:named_type",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:btree",
         "@fmt",

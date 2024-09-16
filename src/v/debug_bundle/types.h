@@ -15,6 +15,7 @@
 #include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "security/types.h"
+#include "utils/named_type.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -29,6 +30,8 @@
 #include <optional>
 #include <variant>
 namespace debug_bundle {
+
+using job_id_t = named_type<uuid_t, struct uuid_t_tag>;
 
 /// Special date strings used by journalctl
 enum class special_date { yesterday, today, now, tomorrow };
@@ -100,7 +103,7 @@ std::ostream& operator<<(std::ostream& o, const debug_bundle_status& s);
 
 /// Status of the debug bundle process
 struct debug_bundle_status_data {
-    uuid_t job_id;
+    job_id_t job_id;
     debug_bundle_status status;
     clock::time_point created_timestamp;
     ss::sstring file_name;

@@ -64,7 +64,7 @@ public:
      * * error_code::internal_error
      */
     ss::future<result<void>> initiate_rpk_debug_bundle_collection(
-      uuid_t job_id, debug_bundle_parameters params);
+      job_id_t job_id, debug_bundle_parameters params);
 
     /**
      * @brief Attempts to cancel a running "rpk debug bundle" process
@@ -76,7 +76,7 @@ public:
      * * error_code::job_id_not_recognized
      * * error_code::debug_bundle_process_never_started
      */
-    ss::future<result<void>> cancel_rpk_debug_bundle(uuid_t job_id);
+    ss::future<result<void>> cancel_rpk_debug_bundle(job_id_t job_id);
 
     /**
      * @brief Retrieves the status of the bundle process
