@@ -71,6 +71,8 @@ class JiraHelper():
             self._check_env_val('ISSUE_LABELS')
             self._check_env_val('ISSUE_STATE')
             self._check_env_val('EVENT_NAME')
+            
+            
         elif self.command == Command.UPDATE_COMMENT:
             self._check_env_val('ISSUE_URL')
             self._check_env_val('ISSUE_COMMENT')
@@ -281,6 +283,8 @@ issue that triggered this issue's creation.
         gh_milestone = os.environ['MILESTONE_TITLE']
         self.logger.debug(f'GH Labels: {gh_issue_labels}')
 
+        print("issue id:" + issue_id)
+
         fields = {}
         jira_issue_summary = self._jira.issue_field_value(issue_id,
                                                           field='summary')
@@ -299,24 +303,27 @@ issue that triggered this issue's creation.
             )
             fields['labels'] = gh_issue_labels
 
-        ## all of this is fudged until I can figure out how to test it
-        jira_fix_version = self._jira.issue_field_value(issue_id, 
-                                                        field='Fix Versions')
-        jira_version_exists = False 
-        versions = self._jira.get_product_versions_paginated(self._project_key, query=gh_milestone)
-        if versions is not None: 
-            jira_fix_version.append(versions[0])
-            fields['Fix Versions'] = jira_fix_version
-        else: 
-            new_version = self._jira.add_version(
-                                    self._project_key,
-                                    "",
-                                    gh_milestone,
-                                    is_archived=False,
-                                    is_released=False,
-                                  )  
-            jira_fix_version.append(new_version)
-            fields['Fix Versions'] = jira_fix_version
+        if gh_milestone is not None:
+            jira_fix_version = self._jira.issue_field_value(issue_id, 
+                                                            field="fixVersions")
+            print("JFV", jira_fix_version)
+            jira_version_exists = False 
+            versions = self._jira.get_project_versions_paginated(self._project_key, query=gh_milestone)
+            print(versions["values"])
+            if versions["values"] != []: 
+                jira_fix_version.append(versions["values"][0])
+                fields['fixVersions'] = jira_fix_version
+            else: 
+                new_version = self._jira.add_version(
+                                        self._project_key,
+                                        "",
+                                        gh_milestone,
+                                        is_archived=False,
+                                        is_released=False,
+                                    )  
+                print(new_version)
+            # jira_fix_version.append(new_version)
+            # fields['Fix Versions'] = jira_fix_version
         # end fudged bit
 
         if len(fields) == 0:
