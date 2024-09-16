@@ -35,6 +35,12 @@ struct partition_spec {
 
     friend bool operator==(const partition_spec&, const partition_spec&)
       = default;
+    partition_spec copy() const {
+        return {
+          .spec_id = spec_id,
+          .fields = fields.copy(),
+        };
+    }
 };
 
 } // namespace iceberg

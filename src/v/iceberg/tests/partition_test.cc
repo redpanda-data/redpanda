@@ -104,7 +104,7 @@ TEST(PartitionTest, TestPartitionSpec) {
           }}};
     };
     auto t1 = make_spec_single(0, 1, "foo", identity_transform{});
-    auto t1_dup = make_spec_single(0, 1, "foo", identity_transform{});
+    auto t1_dup = t1.copy();
     ASSERT_EQ(t1, t1_dup);
     auto t2 = make_spec_single(1, 1, "foo", identity_transform{});
     auto t3 = make_spec_single(0, 0, "foo", identity_transform{});
