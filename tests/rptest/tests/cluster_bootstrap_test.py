@@ -72,9 +72,15 @@ class ClusterBootstrapNew(RedpandaTest):
     @cluster(num_nodes=3)
     @matrix(num_seeds=[1, 2, 3],
             auto_assign_node_ids=[False, True],
-            empty_seed_starts_cluster=[False, True])
+            empty_seed_starts_cluster=[False, True],
+            with_enterprise_features=[False, True])
     def test_three_node_bootstrap(self, num_seeds, auto_assign_node_ids,
-                                  empty_seed_starts_cluster):
+                                  empty_seed_starts_cluster,
+                                  with_enterprise_features):
+        if with_enterprise_features:
+            self.redpanda.add_extra_rp_conf(
+                {"partition_autobalancing_mode": "continuous"})
+
         set_seeds_for_cluster(self.redpanda, num_seeds)
         for node in self.redpanda.nodes:
             self.redpanda.set_extra_node_conf(

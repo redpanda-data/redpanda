@@ -100,6 +100,8 @@ public:
     ss::future<std::error_code> update_license(security::license&& license);
 
     features::enterprise_feature_report report_enterprise_features() const;
+    bool need_to_verify_enterprise_license();
+    void verify_enterprise_license();
 
 private:
     void update_node_version(model::node_id, cluster_version v);
@@ -199,6 +201,9 @@ private:
     // Keep track of whether this node is the controller leader
     // via leadership notifications
     bool _am_controller_leader{false};
+
+    // Blocks cluster upgrades until the enterprise license has been verified
+    bool _verified_enterprise_license{false};
 };
 
 } // namespace cluster

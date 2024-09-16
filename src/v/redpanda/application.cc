@@ -42,6 +42,7 @@
 #include "cluster/data_migration_service_handler.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/ephemeral_credential_service.h"
+#include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
@@ -3112,6 +3113,23 @@ void application::start_runtime_services(
             _await_controller_last_applied.value(), app_signal.abort_source())
           .get();
     }
+
+    // Verify the enterprise license when trying to upgrade Redpanda.
+    // By this point during startup we have enough information to evaluate the
+    // state of the license and to evaluate what enterprise features are used.
+    // If redpanda has been restarted on an existing node, we have already
+    // loaded the feature table from the local snapshot in
+    // application::load_feature_table_snapshot. If this is a new node joining
+    // an existing cluster, by this point we have received a controller snapshot
+    // from another node in the join response and have waited for the controller
+    // stm to apply that snapshot above.
+    controller->get_feature_manager()
+      .invoke_on(
+        cluster::feature_manager::backend_shard,
+        [](cluster::feature_manager& fm) {
+            return fm.verify_enterprise_license();
+        })
+      .get();
 
     _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();
 

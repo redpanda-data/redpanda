@@ -33,6 +33,8 @@
 
 #include <absl/algorithm/container.h>
 
+#include <stdexcept>
+
 namespace cluster {
 
 static constexpr std::chrono::seconds status_retry = 5s;
@@ -288,7 +290,65 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
 }
 
+bool feature_manager::need_to_verify_enterprise_license() {
+    return features::is_major_version_upgrade(
+      _feature_table.local().get_active_version(),
+      _feature_table.local().get_latest_logical_version());
+}
+
+void feature_manager::verify_enterprise_license() {
+    vlog(clusterlog.info, "Verifying enterprise license...");
+
+    if (!need_to_verify_enterprise_license()) {
+        vlog(clusterlog.info, "Enterprise license verification skipped...");
+        _verified_enterprise_license = true;
+        return;
+    }
+
+    const auto& license = _feature_table.local().get_license();
+    auto license_missing_or_expired = !license || license->is_expired();
+    auto enterprise_features_used = license_required_feature_enabled();
+
+    vlog(
+      clusterlog.info,
+      "Verifying enterprise license: active_version={}, latest_version={}, "
+      "enterprise_features_used={}, license_missing_or_expired={}",
+      _feature_table.local().get_active_version(),
+      _feature_table.local().get_latest_logical_version(),
+      enterprise_features_used,
+      license_missing_or_expired);
+
+    if (enterprise_features_used && license_missing_or_expired) {
+        throw std::runtime_error{
+          "Looks like you’ve enabled a Redpanda Enterprise feature(s) "
+          "without a valid license. Please enter an active Redpanda "
+          "license key (e.g. rpk cluster license set <key>). If you "
+          "don’t have one, please request a new/trial license at "
+          "https://redpanda.com/license-request"};
+    }
+
+    _verified_enterprise_license = true;
+}
+
 ss::future<> feature_manager::maybe_update_feature_table() {
+    // Before doing any feature enablement or active version update, check that
+    // the cluster has an enterprise license if they use enterprise features
+    // It's possible that on ::start() the controller log hasn't synced yet, so
+    // check this every time we're about to update the active version to ensure
+    // that we abort before the update
+    if (need_to_verify_enterprise_license() && !_verified_enterprise_license) {
+        vlog(
+          clusterlog.debug,
+          "Waiting for enterprise license to be verified before checking for "
+          "active version updates...");
+        try {
+            co_await ss::sleep_abortable(status_retry, _as.local());
+        } catch (const ss::sleep_aborted&) {
+            // Shutting down - next iteration will drop out
+        }
+        co_return;
+    }
+
     vlog(clusterlog.debug, "Checking for active version update...");
     bool failed = false;
     try {
