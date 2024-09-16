@@ -21,6 +21,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <optional>
+#include <variant>
 
 namespace config {
 
@@ -48,6 +49,18 @@ struct key_cert {
     friend std::ostream& operator<<(std::ostream& o, const key_cert& c);
 };
 
+struct p12_container {
+    ss::sstring p12_path;
+    ss::sstring p12_password;
+
+    friend bool operator==(const p12_container&, const p12_container&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const p12_container& p);
+};
+
+using key_cert_container = std::variant<key_cert, p12_container>;
+
 inline constexpr std::string_view tlsv1_2_cipher_string
   = "ECDHE-RSA-AES128-GCM-SHA256:AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:"
     "AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-RSA-AES128-SHA:AES128-"
@@ -65,7 +78,7 @@ public:
 
     tls_config(
       bool enabled,
-      std::optional<key_cert> key_cert,
+      std::optional<key_cert_container> key_cert,
       std::optional<ss::sstring> truststore,
       std::optional<ss::sstring> crl,
       bool require_client_auth)
@@ -77,7 +90,7 @@ public:
 
     bool is_enabled() const { return _enabled; }
 
-    const std::optional<key_cert>& get_key_cert_files() const {
+    const std::optional<key_cert_container>& get_key_cert_files() const {
         return _key_cert;
     }
 
@@ -105,7 +118,7 @@ public:
 
 private:
     bool _enabled{false};
-    std::optional<key_cert> _key_cert;
+    std::optional<key_cert_container> _key_cert;
     std::optional<ss::sstring> _truststore_file;
     std::optional<ss::sstring> _crl_file;
     bool _require_client_auth{false};

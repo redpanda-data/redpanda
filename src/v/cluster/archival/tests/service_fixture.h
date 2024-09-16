@@ -193,6 +193,7 @@ public:
     }
 
     ss::sharded<cloud_storage_clients::client_pool> pool;
+    ss::sharded<cloud_io::remote> io;
     ss::sharded<cloud_storage::remote> remote;
 
 private:

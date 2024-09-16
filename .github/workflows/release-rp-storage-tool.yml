@@ -1,0 +1,69 @@
+name: Release rp-storage-tool
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-rp-storage-tool:
+    if: ${{ github.repository == 'redpanda-data/redpanda' || github.event_name == 'pull_request' }}
+    name: Release - ${{ matrix.platform.release_for }}
+    strategy:
+      matrix:
+        platform:
+          - release_for: linux-amd64
+            os: ubuntu-latest
+          - release_for: linux-arm64
+            os: ubuntu-latest-2-arm64
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - name: configure aws credentials
+        if: ${{ github.ref_type == 'tag' || github.event_name != 'pull_request' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+      - name: get secrets from aws sm
+        if: ${{ github.ref_type == 'tag' || github.event_name != 'pull_request' }}
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/rp_storage_tool_uploader
+          parse-json-secrets: true
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build binary
+        run: |
+          export DOCKER_BUILDKIT=1
+          docker build -f tests/docker/Dockerfile \
+            -t rp-storage-tool \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from redpandadata/redpanda-test-node:cache-amd64 \
+            --cache-from redpandadata/redpanda-test-node:cache-arm64 \
+            --target rp-storage-tool . \
+            --load
+      - name: Get binary
+        run: |
+          id=$(docker create rp-storage-tool)
+          docker cp $id:/usr/local/bin/rp-storage-tool ./
+          ./rp-storage-tool --help
+      - name: Push to public bucket
+        if: ${{ github.ref_type == 'tag' || github.event_name != 'pull_request' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.AWS_RP_STORAGE_UPLOADER_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_RP_STORAGE_UPLOADER_SECRET }}
+          AWS_DEFAULT_REGION: us-west-2
+        run: |
+          arch=$(uname -m)
+          os=$(uname | tr '[:upper:]' '[:lower:]')
+          if [[ $arch == "x86_64" || $arch == "amd64" ]]; then
+            arch="amd64"
+          elif [[ $arch == "aarch64" || $arch == "arm64" ]]; then
+            arch="arm64"
+          else
+            echo "unknown arch: $arch"
+            exit 1
+          fi
+          aws s3 cp ./rp-storage-tool s3://vectorized-public/releases/rp-storage-tool/${{ github.ref_name }}/$os/$arch/rp-storage-tool --acl public-read

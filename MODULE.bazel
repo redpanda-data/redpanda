@@ -24,11 +24,19 @@ use_repo(
     "boost",
 )
 
+bazel_dep(name = "gazelle", version = "0.38.0")
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        "//bazel:gazelle_pr_1909.patch",
+    ],
+)
+
 bazel_dep(name = "abseil-cpp", version = "20240722.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "crc32c", version = "1.1.0")
 bazel_dep(name = "fmt", version = "8.1.1")
-bazel_dep(name = "gazelle", version = "0.37.0")
 bazel_dep(name = "googletest", version = "1.15.2")
 bazel_dep(name = "liburing", version = "2.5")
 bazel_dep(name = "lz4", version = "1.9.4")
@@ -36,7 +44,8 @@ bazel_dep(name = "platforms", version = "0.0.10")
 bazel_dep(name = "protobuf", version = "27.3")
 bazel_dep(name = "re2", version = "2024-07-02")
 bazel_dep(name = "rules_foreign_cc", version = "0.10.1")
-bazel_dep(name = "rules_go", version = "0.49.0")
+bazel_dep(name = "rules_go", version = "0.50.1")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "6.0.2")
 bazel_dep(name = "rules_rust", version = "0.49.3")
 bazel_dep(name = "snappy", version = "1.2.1")
@@ -90,10 +99,12 @@ use_repo(non_module_dependencies, "wasmtime")
 use_repo(non_module_dependencies, "xxhash")
 
 bazel_dep(name = "toolchains_llvm", version = "1.1.2")
-git_override(
+single_version_override(
     module_name = "toolchains_llvm",
-    commit = "a7ac0ad3e4ce01f5390e7413c4e06ac4baf1807d",
-    remote = "https://github.com/mmaslankaprv/toolchains_llvm",
+    patch_strip = 1,
+    patches = [
+        "//bazel:toolchains_llvm_pr_346.patch",
+    ],
 )
 
 # ====================================
@@ -149,17 +160,21 @@ register_toolchains("@llvm_18_toolchain//:all")
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.23.0")
 
-# currently the only go code built with bazel is the kafka-request-generator
-# that is used in tests. if we start building other things, such as rpk, then it
-# may be worth generating build files with gazelle. explicitly listing the one
-# dependency for the request generator is easier for such a simple case.
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
-go_deps.module(
-    path = "github.com/twmb/franz-go/pkg/kmsg",
-    sum = "h1:a457IbvezYfA5UkiBvyV3zj0Is3y1i8EJgqjJYoij2E=",
-    version = "v1.7.0",
+go_deps.from_file(go_work = "//bazel/thirdparty:go.work")
+use_repo(
+    go_deps,
+    "com_github_actgardner_gogen_avro_v10",
+    "com_github_hamba_avro",
+    "com_github_redpanda_data_redpanda_src_transform_sdk_go_transform",
+    "com_github_stretchr_testify",
+    "com_github_testcontainers_testcontainers_go",
+    "com_github_testcontainers_testcontainers_go_modules_redpanda",
+    "com_github_twmb_franz_go",
+    "com_github_twmb_franz_go_pkg_kadm",
+    "com_github_twmb_franz_go_pkg_kmsg",
+    "com_github_twmb_franz_go_pkg_sr",
 )
-use_repo(go_deps, "com_github_twmb_franz_go_pkg_kmsg")
 
 # ====================================
 # Rust Toolchain

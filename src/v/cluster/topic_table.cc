@@ -48,7 +48,12 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           errc::topic_already_exists);
     }
 
-    if (_migrated_resources.is_already_migrated(cmd.key)) {
+    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    if (
+      !cmd.value.cfg.is_migrated
+      && migration_state
+           != data_migrations::migrated_resource_state::non_restricted) {
+        vlog(clusterlog.debug, "topic {} already migrated", cmd.key);
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
     }
@@ -104,15 +109,16 @@ ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
 
-    co_return do_local_delete(cmd.key, offset);
+    co_return do_local_delete(cmd.key, offset, false);
 }
 
-std::error_code
-topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
+std::error_code topic_table::do_local_delete(
+  model::topic_namespace nt, model::offset offset, bool ignore_migration) {
     auto const migration_state = _migrated_resources.get_topic_state(nt);
     if (
-      migration_state
-      != data_migrations::migrated_resource_state::non_restricted) {
+      !ignore_migration
+      && migration_state
+           != data_migrations::migrated_resource_state::non_restricted) {
         return errc::resource_is_being_migrated;
     }
     if (auto tp = _topics.find(nt); tp != _topics.end()) {
@@ -186,20 +192,24 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
         }
     }
 
-    if (
-      soft_del.mode == topic_lifecycle_transition_mode::pending_gc
-      || soft_del.mode == topic_lifecycle_transition_mode::oneshot_delete) {
-        return ss::make_ready_future<std::error_code>(
-          do_local_delete(soft_del.topic.nt, offset));
-    } else {
-        return ss::make_ready_future<std::error_code>(errc::success);
+    if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
+        return ssx::now<std::error_code>(errc::success);
     }
+    return ssx::now(do_local_delete(
+      soft_del.topic.nt,
+      offset,
+      soft_del.mode == topic_lifecycle_transition_mode::delete_migrated));
 }
 
 ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
     auto const migration_state = _migrated_resources.get_topic_state(
       cmd.value.cfg.tp_ns);
+    vlog(
+      clusterlog.trace,
+      "attempting to create a partition in {}, migration state = {}",
+      cmd.value.cfg.tp_ns,
+      migration_state);
     if (
       migration_state
       != data_migrations::migrated_resource_state::non_restricted) {
@@ -869,78 +879,87 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       != data_migrations::migrated_resource_state::non_restricted) {
         co_return errc::resource_is_being_migrated;
     }
-    auto& properties = tp->second.get_configuration().properties;
-    auto properties_snapshot = properties;
+    auto updated_properties = tp->second.get_configuration().properties;
     auto& overrides = cmd.value;
     /**
      * Update topic properties
      */
     incremental_update(
-      properties.cleanup_policy_bitflags, overrides.cleanup_policy_bitflags);
+      updated_properties.cleanup_policy_bitflags,
+      overrides.cleanup_policy_bitflags);
     incremental_update(
-      properties.compaction_strategy, overrides.compaction_strategy);
-    incremental_update(properties.compression, overrides.compression);
-    incremental_update(properties.retention_bytes, overrides.retention_bytes);
+      updated_properties.compaction_strategy, overrides.compaction_strategy);
+    incremental_update(updated_properties.compression, overrides.compression);
     incremental_update(
-      properties.retention_duration, overrides.retention_duration);
-    incremental_update(properties.segment_size, overrides.segment_size);
-    incremental_update(properties.timestamp_type, overrides.timestamp_type);
-
-    incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
-    incremental_update(properties.batch_max_bytes, overrides.batch_max_bytes);
-
+      updated_properties.retention_bytes, overrides.retention_bytes);
     incremental_update(
-      properties.retention_local_target_bytes,
+      updated_properties.retention_duration, overrides.retention_duration);
+    incremental_update(updated_properties.segment_size, overrides.segment_size);
+    incremental_update(
+      updated_properties.timestamp_type, overrides.timestamp_type);
+    incremental_update(
+      updated_properties.shadow_indexing, overrides.shadow_indexing);
+    incremental_update(
+      updated_properties.batch_max_bytes, overrides.batch_max_bytes);
+    incremental_update(
+      updated_properties.retention_local_target_bytes,
       overrides.retention_local_target_bytes);
     incremental_update(
-      properties.retention_local_target_ms,
+      updated_properties.retention_local_target_ms,
       overrides.retention_local_target_ms);
     incremental_update(
-      properties.remote_delete,
+      updated_properties.remote_delete,
       overrides.remote_delete,
       storage::ntp_config::default_remote_delete);
-    incremental_update(properties.segment_ms, overrides.segment_ms);
+    incremental_update(updated_properties.segment_ms, overrides.segment_ms);
     incremental_update(
-      properties.record_key_schema_id_validation,
+      updated_properties.record_key_schema_id_validation,
       overrides.record_key_schema_id_validation);
     incremental_update(
-      properties.record_key_schema_id_validation_compat,
+      updated_properties.record_key_schema_id_validation_compat,
       overrides.record_key_schema_id_validation_compat);
     incremental_update(
-      properties.record_key_subject_name_strategy,
+      updated_properties.record_key_subject_name_strategy,
       overrides.record_key_subject_name_strategy);
     incremental_update(
-      properties.record_key_subject_name_strategy_compat,
+      updated_properties.record_key_subject_name_strategy_compat,
       overrides.record_key_subject_name_strategy_compat);
     incremental_update(
-      properties.record_value_schema_id_validation,
+      updated_properties.record_value_schema_id_validation,
       overrides.record_value_schema_id_validation);
     incremental_update(
-      properties.record_value_schema_id_validation_compat,
+      updated_properties.record_value_schema_id_validation_compat,
       overrides.record_value_schema_id_validation_compat);
     incremental_update(
-      properties.record_value_subject_name_strategy,
+      updated_properties.record_value_subject_name_strategy,
       overrides.record_value_subject_name_strategy);
     incremental_update(
-      properties.record_value_subject_name_strategy_compat,
+      updated_properties.record_value_subject_name_strategy_compat,
       overrides.record_value_subject_name_strategy_compat);
     incremental_update(
-      properties.initial_retention_local_target_bytes,
+      updated_properties.initial_retention_local_target_bytes,
       overrides.initial_retention_local_target_bytes);
     incremental_update(
-      properties.initial_retention_local_target_ms,
+      updated_properties.initial_retention_local_target_ms,
       overrides.initial_retention_local_target_ms);
-    incremental_update(properties.write_caching, overrides.write_caching);
-    incremental_update(properties.flush_ms, overrides.flush_ms);
-    incremental_update(properties.flush_bytes, overrides.flush_bytes);
+    incremental_update(
+      updated_properties.write_caching, overrides.write_caching);
+    incremental_update(updated_properties.flush_ms, overrides.flush_ms);
+    incremental_update(updated_properties.flush_bytes, overrides.flush_bytes);
+
+    auto& properties = tp->second.get_configuration().properties;
+
     // no configuration change, no need to generate delta
-    if (properties == properties_snapshot) {
+    if (updated_properties == properties) {
         co_return errc::success;
     }
 
-    if (!schema_id_validation_validator::is_valid(properties)) {
+    if (!schema_id_validation_validator::is_valid(updated_properties)) {
         co_return schema_id_validation_validator::ec;
     }
+
+    // Apply the changes
+    properties = std::move(updated_properties);
 
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();

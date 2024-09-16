@@ -54,8 +54,6 @@ redpanda_cc_library(
         "transform_manager.h",
         "transform_processor.cc",
         "transform_processor.h",
-        "txn_reader.cc",
-        "txn_reader.h",
     ],
     hdrs = [
         "api.h",
@@ -71,6 +69,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/features",
         "//src/v/kafka/server",
+        "//src/v/kafka/utils:txn_reader",
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/raft",

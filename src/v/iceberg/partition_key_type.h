@@ -33,6 +33,8 @@ struct partition_key_type {
     // Constructs the appropriate partition key type from the given partition
     // spec and schema.
     static partition_key_type create(const partition_spec&, const schema&);
+
+    partition_key_type copy() const;
 };
 
 } // namespace iceberg

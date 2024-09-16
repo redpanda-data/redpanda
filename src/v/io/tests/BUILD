@@ -93,7 +93,7 @@ redpanda_cc_gtest(
     srcs = ["io_queue_test.cc"],
     # scheduler test is memory hungary since it track copies of all dispatched
     # and completed ios. scaling down cpus give each core more breathing room.
-    args = ["-c2"],
+    cpu = 2,
     deps = [
         ":testing",
         "//src/v/base",
@@ -110,7 +110,7 @@ redpanda_cc_gtest(
     srcs = ["scheduler_test.cc"],
     # scheduler test is memory hungary since it track copies of all dispatched
     # and completed ios. scaling down cpus give each core more breathing room.
-    args = ["-c2"],
+    cpu = 2,
     deps = [
         ":testing",
         "//src/v/base",
@@ -125,7 +125,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "pager_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = ["pager_test.cc"],
     deps = [
         ":testing",

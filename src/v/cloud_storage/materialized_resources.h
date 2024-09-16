@@ -74,26 +74,16 @@ public:
 
     ts_read_path_probe& get_read_path_probe();
 
-    /// Acquire hydration units
-    ///
-    /// The undrlying semaphore limits number of parallel hydrations
-    ss::future<ssx::semaphore_units> get_hydration_units(size_t n);
-    ss::input_stream<char>
-    throttle_download(ss::input_stream<char> underlying, ss::abort_source& as);
-
 private:
     /// Timer use to periodically evict stale segment readers
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
 
     config::binding<std::optional<uint32_t>> _max_segment_readers_per_shard;
-    config::binding<std::optional<uint32_t>>
-      _max_concurrent_hydrations_per_shard;
     config::binding<size_t> _storage_read_buffer_size;
     config::binding<int16_t> _storage_read_readahead_count;
 
     size_t max_memory_utilization() const;
-    size_t max_parallel_hydrations() const;
 
     /// How many remote_segment_batch_reader instances exist
     size_t current_segment_readers() const;
@@ -117,18 +107,6 @@ private:
     /// Counts the number of times when get_segment_units() was
     /// called and had to sleep because no units were immediately available.
     uint64_t get_segments_delayed() { return _segments_delayed; }
-
-    /// Consume from _eviction_list
-    ss::future<> run_eviction_loop();
-
-    /// Set bandwidth for tiered-storage scheduling_group
-    ss::future<> set_disk_max_bandwidth(size_t tput);
-
-    /// Set download bandwidth for cloud storage API
-    void set_net_max_bandwidth(size_t tput);
-
-    /// Recalculate and reset throughput limits
-    ss::future<> update_throughput();
 
     /// Try to evict segment readers until `target_free` units are available in
     /// _reader_units, i.e. available for new readers to be created.
@@ -160,7 +138,6 @@ private:
     ss::gate _gate;
 
     adjustable_semaphore _mem_units;
-    adjustable_semaphore _hydration_units;
 
     /// Size of the materialized_manifest_cache
     config::binding<size_t> _manifest_meta_size;
@@ -174,11 +151,6 @@ private:
     uint64_t _segments_delayed{0};
 
     ts_read_path_probe _read_path_probe;
-    token_bucket<> _throughput_limit;
-    config::binding<std::optional<size_t>> _throughput_shard_limit_config;
-    config::binding<std::optional<size_t>> _relative_throughput;
-    bool _throttling_disabled{false};
-    std::optional<size_t> _device_throughput;
     config::binding<uint32_t> _cache_carryover_bytes;
     // Memory reserved for cache carryover mechanism
     std::optional<ssx::semaphore_units> _carryover_units;

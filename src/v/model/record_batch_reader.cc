@@ -135,6 +135,22 @@ record_batch_reader make_foreign_memory_record_batch_reader(record_batch b) {
     return make_foreign_memory_record_batch_reader(std::move(data));
 }
 
+record_batch_reader make_empty_record_batch_reader() {
+    class reader final : public record_batch_reader::impl {
+    public:
+        bool is_end_of_stream() const final { return true; }
+
+        ss::future<storage_t> do_load_slice(timeout_clock::time_point) final {
+            co_return data_t{};
+        }
+
+        void print(std::ostream& os) final {
+            os << "{empty_record_batch_reader}";
+        }
+    };
+    return make_record_batch_reader<reader>();
+}
+
 record_batch_reader make_generating_record_batch_reader(
   ss::noncopyable_function<ss::future<record_batch_reader::data_t>()> gen) {
     class reader final : public record_batch_reader::impl {

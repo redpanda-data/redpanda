@@ -408,6 +408,7 @@ void admin_server::configure_admin_routes() {
     register_shadow_indexing_routes();
     register_wasm_transform_routes();
     register_data_migration_routes();
+    register_topic_routes();
     /**
      * Special REST apis active only in recovery mode
      */
@@ -650,7 +651,7 @@ void admin_server::log_exception(
 
     try {
         std::rethrow_exception(eptr);
-    } catch (ss::httpd::base_exception& ex) {
+    } catch (const ss::httpd::base_exception& ex) {
         const auto status = static_cast<http_status_ut>(ex.status());
         if (ex.status() == http_status::internal_server_error) {
             vlog(adminlog.error, "{}", log_ex(status));
@@ -1274,7 +1275,7 @@ void admin_server::register_config_routes() {
               try {
                   config::shard_local_cfg().to_json_single_key(
                     writer, config::redact_secrets::yes, key_str);
-              } catch (std::out_of_range&) {
+              } catch (const std::out_of_range&) {
                   throw ss::httpd::bad_param_exception(
                     fmt::format("Unknown property {{{}}}", key_str));
               }
@@ -1346,7 +1347,7 @@ void admin_server::register_config_routes() {
           ss::log_level cur_level;
           try {
               cur_level = ss::global_logger_registry().get_logger_level(name);
-          } catch (std::out_of_range&) {
+          } catch (const std::out_of_range&) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Cannot set log level: unknown logger {{{}}}", name));
           }
@@ -1387,7 +1388,7 @@ void admin_server::register_config_routes() {
           ss::log_level cur_level;
           try {
               cur_level = ss::global_logger_registry().get_logger_level(name);
-          } catch (std::out_of_range&) {
+          } catch (const std::out_of_range&) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Cannot set log level: unknown logger {{{}}}", name));
           }

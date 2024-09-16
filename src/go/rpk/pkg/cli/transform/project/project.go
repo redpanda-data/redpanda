@@ -111,7 +111,7 @@ func UnmarshalConfig(b []byte, c *Config) error {
 		Env:          raw.Env,
 		Compression:  raw.Compression,
 	}
-	if (c.OutputTopics == nil || len(c.OutputTopics) == 0) && len(raw.OutputTopic) > 0 {
+	if len(c.OutputTopics) == 0 && len(raw.OutputTopic) > 0 {
 		c.OutputTopics = []string{raw.OutputTopic}
 	}
 	return c.Language.Set(raw.Language)

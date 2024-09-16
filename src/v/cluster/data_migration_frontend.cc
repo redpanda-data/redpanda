@@ -32,6 +32,7 @@ namespace cluster::data_migrations {
 
 frontend::frontend(
   model::node_id self,
+  bool cloud_storage_api_initialized,
   migrations_table& table,
   ss::sharded<features::feature_table>& features,
   ss::sharded<controller_stm>& stm,
@@ -39,13 +40,14 @@ frontend::frontend(
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
+  , _cloud_storage_api_initialized(cloud_storage_api_initialized)
   , _table(table)
   , _features(features)
   , _controller(stm)
   , _leaders_table(leaders)
   , _connections(connections)
   , _as(as)
-  , _operation_timeout(5s) {}
+  , _operation_timeout(10s) {}
 
 template<
   typename Request,
@@ -53,13 +55,13 @@ template<
   typename DispatchFunc,
   typename ProcessFunc,
   typename ReplyMapperFunc>
-auto frontend::process_or_dispatch(
+ss::future<std::invoke_result_t<ReplyMapperFunc, result<Reply>>>
+frontend::process_or_dispatch(
   Request req,
   can_dispatch_to_leader can_dispatch,
   DispatchFunc dispatch,
   ProcessFunc process,
   ReplyMapperFunc reply_mapper) {
-    using result_t = std::invoke_result_t<ReplyMapperFunc, result<Reply>>;
     auto controller_leader = _leaders_table.local().get_leader(
       model::controller_ntp);
     /// Return early if there is no controller leader
@@ -69,7 +71,7 @@ auto frontend::process_or_dispatch(
           "unable to process request {}, no controller present",
           req);
 
-        return ssx::now<result_t>(errc::no_leader_controller);
+        co_return errc::no_leader_controller;
     }
 
     /// If current node is a leader, process request
@@ -78,13 +80,13 @@ auto frontend::process_or_dispatch(
           dm_log.debug,
           "current node is controller leader, processing request {}",
           req);
-        return process(std::move(req));
+        co_return co_await process(std::move(req));
     }
 
     /// If current node is not a leader and request can not be dispatched,
     /// return error
     if (!can_dispatch) {
-        return ssx::now<result_t>(errc::not_leader);
+        co_return errc::not_leader;
     }
 
     vlog(
@@ -93,23 +95,29 @@ auto frontend::process_or_dispatch(
       req,
       *controller_leader);
     /// If leader is somewhere else, dispatch RPC request to current leader
-    return _connections.local()
-      .with_node_client<data_migrations_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        *controller_leader,
-        _operation_timeout,
-        [req = std::move(req), dispatch = std::forward<DispatchFunc>(dispatch)](
-          data_migrations_client_protocol client) mutable {
-            return dispatch(std::move(req), client)
-              .then(&rpc::get_ctx_data<Reply>);
-        })
-      .then([reply_mapper = std::forward<ReplyMapperFunc>(reply_mapper)](
-              result<Reply> r) { return reply_mapper(std::move(r)); });
+    auto reply = co_await _connections.local()
+                   .with_node_client<data_migrations_client_protocol>(
+                     _self,
+                     ss::this_shard_id(),
+                     *controller_leader,
+                     _operation_timeout,
+                     [req = std::move(req),
+                      dispatch = std::forward<DispatchFunc>(dispatch)](
+                       data_migrations_client_protocol client) mutable {
+                         return dispatch(std::move(req), client)
+                           .then(&rpc::get_ctx_data<Reply>);
+                     });
+    vlog(
+      dm_log.debug,
+      "got reply {} from controller leader at {}",
+      reply,
+      *controller_leader);
+    co_return reply_mapper(std::move(reply));
 }
 
 bool frontend::data_migrations_active() const {
-    return _features.local().is_active(features::feature::data_migrations);
+    return _features.local().is_active(features::feature::data_migrations)
+           && _cloud_storage_api_initialized;
 }
 
 ss::future<result<id>> frontend::create_migration(
@@ -327,8 +335,8 @@ frontend::do_update_migration_state(id id, state state) {
           dm_log.warn,
           "migration {} cannot be transitioned from state {} to {}",
           id,
-          state,
-          cur_state);
+          cur_state,
+          state);
         co_return errc::invalid_data_migration_state;
     }
     ec = co_await replicate_and_wait(
@@ -358,6 +366,7 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
     validate_migration_shard();
     auto ec = co_await insert_barrier();
     if (ec) {
+        vlog(dm_log.warn, "failed waiting for barrier: {}", ec);
         co_return ec;
     }
     /**
@@ -365,6 +374,7 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
      */
     auto migration = _table.get_migration(id);
     if (!migration) {
+        vlog(dm_log.warn, "migration {} id not found", id);
         co_return errc::data_migration_not_exists;
     }
 
@@ -375,8 +385,10 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
       _operation_timeout + model::timeout_clock::now());
 
     if (ec) {
+        vlog(dm_log.warn, "failed to send remove_data_migration_cmd: {}", ec);
         co_return ec;
     }
+    vlog(dm_log.debug, "successfully sent migration {} delete request", id);
 
     co_return errc::success;
 }

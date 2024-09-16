@@ -10,10 +10,11 @@
 
 #include "bytes/iobuf.h"
 #include "iceberg/manifest.h"
+#include "iceberg/partition_key_type.h"
 
 namespace iceberg {
 
 iobuf serialize_avro(const manifest&);
-manifest parse_manifest(iobuf);
+manifest parse_manifest(const partition_key_type&, iobuf);
 
 } // namespace iceberg

@@ -54,6 +54,8 @@ v_cc_library(
     admin/kafka.cc
     admin/util.cc
     admin/migrations.cc
+    admin/topics.cc
+    admin/data_migration_utils.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc
@@ -61,6 +63,7 @@ v_cc_library(
     Seastar::seastar
     v::crypto
     v::cluster
+    v::debug_bundle
     v::kafka_recovery
     v::finjector
     v::kafka

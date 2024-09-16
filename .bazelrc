@@ -2,6 +2,7 @@ common --registry=https://bcr.bazel.build
 common --extra_toolchains=@llvm_17_toolchain//:all
 
 common --@toolchains_llvm//toolchain/config:libunwind=False
+common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 
 common:clang-18 --extra_toolchains=@llvm_18_toolchain//:all
@@ -27,6 +28,16 @@ build --host_action_env=CXXFLAGS=-Wno-int-conversion
 build --action_env=CXXFLAGS=-Wno-int-conversion
 build --host_action_env=CFLAGS=-Wno-int-conversion
 build --action_env=CFLAGS=-Wno-int-conversion
+
+build --keep_going
+
+# prevent actions and tests from using the network. anything that needs to
+# opt-out (e.g. a network test) can use `tags=["requires-network"]`.
+build --sandbox_default_allow_network=false
+
+# prevent certain environment variables (e.g. PATH and LD_LIBRARY_PATH) from
+# leaking into the build.
+build --incompatible_strict_action_env
 
 # =================================
 # Sanitizer
@@ -69,20 +80,7 @@ build:release --config=secure
 build:release --copt -mllvm --copt -inline-threshold=2500
 build:release --linkopt=-flto
 
-build --keep_going
-
-# prevent actions and tests from using the network. anything that needs to
-# opt-out (e.g. a network test) can use `tags=["requires-network"]`.
-build --sandbox_default_allow_network=false
-
-# prevent certain environment variables (e.g. PATH and LD_LIBRARY_PATH) from
-# leaking into the build.
-build --incompatible_strict_action_env
-
-# disabling until we are able to address the issue with GHA checkout into
-# container resulting in a Git repository that doesn't seems to cause errors
-# https://github.com/actions/checkout/issues/363
-#build --workspace_status_command=bazel/workspace_status.sh
+build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
 
 # =================================
 # Testing

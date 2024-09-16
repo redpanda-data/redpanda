@@ -62,7 +62,8 @@ static void set_version(iobuf& buf, int8_t version) {
     auto tmp = iobuf_to_bytes(buf);
     buf.clear();
     buf.append((const char*)&version, sizeof(version));
-    buf.append(bytes_to_iobuf(tmp.substr(1)));
+    vassert(tmp.size() > 1, "unexpected buffer size: {}", tmp.size());
+    buf.append(tmp.data() + 1, tmp.size() - 1);
 }
 
 // encode/decode using new serde framework

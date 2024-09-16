@@ -190,6 +190,28 @@ void transform_metadata::serde_write(iobuf& out) const {
     serde::write(out, compression_mode);
 }
 
+void transform_metadata::serde_read(iobuf_parser& in, const serde::header& h) {
+    using serde::read_nested;
+
+    name = read_nested<decltype(name)>(in, h._bytes_left_limit);
+    input_topic = read_nested<decltype(input_topic)>(in, h._bytes_left_limit);
+    output_topics = read_nested<decltype(output_topics)>(
+      in, h._bytes_left_limit);
+    environment = read_nested<decltype(environment)>(in, h._bytes_left_limit);
+    uuid = read_nested<decltype(uuid)>(in, h._bytes_left_limit);
+    source_ptr = read_nested<decltype(source_ptr)>(in, h._bytes_left_limit);
+
+    if (h._version >= 1) {
+        offset_options = read_nested<decltype(offset_options)>(
+          in, h._bytes_left_limit);
+    }
+    if (h._version >= 2) {
+        paused = read_nested<decltype(paused)>(in, h._bytes_left_limit);
+        compression_mode = read_nested<decltype(compression_mode)>(
+          in, h._bytes_left_limit);
+    }
+}
+
 bool transform_metadata_patch::empty() const noexcept {
     return !env.has_value() && !paused.has_value()
            && !compression_mode.has_value();

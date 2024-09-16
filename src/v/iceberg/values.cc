@@ -18,6 +18,22 @@ namespace iceberg {
 
 namespace {
 
+struct primitive_copying_visitor {
+    template<typename PrimitiveT>
+    primitive_value operator()(const PrimitiveT& v) const {
+        return v;
+    }
+    primitive_value operator()(const string_value& v) const {
+        return string_value{v.val.copy()};
+    }
+    primitive_value operator()(const fixed_value& v) const {
+        return fixed_value{v.val.copy()};
+    }
+    primitive_value operator()(const binary_value& v) const {
+        return binary_value{v.val.copy()};
+    }
+};
+
 struct primitive_hashing_visitor {
     size_t operator()(const boolean_value& v) const {
         return std::hash<bool>()(v.val);
@@ -111,6 +127,10 @@ void ostream_val_ptr(std::ostream& o, const std::optional<value>& v) {
 }
 
 } // namespace
+
+primitive_value make_copy(const primitive_value& v) {
+    return std::visit(primitive_copying_visitor{}, v);
+}
 
 struct primitive_value_comparison_visitor {
     template<typename T, typename U>
@@ -232,6 +252,32 @@ bool operator==(
         return true;
     }
     return *lhs == *rhs;
+}
+
+struct comparison_visitor {
+    explicit comparison_visitor(const value& lhs)
+      : lhs_(lhs) {}
+    const value& lhs_;
+
+    bool operator()(const primitive_value& rhs) {
+        return std::get<primitive_value>(lhs_) == rhs;
+    }
+    bool operator()(const std::unique_ptr<list_value>& rhs) {
+        return std::get<std::unique_ptr<list_value>>(lhs_) == rhs;
+    }
+    bool operator()(const std::unique_ptr<struct_value>& rhs) {
+        return std::get<std::unique_ptr<struct_value>>(lhs_) == rhs;
+    }
+    bool operator()(const std::unique_ptr<map_value>& rhs) {
+        return std::get<std::unique_ptr<map_value>>(lhs_) == rhs;
+    }
+};
+
+bool operator==(const value& lhs, const value& rhs) {
+    if (lhs.index() != rhs.index()) {
+        return false;
+    }
+    return std::visit(comparison_visitor{lhs}, rhs);
 }
 
 std::ostream& operator<<(std::ostream& o, const boolean_value& v) {
@@ -364,6 +410,32 @@ std::ostream& operator<<(std::ostream& o, const struct_value& v) {
     }
     o << "}";
     return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const std::unique_ptr<struct_value>& v) {
+    if (!v) {
+        o << "struct{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const std::unique_ptr<list_value>& v) {
+    if (!v) {
+        o << "list{nullptr}";
+        return o;
+    }
+    return o << *v;
+}
+
+std::ostream& operator<<(std::ostream& o, const std::unique_ptr<map_value>& v) {
+    if (!v) {
+        o << "map{nullptr}";
+        return o;
+    }
+    return o << *v;
 }
 
 std::ostream& operator<<(std::ostream& o, const value& v) {

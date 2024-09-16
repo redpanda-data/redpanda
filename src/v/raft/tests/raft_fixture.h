@@ -11,28 +11,21 @@
  */
 
 #pragma once
-
-#include "base/vassert.h"
-#include "bytes/iobuf.h"
 #include "bytes/random.h"
 #include "cluster/errc.h"
+#include "config/mock_property.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/errc.h"
 #include "raft/fwd.h"
-#include "raft/group_configuration.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
-#include "random/generators.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/test.h"
@@ -45,11 +38,7 @@
 #include <absl/container/node_hash_map.h>
 #include <boost/range/irange.hpp>
 
-#include <optional>
 #include <ranges>
-#include <system_error>
-#include <type_traits>
-
 namespace raft {
 
 static constexpr raft::group_id test_group(123);
@@ -170,7 +159,8 @@ public:
       ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb,
       bool enable_longest_log_detection,
-      std::chrono::milliseconds election_timeout);
+      config::binding<std::chrono::milliseconds> election_timeout,
+      config::binding<std::chrono::milliseconds> heartbeat_interval);
 
     raft_node_instance(
       model::node_id id,
@@ -179,7 +169,8 @@ public:
       ss::sharded<features::feature_table>& feature_table,
       leader_update_clb_t leader_update_clb,
       bool enable_longest_log_detection,
-      std::chrono::milliseconds election_timeout);
+      config::binding<std::chrono::milliseconds> election_timeout,
+      config::binding<std::chrono::milliseconds> heartbeat_interval);
 
     raft_node_instance(const raft_node_instance&) = delete;
     raft_node_instance(raft_node_instance&&) noexcept = delete;
@@ -261,6 +252,7 @@ private:
     bool started = false;
     bool _enable_longest_log_detection;
     config::binding<std::chrono::milliseconds> _election_timeout;
+    config::binding<std::chrono::milliseconds> _heartbeat_interval;
 };
 
 class raft_fixture
@@ -536,7 +528,10 @@ public:
     }
 
     void set_election_timeout(std::chrono::milliseconds timeout) {
-        _election_timeout = timeout;
+        _election_timeout.update(std::move(timeout));
+    }
+    void set_heartbeat_interval(std::chrono::milliseconds timeout) {
+        _heartbeat_interval.update(std::move(timeout));
     }
 
 private:
@@ -550,7 +545,8 @@ private:
     ss::sharded<features::feature_table> _features;
     bool _enable_longest_log_detection = true;
     std::optional<leader_update_clb_t> _leader_clb;
-    std::chrono::milliseconds _election_timeout = 500ms;
+    config::mock_property<std::chrono::milliseconds> _election_timeout{500ms};
+    config::mock_property<std::chrono::milliseconds> _heartbeat_interval{50ms};
 };
 
 template<class... STM>

@@ -51,7 +51,7 @@ ss::future<bool> api::wait_for_cluster_uuid() {
         vassert(
           _cluster_uuid.has_value(), "Expected cluster UUID after waiting");
         co_return true;
-    } catch (ss::broken_condition_variable&) {
+    } catch (const ss::broken_condition_variable&) {
         vlog(stlog.info, "Stopped waiting for cluster UUID");
     }
     co_return false;

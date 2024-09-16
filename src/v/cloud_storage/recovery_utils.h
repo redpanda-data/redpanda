@@ -13,8 +13,7 @@
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-
-class retry_chain_node;
+#include "utils/retry_chain_node.h"
 
 namespace storage {
 class ntp_config;

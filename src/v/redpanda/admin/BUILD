@@ -116,6 +116,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "data_migration_utils",
+    srcs = [
+        "data_migration_utils.cc",
+    ],
+    hdrs = [
+        "data_migration_utils.h",
+    ],
+    include_prefix = "redpanda/admin",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":migration",
+        "//src/v/cluster",
+        "//src/v/json",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "admin",
     srcs = [
         "debug.cc",
@@ -125,6 +143,7 @@ redpanda_cc_library(
         "recovery.cc",
         "security.cc",
         "server.cc",
+        "topics.cc",
         "transaction.cc",
         "transform.cc",
         "usage.cc",
@@ -159,6 +178,7 @@ redpanda_cc_library(
         ":cluster_config",
         ":cluster_config_schema_util",
         ":config",
+        ":data_migration_utils",
         ":debug",
         ":features",
         ":hbadger",

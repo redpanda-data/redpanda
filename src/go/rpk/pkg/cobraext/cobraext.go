@@ -31,7 +31,7 @@ func DeprecatedCmd(name string, args int) *cobra.Command {
 		Use:   name,
 		Short: "This command has been deprecated.",
 		Args:  cobra.ExactArgs(args),
-		Run:   func(cmd *cobra.Command, args []string) {},
+		Run:   func(_ *cobra.Command, _ []string) {},
 	}
 }
 
@@ -105,7 +105,15 @@ func StripFlags(args []string, fs *pflag.FlagSet, long []string, short []string)
 			_, strip := stripLong[k]
 			if f == nil || !strip {
 				inFlag = len(kv) == 1
-				keep = append(keep, arg) // either we are keeping this flag, or it is not in our flag set so we cannot strip it
+				// either we are keeping this flag, or it is not in our flag
+				// set, so we cannot strip it.
+				keep = append(keep, arg)
+				// If we are at this point is because the flag does not exist,
+				// and it's part of the plugin. If the next arg starts with
+				// '-' we will assume this flag is a boolean flag.
+				if i+1 < len(args) && strings.HasPrefix(args[i+1], "-") {
+					inFlag = false
+				}
 				continue
 			}
 
@@ -191,13 +199,13 @@ func StripFlags(args []string, fs *pflag.FlagSet, long []string, short []string)
 // some flags in args. The flagset should be received from *inside* a cobra
 // command, where persistent and non-persistent flags from all parents are
 // merged. For repeated flags, only the last value is returned.
-func LongFlagValue(args []string, fs *pflag.FlagSet, flag string) string {
+func LongFlagValue(args []string, fs *pflag.FlagSet, flag, shorthand string) string {
 	nop := new(nopValue)
 	dup := pflag.NewFlagSet("dup", pflag.ContinueOnError)
 	dup.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
 
 	var f string
-	dup.StringVar(&f, flag, "", "")
+	dup.StringVarP(&f, flag, shorthand, "", "")
 	added := dup.Lookup(flag)
 	fs.VisitAll(func(f *pflag.Flag) {
 		if f.Name != flag {

@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/spf13/afero"
@@ -126,6 +128,45 @@ type Plugin struct {
 // "_".
 func (p *Plugin) FullName() string { return strings.Join(p.Arguments, "_") }
 
+type uninstallOperation struct {
+	Path    string
+	Message string
+}
+
+// Uninstall uninstalls the plugin. To uninstall the shadowed plugins, use
+// removeShadows.
+func (p *Plugin) Uninstall(removeShadows bool) (ops []uninstallOperation, anyFailed bool) {
+	if err := os.Remove(p.Path); err != nil {
+		ops = append(ops, uninstallOperation{
+			Path:    p.Path,
+			Message: err.Error(),
+		})
+		anyFailed = true
+	} else {
+		ops = append(ops, uninstallOperation{
+			Path:    p.Path,
+			Message: "OK",
+		})
+	}
+	if removeShadows {
+		for _, shadowed := range p.ShadowedPaths {
+			if err := os.Remove(shadowed); err != nil {
+				ops = append(ops, uninstallOperation{
+					Path:    shadowed,
+					Message: fmt.Sprintf("Unable to remove shadowed plugin: %v", err),
+				})
+				anyFailed = true
+			} else {
+				ops = append(ops, uninstallOperation{
+					Path:    shadowed,
+					Message: "OK",
+				})
+			}
+		}
+	}
+	return
+}
+
 // Plugins is a handy alias for a slice of plugins.
 type Plugins []Plugin
 
@@ -164,6 +205,7 @@ func UserPaths() []string {
 	defaultPath, err := DefaultBinPath()
 	pathList := filepath.SplitList(os.Getenv("PATH"))
 	if err != nil {
+		zap.L().Sugar().Warnf("Unable to get default plugin path: %v; using $PATH only", err)
 		// If there is an error getting the default bin path we will only look
 		// for the binary in the $PATH.
 		return pathList

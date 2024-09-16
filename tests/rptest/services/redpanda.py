@@ -116,6 +116,11 @@ DEFAULT_LOG_ALLOW_LIST = [
     # lead to any test failure because the error is transient (AWS weather).
     re.compile(r"unexpected REST API error \"Internal Server Error\" detected"
                ),
+
+    # Redpanda upgrade tests will use the default location of rpk (/usr/bin/rpk)
+    # which is not present in typical CI runs, which results in the following
+    # error message from the debug bundle service
+    re.compile(r"Current specified RPK location"),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
@@ -159,6 +164,7 @@ CHAOS_LOG_ALLOW_LIST = [
 # without a corresponding mock service set up to return credentials
 IAM_ROLES_API_CALL_ALLOW_LIST = [
     re.compile(r'cloud_roles - .*api request failed'),
+    re.compile(r'cloud_roles - .*Failed to get IMDSv2 token'),
     re.compile(r'cloud_roles - .*failed during IAM credentials refresh:'),
 ]
 
@@ -841,8 +847,9 @@ class SISettings:
             conf[
                 'cloud_storage_max_throughput_per_shard'] = self.cloud_storage_max_throughput_per_shard
 
-        # Always run with scrubbing in testing.
-        conf['cloud_storage_enable_scrubbing'] = True
+        # Enable scrubbing in testing unless it was explicitly disabled.
+        if 'cloud_storage_enable_scrubbing' not in conf:
+            conf['cloud_storage_enable_scrubbing'] = True
 
         return conf
 
@@ -902,6 +909,18 @@ class TLSProvider:
         Create a certificate for an internal service client.
         """
         raise NotImplementedError("create_service_client_cert")
+
+    def use_pkcs12_file(self) -> bool:
+        """
+        Use the generated PKCS#12 file instead of the key/cert
+        """
+        return False
+
+    def p12_password(self, node: ClusterNode) -> str:
+        """
+        Get the PKCS#12 file password for the node
+        """
+        raise NotImplementedError("p12_password")
 
 
 class SecurityConfig:
@@ -1275,6 +1294,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
+    TLS_SERVER_P12_FILE = "/etc/redpanda/server.p12"
     TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
     TLS_CA_CRL_FILE = "/etc/redpanda/ca.crl"
     SYSTEM_TLS_CA_CRT_FILE = "/usr/local/share/ca-certificates/ca.crt"
@@ -1703,7 +1723,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         self._cc_config = context.globals[self.GLOBAL_CLOUD_CLUSTER_CONFIG]
 
         self._provider_config = {}
-        match get_cloud_provider():
+        match context.globals.get("cloud_provider"):
             case "aws" | "gcp":
                 self._provider_config.update({
                     'access_key':
@@ -2884,6 +2904,15 @@ class RedpandaService(RedpandaServiceBase):
             node.account.mkdirs(
                 os.path.dirname(RedpandaService.TLS_SERVER_CRT_FILE))
             node.account.copy_to(cert.crt, RedpandaService.TLS_SERVER_CRT_FILE)
+
+            self.logger.info(
+                f"Writing Redpanda node P12 file: {RedpandaService.TLS_SERVER_P12_FILE}"
+            )
+            self.logger.debug("P12 file is binary encoded")
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.TLS_SERVER_P12_FILE))
+            node.account.copy_to(cert.p12_file,
+                                 RedpandaService.TLS_SERVER_P12_FILE)
 
             self.logger.info(
                 f"Writing Redpanda node tls ca cert file: {RedpandaService.TLS_CA_CRT_FILE}"
@@ -4178,17 +4207,25 @@ class RedpandaService(RedpandaServiceBase):
             conf = yaml.dump(doc)
 
         if self._security.tls_provider:
+            p12_password = self._security.tls_provider.p12_password(
+                node) if self._security.tls_provider.use_pkcs12_file(
+                ) else None
             tls_config = [
                 dict(
                     enabled=True,
                     require_client_auth=self.require_client_auth(),
                     name=n,
-                    key_file=RedpandaService.TLS_SERVER_KEY_FILE,
-                    cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                     truststore_file=RedpandaService.TLS_CA_CRT_FILE,
                     crl_file=RedpandaService.TLS_CA_CRL_FILE,
                 ) for n in ["dnslistener", "iplistener"]
             ]
+            for n in tls_config:
+                if p12_password is None:
+                    n["cert_file"] = RedpandaService.TLS_SERVER_CRT_FILE
+                    n["key_file"] = RedpandaService.TLS_SERVER_KEY_FILE
+                else:
+                    n["p12_file"] = RedpandaService.TLS_SERVER_P12_FILE
+                    n["p12_password"] = p12_password
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)
@@ -4257,6 +4294,13 @@ class RedpandaService(RedpandaServiceBase):
             )
             conf.update(
                 dict(http_authentication=self._security.http_authentication))
+
+        # Only override `rpk_path` if not already provided
+        if (cur_ver == RedpandaInstaller.HEAD
+                or cur_ver >= (24, 3, 1)) and 'rpk_path' not in conf:
+            # Introduced rpk_path to v24.3
+            rpk_path = f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
+            conf.update(dict(rpk_path=rpk_path))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
@@ -5224,6 +5268,62 @@ class RedpandaService(RedpandaServiceBase):
             return sum(s.value for s in samples.samples)
         else:
             return None
+
+    def wait_node_add_rebalance_finished(self,
+                                         new_nodes,
+                                         admin=None,
+                                         min_partitions=5,
+                                         progress_timeout=30,
+                                         timeout=300,
+                                         backoff=2):
+        """Waits until the rebalance triggered by adding new nodes is finished."""
+
+        new_node_names = [n.name for n in new_nodes]
+
+        if admin is None:
+            admin = Admin(self)
+        started_at = time.monotonic()
+        last_reconfiguring = set()
+        last_bytes_moved = 0
+        last_update = started_at
+
+        while True:
+            time.sleep(backoff)
+
+            if time.monotonic() - last_update > progress_timeout:
+                raise TimeoutError(
+                    f"rebalance after adding nodes {new_node_names} "
+                    "stopped making progress")
+
+            if time.monotonic() - started_at > timeout:
+                raise TimeoutError(
+                    f"rebalance after adding nodes {new_node_names} "
+                    "timed out")
+
+            cur_reconfiguring = set()
+            cur_bytes_moved = 0
+            for p in admin.list_reconfigurations():
+                cur_reconfiguring.add(
+                    f"{p['ns']}/{p['topic']}/{p['partition']}")
+                cur_bytes_moved += p['bytes_moved']
+
+            if (cur_reconfiguring != last_reconfiguring
+                    or cur_bytes_moved != last_bytes_moved):
+                last_update = time.monotonic()
+
+            last_reconfiguring = cur_reconfiguring
+            last_bytes_moved = cur_bytes_moved
+
+            if len(cur_reconfiguring) > 0:
+                continue
+
+            partition_counts = [
+                len(admin.get_partitions(node=n)) for n in new_nodes
+            ]
+            if any(pc < min_partitions for pc in partition_counts):
+                continue
+
+            return
 
 
 def make_redpanda_service(context: TestContext,

@@ -14,17 +14,25 @@
 #include "iceberg/datatypes_json.h"
 #include "iceberg/json_utils.h"
 #include "iceberg/manifest.h"
+#include "iceberg/manifest_entry_type.h"
+#include "iceberg/manifest_entry_values.h"
+#include "iceberg/partition_json.h"
+#include "iceberg/partition_key_type.h"
 #include "iceberg/schema.h"
+#include "iceberg/schema_avro.h"
 #include "iceberg/schema_json.h"
+#include "iceberg/values_avro.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
+#include <avro/Compiler.hh>
 #include <avro/DataFile.hh>
+#include <avro/Generic.hh>
+#include <avro/GenericDatum.hh>
+#include <avro/Schema.hh>
 
 namespace iceberg {
-
-using avrogen::manifest_entry;
 
 namespace {
 ss::sstring schema_to_json_str(const schema& s) {
@@ -77,31 +85,22 @@ struct partition_spec_strs {
 };
 partition_spec partition_spec_from_str(const partition_spec_strs& strs) {
     auto spec_id = std::stoi(strs.spec_id_str);
-    json::Document parsed_spec;
-    parsed_spec.Parse(strs.fields_json_str);
-    if (!parsed_spec.IsObject()) {
+    json::Document parsed_spec_json;
+    parsed_spec_json.Parse(strs.fields_json_str);
+    auto parsed_spec = parse_partition_spec(parsed_spec_json);
+    if (parsed_spec.spec_id() != spec_id) {
         throw std::invalid_argument(fmt::format(
-          "'partition-spec' metadata has type '{}' instead of object",
-          parsed_spec.GetType()));
+          "Mismatched partition spec id {} vs {}",
+          spec_id,
+          parsed_spec.spec_id()));
     }
-    auto spec_spec_id = parse_required_i32(parsed_spec, "spec-id");
-    if (spec_spec_id != spec_id) {
-        throw std::invalid_argument(fmt::format(
-          "Mismatched partition spec id {} vs {}", spec_id, spec_spec_id));
-    }
-    return partition_spec{
-      .spec_id = partition_spec::id_t{spec_id},
-      // TODO: implement me!
-      .fields = {},
-    };
+    return parsed_spec;
 }
-partition_spec_strs partition_spec_to_str(const partition_spec& spec) {
-    partition_spec_strs strs;
-    strs.spec_id_str = fmt::format("{}", spec.spec_id());
-    // TODO: implement me!
-    strs.fields_json_str = fmt::format(
-      "{{\"spec-id\":{},\"fields\":[]}}", spec.spec_id());
-    return strs;
+ss::sstring partition_spec_to_str(const partition_spec& spec) {
+    json::StringBuffer spec_buf;
+    json::Writer<json::StringBuffer> w_spec(spec_buf);
+    rjson_serialize(w_spec, spec);
+    return spec_buf.GetString();
 }
 
 std::map<std::string, std::string>
@@ -110,13 +109,13 @@ metadata_to_map(const manifest_metadata& meta) {
     return {
       {"schema", schema_to_json_str(meta.schema)},
       {"content", std::string{content_type_to_str(meta.manifest_content_type)}},
-      {"partition-spec", partition_spec_strs.fields_json_str},
-      {"partition-spec-id", partition_spec_strs.spec_id_str},
+      {"partition-spec", partition_spec_to_str(meta.partition_spec)},
+      {"partition-spec-id", fmt::to_string(meta.partition_spec.spec_id())},
       {"format-version", std::string{format_to_str(meta.format_version)}}};
 }
 // TODO: make DataFileReader::getMetadata const!
 manifest_metadata
-metadata_from_reader(avro::DataFileReader<manifest_entry>& rdr) {
+metadata_from_reader(avro::DataFileReader<avro::GenericDatum>& rdr) {
     const auto find_required_str = [&rdr](const std::string& key) {
         auto val = rdr.getMetadata(key);
         if (!val) {
@@ -144,21 +143,26 @@ iobuf serialize_avro(const manifest& m) {
     avro_iobuf_ostream::buf_container_t bufs;
     static constexpr size_t avro_default_sync_bytes = 16_KiB;
     auto meta = metadata_to_map(m.metadata);
+    auto pk_type = partition_key_type::create(
+      m.metadata.partition_spec, m.metadata.schema);
+    auto entry_type = manifest_entry_type(std::move(pk_type));
+    auto entry_schema = avro::ValidSchema(
+      struct_type_to_avro(entry_type, "manifest_entry"));
     {
         auto out = std::make_unique<avro_iobuf_ostream>(
           4_KiB, &bufs, &bytes_streamed);
-        avro::DataFileWriter<manifest_entry> writer(
+        avro::DataFileWriter<avro::GenericDatum> writer(
           std::move(out),
-          manifest_entry::valid_schema(),
+          entry_schema,
           avro_default_sync_bytes,
           avro::NULL_CODEC,
           meta);
 
-        // TODO: the Avro code-generated manifest_entry doesn't have the r102
-        // partition field defined, as it relies on runtime information of the
-        // partition spec!
-        for (const auto& e : m.entries) {
-            writer.write(e);
+        for (auto& e : m.entries) {
+            auto entry_struct = manifest_entry_to_value(e);
+            auto entry_datum = struct_to_avro(
+              entry_struct, entry_schema.root());
+            writer.write(entry_datum);
         }
         writer.flush();
         writer.close();
@@ -174,19 +178,25 @@ iobuf serialize_avro(const manifest& m) {
     return buf;
 }
 
-manifest parse_manifest(iobuf buf) {
-    auto in = std::make_unique<avro_iobuf_istream>(buf.copy());
-    avro::DataFileReader<manifest_entry> reader(
-      std::move(in), manifest_entry::valid_schema());
+manifest parse_manifest(const partition_key_type& pk_type, iobuf buf) {
+    auto entry_type = field_type{manifest_entry_type(pk_type.copy())};
+    auto entry_schema = avro::ValidSchema(
+      struct_type_to_avro(std::get<struct_type>(entry_type), "manifest_entry"));
+    auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
+    avro::DataFileReader<avro::GenericDatum> reader(
+      std::move(in), entry_schema);
     auto meta = metadata_from_reader(reader);
     chunked_vector<manifest_entry> entries;
     while (true) {
-        manifest_entry e;
-        auto did_read = reader.read(e);
+        avro::GenericDatum d(entry_schema);
+        auto did_read = reader.read(d);
         if (!did_read) {
             break;
         }
-        entries.emplace_back(std::move(e));
+        auto parsed_struct = std::get<std::unique_ptr<struct_value>>(
+          *val_from_avro(d, entry_type, field_required::yes));
+        entries.emplace_back(
+          manifest_entry_from_value(std::move(*parsed_struct)));
     }
     manifest m;
     m.metadata = std::move(meta);

@@ -47,4 +47,13 @@ std::ostream& operator<<(std::ostream& os, manifest_format f) {
     }
 }
 
+ss::future<serialized_data_stream> base_manifest::serialize() const {
+    auto buf = co_await serialize_buf();
+    auto size = buf.size_bytes();
+    co_return serialized_data_stream{
+      .stream = make_iobuf_input_stream(std::move(buf)),
+      .size_bytes = size,
+    };
+}
+
 } // namespace cloud_storage

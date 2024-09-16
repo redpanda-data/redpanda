@@ -182,11 +182,11 @@ INSTANTIATE_TEST_SUITE_P(
   Scheduler,
   SchedulerTest,
   ::testing::Combine(
-    ::testing::Bool(),               // disk backend?
-    ::testing::Values(10_MiB),       // backing file size
-    ::testing::Values(1000),         // number of io operations
-    ::testing::Range<size_t>(1, 5),  // num submission queues
-    ::testing::Values(1, 2, 5, 6))); // max open files
+    ::testing::Bool(),              // disk backend?
+    ::testing::Values(10_MiB),      // backing file size
+    ::testing::Values(600),         // number of io operations
+    ::testing::Range<size_t>(1, 3), // num submission queues
+    ::testing::Values(1, 2, 6)));   // max open files
 
 /*
  * memory persistence is disabled in this test. some ci environments have

@@ -209,7 +209,7 @@ public:
         serde::write(buf, key);
         auto bytes = iobuf_to_bytes(buf);
         auto result = model::partition_id(
-          murmur2(bytes.c_str(), bytes.length()) % num_partitions.value());
+          murmur2(bytes.data(), bytes.size()) % num_partitions.value());
 
         auto res = co_await replicate_and_wait(
           make_coordinator_assignment_batch(

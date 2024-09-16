@@ -224,6 +224,9 @@ ss::future<> segment::do_close() {
     // after appender flushes to make sure we make things visible
     // only after appender flush
     f = f.then([this] { return _idx.flush(); });
+    if (_cache) {
+        f = f.then([this] { return _cache->clear_async(); });
+    }
     return f;
 }
 

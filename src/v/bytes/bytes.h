@@ -32,23 +32,8 @@ using bytes = ss::basic_sstring<
   >;
 
 using bytes_view = std::basic_string_view<uint8_t>;
-using bytes_opt = std::optional<bytes>;
 template<std::size_t Extent = std::dynamic_extent>
 using bytes_span = std::span<bytes::value_type, Extent>;
-
-struct bytes_type_hash {
-    using is_transparent = std::true_type;
-    // NOTE: you hash a fragmented buffer with a linearized buffer
-    //       unless you make a copy and linearize first. Our fragmented buffer
-    //       correctly implements boost::hash_combine between fragments which
-    //       would be missing altogether from a linearize buffer which is simply
-    //       the std::hash<std::string_view>()
-    //
-    //   size_t operator()(const iobuf& k) const;
-    //
-    size_t operator()(const bytes& k) const;
-    size_t operator()(const bytes_view&) const;
-};
 
 template<typename R, R (*HashFunction)(bytes::const_pointer, size_t)>
 requires requires(bytes::const_pointer data, size_t len) {
@@ -86,10 +71,9 @@ inline ss::sstring to_hex(const std::array<Char, Size>& data) {
 }
 
 std::ostream& operator<<(std::ostream& os, const bytes& b);
-std::ostream& operator<<(std::ostream& os, const bytes_opt& b);
 
 inline bytes iobuf_to_bytes(const iobuf& in) {
-    auto out = ss::uninitialized_string<bytes>(in.size_bytes());
+    bytes out(bytes::initialized_later{}, in.size_bytes());
     {
         iobuf::iterator_consumer it(in.cbegin(), in.cend());
         it.consume_to(in.size_bytes(), out.data());
@@ -127,14 +111,6 @@ struct hash<bytes_view> {
 // NOLINTNEXTLINE(cert-dcl58-cpp)
 namespace std {
 std::ostream& operator<<(std::ostream& os, const bytes_view& b);
-}
-
-inline size_t bytes_type_hash::operator()(const bytes_view& k) const {
-    return absl::Hash<bytes_view>{}(k);
-}
-
-inline size_t bytes_type_hash::operator()(const bytes& k) const {
-    return absl::Hash<bytes>{}(k);
 }
 
 inline bool
@@ -187,9 +163,3 @@ operator^(const std::array<char, Size>& a, const std::array<char, Size>& b) {
       a.begin(), a.end(), b.begin(), out.begin(), std::bit_xor<>());
     return out;
 }
-
-struct bytes_type_cmp {
-    using is_transparent = std::true_type;
-    bool operator()(const bytes& lhs, const bytes_view& rhs) const;
-    bool operator()(const bytes& lhs, const bytes& rhs) const;
-};

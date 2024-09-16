@@ -95,6 +95,7 @@ using primitive_value = std::variant<
   binary_value,
   decimal_value>;
 bool operator==(const primitive_value&, const primitive_value&);
+primitive_value make_copy(const primitive_value&);
 
 struct struct_value;
 struct list_value;
@@ -134,6 +135,7 @@ struct map_value {
 bool operator==(const map_value&, const map_value&);
 bool operator==(
   const std::unique_ptr<map_value>&, const std::unique_ptr<map_value>&);
+bool operator==(const value&, const value&);
 
 std::ostream& operator<<(std::ostream&, const boolean_value&);
 std::ostream& operator<<(std::ostream&, const int_value&);
@@ -153,6 +155,9 @@ std::ostream& operator<<(std::ostream&, const primitive_value&);
 std::ostream& operator<<(std::ostream&, const struct_value&);
 std::ostream& operator<<(std::ostream&, const list_value&);
 std::ostream& operator<<(std::ostream&, const map_value&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<struct_value>&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<list_value>&);
+std::ostream& operator<<(std::ostream&, const std::unique_ptr<map_value>&);
 std::ostream& operator<<(std::ostream&, const value&);
 
 size_t value_hash(const struct_value&);

@@ -144,6 +144,10 @@ public:
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
+    ss::sharded<data_migrations::migrated_resources>&
+    get_data_migrated_resources() {
+        return _data_migrated_resources;
+    }
     ss::sharded<data_migrations::frontend>& get_data_migration_frontend() {
         return _data_migration_frontend;
     }

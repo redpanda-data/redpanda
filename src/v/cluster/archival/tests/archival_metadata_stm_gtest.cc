@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_io/remote.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -63,6 +64,7 @@ struct archival_stm_node {
 
     ss::shared_ptr<cluster::archival_metadata_stm> archival_stm;
     ss::sharded<cloud_storage_clients::client_pool> client_pool;
+    ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<cloud_storage::remote> remote;
 };
 
@@ -73,8 +75,9 @@ public:
     seastar::future<> TearDownAsync() override {
         co_await seastar::coroutine::parallel_for_each(
           _archival_stm_nodes, [](archival_stm_node& node) {
-              return node.remote.stop().then(
-                [&node]() { return node.client_pool.stop(); });
+              return node.remote.stop()
+                .then([&node]() { return node.cloud_io.stop(); })
+                .then([&node]() { return node.client_pool.stop(); });
           });
 
         co_await raft::raft_fixture::TearDownAsync();
@@ -90,11 +93,14 @@ public:
 
             co_await stm_node.client_pool.start(
               10, ss::sharded_parameter([]() { return get_configuration(); }));
+            co_await stm_node.cloud_io.start(
+              std::ref(stm_node.client_pool),
+              ss::sharded_parameter([]() { return get_configuration(); }),
+              ss::sharded_parameter([] { return config_file; }));
 
             co_await stm_node.remote.start(
-              std::ref(stm_node.client_pool),
-              ss::sharded_parameter([] { return get_configuration(); }),
-              ss::sharded_parameter([] { return config_file; }));
+              std::ref(stm_node.cloud_io),
+              ss::sharded_parameter([] { return get_configuration(); }));
 
             co_await node->initialise(all_vnodes());
 

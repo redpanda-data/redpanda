@@ -1,26 +1,51 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//bazel:build.bzl", "redpanda_cc_library")
+load(":expand_with_stamp_vars.bzl", "expand_with_stamp_vars")
 
-# TODO(bazel) https://redpandadata.atlassian.net/browse/CORE-5568 there is some
-# learning and bits to create to properly get the version embedded. however, we
-# don't want to block all progress (there are, unfortunatley, a lot of uses in
-# the tree of redpanda_version) until that is addressed. so instead we'll fill
-# in fake version information in the bazel build until CORE-5568 is resolved.
+# Our python binary used to parse the workspace_status output and expand a template with those variables.
+py_binary(
+    name = "stamper",
+    srcs = ["stamper.py"],
+)
 
-genrule(
+# These are our defaults, it uses the same format as the values printed in //bazel:workspace_status.sh
+# If not using --config=stamp, then these will be the values in version.cc
+write_file(
+    name = "nostamp_variables",
+    out = "nostamp_variables.txt",
+    content = [
+        "STABLE_GIT_LATEST_TAG 0.0.0-dev",
+        "STABLE_GIT_COMMIT 0000000000000000000000000000000000000000",
+        "STABLE_GIT_TREE_DIRTY ",
+    ],
+)
+
+# Convert from a CMake template, to a template that works with Python's built-in string.Template
+expand_template(
+    name = "version_template",
+    out = "version.in.bazel.cc",
+    substitutions = {
+        "@GIT_VER@": "${STABLE_GIT_LATEST_TAG}",
+        "@GIT_SHA1@": "${STABLE_GIT_COMMIT}",
+        "@GIT_CLEAN_DIRTY@": "${STABLE_GIT_TREE_DIRTY}",
+    },
+    template = "version.cc.in",
+)
+
+# Use our custom rule to inject the variables from workspace_status.sh or our default if the
+# workspace_status wasn't used.
+expand_with_stamp_vars(
     name = "version_cc",
-    srcs = ["version.cc.in"],
-    outs = ["version.cc"],
-    cmd_bash = """
-    sed -e 's/@GIT_VER@/1.0.0/g' \
-        -e 's/@GIT_SHA1@/0000000000000000000000000000000000000000/g' \
-        -e 's/@GIT_CLEAN_DIRTY@//g' $< > $@
-    """,
+    out = "version.cc",
+    defaults_file = ":nostamp_variables",
+    template = ":version_template",
 )
 
 redpanda_cc_library(
     name = "version",
     srcs = [
-        "version.cc",
+        ":version_cc",
     ],
     hdrs = [
         "version.h",

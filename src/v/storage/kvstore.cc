@@ -155,8 +155,7 @@ static inline bytes make_spaced_key(kvstore::key_space ks, bytes_view key) {
     auto ks_native
       = static_cast<std::underlying_type<kvstore::key_space>::type>(ks);
     auto ks_le = ss::cpu_to_le(ks_native);
-    auto spaced_key = ss::uninitialized_string<bytes>(
-      sizeof(ks_le) + key.size());
+    bytes spaced_key(bytes::initialized_later{}, sizeof(ks_le) + key.size());
     auto out = spaced_key.begin();
     out = std::copy_n(
       reinterpret_cast<const char*>(&ks_le), sizeof(ks_le), out);
@@ -216,7 +215,7 @@ ss::future<> kvstore::for_each(
           if (!spaced_key.starts_with(prefix)) {
               return;
           }
-          auto key = spaced_key.substr(prefix.length());
+          auto key = spaced_key.substr(prefix.size());
           visitor(key, kv.second);
       });
 }

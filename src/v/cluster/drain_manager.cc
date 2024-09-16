@@ -260,7 +260,7 @@ ss::future<> drain_manager::do_drain() {
         if (failed > 0 && dur < transfer_throttle && !_restore_requested) {
             try {
                 co_await ss::sleep_abortable(transfer_throttle - dur, _abort);
-            } catch (ss::sleep_aborted&) {
+            } catch (const ss::sleep_aborted&) {
             }
         }
     }

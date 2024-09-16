@@ -932,12 +932,12 @@ struct adl<security::acl_host> {
             if (ipv4) {
                 ::in_addr addr{};
                 vassert(data.size() == sizeof(addr), "Unexpected ipv4 size");
-                std::memcpy(&addr, data.c_str(), sizeof(addr));
+                std::memcpy(&addr, data.data(), sizeof(addr));
                 return security::acl_host(ss::net::inet_address(addr));
             } else {
                 ::in6_addr addr{};
                 vassert(data.size() == sizeof(addr), "Unexpected ipv6 size");
-                std::memcpy(&addr, data.c_str(), sizeof(addr));
+                std::memcpy(&addr, data.data(), sizeof(addr));
                 return security::acl_host(ss::net::inet_address(addr));
             }
         }

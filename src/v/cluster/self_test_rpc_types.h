@@ -335,6 +335,8 @@ struct empty_request
   : serde::
       envelope<empty_request, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+
+    auto serde_fields() { return std::tie(); }
 };
 
 struct start_test_request
@@ -386,6 +388,8 @@ struct get_status_response
     std::vector<self_test_result> results;
     self_test_stage stage{};
 
+    auto serde_fields() { return std::tie(id, status, results, stage); }
+
     friend std::ostream&
     operator<<(std::ostream& o, const get_status_response& r) {
         fmt::print(
@@ -405,6 +409,7 @@ struct netcheck_request
     using rpc_adl_exempt = std::true_type;
     model::node_id source;
     iobuf buf;
+    auto serde_fields() { return std::tie(source, buf); }
     friend std::ostream&
     operator<<(std::ostream& o, const netcheck_request& r) {
         fmt::print(o, "{{source: {} buf: {}}}", r.source, r.buf.size_bytes());
@@ -417,6 +422,9 @@ struct netcheck_response
       envelope<netcheck_response, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     size_t bytes_read{0};
+
+    auto serde_fields() { return std::tie(bytes_read); }
+
     friend std::ostream&
     operator<<(std::ostream& o, const netcheck_response& r) {
         fmt::print(o, "{{bytes_read: {}}}", r.bytes_read);

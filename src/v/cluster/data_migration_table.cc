@@ -16,8 +16,11 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/topic_table.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/util/variant_utils.hh>
+
+#include <ranges>
 
 namespace cluster::data_migrations {
 
@@ -82,19 +85,19 @@ ss::future<> migrations_table::apply_snapshot(
     _next_id = snapshot.data_migrations.next_id;
     _migrations.reserve(snapshot.data_migrations.migrations.size());
 
+    std::vector<migration_metadata> deleted;
     auto it = _migrations.cbegin();
     while (it != _migrations.cend()) {
         auto prev = it++;
         if (!snapshot.data_migrations.migrations.contains(prev->first)) {
-            _migrations.erase(prev);
-            _callbacks.notify(prev->first);
-            co_await _resources.invoke_on_all(
-              [&meta = prev->second](migrated_resources& resources) {
-                  resources.remove_migration(meta);
-              });
+            auto extracted = _migrations.extract(prev);
+            _callbacks.notify(extracted.key());
+            deleted.push_back(std::move(extracted.mapped()));
         }
     }
 
+    // iterators and therefore references remain valid as we reserved the space
+    std::vector<std::reference_wrapper<migration_metadata>> updated;
     for (const auto& [id, migration] : snapshot.data_migrations.migrations) {
         auto it = _migrations.find(id);
         if (it == _migrations.end()) {
@@ -106,11 +109,13 @@ ss::future<> migrations_table::apply_snapshot(
             it->second.state = migration.state;
         }
         _callbacks.notify(id);
-        co_await _resources.invoke_on_all(
-          [&meta = it->second](migrated_resources& resources) {
-              resources.apply_update(meta);
-          });
+        updated.emplace_back(it->second);
     }
+
+    co_await _resources.invoke_on_all(
+      [&deleted, &updated](migrated_resources& resources) {
+          resources.apply_snapshot(deleted, updated);
+      });
 }
 
 std::optional<std::reference_wrapper<const migration_metadata>>
@@ -119,6 +124,11 @@ migrations_table::get_migration(id id) const {
         return std::cref(it->second);
     }
     return {};
+}
+
+chunked_vector<id> migrations_table::get_migrations() const {
+    auto view = _migrations | std::views::keys;
+    return {view.begin(), view.end()};
 }
 
 migrations_table::notification_id

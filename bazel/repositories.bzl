@@ -23,9 +23,9 @@ def data_dependency():
     http_archive(
         name = "avro",
         build_file = "//bazel/thirdparty:avro.BUILD",
-        sha256 = "a95c1b9517493d2e09d62a428ba7b4295c5cdb76eb07a0b2466f64a268486387",
-        strip_prefix = "avro-b3d7efe3d8bc15e7a19ee349c51e14f8795b1515",
-        url = "https://github.com/redpanda-data/avro/archive/b3d7efe3d8bc15e7a19ee349c51e14f8795b1515.tar.gz",
+        sha256 = "f1a7d13b28ce5cc8812f26c705a6ea27b8bc63554d82d556c63b437da0338cf1",
+        strip_prefix = "avro-e54bf712fce903652f3eab7a6c16264ac5d17285",
+        url = "https://github.com/redpanda-data/avro/archive/e54bf712fce903652f3eab7a6c16264ac5d17285.tar.gz",
         patches = ["//bazel/thirdparty:avro-snappy-includes.patch"],
         patch_args = ["-p1"],
     )
@@ -135,9 +135,9 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "7375e6200ccd1540245a39c01bc8e37750d9aad5f747ad10a168a520e95dba43",
-        strip_prefix = "openssl-9cff14fd97814baf8a9a07d8447960a64d616ada",
-        url = "https://github.com/openssl/openssl/archive/9cff14fd97814baf8a9a07d8447960a64d616ada.tar.gz",
+        sha256 = "23c666d0edf20f14249b3d8f0368acaee9ab585b09e1de82107c66e1f3ec9533",
+        strip_prefix = "openssl-3.0.15",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.15/openssl-3.0.15.tar.gz",
     )
 
     http_archive(
@@ -167,9 +167,11 @@ def data_dependency():
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "18204fa9a6db7cf7695ad017a0850f58ebf385e9d0f4b05e8770fe4316a45ea2",
-        strip_prefix = "seastar-6499285ac3899809712124da7a50fbb21f9409f2",
-        url = "https://github.com/redpanda-data/seastar/archive/6499285ac3899809712124da7a50fbb21f9409f2.tar.gz",
+        sha256 = "eefe8af689aac287971738e4d97ed495c7a285a7fe18b1aa8bbbfe025b528e6c",
+        strip_prefix = "seastar-c21f48b4aced07a80308215f7d801503a223d9db",
+        url = "https://github.com/redpanda-data/seastar/archive/c21f48b4aced07a80308215f7d801503a223d9db.tar.gz",
+        patches = ["//bazel/thirdparty:seastar-fortify-source.patch"],
+        patch_args = ["-p1"],
     )
 
     http_archive(

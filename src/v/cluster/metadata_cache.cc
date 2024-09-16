@@ -36,10 +36,12 @@ namespace cluster {
 
 metadata_cache::metadata_cache(
   ss::sharded<topic_table>& tp,
+  ss::sharded<data_migrations::migrated_resources>& mr,
   ss::sharded<members_table>& m,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<health_monitor_frontend>& health_monitor)
   : _topics_state(tp)
+  , _migrated_resources(mr)
   , _members_table(m)
   , _leaders(leaders)
   , _health_monitor(health_monitor) {}
@@ -148,6 +150,17 @@ std::vector<model::node_id> metadata_cache::node_ids() const {
 bool metadata_cache::should_reject_writes() const {
     return _health_monitor.local().get_cluster_disk_health()
            == storage::disk_space_alert::degraded;
+}
+
+bool metadata_cache::should_reject_reads(model::topic_namespace_view tp) const {
+    return _migrated_resources.local().get_topic_state(tp)
+           >= data_migrations::migrated_resource_state::fully_blocked;
+}
+
+bool metadata_cache::should_reject_writes(
+  model::topic_namespace_view tp) const {
+    return _migrated_resources.local().get_topic_state(tp)
+           >= data_migrations::migrated_resource_state::read_only;
 }
 
 bool metadata_cache::contains(

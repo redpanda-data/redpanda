@@ -89,4 +89,51 @@
             }
         ]
     }
+},
+"/v1/topics/mount": {
+    "post": {
+        "operationId": "mount_topics",
+        "summary": "Mount topic according to provided configuration",
+        "requestBody": {
+            "description": "Mount topic configuration",
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": "mount_configuration"
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "description": "Underlying migration information",
+                "schema": "migration_info"
+            }
+        }
+    }
+},
+"/v1/topics/unmount": {
+    "post": {
+        "operationId": "unmount_topics",
+        "summary": "Unmount the topics provided in the list",
+        "requestBody": {
+            "description": "List of topics to unmount",
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "type": "namespaced_topic"
+                        }
+                    }
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "description": "Underlying migration information",
+                "schema": "migration_info"
+            }
+        }
+    }
 }

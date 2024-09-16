@@ -1537,6 +1537,8 @@ struct metadata_stm_segment
     cloud_storage::segment_name name;
     cloud_storage::partition_manifest::segment_meta meta;
 
+    auto serde_fields() { return std::tie(name, meta); }
+
     bool operator==(const metadata_stm_segment&) const = default;
 };
 
@@ -1553,6 +1555,17 @@ struct segment_meta_v0 {
     model::timestamp base_timestamp;
     model::timestamp max_timestamp;
     model::offset delta_offset;
+
+    auto serde_fields() {
+        return std::tie(
+          is_compacted,
+          size_bytes,
+          base_offset,
+          committed_offset,
+          base_timestamp,
+          max_timestamp,
+          delta_offset);
+    }
 
     auto operator<=>(const segment_meta_v0&) const = default;
 };
@@ -1572,6 +1585,19 @@ struct segment_meta_v1 {
     model::initial_revision_id ntp_revision;
     model::term_id archiver_term;
 
+    auto serde_fields() {
+        return std::tie(
+          is_compacted,
+          size_bytes,
+          base_offset,
+          committed_offset,
+          base_timestamp,
+          max_timestamp,
+          delta_offset,
+          ntp_revision,
+          archiver_term);
+    }
+
     auto operator<=>(const segment_meta_v1&) const = default;
 };
 
@@ -1583,6 +1609,8 @@ struct metadata_stm_segment
       serde::compat_version<0>> {
     cloud_storage::segment_name name;
     segment_meta_t meta;
+
+    auto serde_fields() { return std::tie(name, meta); }
 
     bool operator==(const metadata_stm_segment&) const = default;
 };

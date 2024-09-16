@@ -125,6 +125,7 @@ redpanda_cc_library(
         "//src/v/container:intrusive",
         "//src/v/model",
         "//src/v/resource_mgmt:available_memory",
+        "//src/v/ssx:async_algorithm",
         "//src/v/ssx:semaphore",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
@@ -163,6 +164,106 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "chunk_cache",
+    srcs = [
+        "chunk_cache.cc",
+    ],
+    hdrs = [
+        "chunk_cache.h",
+        "segment_appender_chunk.h",
+    ],
+    implementation_deps = [
+        "//src/v/config",
+        "//src/v/resource_mgmt:memory_groups",
+        "@boost//:iterator",
+    ],
+    include_prefix = "storage",
+    visibility = [
+        "//src/v/storage/tests:__pkg__",
+        # TODO(bazel) chunk cache could probably be instantiated in
+        # log_manager.cc instead of in redpanda::application.
+        "//src/v/redpanda:__pkg__",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "resources",
+    srcs = [
+        "storage_resources.cc",
+    ],
+    hdrs = [
+        "storage_resources.h",
+    ],
+    implementation_deps = [
+        ":chunk_cache",
+        ":logger",
+        "@seastar",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:adjustable_semaphore",
+    ],
+)
+
+redpanda_cc_library(
+    name = "record_batch_utils",
+    srcs = [
+        "record_batch_utils.cc",
+    ],
+    hdrs = [
+        "record_batch_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/reflection:adl",
+    ],
+    include_prefix = "storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
+    name = "segment_appender",
+    srcs = [
+        "segment_appender.cc",
+    ],
+    hdrs = [
+        "segment_appender.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/config",
+        "//src/v/reflection:adl",
+        "@fmt",
+    ],
+    include_prefix = "storage",
+    deps = [
+        ":chunk_cache",
+        ":config",
+        ":record_batch_utils",
+        ":resources",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "storage",
     srcs = [
         "api.cc",
@@ -186,9 +287,7 @@ redpanda_cc_library(
         "parser.cc",
         "probe.cc",
         "readers_cache.cc",
-        "record_batch_utils.cc",
         "segment.cc",
-        "segment_appender.cc",
         "segment_deduplication_utils.cc",
         "segment_index.cc",
         "segment_reader.cc",
@@ -196,14 +295,12 @@ redpanda_cc_library(
         "segment_utils.cc",
         "snapshot.cc",
         "spill_key_index.cc",
-        "storage_resources.cc",
         "types.cc",
     ],
     hdrs = [
         "api.h",
         "backlog_controller.h",
         "batch_consumer_utils.h",
-        "chunk_cache.h",
         "compacted_index.h",
         "compacted_index_chunk_reader.h",
         "compacted_index_reader.h",
@@ -240,11 +337,8 @@ redpanda_cc_library(
         "probe.h",
         "readers_cache.h",
         "readers_cache_probe.h",
-        "record_batch_utils.h",
         "scoped_file_tracker.h",
         "segment.h",
-        "segment_appender.h",
-        "segment_appender_chunk.h",
         "segment_deduplication_utils.h",
         "segment_index.h",
         "segment_reader.h",
@@ -252,7 +346,6 @@ redpanda_cc_library(
         "segment_utils.h",
         "snapshot.h",
         "spill_key_index.h",
-        "storage_resources.h",
         "translating_reader.h",
         "types.h",
         "version.h",
@@ -265,11 +358,15 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":batch_cache",
+        ":chunk_cache",
         ":compaction",
         ":index_state",
         ":key_offset_map",
         ":parser_utils",
         ":record_batch_builder",
+        ":record_batch_utils",
+        ":resources",
+        ":segment_appender",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
@@ -316,6 +413,7 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:notification_list",
         "//src/v/utils:prefix_logger",
+        "//src/v/utils:stream_provider",
         "//src/v/utils:to_string",
         "//src/v/utils:tracking_allocator",
         "//src/v/utils:tristate",

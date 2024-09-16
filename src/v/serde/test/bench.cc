@@ -26,6 +26,8 @@ struct small_t
     int16_t b = 2;
     int32_t c = 3;
     int64_t d = 4;
+
+    auto serde_fields() { return std::tie(a, b, c, d); }
 };
 static_assert(sizeof(small_t) == 16, "one more byte for padding");
 
@@ -47,6 +49,7 @@ struct big_t
   : public serde::envelope<big_t, serde::version<3>, serde::compat_version<2>> {
     small_t s;
     iobuf data;
+    auto serde_fields() { return std::tie(s, data); }
 };
 
 inline big_t gen_big(size_t data_size, size_t chunk_size) {

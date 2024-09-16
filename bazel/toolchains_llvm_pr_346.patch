@@ -1,0 +1,235 @@
+From 1370e9e42ac179f033957fd1c82df9ecfcc03ad1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Micha=C5=82=20Ma=C5=9Blanka?= <michal@redpanda.com>
+Date: Thu, 27 Jun 2024 15:09:12 +0200
+Subject: [PATCH 1/3] configuration: added option to disable linking against
+ libunwind
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Added a `bool_flag` that allows the user to disable linking against the
+`libunwind` binary.
+
+To disable linking against libunwind use the following command line
+parameter:
+
+```
+--@toolchains_llvm//toolchain/config:libunwind=False
+
+```
+
+Signed-off-by: Michał Maślanka <michal@redpanda.com>
+---
+ toolchain/cc_toolchain_config.bzl | 13 +++++++++----
+ toolchain/config/BUILD.bazel      | 27 +++++++++++++++++++++++++++
+ 2 files changed, 36 insertions(+), 4 deletions(-)
+ create mode 100644 toolchain/config/BUILD.bazel
+
+diff --git a/toolchain/cc_toolchain_config.bzl b/toolchain/cc_toolchain_config.bzl
+index c1b0d922..2e555bef 100644
+--- a/toolchain/cc_toolchain_config.bzl
++++ b/toolchain/cc_toolchain_config.bzl
+@@ -141,6 +141,7 @@ def cc_toolchain_config(
+     # Similar to link_flags, but placed later in the command line such that
+     # unused symbols are not stripped.
+     link_libs = []
++    libunwind_link_flags = []
+ 
+     # Flags for ar.
+     archive_flags = []
+@@ -205,13 +206,15 @@ def cc_toolchain_config(
+             link_flags.extend([
+                 "-l:libc++.a",
+                 "-l:libc++abi.a",
++            ])
++            libunwind_link_flags = [
+                 "-l:libunwind.a",
+                 # Compiler runtime features.
+                 "-rtlib=compiler-rt",
+                 # To support libunwind.
+                 "-lpthread",
+                 "-ldl",
+-            ])
++            ]
+         else:
+             # Several system libraries on macOS dynamically link libc++ and
+             # libc++abi, so static linking them becomes a problem. We need to
+@@ -223,11 +226,13 @@ def cc_toolchain_config(
+                 "-L{}/usr/lib".format(sysroot_path),
+                 "-lc++",
+                 "-lc++abi",
+-                "-Bstatic",
+-                "-lunwind",
+                 "-Bdynamic",
+                 "-L{}lib".format(toolchain_path_prefix),
+             ])
++            libunwind_link_flags = [
++                "-Bstatic",
++                "-lunwind",
++            ]
+ 
+     elif stdlib == "libc++":
+         cxx_flags = [
+@@ -340,7 +345,7 @@ def cc_toolchain_config(
+         dbg_compile_flags = dbg_compile_flags,
+         opt_compile_flags = opt_compile_flags,
+         cxx_flags = cxx_flags,
+-        link_flags = link_flags,
++        link_flags = link_flags + select({"//conditions:default": [], str(Label("@toolchains_llvm//toolchain/config:use_libunwind")): libunwind_link_flags}),
+         archive_flags = archive_flags,
+         link_libs = link_libs,
+         opt_link_flags = opt_link_flags,
+diff --git a/toolchain/config/BUILD.bazel b/toolchain/config/BUILD.bazel
+new file mode 100644
+index 00000000..e794fe09
+--- /dev/null
++++ b/toolchain/config/BUILD.bazel
+@@ -0,0 +1,27 @@
++# Copyright 2021 The Bazel Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
++
++bool_flag(
++    name = "libunwind",
++    build_setting_default = True,
++    visibility = ["//visibility:public"],
++)
++
++config_setting(
++    name = "use_libunwind",
++    flag_values = {":libunwind": "True"},
++    visibility = ["//visibility:public"],
++)
+
+From 90f1b600d8b7661ffd9d0f0c1bea23293310fa79 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Micha=C5=82=20Ma=C5=9Blanka?= <michal@redpanda.com>
+Date: Thu, 27 Jun 2024 15:09:12 +0200
+Subject: [PATCH 2/3] configuration: added option to disable linking against
+ libunwind
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Added a `bool_flag` that allows the user to disable linking against the
+`libunwind` binary.
+
+To disable linking against libunwind use the following command line
+parameter:
+
+```
+--@toolchains_llvm//toolchain/config:libunwind=False
+
+```
+
+Signed-off-by: Michał Maślanka <michal@redpanda.com>
+---
+ toolchain/cc_toolchain_config.bzl | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/toolchain/cc_toolchain_config.bzl b/toolchain/cc_toolchain_config.bzl
+index 2e555bef..7e1b1aad 100644
+--- a/toolchain/cc_toolchain_config.bzl
++++ b/toolchain/cc_toolchain_config.bzl
+@@ -209,8 +209,6 @@ def cc_toolchain_config(
+             ])
+             libunwind_link_flags = [
+                 "-l:libunwind.a",
+-                # Compiler runtime features.
+-                "-rtlib=compiler-rt",
+                 # To support libunwind.
+                 "-lpthread",
+                 "-ldl",
+
+From 960e57d4a61c5e3d5a3e4e2b4b57374ef798e147 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Micha=C5=82=20Ma=C5=9Blanka?= <michal@redpanda.com>
+Date: Fri, 23 Aug 2024 13:57:14 +0200
+Subject: [PATCH 3/3] configuration: added option to disable compiler-rt
+ library
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Added a `bool_flag` allowing user to disable using `compiler-rt`
+library.
+
+The option can be controlled with:
+```
+--@toolchains_llvm//toolchain/config:compiler-rt=False
+```
+
+Signed-off-by: Michał Maślanka <michal@redpanda.com>
+---
+ toolchain/cc_toolchain_config.bzl |  5 ++++-
+ toolchain/config/BUILD.bazel      | 14 ++++++++++++++
+ 2 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/toolchain/cc_toolchain_config.bzl b/toolchain/cc_toolchain_config.bzl
+index 7e1b1aad..7f3ce5f1 100644
+--- a/toolchain/cc_toolchain_config.bzl
++++ b/toolchain/cc_toolchain_config.bzl
+@@ -142,6 +142,7 @@ def cc_toolchain_config(
+     # unused symbols are not stripped.
+     link_libs = []
+     libunwind_link_flags = []
++    compiler_rt_link_flags = []
+ 
+     # Flags for ar.
+     archive_flags = []
+@@ -207,6 +208,7 @@ def cc_toolchain_config(
+                 "-l:libc++.a",
+                 "-l:libc++abi.a",
+             ])
++            compiler_rt_link_flags = ["-rtlib=compiler-rt"]
+             libunwind_link_flags = [
+                 "-l:libunwind.a",
+                 # To support libunwind.
+@@ -343,7 +345,8 @@ def cc_toolchain_config(
+         dbg_compile_flags = dbg_compile_flags,
+         opt_compile_flags = opt_compile_flags,
+         cxx_flags = cxx_flags,
+-        link_flags = link_flags + select({"//conditions:default": [], str(Label("@toolchains_llvm//toolchain/config:use_libunwind")): libunwind_link_flags}),
++        link_flags = link_flags + select({"//conditions:default": [], str(Label("@toolchains_llvm//toolchain/config:use_libunwind")): libunwind_link_flags}) +
++                     select({"//conditions:default": [], str(Label("@toolchains_llvm//toolchain/config:use_compiler_rt")): compiler_rt_link_flags}),
+         archive_flags = archive_flags,
+         link_libs = link_libs,
+         opt_link_flags = opt_link_flags,
+diff --git a/toolchain/config/BUILD.bazel b/toolchain/config/BUILD.bazel
+index e794fe09..4feca95e 100644
+--- a/toolchain/config/BUILD.bazel
++++ b/toolchain/config/BUILD.bazel
+@@ -20,8 +20,22 @@ bool_flag(
+     visibility = ["//visibility:public"],
+ )
+ 
++bool_flag(
++    name = "compiler-rt",
++    build_setting_default = True,
++    visibility = ["//visibility:public"],
++)
++
+ config_setting(
+     name = "use_libunwind",
+     flag_values = {":libunwind": "True"},
+     visibility = ["//visibility:public"],
+ )
++
++
++
++config_setting(
++    name = "use_compiler_rt",
++    flag_values = {":compiler-rt": "True"},
++    visibility = ["//visibility:public"],
++)
+\ No newline at end of file

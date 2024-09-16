@@ -15,6 +15,7 @@
 #include "bytes/streambuf.h"
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "src/v/pandaproxy/schema_registry/protobuf/confluent/meta.pb.h"
@@ -534,48 +535,60 @@ encoding get_encoding(pb::FieldDescriptor::Type type) {
     __builtin_unreachable();
 }
 
-struct compatibility_checker {
-    bool check_compatible() { return check_compatible(_writer.fd); }
+using proto_compatibility_result = raw_compatibility_result;
 
-    bool check_compatible(const pb::FileDescriptor* writer) {
+struct compatibility_checker {
+    proto_compatibility_result check_compatible(std::filesystem::path p) {
+        return check_compatible(_writer.fd, std::move(p));
+    }
+
+    proto_compatibility_result check_compatible(
+      const pb::FileDescriptor* writer, std::filesystem::path p) {
         // There must be a compatible reader message for every writer
         // message
+        proto_compatibility_result compat_result;
         for (int i = 0; i < writer->message_type_count(); ++i) {
             auto w = writer->message_type(i);
             auto r = _reader._dp.FindMessageTypeByName(w->full_name());
-            if (!r || !check_compatible(r, w)) {
-                return false;
+
+            if (!r) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / w->name(), proto_incompatibility::Type::message_removed);
+            } else {
+                compat_result.merge(check_compatible(r, w, p / w->name()));
             }
         }
-        return true;
+        return compat_result;
     }
 
-    bool check_compatible(
-      const pb::Descriptor* reader, const pb::Descriptor* writer) {
+    proto_compatibility_result check_compatible(
+      const pb::Descriptor* reader,
+      const pb::Descriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
         if (!_seen_descriptors.insert(reader).second) {
-            return true;
+            return compat_result;
         }
 
         for (int i = 0; i < writer->nested_type_count(); ++i) {
             auto w = writer->nested_type(i);
-            auto r = reader->FindNestedTypeByName(w->full_name());
-            if (!r || !check_compatible(r, w)) {
-                return false;
+            auto r = reader->FindNestedTypeByName(w->name());
+            if (!r) {
+                compat_result.emplace<proto_incompatibility>(
+                  p / w->name(), proto_incompatibility::Type::message_removed);
+            } else {
+                compat_result.merge(check_compatible(r, w, p / w->name()));
             }
         }
 
         for (int i = 0; i < writer->real_oneof_decl_count(); ++i) {
             auto w = writer->oneof_decl(i);
-            if (!check_compatible(reader, w)) {
-                return false;
-            }
+            compat_result.merge(check_compatible(reader, w, p / w->name()));
         }
 
         for (int i = 0; i < reader->real_oneof_decl_count(); ++i) {
             auto r = reader->oneof_decl(i);
-            if (!check_compatible(r, writer)) {
-                return false;
-            }
+            compat_result.merge(check_compatible(r, writer, p / r->name()));
         }
 
         // check writer fields
@@ -585,9 +598,16 @@ struct compatibility_checker {
             auto r = reader->FindFieldByNumber(number);
             // A reader may ignore a writer field iff it is not `required`
             if (!r && w->is_required()) {
-                return false;
-            } else if (r && !check_compatible(r, w)) {
-                return false;
+                compat_result.emplace<proto_incompatibility>(
+                  p / std::to_string(w->number()),
+                  proto_incompatibility::Type::required_field_removed);
+            } else if (r) {
+                auto oneof = r->containing_oneof();
+                compat_result.merge(check_compatible(
+                  r,
+                  w,
+                  p / (oneof ? oneof->name() : "")
+                    / std::to_string(w->number())));
             }
         }
 
@@ -598,18 +618,24 @@ struct compatibility_checker {
             auto w = writer->FindFieldByNumber(number);
             // A writer may ignore a reader field iff it is not `required`
             if ((!w || !w->is_required()) && r->is_required()) {
-                return false;
+                compat_result.emplace<proto_incompatibility>(
+                  p / std::to_string(number),
+                  proto_incompatibility::Type::required_field_added);
             }
         }
-        return true;
+        return compat_result;
     }
 
-    bool check_compatible(
-      const pb::Descriptor* reader, const pb::OneofDescriptor* writer) {
+    proto_compatibility_result check_compatible(
+      const pb::Descriptor* reader,
+      const pb::OneofDescriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
+
         // If the oneof in question doesn't appear in the reader descriptor,
         // then we don't need to account for any difference in fields.
         if (!reader->FindOneofByName(writer->name())) {
-            return true;
+            return compat_result;
         }
 
         for (int i = 0; i < writer->field_count(); ++i) {
@@ -617,14 +643,20 @@ struct compatibility_checker {
             auto r = reader->FindFieldByNumber(w->number());
 
             if (!r || !r->real_containing_oneof()) {
-                return false;
+                compat_result.emplace<proto_incompatibility>(
+                  p / std::to_string(w->number()),
+                  proto_incompatibility::Type::oneof_field_removed);
             }
         }
-        return true;
+        return compat_result;
     }
 
-    bool check_compatible(
-      const pb::OneofDescriptor* reader, const pb::Descriptor* writer) {
+    proto_compatibility_result check_compatible(
+      const pb::OneofDescriptor* reader,
+      const pb::Descriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
+
         size_t count = 0;
         for (int i = 0; i < reader->field_count(); ++i) {
             auto r = reader->field(i);
@@ -633,11 +665,19 @@ struct compatibility_checker {
                 ++count;
             }
         }
-        return count <= 1;
+        if (count > 1) {
+            compat_result.emplace<proto_incompatibility>(
+              std::move(p),
+              proto_incompatibility::Type::multiple_fields_moved_to_oneof);
+        }
+        return compat_result;
     }
 
-    bool check_compatible(
-      const pb::FieldDescriptor* reader, const pb::FieldDescriptor* writer) {
+    proto_compatibility_result check_compatible(
+      const pb::FieldDescriptor* reader,
+      const pb::FieldDescriptor* writer,
+      std::filesystem::path p) {
+        proto_compatibility_result compat_result;
         switch (writer->type()) {
         case pb::FieldDescriptor::Type::TYPE_MESSAGE:
         case pb::FieldDescriptor::Type::TYPE_GROUP: {
@@ -645,16 +685,23 @@ struct compatibility_checker {
                                     == pb::FieldDescriptor::Type::TYPE_MESSAGE
                                   || reader->type()
                                        == pb::FieldDescriptor::Type::TYPE_GROUP;
-
-            if (
-              !type_is_compat
-              || reader->message_type()->name()
-                   != writer->message_type()->name()) {
-                return false;
+            if (!type_is_compat) {
+                compat_result.emplace<proto_incompatibility>(
+                  std::move(p),
+                  proto_incompatibility::Type::field_kind_changed);
+            } else if (
+              reader->message_type()->name()
+              != writer->message_type()->name()) {
+                compat_result.emplace<proto_incompatibility>(
+                  std::move(p),
+                  proto_incompatibility::Type::field_named_type_changed);
             } else {
-                return check_compatible(
-                  reader->message_type(), writer->message_type());
+                compat_result.merge(check_compatible(
+                  reader->message_type(),
+                  writer->message_type(),
+                  std::move(p)));
             }
+            break;
         }
         case pb::FieldDescriptor::Type::TYPE_FLOAT:
         case pb::FieldDescriptor::Type::TYPE_DOUBLE:
@@ -672,14 +719,27 @@ struct compatibility_checker {
         case pb::FieldDescriptor::Type::TYPE_SFIXED32:
         case pb::FieldDescriptor::Type::TYPE_FIXED64:
         case pb::FieldDescriptor::Type::TYPE_SFIXED64:
-            return check_compatible(
-              get_encoding(reader->type()), get_encoding(writer->type()));
+            compat_result.merge(check_compatible(
+              get_encoding(reader->type()),
+              get_encoding(writer->type()),
+              std::move(p)));
         }
-        __builtin_unreachable();
+        return compat_result;
     }
 
-    bool check_compatible(encoding reader, encoding writer) {
-        return reader == writer && reader != encoding::struct_;
+    proto_compatibility_result check_compatible(
+      encoding reader, encoding writer, std::filesystem::path p) {
+        proto_compatibility_result compat_result;
+        // we know writer has scalar encoding because of the switch stmt above
+        if (reader == encoding::struct_) {
+            compat_result.emplace<proto_incompatibility>(
+              std::move(p), proto_incompatibility::Type::field_kind_changed);
+        } else if (reader != writer) {
+            compat_result.emplace<proto_incompatibility>(
+              std::move(p),
+              proto_incompatibility::Type::field_scalar_kind_changed);
+        }
+        return compat_result;
     }
 
     const protobuf_schema_definition::impl& _reader;
@@ -692,10 +752,9 @@ struct compatibility_checker {
 compatibility_result check_compatible(
   const protobuf_schema_definition& reader,
   const protobuf_schema_definition& writer,
-  verbose is_verbose [[maybe_unused]]) {
+  verbose is_verbose) {
     compatibility_checker checker{reader(), writer()};
-    // TODO(gellert.nagy): start using the is_verbose flag in a follow up PR
-    return compatibility_result{.is_compat = checker.check_compatible()};
+    return checker.check_compatible("#/")(is_verbose);
 }
 
 } // namespace pandaproxy::schema_registry

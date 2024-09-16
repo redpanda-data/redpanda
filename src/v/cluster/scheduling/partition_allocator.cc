@@ -22,7 +22,6 @@
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "ssx/async_algorithm.h"
-#include "storage/segment_appender.h"
 #include "utils/human.h"
 
 #include <seastar/core/chunked_fifo.hh>

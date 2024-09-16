@@ -11,6 +11,7 @@
 
 #include "base/vlog.h"
 #include "cli_parser.h"
+#include "cloud_io/remote.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/configuration.h"
 #include "cloud_storage/inventory/inv_ops.h"
@@ -83,6 +84,7 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -324,6 +326,9 @@ void application::shutdown() {
           .invoke_on_all(
             &cloud_storage_clients::client_pool::shutdown_connections)
           .get();
+    }
+    if (cloud_io.local_is_initialized()) {
+        cloud_io.invoke_on_all(&cloud_io::remote::request_stop).get();
     }
 
     // Stop all partitions before destructing the subsystems (transaction
@@ -1425,6 +1430,10 @@ void application::wire_up_runtime_services(
 
     construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
 
+    construct_service(
+      _debug_bundle_service, config::node().data_directory().path)
+      .get();
+
     configure_admin_server();
 }
 
@@ -1556,8 +1565,18 @@ void application::wire_up_redpanda_services(
             }))
           .get();
         construct_service(
-          cloud_storage_api,
+          cloud_io,
           std::ref(cloud_storage_clients),
+          ss::sharded_parameter(
+            [&cloud_configs] { return cloud_configs.local().client_config; }),
+          ss::sharded_parameter([&cloud_configs] {
+              return cloud_configs.local().cloud_credentials_source;
+          }))
+          .get();
+        cloud_io.invoke_on_all(&cloud_io::remote::start).get();
+        construct_service(
+          cloud_storage_api,
+          std::ref(cloud_io),
           ss::sharded_parameter(
             [&cloud_configs] { return cloud_configs.local(); }))
           .get();
@@ -1785,6 +1804,7 @@ void application::wire_up_redpanda_services(
     construct_service(
       metadata_cache,
       std::ref(controller->get_topics_state()),
+      std::ref(controller->get_data_migrated_resources()),
       std::ref(controller->get_members_table()),
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_health_monitor()))
@@ -3036,6 +3056,8 @@ void application::start_runtime_services(
             _await_controller_last_applied.value(), app_signal.abort_source())
           .get();
     }
+
+    _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();
 
     if (!config::node().admin().empty()) {
         _admin.invoke_on_all(&admin_server::start).get0();

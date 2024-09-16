@@ -15,8 +15,7 @@
 #include "seastar/core/weak_ptr.hh"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
-
-class retry_chain_logger;
+#include "utils/retry_chain_node.h"
 
 namespace cloud_storage {
 

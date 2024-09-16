@@ -35,7 +35,7 @@ You can use the --all flag to log out of all organizations you may be logged
 into.
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			if rpkos.IsRunningSudo() {
 				out.Die("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
 			}

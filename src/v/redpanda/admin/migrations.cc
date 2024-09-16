@@ -19,6 +19,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "redpanda/admin/api-doc/migration.json.hh"
+#include "redpanda/admin/data_migration_utils.h"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
 #include "ssx/async_algorithm.h"
@@ -58,8 +59,9 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
         ss::httpd::migration_json::inbound_topic inbound_tp;
         inbound_tp.source_topic = to_admin_type(inbound_t.source_topic_name);
         if (inbound_t.alias) {
-            inbound_tp.alias = to_admin_type(inbound_t.source_topic_name);
+            inbound_tp.alias = to_admin_type(*inbound_t.alias);
         }
+        migration.topics.push(inbound_tp);
     }
     for (auto& cg : idm.groups) {
         migration.consumer_groups.push(cg);
@@ -206,34 +208,10 @@ json::validator make_migration_validator() {
     return json::validator(schema);
 }
 
-model::topic_namespace parse_topic_namespace(json::Value& json) {
-    if (json.HasMember("ns")) {
-        return {
-          model::ns(json["ns"].GetString()),
-          model::topic(json["topic"].GetString())};
-    } else {
-        return {
-          model::kafka_namespace, model::topic(json["topic"].GetString())};
-    }
-}
-
-cluster::data_migrations::inbound_topic parse_inbound_topic(json::Value& json) {
-    cluster::data_migrations::inbound_topic ret;
-    ret.source_topic_name = parse_topic_namespace(json["source_topic"]);
-    if (json.HasMember("alias")) {
-        ret.alias = parse_topic_namespace(json["alias"]);
-    }
-    return ret;
-}
-
 cluster::data_migrations::inbound_migration
 parse_inbound_data_migration(json::Value& json) {
     cluster::data_migrations::inbound_migration ret;
-    auto topics_array = json["topics"].GetArray();
-    ret.topics.reserve(topics_array.Size());
-    std::ranges::transform(
-      topics_array, std::back_inserter(ret.topics), &parse_inbound_topic);
-
+    ret.topics = parse_inbound_topics(json);
     auto consumer_groups_array = json["consumer_groups"].GetArray();
     ret.groups.reserve(consumer_groups_array.Size());
     for (auto& group : consumer_groups_array) {
@@ -245,10 +223,7 @@ parse_inbound_data_migration(json::Value& json) {
 cluster::data_migrations::outbound_migration
 parse_outbound_data_migration(json::Value& json) {
     cluster::data_migrations::outbound_migration ret;
-    auto topics_array = json["topics"].GetArray();
-    ret.topics.reserve(topics_array.Size());
-    std::ranges::transform(
-      topics_array, std::back_inserter(ret.topics), &parse_topic_namespace);
+    ret.topics = parse_topics(json);
 
     auto consumer_groups_array = json["consumer_groups"].GetArray();
     ret.groups.reserve(consumer_groups_array.Size());

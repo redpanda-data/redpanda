@@ -160,6 +160,7 @@ struct transform_offset_options
       : serde::
           envelope<latest_offset, serde::version<0>, serde::compat_version<0>> {
         bool operator==(const latest_offset&) const = default;
+        auto serde_fields() { return std::tie(); }
     };
     // A transform can either start at the latest offset, at a timestamp, or at
     // some delta from the start or end of an input partition.
@@ -227,19 +228,7 @@ struct transform_metadata
     friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
 
     void serde_write(iobuf& out) const;
-
-    auto serde_fields() {
-        return std::tie(
-          name,
-          input_topic,
-          output_topics,
-          environment,
-          uuid,
-          source_ptr,
-          offset_options,
-          paused,
-          compression_mode);
-    }
+    void serde_read(iobuf_parser& in, const serde::header& h);
 };
 
 // A patch update for transform metadata.

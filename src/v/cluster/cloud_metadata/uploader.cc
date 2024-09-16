@@ -132,7 +132,7 @@ ss::future<error_outcome> uploader::upload_next_metadata(
     }
     // Set up an abort source for if there is a leadership change while
     // we're uploading.
-    auto lazy_as = cloud_storage::lazy_abort_source{
+    auto lazy_as = lazy_abort_source{
       [&, synced_term]() -> std::optional<ss::sstring> {
           if (synced_term == _raft0->term()) {
               return std::nullopt;
@@ -231,7 +231,7 @@ ss::future<error_outcome> uploader::upload_next_metadata(
 
 ss::future<error_outcome> uploader::maybe_upload_controller_snapshot(
   cluster_metadata_manifest& manifest,
-  cloud_storage::lazy_abort_source& lazy_as,
+  lazy_abort_source& lazy_as,
   retry_chain_node& retry_node) {
     auto controller_snap_file = co_await _raft0->open_snapshot_file();
     if (!controller_snap_file.has_value()) {
@@ -333,7 +333,7 @@ ss::future<> uploader::upload_until_abort() {
             bool shutdown = false;
             try {
                 co_await _leader_cond.wait();
-            } catch (ss::broken_condition_variable&) {
+            } catch (const ss::broken_condition_variable&) {
                 shutdown = true;
             }
             if (shutdown || _as.abort_requested()) {

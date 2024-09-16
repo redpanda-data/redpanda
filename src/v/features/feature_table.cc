@@ -518,7 +518,7 @@ feature_table::await_feature_then(feature f, std::function<void(void)> fn) {
     try {
         co_await await_feature(f);
         fn();
-    } catch (ss::abort_requested_exception&) {
+    } catch (const ss::abort_requested_exception&) {
         // Shutting down
     } catch (...) {
         // Should never happen, abort is the only exception that await_feature

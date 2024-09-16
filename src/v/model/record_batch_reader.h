@@ -388,4 +388,6 @@ consume_reader_to_chunked_vector(
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&&);
 
+record_batch_reader make_empty_record_batch_reader();
+
 } // namespace model

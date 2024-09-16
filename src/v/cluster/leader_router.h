@@ -267,7 +267,7 @@ leader_router<req_t, resp_t, handler_t>::find_shard_and_process(
         while (!_as.abort_requested() && !shard && 0 < retries--) {
             try {
                 co_await sleep_abortable(delay_ms, _as);
-            } catch (ss::sleep_aborted&) {
+            } catch (const ss::sleep_aborted&) {
                 break;
             }
             shard = _shard_table.local().shard_for(ntp);

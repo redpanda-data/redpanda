@@ -22,6 +22,8 @@
 #include "serde/rw/vector.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <absl/container/flat_hash_set.h>
 
 #include <ranges>
@@ -37,14 +39,14 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
 /**
  * Migration state
  *  ┌─────────┐
- *  │ planned ├───────────────────┐
- *  └────┬────┘                   │
- *       │                        │
- * ┌─────▼─────┐                  │
- * │ preparing ├────────────────┐ │
- * └─────┬─────┘                │ │
- *       │                      │ │
- * ┌─────▼────┐          ┌──────▼─▼──┐
+ *  │ planned │
+ *  └────┬────┘
+ *       │
+ * ┌─────▼─────┐
+ * │ preparing ├────────────────┐
+ * └─────┬─────┘                │
+ *       │                      │
+ * ┌─────▼────┐          ┌──────▼────┐
  * │ prepared ├──────────► canceling │
  * └─────┬────┘          └▲──▲─┬─────┘
  *       │                │  │ │
@@ -63,8 +65,6 @@ using consumer_group = named_type<ss::sstring, struct consumer_group_tag>;
  * ┌─────▼────┐
  * │ finished │
  * └──────────┘
- *
- *
  */
 enum class state {
     planned,
@@ -98,8 +98,9 @@ std::ostream& operator<<(std::ostream& o, migrated_replica_status);
  */
 enum class migrated_resource_state {
     non_restricted,
-    restricted,
-    blocked,
+    metadata_locked,
+    read_only,
+    fully_blocked
 };
 
 std::ostream& operator<<(std::ostream& o, migrated_resource_state);
@@ -122,9 +123,13 @@ struct cloud_storage_location
     friend std::ostream&
     operator<<(std::ostream&, const cloud_storage_location&);
 
+    ss::sstring hint;
+
     friend bool
     operator==(const cloud_storage_location&, const cloud_storage_location&)
       = default;
+
+    auto serde_fields() { return std::tie(hint); }
 };
 
 /**
@@ -185,8 +190,7 @@ struct inbound_migration
 
     auto topic_nts() const {
         return std::as_const(topics)
-               | std::views::transform(
-                 [](const inbound_topic& it) { return it.source_topic_name; });
+               | std::views::transform(&inbound_topic::effective_topic_name);
     }
 };
 
@@ -200,6 +204,8 @@ struct inbound_migration
 struct copy_target
   : serde::envelope<copy_target, serde::version<0>, serde::compat_version<0>> {
     ss::sstring bucket;
+
+    auto serde_fields() { return std::tie(bucket); }
 
     friend bool operator==(const copy_target&, const copy_target&) = default;
     friend std::ostream& operator<<(std::ostream&, const copy_target&);
@@ -243,7 +249,7 @@ data_migration copy_migration(const data_migration& migration);
 
 /* Additional info worker needs from backend to work on a partition */
 struct inbound_partition_work_info {
-    std::optional<model::topic_namespace> alias;
+    std::optional<model::topic_namespace> source;
     std::optional<cloud_storage_location> cloud_storage_location;
 };
 struct outbound_partition_work_info {
@@ -259,7 +265,7 @@ struct partition_work {
 
 /* Additional info worker needs from backend to work on a topic */
 struct inbound_topic_work_info {
-    std::optional<model::topic_namespace> alias;
+    std::optional<model::topic_namespace> source;
     std::optional<cloud_storage_location> cloud_storage_location;
 };
 struct outbound_topic_work_info {

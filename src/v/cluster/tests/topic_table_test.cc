@@ -513,6 +513,34 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     cfg = topics.get_topic_cfg(tp_ns);
     BOOST_REQUIRE(cfg.has_value());
     BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
+
+    // Ensure that an invalid update cmd does not get persisted in the topic
+    // table.
+    // Sanity check before starting.
+    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
+    BOOST_REQUIRE(
+      !cfg->properties.record_key_schema_id_validation_compat.has_value());
+
+    update.record_key_schema_id_validation.op
+      = cluster::incremental_update_operation::set;
+    update.record_key_schema_id_validation.value.emplace(true);
+
+    update.record_key_schema_id_validation_compat.op
+      = cluster::incremental_update_operation::set;
+    update.record_key_schema_id_validation_compat.value.emplace(false);
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, update},
+             model::offset{11})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::topic_invalid_config);
+    cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+
+    // Properties from invalid configuration should not have been persisted.
+    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
+    BOOST_REQUIRE(
+      !cfg->properties.record_key_schema_id_validation_compat.has_value());
 }
 
 FIXTURE_TEST(test_topic_table_iterator_basic, topic_table_fixture) {

@@ -1336,12 +1336,20 @@ class simple_fetch_planner final : public fetch_planner::impl {
               }
 
               auto& tp = fp.topic_partition;
+              auto tn_view = tp.as_tn_view();
+              const auto& metadata_cache = octx.rctx.metadata_cache();
+              auto partition_id = tp.get_partition();
 
-              if (unlikely(octx.rctx.metadata_cache().is_disabled(
-                    tp.as_tn_view(), tp.get_partition()))) {
+              if (unlikely(metadata_cache.is_disabled(tn_view, partition_id))) {
                   resp_it->set(make_partition_response_error(
-                    fp.topic_partition.get_partition(),
-                    error_code::replica_not_available));
+                    partition_id, error_code::replica_not_available));
+                  ++resp_it;
+                  return;
+              }
+
+              if (unlikely(metadata_cache.should_reject_reads(tn_view))) {
+                  resp_it->set(make_partition_response_error(
+                    partition_id, error_code::invalid_topic_exception));
                   ++resp_it;
                   return;
               }
@@ -1358,11 +1366,10 @@ class simple_fetch_planner final : public fetch_planner::impl {
                    * return not_leader_for_partition error to force metadata
                    * update.
                    */
-                  auto ec = octx.rctx.metadata_cache().contains(tp.to_ntp())
+                  auto ec = metadata_cache.contains(tp.to_ntp())
                               ? error_code::not_leader_for_partition
                               : error_code::unknown_topic_or_partition;
-                  resp_it->set(make_partition_response_error(
-                    fp.topic_partition.get_partition(), ec));
+                  resp_it->set(make_partition_response_error(partition_id, ec));
                   ++resp_it;
                   return;
               }

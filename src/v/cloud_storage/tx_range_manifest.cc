@@ -82,28 +82,25 @@ void tx_range_manifest::do_update(const rapidjson::Document& doc) {
     _ranges.shrink_to_fit();
 }
 
-ss::future<serialized_data_stream> tx_range_manifest::serialize() const {
+ss::future<iobuf> tx_range_manifest::serialize_buf() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
-    serialize(os);
+    serialize_ostream(os);
     if (!os.good()) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "could not serialize tx range manifest {}",
           get_manifest_path()));
     }
-    size_t size_bytes = serialized.size_bytes();
-    co_return serialized_data_stream{
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
+    co_return serialized;
 }
 
 remote_manifest_path tx_range_manifest::get_manifest_path() const {
     return generate_remote_tx_path(_path);
 }
 
-void tx_range_manifest::serialize(std::ostream& out) const {
+void tx_range_manifest::serialize_ostream(std::ostream& out) const {
     using namespace rapidjson;
     OStreamWrapper wrapper(out);
     Writer<OStreamWrapper> w(wrapper);

@@ -11,6 +11,8 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cloud_io/io_result.h"
+#include "cloud_io/transfer_details.h"
 #include "cloud_storage_clients/types.h"
 #include "config/configuration.h"
 #include "model/compression.h"
@@ -31,6 +33,9 @@
 #include <filesystem>
 
 namespace cloud_storage {
+
+using upload_result = cloud_io::upload_result;
+using download_result = cloud_io::download_result;
 
 using remote_metrics_disabled
   = ss::bool_class<struct remote_metrics_disabled_tag>;
@@ -65,21 +70,6 @@ enum class segment_name_format : int16_t {
 };
 
 std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
-
-enum class [[nodiscard]] download_result : int32_t {
-    success,
-    notfound,
-    timedout,
-    failed,
-};
-
-enum class [[nodiscard]] upload_result : int32_t {
-    success,
-    timedout,
-    failed,
-    cancelled,
-};
-
 enum class manifest_version : int32_t {
     v1 = 1,
     v2 = 2,
@@ -92,10 +82,6 @@ enum class tx_range_manifest_version : int32_t {
     current_version = v1,
     compat_version = v1,
 };
-
-std::ostream& operator<<(std::ostream& o, const download_result& r);
-
-std::ostream& operator<<(std::ostream& o, const upload_result& r);
 
 struct offset_range {
     kafka::offset begin;
@@ -390,9 +376,40 @@ enum class upload_type {
     inventory_configuration,
 };
 
+constexpr std::string_view to_string(upload_type t) {
+    switch (t) {
+        using enum upload_type;
+    case object:
+        return "object";
+    case segment_index:
+        return "segment-index";
+    case manifest:
+        return "manifest";
+    case group_offsets_snapshot:
+        return "group-offsets-snapshot";
+    case download_result_file:
+        return "download-result-file";
+    case remote_lifecycle_marker:
+        return "remote-lifecycle-marker";
+    case inventory_configuration:
+        return "inventory-configuration";
+    }
+}
 std::ostream& operator<<(std::ostream&, upload_type);
 
 enum class download_type { object, segment_index, inventory_report_manifest };
+
+constexpr std::string_view to_string(download_type t) {
+    switch (t) {
+        using enum download_type;
+    case object:
+        return "object";
+    case segment_index:
+        return "segment-index";
+    case inventory_report_manifest:
+        return "inventory-report-manifest";
+    }
+}
 
 std::ostream& operator<<(std::ostream&, download_type);
 
@@ -401,32 +418,15 @@ enum class existence_check_type { object, segment, manifest };
 std::ostream& operator<<(std::ostream&, existence_check_type);
 
 class remote_probe;
-using probe_callback_t = ss::noncopyable_function<void(remote_probe&)>;
-
-struct transfer_details {
-    cloud_storage_clients::bucket_name bucket;
-    cloud_storage_clients::object_key key;
-
-    retry_chain_node& parent_rtc;
-
-    std::optional<probe_callback_t> success_cb{std::nullopt};
-    std::optional<probe_callback_t> failure_cb{std::nullopt};
-    std::optional<probe_callback_t> backoff_cb{std::nullopt};
-
-    void on_success(remote_probe& probe);
-    void on_failure(remote_probe& probe);
-    void on_backoff(remote_probe& probe);
-};
-
 struct upload_request {
-    transfer_details transfer_details;
+    cloud_io::transfer_details transfer_details;
     upload_type type;
     iobuf payload;
     bool accept_no_content_response{false};
 };
 
 struct download_request {
-    transfer_details transfer_details;
+    cloud_io::transfer_details transfer_details;
     download_type type;
     iobuf& payload;
     bool expect_missing{false};

@@ -303,6 +303,9 @@ public:
 
     ss::sstring name() const;
 
+    // retrieve "title" property from the schema, used to form the record name
+    std::optional<ss::sstring> title() const;
+
 private:
     pimpl _impl;
 };
@@ -531,6 +534,11 @@ from_string_view<compatibility_level>(std::string_view sv) {
 }
 
 struct compatibility_result {
+    friend bool
+    operator==(const compatibility_result&, const compatibility_result&)
+      = default;
+    friend std::ostream& operator<<(std::ostream&, const compatibility_result&);
+
     bool is_compat;
     std::vector<ss::sstring> messages;
 };

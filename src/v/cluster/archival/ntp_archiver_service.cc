@@ -44,7 +44,9 @@
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "utils/human.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 #include "utils/stream_utils.h"
 
 #include <seastar/core/abort_source.hh>
@@ -416,6 +418,15 @@ ss::future<> ntp_archiver::upload_until_abort() {
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "upload loop error: {}", e);
           });
+
+        if (flush_in_progress()) {
+            vlog(
+              _rtclog.debug,
+              "Exited upload_until_term_change() loop, alerting flush "
+              "waiters.");
+            _flush_uploads_offset.reset();
+            _flush_cond.broadcast();
+        }
     }
 }
 
@@ -1204,13 +1215,13 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
-    auto lazy_abort_source = cloud_storage::lazy_abort_source{
+    auto lazy_abort = lazy_abort_source{
       [this]() { return upload_should_abort(); },
     };
 
     // This struct wraps a stream object and exposes the stream_provider
     // interface for compatibility with the remote object API.
-    struct stream_wrapper final : public storage::stream_provider {
+    struct stream_wrapper final : public stream_provider {
         std::optional<ss::input_stream<char>> stream;
 
         stream_wrapper(const stream_wrapper&) = delete;
@@ -1240,7 +1251,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
     std::optional<ss::input_stream<char>> stream_state = std::move(stream);
     auto reset_func = [this, candidate, &stream_state] {
-        using provider_t = std::unique_ptr<storage::stream_provider>;
+        using provider_t = std::unique_ptr<stream_provider>;
         // On first attempt to upload, the stream-ref passed in is used.
         if (stream_state.has_value()) {
             auto f = ss::make_ready_future<provider_t>(
@@ -1267,7 +1278,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           candidate.content_length,
           std::move(reset_func),
           fib,
-          lazy_abort_source);
+          lazy_abort);
     } catch (const ss::gate_closed_exception&) {
         response = cloud_storage::upload_result::cancelled;
     } catch (const ss::abort_requested_exception&) {
@@ -1330,16 +1341,11 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
         // the read path will create the index on the fly while downloading the
         // segment, so it is okay to ignore the index upload failure, we still
         // want to advance the offsets because the segment did get uploaded.
-        std::ignore = co_await _remote.upload_object({
-          .transfer_details = {
-            .bucket = _conf->bucket_name,
-            .key = cloud_storage_clients::object_key{index_path},
-            .parent_rtc = fib,
-            .success_cb = [](auto& probe) { probe.index_upload(); },
-            .failure_cb = [](auto& probe) { probe.failed_index_upload(); }},
-          .type = cloud_storage::upload_type::segment_index,
-          .payload = idx_res->index.to_iobuf(),
-        });
+        std::ignore = co_await _remote.upload_index(
+          _conf->bucket_name,
+          cloud_storage_clients::object_key{index_path},
+          idx_res->index,
+          fib);
 
         co_return ntp_archiver_upload_result(idx_res->stats);
     } else {
@@ -2272,7 +2278,7 @@ ss::future<> ntp_archiver::housekeeping() {
         // Shutdown-type exceptions are thrown, to promptly drop out
         // of the upload loop.
         throw;
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         // Unexpected exceptions are logged, and suppressed: we do not
         // want to stop who upload loop because of issues in housekeeping
         vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());
@@ -2742,7 +2748,9 @@ ss::future<wait_result> ntp_archiver::wait(model::offset o) {
     auto wait_issued_term = _start_term;
 
     while (!uploaded_and_clean_past_offset(o)) {
-        if (!_parent.is_leader() || wait_issued_term != _start_term) {
+        if (
+          !_parent.is_leader() || wait_issued_term != _start_term
+          || !flush_in_progress()) {
             vlog(
               _rtclog.debug,
               "Leadership was lost during flush operation in ntp_archiver");

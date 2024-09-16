@@ -207,16 +207,15 @@ class ShardPlacementTest(PreallocNodesTest):
         return shard_map
 
     def wait_shard_map_consistent_with_cluster_partitions(
-            self,
-            shard_map,
-            user_topics=[],
-            admin=None,
-            timeout_sec=30,
-            backoff_sec=3):
+            self, user_topics=[], admin=None, timeout_sec=30, backoff_sec=3):
         if admin is None:
             admin = Admin(self.redpanda)
 
         def is_consistent():
+            self.logger.debug("querying shard map directly from nodes...")
+            shard_map = self.get_replica_shard_map(
+                self.redpanda.started_nodes(), admin=None)
+
             self.logger.debug("querying shard map for all partitions...")
             all_partitions = admin.get_cluster_partitions(with_internal=True)
             if not self.shard_maps_equal(
@@ -284,7 +283,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.print_shard_stats(map_after_upgrade)
         assert map_after_upgrade == initial_map
         self.wait_shard_map_consistent_with_cluster_partitions(
-            map_after_upgrade, user_topics=topics, admin=admin)
+            user_topics=topics, admin=admin)
 
         # Manually move replicas of one topic on one node to shard 0
 
@@ -308,7 +307,7 @@ class ShardPlacementTest(PreallocNodesTest):
         assert foo_shard_counts[0] == n_partitions
         assert sum(foo_shard_counts) == n_partitions
         self.wait_shard_map_consistent_with_cluster_partitions(
-            map_after_manual_move, user_topics=topics, admin=admin)
+            user_topics=topics, admin=admin)
 
         # Add more nodes to the cluster and create another topic
 
@@ -372,7 +371,7 @@ class ShardPlacementTest(PreallocNodesTest):
         self.print_shard_stats(map_after_restart)
         assert map_after_restart == map_before_restart
         self.wait_shard_map_consistent_with_cluster_partitions(
-            map_after_restart, user_topics=topics, admin=admin)
+            user_topics=topics, admin=admin)
 
         self.stop_client_load()
 
@@ -420,7 +419,7 @@ class ShardPlacementTest(PreallocNodesTest):
         assert counts_by_topic["bar"][core_count - 1] == n_partitions
         assert sum(counts_by_topic["bar"]) == n_partitions
         self.wait_shard_map_consistent_with_cluster_partitions(
-            shard_map, user_topics=topics, admin=admin)
+            user_topics=topics, admin=admin)
 
         admin.trigger_cores_rebalance(node)
         self.logger.info(
@@ -433,7 +432,7 @@ class ShardPlacementTest(PreallocNodesTest):
         for topic, shard_counts in counts_by_topic.items():
             assert max(shard_counts) - min(shard_counts) <= 1
         self.wait_shard_map_consistent_with_cluster_partitions(
-            shard_map, user_topics=topics, admin=admin)
+            user_topics=topics, admin=admin)
 
         self.stop_client_load()
 
@@ -574,19 +573,8 @@ class ShardPlacementTest(PreallocNodesTest):
 
         self.redpanda.start(nodes=joiner_nodes)
 
-        def node_rebalance_finished():
-            in_progress = admin.list_reconfigurations(node=seed_nodes[0])
-            if len(in_progress) > 0:
-                return False
-
-            for n in joiner_nodes:
-                num_partitions = len(admin.get_partitions(node=n))
-                if num_partitions < 5:
-                    return False
-
-            return True
-
-        wait_until(node_rebalance_finished, timeout_sec=60, backoff_sec=2)
+        self.redpanda.wait_node_add_rebalance_finished(joiner_nodes,
+                                                       admin=admin)
         self.logger.info("node rebalance finished")
 
         def shard_rebalance_finished():
@@ -617,6 +605,6 @@ class ShardPlacementTest(PreallocNodesTest):
         self.logger.info("shard rebalance finished")
         self.print_shard_stats(shard_map_after_balance)
         self.wait_shard_map_consistent_with_cluster_partitions(
-            shard_map_after_balance, user_topics=topics, admin=admin)
+            user_topics=topics, admin=admin)
 
         self.stop_client_load()

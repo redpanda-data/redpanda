@@ -14,16 +14,14 @@
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/sharded.hh>
 
 #include <variant>
 
-class retry_chain_node;
-
 namespace cloud_storage {
 class cloud_storage_api;
-enum class upload_result;
 } // namespace cloud_storage
 
 namespace cloud_storage::inventory {

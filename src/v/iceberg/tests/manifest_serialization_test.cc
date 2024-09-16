@@ -15,8 +15,12 @@
 #include "iceberg/manifest_avro.h"
 #include "iceberg/manifest_entry.avrogen.h"
 #include "iceberg/manifest_file.avrogen.h"
+#include "iceberg/manifest_list.h"
+#include "iceberg/manifest_list_avro.h"
+#include "iceberg/partition_key_type.h"
 #include "iceberg/schema_json.h"
 #include "iceberg/tests/test_schemas.h"
+#include "test_utils/runfiles.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -28,16 +32,14 @@
 
 using namespace iceberg;
 
-using avrogen::manifest_entry;
-using avrogen::manifest_file;
-
 namespace {
 
 // Returns true if the trivial, non-union type fields match between the two
 // manifest entries.
 // TODO: define a manifest_entry struct that isn't tied to Avro codegen, that
 // has a trivial operator==.
-bool trivial_fields_eq(const manifest_entry& lhs, const manifest_entry& rhs) {
+bool trivial_fields_eq(
+  const avrogen::manifest_entry& lhs, const avrogen::manifest_entry& rhs) {
     return lhs.status == rhs.status
            && lhs.data_file.content == rhs.data_file.content
            && lhs.data_file.file_format == rhs.data_file.file_format
@@ -50,7 +52,7 @@ bool trivial_fields_eq(const manifest_entry& lhs, const manifest_entry& rhs) {
 } // anonymous namespace
 
 TEST(ManifestSerializationTest, TestManifestEntry) {
-    manifest_entry entry;
+    avrogen::manifest_entry entry;
     entry.status = 1;
     entry.data_file.content = 2;
     entry.data_file.file_path = "path/to/file";
@@ -78,14 +80,14 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
-    manifest_entry dentry;
+    avrogen::manifest_entry dentry;
     avro::decode(*decoder, dentry);
 
     EXPECT_TRUE(trivial_fields_eq(entry, dentry));
 }
 
 TEST(ManifestSerializationTest, TestManyManifestEntries) {
-    manifest_entry entry;
+    avrogen::manifest_entry entry;
     entry.status = 1;
     entry.data_file.content = 2;
     entry.data_file.file_path = "path/to/file";
@@ -118,14 +120,42 @@ TEST(ManifestSerializationTest, TestManyManifestEntries) {
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
     for (int i = 0; i < 1024; i++) {
-        manifest_entry dentry;
+        avrogen::manifest_entry dentry;
         avro::decode(*decoder, dentry);
         EXPECT_TRUE(trivial_fields_eq(entry, dentry));
     }
 }
 
+TEST(ManifestSerializationTest, TestManifestList) {
+    manifest_list l;
+    for (int i = 0; i < 1024; ++i) {
+        manifest_file file;
+        file.manifest_path = "path/to/file";
+        file.partition_spec_id = partition_spec::id_t{1};
+        file.content = manifest_file_content::data;
+        file.seq_number = sequence_number{3};
+        file.min_seq_number = sequence_number{4};
+        file.added_snapshot_id = snapshot_id{5};
+        file.added_files_count = 6;
+        file.existing_files_count = 7;
+        file.deleted_files_count = 8;
+        file.added_rows_count = 9;
+        file.existing_rows_count = 10;
+        file.deleted_rows_count = 11;
+        l.files.emplace_back(std::move(file));
+    }
+
+    auto buf = serialize_avro(l);
+    for (int i = 0; i < 10; ++i) {
+        auto roundtrip_l = parse_manifest_list(std::move(buf));
+        ASSERT_EQ(1024, roundtrip_l.files.size());
+        ASSERT_EQ(roundtrip_l, l);
+        buf = serialize_avro(roundtrip_l);
+    }
+}
+
 TEST(ManifestSerializationTest, TestManifestFile) {
-    manifest_file manifest;
+    avrogen::manifest_file manifest;
     manifest.manifest_path = "path/to/file";
     manifest.partition_spec_id = 1;
     manifest.content = 2;
@@ -158,7 +188,7 @@ TEST(ManifestSerializationTest, TestManifestFile) {
     auto in = std::make_unique<avro_iobuf_istream>(std::move(buf));
     avro::DecoderPtr decoder = avro::binaryDecoder();
     decoder->init(*in);
-    manifest_file dmanifest;
+    avrogen::manifest_file dmanifest;
     avro::decode(*decoder, dmanifest);
 
     EXPECT_EQ(manifest.manifest_path, dmanifest.manifest_path);
@@ -179,8 +209,8 @@ TEST(ManifestSerializationTest, TestManifestFile) {
 }
 
 TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
-    const auto& manifest_file_schema = manifest_file::valid_schema();
-    manifest_file manifest;
+    const auto& manifest_file_schema = avrogen::manifest_file::valid_schema();
+    avrogen::manifest_file manifest;
     manifest.manifest_path = "path/to/file";
     manifest.partition_spec_id = 1;
     manifest.content = 2;
@@ -204,7 +234,7 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     auto out = std::make_unique<avro_iobuf_ostream>(
       4_KiB, &bufs, &bytes_streamed);
     {
-        avro::DataFileWriter<manifest_file> writer(
+        avro::DataFileWriter<avrogen::manifest_file> writer(
           std::move(out),
           manifest_file_schema,
           16_KiB,
@@ -221,9 +251,9 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
         buf.append(std::move(b));
     }
     auto in = std::make_unique<avro_iobuf_istream>(buf.copy());
-    avro::DataFileReader<manifest_file> reader(
+    avro::DataFileReader<avrogen::manifest_file> reader(
       std::move(in), manifest_file_schema);
-    manifest_file dmanifest;
+    avrogen::manifest_file dmanifest;
     reader.read(dmanifest);
     EXPECT_STREQ(reader.getMetadata("f1")->c_str(), f1);
     EXPECT_STREQ(reader.getMetadata("f2")->c_str(), f2);
@@ -244,10 +274,54 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     EXPECT_EQ(manifest.deleted_rows_count, dmanifest.deleted_rows_count);
 }
 
+TEST(ManifestSerializationTest, TestMetadataWithPartitionSpec) {
+    schema s{
+      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+      .schema_id = schema::id_t{12},
+      .identifier_field_ids = {nested_field::id_t{1}},
+    };
+    partition_spec p{
+      .spec_id = partition_spec::id_t{8},
+        .fields = {
+            partition_field{
+              .source_id = nested_field::id_t{2},
+              .field_id = partition_field::id_t{1000},
+              .name = "p0",
+              .transform = bucket_transform{10},
+            },
+        },
+    };
+    manifest_metadata meta{
+      .schema = std::move(s),
+      .partition_spec = std::move(p),
+      .format_version = format_version::v1,
+      .manifest_content_type = manifest_content_type::data,
+    };
+    manifest m{
+      .metadata = std::move(meta),
+      .entries = {},
+    };
+    auto pk_type = partition_key_type::create(
+      m.metadata.partition_spec, m.metadata.schema);
+    auto serialized_buf = serialize_avro(m);
+    for (int i = 0; i < 10; i++) {
+        auto m_roundtrip = parse_manifest(pk_type, std::move(serialized_buf));
+        ASSERT_EQ(m.metadata, m_roundtrip.metadata);
+        ASSERT_EQ(0, m_roundtrip.entries.size());
+
+        serialized_buf = serialize_avro(m_roundtrip);
+    }
+}
+
 TEST(ManifestSerializationTest, TestSerializeManifestData) {
+    auto manifest_path = test_utils::get_runfile_path(
+      "src/v/iceberg/tests/testdata/nested_manifest.avro");
+    if (!manifest_path.has_value()) {
+        manifest_path = "nested_manifest.avro";
+    }
     auto orig_buf = iobuf{
-      ss::util::read_entire_file("nested_manifest.avro").get0()};
-    auto m = parse_manifest(orig_buf.copy());
+      ss::util::read_entire_file(manifest_path.value()).get0()};
+    auto m = parse_manifest({struct_type{}}, orig_buf.copy());
     ASSERT_EQ(100, m.entries.size());
     ASSERT_EQ(m.metadata.manifest_content_type, manifest_content_type::data);
     ASSERT_EQ(m.metadata.format_version, format_version::v2);
@@ -258,10 +332,21 @@ TEST(ManifestSerializationTest, TestSerializeManifestData) {
       std::get<struct_type>(test_nested_schema_type()));
 
     auto serialized_buf = serialize_avro(m);
-    auto m_roundtrip = parse_manifest(serialized_buf.copy());
-    ASSERT_EQ(m.metadata, m_roundtrip.metadata);
-    ASSERT_EQ(100, m_roundtrip.entries.size());
+    for (int i = 0; i < 10; i++) {
+        auto m_roundtrip = parse_manifest(
+          {struct_type{}}, std::move(serialized_buf));
+        ASSERT_EQ(m.metadata, m_roundtrip.metadata);
+        ASSERT_EQ(100, m_roundtrip.entries.size());
+        ASSERT_EQ(
+          m_roundtrip.metadata.manifest_content_type,
+          manifest_content_type::data);
+        ASSERT_EQ(m_roundtrip.metadata.format_version, format_version::v2);
+        ASSERT_EQ(m_roundtrip.metadata.partition_spec.spec_id, 0);
+        ASSERT_EQ(m_roundtrip.metadata.partition_spec.fields.size(), 0);
+        ASSERT_EQ(
+          m_roundtrip.metadata.schema.schema_struct,
+          std::get<struct_type>(test_nested_schema_type()));
 
-    auto roundtrip_buf = serialize_avro(m_roundtrip);
-    ASSERT_EQ(serialized_buf, roundtrip_buf);
+        serialized_buf = serialize_avro(m_roundtrip);
+    }
 }

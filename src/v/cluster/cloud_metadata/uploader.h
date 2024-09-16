@@ -18,6 +18,7 @@
 #include "config/property.h"
 #include "raft/notification.h"
 #include "storage/fwd.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -110,7 +111,7 @@ public:
     //   callers may retry with the resulting manifest in the same term.
     ss::future<error_outcome> maybe_upload_controller_snapshot(
       cluster_metadata_manifest& manifest,
-      cloud_storage::lazy_abort_source& lazy_as,
+      lazy_abort_source& lazy_as,
       retry_chain_node& retry_node);
 
     auto manifest() const { return _term_manifest; }

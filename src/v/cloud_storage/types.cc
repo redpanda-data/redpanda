@@ -41,14 +41,6 @@ cloud_storage_clients::default_overrides get_default_overrides() {
     return overrides;
 }
 
-void run_callback(
-  std::optional<cloud_storage::probe_callback_t>& cb,
-  cloud_storage::remote_probe& probe) {
-    if (cb.has_value()) {
-        cb.value()(probe);
-    }
-}
-
 } // namespace
 
 namespace cloud_storage {
@@ -88,42 +80,6 @@ std::ostream& operator<<(std::ostream& o, const segment_name_format& r) {
         o << "{v3}";
         break;
     }
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const download_result& r) {
-    switch (r) {
-    case download_result::success:
-        o << "{success}";
-        break;
-    case download_result::notfound:
-        o << "{key_not_found}";
-        break;
-    case download_result::timedout:
-        o << "{timed_out}";
-        break;
-    case download_result::failed:
-        o << "{failed}";
-        break;
-    };
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const upload_result& r) {
-    switch (r) {
-    case upload_result::success:
-        o << "{success}";
-        break;
-    case upload_result::timedout:
-        o << "{timed_out}";
-        break;
-    case upload_result::failed:
-        o << "{failed}";
-        break;
-    case upload_result::cancelled:
-        o << "{cancelled}";
-        break;
-    };
     return o;
 }
 
@@ -354,11 +310,10 @@ std::ostream& operator<<(std::ostream& o, const anomalies& a) {
 std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
-      "{{connection_limit: {}, client_config: {}, metrics_disabled: {}, "
+      "{{connection_limit: {}, client_config: {}, "
       "bucket_name: {}, cloud_credentials_source: {}}}",
       cfg.connection_limit,
       cfg.client_config,
-      cfg.metrics_disabled,
       cfg.bucket_name,
       cfg.cloud_credentials_source);
     return o;
@@ -438,8 +393,6 @@ ss::future<configuration> configuration::get_s3_config() {
       .client_config = std::move(s3_conf),
       .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
-      .metrics_disabled = remote_metrics_disabled(
-        static_cast<bool>(disable_metrics)),
       .bucket_name = bucket_name,
       .cloud_credentials_source = cloud_credentials_source,
     };
@@ -501,8 +454,6 @@ ss::future<configuration> configuration::get_abs_config() {
       .client_config = std::move(abs_conf),
       .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
-      .metrics_disabled = remote_metrics_disabled(
-        static_cast<bool>(disable_metrics)),
       .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_azure_container,
         "cloud_storage_azure_container")),
@@ -523,45 +474,11 @@ configuration::get_bucket_config() {
 }
 
 std::ostream& operator<<(std::ostream& os, upload_type upload) {
-    switch (upload) {
-        using enum cloud_storage::upload_type;
-    case object:
-        return os << "object";
-    case segment_index:
-        return os << "segment-index";
-    case manifest:
-        return os << "manifest";
-    case group_offsets_snapshot:
-        return os << "group-offsets-snapshot";
-    case download_result_file:
-        return os << "download-result-file";
-    case remote_lifecycle_marker:
-        return os << "remote-lifecycle-marker";
-    case inventory_configuration:
-        return os << "inventory-configuration";
-    }
+    return os << to_string(upload);
 }
 
 std::ostream& operator<<(std::ostream& os, download_type download) {
-    switch (download) {
-        using enum cloud_storage::download_type;
-    case object:
-        return os << "object";
-    case segment_index:
-        return os << "segment-index";
-    case inventory_report_manifest:
-        return os << "inventory-report-manifest";
-    }
-}
-
-void transfer_details::on_success(remote_probe& probe) {
-    run_callback(success_cb, probe);
-}
-void transfer_details::on_failure(remote_probe& probe) {
-    run_callback(failure_cb, probe);
-}
-void transfer_details::on_backoff(remote_probe& probe) {
-    run_callback(backoff_cb, probe);
+    return os << to_string(download);
 }
 
 std::ostream& operator<<(std::ostream& os, existence_check_type head) {

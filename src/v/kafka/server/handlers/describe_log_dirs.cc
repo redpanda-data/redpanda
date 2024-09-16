@@ -33,7 +33,7 @@ struct partition_data {
 };
 
 using partition_dir_set
-  = absl::flat_hash_map<model::topic, std::vector<partition_data>>;
+  = chunked_hash_map<model::topic, chunked_vector<partition_data>>;
 
 static partition_data describe_partition(cluster::partition& p) {
     auto result = partition_data{
@@ -168,7 +168,7 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
 
         chunked_vector<describe_log_dirs_partition> local_partitions;
         chunked_vector<describe_log_dirs_partition> remote_partitions;
-        for (const auto& i : node.mapped()) {
+        for (const auto& i : node.second) {
             local_partitions.push_back(i.local);
             if (i.remote.has_value()) {
                 remote_partitions.push_back(i.remote.value());
@@ -176,12 +176,12 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
         }
 
         local_results.topics.push_back(describe_log_dirs_topic{
-          .name = node.key(),
+          .name = node.first,
           .partitions = std::move(local_partitions),
         });
         if (!remote_partitions.empty()) {
             remote_results.topics.push_back(describe_log_dirs_topic{
-              .name = std::move(node.key()),
+              .name = std::move(node.first),
               .partitions = std::move(remote_partitions),
             });
         }

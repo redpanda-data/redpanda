@@ -74,7 +74,7 @@ You may also use <key>=<value> notation for setting configuration properties:
   rpk redpanda config set redpanda.kafka_api[0].port=9092
 `,
 		Args: cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -131,7 +131,7 @@ redpanda will listen on it. If your machine has multiple private IP addresses,
 you must use the --self flag to specify which ip redpanda should listen on.
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			y := cfg.ActualRedpandaYamlOrDefaults() // we modify fields in the raw file without writing env / flag overrides

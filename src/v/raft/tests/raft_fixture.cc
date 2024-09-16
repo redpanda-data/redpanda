@@ -13,7 +13,6 @@
 
 #include "bytes/iobuf_parser.h"
 #include "config/property.h"
-#include "config/throughput_control_group.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -28,11 +27,9 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/heartbeats.h"
 #include "raft/state_machine_manager.h"
-#include "raft/tests/raft_group_fixture.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -42,30 +39,9 @@
 #include "test_utils/async.h"
 #include "utils/prefix_logger.h"
 
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/circular_buffer.hh>
-#include <seastar/core/gate.hh>
-#include <seastar/core/io_priority_class.hh>
-#include <seastar/core/scheduling.hh>
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/timed_out_error.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/util/file.hh>
-#include <seastar/util/log.hh>
-#include <seastar/util/noncopyable_function.hh>
-
-#include <absl/container/flat_hash_set.h>
-#include <fmt/core.h>
-
-#include <algorithm>
-#include <chrono>
-#include <filesystem>
-#include <memory>
-#include <optional>
-#include <ranges>
-#include <stdexcept>
-#include <type_traits>
 
 namespace raft {
 
@@ -363,7 +339,8 @@ raft_node_instance::raft_node_instance(
   ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb,
   bool enable_longest_log_detection,
-  std::chrono::milliseconds election_timeout)
+  config::binding<std::chrono::milliseconds> election_timeout,
+  config::binding<std::chrono::milliseconds> heartbeat_interval)
   : raft_node_instance(
     id,
     revision,
@@ -373,7 +350,8 @@ raft_node_instance::raft_node_instance(
     feature_table,
     std::move(leader_update_clb),
     enable_longest_log_detection,
-    election_timeout) {}
+    std::move(election_timeout),
+    std::move(heartbeat_interval)) {}
 
 raft_node_instance::raft_node_instance(
   model::node_id id,
@@ -383,7 +361,8 @@ raft_node_instance::raft_node_instance(
   ss::sharded<features::feature_table>& feature_table,
   leader_update_clb_t leader_update_clb,
   bool enable_longest_log_detection,
-  std::chrono::milliseconds election_timeout)
+  config::binding<std::chrono::milliseconds> election_timeout,
+  config::binding<std::chrono::milliseconds> heartbeat_interval)
   : _id(id)
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
@@ -401,15 +380,15 @@ raft_node_instance::raft_node_instance(
       config::mock_binding<size_t>(64), config::mock_binding(10ms))
   , _leader_clb(std::move(leader_update_clb))
   , _enable_longest_log_detection(enable_longest_log_detection)
-  , _election_timeout(
-      config::mock_binding<std::chrono::milliseconds>(election_timeout)) {
+  , _election_timeout(std::move(election_timeout))
+  , _heartbeat_interval(std::move(heartbeat_interval)) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
 ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     _hb_manager = std::make_unique<heartbeat_manager>(
-      config::mock_binding<std::chrono::milliseconds>(_election_timeout() / 10),
+      _heartbeat_interval,
       consensus_client_protocol(_protocol),
       _id,
       config::mock_binding<std::chrono::milliseconds>(1000ms),
@@ -600,7 +579,8 @@ raft_fixture::add_node(model::node_id id, model::revision_id rev) {
           }
       },
       _enable_longest_log_detection,
-      _election_timeout);
+      _election_timeout.bind(),
+      _heartbeat_interval.bind());
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
@@ -621,7 +601,8 @@ raft_node_instance& raft_fixture::add_node(
           }
       },
       _enable_longest_log_detection,
-      _election_timeout);
+      _election_timeout.bind(),
+      _heartbeat_interval.bind());
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;

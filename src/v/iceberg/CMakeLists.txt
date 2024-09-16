@@ -33,18 +33,29 @@ v_cc_library(
     json_utils.cc
     logger.cc
     manifest_avro.cc
+    manifest_entry_type.cc
+    manifest_entry_values.cc
+    manifest_io.cc
+    manifest_list_avro.cc
     partition_key.cc
     partition_key_type.cc
+    partition_json.cc
     schema.cc
+    schema_avro.cc
     schema_json.cc
+    snapshot_json.cc
     struct_accessor.cc
+    table_metadata_json.cc
     time_transform_visitor.cc
     transform.cc
+    transform_json.cc
     transform_utils.cc
     values.cc
+    values_avro.cc
   DEPS
     Avro::avro
     v::bytes
+    v::cloud_io
     v::container
     v::json
     v::strings

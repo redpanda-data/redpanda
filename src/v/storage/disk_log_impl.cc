@@ -495,17 +495,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
         }
     }
 
-    if (auto range = find_compaction_range(cfg); range) {
-        auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
-        vlog(
-          stlog.debug,
-          "Adjacent segments of {}, compaction result: {}",
-          config().ntp(),
-          r);
-        if (r.did_compact()) {
-            _compaction_ratio.update(r.compaction_ratio());
-        }
-    }
+    co_await compact_adjacent_segments(cfg);
 }
 
 segment_set disk_log_impl::find_sliding_range(
@@ -560,7 +550,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     vlog(gclog.debug, "[{}] running sliding window compaction", config().ntp());
     auto segs = find_sliding_range(cfg, new_start_offset);
     if (segs.empty()) {
-        vlog(gclog.debug, "[{}] no more segments to compact", config().ntp());
+        vlog(
+          gclog.debug, "[{}] no segments in range to compact", config().ntp());
         co_return false;
     }
     bool has_self_compacted = false;
@@ -788,7 +779,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-disk_log_impl::find_compaction_range(const compaction_config& cfg) {
+disk_log_impl::find_adjacent_compaction_range(const compaction_config& cfg) {
     /*
      * adjacent segment compaction.
      *
@@ -864,7 +855,29 @@ disk_log_impl::find_compaction_range(const compaction_config& cfg) {
     return range;
 }
 
-ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
+ss::future<std::optional<compaction_result>>
+disk_log_impl::compact_adjacent_segments(storage::compaction_config cfg) {
+    std::optional<compaction_result> r;
+    if (auto range = find_adjacent_compaction_range(cfg); range) {
+        r = co_await do_compact_adjacent_segments(std::move(*range), cfg);
+        vlog(
+          gclog.debug,
+          "Adjacent segments of {}, compaction result: {}",
+          config().ntp(),
+          r);
+        if (r->did_compact()) {
+            _compaction_ratio.update(r->compaction_ratio());
+        }
+    } else {
+        vlog(
+          gclog.debug,
+          "Adjacent segments of {}, no adjacent pair",
+          config().ntp());
+    }
+    co_return r;
+}
+
+ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
   std::pair<segment_set::iterator, segment_set::iterator> range,
   storage::compaction_config cfg) {
     // lightweight copy of segments in range. once a scheduling event occurs in
@@ -1220,6 +1233,7 @@ ss::future<> disk_log_impl::do_compact(
         co_return co_await adjacent_merge_compact(
           compact_cfg, new_start_offset);
     }
+
     // TODO: unify error handling.
     compact_cfg.asrc = &_compaction_as;
     auto did_compact_fut = co_await ss::coroutine::as_future(
@@ -1237,23 +1251,10 @@ ss::future<> disk_log_impl::do_compact(
     }
     bool compacted = did_compact_fut.get();
     if (!compacted) {
-        if (auto range = find_compaction_range(compact_cfg); range) {
-            auto r = co_await compact_adjacent_segments(
-              std::move(*range), compact_cfg);
-            vlog(
-              gclog.debug,
-              "Adjacent segments of {}, compaction result: {}",
-              config().ntp(),
-              r);
-            if (r.did_compact()) {
-                _compaction_ratio.update(r.compaction_ratio());
-            }
-        } else {
-            vlog(
-              gclog.debug,
-              "Adjacent segments of {}, no adjacent pair",
-              config().ntp());
-        }
+        // If sliding window compaction did not occur, we fall back to adjacent
+        // segment compaction (as self compaction of segments occured in
+        // sliding_window_compact()).
+        co_await compact_adjacent_segments(compact_cfg);
     }
 }
 

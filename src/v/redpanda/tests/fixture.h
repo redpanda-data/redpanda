@@ -319,7 +319,6 @@ public:
         cconf.client_config = s3conf;
         cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
         cconf.connection_limit = archival::connection_limit(4);
-        cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
         return cconf;
     }
 

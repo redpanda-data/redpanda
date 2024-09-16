@@ -103,6 +103,7 @@ add_subdirectory(wasm)
 add_subdirectory(transform)
 add_subdirectory(net)
 add_subdirectory(rpc)
+add_subdirectory(debug_bundle)
 
 # libraries
 add_subdirectory(test_utils)
@@ -129,6 +130,7 @@ add_subdirectory(rp_util)
 add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
 add_subdirectory(datalake)
+add_subdirectory(cloud_io)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 

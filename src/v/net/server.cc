@@ -115,7 +115,7 @@ bool is_gate_closed_exception(std::exception_ptr e) {
         if (e) {
             rethrow_exception(e);
         }
-    } catch (ss::gate_closed_exception&) {
+    } catch (const ss::gate_closed_exception&) {
         return true;
     } catch (...) {
         return false;

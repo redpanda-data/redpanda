@@ -432,15 +432,11 @@ topic_manifest::update(manifest_format format, ss::input_stream<char> is) {
     co_return;
 }
 
-ss::future<serialized_data_stream> topic_manifest::serialize() const {
+ss::future<iobuf> topic_manifest::serialize_buf() const {
     vassert(_topic_config.has_value(), "_topic_config is not initialized");
     // serialize in binary format
-    auto serialized = serde::to_iobuf(topic_manifest_state{
-      .cfg = _topic_config.value(), .initial_revision = _rev});
-    auto size_bytes = serialized.size_bytes();
-    co_return serialized_data_stream{
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
+    return ss::make_ready_future<iobuf>(serde::to_iobuf(topic_manifest_state{
+      .cfg = _topic_config.value(), .initial_revision = _rev}));
 }
 
 void topic_manifest::serialize_v1_json(std::ostream& out) const {

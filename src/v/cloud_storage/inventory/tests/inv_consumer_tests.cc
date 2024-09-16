@@ -43,6 +43,8 @@ TEST(Consumer, ParseNTPFromPath) {
     std::vector<p> test_data{
       {"a0a6eeb8/kafka/topic-x/999_24/178-188-1574137-1-v1.log.1",
        std::make_optional(make_ntp("kafka", "topic-x", 999))},
+      {"d10492a6-2408-418e-9b6b-051697c5255b/k/t/1_24/---",
+       std::make_optional(make_ntp("k", "t", 1))},
       {"a/k/t/1_24/---", std::make_optional(make_ntp("k", "t", 1))},
       // Bad hex m
       {"m/k/t/1_24/---", std::nullopt},

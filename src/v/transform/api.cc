@@ -21,6 +21,7 @@
 #include "features/feature_table.h"
 #include "io.h"
 #include "kafka/server/partition_proxy.h"
+#include "kafka/utils/txn_reader.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -38,7 +39,6 @@
 #include "transform_logger.h"
 #include "transform_manager.h"
 #include "transform_processor.h"
-#include "txn_reader.h"
 #include "wasm/cache.h"
 #include "wasm/engine.h"
 #include "wasm/errc.h"
@@ -222,9 +222,9 @@ public:
         // all readers it makes, as this takes a pointer to a member.
         //
         // This is documented as part of the contract for the source interface.
-        auto tracker = aborted_transaction_tracker::create_default(
+        auto tracker = kafka::aborted_transaction_tracker::create_default(
           &_partition, std::move(translater.ot_state));
-        co_return model::make_record_batch_reader<read_committed_reader>(
+        co_return model::make_record_batch_reader<kafka::read_committed_reader>(
           std::move(tracker), std::move(translater.reader));
     }
 

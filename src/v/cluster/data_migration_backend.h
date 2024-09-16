@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cloud_storage/fwd.h"
+#include "cloud_storage/topic_mount_handler.h"
 #include "cluster/data_migration_table.h"
 #include "cluster/shard_table.h"
 #include "container/chunked_hash_map.h"
@@ -19,6 +21,8 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shared_future.hh>
+#include <seastar/core/shared_ptr.hh>
 
 namespace cluster::data_migrations {
 
@@ -33,11 +37,14 @@ public:
       frontend& frontend,
       ss::sharded<worker>& worker,
       partition_leaders_table& leaders_table,
+      topics_frontend& topics_frontend,
       topic_table& topic_table,
       shard_table& shard_table,
+      std::optional<std::reference_wrapper<cloud_storage::remote>>
+        _cloud_storage_api,
       ss::abort_source& as);
 
-    void start();
+    ss::future<> start();
     ss::future<> stop();
 
 private:
@@ -61,7 +68,6 @@ private:
           : scope(scope){};
         work_scope scope;
         topic_map_t outstanding_topics;
-        void erase_tstate_if_done(topic_map_t::iterator it);
     };
     using migration_reconciliation_states_t
       = absl::flat_hash_map<id, migration_reconciliation_state>;
@@ -83,6 +89,25 @@ private:
         state sought_state;
         errc ec;
     };
+    class topic_scoped_work_state {
+        using self = topic_scoped_work_state;
+        ss::abort_source _as;
+        retry_chain_node _rcn;
+        ss::shared_promise<errc> _promise;
+
+    public:
+        topic_scoped_work_state();
+        ~topic_scoped_work_state();
+        topic_scoped_work_state(const self&) = delete;
+        topic_scoped_work_state(self&&) = delete;
+        self& operator=(const self&) = delete;
+        self& operator=(self&&) = delete;
+
+        retry_chain_node& rcn();
+        void set_value(errc ec);
+        ss::future<errc> future();
+    };
+    using tsws_lwptr_t = ss::lw_shared_ptr<topic_scoped_work_state>;
 
 private:
     /* loop management */
@@ -110,19 +135,40 @@ private:
     // also resulting future cannot throw when co_awaited
     do_topic_work(model::topic_namespace nt, topic_work tw) noexcept;
     ss::future<errc> do_topic_work(
-      model::topic_namespace nt,
+      const model::topic_namespace& nt,
       state sought_state,
-      inbound_topic_work_info itwi);
+      const inbound_topic_work_info& itwi,
+      tsws_lwptr_t tsws);
     ss::future<errc> do_topic_work(
-      model::topic_namespace nt,
+      const model::topic_namespace& nt,
       state sought_state,
-      outbound_topic_work_info otwi);
+      const outbound_topic_work_info& otwi,
+      tsws_lwptr_t tsws);
+    ss::future<> abort_all_topic_work();
+    /* topic work helpers */
+    ss::future<errc> create_topic(
+      const model::topic_namespace& local_nt,
+      const std::optional<model::topic_namespace>& original_nt,
+      const std::optional<cloud_storage_location>& storage_location,
+      retry_chain_node& rcn);
+    ss::future<errc> prepare_mount_topic(
+      const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc> confirm_mount_topic(
+      const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
+    delete_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
+    unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
+    ss::future<errc>
+    do_unmount_topic(const model::topic_namespace& nt, retry_chain_node& rcn);
 
     /* communication with partition workers */
     void start_partition_work(
       const model::ntp& ntp, const replica_work_state& rwstate);
     void stop_partition_work(
-      const model::ntp& ntp, const replica_work_state& rwstate);
+      model::topic_namespace_view nt,
+      model::partition_id partition_id,
+      const replica_work_state& rwstate);
     void
     on_partition_work_completed(model::ntp&& ntp, id migration, state state);
 
@@ -142,11 +188,13 @@ private:
       migration_reconciliation_state& rs, const model::ntp& ntp);
     void mark_migration_step_done_for_nt(
       migration_reconciliation_state& rs, const model::topic_namespace& nt);
-    void drop_migration_reconciliation_rstate(
+    ss::future<> drop_migration_reconciliation_rstate(
       migration_reconciliation_states_t::const_iterator rs_it);
     void clear_tstate_belongings(
       const model::topic_namespace& nt,
       const topic_reconciliation_state& tstate);
+    void erase_tstate_if_done(
+      migration_reconciliation_state& mrstate, topic_map_t::iterator it);
 
     // call only with _mutex lock grabbed
     ss::future<> reconcile_migration(
@@ -159,7 +207,7 @@ private:
       topic_reconciliation_state& tstate,
       id migration,
       work_scope scope,
-      bool schedule_local_work);
+      bool schedule_local_partition_work);
 
     std::optional<std::reference_wrapper<replica_work_state>>
     get_replica_work_state(const model::ntp& ntp);
@@ -238,23 +286,35 @@ private:
     };
     absl::flat_hash_map<id, advance_info> _advance_requests;
     chunked_vector<topic_table_delta> _unprocessed_deltas;
+    chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
 
-    /* Node-local data */
+    /* Node-local data for partition-scoped work */
     using topic_work_state_t
       = chunked_hash_map<model::partition_id, replica_work_state>;
-    chunked_hash_map<model::topic_namespace, topic_work_state_t> _work_states;
-
-    chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
+    chunked_hash_map<model::topic_namespace, topic_work_state_t>
+      _local_work_states;
+    /*
+     * Topic-scoped work states for starting/stopping and disallowing concurrent
+     * work on the same topic: similar to data_migrations::worker
+     */
     chunked_vector<topic_work_result> _topic_work_results;
+    chunked_hash_map<model::topic_namespace, tsws_lwptr_t>
+      _active_topic_work_states; // no null pointers on scheduling points
 
+    /* Refs to services etc */
     model::node_id _self;
     migrations_table& _table;
     frontend& _frontend;
     ss::sharded<worker>& _worker;
     partition_leaders_table& _leaders_table;
+    topics_frontend& _topics_frontend;
     topic_table& _topic_table;
     shard_table& _shard_table;
+    std::optional<std::reference_wrapper<cloud_storage::remote>>
+      _cloud_storage_api;
     ss::abort_source& _as;
+
+    std::unique_ptr<cloud_storage::topic_mount_handler> _topic_mount_handler;
 
     ss::gate _gate;
     ssx::semaphore _sem{0, "c/data-migration-be"};

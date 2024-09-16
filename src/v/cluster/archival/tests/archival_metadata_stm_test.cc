@@ -99,8 +99,6 @@ struct archival_metadata_stm_base_fixture
             [port = httpd_port_number()](cloud_storage::configuration& cfg) {
                 cfg.bucket_name = cloud_storage_clients::bucket_name(
                   "panda-bucket");
-                cfg.metrics_disabled
-                  = cloud_storage::remote_metrics_disabled::yes;
                 cfg.connection_limit = cloud_storage::connection_limit(10);
                 cfg.client_config = get_s3_configuration(port);
             })
@@ -113,7 +111,17 @@ struct archival_metadata_stm_base_fixture
             }))
           .get();
         // Cloud storage remote api
-        cloud_api.start(std::ref(cloud_conn_pool), std::ref(cloud_cfg)).get();
+        cloud_io
+          .start(
+            std::ref(cloud_conn_pool),
+            ss::sharded_parameter(
+              [this] { return cloud_cfg.local().client_config; }),
+            ss::sharded_parameter(
+              [this] { return cloud_cfg.local().cloud_credentials_source; }))
+          .get();
+        cloud_io.invoke_on_all([](cloud_io::remote& io) { return io.start(); })
+          .get();
+        cloud_api.start(std::ref(cloud_io), std::ref(cloud_cfg)).get();
         cloud_api
           .invoke_on_all([](cloud_storage::remote& api) { return api.start(); })
           .get();
@@ -122,6 +130,7 @@ struct archival_metadata_stm_base_fixture
     ~archival_metadata_stm_base_fixture() override {
         stop_all();
         cloud_conn_pool.local().shutdown_connections();
+        cloud_io.stop().get();
         cloud_api.stop().get();
         cloud_conn_pool.stop().get();
         cloud_cfg.stop().get();
@@ -131,6 +140,7 @@ struct archival_metadata_stm_base_fixture
     ss::sharded<features::feature_table> feature_table;
     ss::sharded<cloud_storage::configuration> cloud_cfg;
     ss::sharded<cloud_storage_clients::client_pool> cloud_conn_pool;
+    ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<cloud_storage::remote> cloud_api;
 };
 
@@ -566,6 +576,10 @@ struct segment
     model::initial_revision_id ntp_revision_deprecated;
     cloud_storage::segment_name name;
     cloud_storage::partition_manifest::segment_meta meta;
+
+    auto serde_fields() {
+        return std::tie(ntp_revision_deprecated, name, meta);
+    }
 };
 
 struct snapshot
@@ -573,6 +587,8 @@ struct snapshot
       envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
     /// List of segments
     std::vector<segment> segments;
+
+    auto serde_fields() { return std::tie(segments); }
 };
 
 } // namespace old

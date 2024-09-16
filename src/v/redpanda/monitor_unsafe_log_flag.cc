@@ -80,7 +80,7 @@ ss::future<> monitor_unsafe_log_flag::maybe_log_flag_nag() {
 
     try {
         co_await ss::sleep_abortable(nag_check_retry, _as);
-    } catch (ss::sleep_aborted&) {
+    } catch (const ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }

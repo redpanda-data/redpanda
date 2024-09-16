@@ -78,10 +78,10 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
                 vlog(stlog.trace, "Disabled COW on BTRFS segment {}", path);
             }
         }
-    } catch (std::filesystem::filesystem_error& e) {
+    } catch (const std::filesystem::filesystem_error& e) {
         // This can happen if e.g. our file open races with an unlink
         vlog(stlog.info, "Filesystem error disabling COW on {}: {}", path, e);
-    } catch (std::system_error& e) {
+    } catch (const std::system_error& e) {
         // Non-fatal, user will just get degraded behaviour
         // when btrfs tries to COW on a journal.
         vlog(stlog.info, "System error disabling COW on {}: {}", path, e);
@@ -554,7 +554,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     auto write_lock_holder = co_await s->write_lock();
     if (segment_generation != s->get_generation_id()) {
         vlog(
-          stlog.debug,
+          gclog.debug,
           "segment generation mismatch current generation: {}, previous "
           "generation: {}, skipping compaction",
           s->get_generation_id(),
@@ -649,30 +649,24 @@ ss::future<> rebuild_compaction_index(
       gclog.info, "rebuilt index: {}, attempting compaction again", idx_path);
 }
 
-ss::future<compaction_result> self_compact_segment(
+ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
   ss::lw_shared_ptr<segment> s,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
-  compaction_config cfg,
-  storage::probe& pb,
-  storage::readers_cache& readers_cache,
+  const compaction_config& cfg,
+  ss::rwlock::holder& read_holder,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table) {
-    if (s->has_appender()) {
-        throw std::runtime_error(fmt::format(
-          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
-    }
-
-    if (s->finished_self_compaction() || !s->has_compactible_offsets(cfg)) {
-        co_return compaction_result{s->size_bytes()};
-    }
-
+  storage::probe& pb) {
     segment_full_path idx_path = s->path().to_compacted_index();
 
-    auto read_holder = co_await s->read_lock();
     compacted_index::recovery_state state;
     std::optional<scoped_file_tracker> to_clean;
     while (true) {
         if (s->is_closed()) {
+            // Temporary compaction index will be removed by file tracker.
+            vlog(
+              gclog.debug,
+              "Stopping in maybe_rebuild_compaction_index, segment closed: {}",
+              s->filename());
             throw segment_closed_exception();
         }
         // Check the index state while the read lock is held, preventing e.g.
@@ -696,22 +690,54 @@ ss::future<compaction_result> self_compact_segment(
 
         co_await rebuild_compaction_index(s, stm_manager, cfg, pb, resources);
 
-        // Take the lock again before proceeding so we're guaranteed the index
-        // will survive until it's used in self compaction below.
+        // Take the lock again before proceeding.
         read_holder = co_await s->read_lock();
     }
+
+    // Compaction index was successfully built, remove it from files to clean.
     if (to_clean.has_value()) {
         to_clean->clear();
     }
+
+    co_return state;
+}
+
+ss::future<compaction_result> self_compact_segment(
+  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  const compaction_config& cfg,
+  storage::probe& pb,
+  storage::readers_cache& readers_cache,
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
+    if (s->has_appender()) {
+        throw std::runtime_error(fmt::format(
+          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
+    }
+
+    if (s->finished_self_compaction() || !s->has_compactible_offsets(cfg)) {
+        co_return compaction_result{s->size_bytes()};
+    }
+
+    auto read_holder = co_await s->read_lock();
+    compacted_index::recovery_state state
+      = co_await maybe_rebuild_compaction_index(
+        s, stm_manager, cfg, read_holder, resources, pb);
+
     if (state == compacted_index::recovery_state::already_compacted) {
-        vlog(gclog.debug, "detected {} is already compacted", idx_path);
+        vlog(
+          gclog.debug,
+          "detected {} is already compacted",
+          s->path().to_compacted_index());
         s->mark_as_finished_self_compaction();
         co_return compaction_result{s->size_bytes()};
     }
+
     vassert(
       state == compacted_index::recovery_state::index_recovered,
       "Unexpected state {}",
-      int(state));
+      state);
+
     auto sz_before = s->size_bytes();
     auto apply_offset = should_apply_delta_time_offset(feature_table);
     auto sz_after = co_await do_self_compact_segment(
@@ -723,10 +749,12 @@ ss::future<compaction_result> self_compact_segment(
       apply_offset,
       std::move(read_holder),
       feature_table);
+
     // compaction wasn't executed, return
     if (!sz_after) {
         co_return compaction_result(sz_before);
     }
+
     pb.segment_compacted();
     pb.add_compaction_removed_bytes(ssize_t(sz_before) - ssize_t(*sz_after));
     s->mark_as_finished_self_compaction();
@@ -1017,7 +1045,7 @@ ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
             }
             held = co_await ss::when_all_succeed(held_f.begin(), held_f.end());
             break;
-        } catch (ss::semaphore_timed_out&) {
+        } catch (const ss::semaphore_timed_out&) {
             held.clear();
         }
         if (retries == 0) {

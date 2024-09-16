@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include "cloud_io/auth_refresh_bg_op.h"
+#include "cloud_io/io_resources.h"
+#include "cloud_io/remote.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/configuration.h"
@@ -24,7 +27,9 @@
 #include "container/intrusive_list_helpers.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
+#include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -37,70 +42,7 @@ namespace cloud_storage {
 
 class materialized_resources;
 
-/// \brief Predicate required to continue operation
-///
-/// Describes a predicate to be evaluated before starting an expensive
-/// operation, or to be evaluated when an operation has failed, to find
-/// the reason for failure
-struct lazy_abort_source {
-    /// Predicate to be evaluated before an operation. Evaluates to true when
-    /// the operation should be aborted, false otherwise.
-    using predicate_t = ss::noncopyable_function<std::optional<ss::sstring>()>;
-
-    lazy_abort_source(predicate_t predicate)
-      : _predicate{std::move(predicate)} {}
-
-    bool abort_requested();
-    ss::sstring abort_reason() const;
-
-private:
-    ss::sstring _abort_reason;
-    predicate_t _predicate;
-};
-
 static constexpr ss::shard_id auth_refresh_shard_id = 0;
-
-/// Helper class to start the background operations to periodically refresh
-/// authentication. Selects the implementation for fetch based on the
-/// cloud_credentials_source property.
-class auth_refresh_bg_op {
-public:
-    auth_refresh_bg_op(
-      ss::gate& gate,
-      ss::abort_source& as,
-      cloud_storage_clients::client_configuration client_conf,
-      model::cloud_credentials_source cloud_credentials_source);
-
-    /// Helper to decide if credentials will be regularly fetched from
-    /// infrastructure APIs or loaded once from config file.
-    bool is_static_config() const;
-
-    /// Builds a set of static AWS compatible credentials, reading values from
-    /// the S3 configuration passed to us.
-    cloud_roles::credentials build_static_credentials() const;
-
-    /// Start a background refresh operation, accepting a callback which is
-    /// called with newly fetched credentials periodically. The operation is
-    /// started on auth_refresh_shard_id and credentials are copied to other
-    /// shards using the callback.
-    void maybe_start_auth_refresh_op(
-      cloud_roles::credentials_update_cb_t credentials_update_cb);
-
-    cloud_storage_clients::client_configuration get_client_config() const;
-    void set_client_config(cloud_storage_clients::client_configuration conf);
-
-    ss::future<> stop();
-
-private:
-    void do_start_auth_refresh_op(
-      cloud_roles::credentials_update_cb_t credentials_update_cb);
-
-    ss::gate& _gate;
-    ss::abort_source& _as;
-    cloud_storage_clients::client_configuration _client_conf;
-    model::cloud_credentials_source _cloud_credentials_source;
-    std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
-};
 
 enum class api_activity_type {
     segment_upload,
@@ -182,14 +124,12 @@ public:
 /// download data. Also, it's responsible for maintaining
 /// correct naming in S3. The remote takes into account
 /// things like reconnects, backpressure and backoff.
-class remote
-  : public ss::peering_sharded_service<remote>
-  , public cloud_storage_api {
+class remote : public cloud_storage_api {
 public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
     using reset_input_stream = ss::noncopyable_function<
-      ss::future<std::unique_ptr<storage::stream_provider>>()>;
+      ss::future<std::unique_ptr<stream_provider>>()>;
 
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation
@@ -202,9 +142,8 @@ public:
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
     remote(
-      ss::sharded<cloud_storage_clients::client_pool>& clients,
-      const cloud_storage_clients::client_configuration& conf,
-      model::cloud_credentials_source cloud_credentials_source);
+      ss::sharded<cloud_io::remote>& io,
+      const cloud_storage_clients::client_configuration& conf);
 
     ~remote() override;
 
@@ -212,8 +151,7 @@ public:
     ///
     /// \param conf is an archival configuration
     explicit remote(
-      ss::sharded<cloud_storage_clients::client_pool>& pool,
-      const configuration& conf);
+      ss::sharded<cloud_io::remote>& io, const configuration& conf);
 
     /// \brief Start the remote
     ss::future<> start();
@@ -226,8 +164,6 @@ public:
     /// Return max number of concurrent requests that the object
     /// can perform.
     size_t concurrency() const;
-
-    model::cloud_storage_backend backend() const;
 
     bool is_batch_delete_supported() const;
     int delete_objects_max_keys() const;
@@ -307,6 +243,18 @@ public:
       retry_chain_node& parent,
       lazy_abort_source& lazy_abort_source,
       std::optional<size_t> max_retries = std::nullopt);
+
+    /// \brief Upload segment index to the pre-defined S3 location
+    ///
+    /// \param bucket is a bucket name
+    /// \param manifest is the index to upload
+    /// \param key is the remote object name
+    /// \return future that returns success code
+    ss::future<upload_result> upload_index(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key,
+      const offset_index& index,
+      retry_chain_node& parent);
 
     /// \brief Download segment from S3
     ///
@@ -525,83 +473,26 @@ public:
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.
-    seastar::gate& gate() { return _gate; };
-    ss::abort_source& as() { return _as; }
+    seastar::gate& gate() { return io().gate(); };
+    ss::abort_source& as() { return io().as(); }
 
 private:
-    template<
-      typename FailedUploadMetricFn,
-      typename SuccessfulUploadMetricFn,
-      typename UploadBackoffMetricFn>
-    ss::future<upload_result> upload_stream(
-      const cloud_storage_clients::bucket_name& bucket,
-      const remote_segment_path& segment_path,
-      uint64_t content_length,
-      const reset_input_stream& reset_str,
-      retry_chain_node& parent,
-      lazy_abort_source& lazy_abort_source,
-      const std::string_view stream_label,
-      api_activity_type event_type,
-      FailedUploadMetricFn failed_upload_metric,
-      SuccessfulUploadMetricFn successful_upload_metric,
-      UploadBackoffMetricFn upload_backoff_metric,
-      std::optional<size_t> max_retries);
+    cloud_io::remote& io() { return _io.local(); }
+    const cloud_io::remote& io() const { return _io.local(); }
 
-    template<
-      typename DownloadLatencyMeasurementFn,
-      typename FailedDownloadMetricFn,
-      typename DownloadBackoffMetricFn>
-    ss::future<download_result> download_stream(
-      const cloud_storage_clients::bucket_name& bucket,
-      const remote_segment_path& path,
-      const try_consume_stream& cons_str,
-      retry_chain_node& parent,
-      const std::string_view stream_label,
-      bool acquire_hydration_units,
-      DownloadLatencyMeasurementFn download_latency_measurement,
-      FailedDownloadMetricFn failed_download_metric,
-      DownloadBackoffMetricFn download_backoff_metric,
-      std::optional<cloud_storage_clients::http_byte_range> byte_range
-      = std::nullopt);
-
-    template<typename R>
-    requires std::ranges::range<R>
-             && std::same_as<
-               std::ranges::range_value_t<R>,
-               cloud_storage_clients::object_key>
-    ss::future<upload_result> delete_objects_sequentially(
-      const cloud_storage_clients::bucket_name& bucket,
-      R keys,
-      retry_chain_node& parent);
-
-    /// Delete a single batch of keys. The batch size must not exceed the
-    /// backend limits.
-    ///
-    /// \pre the number of keys is <= delete_objects_max_keys
-    ss::future<upload_result> delete_object_batch(
-      const cloud_storage_clients::bucket_name& bucket,
-      std::vector<cloud_storage_clients::object_key> keys,
-      retry_chain_node& parent);
-
-    ss::future<> propagate_credentials(cloud_roles::credentials credentials);
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);
+    std::function<void(size_t)>
+    make_notify_cb(api_activity_type t, retry_chain_node& retry);
 
-    ss::sharded<cloud_storage_clients::client_pool>& _pool;
-    ss::gate _gate;
-    ss::abort_source _as;
-    auth_refresh_bg_op _auth_refresh_bg_op;
+    ss::sharded<cloud_io::remote>& _io;
     std::unique_ptr<materialized_resources> _materialized;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;
 
     intrusive_list<event_filter, &event_filter::_hook> _filters;
-
-    config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
-
-    model::cloud_storage_backend _cloud_storage_backend;
 };
 
 } // namespace cloud_storage

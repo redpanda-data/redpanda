@@ -254,6 +254,15 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
       synced_term,
       *producer);
 
+    // Note fencing stale requests:
+    // Fencing is done on two dimensions epoch and sequence number.
+    // 1. If the epoch is bumped, older epochs are rejected (Kafka guarantee)
+    // 2. If the sequence number is advanced, older sequences are rejected.
+    //    Sequence numbers are advanced by the coordinator for every new
+    //    transaction with the same epoch. If there is a request from a stale
+    //    sequence number, it is likely from a stale coordinator instance
+    //    attempting to recover, in which case the requests are fenced.
+
     auto current_pid = producer->id();
     if (pid.epoch < current_pid.epoch) {
         // request from an older instance of the producer
@@ -265,32 +274,73 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
           synced_term, producer, std::nullopt, _sync_timeout);
         if (ar != tx::errc::none) {
             vlog(
-              _ctx_log.trace,
-              "can't begin tx {} because abort of a prev tx {} failed with {}",
+              _ctx_log.warn,
+              "[{}] can't begin tx because abort of a prev tx with lower epoch "
+              "{} failed with {}",
+              *producer,
               pid,
-              current_pid,
               ar);
             co_return tx::errc::stale;
         }
     } else if (producer->has_transaction_in_progress()) {
-        // check for duplicate request
-        if (
-          producer->transaction_state()->status
-          == tx::partition_transaction_status::initialized) {
+        const auto& tx_state = producer->transaction_state();
+        if (tx_seq < tx_state->sequence) {
             vlog(
-              _ctx_log.debug,
-              "Ignoring duplicate begin_tx request with producer: {}",
+              _ctx_log.warn,
+              "[{}] Fencing begin_tx request due to a smaller sequence "
+              "number {}",
+              *producer,
+              tx_seq);
+        } else if (tx_seq > tx_state->sequence) {
+            // this is impossible because the coordinator state machine has to
+            // ensure that a sequence is committed/aborted before bumping it.
+            vlog(
+              _ctx_log.error,
+              "[{}] can't begin tx with {} because a transaction with lower "
+              "sequence is in progress, this is likely a bug in the "
+              "coordinator",
+              *producer,
+              tx_seq);
+        } else {
+            // sequence numbers matched.
+            // check for duplicate request
+            if (
+              tx_state->status
+              == tx::partition_transaction_status::initialized) {
+                vlog(
+                  _ctx_log.debug,
+                  "Ignoring duplicate begin_tx request with producer: {}",
+                  *producer);
+                // no data yet, in the transaction ignore the duplicate
+                // request by returning success
+                co_return synced_term;
+            }
+            vlog(
+              _ctx_log.error,
+              "duplicate begin request with producer after the transaction "
+              "already "
+              "began: {}",
               *producer);
-            // no data yet, in the transaction ignore the duplicate
-            // request by returning success
-            co_return synced_term;
         }
-        vlog(
-          _ctx_log.warn,
-          "duplicate begin request with producer after the transaction already "
-          "began: {}",
-          *producer);
-        co_return tx::errc::unknown_server_error;
+        co_return tx::errc::request_rejected;
+    } else {
+        // tx sequence is monotonic and cannot move backwards.
+        // check if the request is stale i.e. tx_seq has moved forward already.
+        // we may not always have this transaction state around since producers
+        // may be evicted, so this fencing is not enforced in all times.
+        const auto& sealed_tx_state = producer->transaction_state();
+        if (sealed_tx_state && tx_seq <= sealed_tx_state->sequence) {
+            // At this point there is no transaction in progress and the
+            // requested sequence number is behind the sequence number of the
+            // transaction that is already sealed, so this is likely from an
+            // stale coordinator.
+            vlog(
+              _ctx_log.warn,
+              "[{}] Rejecting stale request with sequence number {}",
+              *producer,
+              tx_seq);
+            co_return tx::errc::request_rejected;
+        }
     }
     // By now any in progresss transactions are aborted and the resulting
     // state and the resulting changes are reflected in the producer state.

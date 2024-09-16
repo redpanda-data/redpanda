@@ -770,7 +770,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     nb.set_correlation_id(10);
     nb.set_service_method(echo::echo_service::echo_method);
     auto bytes = random_generators::get_bytes();
-    nb.buffer().append(bytes.c_str(), bytes.size());
+    nb.buffer().append(bytes.data(), bytes.size());
 
     BOOST_TEST_MESSAGE("Request with invalid payload");
     // will fail all the futures as server close the connection

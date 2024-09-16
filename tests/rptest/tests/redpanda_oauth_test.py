@@ -10,7 +10,7 @@
 import threading
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, ok_to_fail_fips
 
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -620,6 +620,7 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
         )
 
     @cluster(num_nodes=3)
+    @ok_to_fail_fips  # See NOTE below
     @parametrize(authn_config={"sasl_mechanisms": ["OAUTHBEARER", "SCRAM"]})
     @parametrize(authn_config={"http_authentication": ["OIDC", "BASIC"]})
     def test_license_nag(self, authn_config):
@@ -629,6 +630,8 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
 
         self.logger.debug("Ensuring no license nag")
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        # NOTE: This assertion will FAIL if running in FIPS mode because
+        # being in FIPS mode will trigger the license nag
         assert not self._has_license_nag()
 
         self.logger.debug("Setting cluster config")

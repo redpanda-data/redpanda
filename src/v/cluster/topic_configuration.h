@@ -22,16 +22,18 @@ namespace cluster {
 struct topic_configuration
   : serde::envelope<
       topic_configuration,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     topic_configuration(
       model::ns ns,
       model::topic topic,
       int32_t partition_count,
-      int16_t replication_factor)
+      int16_t replication_factor,
+      bool is_migrated = false)
       : tp_ns(std::move(ns), std::move(topic))
       , partition_count(partition_count)
-      , replication_factor(replication_factor) {}
+      , replication_factor(replication_factor)
+      , is_migrated(is_migrated) {}
 
     topic_configuration() = default;
 
@@ -64,31 +66,16 @@ struct topic_configuration
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
-    int32_t partition_count;
+    int32_t partition_count{0};
     // using signed integer because Kafka protocol defines it as signed int
-    int16_t replication_factor;
+    int16_t replication_factor{0};
+    // bypass migration restrictions
+    bool is_migrated{false};
 
     topic_properties properties;
 
-    auto serde_fields() {
-        return std::tie(tp_ns, partition_count, replication_factor, properties);
-    }
-
-    void serde_read(iobuf_parser& in, const serde::header& h) {
-        using serde::read_nested;
-
-        tp_ns = read_nested<model::topic_namespace>(in, h._bytes_left_limit);
-        partition_count = read_nested<int32_t>(in, h._bytes_left_limit);
-        replication_factor = read_nested<int16_t>(in, h._bytes_left_limit);
-        properties = read_nested<topic_properties>(in, h._bytes_left_limit);
-
-        if (h._version < 1) {
-            // Legacy tiered storage topics do not delete data on
-            // topic deletion.
-            properties.remote_delete
-              = storage::ntp_config::legacy_remote_delete;
-        }
-    }
+    void serde_write(iobuf& out);
+    void serde_read(iobuf_parser& in, const serde::header& h);
 
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 

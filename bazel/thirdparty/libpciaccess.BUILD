@@ -55,6 +55,11 @@ cc_library(
         "-Werror=address",
         "-Werror=int-to-pointer-cast",
     ],
+    # This is only consumed by a make library that produces a static library,
+    # so this library only needs to produce a static library. Doing this means
+    # that the final build doesn't have a worthless shared library copied to
+    # the output.
+    linkstatic = True,
     local_defines = [
         'PCIIDS_PATH=\\"/usr/share/hwdata\\"',
         "HAVE_ZLIB=1",

@@ -19,10 +19,11 @@
 
 using namespace iceberg;
 
-field_type nested_type_with_timestamp(int field_id) {
+field_type nested_type_with_timestamp(
+  int field_id, field_required required = field_required::yes) {
     struct_type type;
-    type.fields.emplace_back(nested_field::create(
-      field_id, "ts", field_required::yes, timestamp_type{}));
+    type.fields.emplace_back(
+      nested_field::create(field_id, "ts", required, timestamp_type{}));
     auto nested_type = test_nested_schema_type();
     for (auto& f : std::get<struct_type>(nested_type).fields) {
         type.fields.emplace_back(std::move(f));
@@ -48,6 +49,13 @@ val_with_timestamp(const field_type& type, model::timestamp timestamp_ms) {
     auto timestamp_us = timestamp_ms.value() * micros_per_ms;
     auto val = tests::make_value({.forced_num_val = timestamp_us}, type);
     return std::move(*std::get<std::unique_ptr<struct_value>>(val));
+}
+
+partition_key make_partition_key(
+  const struct_value& v, const struct_type& t, int source_field_id) {
+    const auto accessors = struct_accessor::from_struct_type(t);
+    auto partition_spec = make_ts_partition_spec(source_field_id);
+    return partition_key::create(v, accessors, partition_spec);
 }
 
 TEST(PartitionKeyTest, TestHourlyGrouping) {
@@ -118,4 +126,37 @@ TEST(PartitionKeyTest, TestBogusPartitionSpec) {
     ASSERT_THROW(
       partition_key::create(v, accessors, partition_spec),
       std::invalid_argument);
+}
+
+TEST(PartitionKeyTest, TestCopyPartitionKey) {
+    const auto ts_field_id = 0;
+    auto schema_type = nested_type_with_timestamp(0, field_required::no);
+    {
+        // Construct a partition key that has empty values and ensure it gets
+        // copied.
+        auto v = tests::make_value({.null_pct = 100}, schema_type);
+        auto pk = make_partition_key(
+          *std::get<std::unique_ptr<struct_value>>(v),
+          std::get<struct_type>(schema_type),
+          ts_field_id);
+        auto pk_copy = pk.copy();
+        ASSERT_EQ(pk_copy, pk);
+        for (const auto& f : pk_copy.val->fields) {
+            ASSERT_FALSE(f.has_value()) << f.value();
+        }
+    }
+    {
+        // Construct a partition key that has non-empty values and ensure it
+        // gets copied.
+        auto v = tests::make_value({.null_pct = 0}, schema_type);
+        auto pk = make_partition_key(
+          *std::get<std::unique_ptr<struct_value>>(v),
+          std::get<struct_type>(schema_type),
+          ts_field_id);
+        auto pk_copy = pk.copy();
+        ASSERT_EQ(pk_copy, pk);
+        for (const auto& f : pk_copy.val->fields) {
+            ASSERT_TRUE(f.has_value());
+        }
+    }
 }

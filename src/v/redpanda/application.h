@@ -27,6 +27,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "crypto/ossl_context_service.h"
+#include "debug_bundle/fwd.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
@@ -112,6 +113,7 @@ public:
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
     ss::sharded<cloud_storage_clients::client_pool> cloud_storage_clients;
+    ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<cloud_storage::remote> cloud_storage_api;
     ss::sharded<archival::upload_housekeeping_service>
       archival_upload_housekeeping;
@@ -204,6 +206,10 @@ private:
         uint32_t _crash_count{0};
         uint64_t _config_checksum{0};
         model::timestamp _last_start_ts;
+
+        auto serde_fields() {
+            return std::tie(_crash_count, _config_checksum, _last_start_ts);
+        }
     };
 
     // Constructs and starts the services required to provide cryptographic
@@ -324,6 +330,7 @@ private:
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
     ss::sharded<resources::cpu_profiler> _cpu_profiler;
+    ss::sharded<debug_bundle::service> _debug_bundle_service;
 
     std::unique_ptr<cluster::node_isolation_watcher> _node_isolation_watcher;
 

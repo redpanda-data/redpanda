@@ -17,6 +17,8 @@
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/net/tls.hh>
+#include <seastar/util/variant_utils.hh>
 
 namespace config {
 ss::future<std::optional<ss::tls::credentials_builder>>
@@ -50,10 +52,20 @@ tls_config::get_credentials_builder() const& {
 
               if (_key_cert) {
                   f = f.then([this, &builder] {
-                      return builder.set_x509_key_file(
-                        (*_key_cert).cert_file,
-                        (*_key_cert).key_file,
-                        ss::tls::x509_crt_format::PEM);
+                      return ss::visit(
+                        _key_cert.value(),
+                        [&builder](const key_cert& c) {
+                            return builder.set_x509_key_file(
+                              c.cert_file,
+                              c.key_file,
+                              ss::tls::x509_crt_format::PEM);
+                        },
+                        [&builder](const p12_container& p) {
+                            return builder.set_simple_pkcs12_file(
+                              p.p12_path,
+                              ss::tls::x509_crt_format::PEM,
+                              p.p12_password);
+                        });
                   });
               }
 
@@ -74,12 +86,26 @@ tls_config::get_credentials_builder() && {
 }
 
 std::optional<ss::sstring> tls_config::validate(const tls_config& c) {
-    if (c.get_require_client_auth() && !c.get_truststore_file()) {
-        return "Trust store is required when client authentication is "
-               "enabled";
+    const auto contains_p12_file = [&c]() {
+        if (c.get_key_cert_files()) {
+            return std::holds_alternative<config::p12_container>(
+              (*c.get_key_cert_files()));
+        }
+        return false;
+    };
+    if (
+      c.get_require_client_auth() && !c.get_truststore_file()
+      && !contains_p12_file()) {
+        return "Trust store or P12 file is required when client authentication "
+               "is enabled";
     }
 
     return std::nullopt;
+}
+
+std::ostream& operator<<(std::ostream& o, const config::p12_container& p) {
+    fmt::print(o, "{{ p12 file: {}, p12 password: REDACTED }}", p.p12_path);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const config::key_cert& c) {
@@ -126,8 +152,16 @@ Node convert<config::tls_config>::encode(const config::tls_config& rhs) {
     node["require_client_auth"] = rhs.get_require_client_auth();
 
     if (rhs.get_key_cert_files()) {
-        node["cert_file"] = (*rhs.get_key_cert_files()).key_file;
-        node["key_file"] = (*rhs.get_key_cert_files()).cert_file;
+        ss::visit(
+          rhs.get_key_cert_files().value(),
+          [&node](const config::key_cert& c) {
+              node["cert_file"] = c.cert_file;
+              node["key_file"] = c.key_file;
+          },
+          [&node](const config::p12_container& p12) {
+              node["p12_file"] = p12.p12_path;
+              node["p12_password"] = "REDACTED";
+          });
     }
 
     if (rhs.get_truststore_file()) {
@@ -153,19 +187,38 @@ bool convert<config::tls_config>::decode(
       ^ static_cast<bool>(node["cert_file"])) {
         return false;
     }
+
+    // Must have either both or neither for PKCS#12 files
+    if (
+      static_cast<bool>(node["p12_file"])
+      ^ static_cast<bool>(node["p12_password"])) {
+        return false;
+    }
+
+    // Cannot have both key/cert and P12 file
+    if (
+      static_cast<bool>(node["key_file"])
+      && static_cast<bool>(node["p12_file"])) {
+        return false;
+    }
     auto enabled = node["enabled"] && node["enabled"].as<bool>();
     if (!enabled) {
         rhs = config::tls_config(
           false, std::nullopt, std::nullopt, std::nullopt, false);
     } else {
-        auto key_cert = node["key_file"] ? std::make_optional<config::key_cert>(
-                          config::key_cert{
-                            to_absolute(node["key_file"].as<ss::sstring>()),
-                            to_absolute(node["cert_file"].as<ss::sstring>())})
-                                         : std::nullopt;
+        std::optional<config::key_cert_container> container;
+        if (node["key_file"]) {
+            container.emplace(config::key_cert{
+              to_absolute(node["key_file"].as<ss::sstring>()),
+              to_absolute(node["cert_file"].as<ss::sstring>())});
+        } else if (node["p12_file"]) {
+            container.emplace(config::p12_container{
+              to_absolute(node["p12_file"].as<ss::sstring>()),
+              node["p12_password"].as<ss::sstring>()});
+        }
         rhs = config::tls_config(
           enabled,
-          key_cert,
+          container,
           to_absolute(read_optional(node, "truststore_file")),
           to_absolute(read_optional(node, "crl_file")),
           node["require_client_auth"]

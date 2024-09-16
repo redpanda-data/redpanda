@@ -16,6 +16,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_io:remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
@@ -23,6 +24,7 @@ redpanda_cc_library(
         "//src/v/compression",
         "//src/v/config",
         "//src/v/crypto",
+        "//src/v/debug_bundle",
         "//src/v/features",
         "//src/v/finjector",
         "//src/v/kafka/client",
@@ -48,6 +50,7 @@ redpanda_cc_library(
         "//src/v/ssx:abort_source",
         "//src/v/ssx:thread_worker",
         "//src/v/storage",
+        "//src/v/storage:chunk_cache",
         "//src/v/strings:utf8",
         "//src/v/syschecks",
         "//src/v/transform",

@@ -88,4 +88,9 @@ std::ostream& operator<<(std::ostream& os, const canonical_schema& ref) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const compatibility_result& res) {
+    fmt::print(os, "is_compat: {}, messages: {}", res.is_compat, res.messages);
+    return os;
+}
+
 } // namespace pandaproxy::schema_registry

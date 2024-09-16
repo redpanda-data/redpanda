@@ -531,6 +531,7 @@ public:
     batch_cache_index(const batch_cache_index&) = delete;
     batch_cache_index& operator=(const batch_cache_index&) = delete;
 
+    ss::future<> clear_async();
     bool empty() const { return _index.empty(); }
 
     void

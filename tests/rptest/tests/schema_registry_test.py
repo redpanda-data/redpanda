@@ -21,7 +21,7 @@ import socket
 
 from confluent_kafka.schema_registry import SchemaRegistryClient, topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy, Schema, SchemaRegistryError, SchemaReference
 from confluent_kafka.serialization import (MessageField, SerializationContext)
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import parametrize, matrix, ok_to_fail_fips
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -199,6 +199,8 @@ message myrecord {
     ]
 }
 """,
+    json=r'{"type": "number"}',
+    json_incompat=r'{"type": "number", "multipleOf": 20}',
 )
 
 log_config = LoggingConfig('info',
@@ -1090,6 +1092,34 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.json()["id"] == 1
 
     @cluster(num_nodes=3)
+    def test_post_subjects_subject_versions_metadata_ruleset(self):
+        """
+        Verify posting a schema with metatada and ruleSet
+        These are not supported, but if they're null, we let it pass.
+        """
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug("Dump the schema with null metadata and ruleSet")
+        schema_1_data = json.dumps({
+            "schema": schema1_def,
+            "metadata": None,
+            "ruleSet": None
+        })
+
+        self.logger.debug("Posting schema as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Retrieving schema")
+        result_raw = self._post_subjects_subject(subject=f"{topic}-key",
+                                                 data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+    @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
         """
         Verify posting a schema
@@ -1542,6 +1572,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     @parametrize(schemas=("avro", "avro_incompat", "AVRO"))
     @parametrize(schemas=("proto3", "proto3_incompat", "PROTOBUF"))
     @parametrize(schemas=("proto2", "proto2_incompat", "PROTOBUF"))
+    @parametrize(schemas=("json", "json_incompat", "JSON"))
     def test_compatibility_messages(self, schemas):
         """
         Verify compatibility messages
@@ -1588,6 +1619,17 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert any(
                 message in m for m in msgs
             ), f"Expected to find an instance of '{message}', got {msgs}"
+
+        self.logger.debug(
+            "Check post incompatible schema error message (expect verbose messages)"
+        )
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=incompatible_data)
+
+        assert result_raw.status_code == 409
+        msg = result_raw.json()["message"]
+        for message in ["oldSchemaVersion", "oldSchema", "compatibility"]:
+            assert message in msg, f"Expected to find an instance of '{message}', got {msgs}"
 
     @cluster(num_nodes=3)
     def test_delete_subject(self):
@@ -2045,7 +2087,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert schema.json()["schemaType"] == protocol.name
 
     @cluster(num_nodes=4)
-    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
+    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF, SchemaType.JSON],
             client_type=[SerdeClientType.Python],
             validate_schema_id=[True],
             subject_name_strategy=list(TopicSpec.SubjectNameStrategyCompat),
@@ -3796,6 +3838,7 @@ class SchemaRegistryLicenseTest(RedpandaTest):
         )
 
     @cluster(num_nodes=3)
+    @ok_to_fail_fips  # See NOTE below
     @parametrize(mode=SchemaIdValidationMode.REDPANDA)
     @parametrize(mode=SchemaIdValidationMode.COMPAT)
     def test_license_nag(self, mode):
@@ -3805,6 +3848,8 @@ class SchemaRegistryLicenseTest(RedpandaTest):
 
         self.logger.debug("Ensuring no license nag")
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        # NOTE: This assertion will FAIL if running in FIPS mode because
+        # being in FIPS mode will trigger the license nag
         assert not self._has_license_nag()
 
         self.logger.debug("Setting cluster config")

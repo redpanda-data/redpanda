@@ -1,6 +1,32 @@
 load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
+    name = "s3_imposter_gtest",
+    srcs = [
+        "s3_imposter.cc",
+    ],
+    hdrs = [
+        "s3_imposter.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/test_utils:gtest",
+    ],
+    include_prefix = "cloud_storage/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
+        "//src/v/http/tests:utils",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "s3_imposter",
     srcs = [
         "s3_imposter.cc",
@@ -8,12 +34,21 @@ redpanda_test_cc_library(
     hdrs = [
         "s3_imposter.h",
     ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/test_utils:seastar_boost",
+    ],
     include_prefix = "cloud_storage/tests",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/cloud_storage",
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
         "//src/v/http/tests:utils",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@seastar",
     ],
 )
 

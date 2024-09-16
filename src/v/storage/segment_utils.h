@@ -30,12 +30,28 @@
 
 namespace storage::internal {
 
+// Rebuilds the compaction index for a segment, if it is needed.
+// Requires a rwlock::holder to be passed in, which is likely to be the
+// segment's read_lock(). The lock owned by the holder will be held after this
+// function call completes, allowing the caller to proceed to self compaction or
+// other destructive operations.
+//
+// Returns the recovery_state, indicating status of the compaction index and
+// whether self-compaction should be executed or not.
+ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
+  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  const compaction_config& cfg,
+  ss::rwlock::holder& read_holder,
+  storage_resources& resources,
+  storage::probe& pb);
+
 /// \brief, this method will acquire it's own locks on the segment
 ///
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
   ss::lw_shared_ptr<storage::stm_manager>,
-  storage::compaction_config,
+  const storage::compaction_config&,
   storage::probe&,
   storage::readers_cache&,
   storage::storage_resources&,
@@ -209,6 +225,7 @@ struct clean_segment_value
       serde::version<0>,
       serde::compat_version<0>> {
     ss::sstring segment_name;
+    auto serde_fields() { return std::tie(segment_name); }
 };
 
 inline bool

@@ -878,6 +878,9 @@ enum class topic_lifecycle_transition_mode : uint8_t {
     // Legacy-style deletion, where we attempt to delete local data and drop
     // the topic entirely from the topic table in one step.
     oneshot_delete = 2,
+
+    // Local-only delete for migrated-from topics
+    delete_migrated = 3
 };
 
 struct nt_lifecycle_marker
@@ -3133,6 +3136,8 @@ struct controller_committed_offset_request
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+
+    auto serde_fields() { return std::tie(); }
 };
 
 struct controller_committed_offset_reply

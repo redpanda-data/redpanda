@@ -92,7 +92,7 @@ parse_tags(ss::input_stream<char>& src) {
         auto id = co_await read_unsigned_vint(total_bytes_read, src);
         auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
         auto buf = co_await src.read_exactly(next_len);
-        auto data = ss::uninitialized_string<bytes>(buf.size());
+        bytes data(bytes::initialized_later{}, buf.size());
         std::copy_n(buf.begin(), buf.size(), data.begin());
         total_bytes_read += next_len;
         auto [_, succeded] = tags.emplace(tag_id(id), std::move(data));
