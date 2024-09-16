@@ -36,7 +36,8 @@ class cluster_metadata_fixture
 public:
     cluster_metadata_fixture()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}, httpd_port_number())
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number())
       , remote(app.cloud_storage_api.local())
       , bucket(cloud_storage_clients::bucket_name("test-bucket")) {
         set_expectations_and_listen({});

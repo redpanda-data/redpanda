@@ -24,7 +24,7 @@ public:
     unauthorized_user_exception(
       security::credential_user username, const std::string& msg)
       : ss::httpd::base_exception(
-        msg, ss::http::reply::status_type::unauthorized)
+          msg, ss::http::reply::status_type::unauthorized)
       , _username(std::move(username)) {}
     const security::credential_user& get_username() const { return _username; }
 
@@ -65,7 +65,7 @@ public:
       , _sasl_mechanism(std::move(sasl_mechanism))
       , _authenticated(true)
       , _superuser(is_superuser)
-      , _auth_required(true){};
+      , _auth_required(true) {};
 
     /**
      * Anonymous user.  They may still be considered authenticated/superuser
@@ -78,7 +78,7 @@ public:
       auth_required is_auth_required)
       : _authenticated(is_authenticated)
       , _superuser(is_superuser)
-      , _auth_required(is_auth_required){};
+      , _auth_required(is_auth_required) {};
 
     ~request_auth_result() noexcept(false);
 

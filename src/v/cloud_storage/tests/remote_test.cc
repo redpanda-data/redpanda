@@ -106,7 +106,7 @@ template<model::cloud_storage_backend backend>
 struct backend_override_mixin_t {
     backend_override_mixin_t()
       : _default_backend(
-        config::shard_local_cfg().cloud_storage_backend.value()) {
+          config::shard_local_cfg().cloud_storage_backend.value()) {
         config::shard_local_cfg().cloud_storage_backend.set_value(
           model::cloud_storage_backend::google_s3_compat);
     }

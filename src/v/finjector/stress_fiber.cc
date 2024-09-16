@@ -71,7 +71,7 @@ ss::future<> stress_payload::run_count_fiber(int min_count, int max_count) {
         int spins_per_scheduling_point = min_count == max_count
                                            ? min_count
                                            : random_generators::get_int(
-                                             min_count, max_count);
+                                               min_count, max_count);
         co_await ss::maybe_yield();
         volatile int spins = 0;
         while (true) {
@@ -88,7 +88,7 @@ ss::future<> stress_payload::run_delay_fiber(int min_ms, int max_ms) {
         int ms_per_scheduling_point = min_ms == max_ms
                                         ? min_ms
                                         : random_generators::get_int(
-                                          min_ms, max_ms);
+                                            min_ms, max_ms);
         co_await ss::maybe_yield();
         const auto stop_time = ss::steady_clock_type::now()
                                + std::chrono::milliseconds(

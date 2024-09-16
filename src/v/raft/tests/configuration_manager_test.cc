@@ -38,21 +38,21 @@ using namespace std::chrono_literals; // NOLINT
 struct config_manager_fixture {
     config_manager_fixture()
       : _storage(storage::api(
-        [this] {
-            return storage::kvstore_config(
-              100_MiB,
-              config::mock_binding(std::chrono::milliseconds(10)),
-              base_dir,
-              storage::make_sanitized_file_config());
-        },
-        [this]() {
-            return storage::log_config(
-              base_dir,
-              100_MiB,
-              ss::default_priority_class(),
-              storage::make_sanitized_file_config());
-        },
-        _feature_table))
+          [this] {
+              return storage::kvstore_config(
+                100_MiB,
+                config::mock_binding(std::chrono::milliseconds(10)),
+                base_dir,
+                storage::make_sanitized_file_config());
+          },
+          [this]() {
+              return storage::log_config(
+                base_dir,
+                100_MiB,
+                ss::default_priority_class(),
+                storage::make_sanitized_file_config());
+          },
+          _feature_table))
       , _logger(
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))

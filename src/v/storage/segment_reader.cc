@@ -333,7 +333,7 @@ concat_segment_reader_view::concat_segment_reader_view(
   size_t end_pos,
   ss::io_priority_class priority_class)
   : _stream(ss::data_source{std::make_unique<concat_segment_data_source_impl>(
-    std::move(segments), start_pos, end_pos, priority_class)}) {}
+      std::move(segments), start_pos, end_pos, priority_class)}) {}
 
 ss::input_stream<char> concat_segment_reader_view::take_stream() {
     auto r = std::move(_stream.value());

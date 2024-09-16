@@ -158,7 +158,7 @@ struct generating_value_visitor {
               should_null(t.element_field)
                 ? std::nullopt
                 : std::make_optional<value>(
-                  make_value(spec_, t.element_field->type)));
+                    make_value(spec_, t.element_field->type)));
         }
         return ret;
     }
@@ -169,7 +169,7 @@ struct generating_value_visitor {
               make_value(spec_, t.key_field->type),
               should_null(t.value_field) ? std::nullopt
                                          : std::make_optional<value>(make_value(
-                                           spec_, t.value_field->type))};
+                                             spec_, t.value_field->type))};
             ret->kvs.emplace_back(std::move(kv));
         }
         return ret;

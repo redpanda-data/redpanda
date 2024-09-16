@@ -72,7 +72,8 @@ public class SecuritySettings {
       prop.put(
           "sasl.jaas.config",
           String.format(
-              "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"%s\" password=\"%s\";",
+              "org.apache.kafka.common.security.scram.ScramLoginModule "
+                  + "required username=\"%s\" password=\"%s\";",
               this.saslPlainUsername, this.saslPlainPassword));
     } else {
       throw new RuntimeException(

@@ -102,10 +102,10 @@ public:
           model::revision_id initial_revision,
           model::revision_id current_revision)
           : ::concurrent_modification_error(ssx::sformat(
-            "Topic table was modified by concurrent fiber. "
-            "(initial_revision: {}, current_revision: {}) ",
-            initial_revision,
-            current_revision)) {}
+              "Topic table was modified by concurrent fiber. "
+              "(initial_revision: {}, current_revision: {}) ",
+              initial_revision,
+              current_revision)) {}
     };
 
     class in_progress_update {

@@ -186,7 +186,7 @@ disk_persistence::open(std::filesystem::path path) noexcept {
 
 memory_persistence::memory_persistence()
   : memory_persistence(
-    {default_alignment, default_alignment, default_alignment}) {}
+      {default_alignment, default_alignment, default_alignment}) {}
 
 memory_persistence::memory_persistence(config config)
   : disk_read_dma_alignment_(config.disk_read_dma_alignment)

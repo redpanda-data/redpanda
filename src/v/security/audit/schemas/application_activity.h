@@ -54,12 +54,12 @@ public:
       timestamp_t time,
       api_activity_unmapped unmapped)
       : ocsf_base_event(
-        category_uid::application_activity,
-        class_uid::api_activity,
-        ocsf_redpanda_metadata_cloud_profile(),
-        severity_id,
-        time,
-        activity_id)
+          category_uid::application_activity,
+          class_uid::api_activity,
+          ocsf_redpanda_metadata_cloud_profile(),
+          severity_id,
+          time,
+          activity_id)
       , _activity_id(activity_id)
       , _actor(std::move(actor))
       , _api(std::move(api))
@@ -284,11 +284,11 @@ public:
       severity_id severity_id,
       timestamp_t time)
       : ocsf_base_event(
-        category_uid::application_activity,
-        class_uid::application_lifecycle,
-        severity_id,
-        time,
-        activity_id)
+          category_uid::application_activity,
+          class_uid::application_lifecycle,
+          severity_id,
+          time,
+          activity_id)
       , _activity_id(activity_id)
       , _app(std::move(app)) {}
 

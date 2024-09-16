@@ -53,9 +53,9 @@ struct sync_group_response final {
 
     sync_group_response(error_code error, bytes assignment)
       : data({
-        .error_code = error,
-        .assignment = std::move(assignment),
-      }) {}
+          .error_code = error,
+          .assignment = std::move(assignment),
+        }) {}
 
     explicit sync_group_response(error_code error)
       : sync_group_response(error, bytes()) {}

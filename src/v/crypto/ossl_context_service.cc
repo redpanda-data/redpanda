@@ -334,8 +334,10 @@ ossl_context_service::ossl_context_service(
   ss::sstring module_path,
   is_fips_mode fips_mode)
   : _impl(std::make_unique<impl>(
-    thread_worker, std::move(config_file), std::move(module_path), fips_mode)) {
-}
+      thread_worker,
+      std::move(config_file),
+      std::move(module_path),
+      fips_mode)) {}
 
 ss::future<> ossl_context_service::start() {
     if (in_rp_fixture_test()) {

@@ -51,8 +51,7 @@ public:
     [[deprecated("Use 'for_each_ref()' in record_batch_reader and not "
                  "'consume()' since we don't need to take ownership")]]
     // Alert users (clang-format workaround)
-    ss::future<ss::stop_iteration>
-    operator()(model::record_batch&& b) {
+    ss::future<ss::stop_iteration> operator()(model::record_batch&& b) {
         return ss::do_with(std::move(b), [this](model::record_batch& b) {
             return _impl->operator()(b);
         });

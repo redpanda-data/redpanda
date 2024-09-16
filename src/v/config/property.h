@@ -827,22 +827,22 @@ public:
       T def,
       std::vector<T> values)
       : property<T>(
-        conf,
-        name,
-        desc,
-        meta,
-        def,
-        [this](T new_value) -> std::optional<ss::sstring> {
-            auto found = std::find_if(
-              _values.begin(), _values.end(), [&new_value](T const& v) {
-                  return v == new_value;
-              });
-            if (found == _values.end()) {
-                return help_text();
-            } else {
-                return std::nullopt;
-            }
-        })
+          conf,
+          name,
+          desc,
+          meta,
+          def,
+          [this](T new_value) -> std::optional<ss::sstring> {
+              auto found = std::find_if(
+                _values.begin(), _values.end(), [&new_value](T const& v) {
+                    return v == new_value;
+                });
+              if (found == _values.end()) {
+                  return help_text();
+              } else {
+                  return std::nullopt;
+              }
+          })
       , _values(values) {}
 
     std::optional<validation_error>

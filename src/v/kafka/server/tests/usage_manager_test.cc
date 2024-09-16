@@ -25,10 +25,10 @@ public:
       std::chrono::seconds usage_window_width_interval,
       std::chrono::seconds usage_disk_persistance_interval)
       : kafka::usage_aggregator<ss::manual_clock>(
-        kvstore,
-        usage_num_windows,
-        usage_window_width_interval,
-        usage_disk_persistance_interval) {}
+          kvstore,
+          usage_num_windows,
+          usage_window_width_interval,
+          usage_disk_persistance_interval) {}
 
     void add_bytes(size_t sent, size_t recv) {
         vlog(af_logger.info, "Adding bytes sent: {} recv: {}", sent, recv);

@@ -938,7 +938,7 @@ struct raft_test_fixture {
         }).get();
     }
 
-    virtual ~raft_test_fixture(){};
+    virtual ~raft_test_fixture() {};
 
     consensus_ptr get_leader_raft(raft_group& gr) {
         auto leader_id = gr.get_leader_id();

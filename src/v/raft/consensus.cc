@@ -1972,7 +1972,8 @@ consensus::do_append_entries(append_entries_request&& r) {
       = lstats.dirty_offset == request_metadata.prev_log_index
           ? lstats.dirty_offset_term // use term from lstats
           : get_term(model::offset(
-            request_metadata.prev_log_index)); // lookup for request term in log
+              request_metadata
+                .prev_log_index)); // lookup for request term in log
     // We can only check prev_log_term for entries that are present in the
     // log. When leader installed snapshot on the follower we may require to
     // skip the term check as term of prev_log_idx may not be available.

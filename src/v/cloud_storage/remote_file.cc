@@ -36,7 +36,7 @@ remote_file::remote_file(
   , _rtc(&retry_parent)
   , _ctxlog(cst_log, _rtc, std::move(log_prefix))
   , _metrics(std::move(metrics))
-  , _cache_backoff_jitter(cache_thrash_backoff){};
+  , _cache_backoff_jitter(cache_thrash_backoff) {};
 
 ss::future<ss::file> remote_file::hydrate_readable_file() {
     ss::gate::holder g(_gate);

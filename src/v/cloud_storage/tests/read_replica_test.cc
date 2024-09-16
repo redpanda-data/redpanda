@@ -33,8 +33,8 @@ class read_replica_e2e_fixture
 public:
     read_replica_e2e_fixture()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();

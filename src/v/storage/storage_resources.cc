@@ -77,17 +77,17 @@ storage_resources::storage_resources(
 // but otherwise do not want to override anything.
 storage_resources::storage_resources(config::binding<size_t> falloc_step)
   : storage_resources(
-    std::move(falloc_step),
-    config::shard_local_cfg().storage_target_replay_bytes.bind(),
-    config::shard_local_cfg().storage_max_concurrent_replay.bind(),
-    config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
+      std::move(falloc_step),
+      config::shard_local_cfg().storage_target_replay_bytes.bind(),
+      config::shard_local_cfg().storage_max_concurrent_replay.bind(),
+      config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
 
 storage_resources::storage_resources()
   : storage_resources(
-    config::shard_local_cfg().segment_fallocation_step.bind(),
-    config::shard_local_cfg().storage_target_replay_bytes.bind(),
-    config::shard_local_cfg().storage_max_concurrent_replay.bind(),
-    config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
+      config::shard_local_cfg().segment_fallocation_step.bind(),
+      config::shard_local_cfg().storage_target_replay_bytes.bind(),
+      config::shard_local_cfg().storage_max_concurrent_replay.bind(),
+      config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
 
 void storage_resources::update_allowance(uint64_t total, uint64_t free) {
     // TODO: also take as an input the disk consumption of the SI cache:

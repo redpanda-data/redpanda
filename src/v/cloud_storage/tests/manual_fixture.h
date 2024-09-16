@@ -27,8 +27,8 @@ class cloud_storage_manual_multinode_test_base
 public:
     cloud_storage_manual_multinode_test_base()
       : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {
+          redpanda_thread_fixture::init_cloud_storage_tag{},
+          httpd_port_number()) {
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
 

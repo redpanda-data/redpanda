@@ -28,7 +28,7 @@ static ss::logger ctrl_logger{"test-controller"};
 
 struct simple_backlog_sampler : storage::backlog_controller::sampler {
     explicit simple_backlog_sampler(int64_t& b)
-      : current_backlog(b){};
+      : current_backlog(b) {};
     ss::future<int64_t> sample_backlog() final { co_return current_backlog; }
 
     int64_t& current_backlog;

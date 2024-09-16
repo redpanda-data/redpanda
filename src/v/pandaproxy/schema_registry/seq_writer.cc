@@ -367,7 +367,7 @@ ss::future<std::optional<bool>> seq_writer::do_write_mode(
     try {
         // Check for no-op case
         mode existing = sub ? co_await _store.get_mode(
-                          sub.value(), default_to_global::no)
+                                sub.value(), default_to_global::no)
                             : co_await _store.get_mode();
         if (existing == m) {
             co_return false;

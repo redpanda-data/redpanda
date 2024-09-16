@@ -272,7 +272,8 @@ public class VerifiableConsumer
     } catch (WakeupException e) {
       // ignore, we are closing
       log.trace(
-          "Caught WakeupException because consumer is shutdown, ignore and terminate.",
+          "Caught WakeupException because consumer is shutdown, ignore and "
+              + "terminate.",
           e);
     } catch (Throwable t) {
       // Log the error so it goes to the service log and not stdout
@@ -552,7 +553,10 @@ public class VerifiableConsumer
         = ArgumentParsers.newArgumentParser("verifiable-consumer")
               .defaultHelp(true)
               .description(
-                  "This tool consumes messages from a specific topic and emits consumer events (e.g. group rebalances, received messages, and offsets committed) as JSON objects to STDOUT.");
+                  "This tool consumes messages from a specific topic "
+                  + "and emits consumer events (e.g. group "
+                  + "rebalances, received messages, and offsets "
+                  + "committed) as JSON objects to STDOUT.");
     MutuallyExclusiveGroup connectionGroup
         = parser.addMutuallyExclusiveGroup("Connection Group")
               .description("Group of arguments for connection to brokers")
@@ -564,7 +568,9 @@ public class VerifiableConsumer
         .metavar("HOST1:PORT1[,HOST2:PORT2[...]]")
         .dest("bootstrapServer")
         .help(
-            "REQUIRED unless --broker-list(deprecated) is specified. The server(s) to connect to. Comma-separated list of Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
+            "REQUIRED unless --broker-list(deprecated) is specified. The "
+            + "server(s) to connect to. Comma-separated list of Kafka "
+            + "brokers in the form HOST1:PORT1,HOST2:PORT2,...");
     connectionGroup.addArgument("--broker-list")
         .action(store())
         .required(false)
@@ -572,7 +578,9 @@ public class VerifiableConsumer
         .metavar("HOST1:PORT1[,HOST2:PORT2[...]]")
         .dest("brokerList")
         .help(
-            "DEPRECATED, use --bootstrap-server instead; ignored if --bootstrap-server is specified.  Comma-separated list of Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
+            "DEPRECATED, use --bootstrap-server instead; ignored if "
+            + "--bootstrap-server is specified.  Comma-separated list of "
+            + "Kafka brokers in the form HOST1:PORT1,HOST2:PORT2,...");
 
     parser.addArgument("--topic")
         .action(store())
@@ -605,7 +613,8 @@ public class VerifiableConsumer
         .metavar("MAX-MESSAGES")
         .dest("maxMessages")
         .help(
-            "Consume this many messages. If -1 (the default), the consumer will consume until the process is killed externally");
+            "Consume this many messages. If -1 (the default), the consumer "
+            + "will consume until the process is killed externally");
 
     parser.addArgument("--session-timeout")
         .action(store())
@@ -654,7 +663,8 @@ public class VerifiableConsumer
         .type(String.class)
         .metavar("CONFIG_FILE")
         .help(
-            "Consumer config properties file (config options shared with command line parameters will be overridden).");
+            "Consumer config properties file (config options shared with "
+            + "command line parameters will be overridden).");
 
     return parser;
   }

@@ -58,7 +58,7 @@ class missing_partition_exception final : public std::exception {
 public:
     explicit missing_partition_exception(const storage::ntp_config& ntpc)
       : _msg(ssx::sformat(
-        "missing partition {}, rev {}", ntpc.ntp(), ntpc.get_revision())) {}
+          "missing partition {}, rev {}", ntpc.ntp(), ntpc.get_revision())) {}
 
     explicit missing_partition_exception(const remote_manifest_path& path)
       : _msg(ssx::sformat("missing partition s3://{}", path)) {}

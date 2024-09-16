@@ -68,23 +68,23 @@ public:
       kafka::protocol_type protocol_type,
       chunked_vector<member_protocol> protocols)
       : group_member(
-        member_state{
-          .id = std::move(member_id),
-          .instance_id = std::move(group_instance_id),
-          .client_id = std::move(client_id),
-          .client_host = std::move(client_host),
-          .rebalance_timeout
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-            rebalance_timeout),
-          .session_timeout
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-            session_timeout),
-          .subscription = iobuf{},
-          .assignment = iobuf{},
-        },
-        std::move(group_id),
-        std::move(protocol_type),
-        std::move(protocols)) {}
+          member_state{
+            .id = std::move(member_id),
+            .instance_id = std::move(group_instance_id),
+            .client_id = std::move(client_id),
+            .client_host = std::move(client_host),
+            .rebalance_timeout
+            = std::chrono::duration_cast<std::chrono::milliseconds>(
+              rebalance_timeout),
+            .session_timeout
+            = std::chrono::duration_cast<std::chrono::milliseconds>(
+              session_timeout),
+            .subscription = iobuf{},
+            .assignment = iobuf{},
+          },
+          std::move(group_id),
+          std::move(protocol_type),
+          std::move(protocols)) {}
 
     group_member(
       kafka::member_state state,

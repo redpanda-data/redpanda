@@ -24,21 +24,21 @@ public:
 
     kafka_client_fixture(std::optional<uint32_t> kafka_admin_topic_api_rate)
       : redpanda_thread_fixture(
-        model::node_id(1),
-        9092,
-        33145,
-        8082,
-        8081,
-        {},
-        ssx::sformat("test.dir_{}", time(0)),
-        std::nullopt,
-        true,
-        std::nullopt,
-        std::nullopt,
-        std::nullopt,
-        configure_node_id::yes,
-        empty_seed_starts_cluster::yes,
-        kafka_admin_topic_api_rate) {}
+          model::node_id(1),
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          ssx::sformat("test.dir_{}", time(0)),
+          std::nullopt,
+          true,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          configure_node_id::yes,
+          empty_seed_starts_cluster::yes,
+          kafka_admin_topic_api_rate) {}
 
     void restart(bool test_mode = false) {
         shutdown();

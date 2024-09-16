@@ -447,7 +447,7 @@ public:
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     resource_pattern_filter(const resource_pattern& resource)
       : resource_pattern_filter(
-        resource.resource(), resource.name(), resource.pattern()) {}
+          resource.resource(), resource.name(), resource.pattern()) {}
 
     /*
      * A filter that matches any resource.
@@ -508,10 +508,10 @@ public:
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     acl_entry_filter(const acl_entry& entry)
       : acl_entry_filter(
-        entry.principal(),
-        entry.host(),
-        entry.operation(),
-        entry.permission()) {}
+          entry.principal(),
+          entry.host(),
+          entry.operation(),
+          entry.permission()) {}
 
     acl_entry_filter(
       std::optional<acl_principal> principal,

@@ -47,21 +47,21 @@ struct foreign_entry_fixture {
 
     foreign_entry_fixture()
       : _storage(
-        [this]() {
-            return storage::kvstore_config(
-              1_MiB,
-              config::mock_binding(10ms),
-              test_dir,
-              storage::make_sanitized_file_config());
-        },
-        [this]() {
-            return storage::log_config(
-              test_dir,
-              1_GiB,
-              ss::default_priority_class(),
-              storage::make_sanitized_file_config());
-        },
-        _feature_table) {
+          [this]() {
+              return storage::kvstore_config(
+                1_MiB,
+                config::mock_binding(10ms),
+                test_dir,
+                storage::make_sanitized_file_config());
+          },
+          [this]() {
+              return storage::log_config(
+                test_dir,
+                1_GiB,
+                ss::default_priority_class(),
+                storage::make_sanitized_file_config());
+          },
+          _feature_table) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(

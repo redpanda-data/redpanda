@@ -296,7 +296,7 @@ client_pool::acquire(ss::abort_source& as) {
                 // sid1 == sid2 if we have only two shards
                 auto cnt2 = sid1 == sid2 ? cnt1
                                          : co_await container().invoke_on(
-                                           sid2, clients_in_use);
+                                             sid2, clients_in_use);
                 auto [sid, cnt] = cnt1 < cnt2 ? std::tie(sid1, cnt1)
                                               : std::tie(sid2, cnt2);
                 vlog(

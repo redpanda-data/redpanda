@@ -691,13 +691,13 @@ struct managed_partition : public managed_partition_fsm::state_machine_t {
       cloud_storage::cache& cache,
       archival::upload_housekeeping_service& housekeeping)
       : managed_partition_fsm::state_machine_t(
-        ntp,
-        broker_id,
-        std::move(part),
-        std::move(config),
-        remote,
-        cache,
-        housekeeping)
+          ntp,
+          broker_id,
+          std::move(part),
+          std::move(config),
+          remote,
+          cache,
+          housekeeping)
       , _ntp(ntp)
       , _node_id(broker_id) {}
 
@@ -1022,7 +1022,7 @@ archiver_manager::archiver_manager(
   ss::sharded<archival::upload_housekeeping_service>& upload_housekeeping,
   ss::lw_shared_ptr<const configuration> config)
   : _impl(std::make_unique<impl>(
-    node_id, pm, gm, api, cache, upload_housekeeping, config)) {}
+      node_id, pm, gm, api, cache, upload_housekeeping, config)) {}
 
 archiver_manager::~archiver_manager() {}
 

@@ -22,11 +22,11 @@ configuration::configuration(const YAML::Node& cfg)
 
 configuration::configuration()
   : brokers(
-    *this,
-    "brokers",
-    "List of address and port of the brokers",
-    {.required = config::required::yes},
-    std::vector<net::unresolved_address>({{"127.0.0.1", 9092}}))
+      *this,
+      "brokers",
+      "List of address and port of the brokers",
+      {.required = config::required::yes},
+      std::vector<net::unresolved_address>({{"127.0.0.1", 9092}}))
   , broker_tls(
       *this,
       "broker_tls",

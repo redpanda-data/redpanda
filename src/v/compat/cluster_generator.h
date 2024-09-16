@@ -731,11 +731,11 @@ auto random_property_update(Func f) {
     return tests::random_bool()
              ? cluster::property_update<T>()
              : cluster::property_update<T>(
-               f(),
-               random_generators::random_choice(
-                 {cluster::incremental_update_operation::none,
-                  cluster::incremental_update_operation::set,
-                  cluster::incremental_update_operation::remove}));
+                 f(),
+                 random_generators::random_choice(
+                   {cluster::incremental_update_operation::none,
+                    cluster::incremental_update_operation::set,
+                    cluster::incremental_update_operation::remove}));
 }
 
 template<>

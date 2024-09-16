@@ -323,7 +323,8 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
     // Only initialise sasl state if sasl is enabled
     auto sasl = authn_method == config::broker_authn_method::sasl
                   ? std::make_optional<security::sasl_server>(
-                    security::sasl_server::sasl_state::initial, sasl_max_reauth)
+                      security::sasl_server::sasl_state::initial,
+                      sasl_max_reauth)
                   : std::nullopt;
 
     // Only initialise mtls state if mtls_identity is enabled

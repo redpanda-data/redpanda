@@ -25,7 +25,7 @@ ss::future<int64_t> compaction_backlog_sampler::sample_backlog() {
 compaction_controller::compaction_controller(
   ss::sharded<api>& api, backlog_controller_config cfg)
   : _ctrl(
-    std::make_unique<compaction_backlog_sampler>(api), compaction_log, cfg) {
+      std::make_unique<compaction_backlog_sampler>(api), compaction_log, cfg) {
     _ctrl.setup_metrics("storage:compaction");
 }
 

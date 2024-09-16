@@ -44,11 +44,11 @@ offset_translator::offset_translator(
   model::ntp ntp,
   storage::api& storage_api)
   : offset_translator(
-    std::move(filtered_types),
-    group,
-    std::move(ntp),
-    storage_api.kvs(),
-    storage_api.resources()) {}
+      std::move(filtered_types),
+      group,
+      std::move(ntp),
+      storage_api.kvs(),
+      storage_api.resources()) {}
 
 void offset_translator::process(const model::record_batch& batch) {
     if (_filtered_types.empty()) {

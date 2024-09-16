@@ -155,7 +155,7 @@ void memory_sampling::start_low_available_memory_logging() {
 memory_sampling::memory_sampling(
   ss::logger& logger, config::binding<bool> enabled)
   : memory_sampling(
-    logger, std::move(enabled), std::chrono::seconds(60), 0.2, 0.1) {}
+      logger, std::move(enabled), std::chrono::seconds(60), 0.2, 0.1) {}
 
 memory_sampling::memory_sampling(
   ss::logger& logger,

@@ -18,13 +18,13 @@ configuration::configuration(const YAML::Node& cfg)
 
 configuration::configuration()
   : schema_registry_api(
-    *this,
-    "schema_registry_api",
-    "Schema Registry API listen address and port",
-    {},
-    {config::rest_authn_endpoint{
-      .address = net::unresolved_address("0.0.0.0", 8081),
-      .authn_method = std::nullopt}})
+      *this,
+      "schema_registry_api",
+      "Schema Registry API listen address and port",
+      {},
+      {config::rest_authn_endpoint{
+        .address = net::unresolved_address("0.0.0.0", 8081),
+        .authn_method = std::nullopt}})
   , schema_registry_api_tls(
       *this,
       "schema_registry_api_tls",

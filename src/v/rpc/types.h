@@ -113,7 +113,7 @@ struct timeout_spec {
         return timeout_period == max_duration
                  ? none
                  : timeout_spec{
-                   clock_type::now() + timeout_period, timeout_period};
+                     clock_type::now() + timeout_period, timeout_period};
     }
 
     /**

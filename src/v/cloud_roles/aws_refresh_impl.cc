@@ -61,7 +61,7 @@ aws_refresh_impl::aws_refresh_impl(
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    std::move(address), std::move(region), as, retry_params) {}
+      std::move(address), std::move(region), as, retry_params) {}
 
 bool aws_refresh_impl::is_fallback_required(const api_request_error& response) {
     return std::find(

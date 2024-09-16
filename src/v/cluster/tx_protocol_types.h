@@ -595,7 +595,7 @@ struct begin_group_tx_request
       model::timeout_clock::duration timeout,
       model::partition_id tm)
       : begin_group_tx_request(
-        model::ntp(), std::move(group_id), pid, tx_seq, timeout, tm) {}
+          model::ntp(), std::move(group_id), pid, tx_seq, timeout, tm) {}
 
     friend bool
     operator==(const begin_group_tx_request&, const begin_group_tx_request&)
@@ -679,7 +679,7 @@ struct prepare_group_tx_request
       model::tx_seq tx_seq,
       model::timeout_clock::duration timeout)
       : prepare_group_tx_request(
-        model::ntp(), std::move(group_id), etag, pid, tx_seq, timeout) {}
+          model::ntp(), std::move(group_id), etag, pid, tx_seq, timeout) {}
 
     auto serde_fields() {
         return std::tie(ntp, group_id, etag, pid, tx_seq, timeout);
@@ -754,7 +754,7 @@ struct commit_group_tx_request
       kafka::group_id group_id,
       model::timeout_clock::duration timeout)
       : commit_group_tx_request(
-        model::ntp(), pid, tx_seq, std::move(group_id), timeout) {}
+          model::ntp(), pid, tx_seq, std::move(group_id), timeout) {}
 
     friend bool
     operator==(const commit_group_tx_request&, const commit_group_tx_request&)
@@ -827,7 +827,7 @@ struct abort_group_tx_request
       model::tx_seq tx_seq,
       model::timeout_clock::duration timeout)
       : abort_group_tx_request(
-        model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
+          model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 
     friend bool
     operator==(const abort_group_tx_request&, const abort_group_tx_request&)

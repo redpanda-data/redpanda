@@ -337,10 +337,10 @@ class LabelParamRemotePathProviderTest : public ::testing::TestWithParam<bool> {
 public:
     LabelParamRemotePathProviderTest()
       : path_provider(
-        GetParam() ? std::make_optional<remote_label>(
-          model::cluster_uuid{uuid_t::create()})
-                   : std::nullopt,
-        std::nullopt) {}
+          GetParam() ? std::make_optional<remote_label>(
+                         model::cluster_uuid{uuid_t::create()})
+                     : std::nullopt,
+          std::nullopt) {}
 
 protected:
     const remote_path_provider path_provider;

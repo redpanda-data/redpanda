@@ -47,11 +47,11 @@ struct test_config : public config::config_store {
 
     test_config()
       : optional_int(
-        *this,
-        "optional_int",
-        "An optional int value",
-        {.visibility = config::visibility::tunable},
-        100)
+          *this,
+          "optional_int",
+          "An optional int value",
+          {.visibility = config::visibility::tunable},
+          100)
       , required_string(
           *this,
           "required_string",

@@ -116,7 +116,7 @@ void test_decompression_calls(
     auto& instance = compression::lz4_decompression_buffers_instance();
     auto compressed = blocksize.has_value()
                         ? lz4_frame_compressor::compress_with_block_size(
-                          input, blocksize.value())
+                            input, blocksize.value())
                         : lz4_frame_compressor::compress(input);
     auto uncompressed = lz4_frame_compressor::uncompress(compressed);
     EXPECT_EQ(instance.allocation_stats(), expected);

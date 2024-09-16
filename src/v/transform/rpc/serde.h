@@ -137,7 +137,7 @@ struct stored_wasm_binary_metadata
     stored_wasm_binary_metadata() = default;
     stored_wasm_binary_metadata(uuid_t k, model::offset o)
       : key(k)
-      , offset(o){};
+      , offset(o) {};
 
     auto serde_fields() { return std::tie(key, offset); }
 

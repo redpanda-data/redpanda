@@ -30,7 +30,7 @@ struct latency {
     template<typename Duration>
     explicit latency(Duration d)
       : value(
-        std::chrono::duration_cast<std::chrono::microseconds>(d).count()) {}
+          std::chrono::duration_cast<std::chrono::microseconds>(d).count()) {}
     double value;
     friend std::ostream& operator<<(std::ostream& o, const latency&);
 };

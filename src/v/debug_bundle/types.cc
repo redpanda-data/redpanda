@@ -41,14 +41,14 @@ std::ostream& operator<<(std::ostream& o, const debug_bundle_status& s) {
 } // namespace debug_bundle
 
 auto fmt::formatter<debug_bundle::special_date>::format(
-  debug_bundle::special_date d, format_context& ctx) const
-  -> format_context::iterator {
+  debug_bundle::special_date d,
+  format_context& ctx) const -> format_context::iterator {
     return formatter<string_view>::format(debug_bundle::to_string_view(d), ctx);
 }
 
 auto fmt::formatter<debug_bundle::time_variant>::format(
-  const debug_bundle::time_variant& t, format_context& ctx) const
-  -> format_context::iterator {
+  const debug_bundle::time_variant& t,
+  format_context& ctx) const -> format_context::iterator {
     return ss::visit(
       t,
       [&ctx](const debug_bundle::clock::time_point& t) {
@@ -62,8 +62,8 @@ auto fmt::formatter<debug_bundle::time_variant>::format(
 }
 
 auto fmt::formatter<debug_bundle::partition_selection>::format(
-  const debug_bundle::partition_selection& p, format_context& ctx) const
-  -> format_context::iterator {
+  const debug_bundle::partition_selection& p,
+  format_context& ctx) const -> format_context::iterator {
     return fmt::format_to(
       ctx.out(), "{}/{}/{}", p.tn.ns, p.tn.tp, fmt::join(p.partitions, ","));
 }

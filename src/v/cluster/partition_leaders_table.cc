@@ -75,7 +75,8 @@ std::optional<leader_term> partition_leaders_table::get_leader_term(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
     const auto meta = find_leader_meta(tp_ns, pid);
     return meta ? std::make_optional<leader_term>(
-             meta->get().current_leader, meta->get().last_stable_leader_term)
+                    meta->get().current_leader,
+                    meta->get().last_stable_leader_term)
                 : std::nullopt;
 }
 

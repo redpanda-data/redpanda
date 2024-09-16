@@ -303,8 +303,8 @@ redacted_fields();
 
 template<>
 struct fmt::formatter<http::client::request_header> {
-    constexpr auto parse(fmt::format_parse_context& ctx)
-      -> decltype(ctx.begin()) {
+    constexpr auto
+    parse(fmt::format_parse_context& ctx) -> decltype(ctx.begin()) {
         return ctx.begin();
     }
 
