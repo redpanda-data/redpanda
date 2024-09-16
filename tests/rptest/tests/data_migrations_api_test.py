@@ -36,6 +36,10 @@ MIGRATION_LOG_ALLOW_LIST = [
 ]
 
 
+def make_namespaced_topic(topic: str) -> NamespacedTopic:
+    return NamespacedTopic(topic, random.choice([None, "kafka"]))
+
+
 class TransferLeadersBackgroundThread:
     def __init__(self, redpanda: RedpandaServiceBase, topic: str):
         self.redpanda = redpanda
@@ -221,7 +225,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
         with Finjector(self.redpanda, self.scale).finj_thread():
             # out
-            outbound_topics = [NamespacedTopic(t.name) for t in topics]
+            outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             out_migration = OutboundDataMigration(outbound_topics,
                                                   consumer_groups=[])
 
@@ -257,10 +261,10 @@ class DataMigrationsApiTest(RedpandaTest):
 
             # in
             inbound_topics = [
-                InboundTopic(NamespacedTopic(t.name),
+                InboundTopic(make_namespaced_topic(t.name),
                              alias=\
                                 None if i == 0
-                                else NamespacedTopic(f"{t.name}-alias"))
+                                else make_namespaced_topic(f"{t.name}-alias"))
                 for i, t in enumerate(topics[:3])
             ]
             in_migration = InboundDataMigration(topics=inbound_topics,
@@ -315,7 +319,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
         with Finjector(self.redpanda, self.scale).finj_thread():
             # out
-            outbound_topics = [NamespacedTopic(t.name) for t in topics]
+            outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             reply = self.admin.unmount_topics(outbound_topics).json()
             self.logger.info(f"create migration reply: {reply}")
             out_migration_id = reply["id"]
@@ -332,10 +336,10 @@ class DataMigrationsApiTest(RedpandaTest):
 
             # in
             inbound_topics = [
-                InboundTopic(NamespacedTopic(t.name),
+                InboundTopic(make_namespaced_topic(t.name),
                              alias=\
                                 None if i == 0
-                                else NamespacedTopic(f"{t.name}-alias"))
+                                else make_namespaced_topic(f"{t.name}-alias"))
                 for i, t in enumerate(topics[:3])
             ]
             inbound_topics_spec = [
@@ -544,7 +548,7 @@ class DataMigrationsApiTest(RedpandaTest):
             workload_topic.name) if transfer_leadership else nullcontext()
         with out_tl_thread:
             admin = Admin(self.redpanda)
-            workload_ns_topic = NamespacedTopic(workload_topic.name)
+            workload_ns_topic = make_namespaced_topic(workload_topic.name)
             out_migration = OutboundDataMigration(topics=[workload_ns_topic],
                                                   consumer_groups=[])
             out_migration_id = self.create_and_wait(out_migration)
@@ -623,7 +627,7 @@ class DataMigrationsApiTest(RedpandaTest):
         inbound_topic_name = "aliased-workload-topic" if params.use_alias else workload_topic.name
         alias = None
         if params.use_alias:
-            alias = NamespacedTopic(topic=inbound_topic_name)
+            alias = make_namespaced_topic(topic=inbound_topic_name)
 
         in_tl_thread = TransferLeadersBackgroundThread(
             self.redpanda,
