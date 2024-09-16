@@ -199,22 +199,17 @@ ss::future<result<model::offset>> state_machine::insert_linearizable_barrier(
     /**
      * Inject leader barrier and wait until returned offset is applied
      */
-    return ss::with_timeout(
-             timeout,
-             _raft->linearizable_barrier().then(
-               [this, timeout](result<model::offset> r) {
-                   if (!r) {
-                       return ss::make_ready_future<result<model::offset>>(
-                         r.error());
-                   }
 
-                   // wait for the returned offset to be applied
-                   return wait(r.value(), timeout).then([r] {
-                       return result<model::offset>(r.value());
-                   });
-               }))
-      .handle_exception_type([](const ss::timed_out_error&) {
-          return result<model::offset>(errc::timeout);
+    return _raft->linearizable_barrier(timeout).then(
+      [this, timeout](result<model::offset> r) {
+          if (!r) {
+              return ss::make_ready_future<result<model::offset>>(r.error());
+          }
+
+          // wait for the returned offset to be applied
+          return wait(r.value(), timeout).then([r] {
+              return result<model::offset>(r.value());
+          });
       });
 }
 
