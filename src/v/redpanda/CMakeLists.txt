@@ -57,6 +57,7 @@ v_cc_library(
     admin/migrations.cc
     admin/topics.cc
     admin/data_migration_utils.cc
+    admin/debug_bundle.cc
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc

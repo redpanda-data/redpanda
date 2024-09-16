@@ -12,6 +12,7 @@ redpanda_cc_gtest(
         "//src/v/debug_bundle:json",
         "//src/v/json",
         "//src/v/model",
+        "//src/v/security",
         "//src/v/test_utils:gtest",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:flat_hash_map",

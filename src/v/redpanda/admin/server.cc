@@ -391,6 +391,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "cluster");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "transform");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "debug_bundle");
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
@@ -410,6 +412,7 @@ void admin_server::configure_admin_routes() {
     register_wasm_transform_routes();
     register_data_migration_routes();
     register_topic_routes();
+    register_debug_bundle_routes();
     /**
      * Special REST apis active only in recovery mode
      */

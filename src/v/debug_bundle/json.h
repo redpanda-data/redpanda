@@ -199,6 +199,71 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             return std::move(set);
         }
         return parse_error(": expected an array");
+    } else if constexpr (std::is_same_v<T, debug_bundle_parameters>) {
+        debug_bundle_parameters params;
+        if (v.IsObject()) {
+            const auto& obj = v.GetObject();
+            if (auto r = from_json<decltype(params.authn_options)>(
+                  obj, "authentication", false);
+                r.has_value()) {
+                params.authn_options = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r
+                = from_json<decltype(params.controller_logs_size_limit_bytes)>(
+                  obj, "controller_logs_size_limit_bytes", false);
+                r.has_value()) {
+                params.controller_logs_size_limit_bytes = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.cpu_profiler_wait_seconds)>(
+                  obj, "cpu_profiler_wait_seconds", false);
+                r.has_value()) {
+                params.cpu_profiler_wait_seconds = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.logs_since)>(
+                  obj, "logs_since", false);
+                r.has_value()) {
+                params.logs_since = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.logs_size_limit_bytes)>(
+                  obj, "logs_size_limit_bytes", false);
+                r.has_value()) {
+                params.logs_size_limit_bytes = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.logs_until)>(
+                  obj, "logs_until", false);
+                r.has_value()) {
+                params.logs_until = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.metrics_interval_seconds)>(
+                  obj, "metrics_interval_seconds", false);
+                r.has_value()) {
+                params.metrics_interval_seconds = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.partition)>(
+                  obj, "partition", false);
+                r.has_value()) {
+                params.partition = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+
+            return std::move(params);
+        }
+        return parse_error(": expected debug_bundle_parameters");
     } else {
         static_assert(always_false_v<T>, "Not implemented");
     }

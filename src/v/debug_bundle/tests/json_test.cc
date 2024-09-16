@@ -12,6 +12,9 @@
 #include "debug_bundle/json.h"
 #include "debug_bundle/types.h"
 #include "json/document.h"
+#include "model/fundamental.h"
+#include "model/namespace.h"
+#include "security/types.h"
 #include "utils/uuid.h"
 
 #include <fmt/chrono.h>
@@ -23,6 +26,7 @@
 #include <type_traits>
 
 using namespace debug_bundle;
+using namespace std::chrono_literals;
 
 template<typename T>
 class JsonTypeTest : public testing::Test {
@@ -48,6 +52,7 @@ using JsonTestTypes = ::testing::Types<
   scram_creds,
   debug_bundle_authn_options,
   partition_selection,
+  debug_bundle_parameters,
   std::vector<int>,
   absl::btree_set<int>>;
 TYPED_TEST_SUITE(JsonTypeTest, JsonTestTypes);
@@ -102,6 +107,49 @@ TYPED_TEST(JsonTypeTest, BasicType) {
         this->json_input = R"("foo/bar/1")";
         this->expected = {
           {model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}}}};
+    } else if constexpr (std::is_same_v<TypeParam, debug_bundle_parameters>) {
+        this->json_input = R"({
+  "authentication": {
+    "username": "user",
+    "password": "pass",
+    "mechanism": "SCRAM-SHA-256"
+  },
+  "controller_logs_size_limit_bytes": 42,
+  "cpu_profiler_wait_seconds": 42,
+  "logs_since": "yesterday",
+  "logs_size_limit_bytes": 42,
+  "logs_until": "2024-09-05T14:34:02",
+  "metrics_interval_seconds": 42,
+  "partition": [
+    "foo/bar/1,2",
+    "baz/1,2,3"
+   ]
+})";
+        const std::string_view test_time = "2024-09-05T14:34:02";
+        std::istringstream ss(test_time.data());
+        std::tm tmp{};
+        ASSERT_NO_THROW(ss >> std::get_time(&tmp, "%FT%T"));
+        ASSERT_FALSE(ss.fail());
+        // Forces `std::mktime` to "figure it out"
+        tmp.tm_isdst = -1;
+        std::time_t tt = std::mktime(&tmp);
+
+        this->expected = debug_bundle_parameters{
+          .authn_options
+          = scram_creds{.username = security::credential_user{"user"}, .password = security::credential_password{"pass"}, .mechanism = "SCRAM-SHA-256"},
+          .controller_logs_size_limit_bytes = 42,
+          .cpu_profiler_wait_seconds = 42s,
+          .logs_since = special_date::yesterday,
+          .logs_size_limit_bytes = 42,
+          .logs_until = clock::from_time_t(tt),
+          .metrics_interval_seconds = 42s,
+          .partition = std::vector<partition_selection>{
+            {{model::ns{"foo"}, model::topic{"bar"}},
+             {{model::partition_id{1}, model::partition_id{2}}}},
+            {{model::kafka_namespace, model::topic{"baz"}},
+             {{model::partition_id{1},
+               model::partition_id{2},
+               model::partition_id{3}}}}}};
     } else if constexpr (detail::
                            is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"([1,2,3])";
@@ -176,6 +224,9 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
         this->json_input = R"("invalid")";
         this->expected = {
           {model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}}}};
+    } else if constexpr (std::is_same_v<TypeParam, debug_bundle_parameters>) {
+        this->json_input = R"("")";
+        this->expected = debug_bundle_parameters{};
     } else if constexpr (detail::
                            is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"(42)";

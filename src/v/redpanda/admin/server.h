@@ -434,6 +434,7 @@ private:
     void register_recovery_mode_routes();
     void register_data_migration_routes();
     void register_topic_routes();
+    void register_debug_bundle_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -664,6 +665,10 @@ private:
       mount_topics(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       unmount_topics(std::unique_ptr<ss::http::request>);
+
+    // Debug Bundle routes
+    ss::future<std::unique_ptr<ss::http::reply>> post_debug_bundle(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,

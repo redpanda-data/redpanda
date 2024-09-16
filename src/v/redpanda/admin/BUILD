@@ -145,6 +145,7 @@ redpanda_cc_library(
     name = "admin",
     srcs = [
         "debug.cc",
+        "debug_bundle.cc",
         "kafka.cc",
         "migrations.cc",
         "partition.cc",
@@ -245,6 +246,7 @@ redpanda_cc_library(
         "@boost//:lexical_cast",
         "@boost//:range",
         "@fmt",
+        "@rapidjson",
         "@seastar",
     ],
 )
