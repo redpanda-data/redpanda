@@ -14,12 +14,14 @@ func TestVersionFromString(t *testing.T) {
 		expErr bool
 	}{
 		{name: "with v", in: "v22.3.4", exp: Version{22, 3, 4}},
+		{name: "with v, single digit major", in: "4.36.1", exp: Version{4, 36, 1}},
 		{name: "with v and text", in: "v22.3.4 - 9eefb907c43bf1cfeb0783808c224385c857c0d4-dirty", exp: Version{22, 3, 4}},
 		{name: "with v and rc", in: "v22.3.13-rc1", exp: Version{22, 3, 13}},
 		{name: "with v, with rc and text", in: "v22.3.13-rc1 - 29e2b111d1d94d6d1f6cc591457ed03119edf0e6-dirty", exp: Version{22, 3, 13}},
 		{name: "without v", in: "22.3.4", exp: Version{22, 3, 4}},
 		{name: "without v and text", in: "22.3.4 - 9eefb907c43bf1cfeb0783808c224385c857c0d4-dirty", exp: Version{22, 3, 4}},
 		{name: "without v and rc", in: "22.3.13-rc1", exp: Version{22, 3, 13}},
+		{name: "without v and rc - single major", in: "4.36.1-rc1", exp: Version{4, 36, 1}},
 		{name: "without v, with rc and text", in: "22.3.13-rc1 - 29e2b111d1d94d6d1f6cc591457ed03119edf0e6-dirty", exp: Version{22, 3, 13}},
 		{name: "incomplete", in: "22.3", expErr: true},
 		{name: "random string", in: "random", expErr: true},
