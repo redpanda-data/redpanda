@@ -59,7 +59,7 @@ redpanda_cc_library(
         "connection_context.h",
         "coordinator_ntp_mapper.h",
         "errors.h",
-        "fetch_metadata_cache.hh",
+        "fetch_metadata_cache.h",
         "fetch_session.h",
         "fetch_session_cache.h",
         "fwd.h",
