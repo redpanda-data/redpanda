@@ -69,7 +69,7 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 					cmd.Help()
 					return
 				}
-				zap.L().Sugar().Debug("Redpanda Connect not found; downloading latest version")
+				fmt.Println("Downloading latest Redpanda Connect")
 				path, err := installConnect(cmd.Context(), fs, "latest")
 				out.MaybeDie(err, "unable to install Redpanda Connect: %v; if running on an air-gapped environment you may install 'redpanda-connect' with your package manager.", err)
 				pluginPath = path
