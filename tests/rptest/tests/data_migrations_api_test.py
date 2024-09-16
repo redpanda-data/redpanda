@@ -144,7 +144,7 @@ class DataMigrationsApiTest(RedpandaTest):
             timeout_sec=90,
             backoff_sec=1,
             err_msg=
-            f"Failed waiting for migration {id} to reach on of {states} states"
+            f"Failed waiting for migration {id} to reach one of {states} states"
         )
 
     def wait_migration_appear(self, migration_id):
