@@ -12,6 +12,8 @@
 #include "iceberg/datatypes.h"
 #include "utils/named_type.h"
 
+#include <absl/container/btree_set.h>
+
 namespace iceberg {
 
 struct schema {
@@ -21,7 +23,7 @@ struct schema {
 
     struct_type schema_struct;
     id_t schema_id;
-    chunked_hash_set<nested_field::id_t> identifier_field_ids;
+    absl::btree_set<nested_field::id_t> identifier_field_ids;
     friend bool operator==(const schema& lhs, const schema& rhs) = default;
 
     // Returns a mapping from field id to the field type. If the given set of
@@ -29,6 +31,14 @@ struct schema {
     // returns types of all ids in the schema.
     ids_types_map_t
       ids_to_types(chunked_hash_set<nested_field::id_t> = {}) const;
+
+    schema copy() const {
+        return schema{
+          .schema_struct = schema_struct.copy(),
+          .schema_id = schema_id,
+          .identifier_field_ids = identifier_field_ids,
+        };
+    }
 };
 
 } // namespace iceberg

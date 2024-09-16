@@ -90,6 +90,7 @@ using field_required = ss::bool_class<struct field_opt_tag>;
 struct struct_type {
     chunked_vector<nested_field_ptr> fields;
     friend bool operator==(const struct_type& lhs, const struct_type& rhs);
+    struct_type copy() const;
 };
 
 struct list_type {

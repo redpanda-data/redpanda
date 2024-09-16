@@ -261,6 +261,15 @@ std::ostream& operator<<(std::ostream& o, const field_type& t) {
     return o;
 }
 
+struct_type struct_type::copy() const {
+    chunked_vector<nested_field_ptr> fields_copy;
+    fields_copy.reserve(fields.size());
+    for (const auto& f : fields) {
+        fields_copy.emplace_back(f->copy());
+    }
+    return {std::move(fields_copy)};
+}
+
 list_type list_type::create(
   int32_t element_id, field_required element_required, field_type element) {
     // NOTE: the element field doesn't have a name. Functionally, the list type

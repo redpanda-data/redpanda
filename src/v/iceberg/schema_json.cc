@@ -15,6 +15,8 @@
 #include "iceberg/schema.h"
 #include "json/document.h"
 
+#include <absl/container/btree_set.h>
+
 namespace iceberg {
 
 schema parse_schema(const json::Value& v) {
@@ -25,7 +27,7 @@ schema parse_schema(const json::Value& v) {
     }
     int32_t schema_id = parse_required_i32(v, "schema-id");
     auto identifier_fids_json = parse_optional(v, "identifier-field-ids");
-    chunked_hash_set<nested_field::id_t> identifier_fids;
+    absl::btree_set<nested_field::id_t> identifier_fids;
     if (identifier_fids_json.has_value()) {
         if (!identifier_fids_json->get().IsArray()) {
             throw std::invalid_argument(
