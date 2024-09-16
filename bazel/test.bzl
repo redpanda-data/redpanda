@@ -86,6 +86,7 @@ def _redpanda_cc_test(
     common_args = [
         "--blocked-reactor-notify-ms 2000000",
         "--abort-on-seastar-bad-alloc",
+        "--overprovisioned",
     ]
 
     args = common_args + extra_args + custom_args
