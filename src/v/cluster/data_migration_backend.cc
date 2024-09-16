@@ -193,6 +193,7 @@ ss::future<> backend::loop_once() {
 }
 
 ss::future<> backend::work_once() {
+    vlog(dm_log.info, "begin backend work cycle");
     // process pending deltas
     auto unprocessed_deltas = std::move(_unprocessed_deltas);
     for (auto&& delta : unprocessed_deltas) {
@@ -307,6 +308,7 @@ ss::future<> backend::work_once() {
     } else {
         _timer.rearm(next_tick);
     }
+    vlog(dm_log.info, "end backend work cycle");
 }
 
 void backend::wakeup() { _sem.signal(1 - _sem.available_units()); }
@@ -761,6 +763,12 @@ void backend::to_advance_if_done(
             ar_it->second = advance_info(sought_state);
         }
         _migration_states.erase(it);
+    } else {
+        vlog(
+          dm_log.trace,
+          "outstanding topics for migration {}: [{}]",
+          it->first,
+          fmt::join(rs.outstanding_topics | std::views::keys, ", "));
     }
 }
 
