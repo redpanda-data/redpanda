@@ -37,3 +37,18 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "json",
+    hdrs = [
+        "json.h",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":debug_bundle",
+        "//src/v/base",
+        "//src/v/json",
+        "//src/v/reflection:type_traits",
+    ],
+)

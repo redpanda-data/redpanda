@@ -4,14 +4,18 @@ redpanda_cc_gtest(
     name = "types_test",
     timeout = "short",
     srcs = [
+        "json_test.cc",
         "types_test.cc",
     ],
     deps = [
         "//src/v/debug_bundle",
+        "//src/v/debug_bundle:json",
+        "//src/v/json",
         "//src/v/model",
         "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@googletest//:gtest",
+        "@rapidjson",
     ],
 )
 
