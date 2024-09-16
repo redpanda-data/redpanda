@@ -325,7 +325,9 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
     if (state != data_migrations::migrated_resource_state::non_restricted) {
         vlog(
           clusterlog.warn,
-          "can not update topic {} properties as the topic is being migrated",
+          "cannot update topic {} properties as the topic is being migrated; "
+          "restriction is {}",
+          update.tp_ns,
           state);
 
         co_return topic_result{
@@ -1430,7 +1432,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         vlog(
           clusterlog.warn,
           "can not create {} topic partitions as the topic is being migrated",
-          state);
+          p_cfg.tp_ns);
 
         co_return topic_result{
           std::move(p_cfg.tp_ns), errc::resource_is_being_migrated};

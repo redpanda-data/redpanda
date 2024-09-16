@@ -335,8 +335,8 @@ frontend::do_update_migration_state(id id, state state) {
           dm_log.warn,
           "migration {} cannot be transitioned from state {} to {}",
           id,
-          state,
-          cur_state);
+          cur_state,
+          state);
         co_return errc::invalid_data_migration_state;
     }
     ec = co_await replicate_and_wait(
@@ -366,6 +366,7 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
     validate_migration_shard();
     auto ec = co_await insert_barrier();
     if (ec) {
+        vlog(dm_log.warn, "failed waiting for barrier: {}", ec);
         co_return ec;
     }
     /**
@@ -373,6 +374,7 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
      */
     auto migration = _table.get_migration(id);
     if (!migration) {
+        vlog(dm_log.warn, "migration {} id not found", id);
         co_return errc::data_migration_not_exists;
     }
 
@@ -383,8 +385,10 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
       _operation_timeout + model::timeout_clock::now());
 
     if (ec) {
+        vlog(dm_log.warn, "failed to send remove_data_migration_cmd: {}", ec);
         co_return ec;
     }
+    vlog(dm_log.debug, "successfully sent migration {} delete request", id);
 
     co_return errc::success;
 }

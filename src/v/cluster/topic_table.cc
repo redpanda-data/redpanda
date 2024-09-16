@@ -205,6 +205,11 @@ ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
     auto const migration_state = _migrated_resources.get_topic_state(
       cmd.value.cfg.tp_ns);
+    vlog(
+      clusterlog.trace,
+      "attempting to create a partition in {}, migration state = {}",
+      cmd.value.cfg.tp_ns,
+      migration_state);
     if (
       migration_state
       != data_migrations::migrated_resource_state::non_restricted) {

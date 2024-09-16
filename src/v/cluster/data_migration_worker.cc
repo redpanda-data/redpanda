@@ -151,7 +151,6 @@ ss::future<> worker::handle_operation_result(
           migration_id,
           std::move(ntp),
           sought_state,
-          ec,
           should_retry ? "retry" : "complete");
         co_return;
     }

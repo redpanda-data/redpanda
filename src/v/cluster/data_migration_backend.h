@@ -21,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shared_future.hh>
 #include <seastar/core/shared_ptr.hh>
 
 namespace cluster::data_migrations {
@@ -89,11 +90,22 @@ private:
         errc ec;
     };
     class topic_scoped_work_state {
+        using self = topic_scoped_work_state;
         ss::abort_source _as;
+        retry_chain_node _rcn;
+        ss::shared_promise<errc> _promise;
 
     public:
-        retry_chain_node rcn;
         topic_scoped_work_state();
+        ~topic_scoped_work_state();
+        topic_scoped_work_state(const self&) = delete;
+        topic_scoped_work_state(self&&) = delete;
+        self& operator=(const self&) = delete;
+        self& operator=(self&&) = delete;
+
+        retry_chain_node& rcn();
+        void set_value(errc ec);
+        ss::future<errc> future();
     };
     using tsws_lwptr_t = ss::lw_shared_ptr<topic_scoped_work_state>;
 
@@ -126,13 +138,13 @@ private:
       const model::topic_namespace& nt,
       state sought_state,
       const inbound_topic_work_info& itwi,
-      tsws_lwptr_t tsws_lwptr);
+      tsws_lwptr_t tsws);
     ss::future<errc> do_topic_work(
       const model::topic_namespace& nt,
       state sought_state,
       const outbound_topic_work_info& otwi,
-      tsws_lwptr_t tsws_lwptr);
-    void abort_all_topic_work();
+      tsws_lwptr_t tsws);
+    ss::future<> abort_all_topic_work();
     /* topic work helpers */
     ss::future<errc> create_topic(
       const model::topic_namespace& local_nt,
@@ -154,7 +166,9 @@ private:
     void start_partition_work(
       const model::ntp& ntp, const replica_work_state& rwstate);
     void stop_partition_work(
-      const model::ntp& ntp, const replica_work_state& rwstate);
+      model::topic_namespace_view nt,
+      model::partition_id partition_id,
+      const replica_work_state& rwstate);
     void
     on_partition_work_completed(model::ntp&& ntp, id migration, state state);
 
@@ -174,7 +188,7 @@ private:
       migration_reconciliation_state& rs, const model::ntp& ntp);
     void mark_migration_step_done_for_nt(
       migration_reconciliation_state& rs, const model::topic_namespace& nt);
-    void drop_migration_reconciliation_rstate(
+    ss::future<> drop_migration_reconciliation_rstate(
       migration_reconciliation_states_t::const_iterator rs_it);
     void clear_tstate_belongings(
       const model::topic_namespace& nt,
