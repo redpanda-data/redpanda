@@ -1051,6 +1051,13 @@ equals sign between the key and value, and with the value hex encoded. Header
 formatting actually just parses the internal format as a record format, so all
 of the above rules about %K, %V, text, and numbers apply.
 
+VALUES
+
+Values for consumed records can be omitted by using the '--meta-only' flag.
+Tombstone records (records with a 'null' value) have their value omitted
+from the JSON output by default. All other records, including those with
+an empty-string value (""), will have their values printed.
+
 EXAMPLES
 
 A key and value, separated by a space and ending in newline:
