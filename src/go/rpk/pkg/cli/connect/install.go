@@ -53,10 +53,10 @@ You may force the installation of Redpanda Connect using the --force flag.
 				}
 				out.Exit("Redpanda connect is already installed.\nIf you want to upgrade to the latest version, please run 'rpk connect upgrade'.")
 			}
-			_, err = installConnect(cmd.Context(), fs, version)
+			_, installedVersion, err := installConnect(cmd.Context(), fs, version)
 			out.MaybeDie(err, "unable to install Redpanda Connect: %v; if running on an air-gapped environment you may install 'redpanda-connect' with your package manager.", err)
 
-			fmt.Println("Redpanda Connect successfully installed.")
+			fmt.Printf("Redpanda Connect %v successfully installed.\n", installedVersion)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force install of Redpanda Connect")
@@ -69,20 +69,20 @@ You may force the installation of Redpanda Connect using the --force flag.
 // the latest plugin. Version string let you select a specific version to
 // download, if "latest" or an empty string is passed, it will download the
 // latest version.
-func installConnect(ctx context.Context, fs afero.Fs, version string) (path string, err error) {
+func installConnect(ctx context.Context, fs afero.Fs, version string) (path, installedVersion string, err error) {
 	// We check this before calling the API, to avoid getting the binary
 	// and later fail due to a user setting.
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
-		return "", fmt.Errorf("unable to determine plugin default path: %v", err)
+		return "", "", fmt.Errorf("unable to determine plugin default path: %v", err)
 	}
 
-	art, _, err := getConnectArtifact(ctx, version)
+	art, ver, err := getConnectArtifact(ctx, version)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-
-	return downloadAndInstallConnect(ctx, fs, pluginDir, art.Path, art.Sha256)
+	path, err = downloadAndInstallConnect(ctx, fs, pluginDir, art.Path, art.Sha256)
+	return path, ver, err
 }
 
 func getConnectArtifact(ctx context.Context, version string) (connectArtifact, string, error) {
