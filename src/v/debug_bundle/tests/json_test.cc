@@ -12,11 +12,14 @@
 #include "debug_bundle/json.h"
 #include "debug_bundle/types.h"
 #include "json/document.h"
+#include "utils/uuid.h"
 
+#include <fmt/chrono.h>
 #include <gtest/gtest-typed-test.h>
 #include <gtest/gtest.h>
 #include <rapidjson/error/en.h>
 
+#include <chrono>
 #include <type_traits>
 
 using namespace debug_bundle;
@@ -28,13 +31,85 @@ public:
     T expected;
 };
 
-using JsonTestTypes = ::testing::Types<int>;
+using optional_int = std::optional<int>;
+using named_int = named_type<int, struct test_named_tag>;
+
+using JsonTestTypes = ::testing::Types<
+  int,
+  optional_int,
+  named_int,
+  uint64_t,
+  std::chrono::seconds,
+  ss::sstring,
+  uuid_t,
+  special_date,
+  clock::time_point,
+  time_variant,
+  scram_creds,
+  debug_bundle_authn_options,
+  partition_selection,
+  std::vector<int>,
+  absl::btree_set<int>>;
 TYPED_TEST_SUITE(JsonTypeTest, JsonTestTypes);
 
 TYPED_TEST(JsonTypeTest, BasicType) {
     if constexpr (std::is_same_v<TypeParam, int>) {
         this->json_input = R"(42)";
         this->expected = 42;
+    } else if constexpr (std::is_same_v<TypeParam, optional_int>) {
+        this->json_input = R"(42)";
+        this->expected = optional_int{42};
+    } else if constexpr (std::is_same_v<TypeParam, named_int>) {
+        this->json_input = R"(42)";
+        this->expected = named_int{42};
+    } else if constexpr (std::is_same_v<TypeParam, uint64_t>) {
+        this->json_input = R"(42)";
+        this->expected = 42;
+    } else if constexpr (std::is_same_v<TypeParam, std::chrono::seconds>) {
+        this->json_input = R"(42)";
+        this->expected = std::chrono::seconds{42};
+    } else if constexpr (std::is_same_v<TypeParam, ss::sstring>) {
+        this->json_input = R"("42")";
+        this->expected = "42";
+    } else if constexpr (std::is_same_v<TypeParam, uuid_t>) {
+        this->json_input = R"("e6fd84b8-f12b-407e-941f-e968d392e40d")";
+        this->expected = uuid_t::from_string(
+          "e6fd84b8-f12b-407e-941f-e968d392e40d");
+    } else if constexpr (std::is_same_v<TypeParam, special_date>) {
+        this->json_input = R"("yesterday")";
+        this->expected = special_date::yesterday;
+    } else if constexpr (std::is_same_v<TypeParam, clock::time_point>) {
+        auto now = std::chrono::system_clock::now();
+        this->json_input = fmt::format(R"("{:%FT%T}")", now);
+        std::cout << this->json_input << std::endl;
+        this->expected = clock::from_time_t(
+          std::chrono::system_clock::to_time_t(now));
+    } else if constexpr (std::is_same_v<TypeParam, time_variant>) {
+        this->json_input = R"("tomorrow")";
+        this->expected = special_date::tomorrow;
+    } else if constexpr (std::is_same_v<TypeParam, scram_creds>) {
+        this->json_input
+          = R"({"username": "user", "password": "pass", "mechanism": "SCRAM-SHA-256"})";
+        this->expected = scram_creds{
+          .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}};
+    } else if constexpr (std::
+                           is_same_v<TypeParam, debug_bundle_authn_options>) {
+        this->json_input
+          = R"({"username": "user", "password": "pass", "mechanism": "SCRAM-SHA-256"})";
+        this->expected = TypeParam{scram_creds{
+          .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}}};
+    } else if constexpr (std::is_same_v<TypeParam, partition_selection>) {
+        this->json_input = R"("foo/bar/1")";
+        this->expected = {
+          {model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}}}};
+    } else if constexpr (detail::
+                           is_specialization_of_v<TypeParam, std::vector>) {
+        this->json_input = R"([1,2,3])";
+        this->expected = {1, 2, 3};
+    } else if constexpr (detail::
+                           is_specialization_of_v<TypeParam, absl::btree_set>) {
+        this->json_input = R"([1,2,3])";
+        this->expected = {1, 2, 3};
     } else {
         static_assert(always_false_v<TypeParam>, "not implemented");
     }
@@ -57,6 +132,58 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
     if constexpr (std::is_same_v<TypeParam, int>) {
         this->json_input = R"("42")";
         this->expected = 42;
+    } else if constexpr (std::is_same_v<TypeParam, optional_int>) {
+        this->json_input = R"("42")";
+        this->expected = optional_int{42};
+    } else if constexpr (std::is_same_v<TypeParam, named_int>) {
+        this->json_input = R"("42")";
+        this->expected = named_int{42};
+    } else if constexpr (std::is_same_v<TypeParam, uint64_t>) {
+        this->json_input = R"("42")";
+        this->expected = 42;
+    } else if constexpr (std::is_same_v<TypeParam, std::chrono::seconds>) {
+        this->json_input = R"("42")";
+        this->expected = std::chrono::seconds{42};
+    } else if constexpr (std::is_same_v<TypeParam, ss::sstring>) {
+        this->json_input = R"(42)";
+        this->expected = "42";
+    } else if constexpr (std::is_same_v<TypeParam, uuid_t>) {
+        this->json_input = R"("1-2-3-4-5")";
+        this->expected = uuid_t::from_string(
+          "e6fd84b8-f12b-407e-941f-e968d392e40d");
+    } else if constexpr (std::is_same_v<TypeParam, special_date>) {
+        this->json_input = R"(42)";
+        this->expected = special_date::yesterday;
+    } else if constexpr (std::is_same_v<TypeParam, clock::time_point>) {
+        auto now = std::chrono::system_clock::now();
+        this->json_input = fmt::format(R"(42)", now);
+        std::cout << this->json_input << std::endl;
+        this->expected = clock::from_time_t(
+          std::chrono::system_clock::to_time_t(now));
+    } else if constexpr (std::is_same_v<TypeParam, time_variant>) {
+        this->json_input = R"("last_year")";
+        this->expected = special_date::tomorrow;
+    } else if constexpr (std::is_same_v<TypeParam, scram_creds>) {
+        this->json_input = R"({"credential": "user:pass:SCRAM-SHA-256"})";
+        this->expected = scram_creds{
+          .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}};
+    } else if constexpr (std::
+                           is_same_v<TypeParam, debug_bundle_authn_options>) {
+        this->json_input = R"(42)";
+        this->expected = TypeParam{scram_creds{
+          .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}}};
+    } else if constexpr (std::is_same_v<TypeParam, partition_selection>) {
+        this->json_input = R"("invalid")";
+        this->expected = {
+          {model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}}}};
+    } else if constexpr (detail::
+                           is_specialization_of_v<TypeParam, std::vector>) {
+        this->json_input = R"(42)";
+        this->expected = {1, 2, 3};
+    } else if constexpr (detail::
+                           is_specialization_of_v<TypeParam, absl::btree_set>) {
+        this->json_input = R"(42)";
+        this->expected = {1, 2, 3};
     } else {
         static_assert(always_false_v<TypeParam>, "not implemented");
     }

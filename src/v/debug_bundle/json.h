@@ -11,28 +11,220 @@
 
 #pragma once
 
+#include "base/type_traits.h"
 #include "debug_bundle/error.h"
+#include "debug_bundle/types.h"
 #include "json/document.h"
+#include "json/types.h"
+#include "reflection/type_traits.h"
+#include "security/types.h"
 #include "utils/functional.h"
+#include "utils/uuid.h"
 
+#include <exception>
 #include <type_traits>
 
 namespace debug_bundle {
 
+inline std::string_view as_string_view(const json::Value& v) {
+    vassert(v.IsString(), "You must check that v is a string;");
+    return {v.GetString(), v.GetStringLength()};
+}
+
+template<typename T>
+debug_bundle::result<T> from_json(
+  const json::Document::ConstObject& p, std::string_view f, bool required);
+
 template<typename T>
 debug_bundle::result<T> from_json(const json::Value& v) {
-    constexpr auto parse_error = []() {
-        return error_info{error_code::invalid_parameters, "Failed to parse"};
+    constexpr auto parse_error = [](std::string_view extra_msg) {
+        return error_info{
+          error_code::invalid_parameters,
+          fmt::format("Failed to parse{}", extra_msg)};
     };
 
-    if constexpr (std::is_same_v<T, int>) {
+    if constexpr (reflection::is_std_optional<T>) {
+        auto r = from_json<typename T::value_type>(v);
+        if (r.has_value()) {
+            return T{std::move(r).assume_value()};
+        }
+        return std::move(r).assume_error();
+    } else if constexpr (reflection::is_rp_named_type<T>) {
+        auto r = from_json<typename T::type>(v);
+        if (r.has_value()) {
+            return T{std::move(r).assume_value()};
+        }
+        return std::move(r).assume_error();
+    } else if constexpr (std::is_same_v<T, int>) {
         if (v.IsInt()) {
             return v.GetInt();
         }
+        return parse_error(": expected int");
+    } else if constexpr (
+      std::is_same_v<T, uint64_t> || std::is_same_v<T, unsigned long long>) {
+        if (v.IsUint64()) {
+            return v.GetUint64();
+        }
+        return parse_error(": expected uint64_t");
+    } else if constexpr (
+      std::is_same_v<T, int64_t> || std::is_same_v<T, signed long long>) {
+        if (v.IsInt64()) {
+            return v.GetInt64();
+        }
+        return parse_error(": expected int64_t");
+    } else if constexpr (std::is_same_v<T, std::chrono::seconds>) {
+        auto r = from_json<typename T::rep>(v);
+        if (r.has_value()) {
+            return T{v.GetInt64()};
+        }
+        return std::move(r).assume_error();
+    } else if constexpr (std::is_same_v<T, ss::sstring>) {
+        if (v.IsString()) {
+            return T{as_string_view(v)};
+        }
+        return parse_error(": expected string");
+    } else if constexpr (std::is_same_v<T, uuid_t>) {
+        if (v.IsString()) {
+            try {
+                return uuid_t::from_string(as_string_view(v));
+            } catch (const std::exception&) {
+                return parse_error(": invalid uuid");
+            }
+        }
+        return parse_error(": expected uuid");
+    } else if constexpr (std::is_same_v<T, special_date>) {
+        if (v.IsString()) {
+            try {
+                return boost::lexical_cast<special_date>(as_string_view(v));
+            } catch (const std::exception&) {
+                return parse_error(": invalid special_date");
+            }
+        }
+        return parse_error(": expected special_date");
+    } else if constexpr (std::is_same_v<T, clock::time_point>) {
+        if (v.IsString()) {
+            // TODO: Improve this with HowardHinnant/date or
+            // std::chrono::zoned_time
+            std::istringstream ss(v.GetString(), v.GetStringLength());
+            std::tm tmp{};
+            ss >> std::get_time(&tmp, "%FT%T");
+            if (ss.fail()) {
+                return parse_error(": invalid ISO 8601 date");
+            }
+            // Forces `std::mktime` to "figure it out"
+            tmp.tm_isdst = -1;
+            std::time_t tt = std::mktime(&tmp);
+            return clock::from_time_t(tt);
+        }
+        return parse_error(": expected ISO 8601 date");
+    } else if constexpr (std::is_same_v<T, time_variant>) {
+        if (auto r = from_json<special_date>(v); r.has_value()) {
+            return T{std::move(r).assume_value()};
+        } else if (auto res = from_json<clock::time_point>(v);
+                   res.has_value()) {
+            return T{std::move(res).assume_value()};
+        }
+        return parse_error(": expected ISO 8601 date or special_date");
+    } else if constexpr (std::is_same_v<T, scram_creds>) {
+        if (v.IsObject()) {
+            auto o = v.GetObject();
+            scram_creds sc;
+            if (auto r = from_json<decltype(sc.username)>(o, "username", true);
+                r.has_value()) {
+                sc.username = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(sc.password)>(o, "password", true);
+                r.has_value()) {
+                sc.password = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(sc.mechanism)>(
+                  o, "mechanism", true);
+                r.has_value()) {
+                sc.mechanism = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            return std::move(sc);
+        }
+        return parse_error(": expected scram_creds");
+    } else if constexpr (std::is_same_v<T, debug_bundle_authn_options>) {
+        auto r = from_json<scram_creds>(v);
+        if (r.has_value()) {
+            return T{std::move(r).assume_value()};
+        }
+        return std::move(r).assume_error();
+    } else if constexpr (std::is_same_v<T, partition_selection>) {
+        if (v.IsString()) {
+            auto r = partition_selection::from_string_view(as_string_view(v));
+            if (r.has_value()) {
+                return std::move(r).value();
+            }
+        }
+        return parse_error(": expected partition_selection "
+                           "'{namespace}/[topic]/[partitions...]'");
+    } else if constexpr (detail::is_specialization_of_v<T, std::vector>) {
+        if (v.IsArray()) {
+            using V = T::value_type;
+            auto arr = v.GetArray();
+            std::vector<V> vec;
+            vec.reserve(arr.Size());
+            for (const auto& e : arr) {
+                auto r = from_json<V>(e);
+                if (r.has_value()) {
+                    vec.push_back(std::move(r).assume_value());
+                } else {
+                    return std::move(r).assume_error();
+                }
+            }
+            return std::move(vec);
+        }
+        return parse_error(": expected an array");
+    } else if constexpr (detail::is_specialization_of_v<T, absl::btree_set>) {
+        if (v.IsArray()) {
+            using V = T::value_type;
+            auto arr = v.GetArray();
+            absl::btree_set<V> set;
+            for (const auto& e : arr) {
+                auto r = from_json<V>(e);
+                if (r.has_value()) {
+                    set.emplace(std::move(r).assume_value());
+                } else {
+                    return std::move(r).assume_error();
+                }
+            }
+            return std::move(set);
+        }
+        return parse_error(": expected an array");
     } else {
         static_assert(always_false_v<T>, "Not implemented");
     }
-    return parse_error();
+    return parse_error(": unsupported type");
+}
+
+template<typename T>
+debug_bundle::result<T> from_json(
+  const json::Document::ConstObject& p, std::string_view f, bool required) {
+    auto it = p.FindMember(json::Document::StringRefType{
+      f.data(), static_cast<json::SizeType>(f.length())});
+    if (required && it == p.MemberEnd()) {
+        return debug_bundle::error_info{
+          debug_bundle::error_code::invalid_parameters,
+          fmt::format("Failed to parse: field '{}' is required", f)};
+    }
+    if (it == p.MemberEnd()) {
+        return outcome::success();
+    }
+    if (auto r = from_json<T>(it->value); r.has_error()) {
+        return debug_bundle::error_info{
+          r.assume_error().code(),
+          fmt::format("{} for field '{}'", r.assume_error().message(), f)};
+    } else {
+        return r;
+    }
 }
 
 } // namespace debug_bundle

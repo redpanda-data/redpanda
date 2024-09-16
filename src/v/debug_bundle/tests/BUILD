@@ -13,9 +13,12 @@ redpanda_cc_gtest(
         "//src/v/json",
         "//src/v/model",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:flat_hash_map",
+        "@fmt",
         "@googletest//:gtest",
         "@rapidjson",
+        "@seastar",
     ],
 )
 
