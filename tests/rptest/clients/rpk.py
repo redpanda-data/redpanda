@@ -1867,7 +1867,7 @@ class RpkTool:
         return self._run_connect(cmd)
 
     def upgrade_connect(self):
-        cmd = ["upgrade"]
+        cmd = ["upgrade", "--no-confirm"]
         return self._run_connect(cmd)
 
     def connect_version(self):
