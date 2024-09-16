@@ -101,6 +101,7 @@ enum class migrated_resource_state {
     non_restricted,
     metadata_locked,
     read_only,
+    create_only, // can only be created, and only by migrations
     fully_blocked
 };
 

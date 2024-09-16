@@ -95,6 +95,8 @@ std::ostream& operator<<(std::ostream& o, migrated_resource_state state) {
         return o << "restricted";
     case migrated_resource_state::read_only:
         return o << "read_only";
+    case migrated_resource_state::create_only:
+        return o << "create_only";
     case migrated_resource_state::fully_blocked:
         return o << "fully_blocked";
     }

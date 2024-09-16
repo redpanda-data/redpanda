@@ -430,24 +430,29 @@ errc topics_frontend::validate_topic_configuration(
 ss::future<topic_result> topics_frontend::do_create_topic(
   custom_assignable_topic_configuration assignable_config,
   model::timeout_clock::time_point timeout) {
-    if (_topics.local().contains(assignable_config.cfg.tp_ns)) {
+    auto& tp_ns = assignable_config.cfg.tp_ns;
+    if (_topics.local().contains(tp_ns)) {
         vlog(
           clusterlog.trace,
           "unable to create topic {} as it already exists",
-          assignable_config.cfg.tp_ns);
-        co_return topic_result(
-          assignable_config.cfg.tp_ns, errc::topic_already_exists);
+          tp_ns);
+        co_return topic_result(tp_ns, errc::topic_already_exists);
     }
 
-    if (
-      !assignable_config.cfg.is_migrated
-      && _migrated_resources.is_already_migrated(assignable_config.cfg.tp_ns)) {
+    bool blocked = assignable_config.cfg.is_migrated
+                     ? _migrated_resources.get_topic_state(tp_ns)
+                         > data_migrations::migrated_resource_state::create_only
+                     : _migrated_resources.is_already_migrated(tp_ns);
+    if (blocked) {
         vlog(
           clusterlog.warn,
-          "unable to create topic {} as it is being migrated",
-          assignable_config.cfg.tp_ns);
+          "unable to create topic {} as it is being migrated: "
+          "cfg.is_migrated={}, migrated resource state is {}",
+          assignable_config.cfg.tp_ns,
+          assignable_config.cfg.is_migrated,
+          _migrated_resources.get_topic_state(tp_ns));
         co_return topic_result(
-          assignable_config.cfg.tp_ns, errc::topic_already_exists);
+          assignable_config.cfg.tp_ns, errc::resource_is_being_migrated);
     }
 
     auto validation_err = validate_topic_configuration(assignable_config);
