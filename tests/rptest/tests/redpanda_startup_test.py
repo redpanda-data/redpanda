@@ -15,8 +15,9 @@ from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import in_fips_environment, MetricsEndpoint, MetricSamples, RedpandaServiceBase
+from rptest.services.redpanda import MetricsEndpoint, MetricSamples, RedpandaServiceBase
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.mode_checks import in_fips_environment
 
 
 class RedpandaStartupTest(RedpandaTest):
