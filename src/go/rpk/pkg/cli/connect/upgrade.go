@@ -36,7 +36,7 @@ func upgradeCommand(fs afero.Fs) *cobra.Command {
 			// upgrade can result in having multiple copies of connect. Instead,
 			// we kindly ask to re-install.
 			if !connect.Managed {
-				out.Die("Found an unmanaged Redpanda Connect plugin; unfortunately we cannot upgrade it with this install. Run 'rpk connect uninstall' first, and download a new one with 'rpk connect install' or use your package manager.")
+				out.Die("Found a self-managed Redpanda Connect plugin; unfortunately, we cannot upgrade it with this installation. Run rpk connect uninstall && rpk connect install, or to continue managing Connect manually, use our redpanda-connect package.")
 			}
 			art, version, err := getConnectArtifact(cmd.Context(), "latest")
 			out.MaybeDieErr(err)
