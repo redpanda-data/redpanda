@@ -152,13 +152,14 @@ iobuf format_to_str(data_file_format f) {
 }
 
 data_file_format format_from_str(std::string_view s) {
-    return string_switch<data_file_format>(s)
+    ss::sstring str(s);
+    std::transform(str.begin(), str.end(), str.begin(), [](char c) {
+        return std::tolower(c);
+    });
+    return string_switch<data_file_format>(str)
       .match("avro", data_file_format::avro)
-      .match("AVRO", data_file_format::avro)
       .match("orc", data_file_format::orc)
-      .match("ORC", data_file_format::orc)
-      .match("parquet", data_file_format::parquet)
-      .match("PARQUET", data_file_format::parquet);
+      .match("parquet", data_file_format::parquet);
 }
 
 std::unique_ptr<struct_value> data_file_to_value(const data_file& file) {
@@ -173,6 +174,7 @@ std::unique_ptr<struct_value> data_file_to_value(const data_file& file) {
       long_value(static_cast<int64_t>(file.file_size_bytes)));
 
     // TODO: serialize the rest of the optional fields.
+    ret->fields.emplace_back(std::nullopt);
     ret->fields.emplace_back(std::nullopt);
     ret->fields.emplace_back(std::nullopt);
     ret->fields.emplace_back(std::nullopt);
@@ -204,7 +206,8 @@ data_file data_file_from_value(struct_value v) {
     file.column_sizes = get_counts_map(std::move(fs[6]));
     file.value_counts = get_counts_map(std::move(fs[7]));
     file.null_value_counts = get_counts_map(std::move(fs[8]));
-    file.nan_value_counts = get_counts_map(std::move(fs[9]));
+    file.distinct_counts = get_counts_map(std::move(fs[9]));
+    file.nan_value_counts = get_counts_map(std::move(fs[10]));
     return file;
 }
 

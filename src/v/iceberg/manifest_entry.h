@@ -41,6 +41,7 @@ struct data_file {
     chunked_hash_map<nested_field::id_t, size_t> column_sizes;
     chunked_hash_map<nested_field::id_t, size_t> value_counts;
     chunked_hash_map<nested_field::id_t, size_t> null_value_counts;
+    chunked_hash_map<nested_field::id_t, size_t> distinct_counts;
     chunked_hash_map<nested_field::id_t, size_t> nan_value_counts;
 
     // TODO: The following fields are not supported, and are serialized as
