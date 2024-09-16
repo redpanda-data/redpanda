@@ -18,7 +18,7 @@ namespace datalake {
 
 class arrow_to_iobuf {
 public:
-    explicit arrow_to_iobuf(const arrow::Schema& schema);
+    explicit arrow_to_iobuf(std::shared_ptr<arrow::Schema> schema);
 
     void add_arrow_array(std::shared_ptr<arrow::Array> data);
 

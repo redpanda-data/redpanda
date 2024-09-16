@@ -708,9 +708,8 @@ void map_converter::add_data(const iceberg::value& value) {
     }
 }
 
-arrow_translator::arrow_translator(iceberg::struct_type&& schema)
-  : _schema(std::move(schema))
-  , _struct_converter(std::make_unique<struct_converter>(_schema)) {}
+arrow_translator::arrow_translator(iceberg::struct_type schema)
+  : _struct_converter(std::make_unique<struct_converter>(std::move(schema))) {}
 
 arrow_translator::~arrow_translator() = default;
 

@@ -97,3 +97,15 @@ target_include_directories(v_datalake_test_proto_cc_files
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
 )
 
+rp_test(
+  GTEST
+  BINARY_NAME batching_parquet_writer_test
+  SOURCES batching_parquet_writer_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake
+    v::iceberg_test_utils
+  LABELS storage
+  ARGS "-- -c 1"
+)
+

@@ -9,6 +9,7 @@ v_cc_library(
   SRCS
     arrow_translator.cc
     datalake_manager.cc
+    batching_parquet_writer.cc
     parquet_writer.cc
     record_multiplexer.cc
     schema_registry.cc

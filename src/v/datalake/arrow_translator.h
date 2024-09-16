@@ -14,6 +14,7 @@
 #include "iceberg/values.h"
 
 #include <arrow/type.h>
+#include <parquet/arrow/writer.h>
 
 #include <optional>
 
@@ -23,17 +24,7 @@ class struct_converter;
 
 class arrow_translator {
 public:
-    explicit arrow_translator(iceberg::struct_type&& schema);
-
-    // Wrap constructor to return optional on failure.
-    static std::optional<arrow_translator>
-    create(iceberg::struct_type&& schema) {
-        try {
-            return std::make_optional<arrow_translator>(std::move(schema));
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
+    explicit arrow_translator(iceberg::struct_type schema);
 
     ~arrow_translator();
 
@@ -46,8 +37,6 @@ public:
     std::shared_ptr<arrow::Array> take_chunk();
 
 private:
-    iceberg::struct_type _schema;
-
     // Top-level struct that represents the whole schema.
     std::unique_ptr<struct_converter> _struct_converter;
 };
