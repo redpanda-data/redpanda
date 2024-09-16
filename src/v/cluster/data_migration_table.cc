@@ -84,7 +84,12 @@ migrations_table::fill_snapshot(controller_snapshot& snapshot) const {
 ss::future<> migrations_table::apply_snapshot(
   model::offset, const controller_snapshot& snapshot) {
     _next_id = snapshot.data_migrations.next_id;
-    _migrations.reserve(snapshot.data_migrations.migrations.size());
+
+    auto snapshot_size = snapshot.data_migrations.migrations.size();
+    _migrations.reserve(snapshot_size);
+
+    std::vector<id> affected_ids;
+    affected_ids.reserve(snapshot_size);
 
     std::vector<migration_metadata> deleted;
     auto it = _migrations.cbegin();
@@ -92,7 +97,7 @@ ss::future<> migrations_table::apply_snapshot(
         auto prev = it++;
         if (!snapshot.data_migrations.migrations.contains(prev->first)) {
             auto extracted = _migrations.extract(prev);
-            _callbacks.notify(extracted.key());
+            affected_ids.push_back(extracted.key());
             deleted.push_back(std::move(extracted.mapped()));
         }
     }
@@ -109,14 +114,19 @@ ss::future<> migrations_table::apply_snapshot(
             }
             it->second.state = migration.state;
         }
-        _callbacks.notify(id);
+        affected_ids.push_back(id);
         updated.emplace_back(it->second);
     }
 
+    // notify callbacks after resources, see comment in migrations_table::apply
     co_await _resources.invoke_on_all(
       [&deleted, &updated](migrated_resources& resources) {
           resources.apply_snapshot(deleted, updated);
       });
+
+    for (auto id : affected_ids) {
+        _callbacks.notify(id);
+    }
 }
 
 std::optional<std::reference_wrapper<const migration_metadata>>
@@ -176,12 +186,14 @@ migrations_table::apply(create_data_migration_cmd cmd) {
     }
     _last_applied = id;
     _next_id = std::max(_next_id, _last_applied + data_migrations::id(1));
-    _callbacks.notify(id);
-    // update migrated resources
+    // It is vital to update resources before subscribers, backend in
+    // particular. When backend works on the migrated entities it relies on them
+    // being locked by resources.
     co_await _resources.invoke_on_all(
       [&meta = it->second](migrated_resources& resources) {
           resources.apply_update(meta);
       });
+    _callbacks.notify(id);
 
     co_return errc::success;
 }
@@ -279,11 +291,12 @@ migrations_table::apply(update_data_migration_state_cmd cmd) {
         co_return errc::invalid_data_migration_state;
     }
     it->second.state = requested_state;
-    _callbacks.notify(id);
+    // notify callbacks after resources, see comment in migrations_table::apply
     co_await _resources.invoke_on_all(
       [&meta = it->second](migrated_resources& resources) {
           resources.apply_update(meta);
       });
+    _callbacks.notify(id);
 
     co_return errc::success;
 }
@@ -304,11 +317,11 @@ migrations_table::apply(remove_data_migration_cmd cmd) {
     case state::planned: {
         auto meta = std::move(it->second);
         _migrations.erase(it);
-        _callbacks.notify(id);
         co_await _resources.invoke_on_all(
           [&meta](migrated_resources& resources) {
               resources.remove_migration(meta);
           });
+        _callbacks.notify(id);
 
         co_return errc::success;
     }
