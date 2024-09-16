@@ -31,7 +31,12 @@
 #include "security/role_store.h"
 #include "security/types.h"
 
+#include <seastar/core/semaphore.hh>
+
 #include <absl/algorithm/container.h>
+#include <fmt/format.h>
+
+#include <stdexcept>
 
 namespace cluster {
 
@@ -191,6 +196,7 @@ ss::future<> feature_manager::stop() {
       _leader_notify_handle);
     _hm_backend.local().unregister_node_callback(_health_notify_handle);
     _update_wait.broken();
+    _verified_enterprise_license.broken();
     co_await _gate.close();
 }
 
@@ -287,7 +293,62 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
 }
 
+bool feature_manager::need_to_verify_enterprise_license() {
+    return features::is_major_version_upgrade(
+      _feature_table.local().get_active_version(),
+      _feature_table.local().get_latest_logical_version());
+}
+
+void feature_manager::verify_enterprise_license() {
+    vlog(clusterlog.debug, "Verifying enterprise license...");
+
+    if (!need_to_verify_enterprise_license()) {
+        vlog(clusterlog.debug, "Enterprise license verification skipped...");
+        _verified_enterprise_license.signal();
+        return;
+    }
+
+    const auto& license = _feature_table.local().get_license();
+    auto license_missing_or_expired = !license || license->is_expired();
+    auto enterprise_features = report_enterprise_features();
+
+    vlog(
+      clusterlog.info,
+      "Verifying enterprise license: active_version={}, latest_version={}, "
+      "enterprise_features=[{}], license_missing_or_expired={}",
+      _feature_table.local().get_active_version(),
+      _feature_table.local().get_latest_logical_version(),
+      enterprise_features.enabled(),
+      license_missing_or_expired);
+
+    if (enterprise_features.any() && license_missing_or_expired) {
+        throw std::runtime_error{fmt::format(
+          "A Redpanda Enterprise Edition license is required to use enterprise "
+          "features: ([{}]). To add your license, downgrade this broker to the "
+          "pre-upgrade version, and enter the active license key (for example, "
+          "rpk cluster license set). To request a license, see "
+          "https://redpanda.com/license-request. For more information, see "
+          "https://docs.redpanda.com/current/get-started/licenses.",
+          enterprise_features.enabled())};
+    }
+
+    _verified_enterprise_license.signal();
+}
+
 ss::future<> feature_manager::maybe_update_feature_table() {
+    // Before doing any feature enablement or active version update, check that
+    // the cluster has an enterprise license if they use enterprise features
+    if (need_to_verify_enterprise_license()) {
+        vlog(
+          clusterlog.debug,
+          "Waiting for enterprise license to be verified before checking for "
+          "active version updates...");
+        // Immediately release the semaphore units because we are only using it
+        // to wait for the precondition to be met
+        std::ignore = co_await ss::get_units(
+          _verified_enterprise_license, 1, _as.local());
+    }
+
     vlog(clusterlog.debug, "Checking for active version update...");
     bool failed = false;
     try {

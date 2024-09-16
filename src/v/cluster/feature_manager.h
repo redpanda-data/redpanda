@@ -18,6 +18,7 @@
 #include "features/enterprise_features.h"
 #include "raft/notification.h"
 #include "security/fwd.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -101,6 +102,14 @@ public:
 
     features::enterprise_feature_report report_enterprise_features() const;
 
+    /**
+     * This method is always called during startup to verify that the cluster is
+     * only upgraded with a valid enterprise license if enterprise features are
+     * enabled. It throws if the cluster is non-compliant during an upgrade or
+     * unblocks the advancement of the active_version otherwise.
+     */
+    void verify_enterprise_license();
+
 private:
     void update_node_version(model::node_id, cluster_version v);
 
@@ -133,6 +142,7 @@ private:
     }
 
     ss::future<> maybe_log_license_check_info();
+    bool need_to_verify_enterprise_license();
 
     // Compose a command struct, replicate it via raft and wait for apply.
     // Silently swallow not_leader errors, raise on other errors;
@@ -177,6 +187,10 @@ private:
     // Keep track of whether this node is the controller leader
     // via leadership notifications
     bool _am_controller_leader{false};
+
+    // Blocks cluster upgrades until the enterprise license has been verified
+    ssx::semaphore _verified_enterprise_license{
+      0, "feature_manager/enterprise-license-verified"};
 };
 
 } // namespace cluster
