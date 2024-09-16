@@ -70,6 +70,7 @@ from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
+from rptest.utils.mode_checks import in_fips_environment
 import enum
 
 Partition = collections.namedtuple('Partition',
@@ -364,20 +365,6 @@ def is_redpanda_cloud(context: TestContext):
 def should_compile(allow_list_element: LogAllowListElem) -> bool:
     return not isinstance(allow_list_element, re.Pattern) and not isinstance(
         allow_list_element, AllowLogsOnPredicate)
-
-
-def in_fips_environment() -> bool:
-    """
-    Returns True if the file /proc/sys/crypto/fips_enabled is present and
-    contains '1', otherwise returns False.
-    """
-    fips_file = "/proc/sys/crypto/fips_enabled"
-    if os.path.exists(fips_file) and os.path.isfile(fips_file):
-        with open(fips_file, 'r') as f:
-            contents = f.read().strip()
-            return contents == '1'
-
-    return False
 
 
 class ResourceSettings:
