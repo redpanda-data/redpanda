@@ -13,21 +13,21 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
 
 type vendorMock struct {
-	init func() (vendor.InitializedVendor, error)
+	init func() (provider.InitializedVendor, error)
 }
 
 type currentVendor struct {
 	name string
 }
 
-func (v *vendorMock) Init() (vendor.InitializedVendor, error) {
+func (v *vendorMock) Init() (provider.InitializedVendor, error) {
 	return v.init()
 }
 
@@ -48,7 +48,7 @@ const devicePath = "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake"
 func TestDeviceWriteCacheTuner_Tune(t *testing.T) {
 	// given
 	v := &vendorMock{
-		init: func() (vendor.InitializedVendor, error) {
+		init: func() (provider.InitializedVendor, error) {
 			return &currentVendor{
 				name: "gcp",
 			}, nil
@@ -74,7 +74,7 @@ func TestDeviceWriteCacheTuner_Tune(t *testing.T) {
 
 func TestGCPCacheTunerSupported(t *testing.T) {
 	type args struct {
-		vendor vendor.Vendor
+		vendor provider.Vendor
 	}
 	tests := []struct {
 		name string
@@ -85,7 +85,7 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 			name: "should be supported on GCP",
 			args: args{
 				vendor: &vendorMock{
-					init: func() (vendor.InitializedVendor, error) {
+					init: func() (provider.InitializedVendor, error) {
 						return &currentVendor{
 							name: "gcp",
 						}, nil
@@ -98,7 +98,7 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 			name: "should not be supported on AWS",
 			args: args{
 				vendor: &vendorMock{
-					init: func() (vendor.InitializedVendor, error) {
+					init: func() (provider.InitializedVendor, error) {
 						return &currentVendor{
 							name: "aws",
 						}, nil
@@ -111,7 +111,7 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 			name: "should not be supported on not cloud deployments",
 			args: args{
 				vendor: &vendorMock{
-					init: func() (vendor.InitializedVendor, error) {
+					init: func() (provider.InitializedVendor, error) {
 						return nil, fmt.Errorf("no vendor")
 					},
 				},

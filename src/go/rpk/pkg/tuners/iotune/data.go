@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 )
 
 type IoProperties struct {
@@ -45,7 +45,7 @@ func DataFor(mountPoint, v, vm, storage string) (*IoProperties, error) {
 }
 
 func DataForVendor(
-	mountpoint string, v vendor.InitializedVendor,
+	mountpoint string, v provider.InitializedVendor,
 ) (*IoProperties, error) {
 	vmType, err := v.VMType()
 	if err != nil {

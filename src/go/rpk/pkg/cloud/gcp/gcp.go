@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 )
 
 const name = "gcp"
@@ -32,7 +32,7 @@ func (*GcpVendor) Name() string {
 	return name
 }
 
-func (*GcpVendor) Init() (vendor.InitializedVendor, error) {
+func (*GcpVendor) Init() (provider.InitializedVendor, error) {
 	timeout := 500 * time.Millisecond
 	client := metadata.NewClient(&http.Client{Timeout: timeout})
 	if available(client, timeout) {

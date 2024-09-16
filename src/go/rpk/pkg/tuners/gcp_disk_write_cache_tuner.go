@@ -11,7 +11,7 @@ package tuners
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/disk"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
@@ -23,7 +23,7 @@ func NewGcpWriteCacheTuner(
 	directories []string,
 	devices []string,
 	blockDevices disk.BlockDevices,
-	vendor vendor.Vendor,
+	vendor provider.Vendor,
 	executor executors.Executor,
 ) Tunable {
 	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
@@ -43,7 +43,7 @@ func NewDeviceGcpWriteCacheTuner(
 	fs afero.Fs,
 	device string,
 	deviceFeatures disk.DeviceFeatures,
-	vendor vendor.Vendor,
+	vendor provider.Vendor,
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(

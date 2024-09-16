@@ -15,7 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 )
 
 const name = "aws"
@@ -30,7 +30,7 @@ func (*AwsVendor) Name() string {
 	return name
 }
 
-func (*AwsVendor) Init() (vendor.InitializedVendor, error) {
+func (*AwsVendor) Init() (provider.InitializedVendor, error) {
 	s, err := session.NewSession()
 	if err != nil {
 		return nil, err

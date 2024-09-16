@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func (v *mockVendor) Name() string {
 	return v.name
 }
 
-func (v *mockVendor) Init() (vendor.InitializedVendor, error) {
+func (v *mockVendor) Init() (provider.InitializedVendor, error) {
 	if !v.available {
 		return nil, fmt.Errorf("mockVendor '%s' is not available", v.name)
 	}
@@ -44,7 +44,7 @@ func TestAvailableVendor(t *testing.T) {
 		name2 = "vendor2"
 		name3 = "vendor3"
 	)
-	vendors := make(map[string]vendor.Vendor)
+	vendors := make(map[string]provider.Vendor)
 	vendors[name1] = &mockVendor{false, name1, ""}
 	vendors[name2] = &mockVendor{true, name2, ""}
 	vendors[name3] = &mockVendor{false, name3, ""}
@@ -60,7 +60,7 @@ func TestUnvailableVendor(t *testing.T) {
 		name2 = "vendor2"
 		name3 = "vendor3"
 	)
-	vendors := make(map[string]vendor.Vendor)
+	vendors := make(map[string]provider.Vendor)
 	vendors[name1] = &mockVendor{false, name1, ""}
 	vendors[name2] = &mockVendor{false, name2, ""}
 	vendors[name3] = &mockVendor{false, name3, ""}

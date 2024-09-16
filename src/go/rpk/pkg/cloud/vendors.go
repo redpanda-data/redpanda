@@ -15,12 +15,12 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/aws"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 	"go.uber.org/zap"
 )
 
-func vendors() map[string]vendor.Vendor {
-	vendors := make(map[string]vendor.Vendor)
+func vendors() map[string]provider.Vendor {
+	vendors := make(map[string]provider.Vendor)
 	awsVendor := &aws.AwsVendor{}
 	vendors[awsVendor.Name()] = awsVendor
 	gcpVendor := &gcp.GcpVendor{}
@@ -31,18 +31,18 @@ func vendors() map[string]vendor.Vendor {
 
 // AvailableVendor tries to initialize the vendors and returns the one available, or an error
 // if none could be initialized.
-func AvailableVendor() (vendor.InitializedVendor, error) {
+func AvailableVendor() (provider.InitializedVendor, error) {
 	return availableVendorFrom(vendors())
 }
 
 func availableVendorFrom(
-	vendors map[string]vendor.Vendor,
-) (vendor.InitializedVendor, error) {
+	vendors map[string]provider.Vendor,
+) (provider.InitializedVendor, error) {
 	type initResult struct {
-		vendor vendor.InitializedVendor
+		vendor provider.InitializedVendor
 		err    error
 	}
-	initAsync := func(v vendor.Vendor, c chan<- initResult) {
+	initAsync := func(v provider.Vendor, c chan<- initResult) {
 		iv, err := v.Init()
 		c <- initResult{iv, err}
 	}
@@ -59,7 +59,7 @@ func availableVendorFrom(
 		go initAsync(v, ch)
 	}
 
-	var v vendor.InitializedVendor
+	var v provider.InitializedVendor
 	for res := range ch {
 		if res.err == nil {
 			v = res.vendor
