@@ -19,35 +19,35 @@ import (
 	"go.uber.org/zap"
 )
 
-func vendors() map[string]provider.Vendor {
-	vendors := make(map[string]provider.Vendor)
-	awsVendor := &aws.AwsVendor{}
-	vendors[awsVendor.Name()] = awsVendor
-	gcpVendor := &gcp.GcpVendor{}
-	vendors[gcpVendor.Name()] = gcpVendor
+func providers() map[string]provider.Provider {
+	providers := make(map[string]provider.Provider)
+	awsProvider := &aws.AwsProvider{}
+	providers[awsProvider.Name()] = awsProvider
+	gcpProvider := &gcp.GcpProvider{}
+	providers[gcpProvider.Name()] = gcpProvider
 
-	return vendors
+	return providers
 }
 
-// AvailableVendor tries to initialize the vendors and returns the one available, or an error
+// AvailableProviders tries to initialize the providers and returns the one available, or an error
 // if none could be initialized.
-func AvailableVendor() (provider.InitializedVendor, error) {
-	return availableVendorFrom(vendors())
+func AvailableProviders() (provider.InitializedProvider, error) {
+	return availableProviderFrom(providers())
 }
 
-func availableVendorFrom(
-	vendors map[string]provider.Vendor,
-) (provider.InitializedVendor, error) {
+func availableProviderFrom(
+	providers map[string]provider.Provider,
+) (provider.InitializedProvider, error) {
 	type initResult struct {
-		vendor provider.InitializedVendor
-		err    error
+		provider provider.InitializedProvider
+		err      error
 	}
-	initAsync := func(v provider.Vendor, c chan<- initResult) {
+	initAsync := func(v provider.Provider, c chan<- initResult) {
 		iv, err := v.Init()
 		c <- initResult{iv, err}
 	}
 	var wg sync.WaitGroup
-	wg.Add(len(vendors))
+	wg.Add(len(providers))
 
 	ch := make(chan initResult)
 	go func() {
@@ -55,21 +55,21 @@ func availableVendorFrom(
 		close(ch)
 	}()
 
-	for _, v := range vendors {
+	for _, v := range providers {
 		go initAsync(v, ch)
 	}
 
-	var v provider.InitializedVendor
+	var v provider.InitializedProvider
 	for res := range ch {
 		if res.err == nil {
-			v = res.vendor
+			v = res.provider
 		} else {
 			zap.L().Sugar().Debug(res.err)
 		}
 		wg.Done()
 	}
 	if v == nil {
-		return nil, errors.New("The cloud vendor couldn't be detected")
+		return nil, errors.New("The cloud provider couldn't be detected")
 	}
 	return v, nil
 }

@@ -23,7 +23,7 @@ func NewGcpWriteCacheTuner(
 	directories []string,
 	devices []string,
 	blockDevices disk.BlockDevices,
-	vendor provider.Vendor,
+	provider provider.Provider,
 	executor executors.Executor,
 ) Tunable {
 	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
@@ -34,7 +34,7 @@ func NewGcpWriteCacheTuner(
 		blockDevices,
 		func(device string) Tunable {
 			return NewDeviceGcpWriteCacheTuner(fs, device, deviceFeatures,
-				vendor, executor)
+				provider, executor)
 		},
 	)
 }
@@ -43,7 +43,7 @@ func NewDeviceGcpWriteCacheTuner(
 	fs afero.Fs,
 	device string,
 	deviceFeatures disk.DeviceFeatures,
-	vendor provider.Vendor,
+	provider provider.Provider,
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
@@ -52,12 +52,12 @@ func NewDeviceGcpWriteCacheTuner(
 			return tuneWriteCache(fs, device, deviceFeatures, executor)
 		},
 		func() (bool, string) {
-			v, err := vendor.Init()
+			v, err := provider.Init()
 			if err != nil {
 				return false, "Disk write cache tuner is only supported in GCP"
 			}
-			gcpVendor := gcp.GcpVendor{}
-			return v.Name() == gcpVendor.Name(), ""
+			gcpProvider := gcp.GcpProvider{}
+			return v.Name() == gcpProvider.Name(), ""
 		},
 		executor.IsLazy(),
 	)

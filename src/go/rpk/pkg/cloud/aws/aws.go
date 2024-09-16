@@ -20,33 +20,33 @@ import (
 
 const name = "aws"
 
-type AwsVendor struct{}
+type AwsProvider struct{}
 
-type InitializedAwsVendor struct {
+type InitializedAwsProvider struct {
 	client *ec2metadata.EC2Metadata
 }
 
-func (*AwsVendor) Name() string {
+func (*AwsProvider) Name() string {
 	return name
 }
 
-func (*AwsVendor) Init() (provider.InitializedVendor, error) {
+func (*AwsProvider) Init() (provider.InitializedProvider, error) {
 	s, err := session.NewSession()
 	if err != nil {
 		return nil, err
 	}
 	client := ec2metadata.New(s)
 	if available(client, 500*time.Millisecond) {
-		return &InitializedAwsVendor{client}, nil
+		return &InitializedAwsProvider{client}, nil
 	}
-	return nil, errors.New("vendor AWS couldn't be initialized")
+	return nil, errors.New("provider AWS couldn't be initialized")
 }
 
-func (v *InitializedAwsVendor) VMType() (string, error) {
+func (v *InitializedAwsProvider) VMType() (string, error) {
 	return v.client.GetMetadata("instance-type")
 }
 
-func (*InitializedAwsVendor) Name() string {
+func (*InitializedAwsProvider) Name() string {
 	return name
 }
 

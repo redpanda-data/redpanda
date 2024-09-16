@@ -9,12 +9,12 @@
 
 package provider
 
-type Vendor interface {
+type Provider interface {
 	Name() string
-	Init() (InitializedVendor, error)
+	Init() (InitializedProvider, error)
 }
 
-type InitializedVendor interface {
+type InitializedProvider interface {
 	Name() string
 	VMType() (string, error)
 }
