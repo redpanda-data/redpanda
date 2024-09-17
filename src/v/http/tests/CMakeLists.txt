@@ -41,6 +41,7 @@ rp_test(
   BINARY_NAME test_request_builder
   SOURCES
   request_builder_test.cc
+  rest_entity_test.cc
   LIBRARIES v::gtest_main v::http
   LABELS http
   ARGS "-- -c 1"

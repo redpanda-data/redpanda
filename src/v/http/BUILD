@@ -70,3 +70,21 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "rest_entity",
+    srcs = [
+        "rest_client/rest_entity.cc",
+    ],
+    hdrs = [
+        "rest_client/rest_entity.h",
+    ],
+    include_prefix = "http",
+    deps = [
+        "//src/v/base",
+        "//src/v/http:request_builder",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:beast",
+        "@seastar",
+    ],
+)

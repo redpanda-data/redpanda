@@ -108,3 +108,17 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "rest_entity_test",
+    timeout = "short",
+    srcs = [
+        "rest_entity_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/http:rest_entity",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
