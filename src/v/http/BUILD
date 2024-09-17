@@ -9,6 +9,7 @@ redpanda_cc_library(
         "client.cc",
         "iobuf_body.cc",
         "logger.cc",
+        "request_builder.cc",
     ],
     hdrs = [
         "chunk_encoding.h",
@@ -16,6 +17,7 @@ redpanda_cc_library(
         "iobuf_body.h",
         "logger.h",
         "probe.h",
+        "request_builder.h",
     ],
     include_prefix = "http",
     deps = [
@@ -26,7 +28,10 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/net",
         "//src/v/ssx:sformat",
+        "//src/v/thirdparty/ada",
         "//src/v/utils:prefix_logger",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@boost//:asio",
         "@boost//:beast",
         "@boost//:optional",
