@@ -61,4 +61,7 @@ sh_binary(
     data = [
         "@llvm_18_toolchain//:clang-format",
     ],
+    # Only build this target on demand, so we don't download
+    # this toolchain if we're using a different one for the build.
+    tags = ["manual"],
 )
