@@ -38,8 +38,12 @@ go_test(
         "rpk_yaml_test.go",
         "weak_test.go",
     ],
+    data = ["//conf:redpanda.yaml"],
     embed = [":config"],
-    tags = ["no-sandbox"],
+    env = {
+        # NOTE: this is a bit of a hack and rules_go should do this by default
+        "HOME": "$TEST_TMPDIR",
+    },
     deps = [
         "//src/go/rpk/pkg/testfs",
         "//src/go/rpk/pkg/utils",
