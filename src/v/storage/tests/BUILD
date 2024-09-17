@@ -129,3 +129,19 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+
+redpanda_cc_gtest(
+    name = "ntp_config_test",
+    timeout = "short",
+    srcs = [
+        "ntp_config_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "@googletest//:gtest",
+    ],
+)

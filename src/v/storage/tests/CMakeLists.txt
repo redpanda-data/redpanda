@@ -180,3 +180,17 @@ rp_test(
   ARGS "-- -c 1"
   LABELS storage
 )
+
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME ntp_config_test
+  SOURCES
+  ntp_config_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::storage
+  ARGS "-- -c 1"
+  LABELS storage
+)

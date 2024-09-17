@@ -237,6 +237,33 @@ public:
         }
     }
 
+    size_t segment_bytes() const {
+        // override for segment size
+        size_t result;
+        if (_overrides && _overrides->segment_size) {
+            result = *_overrides->segment_size;
+        } else {
+            // no overrides use defaults
+            result = is_compacted()
+                       ? config::shard_local_cfg().compacted_log_segment_size()
+                       : config::shard_local_cfg().log_segment_size();
+        }
+
+        // Clamp to safety limits on segment sizes, in case the
+        // property was set without proper validation (e.g. on
+        // an older version or before limits were set)
+        auto min_limit = config::shard_local_cfg().log_segment_size_min();
+        auto max_limit = config::shard_local_cfg().log_segment_size_max();
+        if (min_limit) {
+            result = std::max(*min_limit, result);
+        }
+        if (max_limit) {
+            result = std::min(*max_limit, result);
+        }
+
+        return result;
+    }
+
     auto segment_ms() const -> std::optional<std::chrono::milliseconds> {
         if (_overrides) {
             if (_overrides->segment_ms.is_disabled()) {
