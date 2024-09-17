@@ -204,9 +204,16 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if topicName == "" {
 					topicName = r.Topic
 				}
-				if tombstone && len(r.Value) == 0 {
-					r.Value = nil
+				if len(r.Value) == 0 {
+					if tombstone {
+						// `null` value
+						r.Value = nil
+					} else {
+						// empty byte-slice
+						r.Value = []byte{}
+					}
 				}
+
 				if defaultKeySerde != nil || isKeyTopicName {
 					keySerde := defaultKeySerde
 					if isKeyTopicName && keySerde == nil {
@@ -443,6 +450,24 @@ message name is unnecessary. For example:
 
 Produce to 'foo', using schema ID 1, message FQN Person.Name
     rpk topic produce foo --schema-id 1 --schema-type Person.Name
+
+TOMBSTONES
+
+By default, records produced without a value will have an empty-string value, "".
+The below example produces a record with the key 'not_a_tombstone_record' and the
+value "":
+    rpk topic produce foo -k not_a_tombstone_record
+    [ret]
+
+Tombstone records (records with a 'null' value) can be produced by using the '-Z'
+flag and creating empty-string value records. Using the same example from above,
+but adding the '-Z' flag will produce a record with the key 'tombstone_record'
+and the value 'null':
+    rpk topic produce foo -k tombstone_record -Z
+    [ret]
+
+It is important to note that records produced with values of string "null" are
+not considered tombstones by Redpanda.
 
 EXAMPLES
 

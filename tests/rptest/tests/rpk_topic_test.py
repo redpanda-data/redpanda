@@ -240,3 +240,46 @@ class RpkToolTest(RedpandaTest):
 
         raise ducktape.errors.TimeoutError(
             f'Message in {topic} never appeared.')
+
+    @cluster(num_nodes=4)
+    def test_produce_and_consume_tombstones(self):
+        topic = 'rp_dt_test_produce_and_consume_tombstones'
+        self._rpk.create_topic(topic)
+
+        num_messages = 2
+
+        tombstone_key = 'ISTOMBSTONE'
+        tombstone_value = ''
+
+        # Producing a record with an empty value and -Z flag results in a tombstone.
+        self._rpk.produce(topic,
+                          tombstone_key,
+                          tombstone_value,
+                          tombstone=True)
+
+        not_tombstone_key = 'ISNOTTOMBSTONE'
+
+        # Producing a record with an empty value without the -Z flag results in an empty value.
+        self._rpk.produce(topic,
+                          not_tombstone_key,
+                          tombstone_value,
+                          tombstone=False)
+
+        c = RpkConsumer(self._ctx, self.redpanda, topic)
+        c.start()
+
+        def cond():
+            return len(c.messages) == num_messages
+
+        wait_until(cond,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg=f'Messages in {topic} never appeared.')
+
+        # Tombstone records do not have a value in the returned JSON
+        assert c.messages[0]['key'] == tombstone_key
+        assert 'value' not in c.messages[0]
+
+        # Records with an empty string have a value of `""` in the returned JSON
+        assert c.messages[1]['key'] == not_tombstone_key
+        assert c.messages[1]['value'] == ""

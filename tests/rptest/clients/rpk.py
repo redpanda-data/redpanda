@@ -589,7 +589,8 @@ class RpkTool:
                 schema_id=None,
                 schema_key_id=None,
                 proto_msg=None,
-                proto_key_msg=None):
+                proto_key_msg=None,
+                tombstone=False):
 
         if timeout is None:
             # For produce, we use a lower timeout than the general
@@ -599,8 +600,16 @@ class RpkTool:
 
         cmd = [
             'produce', '--key', key, '-z', f'{compression_type}',
-            '--delivery-timeout', f'{timeout}s', '-f', '%v', topic
+            '--delivery-timeout', f'{timeout}s', topic
         ]
+
+        # An empty msg needs to be a newline for stdin purposes.
+        if msg == '':
+            msg = '\n'
+
+        if msg not in ['\n']:
+            cmd += ['-f', '%v']
+
         use_schema_registry = False
         if headers:
             cmd += ['-H ' + h for h in headers]
@@ -618,6 +627,8 @@ class RpkTool:
         if proto_key_msg is not None:
             cmd += ["--schema-key-type", proto_key_msg]
             use_schema_registry = True
+        if tombstone:
+            cmd += ["--tombstone"]
 
         # Run remote process with a slightly higher timeout than the
         # rpk delivery timeout, so that we get a clean-ish rpk timeout
