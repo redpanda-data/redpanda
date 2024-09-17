@@ -12,6 +12,7 @@
 #include "json/validator.h"
 
 #include <seastar/http/request.hh>
+#include <seastar/json/json_elements.hh>
 
 #pragma once
 
@@ -30,5 +31,21 @@ void apply_validator(
  */
 bool get_boolean_query_param(
   const ss::http::request& req, std::string_view name);
+
+template<typename T>
+ss::json::json_return_type write_via_body_writer(T response) {
+    auto f = [&]() -> std::function<ss::future<>(ss::output_stream<char>&&)> {
+        return [respo = std::move(response)](
+                 ss::output_stream<char>&& stream) mutable -> ss::future<> {
+            return ss::do_with(
+              std::move(stream), std::move(respo), [](auto& stream, auto resp) {
+                  return ss::json::formatter::write(stream, std::move(resp))
+                    .then([&stream]() { return stream.close(); });
+              });
+        };
+    };
+
+    return f();
+};
 
 } // namespace admin

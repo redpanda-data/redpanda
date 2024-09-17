@@ -11,6 +11,7 @@
 #include "cluster_config_schema_util.h"
 
 #include "redpanda/admin/api-doc/cluster_config.json.hh"
+#include "redpanda/admin/util.h"
 
 // This is factored out to make it a separate binary that can generate schema
 // without bringing up a redpanda cluster. Down stream tools can make use of
@@ -81,5 +82,6 @@ util::generate_json_schema(const config::configuration& conf) {
 
     std::map<ss::sstring, property_map> response = {
       {ss::sstring("properties"), std::move(properties)}};
-    return ss::json::json_return_type(std::move(response));
+
+    return admin::write_via_body_writer(std::move(response));
 }
