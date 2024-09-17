@@ -80,3 +80,16 @@ redpanda_test_cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+
+redpanda_test_cc_library(
+    name = "scoped_config",
+    hdrs = [
+        "scoped_config.h",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/config",
+    ],
+)
