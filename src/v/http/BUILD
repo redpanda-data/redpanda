@@ -38,6 +38,7 @@ redpanda_cc_library(
     ],
     include_prefix = "http",
     deps = [
+        ":utils",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
