@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "out_test",
+    size = "small",
     srcs = [
         "in_test.go",
         "out_test.go",

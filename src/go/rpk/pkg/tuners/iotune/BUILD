@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "iotune_test",
+    size = "small",
     srcs = ["data_test.go"],
     deps = [
         ":iotune",

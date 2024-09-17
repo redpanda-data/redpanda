@@ -33,6 +33,7 @@ go_library(
 
 go_test(
     name = "partitions_test",
+    size = "small",
     srcs = ["move_test.go"],
     embed = [":partitions"],
     deps = [

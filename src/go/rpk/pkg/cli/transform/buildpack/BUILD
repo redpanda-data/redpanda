@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "buildpack_test",
+    size = "small",
     srcs = ["download_test.go"],
     embed = [":buildpack"],
     deps = [

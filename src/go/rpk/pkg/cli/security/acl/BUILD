@@ -25,6 +25,7 @@ go_library(
 
 go_test(
     name = "acl_test",
+    size = "small",
     srcs = ["common_test.go"],
     embed = [":acl"],
     deps = [

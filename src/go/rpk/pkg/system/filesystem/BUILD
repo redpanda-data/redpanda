@@ -71,6 +71,7 @@ go_library(
 
 go_test(
     name = "filesystem_test",
+    size = "small",
     srcs = ["fs_test.go"],
     embed = [":filesystem"],
     deps = ["@com_github_spf13_afero//:afero"],

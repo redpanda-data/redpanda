@@ -22,6 +22,7 @@ go_library(
 
 go_test(
     name = "plugin_test",
+    size = "small",
     srcs = [
         "manifest_test.go",
         "plugin_test.go",

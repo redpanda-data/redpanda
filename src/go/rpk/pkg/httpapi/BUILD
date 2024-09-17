@@ -13,6 +13,7 @@ go_library(
 
 go_test(
     name = "httpapi_test",
+    size = "small",
     srcs = ["httpapi_test.go"],
     embed = [":httpapi"],
     deps = ["@com_github_stretchr_testify//require"],

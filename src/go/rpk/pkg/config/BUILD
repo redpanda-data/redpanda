@@ -31,6 +31,7 @@ go_library(
 
 go_test(
     name = "config_test",
+    size = "small",
     srcs = [
         "config_test.go",
         "params_test.go",
@@ -38,6 +39,7 @@ go_test(
         "weak_test.go",
     ],
     embed = [":config"],
+    tags = ["no-sandbox"],
     deps = [
         "//src/go/rpk/pkg/testfs",
         "//src/go/rpk/pkg/utils",

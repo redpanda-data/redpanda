@@ -104,6 +104,7 @@ go_library(
 
 go_test(
     name = "system_test",
+    size = "small",
     srcs = [
         "cgroup_test.go",
         "cpu_test.go",

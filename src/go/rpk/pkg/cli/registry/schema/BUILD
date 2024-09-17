@@ -26,6 +26,7 @@ go_library(
 
 go_test(
     name = "schema_test",
+    size = "small",
     srcs = ["schema_test.go"],
     embed = [":schema"],
     deps = [

@@ -65,6 +65,7 @@ go_library(
 
 go_test(
     name = "bundle_test",
+    size = "small",
     srcs = ["bundle_test.go"],
     embed = [":bundle"],
     deps = select({

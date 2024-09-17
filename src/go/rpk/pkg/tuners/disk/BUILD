@@ -33,6 +33,7 @@ go_library(
 
 go_test(
     name = "disk_test",
+    size = "small",
     srcs = [
         "block_device_test.go",
         "block_devices_test.go",

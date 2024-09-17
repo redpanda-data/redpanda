@@ -25,6 +25,7 @@ go_library(
 
 go_test(
     name = "irq_test",
+    size = "small",
     srcs = [
         "balance_service_test.go",
         "cpu_masks_test.go",

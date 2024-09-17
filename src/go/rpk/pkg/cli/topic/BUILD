@@ -44,6 +44,7 @@ go_library(
 
 go_test(
     name = "topic_test",
+    size = "small",
     srcs = [
         "consume_test.go",
         "describe_test.go",

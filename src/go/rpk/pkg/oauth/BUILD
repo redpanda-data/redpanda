@@ -22,6 +22,7 @@ go_library(
 
 go_test(
     name = "oauth_test",
+    size = "small",
     srcs = [
         "load_test.go",
         "oauth_test.go",

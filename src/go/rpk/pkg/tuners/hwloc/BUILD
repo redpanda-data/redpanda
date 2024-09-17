@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "hwloc_test",
+    size = "small",
     srcs = ["cpuset_test.go"],
     embed = [":hwloc"],
     deps = ["@com_github_stretchr_testify//require"],

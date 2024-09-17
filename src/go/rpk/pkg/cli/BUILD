@@ -63,6 +63,7 @@ go_library(
 
 go_test(
     name = "cli_test",
+    size = "small",
     srcs = ["root_test.go"],
     embed = [":cli"],
     deps = [

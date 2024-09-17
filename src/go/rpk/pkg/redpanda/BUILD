@@ -58,6 +58,7 @@ go_library(
 
 go_test(
     name = "redpanda_test",
+    size = "small",
     srcs = [
         "launcher_test.go",
         "version_test.go",

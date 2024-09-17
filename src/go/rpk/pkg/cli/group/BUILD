@@ -24,6 +24,7 @@ go_library(
 
 go_test(
     name = "group_test",
+    size = "small",
     srcs = ["seek_test.go"],
     embed = [":group"],
     deps = [

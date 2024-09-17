@@ -71,6 +71,7 @@ go_library(
 
 go_test(
     name = "commands_test",
+    size = "small",
     srcs = [
         "systemd_install_unit_test.go",
         "systemd_start_unit_test.go",

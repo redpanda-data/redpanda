@@ -31,6 +31,7 @@ go_library(
 
 go_test(
     name = "container_test",
+    size = "small",
     srcs = ["start_test.go"],
     embed = [":container"],
     deps = ["@com_github_stretchr_testify//require"],

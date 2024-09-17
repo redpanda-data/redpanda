@@ -15,6 +15,7 @@ go_library(
 
 go_test(
     name = "cloud_test",
+    size = "small",
     srcs = ["providers_test.go"],
     embed = [":cloud"],
     deps = [

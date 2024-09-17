@@ -29,6 +29,7 @@ go_library(
 
 go_test(
     name = "config_test",
+    size = "small",
     srcs = [
         "edit_test.go",
         "import_test.go",

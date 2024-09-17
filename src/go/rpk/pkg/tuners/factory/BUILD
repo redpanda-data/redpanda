@@ -48,6 +48,7 @@ go_library(
 
 go_test(
     name = "factory_test",
+    size = "small",
     srcs = ["factory_test.go"],
     deps = select({
         "@rules_go//go/platform:android": [

@@ -19,6 +19,7 @@ go_library(
 
 go_test(
     name = "utils_test",
+    size = "small",
     srcs = [
         "files_test.go",
         "regex_filter_test.go",

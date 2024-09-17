@@ -26,6 +26,7 @@ go_library(
 
 go_test(
     name = "serde_test",
+    size = "small",
     srcs = [
         "avro_test.go",
         "jsonschema_test.go",

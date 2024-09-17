@@ -84,6 +84,7 @@ go_library(
 
 go_test(
     name = "network_test",
+    size = "small",
     srcs = ["nic_test.go"],
     embed = [":network"],
     deps = [

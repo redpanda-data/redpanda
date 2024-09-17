@@ -23,6 +23,7 @@ go_library(
 
 go_test(
     name = "os_test",
+    size = "small",
     srcs = ["proc_test.go"],
     deps = [
         ":os",

@@ -75,6 +75,7 @@ go_library(
 
 go_test(
     name = "redpanda_test",
+    size = "small",
     srcs = [
         "config_test.go",
         "mode_test.go",

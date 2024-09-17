@@ -15,6 +15,7 @@ go_library(
 
 go_test(
     name = "graf_test",
+    size = "small",
     srcs = [
         "dashboard_test.go",
         "graph_test.go",

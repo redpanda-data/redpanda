@@ -37,6 +37,7 @@ go_library(
 
 go_test(
     name = "transform_test",
+    size = "small",
     srcs = [
         "list_test.go",
         "logs_test.go",

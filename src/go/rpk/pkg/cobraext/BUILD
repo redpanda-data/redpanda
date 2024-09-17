@@ -13,6 +13,7 @@ go_library(
 
 go_test(
     name = "cobraext_test",
+    size = "small",
     srcs = ["cobraext_test.go"],
     embed = [":cobraext"],
     deps = [

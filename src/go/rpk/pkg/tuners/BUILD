@@ -188,6 +188,7 @@ go_library(
 
 go_test(
     name = "tuners_test",
+    size = "small",
     srcs = [
         "aggregated_tunable_test.go",
         "aio_test.go",

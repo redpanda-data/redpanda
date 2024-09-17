@@ -40,6 +40,7 @@ go_library(
 
 go_test(
     name = "generate_test",
+    size = "small",
     srcs = [
         "app_test.go",
         "grafana_test.go",

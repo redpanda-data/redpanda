@@ -15,6 +15,7 @@ go_library(
 
 go_test(
     name = "coredump_test",
+    size = "small",
     srcs = ["tuner_test.go"],
     embed = [":coredump"],
     deps = [

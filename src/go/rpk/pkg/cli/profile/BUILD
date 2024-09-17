@@ -43,6 +43,7 @@ go_library(
 
 go_test(
     name = "profile_test",
+    size = "small",
     srcs = ["prompt_test.go"],
     embed = [":profile"],
     deps = ["@com_github_fatih_color//:color"],

@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "net_test",
+    size = "small",
     srcs = ["hostport_test.go"],
     embed = [":net"],
     deps = ["@com_github_stretchr_testify//require"],

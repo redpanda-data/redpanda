@@ -24,6 +24,7 @@ go_library(
 
 go_test(
     name = "selftest_test",
+    size = "small",
     srcs = ["selftest_test.go"],
     embed = [":selftest"],
     deps = [
