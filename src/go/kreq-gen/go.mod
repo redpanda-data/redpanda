@@ -6,4 +6,4 @@ module kafka-request-generator
 // clang-18)
 go 1.21
 
-require github.com/twmb/franz-go/pkg/kmsg v1.7.0
+require github.com/twmb/franz-go/pkg/kmsg v1.8.0
