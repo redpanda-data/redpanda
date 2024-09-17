@@ -121,10 +121,8 @@ class JiraHelper():
             issue_id = self._find_issue()
             self._create_issue_and_add_comments(
             ) if issue_id is None else self._update_issue(issue_id)
-        elif (event_name == 'labeled' or event_name == 'unlabeled'):
-            issue_id = self._find_issue()
-            self._update_issue(issue_id) if issue_id is not None else None
-        elif (event_name == 'milestoned'): 
+        elif (event_name == 'labeled' or event_name == 'unlabeled'
+              or event_name == 'milestoned'):
             issue_id = self._find_issue()
             self._update_issue(issue_id) if issue_id is not None else None
         else:
