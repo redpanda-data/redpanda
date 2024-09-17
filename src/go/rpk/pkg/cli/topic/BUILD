@@ -1,0 +1,62 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "topic",
+    srcs = [
+        "add_partitions.go",
+        "config.go",
+        "consume.go",
+        "create.go",
+        "delete.go",
+        "describe.go",
+        "describe_storage.go",
+        "list.go",
+        "produce.go",
+        "topic.go",
+        "trim.go",
+        "utils.go",
+    ],
+    importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/topic",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/go/rpk/pkg/adminapi",
+        "//src/go/rpk/pkg/cli/cluster",
+        "//src/go/rpk/pkg/config",
+        "//src/go/rpk/pkg/kafka",
+        "//src/go/rpk/pkg/out",
+        "//src/go/rpk/pkg/schemaregistry",
+        "//src/go/rpk/pkg/serde",
+        "//src/go/rpk/pkg/utils",
+        "@com_github_docker_go_units//:go-units",
+        "@com_github_hashicorp_go_multierror//:go-multierror",
+        "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
+        "@com_github_spf13_afero//:afero",
+        "@com_github_spf13_cobra//:cobra",
+        "@com_github_twmb_franz_go//pkg/kerr",
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
+        "@com_github_twmb_franz_go_pkg_sr//:sr",
+        "@com_github_twmb_types//:types",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "topic_test",
+    size = "small",
+    srcs = [
+        "consume_test.go",
+        "describe_test.go",
+        "trim_test.go",
+        "utils_test.go",
+    ],
+    embed = [":topic"],
+    deps = [
+        "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//require",
+        "@com_github_twmb_franz_go//pkg/kerr",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
+    ],
+)

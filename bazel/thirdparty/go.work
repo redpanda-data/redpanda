@@ -3,6 +3,7 @@ go 1.23.0
 
 // Everything we build with Bazel goes here.
 use (
+	src/go/rpk
 	src/go/kreq-gen
 	src/transform-sdk/go/transform
 	src/transform-sdk/go/transform/internal/testdata
