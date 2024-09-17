@@ -44,7 +44,7 @@ enum class validation_result {
 /// if the map is empty, it has to be interpreted as "validation ok"
 ss::future<absl::flat_hash_map<model::partition_id, validation_result>>
 maybe_validate_recovery_topic(
-  custom_assignable_topic_configuration const& assignable_config,
+  const custom_assignable_topic_configuration& assignable_config,
   cloud_storage_clients::bucket_name bucket,
   cloud_storage::remote& remote,
   ss::abort_source& as);
@@ -60,7 +60,7 @@ public:
 
     partition_validator(
       cloud_storage::remote& remote,
-      cloud_storage_clients::bucket_name const& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       ss::abort_source& as,
       model::ntp ntp,
       model::initial_revision_id rev_id,
@@ -86,7 +86,7 @@ private:
     cloud_storage::remote_manifest_path get_path();
 
     cloud_storage::remote* remote_;
-    cloud_storage_clients::bucket_name const* bucket_;
+    const cloud_storage_clients::bucket_name* bucket_;
     ss::abort_source* as_;
     model::ntp ntp_;
     model::initial_revision_id rev_id_;

@@ -27,7 +27,7 @@ namespace cluster {
 // From this a common retry_chain_logger is created
 partition_validator::partition_validator(
   cloud_storage::remote& remote,
-  cloud_storage_clients::bucket_name const& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as,
   model::ntp ntp,
   model::initial_revision_id rev_id,
@@ -153,7 +153,7 @@ partition_validator::do_validate_manifest_metadata() {
     // this unpack is to trigger a compilation error if a new field is added
     // to cloud_storage::anomalies. If a new anomalies is added, it should
     // be also handled here
-    auto const& [no_partition_manifest, missing_spillovers, missing_segments, segment_anomalies, ignore1, ignore2, ignore3, ignore4]
+    const auto& [no_partition_manifest, missing_spillovers, missing_segments, segment_anomalies, ignore1, ignore2, ignore3, ignore4]
       = anomalies.detected;
 
     if (no_partition_manifest) {
@@ -184,7 +184,7 @@ partition_validator::do_validate_manifest_metadata() {
     // sev-low classify anomaly_meta as failure or ok (not problematic for the
     // recovery use case) true: failure, false: passed
     constexpr static auto is_fatal_anomaly =
-      [](cloud_storage::anomaly_meta const& am) {
+      [](const cloud_storage::anomaly_meta& am) {
           using enum cloud_storage::anomaly_type;
           switch (am.type) {
           case offset_gap:
@@ -217,7 +217,7 @@ cloud_storage::remote_manifest_path partition_validator::get_path() {
 // wrap allocation and execution of partition_validation,
 ss::future<validation_result> do_validate_recovery_partition(
   cloud_storage::remote& remote,
-  cloud_storage_clients::bucket_name const& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as,
   model::ntp ntp,
   model::initial_revision_id rev_id,
@@ -239,7 +239,7 @@ ss::future<validation_result> do_validate_recovery_partition(
 /// its partition manifest. perform checks based on recovery_checks.mode
 ss::future<absl::flat_hash_map<model::partition_id, validation_result>>
 maybe_validate_recovery_topic(
-  custom_assignable_topic_configuration const& assignable_config,
+  const custom_assignable_topic_configuration& assignable_config,
   cloud_storage_clients::bucket_name bucket,
   cloud_storage::remote& remote,
   ss::abort_source& as) {

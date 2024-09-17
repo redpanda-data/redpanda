@@ -65,7 +65,7 @@ void validate_offsets(
     BOOST_REQUIRE_EQUAL(write_headers.size(), read_batches.size());
     auto it = read_batches.begin();
     model::offset next_base = base;
-    for (auto const& h : write_headers) {
+    for (const auto& h : write_headers) {
         BOOST_REQUIRE_EQUAL(it->base_offset(), next_base);
         // last offset delta is inclusive (record with this offset belongs to
         // previous batch)

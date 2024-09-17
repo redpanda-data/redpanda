@@ -192,7 +192,7 @@ public:
       : named_type<ss::sstring, struct model_topic_type>(ss::sstring(view())) {}
 
     friend void
-    read_nested(iobuf_parser& in, topic& t, size_t const bytes_left_limit) {
+    read_nested(iobuf_parser& in, topic& t, const size_t bytes_left_limit) {
         using serde::read_nested;
         return read_nested(in, t._value, bytes_left_limit);
     }
@@ -342,7 +342,7 @@ struct topic_partition {
     friend std::ostream& operator<<(std::ostream&, const topic_partition&);
 
     friend void read_nested(
-      iobuf_parser& in, topic_partition& tp, size_t const bytes_left_limit) {
+      iobuf_parser& in, topic_partition& tp, const size_t bytes_left_limit) {
         using serde::read_nested;
 
         read_nested(in, tp.topic, bytes_left_limit);
@@ -386,7 +386,7 @@ struct ntp {
     }
 
     friend void
-    read_nested(iobuf_parser& in, ntp& ntp, size_t const bytes_left_limit) {
+    read_nested(iobuf_parser& in, ntp& ntp, const size_t bytes_left_limit) {
         using serde::read_nested;
 
         read_nested(in, ntp.ns, bytes_left_limit);

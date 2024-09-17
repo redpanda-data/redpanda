@@ -214,7 +214,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_POST_roundtrip) {
       config,
       std::move(header),
       ss::sstring(httpd_server_reply),
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
           iobuf_parser parser(std::move(body));
@@ -279,7 +279,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_GET_streaming_roundtrip) {
       std::move(header),
       std::nullopt,
       skip_bytes,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
           iobuf_parser parser(std::move(body));
@@ -308,7 +308,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_POST_streaming_roundtrip) {
       std::move(header),
       ss::sstring(httpd_server_reply),
       0,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
           iobuf_parser parser(std::move(body));
@@ -331,7 +331,7 @@ SEASTAR_THREAD_TEST_CASE(test_error_500) {
       config,
       std::move(header),
       std::nullopt,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(
             header.result(), boost::beast::http::status::internal_server_error);
           iobuf_parser parser(std::move(body));
@@ -352,7 +352,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_GET_roundtrip) {
       config,
       std::move(header),
       std::nullopt,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
           iobuf_parser parser(std::move(body));
           std::string actual = parser.read_string(parser.bytes_left());
@@ -376,7 +376,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_PUT_roundtrip) {
       config,
       std::move(header),
       ss::sstring(httpd_server_reply),
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
           iobuf_parser parser(std::move(body));
           std::string actual = parser.read_string(parser.bytes_left());
@@ -401,7 +401,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_PUT_empty_roundtrip) {
       config,
       std::move(header),
       std::move(stream),
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
           iobuf_parser parser(std::move(body));
           std::string actual = parser.read_string(parser.bytes_left());
@@ -601,7 +601,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor) {
       ss::sstring(httpd_server_reply),
       {full_response},
       false,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
           iobuf_parser parser(std::move(body));
           std::string actual = parser.read_string(parser.bytes_left());
@@ -634,13 +634,13 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_incorrect_reply) {
       ss::sstring(httpd_server_reply),
       {full_response},
       false,
-      [](http::client::response_header const&, iobuf&&) {
+      [](const http::client::response_header&, iobuf&&) {
           BOOST_FAIL("Exception expected");
       },
-      [](std::exception_ptr const& eptr) {
+      [](const std::exception_ptr& eptr) {
           try {
               std::rethrow_exception(eptr);
-          } catch (boost::system::system_error const& e) {
+          } catch (const boost::system::system_error& e) {
               BOOST_REQUIRE(e.code() == boost::beast::http::error::bad_version);
           }
       });
@@ -683,7 +683,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_chunked_encoding) {
       ss::sstring(httpd_server_reply),
       {bufparser.read_string(bufparser.bytes_left())},
       false,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
           iobuf_parser parser(std::move(body));
           std::string actual = parser.read_string(parser.bytes_left());
@@ -774,7 +774,7 @@ void run_framing_test_using_impostor(
           ss::sstring(httpd_server_reply),
           chunks,
           prefetch_headers,
-          [](http::client::response_header const& header, iobuf&& body) {
+          [](const http::client::response_header& header, iobuf&& body) {
               BOOST_REQUIRE_EQUAL(
                 header.result(), boost::beast::http::status::ok);
               iobuf_parser parser(std::move(body));
@@ -831,7 +831,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_no_content_length) {
       ss::sstring(httpd_server_reply),
       {full_response},
       false,
-      [](http::client::response_header const& header, iobuf&& body) {
+      [](const http::client::response_header& header, iobuf&& body) {
           // Expect normal reply despite the absence of content-length
           // header
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);

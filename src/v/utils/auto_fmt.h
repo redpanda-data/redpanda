@@ -33,7 +33,7 @@ struct auto_fmt {};
 template<class Derived, char delimiter>
 std::ostream&
 operator<<(std::ostream& o, const auto_fmt<Derived, delimiter>& e) {
-    constexpr auto const a = reflection::arity<Derived>() - 1;
+    constexpr const auto a = reflection::arity<Derived>() - 1;
     static_assert(a <= 16, "Too many fields");
     constexpr char d = delimiter;
     if constexpr (a == 0) {

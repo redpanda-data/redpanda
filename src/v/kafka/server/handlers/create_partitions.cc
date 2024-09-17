@@ -53,7 +53,7 @@ request_iterator validate_range_duplicates(
     absl::node_hash_map<model::topic_view, uint32_t> freq;
 
     freq.reserve(std::distance(begin, end));
-    for (auto const& r : boost::make_iterator_range(begin, end)) {
+    for (const auto& r : boost::make_iterator_range(begin, end)) {
         freq[r.name]++;
     }
     auto valid_range_end = std::partition(

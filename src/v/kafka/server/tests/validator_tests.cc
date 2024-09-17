@@ -25,7 +25,7 @@ struct test_validator_data {
     std::vector<createable_topic_config> configs;
     bool is_valid;
     friend std::ostream&
-    operator<<(std::ostream& os, test_validator_data const& d) {
+    operator<<(std::ostream& os, const test_validator_data& d) {
         fmt::print(os, "configs: {}, expect valid: {}", d.configs, d.is_valid);
         return os;
     }

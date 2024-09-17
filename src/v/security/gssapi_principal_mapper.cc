@@ -147,7 +147,7 @@ template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
 fmt::formatter<security::gssapi_name, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
-  security::gssapi_name const& r,
+  const security::gssapi_name& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     fmt::format_to(ctx.out(), "{}", r._primary);
     if (!r._host_name.empty()) {
@@ -164,7 +164,7 @@ template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
 fmt::formatter<security::gssapi_principal_mapper, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
-  security::gssapi_principal_mapper const& r,
+  const security::gssapi_principal_mapper& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return fmt::format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
 }

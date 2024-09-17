@@ -58,7 +58,7 @@ struct topic_manifest_state
 
     auto serde_fields() { return std::tie(cfg, initial_revision); }
 
-    bool operator==(topic_manifest_state const&) const = default;
+    bool operator==(const topic_manifest_state&) const = default;
 };
 
 } // namespace

@@ -33,13 +33,13 @@
 
 namespace kafka::client {
 // BOOST_REQURE_EQUAL fails to find this if it's in the global namespace
-bool operator==(configuration const& lhs, configuration const& rhs) {
+bool operator==(const configuration& lhs, const configuration& rhs) {
     return fmt::format("{}", config::to_yaml(lhs, config::redact_secrets::no))
            == fmt::format(
              "{}", config::to_yaml(rhs, config::redact_secrets::no));
 }
 
-std::ostream& operator<<(std::ostream& os, configuration const& c) {
+std::ostream& operator<<(std::ostream& os, const configuration& c) {
     YAML::Emitter e{os};
     auto n = config::to_yaml(c, config::redact_secrets::no);
     n.SetStyle(YAML::EmitterStyle::value::Block);
@@ -53,7 +53,7 @@ std::ostream& operator<<(std::ostream& os, configuration const& c) {
 namespace {
 
 template<typename T>
-std::unique_ptr<T> clone_config(T const& t) {
+std::unique_ptr<T> clone_config(const T& t) {
     return T{config::to_yaml(t), config::redact_secrets::no};
 }
 
@@ -65,7 +65,7 @@ FIXTURE_TEST(test_config_utils, redpanda_thread_fixture) {
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
 
-    auto const& ec_store
+    const auto& ec_store
       = app.controller->get_ephemeral_credential_store().local();
 
     // Default configuration doesn't have a SASL listener

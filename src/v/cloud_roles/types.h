@@ -123,7 +123,7 @@ using credentials = std::variant<
 // tmp trick to ensure that we are not calling into infinite recursion if
 // there is a new credential but no operator<<
 template<std::same_as<credentials> Cred>
-std::ostream& operator<<(std::ostream& os, Cred const& c);
+std::ostream& operator<<(std::ostream& os, const Cred& c);
 
 using api_response_parse_result = std::variant<
   malformed_api_response_error,

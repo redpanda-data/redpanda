@@ -747,7 +747,7 @@ uint64_t partition::non_log_disk_size_bytes() const {
     _raft->stm_manager()->for_each_stm(
       [this, &stm_local_size](
         const ss::sstring& name, const raft::state_machine_base& stm) {
-          auto const sz = stm.get_local_state_size();
+          const auto sz = stm.get_local_state_size();
           vlog(
             clusterlog.trace,
             "local non-log disk size of {} stm {} = {} bytes",

@@ -1821,7 +1821,7 @@ std::optional<model::node_id> rack_aware_replica_selector::select_replica(
             continue;
         }
 
-        auto const node_it = _md_cache.nodes().find(replica.id);
+        const auto node_it = _md_cache.nodes().find(replica.id);
         /**
          * Skip nodes which are in maintenance mode or we do not have
          * information about them

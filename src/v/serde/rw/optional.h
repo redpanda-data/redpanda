@@ -30,7 +30,7 @@ void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   std::optional<T>& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     t = read_nested<bool>(in, bytes_left_limit)
           ? std::optional{read_nested<T>(in, bytes_left_limit)}
           : std::nullopt;

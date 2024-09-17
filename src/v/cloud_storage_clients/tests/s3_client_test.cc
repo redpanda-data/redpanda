@@ -246,7 +246,7 @@ void set_routes(ss::httpd::routes& r) {
 
               // partially validate the request xml and construct the response
               // with the provided keys
-              for (auto const& [tag, value] : req_root.get_child("Delete")) {
+              for (const auto& [tag, value] : req_root.get_child("Delete")) {
                   if (tag == "Quiet") {
                       continue;
                   }
@@ -711,7 +711,7 @@ SEASTAR_TEST_CASE(test_delete_objects_errors) {
           result.value().undeleted_keys.begin(),
           result.value().undeleted_keys.end(),
           std::back_inserter(u_keys),
-          [](auto const& kr) { return kr.key; });
+          [](const auto& kr) { return kr.key; });
         std::sort(u_keys.begin(), u_keys.end());
         BOOST_REQUIRE(
           std::equal(keys.begin(), keys.end(), u_keys.begin(), u_keys.end()));

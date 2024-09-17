@@ -15,7 +15,7 @@
 
 namespace json {
 
-inline void read_value(json::Value const& rd, model::compression& e) {
+inline void read_value(const json::Value& rd, model::compression& e) {
     std::underlying_type_t<model::compression> value;
     read_value(rd, value);
     switch (value) {
@@ -42,7 +42,7 @@ inline void read_value(json::Value const& rd, model::compression& e) {
     }
 }
 
-inline void read_value(json::Value const& rd, model::timestamp_type& e) {
+inline void read_value(const json::Value& rd, model::timestamp_type& e) {
     std::underlying_type_t<model::timestamp_type> value;
     read_value(rd, value);
     switch (value) {
@@ -58,7 +58,7 @@ inline void read_value(json::Value const& rd, model::timestamp_type& e) {
 }
 
 inline void
-read_value(json::Value const& rd, model::cleanup_policy_bitflags& e) {
+read_value(const json::Value& rd, model::cleanup_policy_bitflags& e) {
     std::underlying_type_t<model::cleanup_policy_bitflags> value;
     read_value(rd, value);
     switch (value) {
@@ -79,7 +79,7 @@ read_value(json::Value const& rd, model::cleanup_policy_bitflags& e) {
     }
 }
 
-inline void read_value(json::Value const& rd, model::compaction_strategy& e) {
+inline void read_value(const json::Value& rd, model::compaction_strategy& e) {
     std::underlying_type_t<model::compaction_strategy> value;
     read_value(rd, value);
     switch (value) {
@@ -98,7 +98,7 @@ inline void read_value(json::Value const& rd, model::compaction_strategy& e) {
     }
 }
 
-inline void read_value(json::Value const& rd, model::shadow_indexing_mode& e) {
+inline void read_value(const json::Value& rd, model::shadow_indexing_mode& e) {
     std::underlying_type_t<model::shadow_indexing_mode> value;
     read_value(rd, value);
     switch (value) {
@@ -141,7 +141,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::producer_identity& obj) {
+inline void read_value(const json::Value& rd, model::producer_identity& obj) {
     read_member(rd, "id", obj.id);
     read_member(rd, "epoch", obj.epoch);
 }
@@ -156,7 +156,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::broker_shard& obj) {
+inline void read_value(const json::Value& rd, model::broker_shard& obj) {
     read_member(rd, "node_id", obj.node_id);
     read_member(rd, "shard", obj.shard);
 }
@@ -173,7 +173,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::partition_metadata& obj) {
+inline void read_value(const json::Value& rd, model::partition_metadata& obj) {
     read_member(rd, "id", obj.id);
     read_member(rd, "replicas", obj.replicas);
     read_member(rd, "leader_node", obj.leader_node);
@@ -187,7 +187,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::topic_metadata& tm) {
+inline void read_value(const json::Value& rd, model::topic_metadata& tm) {
     read_member(rd, "tp_ns", tm.tp_ns);
     read_member(rd, "partitions", tm.partitions);
 }
@@ -236,7 +236,7 @@ void rjson_serialize_exceptional_type(
 }
 
 template<typename Writer, typename T>
-void write_exceptional_member_type(Writer& w, char const* key, T const& value) {
+void write_exceptional_member_type(Writer& w, const char* key, const T& value) {
     w.String(key);
     rjson_serialize_exceptional_type(w, value);
 }

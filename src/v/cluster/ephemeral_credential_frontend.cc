@@ -40,7 +40,7 @@ constexpr auto timeout = 5s;
 using scram = security::scram_sha512_authenticator::auth::scram;
 
 security::ephemeral_credential
-make_ephemeral_credential(security::acl_principal const& principal) {
+make_ephemeral_credential(const security::acl_principal& principal) {
     constexpr auto gen = []() {
         return random_generators::gen_alphanum_string(credential_length);
     };
@@ -52,7 +52,7 @@ make_ephemeral_credential(security::acl_principal const& principal) {
 }
 
 security::scram_credential
-make_scram_credential(security::ephemeral_credential const& cred) {
+make_scram_credential(const security::ephemeral_credential& cred) {
     return scram::make_credentials(
       cred.principal(), cred.password(), scram::min_iterations);
 }
@@ -75,7 +75,7 @@ ephemeral_credential_frontend::ephemeral_credential_frontend(
   , _gate{} {}
 
 ss::future<ephemeral_credential_frontend::get_return>
-ephemeral_credential_frontend::get(security::acl_principal const& principal) {
+ephemeral_credential_frontend::get(const security::acl_principal& principal) {
     auto guard = _gate.hold();
     get_return res;
 
@@ -124,7 +124,7 @@ ephemeral_credential_frontend::put(security::ephemeral_credential cred) {
 }
 
 ss::future<std::error_code> ephemeral_credential_frontend::inform(
-  model::node_id node_id, security::acl_principal const& principal) {
+  model::node_id node_id, const security::acl_principal& principal) {
     auto guard = _gate.hold();
 
     auto e_cred_res = co_await get(principal);

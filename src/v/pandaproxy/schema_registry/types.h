@@ -213,7 +213,7 @@ public:
       avro::ValidSchema vs, canonical_schema_definition::references refs);
 
     canonical_schema_definition::raw_string raw() const;
-    canonical_schema_definition::references const& refs() const {
+    const canonical_schema_definition::references& refs() const {
         return _refs;
     };
 
@@ -249,7 +249,7 @@ public:
       , _refs(std::move(refs)) {}
 
     canonical_schema_definition::raw_string raw() const;
-    canonical_schema_definition::references const& refs() const {
+    const canonical_schema_definition::references& refs() const {
         return _refs;
     };
 
@@ -269,7 +269,7 @@ public:
     }
 
     ::result<ss::sstring, kafka::error_code>
-    name(std::vector<int> const& fields) const;
+    name(const std::vector<int>& fields) const;
 
 private:
     pimpl _impl;
@@ -285,7 +285,7 @@ public:
       : _impl{std::move(p)} {}
 
     canonical_schema_definition::raw_string raw() const;
-    canonical_schema_definition::references const& refs() const;
+    const canonical_schema_definition::references& refs() const;
 
     const impl& operator()() const { return *_impl; }
 

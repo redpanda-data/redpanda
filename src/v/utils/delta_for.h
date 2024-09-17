@@ -72,7 +72,7 @@ struct delta_xor {
         return p;
     }
 
-    bool operator==(delta_xor const&) const = default;
+    bool operator==(const delta_xor&) const = default;
 };
 
 /*
@@ -130,7 +130,7 @@ struct delta_delta {
 
     ValueT _step_size;
 
-    bool operator==(delta_delta const&) const = default;
+    bool operator==(const delta_delta&) const = default;
 };
 
 namespace decomp {
@@ -237,7 +237,7 @@ auto serialize_little_endian(unsigned_serializable auto bits, uint8_t* output) {
 
 template<size_t bytes_to_read>
 auto deserialize_little_endian(
-  uint8_t const* input, unsigned_serializable auto& output) {
+  const uint8_t* input, unsigned_serializable auto& output) {
     if constexpr (bytes_to_read > 0) {
         static_assert(
           std::endian::native == std::endian::little,
@@ -686,7 +686,7 @@ template<class value_t, class decoder_t>
 class deltafor_frame_const_iterator
   : public boost::iterator_facade<
       deltafor_frame_const_iterator<value_t, decoder_t>,
-      value_t const,
+      const value_t,
       boost::iterators::forward_traversal_tag> {
     constexpr static uint32_t buffer_depth = details::FOR_buffer_depth;
     constexpr static uint32_t index_mask = buffer_depth - 1;
@@ -1032,7 +1032,7 @@ template<class value_t, auto delta_alg>
 class deltafor_column_const_iterator
   : public boost::iterator_facade<
       deltafor_column_const_iterator<value_t, delta_alg>,
-      value_t const,
+      const value_t,
       boost::iterators::forward_traversal_tag> {
     friend class boost::iterator_core_access;
 
@@ -1216,7 +1216,7 @@ class deltafor_column_impl
 
     // crtp helper
     auto to_underlying() const -> decltype(auto) {
-        return *static_cast<Derived const*>(this);
+        return *static_cast<const Derived*>(this);
     }
 
 public:
@@ -1418,7 +1418,7 @@ public:
     void serde_write(iobuf& out) {
         // std::list is not part of the serde-enabled types, save is as
         // size,elements
-        auto const frames_size = _frames.size();
+        const auto frames_size = _frames.size();
         if (unlikely(
               frames_size > std::numeric_limits<serde::serde_size_t>::max())) {
             throw serde::serde_exception(fmt_with_ctx(
@@ -1433,7 +1433,7 @@ public:
         }
     }
 
-    void serde_read(iobuf_parser& in, serde::header const& h) {
+    void serde_read(iobuf_parser& in, const serde::header& h) {
         // std::list is not part of the serde-enabled types, retrieve size and
         // push_back the elements
         if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
@@ -1446,7 +1446,7 @@ public:
               h._bytes_left_limit,
               in.bytes_left()));
         }
-        auto const frames_size = serde::read_nested<serde::serde_size_t>(
+        const auto frames_size = serde::read_nested<serde::serde_size_t>(
           in, h._bytes_left_limit);
         for (auto i = 0U; i < frames_size; ++i) {
             _frames.push_back(
@@ -1468,7 +1468,7 @@ public:
 protected:
     auto get_frame_iterator_by_element_index(size_t ix) const {
         return std::find_if(
-          _frames.begin(), _frames.end(), [ix](frame_t const& f) mutable {
+          _frames.begin(), _frames.end(), [ix](const frame_t& f) mutable {
               if (f.size() > ix) {
                   return true;
               }

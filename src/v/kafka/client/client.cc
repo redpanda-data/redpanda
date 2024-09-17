@@ -88,7 +88,7 @@ ss::future<> client::connect() {
 
 namespace {
 template<typename Func>
-ss::future<> catch_and_log(client const& c, Func&& f) noexcept {
+ss::future<> catch_and_log(const client& c, Func&& f) noexcept {
     return ss::futurize_invoke(std::forward<Func>(f))
       .discard_result()
       .handle_exception([&c](std::exception_ptr e) {
@@ -562,7 +562,7 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
               bool has_error = std::any_of(
                 res.data.topics.begin(),
                 res.data.topics.end(),
-                [](auto const& topics) {
+                [](const auto& topics) {
                     return std::any_of(
                       topics.partitions.begin(),
                       topics.partitions.end(),

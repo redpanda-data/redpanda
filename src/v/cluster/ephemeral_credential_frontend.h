@@ -47,7 +47,7 @@ public:
         security::ephemeral_credential credential;
         std::error_code err{errc::success};
     };
-    ss::future<get_return> get(security::acl_principal const&);
+    ss::future<get_return> get(const security::acl_principal&);
 
     // Insert or update a scram_credential
     ss::future<> put(
@@ -60,7 +60,7 @@ public:
 
     // Inform a node of the credential for the given principal
     ss::future<std::error_code>
-    inform(model::node_id, security::acl_principal const&);
+    inform(model::node_id, const security::acl_principal&);
 
 private:
     model::node_id _self;

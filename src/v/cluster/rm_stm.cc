@@ -1824,7 +1824,7 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
         model::offset last = model::offset::min();
         fragmented_vector<tx::tx_range> aborted_ranges;
 
-        for (auto const& entry : _aborted_tx_state.aborted) {
+        for (const auto& entry : _aborted_tx_state.aborted) {
             first = std::min(first, entry.first);
             last = std::max(last, entry.last);
             aborted_ranges.push_back(entry);

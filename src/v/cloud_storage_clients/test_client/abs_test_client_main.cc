@@ -195,7 +195,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
               keys.begin(),
               keys.end(),
               std::back_inserter(out),
-              [](auto const& ks) {
+              [](const auto& ks) {
                   return cloud_storage_clients::object_key(ks);
               });
             return out;

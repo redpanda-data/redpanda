@@ -25,7 +25,7 @@ template<typename T>
 requires(serde_is_enum_v<std::decay_t<T>>)
 void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
-    auto const val = static_cast<std::underlying_type_t<Type>>(t);
+    const auto val = static_cast<std::underlying_type_t<Type>>(t);
     if (unlikely(
           val > std::numeric_limits<serde_enum_serialized_t>::max()
           || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
@@ -42,10 +42,10 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
 template<typename T>
 requires serde_is_enum_v<std::decay_t<T>>
 void tag_invoke(
-  tag_t<read_tag>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>, iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
 
-    auto const val = read_nested<serde_enum_serialized_t>(in, bytes_left_limit);
+    const auto val = read_nested<serde_enum_serialized_t>(in, bytes_left_limit);
     if (unlikely(
           val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
         throw serde_exception(fmt_with_ctx(

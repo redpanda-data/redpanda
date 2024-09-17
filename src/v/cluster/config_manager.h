@@ -59,7 +59,7 @@ public:
       ss::sharded<ss::abort_source>&);
 
     // Preload early in startup, from bootstrap file or config cache
-    static ss::future<preload_result> preload(YAML::Node const&);
+    static ss::future<preload_result> preload(const YAML::Node&);
 
     // Preload while joining the cluster, from a controller snapshot sent
     // in response to a join request.
@@ -82,7 +82,7 @@ public:
         std::vector<ss::sstring> invalid;
     };
 
-    status_map const& get_status() const { return status; }
+    const status_map& get_status() const { return status; }
 
     status_map get_projected_status() const;
 
@@ -102,13 +102,13 @@ public:
 private:
     void merge_apply_result(
       config_status&,
-      cluster_config_delta_cmd_data const&,
-      apply_result const&);
+      const cluster_config_delta_cmd_data&,
+      const apply_result&);
 
     bool should_send_status();
     ss::future<> reconcile_status();
     ss::future<std::error_code> apply_delta(cluster_config_delta_cmd&&);
-    ss::future<> store_delta(cluster_config_delta_cmd_data const& data);
+    ss::future<> store_delta(const cluster_config_delta_cmd_data& data);
 
     bool _bootstrap_complete{false};
     void start_bootstrap();
@@ -116,7 +116,7 @@ private:
 
     static ss::future<preload_result> load_cache();
     static ss::future<bool> load_bootstrap();
-    static ss::future<> load_legacy(YAML::Node const&);
+    static ss::future<> load_legacy(const YAML::Node&);
 
     ss::future<std::error_code> apply_status(cluster_config_status_cmd&& cmd);
 

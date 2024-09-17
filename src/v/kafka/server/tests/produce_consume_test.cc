@@ -710,7 +710,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
             << "%");
 
         constexpr auto get_throttle_percentile =
-          [](ss::metrics::histogram const& h, int p) {
+          [](const ss::metrics::histogram& h, int p) {
               auto count_p = double(h.sample_count) * p / 100;
               auto lb = std::ranges::lower_bound(
                 h.buckets,

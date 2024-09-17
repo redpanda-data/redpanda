@@ -326,14 +326,14 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_full) {
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_complete) {
     segment_meta_cstore store;
     auto manifest = generate_metadata(short_test_size);
-    for (auto const& sm : manifest) {
+    for (const auto& sm : manifest) {
         store.insert(sm);
     }
 
     store.prefix_truncate(model::offset::max());
     BOOST_REQUIRE(store.empty());
 
-    for (auto const& sm : manifest) {
+    for (const auto& sm : manifest) {
         store.insert(sm);
     }
     store.prefix_truncate(manifest.back().committed_offset + model::offset{1});
@@ -343,7 +343,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_complete) {
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
     segment_meta_cstore store{};
     auto manifest = generate_metadata(10007);
-    for (auto const& sm : manifest) {
+    for (const auto& sm : manifest) {
         store.insert(sm);
     }
     {
@@ -475,7 +475,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
       manifest.begin(),
       manifest.end(),
       false,
-      [&](bool generating_replacement, auto const& in) {
+      [&](bool generating_replacement, const auto& in) {
           if (generating_replacement) {
               if (random_generators::get_int(1) == 1) {
                   // absorb "in" and keep generating

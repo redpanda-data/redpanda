@@ -314,7 +314,7 @@ health_monitor_backend::get_cluster_disk_health(
 ss::future<std::error_code>
 health_monitor_backend::maybe_refresh_cluster_health(
   force_refresh refresh, model::timeout_clock::time_point deadline) {
-    auto const need_refresh = refresh
+    const auto need_refresh = refresh
                               || _last_refresh + max_metadata_age()
                                    < ss::lowres_clock::now();
 

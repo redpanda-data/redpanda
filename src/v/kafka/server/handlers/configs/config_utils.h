@@ -291,7 +291,7 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
 
 template<typename T, typename R>
 ss::future<chunked_vector<R>> unsupported_broker_configuration(
-  chunked_vector<T> resources, std::string_view const msg) {
+  chunked_vector<T> resources, const std::string_view msg) {
     chunked_vector<R> responses;
     responses.reserve(resources.size());
     std::transform(
@@ -504,7 +504,7 @@ void parse_and_set_optional(
                 throw validation_error(*v_error);
             }
             property.value = std::move(v);
-        } catch (std::runtime_error const&) {
+        } catch (const std::runtime_error&) {
             throw boost::bad_lexical_cast();
         }
         return;
@@ -549,7 +549,7 @@ inline void parse_and_set_optional_duration(
                 throw validation_error(*v_error);
             }
             property.value = std::move(v);
-        } catch (std::runtime_error const&) {
+        } catch (const std::runtime_error&) {
             throw boost::bad_lexical_cast();
         }
         return;
@@ -571,7 +571,7 @@ inline void parse_and_set_optional_bool_alpha(
             property.value = string_switch<bool>(*value)
                                .match("true", true)
                                .match("false", false);
-        } catch (std::runtime_error const&) {
+        } catch (const std::runtime_error&) {
             // Our callers expect this exception type on malformed values
             throw boost::bad_lexical_cast();
         }
@@ -677,7 +677,7 @@ public:
 
     ///\brief Parse a topic property from the supplied cfg.
     template<typename C>
-    bool operator()(C const& cfg, kafka::config_resource_operation op) {
+    bool operator()(const C& cfg, kafka::config_resource_operation op) {
         using property_t = std::variant<
           decltype(&props.record_key_schema_id_validation),
           decltype(&props.record_key_subject_name_strategy)>;
@@ -729,7 +729,7 @@ private:
     ///\brief Parse and set a boolean from 'true' or 'false'.
     static void apply(
       cluster::property_update<std::optional<bool>>& prop,
-      std::optional<ss::sstring> const& value,
+      const std::optional<ss::sstring>& value,
       kafka::config_resource_operation op) {
         kafka::parse_and_set_optional_bool_alpha(prop, value, op);
     }
@@ -737,7 +737,7 @@ private:
     static void apply(
       cluster::property_update<std::optional<
         pandaproxy::schema_registry::subject_name_strategy>>& prop,
-      std::optional<ss::sstring> const& value,
+      const std::optional<ss::sstring>& value,
       kafka::config_resource_operation op) {
         kafka::parse_and_set_optional(prop, value, op);
     }

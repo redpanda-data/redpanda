@@ -26,7 +26,7 @@ struct principal_mapping_test_data {
     result<security::acl_principal> principal;
 
     friend std::ostream&
-    operator<<(std::ostream& os, principal_mapping_test_data const& d) {
+    operator<<(std::ostream& os, const principal_mapping_test_data& d) {
         fmt::print(
           os,
           "payload: {}, mapping: {}, principal: {}",

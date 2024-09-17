@@ -179,7 +179,7 @@ private:
 
     ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
     void apply_op(
-      bytes key, std::optional<iobuf> value, ssx::semaphore_units const&);
+      bytes key, std::optional<iobuf> value, const ssx::semaphore_units&);
     ss::future<> flush_and_apply_ops();
     ss::future<> roll();
     ss::future<> save_snapshot();

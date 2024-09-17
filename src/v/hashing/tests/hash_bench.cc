@@ -198,7 +198,7 @@ struct old_ntp_hash<model::ntp> {
 } // namespace
 
 size_t get_ktp_hash(const ktp& k) { return std::hash<ktp>{}(k); }
-size_t get_kaf_hash0(model::ktp const&) {
+size_t get_kaf_hash0(const model::ktp&) {
     return std::hash<std::string_view>{}("kafka");
 }
 size_t get_kaf_hash1() {

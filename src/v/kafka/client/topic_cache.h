@@ -42,7 +42,7 @@ public:
     topic_cache() = default;
     topic_cache(const topic_cache&) = delete;
     topic_cache(topic_cache&&) = default;
-    topic_cache& operator=(topic_cache const&) = delete;
+    topic_cache& operator=(const topic_cache&) = delete;
     topic_cache& operator=(topic_cache&&) = delete;
     ~topic_cache() noexcept = default;
 

@@ -34,6 +34,6 @@ validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept;
 namespace security::oidc {
 
 std::optional<ss::sstring>
-validate_principal_mapping_rule(ss::sstring const& rule);
+validate_principal_mapping_rule(const ss::sstring& rule);
 
 }

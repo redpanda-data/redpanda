@@ -61,7 +61,7 @@ assignments assignment_range::plan(
   const chunked_vector<member_id>& members,
   const chunked_vector<metadata_response::topic>& topics) {
     assignments assignments;
-    for (auto const& t : topics) {
+    for (const auto& t : topics) {
         auto [len, rem] = std::ldiv(t.partitions.size(), members.size());
         auto iterations = std::min(t.partitions.size(), members.size());
         auto p_begin = t.partitions.begin();

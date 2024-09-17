@@ -73,7 +73,7 @@ void iobuf_body::value_type::finish() { _done = true; }
 // iobuf_body::reader implementation
 
 void iobuf_body::reader::init(
-  boost::optional<std::uint64_t> const&, boost::beast::error_code& ec) {
+  const boost::optional<std::uint64_t>&, boost::beast::error_code& ec) {
     ec = {};
 }
 
@@ -83,7 +83,7 @@ void iobuf_body::reader::finish(boost::beast::error_code& ec) {
     _body.finish();
 }
 
-std::uint64_t iobuf_body::size(value_type const& body) { return body.size(); }
+std::uint64_t iobuf_body::size(const value_type& body) { return body.size(); }
 
 static_assert(
   boost::beast::http::is_body<iobuf_body>::value,

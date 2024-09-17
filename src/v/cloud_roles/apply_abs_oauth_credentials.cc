@@ -14,7 +14,7 @@
 
 namespace cloud_roles {
 apply_abs_oauth_credentials::apply_abs_oauth_credentials(
-  abs_oauth_credentials const& credentials)
+  const abs_oauth_credentials& credentials)
   : _oauth_token{fmt::format("Bearer {}", credentials.oauth_token())}
   , _timesource{} {}
 

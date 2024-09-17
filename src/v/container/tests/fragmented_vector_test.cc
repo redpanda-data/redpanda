@@ -279,7 +279,7 @@ TEST(Vector, IteratorTypes) {
 
 struct foo {
     int a;
-    friend std::ostream& operator<<(std::ostream& os, foo const& f) {
+    friend std::ostream& operator<<(std::ostream& os, const foo& f) {
         return os << f.a;
     }
     bool operator==(const foo&) const = default;

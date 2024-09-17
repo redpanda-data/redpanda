@@ -1082,7 +1082,7 @@ rehash_object_name(const std::filesystem::path& p) {
     uint64_t hash = 0;
     try {
         hash = std::stoull(prefix.c_str(), 0, 16);
-    } catch (std::invalid_argument const&) {
+    } catch (const std::invalid_argument&) {
         // The first component of the name is not a hex integer
         return std::nullopt;
     }

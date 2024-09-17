@@ -32,12 +32,12 @@
 #include <vector>
 namespace storage {
 
-inline static ss::sstring random_dir() {
+static inline ss::sstring random_dir() {
     return ssx::sformat(
       "test.dir_{}", random_generators::gen_alphanum_string(7));
 }
 
-inline static log_config log_builder_config() {
+static inline log_config log_builder_config() {
     return log_config(
       random_dir(),
       100_MiB,
@@ -45,21 +45,21 @@ inline static log_config log_builder_config() {
       storage::make_sanitized_file_config());
 }
 
-inline static log_reader_config reader_config() {
+static inline log_reader_config reader_config() {
     return log_reader_config{
       model::offset(0),
       model::model_limits<model::offset>::max(),
       ss::default_priority_class()};
 }
 
-inline static log_append_config append_config() {
+static inline log_append_config append_config() {
     return log_append_config{
       .should_fsync = storage::log_append_config::fsync::yes,
       .io_priority = ss::default_priority_class(),
       .timeout = model::no_timeout};
 }
 
-inline static model::ntp log_builder_ntp() {
+static inline model::ntp log_builder_ntp() {
     return model::ntp(
       model::ns("test.log_builder"),
       model::topic(random_generators::gen_alphanum_string(8)),

@@ -241,7 +241,7 @@ ss::future<> state_machine_manager::do_apply_raft_snapshot(
 
     auto snapshot_content = co_await read_iobuf_exactly(
       reader.input(), snapshot_file_sz);
-    auto const snapshot_content_sz = snapshot_content.size_bytes();
+    const auto snapshot_content_sz = snapshot_content.size_bytes();
 
     vlog(
       _log.debug,

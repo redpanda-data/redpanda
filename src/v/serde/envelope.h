@@ -21,12 +21,12 @@ using version_t = std::uint8_t;
 
 template<version_t V>
 struct version {
-    static constexpr auto const v = V;
+    static constexpr const auto v = V;
 };
 
 template<version_t V>
 struct compat_version {
-    static constexpr auto const v = V;
+    static constexpr const auto v = V;
 };
 
 /**
@@ -58,7 +58,7 @@ struct envelope {
     requires(std::is_same_v<
              std::remove_cvref_t<O>,
              envelope<T, Version, CompatVersion>>)
-    bool operator==(O const&) const {
+    bool operator==(const O&) const {
         return true;
     }
 
@@ -66,7 +66,7 @@ struct envelope {
     requires(std::is_same_v<
              std::remove_cvref_t<O>,
              envelope<T, Version, CompatVersion>>)
-    std::strong_ordering operator<=>(O const&) const {
+    std::strong_ordering operator<=>(const O&) const {
         return std::strong_ordering::equal;
     }
 };
@@ -84,7 +84,7 @@ static constexpr std::size_t envelope_header_size = 6;
  */
 template<typename T, typename Version, typename CompatVersion>
 struct checksum_envelope {
-    bool operator==(checksum_envelope const&) const = default;
+    bool operator==(const checksum_envelope&) const = default;
     using value_t = T;
     static constexpr auto redpanda_serde_version = Version::v;
     static constexpr auto redpanda_serde_compat_version = CompatVersion::v;

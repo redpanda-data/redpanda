@@ -81,8 +81,8 @@ request_creator::request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   std::optional<http_byte_range> byte_range) {
     http::client::request_header header{};
     // Virtual Style:
@@ -119,7 +119,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
 }
 
 result<http::client::request_header> request_creator::make_head_object_request(
-  bucket_name const& name, object_key const& key) {
+  const bucket_name& name, const object_key& key) {
     http::client::request_header header{};
     // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
@@ -148,7 +148,7 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
+  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
     // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
     // Host: {bucket-name}.s3.{region}.amazonaws.com
@@ -237,7 +237,7 @@ request_creator::make_list_objects_v2_request(
 
 result<http::client::request_header>
 request_creator::make_delete_object_request(
-  bucket_name const& name, object_key const& key) {
+  const bucket_name& name, const object_key& key) {
     http::client::request_header header{};
     // Virtual Style:
     // DELETE /{object-id} HTTP/1.1
@@ -318,7 +318,7 @@ request_creator::make_delete_objects_request(
         delete_tree.put("Delete.Quiet", true);
         // add an array of Object.Key=key to the Delete root
         for (auto key_tree = boost::property_tree::ptree{};
-             auto const& k : keys) {
+             const auto& k : keys) {
             key_tree.put("Key", k().c_str());
             delete_tree.add_child("Delete.Object", key_tree);
         }
@@ -635,8 +635,8 @@ void s3_client::shutdown() { _client.shutdown(); }
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 s3_client::get_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
   std::optional<http_byte_range> byte_range) {
@@ -648,8 +648,8 @@ s3_client::get_object(
 }
 
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
   std::optional<http_byte_range> byte_range) {
@@ -717,15 +717,15 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
 
 ss::future<result<s3_client::head_object_result, error_outcome>>
 s3_client::head_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout) {
     return send_request(do_head_object(name, key, timeout), name, key);
 }
 
 ss::future<s3_client::head_object_result> s3_client::do_head_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_head_object_request(name, key);
     if (!header) {
@@ -778,8 +778,8 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
 }
 
 ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
@@ -794,8 +794,8 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
 }
 
 ss::future<> s3_client::do_put_object(
-  bucket_name const& name,
-  object_key const& id,
+  const bucket_name& name,
+  const object_key& id,
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
@@ -1034,7 +1034,7 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
             rest_error_response err(code, msg, rid, res);
             return err;
         }
-        for (auto const& [tag, value] : root.get_child("DeleteResult")) {
+        for (const auto& [tag, value] : root.get_child("DeleteResult")) {
             if (tag != "Error") {
                 continue;
             }
@@ -1076,7 +1076,7 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
 }
 
 auto s3_client::do_delete_objects(
-  bucket_name const& bucket,
+  const bucket_name& bucket,
   std::span<const object_key> keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<client::delete_objects_result> {
@@ -1095,7 +1095,7 @@ auto s3_client::do_delete_objects(
                  return _client.request(std::move(header), to_delete, timeout)
                    .finally([&] { return to_delete.close(); });
              })
-      .then([](http::client::response_stream_ref const& response) {
+      .then([](const http::client::response_stream_ref& response) {
           return util::drain_response_stream(response).then(
             [response](iobuf&& res) {
                 auto status = response->get_headers().result();

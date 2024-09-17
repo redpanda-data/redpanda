@@ -615,7 +615,7 @@ private:
                       // Special case, it can happen when a timequery falls
                       // below the clean offset. Caused when the query races
                       // with retention/gc.
-                      auto const& spillovers = _partition->_manifest_view
+                      const auto& spillovers = _partition->_manifest_view
                                                  ->stm_manifest()
                                                  .get_spillover_map();
 

@@ -671,7 +671,7 @@ controller_backend::calculate_learner_initial_offset(
         return std::nullopt;
     }
 
-    auto const cloud_storage_safe_offset
+    const auto cloud_storage_safe_offset
       = p->archival_meta_stm()->max_collectible_offset();
     /**
      * Last offset uploaded to the cloud is target learner retention upper
@@ -896,9 +896,9 @@ ss::future<> controller_backend::try_reconcile_ntp(
                     last_error = errc::partition_operation_failed;
                 }
             }
-        } catch (ss::gate_closed_exception const&) {
+        } catch (const ss::gate_closed_exception&) {
             break;
-        } catch (ss::abort_requested_exception const&) {
+        } catch (const ss::abort_requested_exception&) {
             break;
         } catch (...) {
             vlog(

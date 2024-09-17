@@ -94,7 +94,7 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
             std::optional<T> prev_label;
 
             for (auto& r : partition.replicas()) {
-                auto const l = _mapper(r.node_id);
+                const auto l = _mapper(r.node_id);
                 if (!l) {
                     continue;
                 }

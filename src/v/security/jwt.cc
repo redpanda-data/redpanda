@@ -13,7 +13,7 @@ namespace security::oidc::detail {
 bytes base64_url_decode(std::string_view sv) { return base64url_to_bytes(sv); };
 
 std::optional<bytes>
-base64_url_decode(json::Value const& v, std::string_view field) {
+base64_url_decode(const json::Value& v, std::string_view field) {
     auto b64 = string_view<>(v, field);
     if (!b64.has_value()) {
         return std::nullopt;

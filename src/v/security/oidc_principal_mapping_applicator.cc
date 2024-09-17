@@ -17,7 +17,7 @@
 namespace security::oidc {
 
 result<acl_principal> principal_mapping_rule_apply(
-  const principal_mapping_rule& mapping, jwt const& jwt) {
+  const principal_mapping_rule& mapping, const jwt& jwt) {
     auto claim = jwt.claim(mapping.claim());
     if (claim.value_or("").empty()) {
         return errc::jwt_invalid_principal;

@@ -82,7 +82,7 @@ private:
     void on_members_update(model::node_id, model::membership_state);
     void on_topic_table_update();
     void on_health_monitor_update(
-      node_health_report const&,
+      const node_health_report&,
       std::optional<ss::lw_shared_ptr<const node_health_report>>);
     size_t get_min_partition_size_threshold() const;
 

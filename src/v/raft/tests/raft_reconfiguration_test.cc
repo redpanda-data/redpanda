@@ -107,7 +107,7 @@ struct reconfiguration_test
               /**
                * Use archival metadata batches to populate offset translator
                */
-              auto const batch_type = random_generators::random_choice(
+              const auto batch_type = random_generators::random_choice(
                 {model::record_batch_type::raft_data,
                  model::record_batch_type::archival_metadata});
               storage::record_batch_builder builder(

@@ -19,7 +19,7 @@ namespace cloud_roles {
 class apply_abs_oauth_credentials final : public apply_credentials::impl {
 public:
     explicit apply_abs_oauth_credentials(
-      abs_oauth_credentials const& credentials);
+      const abs_oauth_credentials& credentials);
 
     std::error_code
     add_auth(http::client::request_header& header) const override;

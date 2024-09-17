@@ -56,7 +56,7 @@ template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
 fmt::formatter<security::tls::principal_mapper, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
-  security::tls::principal_mapper const& r,
+  const security::tls::principal_mapper& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return fmt::format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
 }

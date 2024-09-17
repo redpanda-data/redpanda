@@ -275,7 +275,7 @@ struct broker_shard {
     }
 
     friend void read_nested(
-      iobuf_parser& in, broker_shard& bs, std::size_t const bytes_left_limit) {
+      iobuf_parser& in, broker_shard& bs, const std::size_t bytes_left_limit) {
         using serde::read_nested;
         read_nested(in, bs.node_id, bytes_left_limit);
         read_nested(in, bs.shard, bytes_left_limit);
@@ -374,7 +374,7 @@ struct topic_namespace {
     friend void read_nested(
       iobuf_parser& in,
       topic_namespace& t,
-      std::size_t const bytes_left_limit) {
+      const std::size_t bytes_left_limit) {
         using serde::read_nested;
         read_nested(in, t.ns, bytes_left_limit);
         read_nested(in, t.tp, bytes_left_limit);

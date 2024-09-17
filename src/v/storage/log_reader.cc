@@ -444,7 +444,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                       recs.error().message());
                 }
 
-                auto const batch_parse_err
+                const auto batch_parse_err
                   = recs.error() == parser_errc::header_only_crc_missmatch
                     || recs.error()
                          == parser_errc::input_stream_not_enough_bytes;

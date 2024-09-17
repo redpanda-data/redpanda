@@ -19,7 +19,7 @@ inline void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   iobuf& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
 }
 

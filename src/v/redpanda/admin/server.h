@@ -221,7 +221,7 @@ private:
      * with an extra request_auth_state argument if peek_auth is true.
      */
     template<auth_level required_auth, bool peek_auth = false, typename F>
-    void register_route(ss::httpd::path_description const& path, F handler) {
+    void register_route(const ss::httpd::path_description& path, F handler) {
         path.set(
           _server._routes,
           [this, handler](std::unique_ptr<ss::http::request> req)
@@ -263,7 +263,7 @@ private:
      */
     template<auth_level required_auth, bool peek_auth = false, typename F>
     void
-    register_route_sync(ss::httpd::path_description const& path, F handler) {
+    register_route_sync(const ss::httpd::path_description& path, F handler) {
         path.set(
           _server._routes,
           [this,
@@ -293,7 +293,7 @@ private:
      */
     template<auth_level required_auth, bool peek_auth = false, typename F>
     void register_route_raw_async(
-      ss::httpd::path_description const& path, F handler) {
+      const ss::httpd::path_description& path, F handler) {
         auto wrapped_handler = [this, handler](
                                  std::unique_ptr<ss::http::request> req,
                                  std::unique_ptr<ss::http::reply> rep)
@@ -333,7 +333,7 @@ private:
 
     template<auth_level required_auth>
     void register_route_raw_sync(
-      ss::httpd::path_description const& path,
+      const ss::httpd::path_description& path,
       ss::httpd::handle_function handler) {
         auto handler_f = new ss::httpd::function_handler{
           [this, handler](ss::httpd::const_req req, ss::http::reply& reply) {
@@ -392,7 +392,7 @@ private:
 
     template<auth_level required_auth>
     void register_route(
-      ss::httpd::path_description const& path, request_handler_fn handler) {
+      const ss::httpd::path_description& path, request_handler_fn handler) {
         path.set(
           _server._routes,
           new handler_impl<required_auth>{*this, std::move(handler)});
@@ -666,10 +666,10 @@ private:
     ss::future<> throw_on_error(
       ss::http::request& req,
       std::error_code ec,
-      model::ntp const& ntp,
+      const model::ntp& ntp,
       model::node_id id = model::node_id{-1}) const;
     ss::future<ss::httpd::redirect_exception>
-    redirect_to_leader(ss::http::request& req, model::ntp const& ntp) const;
+    redirect_to_leader(ss::http::request& req, const model::ntp& ntp) const;
 
     ss::future<ss::json::json_return_type> cancel_node_partition_moves(
       ss::http::request& req, cluster::partition_move_direction direction);

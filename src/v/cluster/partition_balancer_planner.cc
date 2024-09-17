@@ -295,7 +295,7 @@ void partition_balancer_planner::init_per_node_state(
   const cluster_health_report& health_report,
   request_context& ctx,
   plan_data& result) {
-    auto const now = rpc::clock_type::now();
+    const auto now = rpc::clock_type::now();
     for (const auto& [id, broker] : _state.members().nodes()) {
         if (
           broker.state.get_membership_state()

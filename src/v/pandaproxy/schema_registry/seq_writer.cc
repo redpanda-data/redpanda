@@ -116,7 +116,7 @@ ss::future<> seq_writer::read_sync() {
     co_await wait_for(max_offset - model::offset{1});
 }
 
-ss::future<> seq_writer::check_mutable(std::optional<subject> const& sub) {
+ss::future<> seq_writer::check_mutable(const std::optional<subject>& sub) {
     auto mode = sub ? co_await _store.get_mode(*sub, default_to_global::yes)
                     : co_await _store.get_mode();
     if (mode == mode::read_only) {
@@ -485,7 +485,7 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     }
 
     auto is_referenced = co_await ssx::parallel_transform(
-      versions.begin(), versions.end(), [this, &sub](auto const& ver) {
+      versions.begin(), versions.end(), [this, &sub](const auto& ver) {
           return _store.is_referenced(sub, ver);
       });
     if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
@@ -502,7 +502,7 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
 
     try {
         rb(co_await _store.get_subject_mode_written_at(sub));
-    } catch (exception const& e) {
+    } catch (const exception& e) {
         if (e.code() != error_code::subject_not_found) {
             throw;
         }
@@ -510,7 +510,7 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
 
     try {
         rb(co_await _store.get_subject_config_written_at(sub));
-    } catch (exception const& e) {
+    } catch (const exception& e) {
         if (e.code() != error_code::subject_not_found) {
             throw;
         }

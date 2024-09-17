@@ -40,7 +40,7 @@ std::ostream& operator<<(std::ostream& os, timestamp ts) {
 }
 
 void read_nested(
-  iobuf_parser& in, timestamp& ts, size_t const bytes_left_limit) {
+  iobuf_parser& in, timestamp& ts, const size_t bytes_left_limit) {
     serde::read_nested(in, ts._v, bytes_left_limit);
 }
 
@@ -582,7 +582,7 @@ std::istream& operator>>(std::istream& is, recovery_validation_mode& vm) {
                  "check_manifest_and_segment_metadata",
                  check_manifest_and_segment_metadata)
                .match("no_check", no_check);
-    } catch (std::runtime_error const&) {
+    } catch (const std::runtime_error&) {
         is.setstate(std::ios::failbit);
     }
     return is;

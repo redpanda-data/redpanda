@@ -35,19 +35,19 @@ concept has_serde_fields = requires(T t) { t.serde_fields(); };
 template<typename T>
 requires is_envelope<std::decay_t<T>>
 void tag_invoke(
-  tag_t<read_tag>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>, iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
 
-    auto const h = read_header<Type>(in, bytes_left_limit);
+    const auto h = read_header<Type>(in, bytes_left_limit);
 
     if constexpr (is_checksum_envelope<Type>) {
-        auto const shared = in.share_no_consume(
+        const auto shared = in.share_no_consume(
           in.bytes_left() - h._bytes_left_limit);
         auto read_only_in = iobuf_const_parser{shared};
         auto crc = crc::crc32c{};
         read_only_in.consume(
           read_only_in.bytes_left(),
-          [&crc](char const* src, std::size_t const n) {
+          [&crc](const char* src, const std::size_t n) {
               crc.extend(src, n);
               return ss::stop_iteration::no;
           });
@@ -106,7 +106,7 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
         checksum_placeholder = out.reserve(sizeof(checksum_t));
     }
 
-    auto const size_before = out.size_bytes();
+    const auto size_before = out.size_bytes();
     if constexpr (has_serde_write<Type>) {
         static_assert(!has_serde_fields<Type>);
         t.serde_write(out);
@@ -115,28 +115,28 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
           t, [&out](auto& f) { write(out, std::move(f)); });
     }
 
-    auto const written_size = out.size_bytes() - size_before;
+    const auto written_size = out.size_bytes() - size_before;
     if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception("envelope too big");
     }
-    auto const size = ss::cpu_to_le(static_cast<serde_size_t>(written_size));
+    const auto size = ss::cpu_to_le(static_cast<serde_size_t>(written_size));
     size_placeholder.write(
-      reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+      reinterpret_cast<const char*>(&size), sizeof(serde_size_t));
 
     if constexpr (is_checksum_envelope<Type>) {
         auto crc = crc::crc32c{};
         auto in = iobuf_const_parser{out};
         in.skip(size_before);
         in.consume(
-          in.bytes_left(), [&crc](char const* src, std::size_t const n) {
+          in.bytes_left(), [&crc](const char* src, const std::size_t n) {
               crc.extend(src, n);
               return ss::stop_iteration::no;
           });
-        auto const checksum = ss::cpu_to_le(crc.value());
+        const auto checksum = ss::cpu_to_le(crc.value());
         static_assert(
           std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
         checksum_placeholder.write(
-          reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
+          reinterpret_cast<const char*>(&checksum), sizeof(checksum_t));
     }
 }
 

@@ -190,7 +190,7 @@ sharded_store::get_schema_version(subject_schema schema) {
 
     std::optional<schema_version> v_id;
     if (s_id.has_value()) {
-        auto v_it = absl::c_find_if(versions, [id = *s_id](auto const& s_id_v) {
+        auto v_it = absl::c_find_if(versions, [id = *s_id](const auto& s_id_v) {
             return s_id_v.id == id;
         });
         if (v_it != versions.end()) {
@@ -217,7 +217,7 @@ sharded_store::get_schema_version(subject_schema schema) {
 
 ss::future<sharded_store::insert_result>
 sharded_store::project_ids(subject_schema schema) {
-    auto const& sub = schema.schema.sub();
+    const auto& sub = schema.schema.sub();
     auto s_id = schema.id;
     if (s_id == invalid_schema_id) {
         // New schema, project an ID for it.
@@ -423,7 +423,7 @@ ss::future<std::vector<schema_id>> sharded_store::referenced_by(
     if (opt_ver.has_value()) {
         ver = *opt_ver;
         auto version_not_found = std::none_of(
-          versions.begin(), versions.end(), [ver](auto const& v) {
+          versions.begin(), versions.end(), [ver](const auto& v) {
               return ver == v;
           });
         if (version_not_found) {

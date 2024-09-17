@@ -85,12 +85,12 @@ operator<<(std::ostream& os, const api_response_parse_error& err) {
 // tmp trick to ensure that we are not calling into infinite recursion if
 // there is a new credential but no operator<<
 template<std::same_as<credentials> Cred>
-std::ostream& operator<<(std::ostream& os, Cred const& c) {
-    ss::visit(c, [&os](auto const& creds) { os << creds; });
+std::ostream& operator<<(std::ostream& os, const Cred& c) {
+    ss::visit(c, [&os](const auto& creds) { os << creds; });
     return os;
 }
 
-template std::ostream& operator<<(std::ostream& os, credentials const& c);
+template std::ostream& operator<<(std::ostream& os, const credentials& c);
 
 bool is_retryable(const std::system_error& ec) {
     auto code = ec.code();

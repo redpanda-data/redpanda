@@ -25,9 +25,9 @@
 #include <optional>
 #include <vector>
 
-const static auto fixed_client_id = "shared-client-id";
-const static size_t total_requests{10 << 20};
-const static size_t unique_client_id_count = 1000;
+static const auto fixed_client_id = "shared-client-id";
+static const size_t total_requests{10 << 20};
+static const size_t unique_client_id_count = 1000;
 
 std::vector<ss::sstring> initialize_client_ids() {
     std::vector<ss::sstring> client_ids;
@@ -146,7 +146,7 @@ struct latency_test_case {
     bool no_quotas;
 };
 
-const static size_t n_repeats = 100;
+static const size_t n_repeats = 100;
 
 future<size_t> run_latency_test(latency_test_case tc) {
     ss::sharded<cluster::client_quota::store> quota_store;

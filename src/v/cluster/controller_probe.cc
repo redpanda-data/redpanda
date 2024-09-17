@@ -139,7 +139,7 @@ void controller_probe::setup_metrics() {
                       return int64_t{0};
                   }
 
-                  auto const& manifest = maybe_manifest_ref.value().get();
+                  const auto& manifest = maybe_manifest_ref.value().get();
                   if (manifest.upload_time_since_epoch == 0ms) {
                       // we never uploaded, so let's return a value that is not
                       // problematic to the aggregation of this metric

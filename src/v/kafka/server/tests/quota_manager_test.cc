@@ -27,7 +27,7 @@
 using namespace std::chrono_literals;
 using kafka::scale_to_smp_count;
 
-const static auto client_id = "franz-go";
+static const auto client_id = "franz-go";
 
 struct fixture {
     ss::sharded<cluster::client_quota::store> quota_store;

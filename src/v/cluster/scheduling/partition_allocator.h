@@ -138,7 +138,7 @@ public:
 
 private:
     std::error_code
-    check_cluster_limits(allocation_request const& request) const;
+    check_cluster_limits(const allocation_request& request) const;
 
     result<reallocation_step> do_allocate_replica(
       allocated_partition&,

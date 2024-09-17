@@ -36,7 +36,7 @@ struct recovery_status {
     uint64_t partitions_active{0};
     uint64_t offsets_pending{0};
 
-    void merge(recovery_status const& rhs) {
+    void merge(const recovery_status& rhs) {
         partitions_to_recover += rhs.partitions_to_recover;
         partitions_active += rhs.partitions_active;
         offsets_pending += rhs.offsets_pending;

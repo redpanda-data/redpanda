@@ -49,7 +49,7 @@ void feature_table_snapshot::apply(feature_table& ft) const {
         auto snap_state_iter = std::find_if(
           states.begin(),
           states.end(),
-          [&spec](feature_state_snapshot const& s) {
+          [&spec](const feature_state_snapshot& s) {
               return s.name == spec.name;
           });
         if (snap_state_iter == states.end()) {

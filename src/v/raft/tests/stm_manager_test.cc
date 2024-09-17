@@ -420,7 +420,7 @@ TEST_F_CORO(
     auto batches = co_await model::consume_reader_to_memory(
       std::move(rdr), model::no_timeout);
 
-    for (auto const& b : batches) {
+    for (const auto& b : batches) {
         simple_kv::apply_to_state(b, partial_expected_state);
     }
 

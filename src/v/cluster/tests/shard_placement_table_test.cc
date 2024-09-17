@@ -224,8 +224,8 @@ private:
                       ntp,
                       res.error());
                 }
-            } catch (ss::gate_closed_exception const&) {
-            } catch (ss::abort_requested_exception const&) {
+            } catch (const ss::gate_closed_exception&) {
+            } catch (const ss::abort_requested_exception&) {
             } catch (...) {
                 vlog(
                   _logger.warn,

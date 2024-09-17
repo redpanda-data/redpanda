@@ -6,14 +6,14 @@
 #endif
 #include <iostream>
 
-constexpr auto const max_depth = 2;
-constexpr auto const max_vector_size = 6;
-constexpr auto const max_str_size = 25;
+constexpr const auto max_depth = 2;
+constexpr const auto max_vector_size = 6;
+constexpr const auto max_str_size = 25;
 
 template<typename... T1, typename... T2, std::size_t... I>
 bool eq(
-  std::tuple<T1...> const& a,
-  std::tuple<T2...> const& b,
+  const std::tuple<T1...>& a,
+  const std::tuple<T2...>& b,
   std::index_sequence<I...>) {
     return ((std::get<I>(a) == std::get<I>(b)) && ...);
 }
@@ -28,7 +28,7 @@ bool operator==(T1 const& a, T2 const& b) {
 }
 
 struct data_gen {
-    data_gen(std::uint8_t const* data, std::size_t const size)
+    data_gen(const std::uint8_t* data, const std::size_t size)
       : _data{data}
       , _size{size} {}
 
@@ -38,14 +38,14 @@ struct data_gen {
     T get() {
         auto val = T{};
         for (auto i = 0U; i != sizeof(val); ++i) {
-            auto const byte = get_byte();
+            const auto byte = get_byte();
             std::memcpy(reinterpret_cast<std::uint8_t*>(&val) + i, &byte, 1);
         }
         return val;
     }
 
     std::uint8_t get_byte() {
-        auto const d = _data[_i];
+        const auto d = _data[_i];
         ++_i;
         if (_i == _size) {
             _i = 0U;
@@ -53,7 +53,7 @@ struct data_gen {
         return d;
     }
 
-    std::uint8_t const* _data{};
+    const std::uint8_t* _data{};
     std::size_t _size{};
     std::size_t _i{};
 };
@@ -126,13 +126,13 @@ serialize(std::tuple<T...>&& structs, std::index_sequence<I...>) {
 }
 
 template<typename T>
-bool test(T const& orig, iobuf&& serialized) {
+bool test(const T& orig, iobuf&& serialized) {
     return serde::from_iobuf<T>(std::move(serialized)) == orig;
 }
 
 template<typename... T, std::size_t... I>
 bool test(
-  std::tuple<T...> const& original,
+  const std::tuple<T...>& original,
   std::array<iobuf, sizeof...(T)>&& serialized,
   std::index_sequence<I...>) {
     return (test(std::get<I>(original), std::move(serialized[I])) && ...);
@@ -143,7 +143,7 @@ bool test_success(
   type_list<T...>,
   data_gen gen,
   std::index_sequence<Generation...> generations) {
-    constexpr auto const idx_seq = std::index_sequence_for<T...>();
+    constexpr const auto idx_seq = std::index_sequence_for<T...>();
     return test(
       init<T...>(gen, idx_seq, generations),
       serialize(init<T...>(gen, idx_seq, generations), idx_seq),
@@ -156,7 +156,7 @@ bool test_failure(
   type_list<T2...>,
   data_gen gen,
   std::index_sequence<Generation...> generations) {
-    constexpr auto const idx_seq = std::index_sequence_for<T1...>();
+    constexpr const auto idx_seq = std::index_sequence_for<T1...>();
     return test(
       init<T1...>(gen, idx_seq, generations),
       serialize(init<T2...>(gen, idx_seq, generations), idx_seq),
@@ -192,7 +192,7 @@ bool test_version_upgrade(
   type_list<T2...>,
   data_gen gen,
   std::index_sequence<Generations...> generations) {
-    constexpr auto const idx_seq = std::index_sequence_for<T1...>();
+    constexpr const auto idx_seq = std::index_sequence_for<T1...>();
     return test_generations(
       init<T1...>(gen, idx_seq, generations),
       serialize(init<T2...>(gen, idx_seq, generations), idx_seq),
@@ -200,13 +200,13 @@ bool test_version_upgrade(
       generations);
 }
 
-void fuzz_serde(uint8_t const* data, size_t size) {
-    constexpr auto const gen1 = std::make_index_sequence<1>();
+void fuzz_serde(const uint8_t* data, size_t size) {
+    constexpr const auto gen1 = std::make_index_sequence<1>();
 
     try {
         test_success(types_21{}, {data, size}, gen1);
         test_success(types_31{}, {data, size}, gen1);
-    } catch (std::exception const& e) {
+    } catch (const std::exception& e) {
         std::cout << e.what() << "\n";
         __builtin_trap();
     }
@@ -243,13 +243,13 @@ int main(int argc, char** argv) {
 
     str.assign(
       (std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    auto const data = reinterpret_cast<std::uint8_t const*>(str.data());
-    auto const size = str.size();
+    const auto data = reinterpret_cast<const std::uint8_t*>(str.data());
+    const auto size = str.size();
 
     fuzz_serde(data, size);
 };
 #else
-extern "C" int LLVMFuzzerTestOneInput(uint8_t const* data, size_t size) {
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (size == 0) {
         return 0;
     }

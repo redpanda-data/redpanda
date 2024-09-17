@@ -65,7 +65,7 @@ struct time_based_retention_cfg {
     bool use_escape_hatch_for_timestamps_in_the_future;
 
     static auto
-    make(features::feature_table const& ft) -> time_based_retention_cfg {
+    make(const features::feature_table& ft) -> time_based_retention_cfg {
         return {
           .use_broker_time = ft.is_active(
             features::feature::broker_time_based_retention),
@@ -273,7 +273,7 @@ operator<<(std::ostream&, const std::optional<segment_index::entry>&);
 template<>
 struct fmt::formatter<storage::time_based_retention_cfg>
   : public fmt::formatter<std::string_view> {
-    auto format(storage::time_based_retention_cfg const& cfg, auto& ctx) const {
+    auto format(const storage::time_based_retention_cfg& cfg, auto& ctx) const {
         auto str = ssx::sformat(
           "[.use_broker_time={}, "
           ".use_escape_hatch_for_timestamps_in_the_future={}]",

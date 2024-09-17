@@ -27,7 +27,7 @@ public:
             auto dex = parent.get_default_exception();
             auto sub = parent.subscribe(
               [this, dex](
-                std::optional<std::exception_ptr> const& ex) mutable noexcept {
+                const std::optional<std::exception_ptr>& ex) mutable noexcept {
                   dex = ex.value_or(dex);
                   return _as.invoke_on_all(
                     [dex](auto& as) { return as.request_abort_ex(dex); });
@@ -44,7 +44,7 @@ public:
     }
 
     auto& local() noexcept { return _as.local(); }
-    auto const& local() const noexcept { return _as.local(); }
+    const auto& local() const noexcept { return _as.local(); }
 
     template<typename Func>
     [[nodiscard]] auto subscribe(Func&& func) {

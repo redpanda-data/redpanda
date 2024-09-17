@@ -48,7 +48,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           errc::topic_already_exists);
     }
 
-    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    const auto migration_state = _migrated_resources.get_topic_state(cmd.key);
     if (
       !cmd.value.cfg.is_migrated
       && migration_state
@@ -115,7 +115,7 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
 std::error_code topic_table::do_local_delete(
   model::topic_namespace nt, model::offset offset, bool ignore_migration) {
-    auto const migration_state = _migrated_resources.get_topic_state(nt);
+    const auto migration_state = _migrated_resources.get_topic_state(nt);
     if (
       !ignore_migration
       && migration_state
@@ -204,7 +204,7 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
 
 ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
-    auto const migration_state = _migrated_resources.get_topic_state(
+    const auto migration_state = _migrated_resources.get_topic_state(
       cmd.value.cfg.tp_ns);
     vlog(
       clusterlog.trace,
@@ -874,7 +874,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     if (tp == _topics.end()) {
         co_return make_error_code(errc::topic_not_exists);
     }
-    auto const migration_state = _migrated_resources.get_topic_state(cmd.key);
+    const auto migration_state = _migrated_resources.get_topic_state(cmd.key);
     if (
       migration_state
       != data_migrations::migrated_resource_state::non_restricted) {

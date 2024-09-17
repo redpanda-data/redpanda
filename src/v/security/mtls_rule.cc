@@ -49,7 +49,7 @@ template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
 fmt::formatter<security::tls::rule, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
-  security::tls::rule const& r,
+  const security::tls::rule& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     if (r._is_default) {
         return fmt::format_to(ctx.out(), "DEFAULT");

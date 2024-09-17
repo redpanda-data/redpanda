@@ -35,7 +35,7 @@
 namespace security {
 
 std::ostream&
-operator<<(std::ostream& os, gssapi_authenticator::state const s) {
+operator<<(std::ostream& os, const gssapi_authenticator::state s) {
     using state = gssapi_authenticator::state;
     switch (s) {
     case state::init:

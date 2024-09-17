@@ -142,7 +142,7 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
 
 auto update_node_bucket(
   ssx::sharded_ptr<kafka::snc_quota_manager::bucket_t>& b,
-  config::binding<std::optional<int64_t>> const& cfg) {
+  const config::binding<std::optional<int64_t>>& cfg) {
     if (!cfg().has_value()) {
         return b.reset();
     }

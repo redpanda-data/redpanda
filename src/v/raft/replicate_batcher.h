@@ -128,7 +128,7 @@ public:
       model::record_batch_reader,
       replicate_options);
 
-    ss::future<> flush(ssx::semaphore_units u, bool const transfer_flush);
+    ss::future<> flush(ssx::semaphore_units u, const bool transfer_flush);
 
     ss::future<> stop();
 

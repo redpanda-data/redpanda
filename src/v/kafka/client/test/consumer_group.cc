@@ -260,7 +260,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
         auto m_id = sorted_members[i];
         auto assignment = client.consumer_assignment(group_id, m_id).get();
         BOOST_REQUIRE_EQUAL(assignment.size(), 3);
-        for (auto const& [topic, partitions] : assignment) {
+        for (const auto& [topic, partitions] : assignment) {
             BOOST_REQUIRE_EQUAL(partitions.size(), 1);
             BOOST_REQUIRE_EQUAL(partitions[0](), i);
         }
@@ -271,9 +271,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               .get();
         BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
         BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
-        for (auto const& t : offsets.data.topics) {
+        for (const auto& t : offsets.data.topics) {
             BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
-            for (auto const& p : t.partitions) {
+            for (const auto& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
                 BOOST_REQUIRE_EQUAL(p.committed_offset(), -1);
@@ -335,7 +335,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
         auto m_id = sorted_members[i];
         auto assignment = client.consumer_assignment(group_id, m_id).get();
         BOOST_REQUIRE_EQUAL(assignment.size(), 3);
-        for (auto const& [topic, partitions] : assignment) {
+        for (const auto& [topic, partitions] : assignment) {
             BOOST_REQUIRE_EQUAL(partitions.size(), 1);
             BOOST_REQUIRE_EQUAL(partitions[0](), i);
         }
@@ -346,9 +346,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               .get();
         BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
         BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
-        for (auto const& t : offsets.data.topics) {
+        for (const auto& t : offsets.data.topics) {
             BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
-            for (auto const& p : t.partitions) {
+            for (const auto& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
                 BOOST_REQUIRE_EQUAL(p.committed_offset(), 5);
@@ -385,9 +385,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               .get();
         BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
         BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
-        for (auto const& t : offsets.data.topics) {
+        for (const auto& t : offsets.data.topics) {
             BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
-            for (auto const& p : t.partitions) {
+            for (const auto& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
                 auto part_it = std::find_if(

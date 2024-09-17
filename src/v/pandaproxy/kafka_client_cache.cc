@@ -25,7 +25,7 @@ namespace pandaproxy {
 static constexpr auto gc_timer_period = 10s;
 
 kafka_client_cache::kafka_client_cache(
-  YAML::Node const& cfg, size_t max_size, std::chrono::milliseconds keep_alive)
+  const YAML::Node& cfg, size_t max_size, std::chrono::milliseconds keep_alive)
   : _config{cfg}
   , _cache_max_size{max_size}
   , _keep_alive{keep_alive} {

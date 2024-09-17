@@ -43,7 +43,7 @@ public:
     std::vector<kafka::offset_commit_request_topic>
     make_offset_commit_request() const;
 
-    friend std::ostream& operator<<(std::ostream& os, fetch_session const&);
+    friend std::ostream& operator<<(std::ostream& os, const fetch_session&);
 
 private:
     kafka::fetch_session_id _id{kafka::invalid_fetch_session_id};

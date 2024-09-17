@@ -119,7 +119,7 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
     // Validate results
     for (const auto& m : mechanisms) {
         if (absl::c_none_of(
-              supported, [&m](auto const& s) { return s == m; })) {
+              supported, [&m](const auto& s) { return s == m; })) {
             return ssx::sformat("'{}' is not a supported SASL mechanism", m);
         }
     }
@@ -134,7 +134,7 @@ validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
     // Validate results
     for (const auto& m : mechanisms) {
         if (absl::c_none_of(
-              supported, [&m](auto const& s) { return s == m; })) {
+              supported, [&m](const auto& s) { return s == m; })) {
             return ssx::sformat(
               "'{}' is not a supported HTTP authentication mechanism", m);
         }

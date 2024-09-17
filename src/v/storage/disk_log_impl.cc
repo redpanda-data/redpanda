@@ -310,7 +310,7 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) const {
     // this will retrive cluster configs, to reused them during the scan since
     // there are no scheduling points
 
-    auto const retention_cfg = time_based_retention_cfg::make(
+    const auto retention_cfg = time_based_retention_cfg::make(
       _feature_table.local());
 
     // if the segment max timestamp is bigger than now plus threshold we

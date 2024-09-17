@@ -353,7 +353,7 @@ FIXTURE_TEST(
 
     auto upload_in_term
       = uploader.upload_until_term_change().handle_exception_type(
-        [](seastar::abort_requested_exception const& e) { std::ignore = e; });
+        [](const seastar::abort_requested_exception& e) { std::ignore = e; });
     // Wait for some valid metadata to show up.
     cluster::cloud_metadata::cluster_metadata_manifest manifest;
     RPTEST_REQUIRE_EVENTUALLY(5s, [this, &manifest] {

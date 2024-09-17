@@ -79,7 +79,7 @@ public:
         auto guard = _g.hold();
         try {
             co_return co_await _h(std::move(rq), std::move(rp));
-        } catch (kafka::client::partition_error const& ex) {
+        } catch (const kafka::client::partition_error& ex) {
             if (
               ex.error == kafka::error_code::unknown_topic_or_partition
               && ex.tp.topic == model::schema_registry_internal_tp.topic) {
@@ -454,7 +454,7 @@ ss::future<> service::configure() {
       principal);
     co_await kafka::client::set_client_credentials(*config, _client);
 
-    auto const& store = _controller->get_ephemeral_credential_store().local();
+    const auto& store = _controller->get_ephemeral_credential_store().local();
     bool has_ephemeral_credentials = store.has(store.find(principal));
     co_await container().invoke_on_all(
       _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
@@ -470,7 +470,7 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
     vlog(plog.warn, "mitigate_error: {}", eptr);
     return ss::make_exception_future<>(eptr)
       .handle_exception_type(
-        [this, eptr](kafka::client::broker_error const& ex) {
+        [this, eptr](const kafka::client::broker_error& ex) {
             if (
               ex.error == kafka::error_code::sasl_authentication_failed
               && _has_ephemeral_credentials) {
@@ -484,7 +484,7 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
             return ss::make_exception_future<>(eptr);
         })
       .handle_exception_type([this,
-                              eptr](kafka::client::topic_error const& ex) {
+                              eptr](const kafka::client::topic_error& ex) {
           if (
             ex.error == kafka::error_code::topic_authorization_failed
             && _has_ephemeral_credentials) {

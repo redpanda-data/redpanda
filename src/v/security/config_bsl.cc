@@ -30,7 +30,7 @@ std::regex make_regex(std::string_view sv) {
 }
 
 bool regex_search(
-  std::string_view msg, std::cmatch& match, std::regex const& regex) {
+  std::string_view msg, std::cmatch& match, const std::regex& regex) {
     return std::regex_search(
       msg.begin(),
       msg.end(),
@@ -40,7 +40,7 @@ bool regex_search(
 }
 
 bool regex_match(
-  std::string_view msg, std::cmatch& match, std::regex const& regex) {
+  std::string_view msg, std::cmatch& match, const std::regex& regex) {
     return std::regex_match(
       msg.begin(),
       msg.end(),

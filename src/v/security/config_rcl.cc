@@ -129,7 +129,7 @@ validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept {
 }
 
 namespace oidc {
-std::ostream& operator<<(std::ostream& os, parsed_url const& url) {
+std::ostream& operator<<(std::ostream& os, const parsed_url& url) {
     fmt::print(os, "{}://{}:{}{}", url.scheme, url.host, url.port, url.target);
     return os;
 }
@@ -229,7 +229,7 @@ parse_principal_mapping_rule(std::string_view mapping) {
 }
 
 std::optional<ss::sstring>
-validate_principal_mapping_rule(ss::sstring const& rule) {
+validate_principal_mapping_rule(const ss::sstring& rule) {
     auto rule_res = parse_principal_mapping_rule(rule);
     if (rule_res.has_error()) {
         return rule_res.assume_error().message();

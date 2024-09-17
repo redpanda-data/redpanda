@@ -327,14 +327,14 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
 }
 
-[[gnu::always_inline]] void inline iobuf::prepend(
-  ss::temporary_buffer<char> b) {
+[[gnu::always_inline]] inline void
+iobuf::prepend(ss::temporary_buffer<char> b) {
     if (unlikely(!b.size())) {
         return;
     }
     prepend(std::make_unique<fragment>(std::move(b)));
 }
-[[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
+[[gnu::always_inline]] inline void iobuf::prepend(iobuf b) {
     oncore_debug_verify(_verify_shard);
     while (!b._frags.empty()) {
         b._frags.pop_back_and_dispose([this](fragment* f) {
@@ -344,13 +344,13 @@ inline void iobuf::reserve_memory(size_t reservation) {
     }
 }
 /// append src + len into storage
-[[gnu::always_inline]] void inline iobuf::append(
-  const uint8_t* src, size_t len) {
+[[gnu::always_inline]] inline void
+iobuf::append(const uint8_t* src, size_t len) {
     // NOLINTNEXTLINE
     append(reinterpret_cast<const char*>(src), len);
 }
 
-[[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
+[[gnu::always_inline]] inline void iobuf::append(const char* ptr, size_t size) {
     oncore_debug_verify(_verify_shard);
     if (unlikely(size == 0)) {
         return;

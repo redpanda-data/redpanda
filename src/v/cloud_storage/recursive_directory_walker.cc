@@ -40,7 +40,7 @@ struct walk_accumulator {
       , dirlist({std::move(start_dir)})
       , filter(std::move(collect_filter)) {}
 
-    ss::future<> visit(ss::sstring const& target, ss::directory_entry entry) {
+    ss::future<> visit(const ss::sstring& target, ss::directory_entry entry) {
         auto entry_path = fmt::format("{}/{}", target, entry.name);
         if (entry.type && entry.type == ss::directory_entry_type::regular) {
             size_t file_size{0};

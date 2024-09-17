@@ -105,8 +105,8 @@ public:
         explicit response_stream(client* client, verb v, ss::sstring target);
 
         response_stream(response_stream&&) = delete;
-        response_stream(response_stream const&) = delete;
-        response_stream& operator=(response_stream const&) = delete;
+        response_stream(const response_stream&) = delete;
+        response_stream& operator=(const response_stream&) = delete;
         response_stream operator=(response_stream&&) = delete;
 
         /// Return true if the whole http payload is received and parsed
@@ -117,7 +117,7 @@ public:
 
         /// Access response headers (should only be called if is_headers_done()
         /// == true)
-        response_header const& get_headers() const;
+        const response_header& get_headers() const;
 
         /// Prefetch HTTP headers. Read data from the socket until the header is
         /// received and parsed (is_headers_done = true).
@@ -158,8 +158,8 @@ public:
         explicit request_stream(client* client, request_header&& hdr);
 
         request_stream(request_stream&&) = delete;
-        request_stream(request_stream const&) = delete;
-        request_stream& operator=(request_stream const&) = delete;
+        request_stream(const request_stream&) = delete;
+        request_stream& operator=(const request_stream&) = delete;
         request_stream operator=(request_stream&&) = delete;
         ~request_stream() override = default;
 

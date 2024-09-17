@@ -238,21 +238,21 @@ struct subject_name_strategy_validator {
         return std::all_of(
           c.configs.begin(),
           c.configs.end(),
-          [](createable_topic_config const& v) {
+          [](const createable_topic_config& v) {
               return !is_sns_config(v) || !v.value.has_value()
                      || is_valid_sns(v.value.value());
           });
     }
 
 private:
-    static bool is_sns_config(createable_topic_config const& c) {
+    static bool is_sns_config(const createable_topic_config& c) {
         static constexpr const auto config_names = {
           topic_property_record_key_subject_name_strategy,
           topic_property_record_key_subject_name_strategy_compat,
           topic_property_record_value_subject_name_strategy,
           topic_property_record_value_subject_name_strategy_compat};
         return std::any_of(
-          config_names.begin(), config_names.end(), [&c](auto const& v) {
+          config_names.begin(), config_names.end(), [&c](const auto& v) {
               return c.name == v;
           });
     }

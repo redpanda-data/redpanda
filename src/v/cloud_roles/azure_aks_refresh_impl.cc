@@ -193,7 +193,7 @@ api_response_parse_result azure_aks_refresh_impl::parse_response(iobuf resp) {
       [](auto err_resp) -> api_response_parse_result {
           return std::move(err_resp);
       },
-      [&](json::Document const& jresp) -> api_response_parse_result {
+      [&](const json::Document& jresp) -> api_response_parse_result {
           next_sleep_duration(
             std::chrono::seconds{jresp["expires_in"].GetInt()});
           auto& access_token = jresp["access_token"];

@@ -214,14 +214,14 @@ ss::future<> consumer::subscribe(chunked_vector<model::topic> topics) {
 void consumer::on_leader_join(const join_group_response& res) {
     _members.clear();
     _members.reserve(res.data.members.size());
-    for (auto const& m : res.data.members) {
+    for (const auto& m : res.data.members) {
         _members.push_back(m.member_id);
     }
     std::sort(_members.begin(), _members.end());
     _members.erase_to_end(std::unique(_members.begin(), _members.end()));
 
     _subscribed_topics.clear();
-    for (auto const& m : res.data.members) {
+    for (const auto& m : res.data.members) {
         protocol::decoder r(bytes_to_iobuf(m.metadata));
         auto topics = r.read_array([](protocol::decoder& reader) {
             return model::topic(reader.read_string());
@@ -420,7 +420,7 @@ ss::future<fetch_response> consumer::fetch(
     refresh_inactivity_timer();
     // Split requests by broker
     broker_reqs_t broker_reqs;
-    for (auto const& [t, ps] : _assignment) {
+    for (const auto& [t, ps] : _assignment) {
         for (const auto& p : ps) {
             auto tp = model::topic_partition{t, p};
             auto leader = co_await _topic_cache.leader(tp);

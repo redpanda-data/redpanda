@@ -137,7 +137,7 @@ template<>
 struct fmt::formatter<
   cloud_storage_clients::client::delete_objects_result::key_reason>
   : public fmt::formatter<std::string_view> {
-    auto format(auto const& kr, auto& ctx) const {
+    auto format(const auto& kr, auto& ctx) const {
         return formatter<std::string_view>::format(
           fmt::format(R"kr(key:"{}" reason:"{}")kr", kr.key, kr.reason), ctx);
     }
@@ -200,7 +200,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
               keys.begin(),
               keys.end(),
               std::back_inserter(out),
-              [](auto const& ks) {
+              [](const auto& ks) {
                   return cloud_storage_clients::object_key(ks);
               });
             return out;

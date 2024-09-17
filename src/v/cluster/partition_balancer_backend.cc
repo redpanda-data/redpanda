@@ -238,7 +238,7 @@ void partition_balancer_backend::on_topic_table_update() {
 }
 
 void partition_balancer_backend::on_health_monitor_update(
-  node_health_report const& report,
+  const node_health_report& report,
   std::optional<ss::lw_shared_ptr<const node_health_report>> old_report) {
     if (!old_report) {
         vlog(
@@ -356,7 +356,7 @@ ss::future<> partition_balancer_backend::do_tick() {
       = (100 - _storage_space_alert_free_threshold_percent()) / 100.0;
     // claim node unresponsive it doesn't responded to at least 7
     // status requests by default 700ms
-    auto const node_responsiveness_timeout = _node_status_interval() * 7;
+    const auto node_responsiveness_timeout = _node_status_interval() * 7;
 
     partition_balancer_planner planner(
       planner_config{

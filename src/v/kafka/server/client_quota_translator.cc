@@ -149,7 +149,7 @@ client_quota_value client_quota_translator::get_client_quota_value(
                 client_quota_rule::kafka_client_id};
           }
 
-          const static auto default_client_key = entity_key{
+          static const auto default_client_key = entity_key{
             entity_key::client_id_default_match{}};
           auto default_quota = _quota_store.local().get_quota(
             default_client_key);

@@ -116,7 +116,7 @@ public:
      * redacted if secret.
      */
     template<typename U>
-    std::string_view format_raw(U const& in) {
+    std::string_view format_raw(const U& in) {
         if (is_secret() && !in.empty()) {
             return secret_placeholder;
         } else {

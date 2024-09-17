@@ -51,7 +51,7 @@ public:
     }
 
     template<typename T>
-    auto get(const credential_user& name) const -> std::optional<T> const {
+    auto get(const credential_user& name) const -> const std::optional<T> {
         if (auto it = _credentials.find(name); it != _credentials.end()) {
             return std::get<T>(it->second);
         }
@@ -70,8 +70,8 @@ public:
     // be serialized to disk, and in the general case, should not be displayed
     // to users.
     static constexpr auto is_not_ephemeral =
-      [](security::credential_store::container_type::value_type const& t) {
-          return ss::visit(t.second, [](security::scram_credential const& c) {
+      [](const security::credential_store::container_type::value_type& t) {
+          return ss::visit(t.second, [](const security::scram_credential& c) {
               return !c.principal().has_value()
                      || c.principal().value().type()
                           != security::principal_type::ephemeral_user;

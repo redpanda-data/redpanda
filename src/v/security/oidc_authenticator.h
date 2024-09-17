@@ -25,17 +25,17 @@ struct authentication_data {
     ss::lowres_system_clock::time_point expiry;
 };
 result<authentication_data> authenticate(
-  jws const& jws,
-  verifier const& verifier,
-  principal_mapping_rule const& mapping,
+  const jws& jws,
+  const verifier& verifier,
+  const principal_mapping_rule& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
   ss::lowres_system_clock::time_point now);
 
 result<authentication_data> authenticate(
-  jwt const& jwt,
-  principal_mapping_rule const& mapping,
+  const jwt& jwt,
+  const principal_mapping_rule& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -45,9 +45,9 @@ class authenticator {
 public:
     explicit authenticator(service& service);
     authenticator(authenticator&&) = default;
-    authenticator(authenticator const&) = delete;
+    authenticator(const authenticator&) = delete;
     authenticator& operator=(authenticator&&) = delete;
-    authenticator& operator=(authenticator const&) = delete;
+    authenticator& operator=(const authenticator&) = delete;
     ~authenticator();
 
     result<authentication_data> authenticate(std::string_view bearer_token);
@@ -64,9 +64,9 @@ public:
 
     explicit sasl_authenticator(oidc::service& service);
     sasl_authenticator(sasl_authenticator&&) = default;
-    sasl_authenticator(sasl_authenticator const&) = delete;
+    sasl_authenticator(const sasl_authenticator&) = delete;
     sasl_authenticator& operator=(sasl_authenticator&&) = delete;
-    sasl_authenticator& operator=(sasl_authenticator const&) = delete;
+    sasl_authenticator& operator=(const sasl_authenticator&) = delete;
     ~sasl_authenticator() override;
 
     ss::future<result<bytes>> authenticate(bytes) override;
@@ -89,7 +89,7 @@ public:
 
 private:
     friend std::ostream&
-    operator<<(std::ostream& os, sasl_authenticator::state const s);
+    operator<<(std::ostream& os, const sasl_authenticator::state s);
 
     authenticator _authenticator;
     authentication_data _auth_data;

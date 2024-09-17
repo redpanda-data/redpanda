@@ -165,7 +165,7 @@ inline error_info has_references(const subject& sub, schema_version ver) {
 }
 
 error_info no_reference_found_for(
-  canonical_schema const& schema, const subject& sub, schema_version ver);
+  const canonical_schema& schema, const subject& sub, schema_version ver);
 
 inline error_info compatibility_not_found(const subject& sub) {
     return error_info{

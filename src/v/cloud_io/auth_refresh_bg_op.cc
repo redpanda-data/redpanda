@@ -62,12 +62,12 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
         try {
             auto region_name = ss::visit(
               _client_conf,
-              [](cloud_storage_clients::s3_configuration const& cfg) {
+              [](const cloud_storage_clients::s3_configuration& cfg) {
                   // S3 needs a region name to compose requests, this extracts
                   // it from s3_configuration
                   return cloud_roles::aws_region_name{cfg.region};
               },
-              [](cloud_storage_clients::abs_configuration const&) {
+              [](const cloud_storage_clients::abs_configuration&) {
                   // Azure Blob Storage does not need a region name to compose
                   // the requests, so this value is defaulted since it's ignored
                   // downstream
@@ -103,7 +103,7 @@ bool auth_refresh_bg_op::is_static_config() const {
 cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
     return ss::visit(
       _client_conf,
-      [](cloud_storage_clients::s3_configuration const& cfg)
+      [](const cloud_storage_clients::s3_configuration& cfg)
         -> cloud_roles::credentials {
           return cloud_roles::aws_credentials{
             cfg.access_key.value(),
@@ -111,7 +111,7 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
             std::nullopt,
             cfg.region};
       },
-      [](cloud_storage_clients::abs_configuration const& cfg)
+      [](const cloud_storage_clients::abs_configuration& cfg)
         -> cloud_roles::credentials {
           return cloud_roles::abs_credentials{
             cfg.storage_account_name, cfg.shared_key.value()};

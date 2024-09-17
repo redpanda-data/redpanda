@@ -149,7 +149,7 @@ public:
     // controller command to register the requested node UUID, responding with
     // a newly assigned node ID.
     ss::future<result<join_node_reply>>
-    handle_join_request(join_node_request const r);
+    handle_join_request(const join_node_request r);
 
     // Applies a committed record batch, specializing handling based on the
     // batch type.
@@ -214,7 +214,7 @@ private:
     bool try_register_node_id(const model::node_id&, const model::node_uuid&);
 
     ss::future<result<join_node_reply>> dispatch_join_to_seed_server(
-      seed_iterator it, join_node_request const& req);
+      seed_iterator it, const join_node_request& req);
     ss::future<result<join_node_reply>> dispatch_join_to_remote(
       const config::seed_server&, join_node_request&& req);
 

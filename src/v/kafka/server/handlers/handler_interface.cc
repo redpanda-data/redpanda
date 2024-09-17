@@ -103,7 +103,7 @@ private:
  */
 template<KafkaApiHandlerAny H>
 struct handler_holder {
-    static const inline handler_base<KafkaApiTwoPhaseHandler<H>> instance{
+    static inline const handler_base<KafkaApiTwoPhaseHandler<H>> instance{
       handler_info{
         H::api::key,
         H::api::name,

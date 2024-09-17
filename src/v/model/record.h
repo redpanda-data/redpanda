@@ -377,7 +377,7 @@ public:
     friend inline void read_nested(
       iobuf_parser& in,
       record_batch_attributes& attrs,
-      size_t const bytes_left_limit) {
+      const size_t bytes_left_limit) {
         attrs._attributes = serde::read_nested<uint64_t>(in, bytes_left_limit);
     }
 

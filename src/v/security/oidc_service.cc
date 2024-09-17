@@ -191,7 +191,7 @@ struct service::impl {
         return _gate.close();
     }
 
-    probe& get_probe_for(parsed_url const& url) {
+    probe& get_probe_for(const parsed_url& url) {
         auto& p = _probes[url.host];
         if (!p) {
             p = std::make_unique<probe>();
@@ -219,10 +219,10 @@ struct service::impl {
     ss::future<> update() {
         auto enabled = absl::c_any_of(
                          _sasl_mechanisms(),
-                         [](auto const& m) { return m == "OAUTHBEARER"; })
+                         [](const auto& m) { return m == "OAUTHBEARER"; })
                        || absl::c_any_of(
                          _http_authentication(),
-                         [](auto const& m) { return m == "OIDC"; });
+                         [](const auto& m) { return m == "OIDC"; });
         if (!enabled) {
             co_return;
         }
@@ -444,9 +444,9 @@ std::chrono::seconds service::clock_skew_tolerance() const {
     return _impl->_clock_skew_tolerance();
 }
 
-verifier const& service::get_verifier() const { return _impl->_verifier; }
+const verifier& service::get_verifier() const { return _impl->_verifier; }
 
-principal_mapping_rule const& service::get_principal_mapping_rule() const {
+const principal_mapping_rule& service::get_principal_mapping_rule() const {
     return _impl->_rule;
 }
 

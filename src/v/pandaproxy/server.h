@@ -53,7 +53,7 @@ concept KafkaRequestType = std::same_as<T, typename T::api_type::request_type>;
 template<typename F>
 concept KafkaRequestFactory = KafkaRequestType<std::invoke_result_t<F>>;
 
-ss::shard_id inline consumer_shard(const kafka::group_id& g_id) {
+inline ss::shard_id consumer_shard(const kafka::group_id& g_id) {
     auto hash = xxhash_64(g_id().data(), g_id().length());
     return jump_consistent_hash(hash, ss::smp::count);
 }
@@ -223,7 +223,7 @@ public:
         }
 
         template<std::invocable<kafka::client::client&> Func>
-        auto dispatch(kafka::group_id const& group_id, Func&& func) {
+        auto dispatch(const kafka::group_id& group_id, Func&& func) {
             switch (authn_method) {
             case config::rest_authn_method::none: {
                 return service().client().invoke_on(

@@ -65,7 +65,7 @@ struct error_test_case {
     ss::sstring def;
     pps::error_info err;
     friend std::ostream&
-    operator<<(std::ostream& os, error_test_case const& e) {
+    operator<<(std::ostream& os, const error_test_case& e) {
         fmt::print(
           os,
           "def: {}, error_code: {}, error_message: {}",
@@ -126,7 +126,7 @@ SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
                   .get();
                 BOOST_CHECK_MESSAGE(
                   false, "terminated without an exception for invalid schema");
-            } catch (pps::exception const& e) {
+            } catch (const pps::exception& e) {
                 BOOST_CHECK_EQUAL(e.code(), data.err.code());
                 BOOST_WARN_MESSAGE(
                   e.message() == data.err.message(),

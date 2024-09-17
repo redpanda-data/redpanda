@@ -58,7 +58,7 @@ public:
 
 private:
     friend std::ostream&
-    operator<<(std::ostream& os, gssapi_authenticator::state const s);
+    operator<<(std::ostream& os, const gssapi_authenticator::state s);
 
     ssx::singleton_thread_worker& _worker;
     security::acl_principal _principal;

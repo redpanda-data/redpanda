@@ -656,8 +656,8 @@ ss::future<> remove_orphan_partition_files(
               vlog(stlog.info, "Cleaning up ntp directory {} ", ntp_directory);
               return ss::recursive_remove_directory(ntp_directory)
                 .handle_exception_type([ntp_directory](
-                                         std::filesystem::
-                                           filesystem_error const& err) {
+                                         const std::filesystem::
+                                           filesystem_error& err) {
                     vlog(
                       stlog.error,
                       "Exception while cleaning orphan files for {} Error: {}",
@@ -713,7 +713,7 @@ ss::future<> log_manager::remove_orphan_files(
                       topic_directory.string());
                 })
                 .handle_exception_type(
-                  [](std::filesystem::filesystem_error const& err) {
+                  [](const std::filesystem::filesystem_error& err) {
                       auto lvl = err.code()
                                      == std::errc::no_such_file_or_directory
                                    ? ss::log_level::trace
@@ -726,7 +726,7 @@ ss::future<> log_manager::remove_orphan_files(
                   });
           })
           .handle_exception_type(
-            [](std::filesystem::filesystem_error const& err) {
+            [](const std::filesystem::filesystem_error& err) {
                 vlog(
                   stlog.error, "Exception while cleaning orphan files {}", err);
             });

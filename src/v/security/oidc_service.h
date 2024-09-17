@@ -33,15 +33,15 @@ public:
       config::binding<std::chrono::seconds> jwks_refresh_interval);
     service(service&&) = delete;
     service& operator=(service&&) = delete;
-    service(service const&) = delete;
-    service& operator=(service const&) = delete;
+    service(const service&) = delete;
+    service& operator=(const service&) = delete;
     ~service() noexcept;
 
     ss::future<> start();
     ss::future<> stop();
 
-    verifier const& get_verifier() const;
-    principal_mapping_rule const& get_principal_mapping_rule() const;
+    const verifier& get_verifier() const;
+    const principal_mapping_rule& get_principal_mapping_rule() const;
     std::string_view audience() const;
     result<std::string_view> issuer() const;
     std::chrono::seconds clock_skew_tolerance() const;

@@ -22,7 +22,7 @@ struct schema_id_validation_validator {
 
     template<typename T>
     static bool
-    compatible(std::optional<T> const& lhs, std::optional<T> const& rhs) {
+    compatible(const std::optional<T>& lhs, const std::optional<T>& rhs) {
         // If both are specified, they must match
         return !lhs || !rhs || lhs == rhs;
     }

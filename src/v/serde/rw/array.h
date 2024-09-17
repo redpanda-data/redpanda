@@ -35,7 +35,7 @@ void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   std::array<T, Size>& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     using Type = std::decay_t<decltype(t)>;
     using value_type = typename Type::value_type;
     const auto size = read_nested<serde_size_t>(in, bytes_left_limit);

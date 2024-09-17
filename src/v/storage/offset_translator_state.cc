@@ -336,7 +336,7 @@ struct persisted_batch {
     int32_t length;
 
     friend inline void read_nested(
-      iobuf_parser& in, persisted_batch& b, size_t const bytes_left_limit) {
+      iobuf_parser& in, persisted_batch& b, const size_t bytes_left_limit) {
         serde::read_nested(in, b.base_offset, bytes_left_limit);
         serde::read_nested(in, b.length, bytes_left_limit);
     }

@@ -38,7 +38,7 @@ public:
     local_monitor(const local_monitor&) = delete;
     local_monitor(local_monitor&&) = default;
     ~local_monitor() = default;
-    local_monitor& operator=(local_monitor const&) = delete;
+    local_monitor& operator=(const local_monitor&) = delete;
     local_monitor& operator=(local_monitor&&) = delete;
 
     ss::future<> start();
