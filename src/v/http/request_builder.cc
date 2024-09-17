@@ -11,7 +11,6 @@
 
 #include "http/request_builder.h"
 
-#include <ada/url_aggregator.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace bh = boost::beast::http;

@@ -80,3 +80,19 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "request_builder_test",
+    timeout = "short",
+    srcs = [
+        "request_builder_test.cc",
+    ],
+    # test assumes single core
+    cpu = 1,
+    deps = [
+        ":utils",
+        "//src/v/http",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+    ],
+)
