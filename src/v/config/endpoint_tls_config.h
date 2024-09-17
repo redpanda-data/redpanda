@@ -28,7 +28,7 @@ struct endpoint_tls_config {
         return o;
     }
 
-    bool operator==(endpoint_tls_config const& rhs) const = default;
+    bool operator==(const endpoint_tls_config& rhs) const = default;
 
     static std::optional<ss::sstring> validate(const endpoint_tls_config& ec) {
         return tls_config::validate(ec.config);

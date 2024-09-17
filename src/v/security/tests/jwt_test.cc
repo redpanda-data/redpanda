@@ -29,7 +29,7 @@ struct parse_test_data {
     std::string_view data;
     oidc::errc err;
     friend std::ostream&
-    operator<<(std::ostream& os, parse_test_data const& r) {
+    operator<<(std::ostream& os, const parse_test_data& r) {
         fmt::print(os, "data: {}, errc: {}", r.data, r.err);
         return os;
     }
@@ -200,7 +200,7 @@ struct verify_test_data {
     oidc::errc update_err;
     oidc::errc verify_err;
     friend std::ostream&
-    operator<<(std::ostream& os, verify_test_data const& r) {
+    operator<<(std::ostream& os, const verify_test_data& r) {
         fmt::print(
           os,
           "jwks: {}, jwks_err: {}, jws: {}, jws_err: {}, update_err: {}, "
@@ -301,7 +301,7 @@ struct auth_test_data {
     oidc::errc auth_err;
     security::acl_principal principal;
     security::oidc::principal_mapping_rule mapping{};
-    friend std::ostream& operator<<(std::ostream& os, auth_test_data const& r) {
+    friend std::ostream& operator<<(std::ostream& os, const auth_test_data& r) {
         fmt::print(
           os,
           "jwks: {}, jws: {}, issuer: {}, audience: {}, clock_skew_tolerance: "
@@ -432,7 +432,7 @@ struct auth_error_test_data {
     oidc::errc auth_err;
     security::acl_principal principal;
     friend std::ostream&
-    operator<<(std::ostream& os, auth_error_test_data const& r) {
+    operator<<(std::ostream& os, const auth_error_test_data& r) {
         fmt::print(
           os,
           "token_payload: {}, issuer: {}, audience: {}, clock_skew_tolerance: "

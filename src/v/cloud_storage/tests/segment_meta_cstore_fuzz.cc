@@ -424,7 +424,7 @@ using cstore_operation = std::variant<
 // SIN SECTION
 // this is a sections of ODR sins to appease the daemons of the linker
 
-auto cloud_storage::operator<<(std::ostream& os, segment_meta const& s)
+auto cloud_storage::operator<<(std::ostream& os, const segment_meta& s)
   -> std::ostream& {
     return os << fmt::format(
              "{{is_compacted: {}, size_bytes: {}, base_offset: {}, "
@@ -447,7 +447,7 @@ auto cloud_storage::operator<<(std::ostream& os, segment_meta const& s)
              s.metadata_size_hint);
 }
 
-auto cloud_storage::operator<<(std::ostream& os, segment_name_format const& sn)
+auto cloud_storage::operator<<(std::ostream& os, const segment_name_format& sn)
   -> std::ostream& {
     return os << fmt::format("{}", unsigned(sn));
 }
@@ -457,7 +457,7 @@ auto cloud_storage::operator<<(std::ostream& os, segment_name_format const& sn)
 template<>
 struct fmt::formatter<cstore_operation>
   : public fmt::formatter<std::string_view> {
-    auto format(cstore_operation const& op, auto& ctx) const {
+    auto format(const cstore_operation& op, auto& ctx) const {
         auto f = [&] {
             return std::visit<std::string>(
               []<typename OP>(OP const& op) {

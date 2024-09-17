@@ -100,7 +100,7 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         first_seg_previous_manifest = *manifest.begin();
     }
 
-    for (auto const& spill_path : spill_manifest_paths) {
+    for (const auto& spill_path : spill_manifest_paths) {
         if (should_stop()) {
             _result.status = scrub_status::partial;
             co_return _result;

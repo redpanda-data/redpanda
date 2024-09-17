@@ -361,7 +361,7 @@ void admin_server::register_security_routes() {
           bool include_ephemeral = req->get_query_param("include_ephemeral")
                                    == "true";
 
-          auto pred = [include_ephemeral](auto const& c) {
+          auto pred = [include_ephemeral](const auto& c) {
               return include_ephemeral
                      || security::credential_store::is_not_ephemeral(c);
           };

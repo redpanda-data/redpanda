@@ -68,7 +68,7 @@ struct timeout_spec {
      * timeout_at() will return time_point::max(), i.e., the furthest possible
      * point in the future.
      */
-    const static timeout_spec none;
+    static const timeout_spec none;
 
     constexpr timeout_spec(
       clock_type::time_point timeout_point, clock_type::duration timeout_period)

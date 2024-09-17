@@ -54,12 +54,12 @@ public:
     public:
         units() = default;
 
-        units(conn_quota& quotas, ss::net::inet_address const& addr)
+        units(conn_quota& quotas, const ss::net::inet_address& addr)
           : _quotas(std::ref(quotas))
           , _addr(addr) {}
 
-        units(units const&) = delete;
-        units& operator=(units const&) = delete;
+        units(const units&) = delete;
+        units& operator=(const units&) = delete;
         units(units&& rhs) noexcept
           : _addr(rhs._addr)
           , _verify_shard(rhs._verify_shard) {
@@ -169,7 +169,7 @@ private:
     ss::shard_id addr_to_shard(ss::net::inet_address) const;
 
     void
-    assert_on_home([[maybe_unused]] ss::net::inet_address const& addr) const {
+    assert_on_home([[maybe_unused]] const ss::net::inet_address& addr) const {
 #ifndef NDEBUG
         vassert(
           conn_quota::addr_to_shard(addr) == ss::this_shard_id(),

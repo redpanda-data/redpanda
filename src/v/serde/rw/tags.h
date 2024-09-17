@@ -43,7 +43,7 @@ inline constexpr struct write_fn {
 inline constexpr struct read_fn {
     template<typename T>
     void operator()(
-      iobuf_parser& in, T& t, std::size_t const bytes_left_limit) const {
+      iobuf_parser& in, T& t, const std::size_t bytes_left_limit) const {
         return tag_invoke(*this, in, t, bytes_left_limit);
     }
 } read_tag{};

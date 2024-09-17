@@ -48,7 +48,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_ptr_basic_ops) {
     try {
         p0.reset().get();
         BOOST_FAIL("Expected exception");
-    } catch (ss::broken_semaphore const&) {
+    } catch (const ss::broken_semaphore&) {
         // Success
     } catch (...) {
         BOOST_FAIL("Unexpected exception");
@@ -58,7 +58,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_ptr_basic_ops) {
     try {
         p0.stop().get();
         BOOST_FAIL("Expected exception");
-    } catch (ss::broken_semaphore const&) {
+    } catch (const ss::broken_semaphore&) {
         // Success
     } catch (...) {
         BOOST_FAIL("Unexpected exception");

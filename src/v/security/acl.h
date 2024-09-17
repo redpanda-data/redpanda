@@ -477,7 +477,7 @@ public:
     friend void read_nested(
       iobuf_parser& in,
       resource_pattern_filter& filter,
-      size_t const bytes_left_limit);
+      const size_t bytes_left_limit);
 
     friend void write(iobuf& out, resource_pattern_filter filter);
 

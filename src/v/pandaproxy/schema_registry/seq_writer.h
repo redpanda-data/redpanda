@@ -41,7 +41,7 @@ public:
     ss::future<> read_sync();
 
     // Throws 42205 if the subject cannot be modified
-    ss::future<> check_mutable(std::optional<subject> const& sub);
+    ss::future<> check_mutable(const std::optional<subject>& sub);
 
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);

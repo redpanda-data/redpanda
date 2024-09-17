@@ -57,7 +57,7 @@ request_authenticator::authenticate(const ss::http::request& req) {
     const auto& cred_store = _controller->get_credential_store().local();
     try {
         return do_authenticate(req, cred_store, _require_auth());
-    } catch (ss::httpd::base_exception const& e) {
+    } catch (const ss::httpd::base_exception& e) {
         if (e.status() == ss::http::reply::status_type::unauthorized) {
             if (_require_auth()) {
                 throw;
@@ -76,13 +76,13 @@ request_authenticator::authenticate(const ss::http::request& req) {
 }
 
 request_auth_result request_authenticator::do_authenticate(
-  ss::http::request const& req,
-  security::credential_store const& cred_store,
+  const ss::http::request& req,
+  const security::credential_store& cred_store,
   bool require_auth) {
     constexpr auto supports = [](std::string_view m) {
         return absl::c_any_of(
           config::shard_local_cfg().http_authentication(),
-          [m](auto const& mech) { return m == mech; });
+          [m](const auto& mech) { return m == mech; });
     };
 
     auto auth_hdr = req.get_header("authorization");
@@ -98,7 +98,7 @@ request_auth_result request_authenticator::do_authenticate(
         ss::sstring decoded_bytes;
         try {
             decoded_bytes = base64_to_string(base64);
-        } catch (base64_decoder_exception const&) {
+        } catch (const base64_decoder_exception&) {
             vlog(logger.info, "Client auth failure: bad BASE64 encoding");
             throw ss::httpd::bad_request_exception(
               "Malformed Authorization header");

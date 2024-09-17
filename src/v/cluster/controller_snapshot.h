@@ -178,7 +178,7 @@ struct topics_t
         friend bool operator==(const topic_t&, const topic_t&) = default;
 
         ss::future<> serde_async_write(iobuf&);
-        ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+        ss::future<> serde_async_read(iobuf_parser&, const serde::header);
     };
 
     chunked_hash_map<model::topic_namespace, topic_t> topics;
@@ -196,7 +196,7 @@ struct topics_t
     friend bool operator==(const topics_t&, const topics_t&) = default;
 
     ss::future<> serde_async_write(iobuf&);
-    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
 };
 
 struct named_role_t
@@ -224,7 +224,7 @@ struct security_t
     friend bool operator==(const security_t&, const security_t&) = default;
 
     ss::future<> serde_async_write(iobuf&);
-    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
 };
 
 struct metrics_reporter_t
@@ -313,7 +313,7 @@ struct controller_snapshot
       = default;
 
     ss::future<> serde_async_write(iobuf&);
-    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
 };
 
 /// A subset of the controller snapshot used to initialize nodes joining

@@ -25,7 +25,7 @@ void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   ss::bool_class<Tag>& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     t = ss::bool_class<Tag>{
       read_nested<std::int8_t>(in, bytes_left_limit) != 0};
 }

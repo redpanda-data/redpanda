@@ -217,7 +217,7 @@ ss::future<> config_manager::start() {
                           return ss::do_until(
                             [this] { return _as.local().abort_requested(); },
                             [this] { return reconcile_status(); });
-                      }).handle_exception([](std::exception_ptr const& e) {
+                      }).handle_exception([](const std::exception_ptr& e) {
         vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
     });
 
@@ -296,8 +296,8 @@ std::filesystem::path config_manager::cache_path() {
 }
 
 static void preload_local(
-  ss::sstring const& key,
-  ss::sstring const& raw_value,
+  const ss::sstring& key,
+  const ss::sstring& raw_value,
   std::optional<std::reference_wrapper<config_manager::preload_result>>
     result) {
     auto& cfg = config::shard_local_cfg();
@@ -341,8 +341,8 @@ static void preload_local(
 }
 
 static void preload_local(
-  ss::sstring const& key,
-  YAML::Node const& value,
+  const ss::sstring& key,
+  const YAML::Node& value,
   std::optional<std::reference_wrapper<config_manager::preload_result>>
     result) {
     auto& cfg = config::shard_local_cfg();
@@ -394,7 +394,7 @@ config_manager::preload_join(const controller_join_snapshot& snap) {
 }
 
 ss::future<config_manager::preload_result>
-config_manager::preload(YAML::Node const& legacy_config) {
+config_manager::preload(const YAML::Node& legacy_config) {
     auto result = co_await load_cache();
 
     if (result.version == cluster::config_version_unset) {
@@ -415,7 +415,7 @@ config_manager::preload(YAML::Node const& legacy_config) {
         if (legacy_config["redpanda"]) {
             const auto nag_properties
               = config::shard_local_cfg().property_names_and_aliases();
-            for (auto const& node : legacy_config["redpanda"]) {
+            for (const auto& node : legacy_config["redpanda"]) {
                 auto name = node.first.as<ss::sstring>();
                 if (nag_properties.contains(name)) {
                     vlog(
@@ -443,7 +443,7 @@ ss::future<bool> config_manager::load_bootstrap() {
     try {
         auto config_str = co_await read_fully_to_string(bootstrap_path());
         config = YAML::Load(config_str);
-    } catch (std::filesystem::filesystem_error const& e) {
+    } catch (const std::filesystem::filesystem_error& e) {
         // This is normal on upgrade from pre-config_manager version or
         // on newly added node.  Also permitted later if user
         // chooses to e.g. blow away config cache during disaster recovery.
@@ -468,7 +468,7 @@ ss::future<bool> config_manager::load_bootstrap() {
     co_return true;
 }
 
-ss::future<> config_manager::load_legacy(YAML::Node const& legacy_config) {
+ss::future<> config_manager::load_legacy(const YAML::Node& legacy_config) {
     co_await ss::smp::invoke_on_all(
       [&legacy_config] { config::shard_local_cfg().load(legacy_config); });
 
@@ -503,7 +503,7 @@ ss::future<config_manager::preload_result> config_manager::load_cache() {
     try {
         auto config_str = co_await read_fully_to_string(cache_path());
         config = YAML::Load(config_str);
-    } catch (std::filesystem::filesystem_error const& e) {
+    } catch (const std::filesystem::filesystem_error& e) {
         // This is normal on upgrade from pre-config_manager version or
         // on newly added node.  Also permitted later if user
         // chooses to e.g. blow away config cache during disaster recovery.
@@ -631,7 +631,7 @@ ss::future<> config_manager::reconcile_status() {
  *         into cluster_status by the caller.
  */
 config_manager::apply_result
-apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
+apply_local(const cluster_config_delta_cmd_data& data, bool silent) {
     auto& cfg = config::shard_local_cfg();
     auto result = config_manager::apply_result{};
     for (const auto& u : data.upsert) {
@@ -752,8 +752,8 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
 
 void config_manager::merge_apply_result(
   config_status& status,
-  cluster_config_delta_cmd_data const& data,
-  apply_result const& r) {
+  const cluster_config_delta_cmd_data& data,
+  const apply_result& r) {
     status.restart |= r.restart;
 
     std::set<ss::sstring> errored_properties;
@@ -811,7 +811,7 @@ void config_manager::merge_apply_result(
  * @return
  */
 ss::future<>
-config_manager::store_delta(cluster_config_delta_cmd_data const& data) {
+config_manager::store_delta(const cluster_config_delta_cmd_data& data) {
     auto& cfg = config::shard_local_cfg();
 
     for (const auto& u : data.upsert) {
@@ -833,7 +833,7 @@ config_manager::store_delta(cluster_config_delta_cmd_data const& data) {
         }
         // cleanup any old alias lying around (it should be normally not
         // necessary, and at most one loop)
-        for (auto const& alias : prop.aliases()) {
+        for (const auto& alias : prop.aliases()) {
             _raw_values.erase(ss::sstring{alias});
         }
     }

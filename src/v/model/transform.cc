@@ -437,7 +437,7 @@ void tag_invoke(
   serde::tag_t<serde::read_tag>,
   iobuf_parser& in,
   wasm_binary_iobuf& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     auto size = serde::read_nested<serde::serde_size_t>(in, bytes_left_limit);
     t = wasm_binary_iobuf(std::make_unique<iobuf>(in.share(size)));
 }

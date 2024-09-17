@@ -25,7 +25,7 @@ inline kafka::error_code check_leader_epoch(
     if (request_epoch < 0) {
         return error_code::none;
     }
-    auto const partition_epoch = p.leader_epoch();
+    const auto partition_epoch = p.leader_epoch();
 
     if (request_epoch > partition_epoch) {
         return error_code::unknown_leader_epoch;

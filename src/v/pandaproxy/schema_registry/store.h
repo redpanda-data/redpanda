@@ -140,7 +140,7 @@ public:
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
 
         if (!version.has_value()) {
-            auto const& versions = sub_it->second.versions;
+            const auto& versions = sub_it->second.versions;
             auto it = std::find_if(
               versions.rbegin(), versions.rend(), [inc_del](const auto& ver) {
                   return inc_del || !ver.deleted;
@@ -183,7 +183,7 @@ public:
             if (inc_del || !sub.second.deleted) {
                 auto has_version = absl::c_any_of(
                   sub.second.versions,
-                  [inc_del](auto const& v) { return inc_del || !v.deleted; });
+                  [inc_del](const auto& v) { return inc_del || !v.deleted; });
                 if (
                   has_version
                   && sub.first().starts_with(subject_prefix.value_or(""))) {
@@ -196,10 +196,10 @@ public:
 
     ///\brief Return if there are subjects.
     bool has_subjects(include_deleted inc_del) const {
-        return absl::c_any_of(_subjects, [inc_del](auto const& sub) {
+        return absl::c_any_of(_subjects, [inc_del](const auto& sub) {
             return absl::c_any_of(
               sub.second.versions,
-              [inc_del](auto const& v) { return inc_del || !v.deleted; });
+              [inc_del](const auto& v) { return inc_del || !v.deleted; });
         });
     }
 

@@ -28,7 +28,7 @@ struct header {
 };
 
 template<typename T>
-header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
+header read_header(iobuf_parser& in, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
 
     version_t version;

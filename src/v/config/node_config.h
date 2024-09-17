@@ -166,12 +166,12 @@ public:
     node_config() noexcept;
     error_map_t load(const YAML::Node& root_node);
     error_map_t load(
-      std::filesystem::path const& loaded_from, const YAML::Node& root_node) {
+      const std::filesystem::path& loaded_from, const YAML::Node& root_node) {
         _cfg_file_path = loaded_from;
         return load(root_node);
     }
 
-    std::filesystem::path const& get_cfg_file_path() const {
+    const std::filesystem::path& get_cfg_file_path() const {
         return _cfg_file_path;
     }
 

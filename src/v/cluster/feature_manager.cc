@@ -168,7 +168,7 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
                           return ss::do_until(
                             [this] { return _as.local().abort_requested(); },
                             [this] { return maybe_update_feature_table(); });
-                      }).handle_exception([](std::exception_ptr const& e) {
+                      }).handle_exception([](const std::exception_ptr& e) {
         vlog(clusterlog.warn, "Exception from updater: {}", e);
     });
 

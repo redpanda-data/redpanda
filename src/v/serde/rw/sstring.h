@@ -30,7 +30,7 @@ inline void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   ss::basic_sstring<char_type, Size, max_size, NulTerminate>& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     auto str = ss::uninitialized_string<
       ss::basic_sstring<char_type, Size, max_size, NulTerminate>>(
       read_nested<serde_size_t>(in, bytes_left_limit));

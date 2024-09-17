@@ -264,7 +264,7 @@ struct spillover_manifest_path_components
         return std::tie(base, last, base_kafka, next_kafka, base_ts, last_ts);
     }
 
-    bool operator==(spillover_manifest_path_components const&) const = default;
+    bool operator==(const spillover_manifest_path_components&) const = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const spillover_manifest_path_components& c) {
@@ -303,7 +303,7 @@ struct anomaly_meta
     segment_meta at;
     std::optional<segment_meta> previous;
 
-    bool operator==(anomaly_meta const&) const = default;
+    bool operator==(const anomaly_meta&) const = default;
 
     auto serde_fields() { return std::tie(type, at, previous); }
 

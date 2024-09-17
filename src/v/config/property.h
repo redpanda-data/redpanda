@@ -170,7 +170,7 @@ public:
         return update_value(std::move(n.as<T>()));
     }
 
-    std::optional<validation_error> validate(T const& v) const {
+    std::optional<validation_error> validate(const T& v) const {
         if (auto err = _validator(v); err) {
             return std::make_optional<validation_error>(name().data(), *err);
         }
@@ -459,7 +459,7 @@ public:
     template<typename U>
     friend inline binding<U> mock_binding(U&&);
     template<typename U>
-    friend inline binding<U> mock_binding(U const&);
+    friend inline binding<U> mock_binding(const U&);
 };
 
 /**
@@ -477,7 +477,7 @@ inline binding<T> mock_binding(T&& value) {
 }
 
 template<typename T>
-inline binding<T> mock_binding(T const& value) {
+inline binding<T> mock_binding(const T& value) {
     return binding<T>(T(value));
 }
 /**
@@ -834,7 +834,7 @@ public:
           def,
           [this](T new_value) -> std::optional<ss::sstring> {
               auto found = std::find_if(
-                _values.begin(), _values.end(), [&new_value](T const& v) {
+                _values.begin(), _values.end(), [&new_value](const T& v) {
                     return v == new_value;
                 });
               if (found == _values.end()) {

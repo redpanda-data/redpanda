@@ -22,7 +22,7 @@
 #include <sstream>
 
 std::chrono::time_point<std::chrono::system_clock>
-parse_time(std::string const& timestr) {
+parse_time(const std::string& timestr) {
     std::tm tm = {};
     std::stringstream ss(timestr + "0");
     ss >> std::get_time(&tm, "%Y%m%dT%H%M%SZ%Z");

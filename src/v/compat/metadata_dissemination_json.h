@@ -28,7 +28,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, cluster::ntp_leader& obj) {
+inline void read_value(const json::Value& rd, cluster::ntp_leader& obj) {
     read_member(rd, "ntp", obj.ntp);
     read_member(rd, "term", obj.term);
     read_member(rd, "leader_id", obj.leader_id);
@@ -49,7 +49,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, cluster::ntp_leader_revision& obj) {
+read_value(const json::Value& rd, cluster::ntp_leader_revision& obj) {
     read_member(rd, "ntp", obj.ntp);
     read_member(rd, "term", obj.term);
     read_member(rd, "leader_id", obj.leader_id);

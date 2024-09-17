@@ -335,7 +335,7 @@ ss::future<> audit_client::mitigate_error(std::exception_ptr eptr) {
     auto f = ss::now();
     try {
         std::rethrow_exception(eptr);
-    } catch (kafka::client::broker_error const& ex) {
+    } catch (const kafka::client::broker_error& ex) {
         f = update_status(ex.error);
         if (ex.error == kafka::error_code::sasl_authentication_failed) {
             f = f.then([this, ex]() {

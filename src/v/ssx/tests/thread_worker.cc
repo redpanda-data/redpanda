@@ -24,9 +24,9 @@ struct move_only {
       : value(v) {}
     ~move_only() = default;
     move_only(move_only&&) = default;
-    move_only(move_only const&) = delete;
+    move_only(const move_only&) = delete;
     move_only& operator=(move_only&&) = default;
-    move_only& operator=(move_only const&) = delete;
+    move_only& operator=(const move_only&) = delete;
     size_t value;
 };
 

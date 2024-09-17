@@ -79,7 +79,7 @@ public:
     friend std::istream& operator>>(std::istream&, xid&);
 
     friend void
-    read_nested(iobuf_parser& in, xid& id, size_t const bytes_left_limit);
+    read_nested(iobuf_parser& in, xid& id, const size_t bytes_left_limit);
 
     friend void write(iobuf& out, xid id);
 

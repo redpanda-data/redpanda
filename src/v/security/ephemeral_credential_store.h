@@ -26,8 +26,8 @@ class ephemeral_credential_store {
     using value_type = ephemeral_credential;
 
     struct get_principal_ref {
-        acl_principal const& operator()(acl_principal const& p) { return p; }
-        acl_principal const& operator()(value_type const& v) {
+        const acl_principal& operator()(const acl_principal& p) { return p; }
+        const acl_principal& operator()(const value_type& v) {
             return v.principal();
         }
     };
@@ -35,7 +35,7 @@ class ephemeral_credential_store {
     struct hasher {
         using is_transparent = void;
         template<typename T>
-        size_t operator()(T const& t) const {
+        size_t operator()(const T& t) const {
             return absl::Hash<acl_principal>()(get_principal_ref{}(t));
         };
     };
@@ -43,7 +43,7 @@ class ephemeral_credential_store {
     struct hash_comp {
         using is_transparent = void;
         template<typename L, typename R>
-        bool operator()(L const& l, R const& r) const {
+        bool operator()(const L& l, const R& r) const {
             return std::equal_to<>()(
               get_principal_ref{}(l), get_principal_ref{}(r));
         }
@@ -55,7 +55,7 @@ class ephemeral_credential_store {
 public:
     ephemeral_credential_store() = default;
 
-    const_iterator find(acl_principal const& p) const {
+    const_iterator find(const acl_principal& p) const {
         assert_principal(p);
         return _credentials.find(p);
     }
@@ -74,7 +74,7 @@ public:
     }
 
 private:
-    static void assert_principal(acl_principal const& p) {
+    static void assert_principal(const acl_principal& p) {
         vassert(
           p.type() == principal_type::ephemeral_user,
           "principal_type expected to be ephemeral: {}",

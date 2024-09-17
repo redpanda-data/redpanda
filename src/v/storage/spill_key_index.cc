@@ -90,8 +90,8 @@ ss::future<> spill_key_index::index(
 
 ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
     auto f = ss::now();
-    auto const entry_size = entry_mem_usage(b);
-    auto const expected_size = idx_mem_usage() + _keys_mem_usage + entry_size;
+    const auto entry_size = entry_mem_usage(b);
+    const auto expected_size = idx_mem_usage() + _keys_mem_usage + entry_size;
 
     auto take_result = _resources.compaction_index_take_bytes(entry_size);
     if (_mem_units.count() == 0) {

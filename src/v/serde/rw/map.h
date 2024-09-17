@@ -37,9 +37,9 @@ void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   Map auto& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     using Type = std::decay_t<decltype(t)>;
-    auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
+    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
     if constexpr (Reservable<Type>) {
         t.reserve(size);
     }

@@ -24,22 +24,22 @@ template<typename>
 inline constexpr bool always_false_v = false;
 
 template<typename T>
-concept is_absl_hashable = requires(T const& t) {
+concept is_absl_hashable = requires(const T& t) {
     { absl::Hash<T>{}(t) } -> std::convertible_to<std::size_t>;
 };
 
 template<typename T>
-concept is_std_hashable = requires(T const& t) {
+concept is_std_hashable = requires(const T& t) {
     { std::hash<T>{}(t) } -> std::convertible_to<std::size_t>;
 };
 
 template<typename T>
-concept is_boost_hashable = requires(T const& t) {
+concept is_boost_hashable = requires(const T& t) {
     { boost::hash<T>{}(t) } -> std::convertible_to<std::size_t>;
 };
 
 template<typename T>
-size_t combine(size_t& seed, T const& t) {
+size_t combine(size_t& seed, const T& t) {
     if constexpr (is_std_hashable<T>) {
         boost::hash_combine(seed, std::hash<T>{}(t));
     } else if constexpr (is_absl_hashable<T>) {

@@ -102,7 +102,7 @@ void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   std::chrono::duration<R, P>& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     using Type = std::chrono::duration<R, P>;
 
     static_assert(
@@ -125,7 +125,7 @@ template<typename Clock, typename Duration>
 void read(
   iobuf_parser&,
   std::chrono::time_point<Clock, Duration>& t,
-  std::size_t const /* bytes_left_limit */) {
+  const std::size_t /* bytes_left_limit */) {
     static_assert(
       base::unsupported_type<decltype(t)>::value,
       "Time point serialization is risky and can have unintended "

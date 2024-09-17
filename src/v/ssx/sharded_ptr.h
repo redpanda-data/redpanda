@@ -40,8 +40,8 @@ public:
     sharded_ptr(sharded_ptr&& other) noexcept = default;
     sharded_ptr& operator=(sharded_ptr&&) noexcept = default;
 
-    sharded_ptr(sharded_ptr const&) = delete;
-    sharded_ptr& operator=(sharded_ptr const&) = delete;
+    sharded_ptr(const sharded_ptr&) = delete;
+    sharded_ptr& operator=(const sharded_ptr&) = delete;
 
     /// dereferences pointer to the managed object for the local shard.
     ///
@@ -135,7 +135,7 @@ public:
     ///
     /// reset must have been called at least once.
     /// stop must not have been called.
-    std::shared_ptr<T> const& local() const {
+    const std::shared_ptr<T>& local() const {
         return _state[ss::this_shard_id()];
     }
 

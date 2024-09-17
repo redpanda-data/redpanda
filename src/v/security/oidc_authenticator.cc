@@ -31,8 +31,8 @@
 namespace security::oidc {
 
 result<authentication_data> authenticate(
-  jwt const& jwt,
-  principal_mapping_rule const& mapping,
+  const jwt& jwt,
+  const principal_mapping_rule& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -73,9 +73,9 @@ result<authentication_data> authenticate(
 }
 
 result<authentication_data> authenticate(
-  jws const& jws,
-  verifier const& verifier,
-  principal_mapping_rule const& mapping,
+  const jws& jws,
+  const verifier& verifier,
+  const principal_mapping_rule& mapping,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -147,7 +147,7 @@ authenticator::authenticate(std::string_view bearer_token) {
     return _impl->authenticate(bearer_token);
 }
 
-std::ostream& operator<<(std::ostream& os, sasl_authenticator::state const s) {
+std::ostream& operator<<(std::ostream& os, const sasl_authenticator::state s) {
     using state = sasl_authenticator::state;
     switch (s) {
     case state::init:

@@ -199,24 +199,24 @@ class column_store
     // projections from segment_meta to value_t used by the columns. the order
     // is the same of columns()
     constexpr static auto segment_meta_accessors = std::tuple{
-      [](segment_meta const& s) {
+      [](const segment_meta& s) {
           return static_cast<int64_t>(s.is_compacted);
       },
-      [](segment_meta const& s) { return static_cast<int64_t>(s.size_bytes); },
-      [](segment_meta const& s) { return s.base_offset(); },
-      [](segment_meta const& s) { return s.committed_offset(); },
-      [](segment_meta const& s) { return s.base_timestamp(); },
-      [](segment_meta const& s) { return s.max_timestamp(); },
-      [](segment_meta const& s) { return s.delta_offset(); },
-      [](segment_meta const& s) { return s.ntp_revision(); },
-      [](segment_meta const& s) { return s.archiver_term(); },
-      [](segment_meta const& s) { return s.segment_term(); },
-      [](segment_meta const& s) { return s.delta_offset_end(); },
-      [](segment_meta const& s) {
+      [](const segment_meta& s) { return static_cast<int64_t>(s.size_bytes); },
+      [](const segment_meta& s) { return s.base_offset(); },
+      [](const segment_meta& s) { return s.committed_offset(); },
+      [](const segment_meta& s) { return s.base_timestamp(); },
+      [](const segment_meta& s) { return s.max_timestamp(); },
+      [](const segment_meta& s) { return s.delta_offset(); },
+      [](const segment_meta& s) { return s.ntp_revision(); },
+      [](const segment_meta& s) { return s.archiver_term(); },
+      [](const segment_meta& s) { return s.segment_term(); },
+      [](const segment_meta& s) { return s.delta_offset_end(); },
+      [](const segment_meta& s) {
           return static_cast<std::underlying_type_t<segment_name_format>>(
             s.sname_format);
       },
-      [](segment_meta const& s) {
+      [](const segment_meta& s) {
           return static_cast<int64_t>(s.metadata_size_hint);
       },
     };
@@ -733,7 +733,7 @@ public:
           [&](auto&... field) { (field_writer(field), ...); }, member_fields());
     }
 
-    void serde_read(iobuf_parser& in, serde::header const& h) {
+    void serde_read(iobuf_parser& in, const serde::header& h) {
         // hint_map_t (absl::btree_map) is not serde-enabled, read it as
         // size,[(key,value)...]
         auto field_reader = [&]<typename FieldType>(FieldType& f) {
@@ -775,7 +775,7 @@ public:
     auto unsafe_alias() const -> column_store {
         auto tmp = column_store{};
         details::tuple_map(
-          [](auto& lhs, auto const& rhs) { lhs = rhs.unsafe_alias(); },
+          [](auto& lhs, const auto& rhs) { lhs = rhs.unsafe_alias(); },
           tmp.columns(),
           columns());
         tmp._hints = _hints;
@@ -1062,7 +1062,7 @@ public:
         flush_write_buffer();
         serde::write(out, std::exchange(_col, {}));
     }
-    void serde_read(iobuf_parser& in, serde::header const& h) {
+    void serde_read(iobuf_parser& in, const serde::header& h) {
         if (h._bytes_left_limit == in.bytes_left()) {
             return;
         }
@@ -1116,7 +1116,7 @@ segment_meta_cstore&
 segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept
   = default;
 
-bool segment_meta_cstore::operator==(segment_meta_cstore const& oth) const {
+bool segment_meta_cstore::operator==(const segment_meta_cstore& oth) const {
     if (size() != oth.size()) {
         return false;
     }
@@ -1178,7 +1178,7 @@ segment_meta_cstore::at_index(size_t ix) const {
     return const_iterator(_impl->at_index(ix));
 }
 
-auto segment_meta_cstore::prev(const_iterator const& it) const
+auto segment_meta_cstore::prev(const const_iterator& it) const
   -> const_iterator {
 #ifndef NDEBUG
     vassert(it != begin(), "prev called on a begin() iterator");

@@ -24,7 +24,7 @@ inline void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   uuid_t& t,
-  std::size_t const /* bytes_left_limit */) {
+  const std::size_t /* bytes_left_limit */) {
     in.consume_to(uuid_t::length, t.mutable_uuid().begin());
 }
 

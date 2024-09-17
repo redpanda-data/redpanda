@@ -55,7 +55,7 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
   const model::topic& topic,
   const cluster::topic_properties& props);
 
-ss::future<schema_id_validator::result> inline maybe_validate_schema_id(
+inline ss::future<schema_id_validator::result> maybe_validate_schema_id(
   std::optional<schema_id_validator> validator,
   model::record_batch_reader rbr,
   cluster::partition_probe* probe) {

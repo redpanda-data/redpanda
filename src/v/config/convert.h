@@ -570,11 +570,11 @@ struct convert<model::recovery_validation_mode> {
       {"check_manifest_existence",
        "check_manifest_and_segment_metadata",
        "no_check"});
-    static Node encode(type const& rhs) {
+    static Node encode(const type& rhs) {
         Node node;
         return Node{boost::lexical_cast<std::string>(rhs)};
     }
-    static bool decode(Node const& node, type& rhs) {
+    static bool decode(const Node& node, type& rhs) {
         auto node_str = node.as<std::string>();
         if (
           std::ranges::find(acceptable_values, node_str)

@@ -249,9 +249,9 @@ node_config::node_config() noexcept
 
 void validate_multi_node_property_config(
   std::map<ss::sstring, ss::sstring>& errors) {
-    auto const& cfg = config::node();
+    const auto& cfg = config::node();
     const auto& kafka_api = cfg.kafka_api.value();
-    for (auto const& ep : kafka_api) {
+    for (const auto& ep : kafka_api) {
         const auto& n = ep.name;
         auto authn_method = ep.authn_method;
         if (authn_method.has_value()) {
@@ -279,7 +279,7 @@ void validate_multi_node_property_config(
         }
     }
 
-    for (auto const& ep : cfg.advertised_kafka_api()) {
+    for (const auto& ep : cfg.advertised_kafka_api()) {
         auto err = model::broker_endpoint::validate_not_is_addr_any(ep);
         if (err) {
             errors.emplace("advertised_kafka_api", ssx::sformat("{}", *err));

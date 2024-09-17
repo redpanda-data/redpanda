@@ -221,7 +221,7 @@ ss::future<> kvstore::for_each(
 }
 
 void kvstore::apply_op(
-  bytes key, std::optional<iobuf> value, ssx::semaphore_units const&) {
+  bytes key, std::optional<iobuf> value, const ssx::semaphore_units&) {
     auto it = _db.find(key);
     bool found = it != _db.end();
     if (value) {

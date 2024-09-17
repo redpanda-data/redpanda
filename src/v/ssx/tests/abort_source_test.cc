@@ -25,7 +25,7 @@ struct derived_error final : std::runtime_error {
 };
 
 struct fixture {
-    using sub_arg_t = std::optional<std::exception_ptr> const&;
+    using sub_arg_t = const std::optional<std::exception_ptr>&;
 
     auto make_incrementor() {
         ++expected_count;
@@ -78,7 +78,7 @@ SEASTAR_THREAD_TEST_CASE(ssx_sharded_abort_source_test_abort_parent) {
     // Ensure parent exception is propated
     BOOST_REQUIRE(f.sas.abort_requested());
     BOOST_REQUIRE_EXCEPTION(
-      f.sas.check(), derived_error, [](derived_error const& e) {
+      f.sas.check(), derived_error, [](const derived_error& e) {
           return e.what() == expected_msg;
       });
 

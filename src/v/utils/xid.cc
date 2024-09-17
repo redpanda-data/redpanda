@@ -113,7 +113,7 @@ fmt::formatter<xid>::format(const xid& id, format_context& ctx) const {
     return ctx.out();
 }
 
-void read_nested(iobuf_parser& in, xid& id, size_t const bytes_left_limit) {
+void read_nested(iobuf_parser& in, xid& id, const size_t bytes_left_limit) {
     serde::read_nested(in, id._data, bytes_left_limit);
 }
 

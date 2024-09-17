@@ -242,7 +242,7 @@ metrics_reporter::build_metrics_snapshot() {
 
     snapshot.has_kafka_gssapi = absl::c_any_of(
       config::shard_local_cfg().sasl_mechanisms(),
-      [](auto const& mech) { return mech == "GSSAPI"; });
+      [](const auto& mech) { return mech == "GSSAPI"; });
 
     snapshot.has_oidc = config::oidc_is_enabled_kafka()
                         || config::oidc_is_enabled_http();

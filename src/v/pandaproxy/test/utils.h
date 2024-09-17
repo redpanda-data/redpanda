@@ -43,7 +43,7 @@ inline boost::beast::string_view to_header_value(serialization_format fmt) {
 inline http::client::request_header make_header(
   boost::beast::http::verb method,
   boost::beast::string_view target,
-  iobuf const& body,
+  const iobuf& body,
   serialization_format content,
   serialization_format accept) {
     http::client::request_header hdr;

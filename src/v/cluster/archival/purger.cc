@@ -323,7 +323,7 @@ purger::global_position purger::get_global_position() {
     uint32_t total = 0;
 
     // Iterate over node IDs earlier than ours, sum their core counts
-    for (auto const& [id, node] : nodes) {
+    for (const auto& [id, node] : nodes) {
         const auto cores = node.broker.properties().cores;
         if (id < self) {
             result += cores;

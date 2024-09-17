@@ -863,7 +863,7 @@ tm_stm_factory::tm_stm_factory(
   : _feature_table(feature_table) {}
 
 bool tm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
-    auto const& ntp = cfg.ntp();
+    const auto& ntp = cfg.ntp();
     return ntp.ns == model::kafka_internal_namespace
            && ntp.tp.topic == model::tx_manager_topic;
 }

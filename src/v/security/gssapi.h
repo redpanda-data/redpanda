@@ -55,7 +55,7 @@ public:
     }
     buffer(const buffer&) = delete;
     buffer operator=(buffer&&) = delete;
-    buffer operator=(buffer const&) = delete;
+    buffer operator=(const buffer&) = delete;
 
     ~buffer() {
         if (value() != nullptr) {
@@ -71,7 +71,7 @@ public:
     buffer_set(buffer_set&&) = delete;
     buffer_set(const buffer_set&) = delete;
     buffer_set operator=(buffer_set&&) = delete;
-    buffer_set operator=(buffer_set const&) = delete;
+    buffer_set operator=(const buffer_set&) = delete;
 
     ~buffer_set() {
         if (_impl != nullptr) {
@@ -98,7 +98,7 @@ public:
     name(name&&) = delete;
     name(const name&) = delete;
     name operator=(name&&) = delete;
-    name operator=(name const&) = delete;
+    name operator=(const name&) = delete;
 
     ~name() {
         if (_impl != nullptr) {
@@ -122,7 +122,7 @@ public:
         return display_name;
     }
 
-    friend std::ostream& operator<<(std::ostream& os, name const& name) {
+    friend std::ostream& operator<<(std::ostream& os, const name& name) {
         fmt::print(os, "{}", std::string_view(name.display_name_buffer()));
         return os;
     }
@@ -137,7 +137,7 @@ public:
     cred_id(cred_id&&) = delete;
     cred_id(const cred_id&) = delete;
     cred_id operator=(cred_id&&) = delete;
-    cred_id operator=(cred_id const&) = delete;
+    cred_id operator=(const cred_id&) = delete;
     ~cred_id() { reset(); }
 
     void reset() {
@@ -160,7 +160,7 @@ public:
     ctx_id(ctx_id&&) = delete;
     ctx_id(const ctx_id&) = delete;
     ctx_id operator=(ctx_id&&) = delete;
-    ctx_id operator=(ctx_id const&) = delete;
+    ctx_id operator=(const ctx_id&) = delete;
     ~ctx_id() { reset(); }
 
     void reset() {

@@ -40,6 +40,10 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 PenaltyBreakAssignment: 80
 PenaltyBreakBeforeFirstCallParameter: 10
 PenaltyReturnTypeOnItsOwnLine: 60
+PointerAlignment: Left
+QualifierAlignment: Custom
+QualifierOrder: [static, inline, const, type]
+ReferenceAlignment: Left
 RequiresClausePosition: OwnLine
 RequiresExpressionIndentation: OuterScope
 ---

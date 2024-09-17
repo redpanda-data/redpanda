@@ -64,7 +64,7 @@ class IgnoreUnknownFields
 class ProtobufParserFixture : public testing::Test {
 public:
     std::unique_ptr<pb::Message> construct_message(std::string_view txtpb) {
-        const static std::unordered_map<std::string, const pb::FileDescriptor*>
+        static const std::unordered_map<std::string, const pb::FileDescriptor*>
           global_protos = {
             {"two.proto", pbtwo::SearchRequest::descriptor()->file()},
             {"three.proto", pbthree::SearchRequest::descriptor()->file()},

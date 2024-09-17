@@ -17,6 +17,6 @@
 namespace security::oidc {
 
 result<acl_principal>
-principal_mapping_rule_apply(const principal_mapping_rule&, jwt const& jwt);
+principal_mapping_rule_apply(const principal_mapping_rule&, const jwt& jwt);
 
 }

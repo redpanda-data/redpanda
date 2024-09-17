@@ -24,8 +24,8 @@ using namespace std::chrono_literals; // NOLINT
 SEASTAR_THREAD_TEST_CASE(base_jitter_gurantees) {
     raft::timeout_jitter jit(
       config::mock_binding<std::chrono::milliseconds>(100ms));
-    auto const low = jit.base_duration();
-    auto const high = jit.base_duration() + 50ms;
+    const auto low = jit.base_duration();
+    const auto high = jit.base_duration() + 50ms;
     BOOST_CHECK_EQUAL(
       std::chrono::duration_cast<std::chrono::milliseconds>(low).count(),
       (100ms).count());

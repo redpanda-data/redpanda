@@ -148,7 +148,7 @@ Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
     using type = typename Iter::value_type;
     boost::container::flat_map<model::topic_view, uint32_t> freq;
     freq.reserve(std::distance(begin, end));
-    for (auto const& r : boost::make_iterator_range(begin, end)) {
+    for (const auto& r : boost::make_iterator_range(begin, end)) {
         freq[r.name]++;
     }
     auto valid_range_end = std::partition(

@@ -280,7 +280,7 @@ const client::response_header& client::response_stream::get_headers() const {
 static std::vector<boost::asio::const_buffer>
 iobuf_to_constbufseq(const iobuf& iobuf) {
     std::vector<boost::asio::const_buffer> seq;
-    for (auto const& fragm : iobuf) {
+    for (const auto& fragm : iobuf) {
         boost::asio::const_buffer cbuf{fragm.get(), fragm.size()};
         seq.push_back(cbuf);
     }

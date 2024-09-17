@@ -69,7 +69,7 @@ public:
     /// Change topic-manifest revision
     void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
 
-    std::optional<cluster::topic_configuration> const&
+    const std::optional<cluster::topic_configuration>&
     get_topic_config() const noexcept {
         return _topic_config;
     }

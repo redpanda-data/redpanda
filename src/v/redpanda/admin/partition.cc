@@ -211,7 +211,7 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
         ntps.push_back(ntp);
     }
 
-    auto const deadline = model::timeout_clock::now() + 5s;
+    const auto deadline = model::timeout_clock::now() + 5s;
 
     auto [reconfiguration_states, reconciliations]
       = co_await ss::when_all_succeed(
@@ -699,7 +699,7 @@ void admin_server::register_partition_routes() {
                 return ss::json::json_return_type(
                   ss::json::stream_range_as_array(
                     lw_shared_container{std::move(partitions)},
-                    [](summary const& i) -> summary const& { return i; }));
+                    [](const summary& i) -> const summary& { return i; }));
             });
       });
 

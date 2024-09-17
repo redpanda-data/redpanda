@@ -45,9 +45,9 @@ class task_base {
 public:
     task_base() = default;
     task_base(task_base&&) = delete;
-    task_base(task_base const&) = delete;
+    task_base(const task_base&) = delete;
     task_base& operator=(task_base&&) = delete;
-    task_base& operator=(task_base const&) = delete;
+    task_base& operator=(const task_base&) = delete;
 
     virtual ss::stop_iteration process(ss::alien::instance&, ss::shard_id) = 0;
     virtual void

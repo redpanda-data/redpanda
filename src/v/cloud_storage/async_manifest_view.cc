@@ -736,7 +736,7 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
         } else {
             // look for first segment in next term, segments are sorted by
             // base_offset and term
-            for (auto const& p : stmm) {
+            for (const auto& p : stmm) {
                 if (p.segment_term > term) {
                     co_return p.base_kafka_offset() - kafka::offset(1);
                 }

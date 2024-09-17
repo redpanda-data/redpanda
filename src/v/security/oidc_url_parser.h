@@ -23,8 +23,8 @@ struct parsed_url {
     ss::sstring host;
     uint16_t port;
     ss::sstring target;
-    friend bool operator==(parsed_url const&, parsed_url const&) = default;
-    friend std::ostream& operator<<(std::ostream&, parsed_url const&);
+    friend bool operator==(const parsed_url&, const parsed_url&) = default;
+    friend std::ostream& operator<<(std::ostream&, const parsed_url&);
 };
 result<parsed_url> parse_url(std::string_view);
 

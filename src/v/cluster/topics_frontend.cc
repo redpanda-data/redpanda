@@ -536,7 +536,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           assignable_config, bucket, _cloud_storage_api.local(), _as.local());
         if (std::ranges::any_of(
               validation_map,
-              [](std::pair<model::partition_id, validation_result> const& vp) {
+              [](const std::pair<model::partition_id, validation_result>& vp) {
                   using enum validation_result;
                   switch (vp.second) {
                   case passed:

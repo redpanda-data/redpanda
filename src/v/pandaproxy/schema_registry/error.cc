@@ -142,10 +142,10 @@ std::error_code make_error_code(error_code e) {
 }
 
 error_info no_reference_found_for(
-  canonical_schema const& schema, const subject& sub, schema_version ver) {
+  const canonical_schema& schema, const subject& sub, schema_version ver) {
     // fmt v8 doesn't support formatting for elements in a range
     auto fmt_refs = schema.def().refs()
-                    | std::views::transform([](auto const& ref) {
+                    | std::views::transform([](const auto& ref) {
                           return fmt::format("{{{:e}}}", ref);
                       });
     return {

@@ -1540,7 +1540,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
             }
         }
 
-        auto const last_applied = read_last_applied();
+        const auto last_applied = read_last_applied();
         if (last_applied > lstats.dirty_offset) {
             vlog(
               _ctxlog.error,
@@ -1598,7 +1598,7 @@ ss::future<> consensus::write_last_applied(model::offset o) {
      * In order to keep an invariant that: 'last applied offset MUST be
      * readable' we limit it here to committed (leader flushed) offset.
      */
-    auto const limited_offset = std::min(o, _flushed_offset);
+    const auto limited_offset = std::min(o, _flushed_offset);
     auto key = last_applied_key();
     iobuf val = reflection::to_iobuf(limited_offset);
     return _storage.kvs().put(

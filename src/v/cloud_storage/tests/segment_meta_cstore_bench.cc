@@ -150,7 +150,7 @@ public:
     }
 
 private:
-    static void serialize(iobuf& buf, auto const& v) {
+    static void serialize(iobuf& buf, const auto& v) {
         auto tmp = std::bit_cast<std::array<uint8_t, sizeof(v)>>(v);
         buf.append(tmp.data(), tmp.size());
     }

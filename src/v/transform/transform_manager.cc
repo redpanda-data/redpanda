@@ -81,7 +81,7 @@ private:
 
 // The lexicographically smallest ntp
 // NOLINTNEXTLINE(cert-err58-cpp)
-const static model::ntp min_ntp = model::ntp(
+static const model::ntp min_ntp = model::ntp(
   model::ns(""), model::topic(""), model::partition_id::min());
 
 } // namespace

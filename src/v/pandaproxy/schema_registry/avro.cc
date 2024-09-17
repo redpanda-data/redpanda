@@ -230,7 +230,7 @@ enum class object_type { complex, field };
 template<object_type type>
 struct member_sorter {
     bool operator()(
-      json::Document::Member const& lhs, json::Document::Member const& rhs) {
+      const json::Document::Member& lhs, const json::Document::Member& rhs) {
         constexpr auto order = [](std::string_view name) {
             auto val = string_switch<char>(name)
                          .match("type", type == object_type::complex ? 0 : 1)
@@ -248,7 +248,7 @@ struct member_sorter {
                          .default_match(std::numeric_limits<char>::max());
             return val;
         };
-        constexpr auto as_string_view = [](json::Value const& v) {
+        constexpr auto as_string_view = [](const json::Value& v) {
             return std::string_view{v.GetString(), v.GetStringLength()};
         };
         return order(as_string_view(lhs.name))
@@ -548,7 +548,7 @@ ss::future<collected_schema> collect_schema(
   collected_schema collected,
   ss::sstring name,
   canonical_schema schema) {
-    for (auto const& ref : schema.def().refs()) {
+    for (const auto& ref : schema.def().refs()) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
               ref.sub, ref.version, include_deleted::no);

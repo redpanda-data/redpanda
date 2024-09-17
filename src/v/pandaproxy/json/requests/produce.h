@@ -287,7 +287,7 @@ void rjson_serialize(
     w.StartObject();
     w.Key("offsets");
     w.StartArray();
-    for (auto const& p : v.partitions) {
+    for (const auto& p : v.partitions) {
         rjson_serialize(w, p);
     }
     w.EndArray();

@@ -178,8 +178,8 @@ abs_request_creator::abs_request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> abs_request_creator::make_get_blob_request(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   std::optional<http_byte_range> byte_range) {
     // GET /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
@@ -210,7 +210,7 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
 }
 
 result<http::client::request_header> abs_request_creator::make_put_blob_request(
-  bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
+  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
     // PUT /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -241,7 +241,7 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
 
 result<http::client::request_header>
 abs_request_creator::make_get_blob_metadata_request(
-  bucket_name const& name, object_key const& key) {
+  const bucket_name& name, const object_key& key) {
     // HEAD /{container-id}/{blob-id}?comp=metadata HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -266,7 +266,7 @@ abs_request_creator::make_get_blob_metadata_request(
 
 result<http::client::request_header>
 abs_request_creator::make_delete_blob_request(
-  bucket_name const& name, object_key const& key) {
+  const bucket_name& name, const object_key& key) {
     // DELETE /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -361,8 +361,8 @@ abs_request_creator::make_get_account_info_request() {
 
 result<http::client::request_header>
 abs_request_creator::make_set_expiry_to_blob_request(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration expires_in) const {
     // https://learn.microsoft.com/en-us/rest/api/storageservices/set-blob-expiry?tabs=microsoft-entra-id
     // available only if HNS are enabled for the bucket
@@ -394,8 +394,8 @@ abs_request_creator::make_set_expiry_to_blob_request(
 result<http::client::request_header>
 abs_request_creator::make_delete_file_request(
   const access_point_uri& adls_ap,
-  bucket_name const& name,
-  object_key const& path) {
+  const bucket_name& name,
+  const object_key& path) {
     // DELETE /{container-id}/{path} HTTP/1.1
     // Host: {storage-account-id}.dfs.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -571,8 +571,8 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 abs_client::get_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
   std::optional<http_byte_range> byte_range) {
@@ -584,8 +584,8 @@ abs_client::get_object(
 }
 
 ss::future<http::client::response_stream_ref> abs_client::do_get_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
   std::optional<http_byte_range> byte_range) {
@@ -638,8 +638,8 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
 
 ss::future<result<abs_client::no_response, error_outcome>>
 abs_client::put_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
@@ -654,8 +654,8 @@ abs_client::put_object(
 }
 
 ss::future<> abs_client::do_put_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
@@ -694,15 +694,15 @@ ss::future<> abs_client::do_put_object(
 
 ss::future<result<abs_client::head_object_result, error_outcome>>
 abs_client::head_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout) {
     return send_request(do_head_object(name, key, timeout), key);
 }
 
 ss::future<abs_client::head_object_result> abs_client::do_head_object(
-  bucket_name const& name,
-  object_key const& key,
+  const bucket_name& name,
+  const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_get_blob_metadata_request(name, key);
     if (!header) {
@@ -955,7 +955,7 @@ abs_client::do_test_set_expiry_on_dummy_file(
 
     co_await response_stream->prefetch_headers();
     vassert(response_stream->is_header_done(), "Header is not received");
-    auto const& headers = response_stream->get_headers();
+    const auto& headers = response_stream->get_headers();
 
     if (headers.result() == boost::beast::http::status::bad_request) {
         if (auto error_code_it = headers.find(error_code_name);

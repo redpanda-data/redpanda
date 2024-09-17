@@ -28,7 +28,7 @@ apply_credentials make_credentials_applier(credentials creds) {
       [](abs_credentials abs) -> std::unique_ptr<apply_credentials::impl> {
           return std::make_unique<apply_abs_credentials>(std::move(abs));
       },
-      [](abs_oauth_credentials const& abs_oauth)
+      [](const abs_oauth_credentials& abs_oauth)
         -> std::unique_ptr<apply_credentials::impl> {
           return std::make_unique<apply_abs_oauth_credentials>(abs_oauth);
       })};

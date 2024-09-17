@@ -70,7 +70,7 @@ struct fmt::formatter<cloud_storage::partition_manifest::segment_meta> {
     }
 
     template<typename FormatContext>
-    auto format(segment_meta const& m, FormatContext& ctx) {
+    auto format(const segment_meta& m, FormatContext& ctx) {
         return fmt::format_to(
           ctx.out(),
           "{{o={}-{} t={}-{}}}",
@@ -2546,7 +2546,7 @@ struct partition_manifest_serde
 
 static_assert(
   std::tuple_size_v<
-    decltype(std::declval<partition_manifest const&>().serde_fields())>
+    decltype(std::declval<const partition_manifest&>().serde_fields())>
     == std::tuple_size_v<
       decltype(std::declval<partition_manifest&>().serde_fields())>,
   "ensure that serde_fields() and serde_fields() const capture the same "
@@ -2562,14 +2562,14 @@ static_assert(
 // construct partition_manifest_serde while keeping
 // std::is_aggregate<partition_manifest_serde> true
 static auto partition_manifest_serde_from_partition_manifest(
-  partition_manifest const& m) -> partition_manifest_serde {
+  const partition_manifest& m) -> partition_manifest_serde {
     partition_manifest_serde tmp{};
     // copy every field that is not segment_meta_cstore in
     // partition_manifest_serde, and uses to_iobuf for segment_meta_cstore
 
     []<typename DT, typename ST, size_t... Is>(
       DT dest_tuple, ST src_tuple, std::index_sequence<Is...>) {
-        (([&]<typename Src>(auto& dest, Src const& src) {
+        (([&]<typename Src>(auto& dest, const Src& src) {
              if constexpr (std::is_same_v<Src, segment_meta_cstore>) {
                  dest = src.to_iobuf();
              } else if constexpr (reflection::is_fragmented_vector<Src>) {

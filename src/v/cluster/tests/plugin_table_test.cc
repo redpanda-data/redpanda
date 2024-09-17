@@ -161,8 +161,8 @@ TEST(PluginTable, Notifications) {
 }
 
 TEST(PluginTable, TopicIndexes) {
-    const static std::optional<meta> missing = std::nullopt;
-    const static std::optional<id> missing_id = std::nullopt;
+    static const std::optional<meta> missing = std::nullopt;
+    static const std::optional<id> missing_id = std::nullopt;
     cluster::plugin_table table;
 
     auto millwheel = make_meta(

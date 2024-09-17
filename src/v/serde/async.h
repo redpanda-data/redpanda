@@ -49,7 +49,7 @@ inline ss::future<crc::crc32c> calculate_crc_async(iobuf_const_parser in) {
                    [&in, &crc] {
                        in.consume(
                          in.bytes_left(),
-                         [&crc](char const* src, size_t const n) {
+                         [&crc](const char* src, const size_t n) {
                              crc.extend(src, n);
                              return (
                                ss::need_preempt() ? ss::stop_iteration::yes
@@ -63,11 +63,11 @@ inline ss::future<crc::crc32c> calculate_crc_async(iobuf_const_parser in) {
 
 template<typename T>
 ss::future<std::decay_t<T>>
-read_async_nested(iobuf_parser& in, size_t const bytes_left_limit) {
+read_async_nested(iobuf_parser& in, const size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
     if constexpr (
       has_serde_async_direct_read<Type> || has_serde_async_read<Type>) {
-        auto const h = read_header<Type>(in, bytes_left_limit);
+        const auto h = read_header<Type>(in, bytes_left_limit);
         auto f = ss::now();
         if constexpr (is_checksum_envelope<Type>) {
             auto shared = in.share_no_consume(
@@ -137,7 +137,7 @@ ss::future<> write_async(iobuf& out, T t) {
             checksum_placeholder = out.reserve(sizeof(checksum_t));
         }
 
-        auto const size_before = out.size_bytes();
+        const auto size_before = out.size_bytes();
 
         return ss::do_with(
           std::move(t),
@@ -152,16 +152,16 @@ ss::future<> write_async(iobuf& out, T t) {
                  size_placeholder = std::move(size_placeholder),
                  checksum_placeholder = std::move(
                    checksum_placeholder)]() mutable {
-                    auto const written_size = out.size_bytes() - size_before;
+                    const auto written_size = out.size_bytes() - size_before;
                     if (unlikely(
                           written_size
                           > std::numeric_limits<serde_size_t>::max())) {
                         throw serde_exception{"envelope too big"};
                     }
-                    auto const size = ss::cpu_to_le(
+                    const auto size = ss::cpu_to_le(
                       static_cast<serde_size_t>(written_size));
                     size_placeholder.write(
-                      reinterpret_cast<char const*>(&size),
+                      reinterpret_cast<const char*>(&size),
                       sizeof(serde_size_t));
 
                     if constexpr (is_checksum_envelope<Type>) {
@@ -171,12 +171,12 @@ ss::future<> write_async(iobuf& out, T t) {
                           .then([checksum_placeholder = std::move(
                                    checksum_placeholder)](
                                   const crc::crc32c crc) mutable {
-                              auto const checksum = ss::cpu_to_le(crc.value());
+                              const auto checksum = ss::cpu_to_le(crc.value());
                               static_assert(std::is_same_v<
                                             std::decay_t<decltype(checksum)>,
                                             checksum_t>);
                               checksum_placeholder.write(
-                                reinterpret_cast<char const*>(&checksum),
+                                reinterpret_cast<const char*>(&checksum),
                                 sizeof(checksum_t));
                           });
                     } else {

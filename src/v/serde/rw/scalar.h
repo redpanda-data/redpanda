@@ -26,7 +26,7 @@ namespace serde {
 template<typename T>
 requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
 void tag_invoke(
-  tag_t<read_tag>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>, iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
 
     if (unlikely(in.bytes_left() - bytes_left_limit < sizeof(Type))) {
@@ -54,19 +54,19 @@ requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
 void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
     if constexpr (sizeof(Type) == 1) {
-        out.append(reinterpret_cast<char const*>(&t), sizeof(t));
+        out.append(reinterpret_cast<const char*>(&t), sizeof(t));
     } else if constexpr (std::is_same_v<float, Type>) {
-        auto const le_t = htole32(std::bit_cast<std::uint32_t>(t));
+        const auto le_t = htole32(std::bit_cast<std::uint32_t>(t));
         static_assert(sizeof(le_t) == sizeof(Type));
-        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+        out.append(reinterpret_cast<const char*>(&le_t), sizeof(le_t));
     } else if constexpr (std::is_same_v<double, Type>) {
-        auto const le_t = htole64(std::bit_cast<std::uint64_t>(t));
+        const auto le_t = htole64(std::bit_cast<std::uint64_t>(t));
         static_assert(sizeof(le_t) == sizeof(Type));
-        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+        out.append(reinterpret_cast<const char*>(&le_t), sizeof(le_t));
     } else {
-        auto const le_t = ss::cpu_to_le(t);
+        const auto le_t = ss::cpu_to_le(t);
         static_assert(sizeof(le_t) == sizeof(Type));
-        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+        out.append(reinterpret_cast<const char*>(&le_t), sizeof(le_t));
     }
 }
 
@@ -78,7 +78,7 @@ inline void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   bool& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     int8_t byte;
     read_tag(in, byte, bytes_left_limit);
     t = (byte != 0);

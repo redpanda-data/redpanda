@@ -51,7 +51,7 @@ public:
         const_iterator;
 
     io_iterator_consumer(
-      io_const_iterator const& begin, io_const_iterator const& end) noexcept
+      const io_const_iterator& begin, const io_const_iterator& end) noexcept
       : _frag(begin)
       , _frag_end(end) {
         if (_frag != _frag_end) {

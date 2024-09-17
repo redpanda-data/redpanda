@@ -142,8 +142,8 @@ ss::future<std::optional<ss::sstring>> get_record_name(
 template<typename T>
 T combine(
   pandaproxy::schema_registry::schema_id_validation_mode mode,
-  std::optional<T> const& redpanda,
-  std::optional<T> const& compat,
+  const std::optional<T>& redpanda,
+  const std::optional<T>& compat,
   T dflt) {
     switch (mode) {
     case pandaproxy::schema_registry::schema_id_validation_mode::none:

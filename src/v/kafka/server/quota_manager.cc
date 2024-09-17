@@ -40,7 +40,7 @@
 
 using namespace std::chrono_literals;
 
-const static unsigned quotas_shard = 0;
+static const unsigned quotas_shard = 0;
 
 namespace kafka {
 

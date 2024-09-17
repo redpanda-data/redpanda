@@ -139,7 +139,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_records_name) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 25");
       });
 }
@@ -158,7 +158,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_partition_name) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 99");
       });
 }
@@ -177,7 +177,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_partition_type) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 112");
       });
 }
@@ -197,7 +197,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_before_records) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 28");
       });
 }
@@ -217,7 +217,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_after_records) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 152");
       });
 }
@@ -237,7 +237,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_between_records) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 144");
       });
 }
@@ -252,7 +252,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request_error_no_records) {
     BOOST_CHECK_EXCEPTION(
       ppj::impl::rjson_parse(input, make_binary_v2_handler()),
       ppj::parse_error,
-      [](ppj::parse_error const& e) {
+      [](const ppj::parse_error& e) {
           return e.what() == std::string_view("parse error at offset 24");
       });
 }

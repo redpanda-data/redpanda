@@ -97,9 +97,9 @@ public:
      */
     void pass();
 
-    ss::sstring const& get_username() const { return _username; }
-    ss::sstring const& get_password() const { return _password; }
-    ss::sstring const& get_sasl_mechanism() const { return _sasl_mechanism; }
+    const ss::sstring& get_username() const { return _username; }
+    const ss::sstring& get_password() const { return _password; }
+    const ss::sstring& get_sasl_mechanism() const { return _sasl_mechanism; }
 
     bool is_authenticated() const { return _authenticated; };
     bool is_superuser() const { return _superuser; }
@@ -126,8 +126,8 @@ public:
 
 private:
     request_auth_result do_authenticate(
-      ss::http::request const& req,
-      security::credential_store const& cred_store,
+      const ss::http::request& req,
+      const security::credential_store& cred_store,
       bool require_auth);
 
     cluster::controller* _controller{nullptr};

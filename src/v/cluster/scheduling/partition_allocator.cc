@@ -108,7 +108,7 @@ allocation_constraints partition_allocator::default_constraints() {
  * with partitions that cannot be re-accommodated on smaller peers).
  */
 std::error_code partition_allocator::check_cluster_limits(
-  allocation_request const& request) const {
+  const allocation_request& request) const {
     if (_members.local().nodes().empty()) {
         // Empty members table, we're probably running in a unit test
         return errc::success;

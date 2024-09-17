@@ -19,7 +19,7 @@ void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   ::detail::base_named_type<T, Tag, IsConstexpr>& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     using Type = std::decay_t<decltype(t)>;
     t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
 }

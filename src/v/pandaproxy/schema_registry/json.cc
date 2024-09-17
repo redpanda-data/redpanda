@@ -114,7 +114,7 @@ struct document_context {
 
 // Passed into is_superset_* methods where the path and the generated verbose
 // incompatibilities don't matter, only whether they are compatible or not
-const static std::filesystem::path ignored_path = "";
+static const std::filesystem::path ignored_path = "";
 
 } // namespace
 
@@ -157,7 +157,7 @@ canonical_schema_definition::raw_string json_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl->to_json()};
 }
 
-canonical_schema_definition::references const&
+const canonical_schema_definition::references&
 json_schema_definition::refs() const {
     return _impl->refs;
 }
@@ -177,7 +177,7 @@ std::optional<ss::sstring> json_schema_definition::title() const {
 }
 namespace {
 
-std::string_view as_string_view(json::Value const& v) {
+std::string_view as_string_view(const json::Value& v) {
     return {v.GetString(), v.GetStringLength()};
 }
 
@@ -196,8 +196,8 @@ ss::future<> check_references(sharded_store& store, canonical_schema schema) {
 
 // helper struct to format json::Value
 struct pj {
-    json::Value const& v;
-    friend std::ostream& operator<<(std::ostream& os, pj const& p) {
+    const json::Value& v;
+    friend std::ostream& operator<<(std::ostream& os, const pj& p) {
         auto osw = json::OStreamWrapper{os};
         auto writer = json::Writer<json::OStreamWrapper>{osw};
         p.v.Accept(writer);
@@ -207,13 +207,13 @@ struct pj {
 
 class schema_context {
 public:
-    explicit schema_context(json_schema_definition::impl const& schema)
+    explicit schema_context(const json_schema_definition::impl& schema)
       : _schema{schema} {}
 
     json_schema_dialect dialect() const { return _schema.ctx.dialect; }
 
 private:
-    json_schema_definition::impl const& _schema;
+    const json_schema_definition::impl& _schema;
 };
 
 struct context {
@@ -222,8 +222,8 @@ struct context {
 };
 
 template<json_schema_dialect Dialect>
-jsoncons::jsonschema::json_schema<jsoncons::json> const& get_metaschema() {
-    static auto const meteschema_doc = [] {
+const jsoncons::jsonschema::json_schema<jsoncons::json>& get_metaschema() {
+    static const auto meteschema_doc = [] {
         auto metaschema = [] {
             switch (Dialect) {
             case json_schema_dialect::draft4:
@@ -255,7 +255,7 @@ jsoncons::jsonschema::json_schema<jsoncons::json> const& get_metaschema() {
 result<json_schema_dialect> validate_json_schema(
   json_schema_dialect dialect, const jsoncons::json& schema) {
     // validation pre-step: get metaschema for json draft
-    auto const& metaschema_doc = [=]() -> const auto& {
+    const auto& metaschema_doc = [=]() -> const auto& {
         using enum json_schema_dialect;
         switch (dialect) {
         case draft4:
@@ -374,9 +374,9 @@ result<document_context> parse_json(iobuf buf) {
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p);
 
 // close the implementation in a namespace to keep it contained
@@ -425,7 +425,7 @@ constexpr std::optional<json_type> from_string_view(std::string_view v) {
       .default_match(std::nullopt);
 }
 
-constexpr auto parse_json_type(json::Value const& v) {
+constexpr auto parse_json_type(const json::Value& v) {
     auto sv = as_string_view(v);
     auto type = from_string_view(sv);
     if (!type) {
@@ -442,11 +442,11 @@ json::Value::ConstObject get_true_schema() {
     // `"additionalProperties": {}` it's used during mainly in
     // is_object_superset(older, newer) and in is_superset to short circuit
     // validation
-    static auto const true_schema = json::Value{rapidjson::kObjectType};
+    static const auto true_schema = json::Value{rapidjson::kObjectType};
     return true_schema.GetObject();
 }
 
-bool is_true_schema(json::Value const& v) {
+bool is_true_schema(const json::Value& v) {
     // check that v is either true or {}. used to break recursion with
     // is_superset NOTE that {"this_prop_is_not_real": 42} should be considered
     // a true schema, but this function does not recognize it.
@@ -472,7 +472,7 @@ json::Value::ConstObject get_false_schema() {
     // `"additionalProperty": false` is equivalent to `"additionalProperties":
     // {"not": {}}` it's used during mainly in is_object_superset(older, newer)
     // and in is_superset to short circuit validation
-    static auto const false_schema = [] {
+    static const auto false_schema = [] {
         auto tmp = json::Document{};
         tmp.Parse(R"({"not": {}})");
         vassert(!tmp.HasParseError(), "Malformed `false` json schema");
@@ -481,7 +481,7 @@ json::Value::ConstObject get_false_schema() {
     return false_schema.GetObject();
 }
 
-bool is_false_schema(json::Value const& v) {
+bool is_false_schema(const json::Value& v) {
     // check that v is either false or {"not": {}}. used to break recursion with
     // is_superset This will accept also {˝this_prop_is_not_real": 42, "not":
     // {}} as a false schema.
@@ -506,7 +506,7 @@ bool is_false_schema(json::Value const& v) {
 // parse None | schema_type | array[schema_type] into a set of types.
 // the return type is implemented as a inlined_vector<json_type> with sorted set
 // semantics
-json_type_list normalized_type(json::Value const& v) {
+json_type_list normalized_type(const json::Value& v) {
     auto type_it = v.FindMember("type");
     auto ret = json_type_list{};
     if (type_it == v.MemberEnd()) {
@@ -535,7 +535,7 @@ json_type_list normalized_type(json::Value const& v) {
 
 // helper to convert a boolean to a schema
 json::Value::ConstObject
-get_schema(schema_context const&, json::Value const& v) {
+get_schema(const schema_context&, const json::Value& v) {
     if (v.IsObject()) {
         return v.GetObject();
     }
@@ -554,7 +554,7 @@ get_schema(schema_context const&, json::Value const& v) {
 // helper to retrieve the object value for a key, or an empty object if the key
 // is not present
 json::Value::ConstObject get_object_or_empty(
-  schema_context const& ctx, json::Value const& v, std::string_view key) {
+  const schema_context& ctx, const json::Value& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
     if (it != v.MemberEnd()) {
@@ -567,7 +567,7 @@ json::Value::ConstObject get_object_or_empty(
 // helper to retrieve the array value for a key, or an empty array if the key
 // is not present
 json::Value::ConstArray
-get_array_or_empty(json::Value const& v, std::string_view key) {
+get_array_or_empty(const json::Value& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
     if (it != v.MemberEnd()) {
@@ -588,10 +588,10 @@ get_array_or_empty(json::Value const& v, std::string_view key) {
 // 2. older has a value and newer does not have. then the result is always not
 // compatible if no short circuit can happen, then the pointers are valid and
 // can be dereferenced.
-std::tuple<std::optional<bool>, json::Value const*, json::Value const*>
+std::tuple<std::optional<bool>, const json::Value*, const json::Value*>
 extract_property_and_gate_check(
-  json::Value const& older,
-  json::Value const& newer,
+  const json::Value& older,
+  const json::Value& newer,
   std::string_view prop_name) {
     auto older_it = older.FindMember(
       json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
@@ -626,15 +626,15 @@ extract_property_and_gate_check(
 template<typename VPred>
 requires std::is_invocable_r_v<bool, VPred, double, double>
 json_compatibility_result is_numeric_property_value_superset(
-  json::Value const& older,
-  json::Value const& newer,
+  const json::Value& older,
+  const json::Value& newer,
   std::string_view prop_name,
   VPred&& value_predicate,
   json_incompatibility changed_err,
   json_incompatibility added_err,
   std::optional<double> default_value = std::nullopt) {
     // get value or default_value
-    auto get_value = [&](json::Value const& v) -> std::optional<double> {
+    auto get_value = [&](const json::Value& v) -> std::optional<double> {
         auto it = v.FindMember(
           json::Value{prop_name.data(), rapidjson::SizeType(prop_name.size())});
 
@@ -686,9 +686,9 @@ json_compatibility_result is_numeric_property_value_superset(
 enum class additional_field_for { object, array };
 
 json_compatibility_result is_additional_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   additional_field_for field_type,
   std::filesystem::path p) {
     // "additional___" can be either true (if omitted it's true), false
@@ -737,8 +737,8 @@ json_compatibility_result is_additional_superset(
         }
     }();
     // helper to parse additional__
-    auto get_additional_props = [&](json_schema_dialect d, json::Value const& v)
-      -> std::variant<bool, json::Value const*> {
+    auto get_additional_props = [&](json_schema_dialect d, const json::Value& v)
+      -> std::variant<bool, const json::Value*> {
         auto it = v.FindMember(get_field_name(d));
         if (it == v.MemberEnd()) {
             return true;
@@ -762,7 +762,7 @@ json_compatibility_result is_additional_superset(
               std::move(additional_path), removed_errt);
         },
         [&ctx, &additional_path, removed_errt](
-          bool older, json::Value const* newer) {
+          bool older, const json::Value* newer) {
             if (older) {
                 // true is compatible with any schema
                 return json_compatibility_result{};
@@ -776,7 +776,7 @@ json_compatibility_result is_additional_superset(
             return json_compatibility_result{};
         },
         [&ctx, &additional_path, narrowed_errt](
-          json::Value const* older, bool newer) {
+          const json::Value* older, bool newer) {
             if (!newer) {
                 // any schema is compatible with false
                 return json_compatibility_result{};
@@ -790,7 +790,7 @@ json_compatibility_result is_additional_superset(
             return json_compatibility_result{};
         },
         [&ctx,
-         &additional_path](json::Value const* older, json::Value const* newer) {
+         &additional_path](const json::Value* older, const json::Value* newer) {
             // check subschemas for compatibility
             return is_superset(ctx, *older, *newer, std::move(additional_path));
         }),
@@ -799,7 +799,7 @@ json_compatibility_result is_additional_superset(
 }
 
 json_compatibility_result is_string_superset(
-  json::Value const& older, json::Value const& newer, std::filesystem::path p) {
+  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
     json_compatibility_result res;
 
     // note: "format" is not part of the checks
@@ -841,7 +841,7 @@ json_compatibility_result is_string_superset(
 }
 
 json_compatibility_result is_numeric_superset(
-  json::Value const& older, json::Value const& newer, std::filesystem::path p) {
+  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
     json_compatibility_result res;
 
     // preconditions:
@@ -901,13 +901,13 @@ json_compatibility_result is_numeric_superset(
     // implemented in this helper
     auto exclusive_limit_check =
       [](
-        json::Value const& older,
-        json::Value const& newer,
+        const json::Value& older,
+        const json::Value& newer,
         std::string_view prop_name,
         std::invocable<double, double> auto pred,
         json_compatibility_result changed_err,
         json_compatibility_result added_err) -> json_compatibility_result {
-        auto get_value = [=](json::Value const& v)
+        auto get_value = [=](const json::Value& v)
           -> std::variant<std::monostate, bool, double> {
             auto it = v.FindMember(json::Value{
               prop_name.data(), rapidjson::SizeType(prop_name.size())});
@@ -999,9 +999,9 @@ json_compatibility_result is_numeric_superset(
 }
 
 json_compatibility_result is_array_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
 
@@ -1035,7 +1035,7 @@ json_compatibility_result is_array_superset(
 
     // uniqueItems makes sense mostly for arrays, but it's also allowed for
     // tuples, so the validation is done here
-    auto get_unique_items = [](json::Value const& v) {
+    auto get_unique_items = [](const json::Value& v) {
         auto it = v.FindMember("uniqueItems");
         if (it == v.MemberEnd()) {
             // default value
@@ -1087,7 +1087,7 @@ json_compatibility_result is_array_superset(
     };
 
     // check if the input is an array schema or a tuple schema
-    auto is_tuple = [](json_schema_dialect d, json::Value const& v) -> bool {
+    auto is_tuple = [](json_schema_dialect d, const json::Value& v) -> bool {
         auto tuple_items_it = v.FindMember(get_tuple_items_kw(d));
         // default for items is `{}` so it's not a tuple schema
         // v is a tuple schema if "items" is an array of schemas
@@ -1168,7 +1168,7 @@ json_compatibility_result is_array_superset(
                   : json_incompatibility_type::
                       item_added_not_covered_by_partially_open_content_model;
 
-    std::for_each(excess_begin, excess_end, [&](json::Value const& e) {
+    std::for_each(excess_begin, excess_end, [&](const json::Value& e) {
         auto item_p = p / "items" / std::to_string(index);
         auto sup_res = newer_has_more
                          ? is_superset(ctx, older_additional_schema, e, item_p)
@@ -1186,9 +1186,9 @@ json_compatibility_result is_array_superset(
 }
 
 json_compatibility_result is_object_properties_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
     // check that every property in newer["properties"]
@@ -1214,7 +1214,7 @@ json_compatibility_result is_object_properties_superset(
     auto older_additional_properties = get_object_or_empty(
       ctx.older, older, "additionalProperties");
     // scan every prop in newer["properties"]
-    for (auto const& [prop, schema] : newer_properties) {
+    for (const auto& [prop, schema] : newer_properties) {
         auto prop_path = [&p, &prop] {
             return p / "properties" / prop.GetString();
         };
@@ -1232,7 +1232,7 @@ json_compatibility_result is_object_properties_superset(
         // older["patternProperties"] that matches
         auto pattern_match_found = false;
         for (auto pname = as_string_view(prop);
-             auto const& [propPattern, schemaPattern] :
+             const auto& [propPattern, schemaPattern] :
              older_pattern_properties) {
             // TODO this rebuilds the regex each time, could be cached
             auto regex = re2::RE2(as_string_view(propPattern));
@@ -1287,9 +1287,9 @@ json_compatibility_result is_object_properties_superset(
 }
 
 json_compatibility_result is_object_required_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
     // to pass the check, a required property from newer has to be present in
@@ -1308,7 +1308,7 @@ json_compatibility_result is_object_required_superset(
 
     // TODO O(n^2) lookup that can be a set_intersection.
     auto older_req_in_both_properties
-      = older_req | std::views::filter([&](json::Value const& o) {
+      = older_req | std::views::filter([&](const json::Value& o) {
             return newer_props.HasMember(o) && older_props.HasMember(o);
         });
 
@@ -1318,7 +1318,7 @@ json_compatibility_result is_object_required_superset(
     //       yes          |         no         |  if it has "default" in older
     //       no           |        yes         |  yes
     std::ranges::for_each(
-      older_req_in_both_properties, [&](json::Value const& o) {
+      older_req_in_both_properties, [&](const json::Value& o) {
           if (
             std::ranges::find(newer_req, o) == newer_req.End()
             && !older_props[o].HasMember("default")) {
@@ -1331,9 +1331,9 @@ json_compatibility_result is_object_required_superset(
 }
 
 json_compatibility_result is_object_dependencies_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
     // "dependencies", if present, is a dict of <property, string_array |
@@ -1349,9 +1349,9 @@ json_compatibility_result is_object_dependencies_superset(
     // compatible
     // TODO: n^2 search
 
-    std::ranges::for_each(older_p, [&](json::Value::Member const& older_dep) {
+    std::ranges::for_each(older_p, [&](const json::Value::Member& older_dep) {
         auto path_dep = p / "dependencies" / as_string_view(older_dep.name);
-        auto const& o = older_dep.value;
+        const auto& o = older_dep.value;
         auto n_it = newer_p.FindMember(older_dep.name);
 
         if (o.IsObject()) {
@@ -1362,7 +1362,7 @@ json_compatibility_result is_object_dependencies_superset(
                 return;
             }
 
-            auto const& n = n_it->value;
+            const auto& n = n_it->value;
 
             if (!n.IsObject()) {
                 res.emplace<json_incompatibility>(
@@ -1381,7 +1381,7 @@ json_compatibility_result is_object_dependencies_superset(
                 return;
             }
 
-            auto const& n = n_it->value;
+            const auto& n = n_it->value;
 
             if (!n.IsArray()) {
                 res.emplace<json_incompatibility>(
@@ -1392,12 +1392,12 @@ json_compatibility_result is_object_dependencies_superset(
             // string array: n needs to be a a superset of o
             // TODO: n^2 search
             bool n_superset_of_o = std::ranges::all_of(
-              o.GetArray(), [n_array = n.GetArray()](json::Value const& p) {
+              o.GetArray(), [n_array = n.GetArray()](const json::Value& p) {
                   return std::ranges::find(n_array, p) != n_array.End();
               });
             if (!n_superset_of_o) {
                 bool o_superset_of_n = std::ranges::all_of(
-                  n.GetArray(), [o_array = o.GetArray()](json::Value const& p) {
+                  n.GetArray(), [o_array = o.GetArray()](const json::Value& p) {
                       return std::ranges::find(o_array, p) != o_array.End();
                   });
                 if (o_superset_of_n) {
@@ -1423,9 +1423,9 @@ json_compatibility_result is_object_dependencies_superset(
 }
 
 json_compatibility_result is_object_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
 
@@ -1479,7 +1479,7 @@ json_compatibility_result is_object_superset(
 }
 
 json_compatibility_result is_enum_superset(
-  json::Value const& older, json::Value const& newer, std::filesystem::path p) {
+  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
     json_compatibility_result res;
     auto enum_p = p / "enum";
 
@@ -1530,9 +1530,9 @@ json_compatibility_result is_enum_superset(
 }
 
 json_compatibility_result is_not_combinator_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
 
@@ -1581,13 +1581,13 @@ json::Value to_keyword(p_combinator c) {
 }
 
 json_compatibility_result is_positive_combinator_superset(
-  context const& ctx,
-  json::Value const& older,
-  json::Value const& newer,
+  const context& ctx,
+  const json::Value& older,
+  const json::Value& newer,
   std::filesystem::path p) {
     json_compatibility_result res;
 
-    auto get_combinator = [](json::Value const& v) {
+    auto get_combinator = [](const json::Value& v) {
         auto res = std::optional<p_combinator>{};
         for (auto c :
              {p_combinator::oneOf, p_combinator::allOf, p_combinator::anyOf}) {
@@ -1655,7 +1655,7 @@ json_compatibility_result is_positive_combinator_superset(
             // older has only one subschema, newer is "allOf" so it can be
             // compatible if any one of the subschemas matches older
             auto any_superset = std::ranges::any_of(
-              newer_schemas, [&](json::Value const& s) {
+              newer_schemas, [&](const json::Value& s) {
                   return !is_superset(
                             ctx, *older_schemas.Begin(), s, ignored_path)
                             .has_error();
@@ -1673,7 +1673,7 @@ json_compatibility_result is_positive_combinator_superset(
             // compatible if the only subschema in newer is compatible with one
             // in older
             auto any_superset = std::ranges::any_of(
-              older_schemas, [&](json::Value const& s) {
+              older_schemas, [&](const json::Value& s) {
                   return !is_superset(
                             ctx, s, *newer_schemas.Begin(), ignored_path)
                             .has_error();
@@ -1772,9 +1772,9 @@ using namespace is_superset_impl;
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  context const& ctx,
-  json::Value const& older_schema,
-  json::Value const& newer_schema,
+  const context& ctx,
+  const json::Value& older_schema,
+  const json::Value& newer_schema,
   std::filesystem::path p) {
     json_compatibility_result res;
 

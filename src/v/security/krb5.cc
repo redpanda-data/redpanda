@@ -41,7 +41,7 @@ struct realm_deleter {
 
 result<context> context::create() noexcept {
     ::krb5_context krb5_ctx{nullptr};
-    int const krb5_rv = ::krb5_init_context(&krb5_ctx);
+    const int krb5_rv = ::krb5_init_context(&krb5_ctx);
     if (krb5_rv != 0) {
         impl::error_message msg{
           ::krb5_get_error_message(nullptr, krb5_rv), nullptr};
@@ -55,7 +55,7 @@ result<context> context::create() noexcept {
 
 result<ss::sstring> context::get_default_realm() const noexcept {
     char* default_realm_ptr = nullptr;
-    int const krb5_rv = ::krb5_get_default_realm(
+    const int krb5_rv = ::krb5_get_default_realm(
       _ctx.get(), &default_realm_ptr);
     if (krb5_rv != 0) {
         impl::error_message msg{
@@ -65,7 +65,7 @@ result<ss::sstring> context::get_default_realm() const noexcept {
         return err;
     }
 
-    std::unique_ptr<char, realm_deleter> const default_realm(
+    const std::unique_ptr<char, realm_deleter> default_realm(
       default_realm_ptr, realm_deleter{_ctx.get()});
     return ss::sstring{std::string_view{default_realm.get()}};
 }

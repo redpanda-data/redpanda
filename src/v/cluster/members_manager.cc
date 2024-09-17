@@ -1090,7 +1090,7 @@ members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
 
 ss::future<result<join_node_reply>>
 members_manager::dispatch_join_to_seed_server(
-  seed_iterator it, join_node_request const& req) {
+  seed_iterator it, const join_node_request& req) {
     using ret_t = result<join_node_reply>;
     auto f = ss::make_ready_future<ret_t>(errc::seed_servers_exhausted);
     if (it == std::cend(_seed_servers)) {
@@ -1237,7 +1237,7 @@ static bool contains_address(
 }
 
 ss::future<result<join_node_reply>>
-members_manager::handle_join_request(join_node_request const req) {
+members_manager::handle_join_request(const join_node_request req) {
     using ret_t = result<join_node_reply>;
     using status_t = join_node_reply::status_code;
 

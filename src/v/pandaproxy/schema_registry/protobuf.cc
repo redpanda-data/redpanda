@@ -432,7 +432,7 @@ protobuf_schema_definition::raw() const {
 }
 
 ::result<ss::sstring, kafka::error_code>
-protobuf_schema_definition::name(std::vector<int> const& fields) const {
+protobuf_schema_definition::name(const std::vector<int>& fields) const {
     if (fields.empty()) {
         return kafka::error_code::invalid_record;
     }

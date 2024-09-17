@@ -15,7 +15,7 @@
 
 namespace admin {
 void apply_validator(
-  json::validator& validator, json::Document::ValueType const& doc) {
+  json::validator& validator, const json::Document::ValueType& doc) {
     try {
         json::validate(validator, doc);
     } catch (const json::json_validation_error& err) {

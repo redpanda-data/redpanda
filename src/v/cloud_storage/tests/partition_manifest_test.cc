@@ -1764,7 +1764,7 @@ void reference_check_timequery(
  * does its own linear scan of segments, as a reference implementation
  * of timequery.
  */
-void scan_ts_segments_general(partition_manifest const& m) {
+void scan_ts_segments_general(const partition_manifest& m) {
     // Before range: should get first segment
     reference_check_timequery(
       m, model::timestamp{m.begin()->base_timestamp() - 100});
@@ -1785,7 +1785,7 @@ void scan_ts_segments_general(partition_manifest const& m) {
  * offset
  */
 void expect_ts_segment(
-  std::optional<partition_manifest::segment_meta> const& s, int base_offset) {
+  const std::optional<partition_manifest::segment_meta>& s, int base_offset) {
     BOOST_REQUIRE(s);
     BOOST_REQUIRE_EQUAL(s->base_offset, model::offset{base_offset});
 }
@@ -1794,7 +1794,7 @@ void expect_ts_segment(
  * For non-overlapping time ranges on segments, verify that each timestamp
  * maps to the expected segment.
  */
-void scan_ts_segments(partition_manifest const& m) {
+void scan_ts_segments(const partition_manifest& m) {
     // Before range: should get first segment
     expect_ts_segment(
       m.timequery(model::timestamp{m.begin()->base_timestamp() - 100}),

@@ -63,7 +63,7 @@ std::optional<std::reference_wrapper<const http_test_utils::request_info>>
 http_imposter_fixture::get_latest_request(
   const ss::sstring& url, bool ignore_url_params) const {
     auto i = std::ranges::upper_bound(
-      _targets, url, std::less<>{}, [=](auto const& url_ri) {
+      _targets, url, std::less<>{}, [=](const auto& url_ri) {
           return ignore_url_params ? remove_query_params(url_ri.first)
                                    : url_ri.first;
       });
@@ -175,7 +175,7 @@ bool http_imposter_fixture::has_call(
   std::string_view url, bool ignore_params) const {
     return std::ranges::find_if(
              _requests,
-             [&](http_test_utils::request_info const& ri) {
+             [&](const http_test_utils::request_info& ri) {
                  return url
                         == (ignore_params ? remove_query_params(ri.url) : ri.url);
              })

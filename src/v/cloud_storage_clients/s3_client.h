@@ -49,8 +49,8 @@ public:
     /// \param payload_size_bytes is a size of the object in bytes
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_unsigned_put_object_request(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       size_t payload_size_bytes);
 
     /// \brief Create a 'GetObject' request header
@@ -60,8 +60,8 @@ public:
     /// \param key is an object name
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_get_object_request(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       std::optional<http_byte_range> byte_range = std::nullopt);
 
     /// \brief Create a 'HeadObject' request header
@@ -70,7 +70,7 @@ public:
     /// \param key is an object name
     /// \return initialized and signed http header or error
     result<http::client::request_header>
-    make_head_object_request(bucket_name const& name, object_key const& key);
+    make_head_object_request(const bucket_name& name, const object_key& key);
 
     /// \brief Create a 'DeleteObject' request header
     ///
@@ -78,7 +78,7 @@ public:
     /// \param key is an object name
     /// \return initialized and signed http header or error
     result<http::client::request_header>
-    make_delete_object_request(bucket_name const& name, object_key const& key);
+    make_delete_object_request(const bucket_name& name, const object_key& key);
 
     /// \brief Create a 'DeleteObjects' request header and body
     ///
@@ -87,7 +87,7 @@ public:
     /// \return the header and an the body as an input_stream
     result<std::tuple<http::client::request_header, ss::input_stream<char>>>
     make_delete_objects_request(
-      bucket_name const& name, std::span<const object_key> keys);
+      const bucket_name& name, std::span<const object_key> keys);
 
     /// \brief Initialize http header for 'ListObjectsV2' request
     ///
@@ -152,8 +152,8 @@ public:
     /// \return future that gets ready after request was sent
     ss::future<result<http::client::response_stream_ref, error_outcome>>
     get_object(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
       std::optional<http_byte_range> byte_range = std::nullopt) override;
@@ -163,8 +163,8 @@ public:
     /// \param key is an id of the object
     /// \return future that becomes ready when the request is completed
     ss::future<result<head_object_result, error_outcome>> head_object(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       ss::lowres_clock::duration timeout) override;
 
     /// Put object to S3 bucket.
@@ -174,8 +174,8 @@ public:
     /// \param body is an input_stream that can be used to read body
     /// \return future that becomes ready when the upload is completed
     ss::future<result<no_response, error_outcome>> put_object(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
@@ -203,20 +203,20 @@ public:
 
 private:
     ss::future<head_object_result> do_head_object(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       ss::lowres_clock::duration timeout);
 
     ss::future<http::client::response_stream_ref> do_get_object(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
       std::optional<http_byte_range> byte_range = std::nullopt);
 
     ss::future<> do_put_object(
-      bucket_name const& name,
-      object_key const& key,
+      const bucket_name& name,
+      const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,

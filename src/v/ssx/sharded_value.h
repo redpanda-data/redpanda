@@ -35,11 +35,11 @@ public:
     sharded_value(sharded_value&& other) noexcept = default;
     sharded_value& operator=(sharded_value&&) noexcept = default;
 
-    sharded_value(sharded_value const&) = delete;
-    sharded_value& operator=(sharded_value const&) = delete;
+    sharded_value(const sharded_value&) = delete;
+    sharded_value& operator=(const sharded_value&) = delete;
 
     /// get a reference to the local instance
-    T const& local() const { return _state[ss::this_shard_id()]; }
+    const T& local() const { return _state[ss::this_shard_id()]; }
 
     /// get a reference to the local instance
     T& local() { return _state[ss::this_shard_id()]; }

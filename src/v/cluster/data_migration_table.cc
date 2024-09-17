@@ -247,8 +247,8 @@ migrations_table::validate_migrated_resources(
 
 ss::future<std::error_code>
 migrations_table::apply(update_data_migration_state_cmd cmd) {
-    auto const id = cmd.value.id;
-    auto const requested_state = cmd.value.requested_state;
+    const auto id = cmd.value.id;
+    const auto requested_state = cmd.value.requested_state;
     vlog(
       dm_log.debug,
       "applying update data migration {} state to {}",

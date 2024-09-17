@@ -105,7 +105,7 @@ public:
 
 private:
     /// \brief Log the client ID if it exists, otherwise don't log
-    friend std::ostream& operator<<(std::ostream& os, broker const& b) {
+    friend std::ostream& operator<<(std::ostream& os, const broker& b) {
         if (b._client.client_id().has_value()) {
             fmt::print(os, "{}: ", b._client.client_id().value());
         }

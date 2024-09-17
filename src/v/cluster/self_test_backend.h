@@ -80,7 +80,7 @@ private:
     do_start_test(start_test_request r);
 
     struct previous_netcheck_entity {
-        static const inline model::node_id unassigned{-1};
+        static inline const model::node_id unassigned{-1};
         model::node_id source{unassigned};
         ss::lowres_clock::time_point last_request{ss::lowres_clock::now()};
     };

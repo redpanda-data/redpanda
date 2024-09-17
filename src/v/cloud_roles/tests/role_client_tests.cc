@@ -138,7 +138,7 @@ FIXTURE_TEST(test_sts_credentials_fetch, fixture) {
 
 class cloud_roles::aks_test_helper {
 public:
-    static auto get_address(azure_aks_refresh_impl const& aks) {
+    static auto get_address(const azure_aks_refresh_impl& aks) {
         return aks.address();
     }
 };

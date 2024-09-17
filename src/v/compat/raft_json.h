@@ -25,7 +25,7 @@ rjson_serialize(json::Writer<json::StringBuffer>& w, const raft::vnode& v) {
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, raft::vnode& obj) {
+inline void read_value(const json::Value& rd, raft::vnode& obj) {
     model::node_id node_id;
     model::revision_id revision;
     read_member(rd, "id", node_id);
@@ -53,7 +53,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, raft::protocol_metadata& obj) {
+inline void read_value(const json::Value& rd, raft::protocol_metadata& obj) {
     raft::protocol_metadata tmp;
     read_member(rd, "group", tmp.group);
     read_member(rd, "commit_index", tmp.commit_index);
@@ -65,7 +65,7 @@ inline void read_value(json::Value const& rd, raft::protocol_metadata& obj) {
     obj = tmp;
 }
 
-inline void read_value(json::Value const& rd, raft::heartbeat_metadata& obj) {
+inline void read_value(const json::Value& rd, raft::heartbeat_metadata& obj) {
     raft::heartbeat_metadata tmp;
     read_member(rd, "meta", tmp.meta);
     read_member(rd, "node_id", tmp.node_id);
@@ -85,7 +85,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
+inline void read_value(const json::Value& rd, raft::append_entries_reply& out) {
     raft::append_entries_reply obj;
     json_read(target_node_id);
     json_read(node_id);
@@ -120,7 +120,7 @@ inline void rjson_serialize(
     rjson_serialize(wr, v.value());
 }
 
-inline void read_value(json::Value const& rd, model::timestamp& out) {
+inline void read_value(const json::Value& rd, model::timestamp& out) {
     out = model::timestamp(rd.GetInt64());
 }
 
@@ -144,7 +144,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, model::record_batch_attributes& out) {
+read_value(const json::Value& rd, model::record_batch_attributes& out) {
     out = model::record_batch_attributes(rd.GetInt());
 }
 
@@ -153,7 +153,7 @@ inline void rjson_serialize(
     rjson_serialize(wr, b.value());
 }
 
-inline void read_value(json::Value const& rd, model::record_attributes& out) {
+inline void read_value(const json::Value& rd, model::record_attributes& out) {
     out = model::record_attributes(rd.GetInt());
 }
 
@@ -211,7 +211,7 @@ inline void rjson_serialize(
     wr.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::record_batch_header& out) {
+inline void read_value(const json::Value& rd, model::record_batch_header& out) {
     model::record_batch_header obj;
     json_read(header_crc);
     json_read(size_bytes);
@@ -238,8 +238,8 @@ inline void read_value(json::Value const& rd, model::record_batch_header& out) {
  * circumvent the normal api to which requires default ctor is available.
  */
 inline void read_value(
-  json::Value const& v, ss::circular_buffer<model::record_batch>& target) {
-    for (auto const& e : v.GetArray()) {
+  const json::Value& v, ss::circular_buffer<model::record_batch>& target) {
+    for (const auto& e : v.GetArray()) {
         model::record_batch_header header;
         std::vector<model::record> records;
 
@@ -254,7 +254,7 @@ inline void read_value(
         vassert(
           e.HasMember("records") && e["records"].IsArray(),
           "invalid records field");
-        for (auto const& r : e["records"].GetArray()) {
+        for (const auto& r : e["records"].GetArray()) {
             vassert(r.IsObject(), "record is not an object");
 
             int32_t size_bytes{};

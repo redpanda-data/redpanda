@@ -44,15 +44,15 @@ BOOST_AUTO_TEST_CASE(schema_parsing_error) {
       parse_schema_fail));
 }
 
-auto to_str(cloud_roles::validate_and_parse_res const& val) {
+auto to_str(const cloud_roles::validate_and_parse_res& val) {
     return ss::visit(
       val,
-      [](json::Document const&) -> ss::sstring { return "json::Document"; },
-      [](cloud_roles::malformed_api_response_error const& mal) {
+      [](const json::Document&) -> ss::sstring { return "json::Document"; },
+      [](const cloud_roles::malformed_api_response_error& mal) {
           return ssx::sformat(
             "malformed_api_response_error: {}", mal.missing_fields);
       },
-      [](cloud_roles::api_response_parse_error const& pe) {
+      [](const cloud_roles::api_response_parse_error& pe) {
           return ssx::sformat("api_response_parse_error: {}", pe.reason);
       });
 }

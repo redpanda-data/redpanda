@@ -233,7 +233,7 @@ ss::sstring gssapi_rule::replace_substitution(
   repeat repeat_) {
     ss::sstring replace_value;
 
-    std::regex_constants::match_flag_type const flags
+    const std::regex_constants::match_flag_type flags
       = std::regex_constants::format_default
         | (repeat_ ? std::regex_constants::match_default : std::regex_constants::format_first_only);
 
@@ -253,7 +253,7 @@ template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
 fmt::formatter<security::gssapi_rule, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
-  security::gssapi_rule const& r,
+  const security::gssapi_rule& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     if (r._is_default) {
         return fmt::format_to(ctx.out(), "DEFAULT");

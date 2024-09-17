@@ -602,7 +602,7 @@ group_configuration::find_by_node_id(model::node_id id) const {
 std::vector<vnode> group_configuration::all_nodes() const {
     std::vector<vnode> ret;
 
-    auto const copy_unique = [&ret](const std::vector<vnode>& source) {
+    const auto copy_unique = [&ret](const std::vector<vnode>& source) {
         std::copy_if(
           source.begin(),
           source.end(),

@@ -56,8 +56,8 @@ inline ss::logger tstlog("raft_test");
 
 using namespace std::chrono_literals; // NOLINT
 
-inline static std::chrono::milliseconds heartbeat_interval = 40ms;
-inline static const raft::replicate_options
+static inline std::chrono::milliseconds heartbeat_interval = 40ms;
+static inline const raft::replicate_options
   default_replicate_opts(raft::consistency_level::quorum_ack);
 
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;

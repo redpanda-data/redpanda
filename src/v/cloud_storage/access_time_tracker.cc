@@ -37,7 +37,7 @@ template<class Key, class Value>
 void read_nested(
   iobuf_parser& in,
   btree_map<Key, Value>& btree,
-  size_t const bytes_left_limit) {
+  const size_t bytes_left_limit) {
     using serde::read_nested;
     uint64_t sz;
     read_nested(in, sz, bytes_left_limit);

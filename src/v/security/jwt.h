@@ -47,36 +47,36 @@ template<typename T>
 concept string_viewable = detail::is_string_viewable<T>::value;
 
 template<typename ToCharT = char>
-std::basic_string_view<ToCharT> char_view_cast(string_viewable auto const& sv) {
-    return {reinterpret_cast<ToCharT const*>(sv.data()), sv.size()};
+std::basic_string_view<ToCharT> char_view_cast(const string_viewable auto& sv) {
+    return {reinterpret_cast<const ToCharT*>(sv.data()), sv.size()};
 }
 
 struct string_viewable_compare {
     using is_transparent = void;
     bool operator()(
-      string_viewable auto const& lhs, string_viewable auto const& rhs) const {
+      const string_viewable auto& lhs, const string_viewable auto& rhs) const {
         return char_view_cast(lhs) == char_view_cast(rhs);
     }
 };
 
 struct string_viewable_hasher {
     using is_transparent = void;
-    size_t operator()(string_viewable auto const& sv) const {
+    size_t operator()(const string_viewable auto& sv) const {
         return std::hash<std::string_view>{}(char_view_cast(sv));
     }
 };
 
 template<typename CharT = std::string_view::value_type>
-std::basic_string_view<CharT> as_string_view(json::Value const& v) {
+std::basic_string_view<CharT> as_string_view(const json::Value& v) {
     expression_in_debug_mode(
       vassert(
         v.IsString(), "only Strings can be converted to std::string_view"););
-    return {reinterpret_cast<CharT const*>(v.GetString()), v.GetStringLength()};
+    return {reinterpret_cast<const CharT*>(v.GetString()), v.GetStringLength()};
 }
 
 template<typename CharT = std::string_view::value_type>
 std::optional<std::basic_string_view<CharT>>
-string_view(json::Value const& doc, std::string_view field) {
+string_view(const json::Value& doc, std::string_view field) {
     auto it = doc.FindMember(field.data());
     if (it == doc.MemberEnd() || !it->value.IsString()) {
         return std::nullopt;
@@ -86,7 +86,7 @@ string_view(json::Value const& doc, std::string_view field) {
 
 template<typename Clock>
 std::optional<typename Clock::time_point>
-time_point(json::Value const& doc, std::string_view field) {
+time_point(const json::Value& doc, std::string_view field) {
     auto it = doc.FindMember(field.data());
     if (it == doc.MemberEnd() || !it->value.IsInt64()) {
         return std::nullopt;
@@ -98,7 +98,7 @@ time_point(json::Value const& doc, std::string_view field) {
 bytes base64_url_decode(std::string_view sv);
 
 std::optional<bytes>
-base64_url_decode(json::Value const& v, std::string_view field);
+base64_url_decode(const json::Value& v, std::string_view field);
 
 } // namespace detail
 
@@ -115,7 +115,7 @@ public:
         if (doc.HasParseError() || !doc.IsObject()) {
             return errc::metadata_invalid;
         }
-        for (auto const& field : {"issuer", "jwks_uri"}) {
+        for (const auto& field : {"issuer", "jwks_uri"}) {
             auto f = detail::string_view(doc, field);
             if (!f || f->empty()) {
                 return errc::metadata_invalid;
@@ -213,7 +213,7 @@ public:
             return errc::jwt_invalid_typ;
         }
 
-        for (auto const& field :
+        for (const auto& field :
              {std::make_pair("alg", errc::jwt_invalid_alg),
               std::make_pair("kid", errc::jwt_invalid_kid)}) {
             auto f = detail::string_view(header, field.first);
@@ -231,7 +231,7 @@ public:
     }
 
     // Retrieve the Claim by JSON Pointer.
-    std::optional<std::string_view> claim(json::Pointer const& p) const {
+    std::optional<std::string_view> claim(const json::Pointer& p) const {
         auto claim = p.Get(_payload);
         if (!claim || !claim->IsString()) {
             return std::nullopt;
@@ -262,7 +262,7 @@ public:
     // Check for aud in the "aud" Claim
     // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.3
     bool has_aud(std::string_view aud) const {
-        const auto is_aud = [aud](auto const& v) {
+        const auto is_aud = [aud](const auto& v) {
             return v.IsString()
                    && std::string_view{v.GetString(), v.GetStringLength()}
                         == aud;
@@ -307,8 +307,8 @@ public:
     auto jti() const { return claim("jti"); }
 
 private:
-    friend std::ostream& operator<<(std::ostream& os, jwt const& jwt) {
-        const auto write = [](std::ostream& os, auto const& doc) {
+    friend std::ostream& operator<<(std::ostream& os, const jwt& jwt) {
+        const auto write = [](std::ostream& os, const auto& doc) {
             json::OStreamWrapper osw(os);
             json::Writer<json::OStreamWrapper> h{osw};
             doc.Accept(h);
@@ -396,16 +396,16 @@ public:
       : _impl(std::move(v)) {}
 
     auto alg() const {
-        return ss::visit(_impl, [](auto const& impl) { return impl.alg(); });
+        return ss::visit(_impl, [](const auto& impl) { return impl.alg(); });
     }
 
     auto kty() const {
-        return ss::visit(_impl, [](auto const& impl) { return impl.kty(); });
+        return ss::visit(_impl, [](const auto& impl) { return impl.kty(); });
     }
 
     bool verify(bytes_view msg, bytes_view sig) const {
         return ss::visit(
-          _impl, [=](auto const& impl) { return impl.verify(msg, sig); });
+          _impl, [=](const auto& impl) { return impl.verify(msg, sig); });
     }
 
 private:
@@ -413,7 +413,7 @@ private:
     verifier_impls _impl;
 };
 
-inline result<verifier> make_rs256_verifier(json::Value const& jwk) {
+inline result<verifier> make_rs256_verifier(const json::Value& jwk) {
     try {
         auto n = detail::base64_url_decode(jwk, "n");
         auto e = detail::base64_url_decode(jwk, "e");
@@ -422,9 +422,9 @@ inline result<verifier> make_rs256_verifier(json::Value const& jwk) {
         }
         auto key = crypto::key::load_rsa_public_key(n.value(), e.value());
         return verifier{rs256_verifier{std::move(key)}};
-    } catch (base64_url_decoder_exception const&) {
+    } catch (const base64_url_decoder_exception&) {
         return errc::jwk_invalid;
-    } catch (crypto::exception const&) {
+    } catch (const crypto::exception&) {
         return errc::jwk_invalid;
     }
 }
@@ -435,10 +435,10 @@ using verifiers = absl::flat_hash_map<
   detail::string_viewable_hasher,
   detail::string_viewable_compare>;
 
-inline result<verifiers> make_verifiers(jwks const& jwks) {
+inline result<verifiers> make_verifiers(const jwks& jwks) {
     auto keys = jwks.keys();
     verifiers vs;
-    for (auto const& key : keys) {
+    for (const auto& key : keys) {
         // NOTE(oren): 'alg' field is optional per RFC 7517
         // https://datatracker.ietf.org/doc/html/rfc7517#section-4.4
         // In particular, Azure doesn't include it, so in its absence we can
@@ -451,7 +451,7 @@ inline result<verifiers> make_verifiers(jwks const& jwks) {
             continue;
         }
 
-        using factory = result<verifier> (*)(json::Value const&);
+        using factory = result<verifier> (*)(const json::Value&);
         auto v = string_switch<std::optional<factory>>(alg)
                    .match(rs256_str, &make_rs256_verifier)
                    .default_match(std::optional<factory>{});
@@ -481,7 +481,7 @@ public:
     explicit verifier() = default;
 
     // Verify the JWS signature and return the JWT
-    result<jwt> verify(jws const& jws) const {
+    result<jwt> verify(const jws& jws) const {
         std::string_view sv(jws._encoded);
         std::vector<std::string_view> jose_enc;
         jose_enc.reserve(3);
@@ -502,7 +502,7 @@ public:
                 json::Document dom;
                 dom.Parse(str.data(), str.length());
                 return dom;
-            } catch (base64_url_decoder_exception const&) {
+            } catch (const base64_url_decoder_exception&) {
                 return errc::jws_invalid_b64;
             }
         };
@@ -545,7 +545,7 @@ public:
     }
 
     // Update the verification keys
-    result<void> update_keys(jwks const& keys) {
+    result<void> update_keys(const jwks& keys) {
         auto verifiers = detail::make_verifiers(keys);
         if (verifiers.has_error()) {
             return verifiers.assume_error();

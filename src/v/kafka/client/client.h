@@ -77,7 +77,7 @@ public:
     using external_mitigate
       = ss::noncopyable_function<ss::future<>(std::exception_ptr)>;
     explicit client(
-      YAML::Node const& cfg,
+      const YAML::Node& cfg,
       external_mitigate mitigater = impl::default_external_mitigate);
 
     /// \brief Connect to all brokers.
@@ -193,7 +193,7 @@ private:
     ss::future<> apply(metadata_response res);
 
     /// \brief Log the client ID if it exists, otherwise don't log
-    friend std::ostream& operator<<(std::ostream& os, client const& c) {
+    friend std::ostream& operator<<(std::ostream& os, const client& c) {
         if (c._config.client_identifier().has_value()) {
             fmt::print(os, "{}: ", c._config.client_identifier().value());
         }

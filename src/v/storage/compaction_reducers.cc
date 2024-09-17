@@ -49,8 +49,8 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
         }
     } else {
         // not found - insert
-        auto const key_size = e.key.size();
-        auto const expected_size = [this, key_size] {
+        const auto key_size = e.key.size();
+        const auto expected_size = [this, key_size] {
             return idx_mem_usage() + _keys_mem_usage + key_size;
         };
 
@@ -296,8 +296,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
           });
     }
     auto batch = co_await compress_batch(original, std::move(to_copy.value()));
-    auto const start_pos = _appender->file_byte_offset();
-    auto const header_size = batch.header().size_bytes;
+    const auto start_pos = _appender->file_byte_offset();
+    const auto header_size = batch.header().size_bytes;
     _acc += header_size;
     // do not set broker_timestamp in this index, leave the operation to the
     // caller who has more context

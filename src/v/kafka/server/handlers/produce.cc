@@ -233,8 +233,8 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
  * the batch, if present
  */
 static auto validate_batch_timestamps(
-  model::ntp const& ntp,
-  model::record_batch_header const& header,
+  const model::ntp& ntp,
+  const model::record_batch_header& header,
   model::timestamp_type timestamp_type,
   net::server_probe& probe) -> std::optional<model::timestamp> {
     // we compute in std::chrono::timepoints, we print in model::timestamps

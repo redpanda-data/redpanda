@@ -176,7 +176,7 @@ ss::future<> proxy::configure() {
       principal);
     co_await kafka::client::set_client_credentials(*config, _client);
 
-    auto const& store = _controller->get_ephemeral_credential_store().local();
+    const auto& store = _controller->get_ephemeral_credential_store().local();
     bool has_ephemeral_credentials = store.has(store.find(principal));
     co_await container().invoke_on_all(
       _ctx.smp_sg, [has_ephemeral_credentials](proxy& p) {
@@ -212,7 +212,7 @@ ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
     }
     vlog(plog.debug, "mitigate_error: {}", eptr);
     return ss::make_exception_future<>(eptr).handle_exception_type(
-      [this, eptr](kafka::client::broker_error const& ex) {
+      [this, eptr](const kafka::client::broker_error& ex) {
           if (
             ex.error == kafka::error_code::sasl_authentication_failed
             && _has_ephemeral_credentials) {

@@ -30,8 +30,8 @@ namespace kafka::client {
 ss::future<std::unique_ptr<kafka::client::configuration>>
 create_client_credentials(
   cluster::controller& controller,
-  config::configuration const& cluster_cfg,
-  kafka::client::configuration const& client_cfg,
+  const config::configuration& cluster_cfg,
+  const kafka::client::configuration& client_cfg,
   security::acl_principal principal) {
     auto new_cfg = std::make_unique<kafka::client::configuration>(
       to_yaml(client_cfg, config::redact_secrets::no));
@@ -68,7 +68,7 @@ create_client_credentials(
 }
 
 void set_client_credentials(
-  kafka::client::configuration const& client_cfg,
+  const kafka::client::configuration& client_cfg,
   kafka::client::client& client) {
     client.config().sasl_mechanism.set_value(client_cfg.sasl_mechanism());
     client.config().scram_username.set_value(client_cfg.scram_username());
@@ -76,7 +76,7 @@ void set_client_credentials(
 }
 
 ss::future<> set_client_credentials(
-  kafka::client::configuration const& client_cfg,
+  const kafka::client::configuration& client_cfg,
   ss::sharded<kafka::client::client>& client) {
     co_await client.invoke_on_all([&client_cfg](kafka::client::client& client) {
         client.config().sasl_mechanism.set_value(client_cfg.sasl_mechanism());

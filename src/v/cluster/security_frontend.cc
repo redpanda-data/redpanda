@@ -388,7 +388,7 @@ security_frontend::get_bootstrap_user_creds_from_env() {
     return std::optional<user_and_credential>(
       std::in_place,
       security::credential_user{parts[0]},
-      ss::visit(scram, [&](auto const& scram) {
+      ss::visit(scram, [&](const auto& scram) {
           using scram_t = std::decay_t<decltype(scram)>;
           return scram_t::make_credentials(
             ss::sstring{parts[1]}, scram_t::min_iterations);

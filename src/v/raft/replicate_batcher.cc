@@ -175,7 +175,7 @@ replicate_batcher::do_cache_with_backpressure(
 }
 
 ss::future<> replicate_batcher::flush(
-  ssx::semaphore_units batcher_units, bool const transfer_flush) {
+  ssx::semaphore_units batcher_units, const bool transfer_flush) {
     auto item_cache = std::exchange(_item_cache, {});
     // this function should not throw, nor return exceptional futures,
     // since it is usually invoked in the background and there is
@@ -211,7 +211,7 @@ ss::future<> replicate_batcher::flush(
         }
 
         auto meta = _ptr->meta();
-        auto const term = model::term_id(meta.term);
+        const auto term = model::term_id(meta.term);
         ss::circular_buffer<model::record_batch> data;
         std::vector<item_ptr> notifications;
         ssx::semaphore_units item_memory_units(_max_batch_size_sem, 0);
