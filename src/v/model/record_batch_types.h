@@ -52,6 +52,8 @@ enum class record_batch_type : int8_t {
     client_quota = 31,        // client quota command
     data_migration_cmd = 32,  // data migration manipulation command
     group_fence_tx = 33,      // fence batch in group transactions
+    partition_properties_update
+    = 34, // special batch type used to update partition properties
     MAX = group_fence_tx,
 };
 
@@ -68,7 +70,8 @@ inline std::vector<model::record_batch_type> offset_translator_batch_types() {
       model::record_batch_type::raft_configuration,
       model::record_batch_type::archival_metadata,
       model::record_batch_type::version_fence,
-      model::record_batch_type::prefix_truncate};
+      model::record_batch_type::prefix_truncate,
+      model::record_batch_type::partition_properties_update};
 }
 
 } // namespace model
