@@ -12,13 +12,19 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "bytes/iobuf.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
+
+#include <absl/container/flat_hash_map.h>
 
 namespace http {
 
 using uri_encode_slash = ss::bool_class<struct uri_encode_slash_t>;
 ss::sstring uri_encode(std::string_view input, uri_encode_slash encode_slash);
+
+iobuf form_encode_data(
+  const absl::flat_hash_map<ss::sstring, ss::sstring>& data);
 
 } // namespace http
