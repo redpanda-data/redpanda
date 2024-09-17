@@ -11,6 +11,7 @@ redpanda_cc_library(
         "logger.cc",
         "request_builder.cc",
         "rest_client/rest_entity.cc",
+        "utils.cc",
     ],
     hdrs = [
         "chunk_encoding.h",
@@ -20,6 +21,7 @@ redpanda_cc_library(
         "probe.h",
         "request_builder.h",
         "rest_client/rest_entity.h",
+        "utils.h",
     ],
     include_prefix = "http",
     deps = [
