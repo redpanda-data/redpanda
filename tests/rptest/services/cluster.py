@@ -118,12 +118,9 @@ def cluster(log_allow_list: LogAllowList | None = None,
                         f"Test failed, doing failure checks on {redpanda.who_am_i()}..."
                     )
 
-                    # Disabled to avoid addr2line hangs
-                    # (https://github.com/redpanda-data/redpanda/issues/5004)
-                    # self.redpanda.decode_backtraces()
-
-                    if isinstance(redpanda, RedpandaServiceBase):
+                    if isinstance(redpanda, RedpandaService):
                         redpanda.cloud_storage_diagnostics()
+                        redpanda.decode_backtraces()
                     if isinstance(redpanda,
                                   RedpandaService | RedpandaServiceCloud):
                         redpanda.raise_on_crash(log_allow_list=log_allow_list)
