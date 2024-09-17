@@ -16,6 +16,7 @@
 #include "bytes/scattered_message.h"
 #include "config/base_property.h"
 #include "http/logger.h"
+#include "http/utils.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -639,6 +640,24 @@ ss::future<client::response_stream_ref> client::request(
     return request(std::move(header), iobuf(), timeout);
 }
 
+ss::future<http::downloaded_response> client::request_and_collect_response(
+  request_header&& req,
+  std::optional<iobuf> payload,
+  ss::lowres_clock::duration timeout) {
+    response_stream_ref response;
+    if (payload.has_value()) {
+        response = co_await request(
+          std::move(req), std::move(payload.value()), timeout);
+    } else {
+        response = co_await request(std::move(req), timeout);
+    }
+
+    auto status_code = co_await status(response);
+    auto body = co_await drain(response);
+    co_return downloaded_response{
+      .status = status_code, .body = std::move(body)};
+}
+
 ss::output_stream<char> client::request_stream::as_output_stream() {
     auto ds = ss::data_sink(
       std::make_unique<request_data_sink>(shared_from_this()));
@@ -690,6 +709,20 @@ seastar::future<client::response_stream_ref> client::post(
       boost::beast::http::field::content_type,
       std::string(content_type_string(type)));
     return request(std::move(header), std::move(body), timeout);
+}
+
+ss::future<boost::beast::http::status>
+status(client::response_stream_ref response) {
+    co_await response->prefetch_headers();
+    co_return response->get_headers().result();
+}
+
+ss::future<iobuf> drain(client::response_stream_ref response) {
+    iobuf buffer;
+    while (!response->is_done()) {
+        buffer.append(co_await response->recv_some());
+    }
+    co_return buffer;
 }
 
 } // namespace http

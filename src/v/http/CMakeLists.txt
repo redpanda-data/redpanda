@@ -9,6 +9,7 @@ v_cc_library(
     utils.cc
     request_builder.cc
     rest_client/rest_entity.cc
+    utils.cc
   DEPS
     Seastar::seastar
     v::bytes

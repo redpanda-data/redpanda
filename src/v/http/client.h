@@ -65,8 +65,35 @@ enum class content_type {
  */
 std::string_view content_type_string(content_type type);
 
+// A fully drained, collected response. The iobuf contains the data from the
+// response stream ref which has been read. Only suitable for short responses,
+// should be avoided when reading large objects like segments.
+struct downloaded_response {
+    boost::beast::http::status status;
+    iobuf body;
+};
+
+// Interface to allow testing the http client with mocks
+class abstract_client {
+public:
+    // Helper expected to fully drain the response stream and return it.
+    // Intended for use with small objects such as JSON/XML responses which can
+    // be easily held in memory
+    virtual ss::future<downloaded_response> request_and_collect_response(
+      boost::beast::http::request_header<>&& request,
+      std::optional<iobuf> payload = std::nullopt,
+      ss::lowres_clock::duration timeout = default_connect_timeout)
+      = 0;
+
+    virtual ss::future<> shutdown_and_stop() = 0;
+
+    virtual ~abstract_client() = default;
+};
+
 /// Http client
-class client : protected net::base_transport {
+class client
+  : protected net::base_transport
+  , public abstract_client {
 public:
     using request_header = boost::beast::http::request_header<>;
     using response_header = boost::beast::http::response_header<>;
@@ -88,6 +115,9 @@ public:
     ss::future<> stop();
     using net::base_transport::shutdown;
     using net::base_transport::wait_input_shutdown;
+
+    // close the connect gate and fail_outstanding_futures which calls shutdown
+    ss::future<> shutdown_and_stop() final { co_return co_await stop(); }
 
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error
@@ -212,6 +242,11 @@ public:
       request_header&& header,
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
+    ss::future<downloaded_response> request_and_collect_response(
+      request_header&& request,
+      std::optional<iobuf> payload = std::nullopt,
+      ss::lowres_clock::duration timeout = default_connect_timeout) final;
+
     /**
      * Dispatch a request with the provided headers and body.
      *
@@ -298,6 +333,11 @@ auto with_client(client&& cl, Func func) {
 
 const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
 redacted_fields();
+
+ss::future<boost::beast::http::status>
+status(client::response_stream_ref response);
+
+ss::future<iobuf> drain(client::response_stream_ref response);
 
 } // namespace http
 
