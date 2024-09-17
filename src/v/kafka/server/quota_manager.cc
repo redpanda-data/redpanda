@@ -557,7 +557,7 @@ ss::future<> quota_manager::do_global_gc() {
 
     for (auto it = _global_map->begin(); it != _global_map->end();) {
         auto& [key, value] = *it;
-        if (value.unique()) {
+        if (value.use_count() == 1) {
             // The pointer in the global map is effectively a weak pointer in
             // that we want to destroy the quota when only the global map holds
             // a reference to it. The reason why we have a std::shared_ptr<>
