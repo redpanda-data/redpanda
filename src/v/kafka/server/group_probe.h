@@ -77,11 +77,10 @@ public:
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:consumer:group"),
           {sm::make_gauge(
-             "committed_offset",
-             [this] { return _offset; },
-             sm::description("Consumer group committed offset"),
-             labels)
-             .aggregate({sm::shard_label})});
+            "committed_offset",
+            [this] { return _offset; },
+            sm::description("Consumer group committed offset"),
+            labels)});
     }
 
 private:
@@ -129,15 +128,13 @@ public:
              "consumers",
              [this] { return _members.size(); },
              sm::description("Number of consumers in a group"),
-             labels)
-             .aggregate({sm::shard_label}),
+             labels),
 
            sm::make_gauge(
              "topics",
              [this] { return _offsets.size(); },
              sm::description("Number of topics in a group"),
-             labels)
-             .aggregate({sm::shard_label})});
+             labels)});
     }
 
 private:
