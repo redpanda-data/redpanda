@@ -13,33 +13,33 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
 
-type vendorMock struct {
-	init func() (vendor.InitializedVendor, error)
+type providerMock struct {
+	init func() (provider.InitializedProvider, error)
 }
 
-type currentVendor struct {
+type currentProvider struct {
 	name string
 }
 
-func (v *vendorMock) Init() (vendor.InitializedVendor, error) {
+func (v *providerMock) Init() (provider.InitializedProvider, error) {
 	return v.init()
 }
 
-func (*vendorMock) Name() string {
+func (*providerMock) Name() string {
 	return "none"
 }
 
-func (v *currentVendor) Name() string {
+func (v *currentProvider) Name() string {
 	return v.name
 }
 
-func (*currentVendor) VMType() (string, error) {
+func (*currentProvider) VMType() (string, error) {
 	return "", nil
 }
 
@@ -47,9 +47,9 @@ const devicePath = "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake"
 
 func TestDeviceWriteCacheTuner_Tune(t *testing.T) {
 	// given
-	v := &vendorMock{
-		init: func() (vendor.InitializedVendor, error) {
-			return &currentVendor{
+	v := &providerMock{
+		init: func() (provider.InitializedProvider, error) {
+			return &currentProvider{
 				name: "gcp",
 			}, nil
 		},
@@ -74,7 +74,7 @@ func TestDeviceWriteCacheTuner_Tune(t *testing.T) {
 
 func TestGCPCacheTunerSupported(t *testing.T) {
 	type args struct {
-		vendor vendor.Vendor
+		provider provider.Provider
 	}
 	tests := []struct {
 		name string
@@ -84,9 +84,9 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 		{
 			name: "should be supported on GCP",
 			args: args{
-				vendor: &vendorMock{
-					init: func() (vendor.InitializedVendor, error) {
-						return &currentVendor{
+				provider: &providerMock{
+					init: func() (provider.InitializedProvider, error) {
+						return &currentProvider{
 							name: "gcp",
 						}, nil
 					},
@@ -97,9 +97,9 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 		{
 			name: "should not be supported on AWS",
 			args: args{
-				vendor: &vendorMock{
-					init: func() (vendor.InitializedVendor, error) {
-						return &currentVendor{
+				provider: &providerMock{
+					init: func() (provider.InitializedProvider, error) {
+						return &currentProvider{
 							name: "aws",
 						}, nil
 					},
@@ -110,9 +110,9 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 		{
 			name: "should not be supported on not cloud deployments",
 			args: args{
-				vendor: &vendorMock{
-					init: func() (vendor.InitializedVendor, error) {
-						return nil, fmt.Errorf("no vendor")
+				provider: &providerMock{
+					init: func() (provider.InitializedProvider, error) {
+						return nil, fmt.Errorf("no provider")
 					},
 				},
 			},
@@ -122,7 +122,7 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tuner := NewDeviceGcpWriteCacheTuner(afero.NewMemMapFs(), "fake",
-				&deviceFeaturesMock{}, tt.args.vendor,
+				&deviceFeaturesMock{}, tt.args.provider,
 				executors.NewDirectExecutor())
 			supported, _ := tuner.CheckIfSupported()
 			require.Equal(t, tt.want, supported)

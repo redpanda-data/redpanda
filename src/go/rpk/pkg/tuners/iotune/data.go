@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 )
 
 type IoProperties struct {
@@ -30,28 +30,28 @@ func DataFor(mountPoint, v, vm, storage string) (*IoProperties, error) {
 	data := precompiledData()
 	vms, ok := data[v]
 	if !ok {
-		return nil, fmt.Errorf("no iotune data found for vendor '%s'", v)
+		return nil, fmt.Errorf("no iotune data found for provider '%s'", v)
 	}
 	storages, ok := vms[vm]
 	if !ok {
-		return nil, fmt.Errorf("no iotune data found for VM '%s', of vendor '%s'", vm, v)
+		return nil, fmt.Errorf("no iotune data found for VM '%s', of provider '%s'", vm, v)
 	}
 	settings, ok := storages[storage]
 	if !ok {
-		return nil, fmt.Errorf("no iotune data found for storage '%s' in VM '%s', of vendor '%s'", storage, vm, v)
+		return nil, fmt.Errorf("no iotune data found for storage '%s' in VM '%s', of provider '%s'", storage, vm, v)
 	}
 	settings.MountPoint = mountPoint
 	return &settings, nil
 }
 
-func DataForVendor(
-	mountpoint string, v vendor.InitializedVendor,
+func DataForProvider(
+	mountpoint string, v provider.InitializedProvider,
 ) (*IoProperties, error) {
 	vmType, err := v.VMType()
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't get the current VM type for vendor '%s'", v.Name())
+		return nil, fmt.Errorf("Couldn't get the current VM type for provider '%s'", v.Name())
 	}
-	fmt.Printf("Detected vendor '%s' and VM type '%s'\n", v.Name(), vmType)
+	fmt.Printf("Detected provider '%s' and VM type '%s'\n", v.Name(), vmType)
 	return DataFor(mountpoint, v.Name(), vmType, "default")
 }
 

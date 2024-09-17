@@ -218,7 +218,7 @@ func (factory *tunersFactory) newGcpWriteCacheTuner(
 		params.Directories,
 		params.Disks,
 		factory.blockDevices,
-		&gcp.GcpVendor{},
+		&gcp.GcpProvider{},
 		factory.executor,
 	)
 }

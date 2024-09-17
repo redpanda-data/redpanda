@@ -259,11 +259,11 @@ func RedpandaCheckers(
 		BallastFileChecker:            {NewBallastFileChecker(fs, y)},
 	}
 
-	v, err := cloud.AvailableVendor()
+	v, err := cloud.AvailableProviders()
 	// NOTE: important workaround for very high flush latency in
 	//       GCP when using local SSD's
-	gcpVendor := gcp.GcpVendor{}
-	if err == nil && v.Name() == gcpVendor.Name() {
+	gcpProvider := gcp.GcpProvider{}
+	if err == nil && v.Name() == gcpProvider.Name() {
 		checkers[WriteCachePolicyChecker] = []Checker{NewDirectoryWriteCacheChecker(y.Redpanda.Directory, deviceFeatures, blockDevices)}
 	}
 
