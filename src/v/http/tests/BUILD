@@ -89,6 +89,7 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/bytes:iobuf_parser",
         "//src/v/http:utils",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

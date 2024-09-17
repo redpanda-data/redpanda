@@ -64,6 +64,7 @@ v_cc_library(
     values.cc
     values_avro.cc
     values_bytes.cc
+    rest_client/parsers.cc
   DEPS
     Avro::avro
     v::bytes
@@ -75,3 +76,4 @@ v_cc_library(
 )
 
 add_subdirectory(tests)
+add_subdirectory(rest_client/tests)
