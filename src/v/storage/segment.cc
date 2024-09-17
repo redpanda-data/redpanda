@@ -828,7 +828,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                 return internal::make_segment_appender(
                          path,
                          internal::number_of_chunks_from_config(ntpc),
-                         internal::segment_size_from_config(ntpc),
+                         ntpc.segment_bytes(),
                          pc,
                          resources,
                          std::move(ntp_sanitizer_config))

@@ -147,7 +147,6 @@ ss::future<segment_appender_ptr> make_segment_appender(
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 size_t number_of_chunks_from_config(const storage::ntp_config&);
-uint64_t segment_size_from_config(const storage::ntp_config&);
 
 /*
 1. if footer.flags == truncate write new .compacted_index file
