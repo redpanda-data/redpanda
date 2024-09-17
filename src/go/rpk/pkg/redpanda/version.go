@@ -7,22 +7,20 @@ import (
 )
 
 type Version struct {
-	Year    int
+	Major   int
 	Feature int
 	Patch   int
 }
 
 // VersionFromString creates a Version struct based on a passed string that
-// contains the version with the AB.C.D convention where AB is the Year, C
-// is the feature, and D is the patch.
+// contains the semver version string.
 func VersionFromString(s string) (Version, error) {
-	// Match the version of redpanda following AB.C.D convention, where C and D
-	// can be either a single or double-digit and returns:
+	// Match the version of redpanda following semver convention, and returns:
 	//   - index 0: the full match
-	//   - index 1: the Year
+	//   - index 1: the Major
 	//   - index 2: the Feature
 	//   - index 3: the Patch
-	vMatch := regexp.MustCompile(`^v?(\d{2})\.(\d{1,2})\.(\d{1,2})(?:\s|-rc\d{1,2}|-dev|$)`).FindStringSubmatch(s)
+	vMatch := regexp.MustCompile(`^v?(\d{1,2})\.(\d{1,2})\.(\d{1,2})(?:\s|-rc\d{1,2}|-dev|$)`).FindStringSubmatch(s)
 
 	if len(vMatch) == 0 {
 		return Version{}, fmt.Errorf("unable to get the redpanda version from %q", s)
@@ -38,11 +36,15 @@ func VersionFromString(s string) (Version, error) {
 
 // Less returns true if the version is lower than the passed 'b' version.
 func (v Version) Less(b Version) bool {
-	if v.Year == b.Year {
+	if v.Major == b.Major {
 		if v.Feature == b.Feature {
 			return v.Patch < b.Patch
 		}
 		return v.Feature < b.Feature
 	}
-	return v.Year < b.Year
+	return v.Major < b.Major
+}
+
+func (v Version) String() string {
+	return fmt.Sprintf("%d.%d.%d", v.Major, v.Feature, v.Patch)
 }

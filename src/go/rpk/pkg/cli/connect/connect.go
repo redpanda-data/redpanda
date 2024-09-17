@@ -11,7 +11,6 @@ package connect
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 
@@ -69,17 +68,15 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 					cmd.Help()
 					return
 				}
-				zap.L().Sugar().Debug("Redpanda Connect not found; downloading latest version")
-				path, err := installConnect(cmd.Context(), fs, "latest")
+				fmt.Println("Downloading latest Redpanda Connect")
+				path, _, err := installConnect(cmd.Context(), fs, "latest")
 				out.MaybeDie(err, "unable to install Redpanda Connect: %v; if running on an air-gapped environment you may install 'redpanda-connect' with your package manager.", err)
 				pluginPath = path
 			}
 			if pluginExists {
 				pluginPath = connect.Path
-				// Old plugin (unmanaged) might be installed, we rename it as
-				// a managed plugin from now on.
 				if !connect.Managed {
-					pluginPath = renameConnect(connect)
+					zap.L().Sugar().Warn("rpk is using a self-managed version of Redpanda Connect. If you want rpk to manage connect, use rpk connect uninstall && rpk connect install. To continue managing Connect manually, use our redpanda-connect package.")
 				}
 			}
 			zap.L().Debug("executing connect plugin", zap.String("path", pluginPath), zap.Strings("args", pluginArgs))
@@ -119,19 +116,4 @@ func parseConnectFlags(p *config.Params, cmd *cobra.Command, args []string) ([]s
 		}
 	}
 	return keepForPlugin, nil
-}
-
-func renameConnect(connect *plugin.Plugin) string {
-	currentPath := connect.Path
-	newPath := strings.Replace(currentPath, ".rpk.ac-connect", ".rpk.managed-connect", -1)
-	err := os.Rename(currentPath, newPath)
-	if err != nil {
-		// If it fails, we just warn instead of failing as the
-		// user may have the plugin installed in a root-owned
-		// directory and be running rpk with another non-root
-		// user.
-		zap.L().Sugar().Warnf("Found unmanaged plugin, rpk was unable to rename %s as a managed connector: %v; please run 'rpk connect uninstall && rpk connect install' if you want rpk to manage Redpanda Connect", currentPath, err)
-		return currentPath
-	}
-	return newPath
 }
