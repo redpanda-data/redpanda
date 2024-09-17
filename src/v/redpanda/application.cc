@@ -1147,7 +1147,8 @@ void application::configure_admin_server() {
       std::ref(audit_mgr),
       std::ref(_tx_manager_migrator),
       std::ref(_kafka_server),
-      std::ref(tx_gateway_frontend))
+      std::ref(tx_gateway_frontend),
+      std::ref(_debug_bundle_service))
       .get();
 }
 

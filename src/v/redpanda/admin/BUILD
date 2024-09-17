@@ -199,6 +199,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/container:lw_shared_container",
+        "//src/v/debug_bundle",
         "//src/v/features",
         "//src/v/finjector",
         "//src/v/json",

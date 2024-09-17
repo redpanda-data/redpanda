@@ -295,7 +295,8 @@ admin_server::admin_server(
   ss::sharded<security::audit::audit_log_manager>& audit_mgr,
   std::unique_ptr<cluster::tx_manager_migrator>& tx_manager_migrator,
   ss::sharded<kafka::server>& kafka_server,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<debug_bundle::service>& debug_bundle_service)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -326,6 +327,7 @@ admin_server::admin_server(
   , _tx_manager_migrator(tx_manager_migrator)
   , _kafka_server(kafka_server)
   , _tx_gateway_frontend(tx_gateway_frontend)
+  , _debug_bundle_service(debug_bundle_service)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
