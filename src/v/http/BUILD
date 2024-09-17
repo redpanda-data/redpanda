@@ -49,3 +49,24 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "request_builder",
+    srcs = [
+        "request_builder.cc",
+    ],
+    hdrs = [
+        "request_builder.h",
+    ],
+    include_prefix = "http",
+    deps = [
+        "//src/v/base",
+        "//src/v/http:utils",
+        "//src/v/thirdparty/ada",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:algorithm",
+        "@boost//:beast",
+        "@seastar",
+    ],
+)

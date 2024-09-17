@@ -94,3 +94,17 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "request_builder_test",
+    timeout = "short",
+    srcs = [
+        "request_builder_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/http:request_builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)

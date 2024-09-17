@@ -7,10 +7,12 @@ v_cc_library(
     client.cc
     logger.cc
     utils.cc
+    request_builder.cc
   DEPS
     Seastar::seastar
     v::bytes
     v::net
+    ada
   DEFINES
     -DBOOST_ASIO_HAS_STD_INVOKE_RESULT
 )
