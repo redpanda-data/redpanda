@@ -81,6 +81,7 @@ enum class feature : std::uint64_t {
     group_tx_fence_dedicated_batch_type = 1ULL << 49U,
     transforms_specify_offset = 1ULL << 50U,
     remote_labels = 1ULL << 51U,
+    partition_properties_stm = 1ULL << 52U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -415,6 +416,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{13},
     "remote_labels",
     feature::remote_labels,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{14},
+    "partition_properties_stm",
+    feature::partition_properties_stm,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
