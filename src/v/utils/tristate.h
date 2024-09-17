@@ -39,7 +39,7 @@ class tristate {
 public:
     using value_type = T;
     constexpr tristate() noexcept
-      : tristate(disable_tristate) {};
+      : tristate(disable_tristate) {}
     constexpr explicit tristate(disable_tristate_t) noexcept
       : _value{disable_tristate} {}
 
