@@ -1459,9 +1459,7 @@ void application::wire_up_runtime_services(
 
     construct_single_service(_monitor_unsafe, std::ref(feature_table));
 
-    construct_service(
-      _debug_bundle_service, config::node().data_directory().path)
-      .get();
+    construct_service(_debug_bundle_service).get();
 
     configure_admin_server();
 }

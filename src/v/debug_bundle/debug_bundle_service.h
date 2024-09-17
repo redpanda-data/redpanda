@@ -38,10 +38,8 @@ public:
     static constexpr std::string_view debug_bundle_dir_name = "debug-bundle";
     /**
      * @brief Construct a new debug bundle service object
-     *
-     * @param data_dir Path to the Redpanda data directory
      */
-    explicit service(const std::filesystem::path& data_dir);
+    service();
 
     /// Destructor
     ~service() noexcept;
@@ -118,17 +116,22 @@ public:
      */
     ss::future<result<void>> delete_rpk_debug_bundle(job_id_t job_id);
 
+    /// Returns the current debug bundle directory
+    const std::filesystem::path& get_debug_bundle_output_directory() const {
+        return _debug_bundle_dir;
+    }
+
 private:
     /**
      * @brief Constructs the arguments for the rpk debug bundle command
      *
-     * @param job_id Job ID
+     * @param debug_bundle_file_path Path to where to output the debug bundle
      * @param params parameters
      * @return std::vector<ss::sstring> The list of strings to pass to
      * external_process
      */
-    result<std::vector<ss::sstring>>
-    build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params);
+    result<std::vector<ss::sstring>> build_rpk_arguments(
+      std::string_view debug_bundle_file_path, debug_bundle_parameters params);
 
     /**
      * @brief Returns the status of the running process
@@ -151,6 +154,9 @@ private:
     class debug_bundle_process;
     /// Path to the debug bundle directory
     std::filesystem::path _debug_bundle_dir;
+    /// Binding to debug bundle storage directory config
+    config::binding<std::optional<std::filesystem::path>>
+      _debug_bundle_storage_dir_binding;
     /// Binding called when the rpk path config changes
     config::binding<std::filesystem::path> _rpk_path_binding;
     /// External process

@@ -12,6 +12,7 @@
 #include "debug_bundle_service.h"
 
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "container/fragmented_vector.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
@@ -84,6 +85,17 @@ bool is_valid_rfc1123(std::string_view ns) {
 bool is_valid_k8s_namespace(std::string_view ns) {
     constexpr auto max_ns_length = 63;
     return !ns.empty() && ns.size() <= max_ns_length && is_valid_rfc1123(ns);
+}
+
+std::filesystem::path form_debug_bundle_storage_directory() {
+    const auto& debug_bundle_dir
+      = config::shard_local_cfg().debug_bundle_storage_dir();
+
+    // Either return the storage directory or the data directory appended with
+    // "debug-bundle"
+    return debug_bundle_dir.value_or(
+      config::node().data_directory.value().path
+      / service::debug_bundle_dir_name);
 }
 } // namespace
 
@@ -188,23 +200,23 @@ private:
     clock::time_point _created_time;
 };
 
-service::service(const std::filesystem::path& data_dir)
-  : _debug_bundle_dir(data_dir / debug_bundle_dir_name)
+service::service()
+  : _debug_bundle_dir(form_debug_bundle_storage_directory())
+  , _debug_bundle_storage_dir_binding(
+      config::shard_local_cfg().debug_bundle_storage_dir.bind())
   , _rpk_path_binding(config::shard_local_cfg().rpk_path.bind())
-  , _process_control_mutex("debug_bundle_service::process_control") {}
+  , _process_control_mutex("debug_bundle_service::process_control") {
+    _debug_bundle_storage_dir_binding.watch([this] {
+        _debug_bundle_dir = form_debug_bundle_storage_directory();
+        lg.debug("Changed debug bundle directory to {}", _debug_bundle_dir);
+    });
+}
 
 service::~service() noexcept = default;
 
 ss::future<> service::start() {
     if (ss::this_shard_id() != service_shard) {
         co_return;
-    }
-
-    try {
-        lg.trace("Creating {}", _debug_bundle_dir);
-        co_await ss::recursive_touch_directory(_debug_bundle_dir.native());
-    } catch (const std::exception& e) {
-        throw std::system_error(error_code::internal_error, e.what());
     }
 
     if (!co_await ss::file_exists(_rpk_path_binding().native())) {
@@ -262,7 +274,29 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
         }
     }
 
-    auto args_res = build_rpk_arguments(job_id, std::move(params));
+    // Make a copy of it now and use it throughout the initialize process
+    // Protects against a situation where the config gets changed while setting
+    // up the initialization parameters
+    auto output_dir = _debug_bundle_dir;
+
+    if (!co_await ss::file_exists(output_dir.native())) {
+        try {
+            co_await ss::recursive_touch_directory(output_dir.native());
+        } catch (const std::exception& e) {
+            co_return error_info(
+              error_code::internal_error,
+              fmt::format(
+                "Failed to create debug bundle directory {}: {}",
+                output_dir,
+                e.what()));
+        }
+    }
+
+    auto debug_bundle_file_path = form_debug_bundle_file_path(
+      output_dir, job_id);
+
+    auto args_res = build_rpk_arguments(
+      debug_bundle_file_path.native(), std::move(params));
     if (!args_res.has_value()) {
         co_return args_res.assume_error();
     }
@@ -276,7 +310,7 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
           job_id,
           co_await external_process::external_process::create_external_process(
             std::move(args)),
-          form_debug_bundle_file_path(_debug_bundle_dir, job_id));
+          std::move(debug_bundle_file_path));
     } catch (const std::exception& e) {
         _rpk_process.reset();
         co_return error_info(
@@ -451,12 +485,12 @@ ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
     co_return outcome::success();
 }
 
-result<std::vector<ss::sstring>>
-service::build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params) {
+result<std::vector<ss::sstring>> service::build_rpk_arguments(
+  std::string_view debug_bundle_file_path, debug_bundle_parameters params) {
     std::vector<ss::sstring> rv{
       _rpk_path_binding().native(), "debug", "bundle"};
     rv.emplace_back(output_variable);
-    rv.emplace_back(form_debug_bundle_file_path(_debug_bundle_dir, job_id));
+    rv.emplace_back(debug_bundle_file_path);
     rv.emplace_back(verbose_variable);
     if (params.authn_options.has_value()) {
         ss::visit(

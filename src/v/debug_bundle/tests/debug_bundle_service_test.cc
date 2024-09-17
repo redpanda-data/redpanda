@@ -10,6 +10,7 @@
  */
 
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
@@ -36,8 +37,9 @@ struct debug_bundle_service_fixture : public seastar_test {
           co_await ss::recursive_touch_directory(_data_dir.native()))
           << "Failed to create " << _data_dir;
 
+        config::node().data_directory.set_value(_data_dir);
         config::shard_local_cfg().rpk_path.set_value(_rpk_shim_path);
-        co_await _service.start(_data_dir);
+        co_await _service.start();
     }
 
     ss::future<> TearDownAsync() override { co_await _service.stop(); }
@@ -61,21 +63,17 @@ struct debug_bundle_service_started_fixture
 TEST_F_CORO(debug_bundle_service_fixture, basic_start_stop) {
     auto debug_bundle_dir = _data_dir
                             / debug_bundle::service::debug_bundle_dir_name;
-    EXPECT_FALSE(co_await ss::file_exists(debug_bundle_dir.native()));
     ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
       [](debug_bundle::service& s) -> ss::future<> { co_await s.start(); }));
-    EXPECT_TRUE(co_await ss::file_exists(debug_bundle_dir.native()));
 }
 
 TEST_F_CORO(debug_bundle_service_fixture, bad_rpk_path) {
     config::shard_local_cfg().rpk_path.set_value("/no/such/bin");
     auto debug_bundle_dir = _data_dir
                             / debug_bundle::service::debug_bundle_dir_name;
-    EXPECT_FALSE(co_await ss::file_exists(debug_bundle_dir.native()));
     // We should still expect the service to start, but it will emit a warning
     ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
       [](debug_bundle::service& s) -> ss::future<> { co_await s.start(); }));
-    EXPECT_TRUE(co_await ss::file_exists(debug_bundle_dir.native()));
 }
 
 ss::future<debug_bundle::result<debug_bundle::debug_bundle_status_data>>
@@ -95,6 +93,20 @@ wait_for_process_to_finish(
         }
     }
     throw std::runtime_error("Timed out waiting for process to exit");
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, change_bundle_dir) {
+    EXPECT_EQ(
+      _service.local().get_debug_bundle_output_directory(),
+      _data_dir / debug_bundle::service::debug_bundle_dir_name);
+    std::filesystem::path test_path = "my-test-path";
+    config::shard_local_cfg().debug_bundle_storage_dir.set_value(test_path);
+    EXPECT_EQ(_service.local().get_debug_bundle_output_directory(), test_path);
+    config::shard_local_cfg().debug_bundle_storage_dir.set_value(std::nullopt);
+    EXPECT_EQ(
+      _service.local().get_debug_bundle_output_directory(),
+      _data_dir / debug_bundle::service::debug_bundle_dir_name);
+    co_return;
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
