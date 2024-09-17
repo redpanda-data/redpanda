@@ -121,34 +121,17 @@ llvm.toolchain(
     cxx_standard = {"": CXX_STANDARD},
     llvm_version = "17.0.6",
     sha256 = {
-        "linux-aarch64": "259da3d332e2080ecfe5a059dedb8f485f0b20e6ed2e3880bc5a5b57084f4036",
-        "linux-x86_64": "2c06b2acb362a10b9e7ac3b0aebdccd710a5329d9c7ee46c10889fdf00a41b9f",
-    },
-    urls = {
-        "linux-aarch64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"],
-        "linux-x86_64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"],
-    },
-)
-use_repo(llvm, "llvm_17_toolchain", "llvm_17_toolchain_llvm")
-
-register_toolchains("@llvm_17_toolchain//:all")
-
-llvm.toolchain(
-    name = "llvm_17_pgo_toolchain",
-    cxx_standard = {"": CXX_STANDARD},
-    llvm_version = "17.0.6",
-    sha256 = {
-        "linux-aarch64": "",
-        "linux-x86_64": "d13bfdeda60b2ee74eb174b9bd23696bb1a3db4f0b102291c2e2460be3a88a0c",
+        "linux-aarch64": "28edd46b9666d99c31aa255dfa5497dba95f095d731c6c398fb0e2c0402a958f",
+        "linux-x86_64": "d75de539f9791b35eb4b58bed6c7605a846857c1b203c160a6dad2d620f8b090",
     },
     urls = {
         "linux-aarch64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"],
         "linux-x86_64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"],
     },
 )
-use_repo(llvm, "llvm_17_pgo_toolchain", "llvm_17_pgo_toolchain_llvm")
+use_repo(llvm, "llvm_17_toolchain", "llvm_17_toolchain_llvm")
 
-register_toolchains("@llvm_17_pgo_toolchain//:all")
+register_toolchains("@llvm_17_toolchain//:all")
 
 llvm.toolchain(
     name = "llvm_18_toolchain",
