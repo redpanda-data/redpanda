@@ -95,10 +95,10 @@ log_config::log_config(
   with_cache with,
   std::optional<file_sanitize_config> file_cfg) noexcept
   : log_config(
-    std::move(directory),
-    segment_size,
-    compaction_priority,
-    std::move(file_cfg)) {
+      std::move(directory),
+      segment_size,
+      compaction_priority,
+      std::move(file_cfg)) {
     cache = with;
 }
 

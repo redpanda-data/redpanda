@@ -196,11 +196,11 @@ public:
       std::optional<rack_id> rack,
       broker_properties props) noexcept
       : broker(
-        id,
-        {broker_endpoint(std::move(kafka_advertised_listener))},
-        std::move(rpc_address),
-        std::move(rack),
-        std::move(props)) {}
+          id,
+          {broker_endpoint(std::move(kafka_advertised_listener))},
+          std::move(rpc_address),
+          std::move(rack),
+          std::move(props)) {}
 
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;

@@ -17,12 +17,12 @@ namespace config {
 
 node_config::node_config() noexcept
   : developer_mode(
-    *this,
-    "developer_mode",
-    "Skips most of the checks performed at startup, not recomended for "
-    "production use",
-    {.visibility = visibility::tunable},
-    false)
+      *this,
+      "developer_mode",
+      "Skips most of the checks performed at startup, not recomended for "
+      "production use",
+      {.visibility = visibility::tunable},
+      false)
   , data_directory(
       *this,
       "data_directory",

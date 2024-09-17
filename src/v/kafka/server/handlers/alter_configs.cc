@@ -165,8 +165,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
             if (cfg.name == topic_property_remote_write) {
                 auto set_value = update.properties.shadow_indexing.value
                                    ? model::add_shadow_indexing_flag(
-                                     *update.properties.shadow_indexing.value,
-                                     model::shadow_indexing_mode::archival)
+                                       *update.properties.shadow_indexing.value,
+                                       model::shadow_indexing_mode::archival)
                                    : model::shadow_indexing_mode::archival;
                 parse_and_set_shadow_indexing_mode(
                   update.properties.shadow_indexing, cfg.value, set_value);
@@ -175,8 +175,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
             if (cfg.name == topic_property_remote_read) {
                 auto set_value = update.properties.shadow_indexing.value
                                    ? model::add_shadow_indexing_flag(
-                                     *update.properties.shadow_indexing.value,
-                                     model::shadow_indexing_mode::fetch)
+                                       *update.properties.shadow_indexing.value,
+                                       model::shadow_indexing_mode::fetch)
                                    : model::shadow_indexing_mode::fetch;
                 parse_and_set_shadow_indexing_mode(
                   update.properties.shadow_indexing, cfg.value, set_value);

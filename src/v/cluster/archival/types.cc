@@ -85,7 +85,7 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
           "cloud_storage_segment_max_upload_interval_sec is invalid");
     }
     auto time_limit_opt = time_limit ? std::make_optional(
-                            segment_time_limit(*time_limit))
+                                         segment_time_limit(*time_limit))
                                      : std::nullopt;
 
     const auto& bucket_config

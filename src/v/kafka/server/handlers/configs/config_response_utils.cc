@@ -641,9 +641,10 @@ config_response_container_t make_topic_configs(
       model::is_fetch_enabled(
         metadata_cache.get_default_shadow_indexing_mode()),
       topic_property_remote_read,
-      topic_properties.shadow_indexing.has_value() ? std::make_optional(
-        model::is_fetch_enabled(*topic_properties.shadow_indexing))
-                                                   : std::nullopt,
+      topic_properties.shadow_indexing.has_value()
+        ? std::make_optional(
+            model::is_fetch_enabled(*topic_properties.shadow_indexing))
+        : std::nullopt,
       include_synonyms,
       maybe_make_documentation(
         include_documentation,
@@ -658,9 +659,10 @@ config_response_container_t make_topic_configs(
       model::is_archival_enabled(
         metadata_cache.get_default_shadow_indexing_mode()),
       topic_property_remote_write,
-      topic_properties.shadow_indexing.has_value() ? std::make_optional(
-        model::is_archival_enabled(*topic_properties.shadow_indexing))
-                                                   : std::nullopt,
+      topic_properties.shadow_indexing.has_value()
+        ? std::make_optional(
+            model::is_archival_enabled(*topic_properties.shadow_indexing))
+        : std::nullopt,
       include_synonyms,
       maybe_make_documentation(
         include_documentation,

@@ -359,7 +359,7 @@ result<document_context> parse_json(iobuf buf) {
     auto jsoncons_schema = jsoncons::json::parse(is.istream());
     auto validation_res = dialect.has_value()
                             ? validate_json_schema(
-                              dialect.value(), jsoncons_schema)
+                                dialect.value(), jsoncons_schema)
                             : try_validate_json_schema(jsoncons_schema);
     if (validation_res.has_error()) {
         return validation_res.as_failure();
@@ -1164,9 +1164,9 @@ json_compatibility_result is_array_superset(
                                      : older_tuple_schema.end();
     auto errt = newer_has_more
                   ? json_incompatibility_type::
-                    item_removed_not_covered_by_partially_open_content_model
+                      item_removed_not_covered_by_partially_open_content_model
                   : json_incompatibility_type::
-                    item_added_not_covered_by_partially_open_content_model;
+                      item_added_not_covered_by_partially_open_content_model;
 
     std::for_each(excess_begin, excess_end, [&](json::Value const& e) {
         auto item_p = p / "items" / std::to_string(index);

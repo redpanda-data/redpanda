@@ -42,7 +42,7 @@ auto populate_waiters(
           .last_term = raft->term()};
         auto f = write_caching
                    ? replication_monitor.wait_until_majority_replicated(
-                     wait_for)
+                       wait_for)
                    : replication_monitor.wait_until_committed(wait_for);
         futures.push_back(std::move(f));
     }

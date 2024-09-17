@@ -41,7 +41,7 @@ gcp_refresh_impl::gcp_refresh_impl(
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    std::move(address), std::move(region), as, retry_params) {}
+      std::move(address), std::move(region), as, retry_params) {}
 
 ss::future<api_response> gcp_refresh_impl::fetch_credentials() {
     http::client::request_header oauth_req;

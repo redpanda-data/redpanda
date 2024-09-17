@@ -19,7 +19,7 @@ namespace cluster::client_quota {
 class backend final {
 public:
     explicit backend(ss::sharded<store>& quotas)
-      : _quotas(quotas){};
+      : _quotas(quotas) {};
 
     static constexpr auto commands
       = make_commands_list<alter_quotas_delta_cmd>();

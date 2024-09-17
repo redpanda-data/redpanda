@@ -577,7 +577,7 @@ delete_subject(server::request_t rq, server::reply_t rp) {
     auto versions
       = permanent
           ? co_await rq.service().writer().delete_subject_permanent(
-            sub, std::nullopt)
+              sub, std::nullopt)
           : co_await rq.service().writer().delete_subject_impermanent(sub);
 
     rp.rep->write_body("json", ppj::rjson_serialize(versions));

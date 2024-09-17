@@ -16,7 +16,7 @@
 #include "features/feature_table.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
-#include "kafka/server/fetch_metadata_cache.hh"
+#include "kafka/server/fetch_metadata_cache.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"

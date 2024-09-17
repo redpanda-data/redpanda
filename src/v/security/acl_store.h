@@ -107,9 +107,8 @@ private:
                | std::views::filter([&name](const auto& e) {
                      return std::string_view(name).starts_with(e.first.name());
                  })
-               | std::views::transform([](const auto& e) {
-                     return RefT{e.first, e.second};
-                 });
+               | std::views::transform(
+                 [](const auto& e) { return RefT{e.first, e.second}; });
     }
 
 public:

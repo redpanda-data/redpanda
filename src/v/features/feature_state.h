@@ -108,7 +108,7 @@ public:
     const feature_spec& spec;
 
     feature_state(const feature_spec& spec_)
-      : spec(spec_){};
+      : spec(spec_) {};
 
     // External inputs
     void notify_version(cluster::cluster_version v);

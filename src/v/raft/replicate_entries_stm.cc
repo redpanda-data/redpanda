@@ -327,9 +327,9 @@ replicate_entries_stm::wait_for_majority() {
     auto appended_term = append_result.last_term;
     auto result = _is_flush_required
                     ? _ptr->_replication_monitor.wait_until_committed(
-                      append_result)
+                        append_result)
                     : _ptr->_replication_monitor.wait_until_majority_replicated(
-                      append_result);
+                        append_result);
     co_return process_result(
       co_await std::move(result), appended_offset, appended_term);
 }

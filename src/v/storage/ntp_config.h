@@ -90,10 +90,10 @@ public:
       ss::sstring base_dir,
       std::unique_ptr<default_overrides> overrides) noexcept
       : ntp_config(
-        std::move(n),
-        std::move(base_dir),
-        std::move(overrides),
-        model::revision_id(0)) {}
+          std::move(n),
+          std::move(base_dir),
+          std::move(overrides),
+          model::revision_id(0)) {}
 
     ntp_config(
       model::ntp n,

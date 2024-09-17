@@ -70,7 +70,7 @@ struct join_group_response final {
 
     join_group_response(kafka::member_id member_id, kafka::error_code error)
       : join_group_response(
-        error, no_generation, no_protocol, no_leader, member_id) {}
+          error, no_generation, no_protocol, no_leader, member_id) {}
 
     explicit join_group_response(kafka::error_code error)
       : join_group_response(no_member, error) {}

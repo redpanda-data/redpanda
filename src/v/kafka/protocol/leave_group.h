@@ -53,8 +53,8 @@ struct leave_group_response final {
 
     explicit leave_group_response(error_code error)
       : data({
-        .error_code = error,
-      }) {}
+          .error_code = error,
+        }) {}
 
     leave_group_response(const leave_group_request&, error_code error)
       : leave_group_response(error) {}

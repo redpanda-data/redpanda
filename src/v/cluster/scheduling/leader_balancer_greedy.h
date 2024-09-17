@@ -33,7 +33,7 @@ public:
     explicit greedy_balanced_shards(
       index_type cores, absl::flat_hash_set<model::node_id> muted_nodes)
       : _mi(std::make_unique<leader_balancer_types::muted_index>(
-        std::move(muted_nodes), leader_balancer_types::muted_groups_t{}))
+          std::move(muted_nodes), leader_balancer_types::muted_groups_t{}))
       , _si(std::make_unique<leader_balancer_types::shard_index>(
           std::move(cores)))
       , _even_shard_load_c(*_si, *_mi) {}

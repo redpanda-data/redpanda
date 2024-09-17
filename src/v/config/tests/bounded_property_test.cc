@@ -34,12 +34,12 @@ struct test_config : public config::config_store {
 
     test_config()
       : bounded_int(
-        *this,
-        "bounded_int",
-        "An integer with some bounds set",
-        {},
-        16384,
-        {.min = 4096, .max = 32768, .align = 16})
+          *this,
+          "bounded_int",
+          "An integer with some bounds set",
+          {},
+          16384,
+          {.min = 4096, .max = 32768, .align = 16})
       , bounded_int_opt(
           *this,
           "bounded_int_opt",

@@ -52,10 +52,10 @@ partition_allocator::partition_allocator(
   config::binding<std::vector<ss::sstring>> internal_kafka_topics,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
-    feature_table.local(),
-    partitions_per_shard,
-    partitions_reserve_shard0,
-    internal_kafka_topics))
+      feature_table.local(),
+      partitions_per_shard,
+      partitions_reserve_shard0,
+      internal_kafka_topics))
   , _members(members)
   , _feature_table(feature_table.local())
   , _memory_per_partition(std::move(memory_per_partition))

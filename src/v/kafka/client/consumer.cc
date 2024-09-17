@@ -281,7 +281,7 @@ consumer::get_subscribed_topic_metadata() {
 ss::future<> consumer::sync() {
     return (is_leader() ? get_subscribed_topic_metadata()
                         : ss::make_ready_future<
-                          chunked_vector<metadata_response::topic>>())
+                            chunked_vector<metadata_response::topic>>())
       .then([this](chunked_vector<metadata_response::topic> topics) {
           auto req_builder = [me{shared_from_this()},
                               topics{std::move(topics)}]() {
@@ -367,10 +367,10 @@ consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
       .then([this](offset_fetch_response res) {
           return res.data.error_code == error_code::none
                    ? ss::make_ready_future<offset_fetch_response>(
-                     std::move(res))
+                       std::move(res))
                    : ss::make_exception_future<offset_fetch_response>(
-                     consumer_error(
-                       _group_id, _member_id, res.data.error_code));
+                       consumer_error(
+                         _group_id, _member_id, res.data.error_code));
       });
 }
 

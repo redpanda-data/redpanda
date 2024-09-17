@@ -39,9 +39,10 @@ tls_config::get_credentials_builder() const& {
                   builder.set_client_auth(ss::tls::client_auth::REQUIRE);
               }
 
-              auto f = _truststore_file ? builder.set_x509_trust_file(
-                         *_truststore_file, ss::tls::x509_crt_format::PEM)
-                                        : builder.set_system_trust();
+              auto f = _truststore_file
+                         ? builder.set_x509_trust_file(
+                             *_truststore_file, ss::tls::x509_crt_format::PEM)
+                         : builder.set_system_trust();
 
               if (_crl_file) {
                   f = f.then([this, &builder] {

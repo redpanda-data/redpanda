@@ -535,7 +535,7 @@ struct property_update<tristate<T>>
       serde::version<0>,
       serde::compat_version<0>> {
     property_update()
-      : value(std::nullopt){};
+      : value(std::nullopt) {};
 
     property_update(tristate<T> v, incremental_update_operation op)
       : value(std::move(v))
@@ -751,7 +751,7 @@ struct custom_partition_assignment {
  */
 struct custom_assignable_topic_configuration {
     explicit custom_assignable_topic_configuration(topic_configuration cfg)
-      : cfg(std::move(cfg)){};
+      : cfg(std::move(cfg)) {};
 
     topic_configuration cfg;
     std::vector<custom_partition_assignment> custom_assignments;
@@ -1130,9 +1130,9 @@ public:
       const configuration_invariants& expected,
       const configuration_invariants& current)
       : _msg(ssx::sformat(
-        "Configuration invariants changed. Expected: {}, current: {}",
-        expected,
-        current)) {}
+          "Configuration invariants changed. Expected: {}, current: {}",
+          expected,
+          current)) {}
 
     const char* what() const noexcept final { return _msg.c_str(); }
 

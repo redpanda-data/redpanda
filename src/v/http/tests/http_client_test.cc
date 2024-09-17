@@ -420,7 +420,7 @@ class http_server_impostor {
 public:
     http_server_impostor(ss::sstring req, ss::sstring resp)
       : http_server_impostor(
-        std::move(req), std::vector<ss::sstring>{std::move(resp)}) {}
+          std::move(req), std::vector<ss::sstring>{std::move(resp)}) {}
 
     http_server_impostor(ss::sstring req, std::vector<ss::sstring> resp)
       : _socket()

@@ -106,8 +106,8 @@ inline auto random_chunked_vector(Fn&& gen, size_t size = 20, Args&&... args)
 }
 
 template<typename Fn, typename T = std::invoke_result_t<Fn>>
-inline auto random_circular_buffer(Fn&& gen, size_t size = 5)
-  -> ss::circular_buffer<T> {
+inline auto
+random_circular_buffer(Fn&& gen, size_t size = 5) -> ss::circular_buffer<T> {
     ss::circular_buffer<T> v;
     v.reserve(size);
     std::generate_n(v.begin(), size, gen);
@@ -115,8 +115,8 @@ inline auto random_circular_buffer(Fn&& gen, size_t size = 5)
 }
 
 template<typename Fn, typename T = std::invoke_result_t<Fn>>
-inline auto random_chunked_fifo(Fn&& gen, size_t size = 20)
-  -> ss::chunked_fifo<T> {
+inline auto
+random_chunked_fifo(Fn&& gen, size_t size = 20) -> ss::chunked_fifo<T> {
     ss::chunked_fifo<T> v;
     v.reserve(size);
     std::generate_n(std::back_inserter(v), size, gen);

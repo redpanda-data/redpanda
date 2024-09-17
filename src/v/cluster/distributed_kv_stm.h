@@ -97,7 +97,8 @@ public:
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
       : persisted_stm<>("distributed_kv_stm.snapshot", logger, raft)
       , _default_max_partitions(max_partitions)
-      , _is_routing_partition(_raft->ntp().tp.partition == routing_partition){};
+      , _is_routing_partition(_raft->ntp().tp.partition == routing_partition) {
+      };
 
     ss::future<> start() override { co_await raft::persisted_stm<>::start(); }
     ss::future<> stop() override { co_await _gate.close(); }

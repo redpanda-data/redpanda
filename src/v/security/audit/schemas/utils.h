@@ -156,7 +156,8 @@ template<typename Func>
 concept returns_auditable_resource_vector = requires(Func func) {
     {
         func()
-    } -> std::same_as<
+    }
+    -> std::same_as<
       std::vector<typename std::remove_cvref_t<decltype(func())>::value_type>>;
 
     requires AuditableResource<

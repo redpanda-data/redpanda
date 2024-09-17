@@ -44,10 +44,10 @@ public:
         concurrent_modification_error(
           version initial_version, version current_version)
           : _msg(ssx::sformat(
-            "Partition leaders table was modified during operation. "
-            "(initial_version: {}, current_version: {}) ",
-            initial_version,
-            current_version)) {}
+              "Partition leaders table was modified during operation. "
+              "(initial_version: {}, current_version: {}) ",
+              initial_version,
+              current_version)) {}
 
         const char* what() const noexcept final { return _msg.c_str(); }
 

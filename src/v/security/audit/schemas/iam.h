@@ -75,11 +75,11 @@ public:
       timestamp_t time,
       user user)
       : ocsf_base_event(
-        category_uid::iam,
-        class_uid::authentication,
-        severity_id,
-        time,
-        activity_id)
+          category_uid::iam,
+          class_uid::authentication,
+          severity_id,
+          time,
+          activity_id)
       , _activity_id(activity_id)
       , _dst_endpoint(std::move(dst_endpoint))
       , _is_cleartext(is_cleartext)

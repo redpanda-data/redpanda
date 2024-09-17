@@ -124,7 +124,7 @@ ss::future<std::vector<model::record_batch_reader>> share_reader(
           for (auto& b : batches) {
               auto r = use_foreign_share
                          ? model::make_foreign_memory_record_batch_reader(
-                           std::move(b))
+                             std::move(b))
                          : model::make_memory_record_batch_reader(std::move(b));
               retval.emplace_back(std::move(r));
           }

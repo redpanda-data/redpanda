@@ -89,14 +89,14 @@ kafka_stages::kafka_stages(
 kafka_stages::kafka_stages(raft::errc ec)
   : request_enqueued(ss::now())
   , replicate_finished(
-      ss::make_ready_future<result<kafka_result>>(make_error_code(ec))){};
+      ss::make_ready_future<result<kafka_result>>(make_error_code(ec))) {};
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
   ss::chunked_fifo<backend_operation> ops,
   reconciliation_status status)
   : ntp_reconciliation_state(
-    std::move(ntp), std::move(ops), status, errc::success) {}
+      std::move(ntp), std::move(ops), status, errc::success) {}
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
@@ -111,7 +111,7 @@ ntp_reconciliation_state::ntp_reconciliation_state(
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp, cluster::errc ec)
   : ntp_reconciliation_state(
-    std::move(ntp), {}, reconciliation_status::error, ec) {}
+      std::move(ntp), {}, reconciliation_status::error, ec) {}
 
 create_partitions_configuration::create_partitions_configuration(
   model::topic_namespace tp_ns, int32_t cnt)

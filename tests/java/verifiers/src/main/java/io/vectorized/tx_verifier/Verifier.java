@@ -444,9 +444,9 @@ class Verifier {
       consumer = new TxConsumer(connection, topic1, true);
       long position = seekOver(consumer, offset, 500, 8);
       should(
-          offset < position,
-          "read committed seek should jump beyond an (auto)aborted tx; tx offset: "
-              + offset + ", position: " + position);
+          offset < position, "read committed seek should jump beyond an "
+                                 + "(auto)aborted tx; tx offset: " + offset
+                                 + ", position: " + position);
 
       try {
         producer.commitTransaction();

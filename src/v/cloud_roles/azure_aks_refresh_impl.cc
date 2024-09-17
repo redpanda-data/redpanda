@@ -52,29 +52,30 @@ azure_aks_refresh_impl::azure_aks_refresh_impl(
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    [&] {
-        if (!address.host().empty()) {
-            // non-empty host: it's an override that we should use
-            return std::move(address);
-        }
+      [&] {
+          if (!address.host().empty()) {
+              // non-empty host: it's an override that we should use
+              return std::move(address);
+          }
 
-        // try to interpret AZURE_AUTHORITY_HOST as a URL, if it fails,
-        // assume it's an hostname
-        auto authority_host = load_from_env(env_var_azure_authority_host);
-        if (auto url = ada::parse<ada::url>(authority_host); url.has_value()) {
-            auto is_https = url->get_protocol() == "https:";
-            // use port if it's set, otherwise fallback on the default 443 for
-            // https and 80 for http
-            auto port = url->port.value_or(is_https ? default_port : 80);
-            auto hostname = url->get_hostname();
-            return net::unresolved_address{hostname, port};
-        }
+          // try to interpret AZURE_AUTHORITY_HOST as a URL, if it fails,
+          // assume it's an hostname
+          auto authority_host = load_from_env(env_var_azure_authority_host);
+          if (auto url = ada::parse<ada::url>(authority_host);
+              url.has_value()) {
+              auto is_https = url->get_protocol() == "https:";
+              // use port if it's set, otherwise fallback on the default 443 for
+              // https and 80 for http
+              auto port = url->port.value_or(is_https ? default_port : 80);
+              auto hostname = url->get_hostname();
+              return net::unresolved_address{hostname, port};
+          }
 
-        return net::unresolved_address{authority_host, default_port};
-    }(),
-    std::move(region),
-    as,
-    retry_params)
+          return net::unresolved_address{authority_host, default_port};
+      }(),
+      std::move(region),
+      as,
+      retry_params)
   , client_id_{load_from_env(env_var_azure_client_id)}
   , tenant_id_{load_from_env(env_var_azure_tenant_id)}
   , federated_token_file_{load_from_env(env_var_azure_federated_token_file)} {}

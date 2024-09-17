@@ -89,7 +89,7 @@ public:
         shard_local_state(
           const shard_local_assignment& as, hosted_status status)
           : shard_local_state(
-            as.group, as.log_revision, status, as.shard_revision) {}
+              as.group, as.log_revision, status, as.shard_revision) {}
 
         friend std::ostream&
         operator<<(std::ostream&, const shard_local_state&);

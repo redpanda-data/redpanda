@@ -70,7 +70,7 @@ constexpr auto default_external_mitigate = [](std::exception_ptr ex) {
     return ss::make_exception_future(ex);
 };
 
-}
+} // namespace impl
 
 class client {
 public:

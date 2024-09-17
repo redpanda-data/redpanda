@@ -35,22 +35,22 @@ struct bootstrap_fixture : raft::simple_record_fixture {
     using raft::simple_record_fixture::active_nodes;
     bootstrap_fixture()
       : _storage(
-        []() {
-            return storage::kvstore_config(
-              1_MiB,
-              config::mock_binding(10ms),
-              "test.dir",
-              storage::make_sanitized_file_config());
-        },
-        []() {
-            return storage::log_config(
-              "test.dir",
-              1_GiB,
-              ss::default_priority_class(),
-              storage::with_cache::no,
-              storage::make_sanitized_file_config());
-        },
-        _feature_table) {
+          []() {
+              return storage::kvstore_config(
+                1_MiB,
+                config::mock_binding(10ms),
+                "test.dir",
+                storage::make_sanitized_file_config());
+          },
+          []() {
+              return storage::log_config(
+                "test.dir",
+                1_GiB,
+                ss::default_priority_class(),
+                storage::with_cache::no,
+                storage::make_sanitized_file_config());
+          },
+          _feature_table) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(

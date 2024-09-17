@@ -194,8 +194,8 @@ ss::future<std::optional<device_throughput>> get_storage_device_throughput() {
 
 io_resources::io_resources()
   : _max_concurrent_hydrations_per_shard(
-    config::shard_local_cfg()
-      .cloud_storage_max_concurrent_hydrations_per_shard.bind())
+      config::shard_local_cfg()
+        .cloud_storage_max_concurrent_hydrations_per_shard.bind())
   , _hydration_units(max_parallel_hydrations(), "cst_hydrations")
   , _throughput_limit(
       // apply shard limit to downloads

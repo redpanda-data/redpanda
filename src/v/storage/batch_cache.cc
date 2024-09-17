@@ -139,7 +139,7 @@ register_memory_reporter(const batch_cache& bc) {
 
 batch_cache::batch_cache(const reclaim_options& opts)
   : _reclaimer(
-    [this](reclaimer::request r) { return reclaim(r); }, reclaim_scope::sync)
+      [this](reclaimer::request r) { return reclaim(r); }, reclaim_scope::sync)
   , _reclaim_opts(opts)
   , _reclaim_size(_reclaim_opts.min_size)
   , _background_reclaimer(

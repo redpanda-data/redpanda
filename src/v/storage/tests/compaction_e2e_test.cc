@@ -400,7 +400,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
         model::offset end_offset = consume_to_end
                                      ? model::offset::max()
                                      : model::offset{random_generators::get_int(
-                                       start_offset(), log_end_offset())};
+                                         start_offset(), log_end_offset())};
 
         storage::log_reader_config reader_cfg{
           start_offset,

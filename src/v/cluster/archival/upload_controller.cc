@@ -34,9 +34,9 @@ upload_controller::upload_controller(
   ss::sharded<cluster::partition_manager>& partition_manager,
   storage::backlog_controller_config cfg)
   : _ctrl(
-    std::make_unique<upload_backlog_sampler>(partition_manager),
-    upload_ctrl_log,
-    cfg) {
+      std::make_unique<upload_backlog_sampler>(partition_manager),
+      upload_ctrl_log,
+      cfg) {
     _ctrl.setup_metrics("archival:upload");
 }
 

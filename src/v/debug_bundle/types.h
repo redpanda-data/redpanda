@@ -126,7 +126,6 @@ struct fmt::formatter<debug_bundle::time_variant>
 template<>
 struct fmt::formatter<debug_bundle::partition_selection>
   : formatter<std::string_view> {
-    auto
-    format(const debug_bundle::partition_selection&, format_context& ctx) const
-      -> format_context::iterator;
+    auto format(const debug_bundle::partition_selection&, format_context& ctx)
+      const -> format_context::iterator;
 };

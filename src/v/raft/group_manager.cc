@@ -134,10 +134,11 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
           trigger_leadership_notification(std::move(st));
       },
       _storage,
-      enable_learner_recovery_throttle ? std::make_optional<
-        std::reference_wrapper<coordinated_recovery_throttle>>(
-        _recovery_throttle)
-                                       : std::nullopt,
+      enable_learner_recovery_throttle
+        ? std::make_optional<
+            std::reference_wrapper<coordinated_recovery_throttle>>(
+            _recovery_throttle)
+        : std::nullopt,
       _recovery_mem_quota,
       _recovery_scheduler,
       _feature_table,

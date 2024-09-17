@@ -58,8 +58,8 @@ ss::sstring list_objects_resp(
     // delimiter.
     auto max_keys = max_keys_opt.has_value()
                       ? std::min(
-                        max_keys_opt.value(),
-                        s3_imposter_fixture::default_max_keys)
+                          max_keys_opt.value(),
+                          s3_imposter_fixture::default_max_keys)
                       : s3_imposter_fixture::default_max_keys;
     auto it = (continuation_token_opt.has_value())
                 ? objects.find(continuation_token_opt.value())
