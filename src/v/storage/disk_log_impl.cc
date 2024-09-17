@@ -155,7 +155,8 @@ disk_log_impl::~disk_log_impl() {
 }
 
 size_t disk_log_impl::compute_max_segment_size() {
-    auto segment_size = std::min(max_segment_size(), segment_size_hard_limit);
+    auto segment_size = std::min(
+      config().segment_bytes(), segment_size_hard_limit);
     return segment_size * (1 + _segment_size_jitter);
 }
 
@@ -1605,33 +1606,6 @@ ss::future<> disk_log_impl::flush() {
     vlog(
       stlog.trace, "flush on segment with offsets {}", _segs.back()->offsets());
     return _segs.back()->flush();
-}
-
-size_t disk_log_impl::max_segment_size() const {
-    // override for segment size
-    size_t result;
-    if (config().has_overrides() && config().get_overrides().segment_size) {
-        result = *config().get_overrides().segment_size;
-    } else {
-        // no overrides use defaults
-        result = config().is_compacted()
-                   ? _manager.config().compacted_segment_size()
-                   : _manager.config().max_segment_size();
-    }
-
-    // Clamp to safety limits on segment sizes, in case the
-    // property was set without proper validation (e.g. on
-    // an older version or before limits were set)
-    auto min_limit = config::shard_local_cfg().log_segment_size_min();
-    auto max_limit = config::shard_local_cfg().log_segment_size_max();
-    if (min_limit) {
-        result = std::max(*min_limit, result);
-    }
-    if (max_limit) {
-        result = std::min(*max_limit, result);
-    }
-
-    return result;
 }
 
 uint64_t disk_log_impl::size_bytes_after_offset(model::offset o) const {
@@ -3195,7 +3169,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
 
     target.min_capacity
       = config::shard_local_cfg().storage_reserve_min_segments()
-        * max_segment_size();
+        * config().segment_bytes();
 
     cfg = apply_kafka_retention_overrides(cfg);
 
@@ -3248,8 +3222,9 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          * segments we can make the estimate a bit more conservative by rounding
          * up to roughly the nearest segment size.
          */
-        want_size.value() += max_segment_size()
-                             - (cfg.max_bytes.value() % max_segment_size());
+        want_size.value()
+          += config().segment_bytes()
+             - (cfg.max_bytes.value() % config().segment_bytes());
     }
 
     /*
