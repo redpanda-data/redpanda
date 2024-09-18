@@ -92,4 +92,60 @@
       }
     }
   }
+},
+"/v1/debug/bundle/{jobid}": {
+  "delete": {
+    "description": "Attempts to kill a running bundle process.  Providing an incorrect `job_id` returns a 422.  If the process is not currently running, the request will return a 409 error.  Internal errors will return a 500 status.",
+    "summary": "Abort a running bundle process.",
+    "operationId": "delete_debug_bundle",
+    "consumes": [
+      "application/json"
+    ],
+    "parameters": [
+      {
+        "name": "jobid",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "204": {
+        "description": "No content"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "422": {
+        "description": "Format Error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
 }

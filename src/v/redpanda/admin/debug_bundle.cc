@@ -120,6 +120,13 @@ void admin_server::register_debug_bundle_routes() {
         std::unique_ptr<ss::http::reply> rep) {
           return get_debug_bundle(std::move(req), std::move(rep));
       });
+    register_route_raw_async<superuser>(
+      ss::httpd::debug_bundle_json::delete_debug_bundle,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return delete_debug_bundle(std::move(req), std::move(rep));
+      });
 }
 
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
@@ -188,4 +195,29 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_debug_bundle(
     }
     co_return make_json_body(
       ss::http::reply::status_type::ok, body, std::move(rep));
+}
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_debug_bundle(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    auto job_id_str = req->get_path_param("jobid");
+    debug_bundle::job_id_t job_id;
+    try {
+        job_id = debug_bundle::job_id_t{uuid_t::from_string(job_id_str)};
+    } catch (const std::exception&) {
+        co_return make_error_body(
+          debug_bundle::error_code::invalid_parameters,
+          "Malformed jobid",
+          std::move(rep));
+    }
+    auto res = co_await _debug_bundle_service.local().cancel_rpk_debug_bundle(
+      job_id);
+    if (res.has_error()) {
+        co_return make_error_body(res.assume_error(), std::move(rep));
+    }
+
+    co_return make_json_body(
+      ss::http::reply::status_type::no_content,
+      ss::json::json_void{},
+      std::move(rep));
 }
