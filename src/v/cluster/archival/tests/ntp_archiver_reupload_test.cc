@@ -235,6 +235,7 @@ struct reupload_fixture : public archiver_fixture {
             model::timestamp::max(),
             std::nullopt,
             max_collectible,
+            std::nullopt,
             ss::default_priority_class(),
             abort_source})
           .get();

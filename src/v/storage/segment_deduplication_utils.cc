@@ -9,6 +9,7 @@
 
 #include "storage/segment_deduplication_utils.h"
 
+#include "model/timestamp.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
 #include "storage/index_state.h"
@@ -164,9 +165,13 @@ ss::future<index_state> deduplicate_segment(
       seg, cfg, probe, std::move(read_holder));
     auto compaction_placeholder_enabled = feature_table.local().is_active(
       features::feature::compaction_placeholder_batch);
+
+    const std::optional<model::timestamp> tombstone_delete_horizon
+      = internal::get_tombstone_delete_horizon(seg, cfg);
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map,
        segment_last_offset = seg->offsets().get_committed_offset(),
+       tombstone_delete_horizon = tombstone_delete_horizon,
        compaction_placeholder_enabled](
         const model::record_batch& b,
         const model::record& r,
@@ -185,6 +190,12 @@ ss::future<index_state> deduplicate_segment(
                 b.header());
               return ss::make_ready_future<bool>(true);
           }
+          // Potentially deal with tombstone record removal
+          if (internal::should_remove_tombstone_record(
+                r, tombstone_delete_horizon)) {
+              return ss::make_ready_future<bool>(false);
+          }
+
           return should_keep(map, b, r);
       },
       &appender,
@@ -198,6 +209,7 @@ ss::future<index_state> deduplicate_segment(
     auto new_idx = co_await std::move(rdr).consume(
       std::move(copy_reducer), model::no_timeout);
     new_idx.broker_timestamp = seg->index().broker_timestamp();
+    new_idx.clean_compact_timestamp = seg->index().clean_compact_timestamp();
     co_return new_idx;
 }
 

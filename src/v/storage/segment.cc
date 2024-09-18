@@ -897,7 +897,7 @@ bool segment::may_have_compactible_records() const {
         // that there were no data records, so err on the side of caution.
         return true;
     }
-    return num_compactible_records.value() > 1;
+    return num_compactible_records.value() > 0;
 }
 
 } // namespace storage

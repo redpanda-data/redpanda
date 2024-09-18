@@ -159,8 +159,9 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", non_data_timestamps:" << s.non_data_timestamps
              << ", broker_timestamp:" << s.broker_timestamp
              << ", num_compactible_records_appended:"
-             << s.num_compactible_records_appended << ", index("
-             << s.relative_offset_index.size() << ","
+             << s.num_compactible_records_appended
+             << ", clean_compact_timestamp:" << s.clean_compact_timestamp
+             << ", index(" << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
 }
@@ -182,6 +183,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, non_data_timestamps);
     write(tmp, broker_timestamp);
     write(tmp, num_compactible_records_appended);
+    write(tmp, clean_compact_timestamp);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -278,6 +280,11 @@ void read_nested(
     } else {
         st.num_compactible_records_appended = std::nullopt;
     }
+    if (hdr._version >= index_state::clean_compact_timestamp_version) {
+        read_nested(p, st.clean_compact_timestamp, 0U);
+    } else {
+        st.clean_compact_timestamp = std::nullopt;
+    }
 }
 
 index_state index_state::copy() const { return *this; }
@@ -357,7 +364,8 @@ index_state::index_state(const index_state& o) noexcept
   , with_offset(o.with_offset)
   , non_data_timestamps(o.non_data_timestamps)
   , broker_timestamp(o.broker_timestamp)
-  , num_compactible_records_appended(o.num_compactible_records_appended) {}
+  , num_compactible_records_appended(o.num_compactible_records_appended)
+  , clean_compact_timestamp(o.clean_compact_timestamp) {}
 
 namespace serde_compat {
 uint64_t index_state_serde::checksum(const index_state& r) {

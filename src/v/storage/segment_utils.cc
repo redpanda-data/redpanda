@@ -376,8 +376,13 @@ ss::future<storage::index_state> do_copy_segment_data(
   storage_resources& resources,
   offset_delta_time apply_offset,
   ss::sharded<features::feature_table>& feature_table) {
-    // preserve broker_timestamp from the segment's index
+    // preserve broker_timestamp and clean_compact_timestamp from the segment's
+    // index
     auto old_broker_timestamp = seg->index().broker_timestamp();
+    auto old_clean_compact_timestamp = seg->index().clean_compact_timestamp();
+
+    const std::optional<model::timestamp> tombstone_delete_horizon
+      = get_tombstone_delete_horizon(seg, cfg);
 
     // find out which offsets will survive compaction
     auto idx_path = seg->reader().path().to_compacted_index();
@@ -411,10 +416,16 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->reader().filename(),
       tmpname);
 
-    auto should_keep = [compacted_list = std::move(compacted_offsets)](
+    auto should_keep = [compacted_list = std::move(compacted_offsets),
+                        tombstone_delete_horizon = tombstone_delete_horizon](
                          const model::record_batch& b,
                          const model::record& r,
                          bool) {
+        // Potentially deal with tombstone record removal
+        if (should_remove_tombstone_record(r, tombstone_delete_horizon)) {
+            return ss::make_ready_future<bool>(false);
+        }
+
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
         return ss::make_ready_future<bool>(compacted_list.contains(o));
     };
@@ -448,8 +459,10 @@ ss::future<storage::index_state> do_copy_segment_data(
                              });
                        });
 
-    // restore broker timestamp
+    // restore broker timestamp and clean compact timestamp
     new_index.broker_timestamp = old_broker_timestamp;
+    new_index.clean_compact_timestamp = old_clean_compact_timestamp;
+
     co_return new_index;
 }
 
@@ -853,13 +866,44 @@ make_concatenated_segment(
           });
         return seg_it->index().broker_timestamp();
     }();
+
+    // If both of the segments have a clean_compact_timestamp set, then the new
+    // index should use the maximum timestamp. If at least one segment doesn't
+    // have a clean_compact_timestamp, then the new index should not either.
+    auto new_clean_compact_timestamp =
+      [&]() -> std::optional<model::timestamp> {
+        // invariants: segments is not empty, but for completeness handle the
+        // empty case
+        if (unlikely(segments.empty())) {
+            return std::nullopt;
+        }
+        std::optional<model::timestamp> new_ts;
+        for (const auto& seg : segments) {
+            // If even one segment in the set does not have a
+            // clean_compact_timestamp, we must not mark the new index as having
+            // one.
+            if (!seg->index().has_clean_compact_timestamp()) {
+                return std::nullopt;
+            }
+
+            auto clean_ts = seg->index().clean_compact_timestamp();
+            if (!new_ts.has_value()) {
+                new_ts = clean_ts;
+            } else {
+                new_ts = std::max(new_ts.value(), clean_ts.value());
+            }
+        }
+        return new_ts;
+    }();
+
     segment_index index(
       index_name,
       offsets.get_base_offset(),
       segment_index::default_data_buffer_step,
       feature_table,
       cfg.sanitizer_config,
-      new_broker_timestamp);
+      new_broker_timestamp,
+      new_clean_compact_timestamp);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
@@ -1084,6 +1128,42 @@ offset_delta_time should_apply_delta_time_offset(
     return offset_delta_time{
       feature_table.local_is_initialized()
       && feature_table.local().is_active(features::feature::node_isolation)};
+}
+
+void mark_segment_as_finished_window_compaction(
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp) {
+    seg->mark_as_finished_windowed_compaction();
+    if (set_clean_compact_timestamp) {
+        seg->index().maybe_set_clean_compact_timestamp(model::timestamp::now());
+    }
+}
+
+std::optional<model::timestamp> get_tombstone_delete_horizon(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
+    std::optional<model::timestamp> tombstone_delete_horizon = {};
+    const auto& tombstone_retention_ms_opt = cfg.tombstone_retention_ms;
+    if (
+      seg->index().has_clean_compact_timestamp()
+      && tombstone_retention_ms_opt.has_value()) {
+        tombstone_delete_horizon = model::timestamp(
+          seg->index().clean_compact_timestamp()->value()
+          + cfg.tombstone_retention_ms->count());
+    }
+    return tombstone_delete_horizon;
+}
+
+bool should_remove_tombstone_record(
+  const model::record& r,
+  std::optional<model::timestamp> tombstone_delete_horizon) {
+    if (!r.is_tombstone()) {
+        return false;
+    }
+
+    if (!tombstone_delete_horizon.has_value()) {
+        return false;
+    }
+
+    return (model::timestamp::now() > tombstone_delete_horizon.value());
 }
 
 } // namespace storage::internal

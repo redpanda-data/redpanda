@@ -108,6 +108,7 @@ FIXTURE_TEST(test_concurrent_log_eviction_and_append, storage_e2e_fixture) {
       /*gc_upper=*/model::timestamp::max(),
       /*max_bytes_in_log=*/1,
       /*max_collect_offset=*/model::offset::min(),
+      /*tombstone_retention_ms=*/std::nullopt,
       ss::default_priority_class(),
       as);
 

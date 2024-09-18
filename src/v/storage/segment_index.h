@@ -129,7 +129,8 @@ public:
       size_t step,
       ss::sharded<features::feature_table>& feature_table,
       std::optional<ntp_sanitizer_config> sanitizer_config,
-      std::optional<model::timestamp> broker_timestamp = std::nullopt);
+      std::optional<model::timestamp> broker_timestamp = std::nullopt,
+      std::optional<model::timestamp> clean_compact_timestamp = std::nullopt);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
@@ -194,6 +195,24 @@ public:
     model::timestamp retention_timestamp(time_based_retention_cfg cfg) const {
         return cfg.compute_retention_ms(
           _state.broker_timestamp, _state.max_timestamp, _retention_timestamp);
+    }
+
+    // Check if compacted timestamp has a value.
+    bool has_clean_compact_timestamp() const {
+        return _state.clean_compact_timestamp.has_value();
+    }
+
+    // Set the compacted timestamp, if it doesn't already have a value.
+    void maybe_set_clean_compact_timestamp(model::timestamp t) {
+        if (!_state.clean_compact_timestamp.has_value()) {
+            _state.clean_compact_timestamp = t;
+            _needs_persistence = true;
+        }
+    }
+
+    // Get the compacted timestamp.
+    std::optional<model::timestamp> clean_compact_timestamp() const {
+        return _state.clean_compact_timestamp;
     }
 
     ss::future<bool> materialize_index();
