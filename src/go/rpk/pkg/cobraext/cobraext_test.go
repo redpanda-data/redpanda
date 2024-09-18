@@ -42,8 +42,8 @@ func TestStripFlagset(t *testing.T) {
 		expStripped []string
 	}{
 		{
-			args:        []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2"},
-			expKept:     []string{"-f", "foo", "finalarg", "finalarg2"},
+			args:        []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "--version", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2", "-r", "--finalUnknown"},
+			expKept:     []string{"--version", "-f", "foo", "finalarg", "finalarg2", "-r", "--finalUnknown"},
 			expStripped: []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug"},
 		},
 	} {
@@ -137,34 +137,45 @@ func TestLongFlagValue(t *testing.T) {
 	fs.StringP("verbose", "v", "none", "Log level")
 	fs.Lookup("verbose").NoOptDefVal = "info"
 
-	args := []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2", "--unknown", "handled", "--unknown2=handled2"}
+	args := []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2", "--unknown", "handled", "--unknown2=handled2", "-h"}
 
 	for _, test := range []struct {
-		f   string
-		exp string
+		flag      string
+		shorthand string
+		exp       string
 	}{
 		{
-			f:   "config",
-			exp: "foo",
+			flag: "config",
+			exp:  "foo",
 		},
 		{
-			f:   "config-opt",
-			exp: "biz", // we take the last value
+			flag: "config-opt",
+			exp:  "biz", // we take the last value
 		},
 		{
-			f:   "noexist",
-			exp: "",
+			flag: "noexist",
+			exp:  "",
 		},
 		{
-			f:   "unknown",
-			exp: "handled",
+			flag: "unknown",
+			exp:  "handled",
 		},
 		{
-			f:   "unknown2",
-			exp: "handled2",
+			flag: "unknown2",
+			exp:  "handled2",
+		},
+		{
+			flag:      "verbose",
+			shorthand: "v",
+			exp:       "debug",
+		},
+		{
+			flag:      "help",
+			shorthand: "h",
+			exp:       "true",
 		},
 	} {
-		got := LongFlagValue(args, fs, test.f)
+		got := LongFlagValue(args, fs, test.flag, test.shorthand)
 		if got != test.exp {
 			t.Errorf("got %v != exp %v", got, test.exp)
 		}

@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 )
 
 // BodyError is returned on non-2xx status codes. For 4xx, you can optionally
@@ -362,8 +363,10 @@ func maybeUnmarshalRespBodyInto(r io.Reader, into interface{}) error {
 		*t = string(body)
 	default:
 		if err := json.Unmarshal(body, into); err != nil {
-			if err := xml.Unmarshal(body, into); err != nil {
-				return fmt.Errorf("unable to decode response body: %w", err)
+			if err := yaml.Unmarshal(body, into); err != nil {
+				if err := xml.Unmarshal(body, into); err != nil {
+					return fmt.Errorf("unable to decode response body: %w", err)
+				}
 			}
 		}
 	}
