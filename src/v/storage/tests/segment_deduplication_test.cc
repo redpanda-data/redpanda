@@ -10,6 +10,7 @@
 #include "gmock/gmock.h"
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/chunk_cache.h"
 #include "storage/disk_log_impl.h"
@@ -18,15 +19,18 @@
 #include "storage/segment_utils.h"
 #include "storage/tests/disk_log_builder_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/util/defer.hh>
 
+#include <chrono>
 #include <stdexcept>
 
 using namespace storage;
+using namespace std::chrono_literals;
 
 namespace {
 ss::abort_source never_abort;
@@ -40,7 +44,9 @@ void add_segments(
   int num_segs,
   int records_per_seg = 10,
   int start_offset = 0,
-  bool mark_compacted = true) {
+  bool mark_compacted = true,
+  bool may_have_tombstones = true,
+  std::optional<model::timestamp> clean_compacted_ts = std::nullopt) {
     auto& disk_log = b.get_disk_log_impl();
     for (int i = 0; i < num_segs; i++) {
         auto offset = start_offset + i * records_per_seg;
@@ -52,6 +58,13 @@ void add_segments(
         if (mark_compacted) {
             seg->mark_as_finished_self_compaction();
             seg->mark_as_finished_windowed_compaction();
+        }
+
+        seg->index().set_may_have_tombstone_records(may_have_tombstones);
+
+        if (clean_compacted_ts.has_value()) {
+            seg->index().maybe_set_clean_compact_timestamp(
+              clean_compacted_ts.value());
         }
         if (seg->has_appender()) {
             seg->appender().close().get();
@@ -65,9 +78,18 @@ void build_segments(
   int num_segs,
   int records_per_seg = 10,
   int start_offset = 0,
-  bool mark_compacted = true) {
+  bool mark_compacted = true,
+  bool may_have_tombstones = true,
+  std::optional<model::timestamp> clean_compacted_ts = std::nullopt) {
     b | start();
-    add_segments(b, num_segs, records_per_seg, start_offset, mark_compacted);
+    add_segments(
+      b,
+      num_segs,
+      records_per_seg,
+      start_offset,
+      mark_compacted,
+      may_have_tombstones,
+      clean_compacted_ts);
 }
 
 TEST(FindSlidingRangeTest, TestCollectSegments) {
@@ -217,6 +239,101 @@ TEST(FindSlidingRangeTest, TestEmptySegmentNoCompactibleRecords) {
     for (const auto& seg : disk_log.segments()) {
         ASSERT_FALSE(seg->may_have_compactible_records());
     }
+}
+
+TEST(FindSlidingRangeTest, TestAllCleanlyCompactedSegments) {
+    storage::disk_log_builder b;
+    const auto num_segs = 3;
+    // Mark as compacted, do not have tombstones, and cleanly compacted at a
+    // previous timestamp.
+    build_segments(b, num_segs, 10, 0, true, false, model::timestamp{0});
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    compaction_config cfg(
+      model::offset{30}, 1ms, ss::default_priority_class(), never_abort);
+    auto segs = disk_log.find_sliding_range(cfg, model::offset{0});
+    // All cleanly compacted segments are still considered in the range.
+    ASSERT_EQ(segs.size(), num_segs);
+}
+
+TEST(FindSlidingRangeTest, TestCompactionLastSegmentNotCompacted) {
+    storage::disk_log_builder b;
+    const auto num_segs = 3;
+    // Mark as not compacted.
+    build_segments(b, num_segs, 10, 0, false);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    compaction_config cfg(
+      model::offset{30},
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort);
+    auto segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(3, segs.size());
+    ASSERT_EQ(segs.front()->offsets().get_base_offset(), model::offset{0});
+
+    // Set the last window start offset to 20. Now, even though the last segment
+    // in the group is marked as not compacted, it still will not be considered
+    // in the window.
+    disk_log.set_last_compaction_window_start_offset(model::offset(20));
+    segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(2, segs.size());
+
+    // Reset the last window start offset, and now all segments are once again
+    // considered in the window.
+    disk_log.set_last_compaction_window_start_offset(std::nullopt);
+    segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(3, segs.size());
+}
+
+TEST(FindSlidingRangeTest, TestWindowWithRemovedSegments) {
+    storage::disk_log_builder b;
+    const auto num_segs = 3;
+    // Mark as not compacted
+    build_segments(b, num_segs, 10, 0, false);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+
+    // Set the last compaction window start offset, then remove a segment from
+    // the log such that start offset < the log's base offset.
+    disk_log.set_last_compaction_window_start_offset(model::offset(5));
+    disk_log.segments().pop_front();
+
+    compaction_config cfg(
+      model::offset{30}, 1ms, ss::default_priority_class(), never_abort);
+    auto segs = disk_log.find_sliding_range(cfg, model::offset{0});
+
+    // We should have reset the compaction window start offset, and had the
+    // remaining two segments in the sliding range.
+    ASSERT_EQ(segs.size(), 2);
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
+}
+
+TEST(FindSlidingRangeTest, TestWindowWithTruncatedSegments) {
+    storage::disk_log_builder b;
+    const auto num_segs = 3;
+    // Mark as not compacted
+    build_segments(b, num_segs, 10, 0, false);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+
+    // Set the last compaction window start offset, then prefix truncate the log
+    // such that start offset < the log's base offset.
+    disk_log.set_last_compaction_window_start_offset(model::offset(5));
+    truncate_prefix_config trunc_cfg(
+      model::offset{10}, ss::default_priority_class());
+    disk_log.truncate_prefix(trunc_cfg).get();
+
+    compaction_config cfg(
+      model::offset{30}, 1ms, ss::default_priority_class(), never_abort);
+    auto segs = disk_log.find_sliding_range(cfg, model::offset{0});
+
+    // We should have reset the compaction window start offset, and had the
+    // remaining two segments in the sliding range.
+    ASSERT_EQ(segs.size(), 2);
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
 }
 
 TEST(BuildOffsetMap, TestBuildSimpleMap) {

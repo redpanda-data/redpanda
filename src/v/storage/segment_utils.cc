@@ -738,7 +738,9 @@ ss::future<compaction_result> self_compact_segment(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
     }
 
-    if (s->finished_self_compaction() || !s->has_compactible_offsets(cfg)) {
+    if (
+      !s->has_compactible_offsets(cfg)
+      || (s->finished_self_compaction() && !may_have_removable_tombstones(s, cfg))) {
         co_return compaction_result{s->size_bytes()};
     }
 

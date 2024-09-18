@@ -500,6 +500,26 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
 
 segment_set disk_log_impl::find_sliding_range(
   const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
+    if (
+      _last_compaction_window_start_offset.has_value()
+      && (_last_compaction_window_start_offset.value()
+           <= _segs.front()->offsets().get_base_offset())) {
+        // If this evaluates to true, it is likely because local retention has
+        // removed segments. e.g, segments ([0],[1],[2]), have been garbage
+        // collected to segments ([2]), while _last_window_compaction_offset
+        // == 1. To avoid compaction getting stuck in this situation, we reset
+        // the compaction window offset here.
+        vlog(
+          gclog.debug,
+          "[{}] start offset ({}) <= base offset of front segment ({}), "
+          "resetting compaction window start offset",
+          config().ntp(),
+          _last_compaction_window_start_offset.value(),
+          _segs.front()->offsets().get_base_offset());
+
+        _last_compaction_window_start_offset.reset();
+    }
+
     // Collect all segments that have stable data.
     segment_set::underlying_t buf;
     for (const auto& seg : _segs) {
@@ -508,11 +528,21 @@ segment_set disk_log_impl::find_sliding_range(
             break;
         }
         if (
+           _last_compaction_window_start_offset.has_value()
+           && (seg->offsets().get_base_offset()
+                >= _last_compaction_window_start_offset.value())) {
+            // Force clean segment production by compacting down to the
+            // start of the log before considering new segments in the
+            // compaction window.
+            break;
+        }
+        if (
           new_start_offset
           && seg->offsets().get_base_offset() < new_start_offset.value()) {
             // Skip over segments that are being truncated.
             continue;
         }
+
         buf.emplace_back(seg);
     }
     segment_set segs(std::move(buf));
@@ -520,28 +550,6 @@ segment_set disk_log_impl::find_sliding_range(
         return segs;
     }
 
-    // If a previous sliding window compaction ran, and there are no new
-    // segments, segments at the start of that window and above have been
-    // fully deduplicated and don't need to be compacted further.
-    //
-    // If there are new segments that have not been compacted, we can't make
-    // this claim, and compact everything again.
-    if (
-      segs.back()->finished_windowed_compaction()
-      && _last_compaction_window_start_offset.has_value()) {
-        while (!segs.empty()) {
-            if (
-              segs.back()->offsets().get_base_offset()
-              >= _last_compaction_window_start_offset.value()) {
-                // A previous compaction deduplicated the keys above this
-                // offset. As such, segments above this point would not benefit
-                // from being included in the compaction window.
-                segs.pop_back();
-            } else {
-                break;
-            }
-        }
-    }
     return segs;
 }
 
@@ -559,9 +567,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         if (cfg.asrc) {
             cfg.asrc->check();
         }
-        if (seg->finished_self_compaction()) {
-            continue;
-        }
+
         auto result = co_await storage::internal::self_compact_segment(
           seg,
           _stm_manager,
@@ -571,6 +577,10 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           _manager.resources(),
           _feature_table);
 
+        if (result.did_compact() == false) {
+            continue;
+        }
+
         vlog(
           gclog.debug,
           "[{}] segment {} self compaction result: {}",
@@ -579,6 +589,17 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           result);
         has_self_compacted = true;
     }
+
+    // Remove any of the segments that have already been cleanly compacted. They
+    // would be no-ops to compact.
+    while (!segs.empty()) {
+        if (segs.back()->index().has_clean_compact_timestamp()) {
+            segs.pop_back();
+        } else {
+            break;
+        }
+    }
+
     // Remove any of the beginning segments that don't have any
     // compactible records. They would be no-ops to compact.
     while (!segs.empty()) {
@@ -592,7 +613,12 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         segs.pop_front();
     }
     if (segs.empty()) {
-        vlog(gclog.debug, "[{}] no more segments to compact", config().ntp());
+        vlog(
+          gclog.debug,
+          "[{}] no segments left in sliding window to compact (all segments "
+          "were already cleanly compacted, or did not have any compactible "
+          "records)",
+          config().ntp());
         co_return has_self_compacted;
     }
     vlog(
@@ -640,6 +666,23 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
       map.capacity(),
       idx_start_offset,
       map.max_offset());
+
+    std::optional<model::offset> next_window_start_offset = idx_start_offset;
+    if (idx_start_offset == segs.front()->offsets().get_base_offset()) {
+        // We have cleanly compacted up to the first segment in the sliding
+        // range (not necessarily equivalent to the first segment in the log-
+        // segments may have been removed from the sliding range if they were
+        // already cleanly compacted or had no compactible offsets). Reset the
+        // start offset to allow new segments into the sliding window range.
+        vlog(
+          gclog.debug,
+          "[{}] fully de-duplicated up to start of sliding range with offset "
+          "{}, resetting sliding window start offset",
+          config().ntp(),
+          idx_start_offset);
+
+        next_window_start_offset.reset();
+    }
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
     for (auto& seg : segs) {
@@ -792,7 +835,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           gclog.debug, "[{}] Final compacted segment {}", config().ntp(), seg);
     }
 
-    _last_compaction_window_start_offset = idx_start_offset;
+    _last_compaction_window_start_offset = next_window_start_offset;
 
     co_return true;
 }
@@ -1269,8 +1312,7 @@ ss::future<> disk_log_impl::do_compact(
     bool compacted = did_compact_fut.get();
     if (!compacted) {
         // If sliding window compaction did not occur, we fall back to adjacent
-        // segment compaction (as self compaction of segments occured in
-        // sliding_window_compact()).
+        // segment compaction.
         co_await compact_adjacent_segments(compact_cfg);
     }
 }

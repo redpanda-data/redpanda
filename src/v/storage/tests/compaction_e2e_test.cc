@@ -506,7 +506,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
         model::offset end_offset = consume_to_end
                                      ? model::offset::max()
                                      : model::offset{random_generators::get_int(
-                                         start_offset(), log_end_offset())};
+                                       start_offset(), log_end_offset())};
 
         storage::log_reader_config reader_cfg{
           start_offset,
@@ -729,10 +729,6 @@ TEST_F(CompactionFixtureTest, TestTombstones) {
     // to compact the tombstone record will be eligible for deletion.
     ss::sleep(tombstone_retention_ms).get();
 
-    // Flush and force roll the log, so that sliding window compaction can
-    // occur.
-    log->flush().get();
-    log->force_roll(ss::default_priority_class()).get();
     did_compact = do_sliding_window_compact(
                     log->segments().back()->offsets().get_base_offset(),
                     tombstone_retention_ms)
@@ -801,6 +797,9 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
                          .get();
 
     ASSERT_TRUE(did_compact);
+    for (int i = 0; i < num_segments; ++i) {
+        ASSERT_TRUE(log->segments()[i]->index().has_clean_compact_timestamp());
+    }
 
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
@@ -828,11 +827,6 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
     // to compact the tombstone records will be eligible for deletion.
     ss::sleep(tombstone_retention_ms).get();
 
-    // Restart to allow sliding window compaction to occur
-    restart(should_wipe::no);
-    wait_for_leader(ntp).get();
-    partition = app.partition_manager.local().get(ntp).get();
-    log = partition->log().get();
     did_compact = do_sliding_window_compact(
                     log->segments().back()->offsets().get_base_offset(),
                     tombstone_retention_ms)
@@ -848,7 +842,6 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
                                 model::partition_id(0),
                                 model::offset(0))
                               .get();
-
         // The tombstones should have been removed after second round of
         // compaction post tombstone.retention.ms.
         ASSERT_TRUE(consumed_kvs.empty());
@@ -917,14 +910,11 @@ TEST_P(
 
     auto num_records_produced = latest_kv_map.size() - num_tombstones_produced;
 
-    std::optional<std::chrono::milliseconds> tombstone_retention_ms
-      = wait_for_retention_ms ? 1000ms
-                              : std::optional<std::chrono::milliseconds>{};
-
     // Perform first round of sliding window compaction.
+    // Don't allow for tombstone clean-up to occur.
     bool did_compact = do_sliding_window_compact(
                          log->segments().back()->offsets().get_base_offset(),
-                         tombstone_retention_ms)
+                         std::nullopt)
                          .get();
 
     ASSERT_TRUE(did_compact);
@@ -952,23 +942,25 @@ TEST_P(
         }
     }
 
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms
+      = wait_for_retention_ms ? 1000ms
+                              : std::optional<std::chrono::milliseconds>{};
+
     // Maybe sleep for tombstone.retention.ms time, so that the next time we
     // attempt to compact the tombstone records will be eligible for deletion.
     if (wait_for_retention_ms) {
         ss::sleep(tombstone_retention_ms.value()).get();
     }
 
-    // Restart to allow sliding window compaction to occur
-    restart(should_wipe::no);
-    wait_for_leader(ntp).get();
-    partition = app.partition_manager.local().get(ntp).get();
-    log = partition->log().get();
     did_compact = do_sliding_window_compact(
                     log->segments().back()->offsets().get_base_offset(),
                     tombstone_retention_ms)
                     .get();
 
-    ASSERT_TRUE(did_compact);
+    // Compaction will only have occurred if tombstones were eligible for
+    // deletion.
+    ASSERT_EQ(did_compact, wait_for_retention_ms);
+
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
@@ -1058,17 +1050,14 @@ TEST_P(
 
     auto num_records_produced = latest_kv_map.size() - num_tombstones_produced;
 
-    std::optional<std::chrono::milliseconds> tombstone_retention_ms
-      = wait_for_retention_ms ? 1000ms
-                              : std::optional<std::chrono::milliseconds>{};
-
     int prev_num_clean_compacted = 0;
     bool did_compact = true;
     // Perform as many rounds of sliding window compaction as required.
+    // Don't allow for tombstone clean-up to occur.
     while (did_compact) {
         did_compact = do_sliding_window_compact(
                         log->segments().back()->offsets().get_base_offset(),
-                        tombstone_retention_ms,
+                        std::nullopt,
                         max_keys)
                         .get();
 
@@ -1085,8 +1074,6 @@ TEST_P(
     // All segments should be clean, minus the active segment.
     ASSERT_EQ(prev_num_clean_compacted, log->segment_count() - 1);
 
-    // Assume above rounds of compaction finished before tombstone.retention.ms
-    // time passed.
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
@@ -1109,23 +1096,25 @@ TEST_P(
         ASSERT_EQ(consumed_kvs.size(), latest_kv_map.size());
     }
 
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms
+      = wait_for_retention_ms ? 1000ms
+                              : std::optional<std::chrono::milliseconds>{};
+
     // Maybe sleep for tombstone.retention.ms time, so that the next time we
     // attempt to compact the tombstone records will be eligible for deletion.
     if (wait_for_retention_ms) {
         ss::sleep(tombstone_retention_ms.value()).get();
     }
 
-    // Restart to allow sliding window compaction to occur
-    restart(should_wipe::no);
-    wait_for_leader(ntp).get();
-    partition = app.partition_manager.local().get(ntp).get();
-    log = partition->log().get();
     did_compact = do_sliding_window_compact(
                     log->segments().back()->offsets().get_base_offset(),
                     tombstone_retention_ms)
                     .get();
 
-    ASSERT_TRUE(did_compact);
+    // Compaction will only have occurred if tombstones were eligible for
+    // deletion.
+    ASSERT_EQ(did_compact, wait_for_retention_ms);
+
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
