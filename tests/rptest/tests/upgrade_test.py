@@ -400,6 +400,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         This ensures that rollbacks remain possible.
         """
         self.install_and_start()
+        self.redpanda.install_license()
 
         initial_version = Version(
             self.redpanda.get_version(self.redpanda.nodes[0]))
