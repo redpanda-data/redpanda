@@ -10,7 +10,6 @@
 package byoc
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -38,33 +37,18 @@ disk space.
 			if !pluginExists {
 				out.Exit("The BYOC managed plugin is not installed!")
 			}
-			messages, anyFailed := removePluginAll(byoc)
-			for _, message := range messages {
-				fmt.Println(message)
-			}
-			if anyFailed {
-				os.Exit(1)
+			messages, anyFailed := byoc.Uninstall(true)
+			tw := out.NewTable("PATH", "MESSAGE")
+			defer func() {
+				tw.Flush()
+				if anyFailed {
+					os.Exit(1)
+				}
+			}()
+			for _, m := range messages {
+				tw.Print(m.Path, m.Message)
 			}
 		},
 	}
 	return cmd
-}
-
-func removePluginAll(p *plugin.Plugin) (messages []string, anyFailed bool) {
-	if err := os.Remove(p.Path); err != nil {
-		messages = append(messages, fmt.Sprintf("Unable to remove %q: %v", p.Path, err))
-		anyFailed = true
-	} else {
-		messages = append(messages, fmt.Sprintf("Removed %q", p.Path))
-	}
-
-	for _, shadowed := range p.ShadowedPaths {
-		if err := os.Remove(shadowed); err != nil {
-			messages = append(messages, fmt.Sprintf("Unable to remove shadowed at %q: %v", p.Path, err))
-			anyFailed = true
-		} else {
-			messages = append(messages, fmt.Sprintf("Remove shadowed at %q", p.Path))
-		}
-	}
-	return
 }
