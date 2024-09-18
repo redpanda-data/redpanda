@@ -71,6 +71,7 @@ from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Sto
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.mode_checks import in_fips_environment
+from rptest.utils.rpenv import sample_license
 import enum
 
 Partition = collections.namedtuple('Partition',
@@ -5332,6 +5333,33 @@ class RedpandaService(RedpandaServiceBase):
                 continue
 
             return
+
+    def install_license(self):
+        """Install a sample Enterprise License for testing Enterprise features during upgrades"""
+        self.logger.debug("Installing an Enterprise License")
+        license = sample_license()
+        assert license, (
+            "No enterprise license found in the environment variable. "
+            "Please follow these instructions to get a sample license for local development: "
+            "https://redpandadata.atlassian.net/l/cp/4eeNEgZW")
+        assert self._admin.put_license(license).status_code == 200, \
+            "Configuring the Enterprise license failed (required for feature upgrades)"
+
+        def license_observable():
+            for node in self.started_nodes():
+                license = self._admin.get_license(node)
+                if license is None or license['loaded'] is not True:
+                    return False
+            return True
+
+        self.logger.debug(
+            f"Waiting for license to be observable by {len(self.started_nodes())} nodes"
+        )
+        wait_until(license_observable,
+                   timeout_sec=15,
+                   backoff_sec=1,
+                   err_msg="Inserted license not observable in time")
+        self.logger.debug("Enterprise License installed successfully")
 
 
 def make_redpanda_service(context: TestContext,
