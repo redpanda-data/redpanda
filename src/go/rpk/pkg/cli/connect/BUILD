@@ -18,6 +18,7 @@ go_library(
         "//src/go/rpk/pkg/os",
         "//src/go/rpk/pkg/out",
         "//src/go/rpk/pkg/plugin",
+        "//src/go/rpk/pkg/redpanda",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@org_uber_go_zap//:zap",
