@@ -66,3 +66,47 @@ def skip_debug_mode(*args, **kwargs):
         return ignore(args, kwargs)
     else:
         return args[0]
+
+
+def in_fips_environment() -> bool:
+    """
+    Returns True if the file /proc/sys/crypto/fips_enabled is present and
+    contains '1', otherwise returns False.
+    """
+    fips_file = "/proc/sys/crypto/fips_enabled"
+    if os.path.exists(fips_file) and os.path.isfile(fips_file):
+        with open(fips_file, 'r') as f:
+            contents = f.read().strip()
+            return contents == '1'
+
+    return False
+
+
+def skip_fips_mode(*args, **kwargs):
+    """
+    Test method decorator which signals to the test runner to ignore a given test.
+
+    Example::
+
+        When no parameters are provided to the @ignore decorator, ignore all parametrizations of the test function
+
+        @skip_fips_mode  # Ignore all parametrizations
+        @parametrize(x=1, y=0)
+        @parametrize(x=2, y=3)
+        def the_test(...):
+            ...
+
+    Example::
+
+        If parameters are supplied to the @skip_fips_mode decorator, only skip the parametrization with matching parameter(s)
+
+        @skip_fips_mode(x=2, y=3)
+        @parametrize(x=1, y=0)  # This test will run as usual
+        @parametrize(x=2, y=3)  # This test will be ignored
+        def the_test(...):
+            ...
+    """
+    if in_fips_environment():
+        return ignore(args, kwargs)
+    else:
+        return args[0]

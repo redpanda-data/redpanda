@@ -8,13 +8,14 @@
 # by the Apache License, Version 2.0
 import re
 
-from ducktape.mark import parametrize, matrix, ok_to_fail_fips
+from ducktape.mark import parametrize, matrix
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.utils import LogSearchLocal
+from rptest.utils.mode_checks import skip_fips_mode
 
 
 class ClusterSelfConfigTest(EndToEndTest):
@@ -87,7 +88,7 @@ class ClusterSelfConfigTest(EndToEndTest):
             assert self_config_result and self_config_result in self_config_expected_results
 
     # OCI only supports path-style requests, fips mode will always fail.
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=1)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
