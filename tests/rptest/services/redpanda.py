@@ -1853,7 +1853,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def get_redpanda_statefulset(self):
         """Get the statefulset for redpanda brokers"""
-        if not self.__is_operator_v2_cluster():
+        if not self.is_operator_v2_cluster():
             return None
         return json.loads(
             self.kubectl.cmd(
@@ -1927,16 +1927,17 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Call to rebuild metadata for all cloud brokers
         self.rebuild_pods_classes()
 
-    def __is_operator_v2_cluster(self):
-        # Even when nothing is found, kubectl always exits 0.  Ref: https://github.com/kubernetes/kubectl/issues/821
-        # But when nothing is found, kubectl by default prints "No resources found in redpanda namespace." to stderr.
-        # Which gets merged into the result lines!
-        #
-        # So, we add --ignore-not-found.  This flag skips the human-readable "No resource" message.
-        # By the way, exit code is still 0, even with this flag :)
-        return len(
+    def is_operator_v2_cluster(self):
+        # Below will fail if there is no 'redpanda' resource type. This is the
+        # case on operator v1 but exists on operator v2.
+        try:
             self.kubectl.cmd(
-                ['get', 'redpanda', '-n=redpanda', '--ignore-not-found'])) > 0
+                ['get', 'redpanda', '-n=redpanda', '--ignore-not-found'])
+        except subprocess.CalledProcessError as e:
+            if 'have a resource type "redpanda"' in e.stderr:
+                return False
+
+        return True
 
     def rolling_restart_pods(self, pod_timeout: int = 180):
         """Restart all pods in the cluster one at a time.
@@ -2015,7 +2016,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def cluster_desired_replicas(self, cluster_name: str = ''):
         """Return cluster desired replica count."""
-        if self.__is_operator_v2_cluster():
+        if self.is_operator_v2_cluster():
             rp_statefulset = self.get_redpanda_statefulset()
             return int(rp_statefulset['status']['replicas'])
         expected_replicas = int(
@@ -2027,7 +2028,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
     def cluster_ready_replicas(self, cluster_name: str = ''):
         """Retrieves the number of ready replicas for the given cluster."""
-        if self.__is_operator_v2_cluster():
+        if self.is_operator_v2_cluster():
             rp_statefulset = self.get_redpanda_statefulset()
             return int(rp_statefulset['status']['readyReplicas'])
         ret = self.kubectl.cmd([

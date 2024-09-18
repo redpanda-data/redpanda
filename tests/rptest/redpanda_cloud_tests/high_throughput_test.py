@@ -880,16 +880,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             return
 
         self.logger.info('verify operator-v2 is not activated')
-        # kubectl get redpanda -n=redpanda
-        # Even when nothing is found, kubectl always exits 0.  Ref: https://github.com/kubernetes/kubectl/issues/821
-        # But when nothing is found, kubectl by default prints "No resources found in redpanda namespace." to stderr.
-        # Which gets merged into the result lines!
-        #
-        # So, we add --ignore-not-found.  This flag skips the human-readable "No resource" message.
-        # By the way, exit code is still 0, even with this flag :)
-        get_redpanda = self.redpanda.kubectl.cmd(
-            ['get', 'redpanda', '-n=redpanda', '--ignore-not-found'])
-        if len(get_redpanda) > 0:
+        if self.redpanda.is_operator_v2_cluster():
             self.logger.warn('cannot run test with operator-v2')
             return
 
@@ -1191,16 +1182,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         """
 
         self.logger.info('verify operator-v2 is not activated')
-        # kubectl get redpanda -n=redpanda
-        # Even when nothing is found, kubectl always exits 0.  Ref: https://github.com/kubernetes/kubectl/issues/821
-        # But when nothing is found, kubectl by default prints "No resources found in redpanda namespace." to stderr.
-        # Which gets merged into the result lines!
-        #
-        # So, we add --ignore-not-found.  This flag skips the human-readable "No resource" message.
-        # By the way, exit code is still 0, even with this flag :)
-        get_redpanda = self.redpanda.kubectl.cmd(
-            ['get', 'redpanda', '-n=redpanda', '--ignore-not-found'])
-        if len(get_redpanda) > 0:
+        if self.redpanda.is_operator_v2_cluster():
             self.logger.warn('cannot run test with operator-v2')
             return
 
