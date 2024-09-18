@@ -57,5 +57,39 @@
         }
       }
     }
+  },
+  "get": {
+    "description": "Returns the status of a debug bundle process.  If one was never kicked off and bundle does not exist, this will return 409",
+    "summary": "Returns the status of a debug bundle process.",
+    "operationId": "get_debug_bundle",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/get_bundle_status"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
   }
 }

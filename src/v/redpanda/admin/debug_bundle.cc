@@ -113,6 +113,13 @@ void admin_server::register_debug_bundle_routes() {
         std::unique_ptr<ss::http::reply> rep) {
           return post_debug_bundle(std::move(req), std::move(rep));
       });
+    register_route_raw_async<superuser>(
+      ss::httpd::debug_bundle_json::get_debug_bundle,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return get_debug_bundle(std::move(req), std::move(rep));
+      });
 }
 
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
@@ -155,6 +162,30 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
 
     ss::httpd::debug_bundle_json::bundle_start_response body;
     body.job_id = ssx::sformat("{}", job_id.assume_value());
+    co_return make_json_body(
+      ss::http::reply::status_type::ok, body, std::move(rep));
+}
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_debug_bundle(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    auto res = co_await _debug_bundle_service.local().rpk_debug_bundle_status();
+    if (res.has_error()) {
+        co_return make_error_body(res.assume_error(), std::move(rep));
+    }
+
+    ss::httpd::debug_bundle_json::get_bundle_status body;
+    body.job_id = ssx::sformat("{}", res.assume_value().job_id);
+    body.status = ssx::sformat("{}", res.assume_value().status);
+    body.created = res.assume_value().created_timestamp.time_since_epoch()
+                   / std::chrono::milliseconds{1};
+    body.filename = res.assume_value().file_name;
+    for (const ss::sstring& l : res.assume_value().cout) {
+        body.stdout.push(l);
+    }
+    for (const ss::sstring& l : res.assume_value().cerr) {
+        body.stderr.push(l);
+    }
     co_return make_json_body(
       ss::http::reply::status_type::ok, body, std::move(rep));
 }
