@@ -352,6 +352,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "values_bytes_test",
+    timeout = "short",
+    srcs = [
+        "values_bytes_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/iceberg:values",
+        "//src/v/iceberg:values_bytes",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "values_test",
     timeout = "short",
     srcs = [
