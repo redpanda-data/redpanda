@@ -10,6 +10,8 @@ v_cc_library(
     v::model
     v::config
     v::version
+    v::security
+    v::metrics
   )
 
 add_dependencies(v_features kafka_codegen_headers)
