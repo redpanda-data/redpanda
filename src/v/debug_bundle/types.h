@@ -15,6 +15,7 @@
 #include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "security/types.h"
+#include "utils/named_type.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -25,10 +26,12 @@
 #include <fmt/format.h>
 
 #include <chrono>
+#include <iosfwd>
 #include <optional>
-#include <ostream>
 #include <variant>
 namespace debug_bundle {
+
+using job_id_t = named_type<uuid_t, struct uuid_t_tag>;
 
 /// Special date strings used by journalctl
 enum class special_date { yesterday, today, now, tomorrow };
@@ -70,6 +73,8 @@ struct partition_selection {
     absl::btree_set<model::partition_id> partitions;
 };
 
+std::ostream& operator<<(std::ostream& o, const partition_selection& p);
+
 /// Parameters used to spawn rpk debug bundle
 struct debug_bundle_parameters {
     std::optional<debug_bundle_authn_options> authn_options;
@@ -100,12 +105,12 @@ std::ostream& operator<<(std::ostream& o, const debug_bundle_status& s);
 
 /// Status of the debug bundle process
 struct debug_bundle_status_data {
-    uuid_t job_id;
+    job_id_t job_id;
     debug_bundle_status status;
     clock::time_point created_timestamp;
     ss::sstring file_name;
-    chunked_vector<ss::sstring> stdout;
-    chunked_vector<ss::sstring> stderr;
+    chunked_vector<ss::sstring> cout;
+    chunked_vector<ss::sstring> cerr;
 };
 } // namespace debug_bundle
 

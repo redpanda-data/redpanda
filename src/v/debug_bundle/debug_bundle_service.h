@@ -13,10 +13,13 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
+#include "container/fragmented_vector.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
+#include "utils/mutex.h"
 #include "utils/uuid.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 namespace debug_bundle {
@@ -39,6 +42,9 @@ public:
      * @param data_dir Path to the Redpanda data directory
      */
     explicit service(const std::filesystem::path& data_dir);
+
+    /// Destructor
+    ~service() noexcept;
     /**
      * @brief Starts the service
      *
@@ -64,7 +70,7 @@ public:
      * * error_code::internal_error
      */
     ss::future<result<void>> initiate_rpk_debug_bundle_collection(
-      uuid_t job_id, debug_bundle_parameters params);
+      job_id_t job_id, debug_bundle_parameters params);
 
     /**
      * @brief Attempts to cancel a running "rpk debug bundle" process
@@ -76,7 +82,7 @@ public:
      * * error_code::job_id_not_recognized
      * * error_code::debug_bundle_process_never_started
      */
-    ss::future<result<void>> cancel_rpk_debug_bundle(uuid_t job_id);
+    ss::future<result<void>> cancel_rpk_debug_bundle(job_id_t job_id);
 
     /**
      * @brief Retrieves the status of the bundle process
@@ -106,9 +112,44 @@ public:
     ss::future<result<void>> delete_rpk_debug_bundle();
 
 private:
+    /**
+     * @brief Constructs the arguments for the rpk debug bundle command
+     *
+     * @param job_id Job ID
+     * @param params parameters
+     * @return std::vector<ss::sstring> The list of strings to pass to
+     * external_process
+     */
+    std::vector<ss::sstring>
+    build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params);
+
+    /**
+     * @brief Returns the status of the running process
+     *
+     * @return std::optional<debug_bundle_status> Will return std::nullopt if
+     * process was never executed, else will return the debug_bundle_status
+     */
+    std::optional<debug_bundle_status> process_status() const;
+
+    /**
+     * @return Whether or not the RPK debug bundle process is running
+     */
+    bool is_running() const;
+
+private:
+    /// Handler used to emplace stdout/stderr into a buffer
+    struct output_handler;
+    /// Structure used to hold information about the running rpk debug bundle
+    /// process
+    class debug_bundle_process;
     /// Path to the debug bundle directory
     std::filesystem::path _debug_bundle_dir;
     /// Binding called when the rpk path config changes
     config::binding<std::filesystem::path> _rpk_path_binding;
+    /// External process
+    std::unique_ptr<debug_bundle_process> _rpk_process;
+    /// Mutex to guard control over the rpk debug bundle process
+    mutex _process_control_mutex;
+    ss::gate _gate;
 };
 } // namespace debug_bundle
