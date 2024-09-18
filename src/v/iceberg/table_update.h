@@ -14,6 +14,8 @@
 #include "iceberg/snapshot.h"
 #include "utils/uuid.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <variant>
 
 namespace iceberg::table_update {
@@ -39,13 +41,17 @@ struct remove_snapshots {
     chunked_vector<snapshot_id> snapshot_ids;
 };
 
+struct set_snapshot_ref {
+    ss::sstring ref_name;
+    snapshot_reference ref;
+};
+
 // TODO: not yet implemented
 // - assign_uuid
 // - upgrade_format_version
 // - set_default_spec
 // - add_sort_order
 // - set_default_sort_order
-// - set_snapshot_ref
 // - remove_snapshot_ref
 // - set_location
 // - set_properties
@@ -57,6 +63,7 @@ using update = std::variant<
   set_current_schema,
   add_spec,
   add_snapshot,
-  remove_snapshots>;
+  remove_snapshots,
+  set_snapshot_ref>;
 
 } // namespace iceberg::table_update
