@@ -10,7 +10,7 @@
  */
 
 #include "base/seastarx.h"
-#include "memory_limiter.h"
+#include "transform/memory_limiter.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
