@@ -1429,7 +1429,7 @@ void application::wire_up_runtime_services(
           .get();
     }
 
-    construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
+    construct_single_service(_monitor_unsafe, std::ref(feature_table));
 
     construct_service(
       _debug_bundle_service, config::node().data_directory().path)
@@ -2794,7 +2794,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     construct_service(_aggregate_metrics_watcher).get();
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
-    _monitor_unsafe_log_flag->start().get();
+    _monitor_unsafe->start().get();
 
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();

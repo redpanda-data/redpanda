@@ -58,7 +58,7 @@ v_cc_library(
     admin/data_migration_utils.cc
     cli_parser.cc
     application.cc
-    monitor_unsafe_log_flag.cc
+    monitor_unsafe.cc
   DEPS
     Seastar::seastar
     v::crypto

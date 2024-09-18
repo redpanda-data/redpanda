@@ -16,13 +16,13 @@
 
 #include <seastar/core/sharded.hh>
 
-class monitor_unsafe_log_flag {
+class monitor_unsafe {
 public:
     static constexpr ss::shard_id backend_shard = 0;
     // Flag introduced in version v23.2.1 (cluster version 10)
     static constexpr cluster::cluster_version flag_introduction_version
       = cluster::cluster_version{10};
-    explicit monitor_unsafe_log_flag(
+    explicit monitor_unsafe(
       ss::sharded<features::feature_table>& feature_table);
 
     static void invoke_unsafe_log_update(
@@ -32,7 +32,7 @@ public:
 
 private:
     void unsafe_log_update();
-    ss::future<> maybe_log_flag_nag();
+    ss::future<> maybe_log_unsafe_nag();
 
     ss::sharded<features::feature_table>& _feature_table;
     config::binding<bool> _legacy_permit_unsafe_log_operation;
