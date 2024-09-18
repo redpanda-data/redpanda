@@ -74,6 +74,9 @@ struct partition_selection {
     model::topic_namespace tn;
     absl::btree_set<model::partition_id> partitions;
 
+    static std::optional<partition_selection>
+      from_string_view(std::string_view);
+
     friend bool
     operator==(const partition_selection&, const partition_selection&)
       = default;

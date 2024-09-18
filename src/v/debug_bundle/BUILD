@@ -31,7 +31,9 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/strings",
         "@fmt",
+        "@re2",
         "@seastar",
     ],
 )

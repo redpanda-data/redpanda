@@ -11,12 +11,21 @@
 
 #include "types.h"
 
+#include "debug_bundle/error.h"
+#include "model/fundamental.h"
+#include "model/namespace.h"
 #include "strings/string_switch.h"
 
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/strings/str_split.h>
 #include <fmt/chrono.h>
 #include <fmt/core.h>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+
+#include <charconv>
+#include <system_error>
 
 namespace debug_bundle {
 std::ostream& operator<<(std::ostream& o, const special_date& d) {
@@ -44,6 +53,40 @@ std::ostream& operator<<(std::ostream& o, const partition_selection& p) {
     fmt::print(o, "{}/{}/{}", p.tn.ns, p.tn.tp, fmt::join(p.partitions, ","));
     return o;
 }
+
+std::optional<partition_selection>
+partition_selection::from_string_view(std::string_view str) {
+    try {
+        re2::RE2 pattern{
+          R"(^(?:(?P<namespace>[a-zA-Z0-9._-]+)/)?(?P<topic>[a-zA-Z0-9._-]+)/(?P<partitions>\d+(?:,\d+)*)$)"};
+
+        re2::StringPiece ns;
+        re2::StringPiece tp;
+        re2::StringPiece parts_str;
+
+        if (RE2::FullMatch(str, pattern, &ns, &tp, &parts_str)) {
+            partition_selection ps;
+            ps.tn = {
+              ns.empty() ? model::kafka_namespace : model::ns{ns},
+              model::topic{tp}};
+
+            std::string_view parts_sv{parts_str.data(), parts_str.length()};
+            for (const auto& part : absl::StrSplit(parts_sv, ',')) {
+                model::partition_id::type part_id{};
+                auto [_, ec] = std::from_chars(
+                  part.data(), part.data() + part.size(), part_id);
+                if (ec != std::errc()) {
+                    return std::nullopt;
+                }
+                ps.partitions.emplace(part_id);
+            }
+            return std::move(ps);
+        }
+    } catch (const std::exception&) {
+    }
+    return std::nullopt;
+}
+
 } // namespace debug_bundle
 
 auto fmt::formatter<debug_bundle::special_date>::format(
