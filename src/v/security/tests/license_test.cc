@@ -13,6 +13,11 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 namespace security {
 
 BOOST_AUTO_TEST_CASE(test_license_invalid_signature) {
@@ -76,7 +81,10 @@ BOOST_AUTO_TEST_CASE(test_license_valid_content) {
     BOOST_CHECK_EQUAL(license.format_version, 0);
     BOOST_CHECK_EQUAL(license.type, license_type::enterprise);
     BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
+    BOOST_CHECK(!license.is_expired());
     BOOST_CHECK_EQUAL(license.expiry.count(), 4813252273);
+    BOOST_CHECK(
+      license.expiration() == license::clock::time_point{4813252273s});
     BOOST_CHECK_EQUAL(
       license.checksum,
       "2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf");

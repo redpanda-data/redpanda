@@ -18,6 +18,11 @@
 #include "json/validator.h"
 #include "utils/base64.h"
 
+#include <algorithm>
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 namespace security {
 
 namespace crypto {
@@ -178,9 +183,11 @@ license make_license(const ss::sstring& raw_license) {
 }
 
 bool license::is_expired() const noexcept {
-    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::system_clock::now().time_since_epoch());
-    return now > expiry;
+    return clock::now() > expiration();
+}
+
+license::clock::time_point license::expiration() const noexcept {
+    return clock::time_point{expiry};
 }
 
 } // namespace security
