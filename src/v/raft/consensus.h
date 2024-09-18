@@ -195,10 +195,11 @@ public:
      * Sends a round of heartbeats to followers, when majority of followers
      * replied with success to either this of any following request all reads up
      * to returned offsets are linearizable. (i.e. majority of followers have
-     * updated their commit indices to at least reaturned offset). For more
+     * updated their commit indices to at least returned offset). For more
      * details see paragraph 6.4 of Raft protocol dissertation.
      */
-    ss::future<result<model::offset>> linearizable_barrier();
+    ss::future<result<model::offset>> linearizable_barrier(
+      model::timeout_clock::time_point deadline = model::no_timeout);
 
     vnode self() const { return _self; }
     protocol_metadata meta() const;

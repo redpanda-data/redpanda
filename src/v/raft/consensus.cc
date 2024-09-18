@@ -658,7 +658,8 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
         });
 }
 
-ss::future<result<model::offset>> consensus::linearizable_barrier() {
+ss::future<result<model::offset>>
+consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
     using ret_t = result<model::offset>;
     ssx::semaphore_units u;
     try {
@@ -760,11 +761,13 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     try {
         // we do not hold the lock while waiting
         co_await _follower_reply.wait(
-          [this, term, &majority_sequences_updated] {
+          deadline, [this, term, &majority_sequences_updated] {
               return majority_sequences_updated() || _term != term;
           });
     } catch (const ss::broken_condition_variable& e) {
         co_return ret_t(make_error_code(errc::shutting_down));
+    } catch (const ss::timed_out_error& e) {
+        co_return errc::timeout;
     }
     // grab an oplock to serialize state updates i.e. wait for all updates in
     // the state that were caused by follower replies
