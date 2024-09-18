@@ -51,6 +51,7 @@
 #include "config/endpoint_tls_config.h"
 #include "container/fragmented_vector.h"
 #include "container/lw_shared_container.h"
+#include "features/enterprise_features.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
@@ -2261,6 +2262,60 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
     co_return ss::json::json_void();
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_enterprise_handler(std::unique_ptr<ss::http::request>) {
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::license)) {
+        throw ss::httpd::bad_request_exception(
+          "Feature manager reports the cluster is not fully upgraded to "
+          "accept get enterprise requests");
+    }
+    using status = ss::httpd::features_json::enterprise_response::
+      enterprise_response_license_status;
+
+    const auto& license
+      = _controller->get_feature_table().local().get_license();
+    auto license_status = [&license]() {
+        auto present = license.has_value();
+        auto exp = present && license.value().is_expired();
+        if (exp) {
+            return status::expired;
+        }
+        if (present) {
+            return status::valid;
+        }
+        return status::not_present;
+    }();
+
+    auto& mgr = _controller->get_feature_manager();
+    const auto report = co_await mgr.invoke_on(
+      cluster::feature_manager::backend_shard,
+      [](const cluster::feature_manager& fm) {
+          return fm.report_enterprise_features();
+      });
+
+    ss::httpd::features_json::enterprise_response res;
+    res.license_status = license_status;
+    res.violation = license_status != status::valid && report.any();
+    auto insert_feature =
+      [&res](features::license_required_feature feat, bool enabled) {
+          ss::httpd::features_json::enterprise_feature elt;
+          elt.name = fmt::format("{}", feat);
+          elt.enabled = enabled;
+          res.features.push(elt);
+      };
+
+    for (auto feat : report.enabled()) {
+        insert_feature(feat, true);
+    }
+
+    for (auto feat : report.disabled()) {
+        insert_feature(feat, false);
+    }
+
+    co_return ss::json::json_return_type{res};
+}
+
 void admin_server::register_features_routes() {
     register_route<user>(
       ss::httpd::features_json::get_features,
@@ -2354,6 +2409,11 @@ void admin_server::register_features_routes() {
       ss::httpd::features_json::put_license,
       [this](std::unique_ptr<ss::http::request> req) {
           return put_license_handler(std::move(req));
+      });
+    register_route<user>(
+      ss::httpd::features_json::get_enterprise,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_enterprise_handler(std::move(req));
       });
 }
 

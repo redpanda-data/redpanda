@@ -593,6 +593,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/container:intrusive",
         "//src/v/features",
+        "//src/v/features:enterprise_features",
         "//src/v/finjector",
         "//src/v/hashing:murmur",
         "//src/v/hashing:secure",
