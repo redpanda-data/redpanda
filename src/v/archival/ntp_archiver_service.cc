@@ -2294,6 +2294,10 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     }
 
     const auto& ntp_conf = _parent.get_ntp_config();
+    if (!ntp_conf.is_collectable()) {
+        vlog(_rtclog.trace, "NTP is not collectable");
+        co_return;
+    }
     std::optional<size_t> retention_bytes = ntp_conf.retention_bytes();
     std::optional<std::chrono::milliseconds> retention_ms
       = ntp_conf.retention_duration();
