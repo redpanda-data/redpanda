@@ -269,6 +269,16 @@ offset_delta_time should_apply_delta_time_offset(
 bool is_past_tombstone_delete_horizon(
   ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
 
+// Checks if a segment may have any tombstones currently eligible for deletion.
+//
+// Returns true if the segment is marked as potentially having tombstone
+// records, and if the result of evaluating
+// `is_past_tombstone_delete_horizon(seg, cfg)` is also true. This can return
+// false-positives, since segments that have not yet gone through the compaction
+// process are assumed to potentially contain tombstones until proven otherwise.
+bool may_have_removable_tombstones(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
+
 // Mark a segment as completed window compaction, and whether it is "clean" (in
 // which case the `clean_compact_timestamp` is set in the segment's index).
 void mark_segment_as_finished_window_compaction(

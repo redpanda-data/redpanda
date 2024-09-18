@@ -1169,4 +1169,10 @@ bool is_past_tombstone_delete_horizon(
     return false;
 }
 
+bool may_have_removable_tombstones(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
+    return seg->index().may_have_tombstone_records()
+           && is_past_tombstone_delete_horizon(seg, cfg);
+}
+
 } // namespace storage::internal
