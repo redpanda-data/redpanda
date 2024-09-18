@@ -13,6 +13,7 @@
 #include "cluster/feature_update_action.h"
 #include "features/feature_table.h"
 #include "features/feature_table_snapshot.h"
+#include "security/license.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sleep.hh>
@@ -334,4 +335,26 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
     BOOST_CHECK(
       ft.get_state(feature::test_alpha).get_state()
       == feature_state::state::active);
+}
+
+SEASTAR_THREAD_TEST_CASE(feature_table_probe_expiry_metric_test) {
+    using ft = features::feature_table;
+    const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
+    if (sample_valid_license == nullptr) {
+        const char* is_on_ci = std::getenv("CI");
+        BOOST_TEST_REQUIRE(
+          !is_on_ci,
+          "Expecting the REDPANDA_SAMPLE_LICENSE env var in the CI "
+          "enviornment");
+        return;
+    }
+    const ss::sstring license_str{sample_valid_license};
+    const auto license = security::make_license(license_str);
+
+    auto expiry = security::license::clock::time_point{4813252273s};
+
+    BOOST_CHECK_EQUAL(ft::calculate_expiry_metric(license, expiry - 1s), 1);
+    BOOST_CHECK_EQUAL(ft::calculate_expiry_metric(license, expiry), 0);
+    BOOST_CHECK_EQUAL(ft::calculate_expiry_metric(license, expiry + 1s), 0);
+    BOOST_CHECK_EQUAL(ft::calculate_expiry_metric(std::nullopt), -1);
 }
