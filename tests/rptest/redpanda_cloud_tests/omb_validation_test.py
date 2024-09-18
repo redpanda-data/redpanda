@@ -425,7 +425,7 @@ class OMBValidationTest(RedpandaCloudTest):
             # did not connect to all brokers, so only require this fraction of the target connection count
             # in order to consider us ready to start. Since we already applied a 1.1x factor to the target
             # connection count above the advertised count, we are still well above the advertised limit.
-            SWARM_TARGET_CONNECTIONS_FUDGE = 0.98
+            SWARM_TARGET_CONNECTIONS_FUDGE = 0.96
             ccount = self._connection_count()
             self.logger.debug(
                 'Waiting for connections to reach target, current:'

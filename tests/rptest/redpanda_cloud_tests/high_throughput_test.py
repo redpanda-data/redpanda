@@ -436,7 +436,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                                         retention_local_bytes: int):
         self.rpk.alter_topic_config(self.topic,
                                     TopicSpec.PROPERTY_SEGMENT_SIZE,
-                                    segment_bytes)
+                                    max(self.min_segment_size, segment_bytes))
         self.rpk.alter_topic_config(
             self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
             retention_local_bytes)
@@ -789,7 +789,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # create default topics
         self._create_default_topics()
 
-        segment_size = 16 * MiB  # Min segment size across all tiers
+        segment_size = self.min_segment_size
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
 
@@ -1289,7 +1289,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # create default topics
         self._create_default_topics()
 
-        segment_size = 16 * MiB  # Min segment size across all tiers
+        segment_size = self.min_segment_size
         self.adjust_topic_segment_properties(
             segment_bytes=segment_size, retention_local_bytes=segment_size)
 
