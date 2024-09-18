@@ -17,7 +17,6 @@
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
 #include "utils/mutex.h"
-#include "utils/uuid.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>

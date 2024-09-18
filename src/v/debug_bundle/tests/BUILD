@@ -10,6 +10,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/debug_bundle",
         "//src/v/debug_bundle:json",
+        "//src/v/debug_bundle:types",
         "//src/v/json",
         "//src/v/model",
         "//src/v/security",
@@ -36,6 +37,8 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/config",
         "//src/v/debug_bundle",
+        "//src/v/debug_bundle:error",
+        "//src/v/debug_bundle:types",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

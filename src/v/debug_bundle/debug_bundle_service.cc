@@ -16,7 +16,6 @@
 #include "container/fragmented_vector.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
-#include "security/acl.h"
 #include "ssx/future-util.h"
 #include "utils/external_process.h"
 
