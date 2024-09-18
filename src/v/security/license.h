@@ -18,6 +18,7 @@
 #include <boost/date_time/gregorian/gregorian_types.hpp>
 #include <fmt/core.h>
 
+#include <chrono>
 #include <exception>
 #include <fstream>
 #include <vector>
@@ -64,6 +65,8 @@ inline std::ostream& operator<<(std::ostream& os, license_type lt) {
 
 struct license
   : serde::envelope<license, serde::version<1>, serde::compat_version<0>> {
+    using clock = std::chrono::system_clock;
+
     /// Expected encoded contents
     uint8_t format_version;
     license_type type;
@@ -80,6 +83,9 @@ struct license
 
     /// Seconds since epoch until license expiration
     std::chrono::seconds expires() const noexcept;
+
+    /// Expiration timepoint
+    clock::time_point expiration() const noexcept;
 
     auto operator<=>(const license&) const = delete;
 
