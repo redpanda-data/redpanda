@@ -996,6 +996,11 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   ss::lw_shared_ptr<available_promise<>> enqueued,
   ssx::semaphore_units& units,
   producer_previously_known known_producer) {
+    if (rand() % 10 > 5) {
+        units.return_all();
+        vlog(_ctx_log.warn, "timed out: {}", bid);
+        co_return cluster::errc::timeout;
+    }
     // Check if the producer bumped the epoch and reset accordingly.
     if (bid.pid.epoch > producer->id().epoch()) {
         producer->reset_with_new_epoch(bid.pid.epoch);

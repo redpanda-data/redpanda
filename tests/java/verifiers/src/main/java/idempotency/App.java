@@ -94,7 +94,7 @@ public class App {
         String kv = Long.toString(counter);
         ProducerRecord<String, String> record
             = new ProducerRecord<>(this.params.topic, kv, kv);
-        idempotentProducer.send(record).get();
+        idempotentProducer.send(record);
       } catch (Exception e) {
         ex = e;
         logger.error("Exception in produce loop: ", e);
