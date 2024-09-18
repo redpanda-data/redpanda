@@ -15,6 +15,7 @@
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
 #include "cloud_storage/recursive_directory_walker.h"
+#include "config/configuration.h"
 #include "config/property.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/semaphore.h"
@@ -196,6 +197,16 @@ public:
     get_local_path(const std::filesystem::path& key) const {
         return _cache_dir / key;
     }
+
+    // Checks if a cluster configuration is valid for the properties
+    // `cloud_storage_cache_size` and `cloud_storage_cache_size_percent`.
+    // Two cases are invalid: 1. the case in which both are 0, 2. the case in
+    // which `cache_size` is 0 while `cache_size_percent` is `std::nullopt`.
+    //
+    // Returns `std::nullopt` if the passed configuration is valid, or an
+    // `ss::sstring` explaining the misconfiguration otherwise.
+    static std::optional<ss::sstring>
+    validate_cache_config(const config::configuration& conf);
 
 private:
     /// Load access time tracker from file

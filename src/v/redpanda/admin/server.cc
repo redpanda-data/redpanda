@@ -1698,6 +1698,14 @@ void config_multi_property_validation(
         errors[ss::sstring(name)] = ssx::sformat(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
+
+    // cloud_storage_cache_size/size_percent validation
+    if (auto invalid_cache = cloud_storage::cache::validate_cache_config(
+          updated_config);
+        invalid_cache.has_value()) {
+        auto name = ss::sstring(updated_config.cloud_storage_cache_size.name());
+        errors[name] = invalid_cache.value();
+    }
 }
 } // namespace
 

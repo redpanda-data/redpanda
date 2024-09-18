@@ -1614,6 +1614,41 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             #Valid api endpoint
             assert valid
 
+    # None for pct_value is std::nullopt, which defaults to 0.0 in the cloud cache.
+    @cluster(num_nodes=1)
+    def test_validate_cloud_storage_cache_size_config(self):
+        CloudCacheConf = namedtuple('CloudCacheConf',
+                                    ['size_value', 'pct_value', 'valid'])
+        test_cases = [
+            CloudCacheConf(size_value=0, pct_value=None, valid=False),
+            CloudCacheConf(size_value=0, pct_value=0.0, valid=False),
+            CloudCacheConf(size_value=0, pct_value=-1.0, valid=False),
+            CloudCacheConf(size_value=0, pct_value=101.0, valid=False),
+            CloudCacheConf(size_value=-1, pct_value=None, valid=False),
+            CloudCacheConf(size_value=1024, pct_value=None, valid=True),
+            CloudCacheConf(size_value=10, pct_value=50.0, valid=True),
+            CloudCacheConf(size_value=0, pct_value=0.1, valid=True)
+        ]
+
+        for size_value, pct_value, valid in test_cases:
+            upsert = {}
+            upsert["cloud_storage_cache_size"] = size_value
+            upsert["cloud_storage_cache_size_percent"] = pct_value
+
+            if valid:
+                patch_result = self.admin.patch_cluster_config(upsert=upsert)
+                new_version = patch_result['config_version']
+                wait_for_version_status_sync(self.admin, self.redpanda,
+                                             new_version)
+                updated_config = self.admin.get_cluster_config()
+                assert updated_config["cloud_storage_cache_size"] == size_value
+                assert updated_config[
+                    "cloud_storage_cache_size_percent"] == pct_value
+            else:
+                with expect_exception(requests.exceptions.HTTPError,
+                                      lambda e: e.response.status_code == 400):
+                    self.admin.patch_cluster_config(upsert=upsert)
+
 
 """
 PropertyAliasData:
