@@ -5,12 +5,12 @@ redpanda_cc_library(
     srcs = [
         "application.cc",
         "cli_parser.cc",
-        "monitor_unsafe_log_flag.cc",
+        "monitor_unsafe.cc",
     ],
     hdrs = [
         "application.h",
         "cli_parser.h",
-        "monitor_unsafe_log_flag.h",
+        "monitor_unsafe.h",
     ],
     include_prefix = "redpanda",
     visibility = ["//visibility:public"],

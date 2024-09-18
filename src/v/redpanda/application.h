@@ -44,7 +44,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
-#include "redpanda/monitor_unsafe_log_flag.h"
+#include "redpanda/monitor_unsafe.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -317,7 +317,7 @@ private:
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
     ss::sharded<archival::upload_controller> _archival_upload_controller;
-    std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
+    std::unique_ptr<monitor_unsafe> _monitor_unsafe;
     ss::sharded<archival::purger> _archival_purger;
 
     std::unique_ptr<wasm::caching_runtime> _wasm_runtime;
