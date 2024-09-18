@@ -166,12 +166,12 @@ ss::future<index_state> deduplicate_segment(
     auto compaction_placeholder_enabled = feature_table.local().is_active(
       features::feature::compaction_placeholder_batch);
 
-    const std::optional<model::timestamp> tombstone_delete_horizon
-      = internal::get_tombstone_delete_horizon(seg, cfg);
+    const bool past_tombstone_delete_horizon
+      = internal::is_past_tombstone_delete_horizon(seg, cfg);
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map,
        segment_last_offset = seg->offsets().get_committed_offset(),
-       tombstone_delete_horizon = tombstone_delete_horizon,
+       past_tombstone_delete_horizon,
        compaction_placeholder_enabled](
         const model::record_batch& b,
         const model::record& r,
@@ -190,9 +190,9 @@ ss::future<index_state> deduplicate_segment(
                 b.header());
               return ss::make_ready_future<bool>(true);
           }
-          // Potentially deal with tombstone record removal
-          if (internal::should_remove_tombstone_record(
-                r, tombstone_delete_horizon)) {
+
+          // Deal with tombstone record removal
+          if (r.is_tombstone() && past_tombstone_delete_horizon) {
               return ss::make_ready_future<bool>(false);
           }
 
