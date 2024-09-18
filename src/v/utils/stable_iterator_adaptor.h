@@ -24,7 +24,7 @@ class iterator_stability_violation final
   : public concurrent_modification_error {
 public:
     explicit iterator_stability_violation(ss::sstring why)
-      : concurrent_modification_error(std::move(why)) {};
+      : concurrent_modification_error(std::move(why)) {}
 };
 
 /*
