@@ -104,7 +104,7 @@ struct update_leadership_request_v2
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     static constexpr int8_t version = 0;
-    fragmented_vector<ntp_leader_revision> leaders;
+    chunked_vector<ntp_leader_revision> leaders;
 
     update_leadership_request_v2() noexcept = default;
 
@@ -119,7 +119,7 @@ struct update_leadership_request_v2
     };
 
     update_leadership_request_v2 copy() const {
-        fragmented_vector<ntp_leader_revision> leaders_cp;
+        chunked_vector<ntp_leader_revision> leaders_cp;
         leaders_cp.reserve(leaders.size());
         std::copy(
           leaders.begin(), leaders.end(), std::back_inserter(leaders_cp));
@@ -134,7 +134,7 @@ struct update_leadership_request_v2
     }
 
     explicit update_leadership_request_v2(
-      fragmented_vector<ntp_leader_revision> leaders)
+      chunked_vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
 
     auto serde_fields() { return std::tie(leaders); }

@@ -25,7 +25,7 @@ namespace compat {
 template<>
 struct instance_generator<cluster::update_leadership_request_v2> {
     static cluster::update_leadership_request_v2 random() {
-        fragmented_vector<cluster::ntp_leader_revision> values;
+        chunked_vector<cluster::ntp_leader_revision> values;
         values.emplace_back(
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),
