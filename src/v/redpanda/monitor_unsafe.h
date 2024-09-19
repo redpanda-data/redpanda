@@ -21,7 +21,7 @@ public:
     static constexpr ss::shard_id backend_shard = 0;
     // Flag introduced in version v23.2.1 (cluster version 10)
     static constexpr cluster::cluster_version flag_introduction_version
-      = cluster::cluster_version{10};
+      = to_cluster_version(features::release_version::v23_2_1);
     explicit monitor_unsafe(
       ss::sharded<features::feature_table>& feature_table);
 

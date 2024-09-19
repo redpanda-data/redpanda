@@ -156,12 +156,16 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-static constexpr cluster_version latest_version = cluster_version{14};
+constexpr cluster_version latest_version = to_cluster_version(
+  release_version::MAX);
 
 // The earliest version we can upgrade from. This is the version that
 // a freshly initialized node will start at. All features up to this cluster
 // version will automatically be enabled when Redpanda starts.
-static constexpr cluster_version earliest_version = cluster_version{11};
+constexpr cluster_version earliest_version = to_cluster_version(
+  release_version::v23_3_1);
+
+} // namespace
 
 namespace {
 bool is_major_version_release(cluster::cluster_version version) {
