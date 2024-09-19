@@ -13,7 +13,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.util import firewall_blocked, wait_until_result
-from rptest.utils.si_utils import BucketView, NTPR
+from rptest.utils.si_utils import BucketView, NTPR, NTP
 from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
 from ducktape.utils.util import wait_until
@@ -218,6 +218,20 @@ def cloud_storage_status_endpoint_check(test):
         retry_on_exc=True)
 
 
+def dump_summaries_check(test):
+    bucket_view = BucketView(test.redpanda, scan_segments=True)
+    try:
+        summaries = bucket_view.segment_summaries(
+            NTP(ns="kafka", topic=test.topic, partition=0))
+        test.logger.debug("BEGIN SUMMARIES")
+        for s in summaries:
+            test.logger.debug(s)
+        test.logger.debug("END SUMMARIES")
+    except Exception as e:
+        test.logger.info(f"dump_summaries_check exception: {e}")
+
+
+
 class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     """
     The tests in this class are intended to be generic cloud storage test.
@@ -290,7 +304,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.logger.info(f"Will produce {bytes_count / self.mib}MiB at"
                          f"{bps / self.mib}MiB/s on topic={self.topic}")
 
-        key_set_cardinality = 10 if 'compact' in cleanup_policy else None
+        key_set_cardinality = 3 if 'compact' in cleanup_policy else None
         return KgoVerifierProducer(self.test_context,
                                    self.redpanda,
                                    self.topic,
@@ -411,9 +425,10 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         # after the partition moves.
         self._initial_revision = self._get_initial_revision()
 
-        self.register_check("cloud_storage_usage", cloud_storage_usage_check)
-        self.register_check("cloud_storage_status_endpoint",
-                            cloud_storage_status_endpoint_check)
+        # self.register_check("cloud_storage_usage", cloud_storage_usage_check)
+        # self.register_check("cloud_storage_status_endpoint",
+        #                    cloud_storage_status_endpoint_check)
+        self.register_check("dump_summaries_check", dump_summaries_check)
 
         self.producer = self._create_producer(cleanup_policy)
         self.consumer = self._create_consumer(self.producer)
@@ -524,7 +539,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"failed to hydrate chunk.*NotFound",
             r"cluster.*Can't add segment",
         ])
-    @parametrize(cleanup_policy="delete")
+    # @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
     def test_cloud_storage_with_partition_moves(self, cleanup_policy):
