@@ -9,6 +9,17 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "disk_log_builder_fixture",
+    hdrs = [
+        "disk_log_builder_fixture.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        ":disk_log_builder",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "disk_log_builder",
     srcs = [
         "utils/disk_log_builder.cc",
@@ -201,5 +212,22 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "timequery_test",
+    timeout = "short",
+    srcs = [
+        "timequery_test.cc",
+    ],
+    deps = [
+        ":disk_log_builder_fixture",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
     ],
 )
