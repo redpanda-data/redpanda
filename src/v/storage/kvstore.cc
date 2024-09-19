@@ -31,6 +31,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <exception>
+
 static ss::logger lg("kvstore");
 
 namespace storage {
@@ -453,7 +455,7 @@ ss::future<> kvstore::load_snapshot() {
 
     co_await reader->close();
     if (ex) {
-        throw ex;
+        std::rethrow_exception(ex);
     }
 }
 
