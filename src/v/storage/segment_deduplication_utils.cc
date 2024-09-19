@@ -168,8 +168,10 @@ ss::future<index_state> deduplicate_segment(
 
     const bool past_tombstone_delete_horizon
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
+    bool may_have_tombstone_records = false;
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map,
+       &may_have_tombstone_records,
        segment_last_offset = seg->offsets().get_committed_offset(),
        past_tombstone_delete_horizon,
        compaction_placeholder_enabled](
@@ -196,7 +198,14 @@ ss::future<index_state> deduplicate_segment(
               return ss::make_ready_future<bool>(false);
           }
 
-          return should_keep(map, b, r);
+          return should_keep(map, b, r).then(
+            [&may_have_tombstone_records,
+             is_tombstone = r.is_tombstone()](bool keep) {
+                if (is_tombstone && keep) {
+                    may_have_tombstone_records = true;
+                }
+                return keep;
+            });
       },
       &appender,
       seg->path().is_internal_topic(),
@@ -208,8 +217,14 @@ ss::future<index_state> deduplicate_segment(
 
     auto new_idx = co_await std::move(rdr).consume(
       std::move(copy_reducer), model::no_timeout);
+
+    // restore broker timestamp and clean compact timestamp
     new_idx.broker_timestamp = seg->index().broker_timestamp();
     new_idx.clean_compact_timestamp = seg->index().clean_compact_timestamp();
+
+    // Set may_have_tombstone_records
+    new_idx.may_have_tombstone_records = may_have_tombstone_records;
+
     co_return new_idx;
 }
 

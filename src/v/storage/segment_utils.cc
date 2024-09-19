@@ -415,8 +415,10 @@ ss::future<storage::index_state> do_copy_segment_data(
       "copying compacted segment data from {} to {}",
       seg->reader().filename(),
       tmpname);
+    bool may_have_tombstone_records = false;
     auto should_keep = [compacted_list = std::move(compacted_offsets),
-                        past_tombstone_delete_horizon](
+                        past_tombstone_delete_horizon,
+                        &may_have_tombstone_records](
                          const model::record_batch& b,
                          const model::record& r,
                          bool) {
@@ -426,7 +428,13 @@ ss::future<storage::index_state> do_copy_segment_data(
         }
 
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-        return ss::make_ready_future<bool>(compacted_list.contains(o));
+        const auto keep = compacted_list.contains(o);
+
+        if (r.is_tombstone() && keep) {
+            may_have_tombstone_records = true;
+        }
+
+        return ss::make_ready_future<bool>(keep);
     };
 
     model::offset segment_last_offset{};
@@ -461,6 +469,9 @@ ss::future<storage::index_state> do_copy_segment_data(
     // restore broker timestamp and clean compact timestamp
     new_index.broker_timestamp = old_broker_timestamp;
     new_index.clean_compact_timestamp = old_clean_compact_timestamp;
+
+    // Set may_have_tombstone_records
+    new_index.may_have_tombstone_records = may_have_tombstone_records;
 
     co_return new_index;
 }
@@ -895,6 +906,12 @@ make_concatenated_segment(
         return new_ts;
     }();
 
+    // If any of the segments contain a tombstone record, then the new index
+    // should reflect that.
+    auto new_may_have_tombstone_records = std::ranges::any_of(
+      segments,
+      [](const auto& s) { return s->index().may_have_tombstone_records(); });
+
     segment_index index(
       index_name,
       offsets.get_base_offset(),
@@ -902,7 +919,8 @@ make_concatenated_segment(
       feature_table,
       cfg.sanitizer_config,
       new_broker_timestamp,
-      new_clean_compact_timestamp);
+      new_clean_compact_timestamp,
+      new_may_have_tombstone_records);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(

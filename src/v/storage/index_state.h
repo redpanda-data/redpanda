@@ -74,11 +74,12 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<8>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<9>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
     static constexpr auto num_compactible_records_version = 7;
     static constexpr auto clean_compact_timestamp_version = 8;
+    static constexpr auto may_have_tombstone_records_version = 9;
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
@@ -137,6 +138,11 @@ struct index_state
     // If not yet set, sliding window compaction has not yet been applied to
     // every previous record in the log.
     std::optional<model::timestamp> clean_compact_timestamp{std::nullopt};
+
+    // may_have_tombstone_records is `true` by default, until compaction
+    // deduplication/segment data copying is performed and it is proven that
+    // the segment does not contain any tombstone records.
+    bool may_have_tombstone_records{true};
 
     size_t size() const;
 
