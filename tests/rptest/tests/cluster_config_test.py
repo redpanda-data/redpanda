@@ -2284,7 +2284,11 @@ class ClusterConfigUnknownTest(RedpandaTest):
 
 class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
     def __init__(self, test_context):
-        super().__init__(test_context)
+        super().__init__(
+            test_context,
+            extra_rp_conf=dict(
+                # controls freq of nag
+                legacy_unsafe_log_warning_interval_sec=5, ))
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=3)
@@ -2353,3 +2357,25 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
                     "enable_experimental_unrecoverable_data_corrupting_features"], f"{errors}"
             else:
                 raise RuntimeError("Expected error")
+
+    @cluster(num_nodes=3)
+    def test_experimental_feature_nag(self):
+        """
+        Test that nag is printed when experimental feature flag enabled.
+        """
+        # first, enable experimental flag
+        key = int(time.time() - 60)
+        patch_result = self.admin.patch_cluster_config(upsert=dict(
+            enable_experimental_unrecoverable_data_corrupting_features=key))
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+        config = self.admin.get_cluster_config()
+        value = config[
+            "enable_experimental_unrecoverable_data_corrupting_features"]
+        assert int(value) == key, f"{value} != {key}"
+
+        wait_until(lambda: self.redpanda.search_log_all(
+            "WARNING: experimental features have been enabled"),
+                   timeout_sec=10,
+                   backoff_sec=1.0,
+                   err_msg=f"Expected to see experimental feature nag")
