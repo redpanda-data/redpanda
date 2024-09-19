@@ -70,7 +70,7 @@ public:
     void adapt_with_version(iobuf, api_version);
 
 private:
-    void verify_crc(uint32_t, iobuf_parser);
+    void verify_crc(const model::record_batch_header&, iobuf_parser);
     model::record_batch_header read_header(iobuf_parser&);
     void convert_message_set(storage::record_batch_builder&, iobuf, bool);
 };
