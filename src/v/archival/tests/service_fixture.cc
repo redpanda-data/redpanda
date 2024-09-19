@@ -280,7 +280,8 @@ void archiver_fixture::initialize_shard(
                        d.term,
                        ss::default_priority_class(),
                        128_KiB,
-                       10)
+                       10,
+                       1_MiB)
                      .get0();
         vlog(fixt_log.trace, "write random batches to segment");
 

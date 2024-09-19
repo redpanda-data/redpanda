@@ -101,7 +101,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                   model::term_id(1),
                   ss::default_priority_class(),
                   default_segment_readahead_size,
-                  default_segment_readahead_count)
+                  default_segment_readahead_count,
+                  0)
                  .get0();
     seg->close().get();
 
@@ -113,7 +114,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    model::term_id(1),
                    ss::default_priority_class(),
                    default_segment_readahead_size,
-                   default_segment_readahead_count)
+                   default_segment_readahead_count,
+                   1_MiB)
                   .get0();
     write_batches(seg3);
     seg3->close().get();
@@ -124,7 +126,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    model::term_id(1),
                    ss::default_priority_class(),
                    default_segment_readahead_size,
-                   default_segment_readahead_count)
+                   default_segment_readahead_count,
+                   1_MiB)
                   .get0();
     write_garbage(seg4->appender());
     seg4->close().get();

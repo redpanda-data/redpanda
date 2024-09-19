@@ -386,7 +386,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   std::optional<batch_cache_index> batch_cache,
   storage_resources&,
   ss::sharded<features::feature_table>& feature_table,
-  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
+  size_t segment_size_hint);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags
