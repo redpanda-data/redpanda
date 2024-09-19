@@ -2280,3 +2280,29 @@ class ClusterConfigUnknownTest(RedpandaTest):
 
         # issue would appear when reloading the property back
         self.redpanda.restart_nodes(self.redpanda.nodes[0])
+
+
+class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
+    def __init__(self, test_context):
+        super().__init__(test_context)
+        self.admin = Admin(self.redpanda)
+
+    @cluster(num_nodes=3)
+    def test_reject_invalid_enable_key(self):
+        """
+        Test that enabling with an invalid key results in rejection.
+        """
+        # key must be within 1 hour
+        key = int(time.time() - (3600 * 1.5))
+        try:
+            patch_result = self.admin.patch_cluster_config(upsert=dict(
+                enable_experimental_unrecoverable_data_corrupting_features=key,
+            ), )
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 400:
+                raise
+            errors = e.response.json()
+            assert f"Invalid key '{key}'. Must be within 1 hour" in errors[
+                "enable_experimental_unrecoverable_data_corrupting_features"], f"{errors}"
+        else:
+            raise RuntimeError("Expected error")
