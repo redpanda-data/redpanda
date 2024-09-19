@@ -238,6 +238,8 @@ public:
 
     ss::shared_ptr<in_memory_test_protocol> get_protocol() { return _protocol; }
 
+    storage::kvstore& get_kvstore() { return _storage.local().kvs(); }
+
 private:
     model::node_id _id;
     model::revision_id _revision;
