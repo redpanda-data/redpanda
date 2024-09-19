@@ -15,6 +15,7 @@
 #include "cluster/feature_barrier.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/enterprise_features.h"
 #include "security/fwd.h"
 
 #include <seastar/core/abort_source.hh>
@@ -96,6 +97,8 @@ public:
     }
 
     ss::future<std::error_code> update_license(security::license&& license);
+
+    features::enterprise_feature_report report_enterprise_features() const;
 
 private:
     void update_node_version(model::node_id, cluster_version v);
