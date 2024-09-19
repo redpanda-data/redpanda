@@ -158,9 +158,7 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
     auto trimmed_bytes = remainder.size_bytes();
     kbatch.trim_back(trimmed_bytes);
 
-    auto crcparser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
-    auto parser = iobuf_parser(std::move(kbatch));
-
+    auto parser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
     auto header = read_header(parser);
     if (unlikely(!v2_format)) {
         vlog(
@@ -169,6 +167,7 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
         return remainder;
     }
 
+    auto crcparser = iobuf_parser(std::move(kbatch));
     verify_crc(header, std::move(crcparser));
     if (unlikely(!valid_crc)) {
         if (trimmed_bytes > 0) {
