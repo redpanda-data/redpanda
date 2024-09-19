@@ -127,6 +127,10 @@ public:
 
     bool is_default() const override { return _value == _default; }
 
+    bool is_hidden() const override {
+        return get_visibility() == visibility::deprecated;
+    }
+
     const T& operator()() { return value(); }
 
     const T& operator()() const { return value(); }
