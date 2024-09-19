@@ -1176,7 +1176,6 @@ class RpkTool:
         self._redpanda.logger.debug(f'\n{output}')
 
         if p.returncode:
-            self._redpanda.logger.error(stderror)
             raise RpkException(
                 'command %s returned %d, output: %s' %
                 (' '.join(cmd) if log_cmd else '[redacted]', p.returncode,
