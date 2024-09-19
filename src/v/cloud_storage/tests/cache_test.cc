@@ -13,6 +13,7 @@
 #include "cache_test_fixture.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"
+#include "random/generators.h"
 #include "test_utils/fixture.h"
 #include "units.h"
 #include "utils/file_io.h"
@@ -537,4 +538,46 @@ FIXTURE_TEST(test_log_segment_cleanup, cache_test_fixture) {
       std::all_of(objects.cbegin(), objects.cend(), [](const auto& path) {
           return !std::filesystem::exists(path);
       }));
+}
+
+FIXTURE_TEST(test_background_maybe_trim, cache_test_fixture) {
+    std::string write_buf(1_KiB, ' ');
+    random_generators::fill_buffer_randomchars(
+      write_buf.data(), write_buf.size());
+    size_t num_objects = 100;
+    std::vector<std::filesystem::path> object_keys;
+    for (int i = 0; i < num_objects; i++) {
+        object_keys.emplace_back(fmt::format("test_{}.log.1", i));
+        std::ofstream segment{CACHE_DIR / object_keys.back()};
+        segment.write(
+          write_buf.data(), static_cast<std::streamsize>(write_buf.size()));
+        segment.flush();
+    }
+
+    // Account all files in the cache (100 MiB).
+    clean_up_at_start().get();
+    BOOST_REQUIRE_EQUAL(get_object_count(), 100);
+
+    for (const auto& key : object_keys) {
+        // Touch every object so they have access times assigned to them
+        auto item = sharded_cache.local().get(key).get();
+        item->body.close().get();
+    }
+    BOOST_REQUIRE_EQUAL(get_object_count(), 100);
+
+    set_trim_thresholds(100.0, 50.0, 100);
+
+    // Do a put which should trigger a background trim and reduce the
+    // object count to 40, followed by a put that will increase it to 41.
+    auto data_string = create_data_string('a', 1_KiB);
+    put_into_cache(data_string, KEY);
+    wait_for_trim();
+
+    // 40: we set a trigger at 50. However, the new object reserves space so the
+    // target is adjusted to 49. The low water mark is 80%, which gives an
+    // adjusted target of 39. We add one for the new object to get a value
+    // of 40. NB: This calculation is specific to the 23.2.x backport. The
+    // reservation works a bit differently in newer versions of the code, so we
+    // end up with 41 objects in those cases.
+    BOOST_REQUIRE_EQUAL(get_object_count(), 40);
 }

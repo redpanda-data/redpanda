@@ -1941,6 +1941,24 @@ configuration::configuration()
       "Number of chunks to prefetch ahead of every downloaded chunk",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0)
+  , cloud_storage_cache_trim_threshold_percent_size(
+      *this,
+      "cloud_storage_cache_trim_threshold_percent_size",
+      "Trim is triggered when the cache reaches this percent of the maximum "
+      "cache size. If this is unset, the default behavior"
+      "is to start trim when the cache is about 100\% full.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1.0, .max = 100.0})
+  , cloud_storage_cache_trim_threshold_percent_objects(
+      *this,
+      "cloud_storage_cache_trim_threshold_percent_objects",
+      "Trim is triggered when the cache reaches this percent of the maximum "
+      "object count. If this is unset, the default behavior"
+      "is to start trim when the cache is about 100\% full.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1.0, .max = 100.0})
   , superusers(
       *this,
       "superusers",

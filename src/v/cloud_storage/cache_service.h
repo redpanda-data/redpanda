@@ -24,8 +24,11 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/thread.hh>
 
 #include <filesystem>
+#include <iterator>
+#include <optional>
 #include <set>
 #include <string_view>
 
@@ -216,7 +219,16 @@ private:
     std::optional<std::chrono::milliseconds> get_trim_delay() const;
 
     /// Invoke trim, waiting if not enough time passed since the last trim
-    ss::future<> trim_throttled();
+    ss::future<> trim_throttled_unlocked(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
+
+    // Take the cleanup semaphore before calling trim_throttled
+    ss::future<> trim_throttled(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
+
+    void maybe_background_trim();
 
     /// Whether an objects path makes it impervious to pinning, like
     /// the access time tracker.
