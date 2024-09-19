@@ -60,6 +60,10 @@ struct configuration;
  *
  * The simplest way to circumvent this is to enable support in one request,
  * and then proceed to interact with experiemntal feature properties.
+ *
+ * Experimental properties are hidden from the outside world until experimental
+ * property support is enabled, at which point the visibility of the property is
+ * identical to the wrapped property.
  */
 template<typename T>
 class experimental_feature_property : public property<T> {
@@ -85,11 +89,20 @@ public:
               }
               return "Experimental feature support is not enabled.";
           })
+      , _conf(conf)
 
     {}
 
+    bool is_hidden() const override {
+        if (experimental_features_enabled(_conf)) {
+            return property<T>::is_hidden();
+        }
+        return true;
+    }
+
 private:
     static bool experimental_features_enabled(const configuration&);
+    configuration& _conf;
 };
 
 struct configuration final : public config_store {
