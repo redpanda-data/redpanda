@@ -1145,7 +1145,7 @@ public:
       const model::ntp& ntp,
       retry_chain_node& rtc)
       : _config(conf)
-      , _parent(parent)
+      , _seg_reader(parent)
       , _term(term)
       , _rtc(&rtc)
       , _ctxlog(cst_log, _rtc, ntp.path())
@@ -1156,18 +1156,11 @@ public:
     /// \note this can only be applied to current record batch
     kafka::offset rp_to_kafka(model::offset k) const noexcept {
         vassert(
-          k() >= _parent._cur_delta(),
+          k() >= _seg_reader._cur_delta(),
           "Redpanda offset {} is smaller than the delta {}",
           k,
-          _parent._cur_delta);
-        return k - _parent._cur_delta;
-    }
-
-    /// Translate kafka offset to redpanda offset
-    ///
-    /// \note this can only be applied to current record batch
-    model::offset kafka_to_rp(kafka::offset k) const noexcept {
-        return k + _parent._cur_delta;
+          _seg_reader._cur_delta);
+        return k - _seg_reader._cur_delta;
     }
 
     /// Point config.start_offset to the next record batch
@@ -1176,7 +1169,7 @@ public:
     /// \note this can only be applied to current record batch
     void
     advance_config_offsets(const model::record_batch_header& header) noexcept {
-        _parent._cur_rp_offset = header.last_offset() + model::offset{1};
+        _seg_reader._cur_rp_offset = header.last_offset() + model::offset{1};
 
         if (header.type == model::record_batch_type::raft_data) {
             auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
@@ -1193,7 +1186,7 @@ public:
           "[{}] accept_batch_start {}, current delta: {}",
           _config.client_address,
           header,
-          _parent._cur_delta);
+          _seg_reader._cur_delta);
 
         if (rp_to_kafka(header.base_offset) > _config.max_offset) {
             vlog(
@@ -1290,21 +1283,22 @@ public:
             _filtered_types.begin(), _filtered_types.end(), header.type)
           > 0) {
             vassert(
-              _parent._cur_ot_state,
+              _seg_reader._cur_ot_state,
               "ntp {}: offset translator state for "
               "remote_segment_batch_consumer not initialized",
-              _parent._seg->get_ntp());
+              _seg_reader._seg->get_ntp());
 
             vlog(
               _ctxlog.debug,
               "added offset translation gap [{}-{}], current state: {}",
               header.base_offset,
               header.last_offset(),
-              _parent._cur_ot_state);
+              _seg_reader._cur_ot_state);
 
-            _parent._cur_ot_state->get().add_gap(
+            _seg_reader._cur_ot_state->get().add_gap(
               header.base_offset, header.last_offset());
-            _parent._cur_delta += header.last_offset_delta + model::offset(1);
+            _seg_reader._cur_delta += header.last_offset_delta
+                                      + model::offset(1);
         }
     }
 
@@ -1328,7 +1322,7 @@ public:
         batch.header().header_crc = model::internal_header_only_crc(
           batch.header());
 
-        size_t sz = _parent.produce(std::move(batch));
+        size_t sz = _seg_reader.produce(std::move(batch));
 
         if (_config.over_budget) {
             co_return stop_parser::yes;
@@ -1347,7 +1341,7 @@ public:
 
 private:
     storage::log_reader_config& _config;
-    remote_segment_batch_reader& _parent;
+    remote_segment_batch_reader& _seg_reader;
     model::record_batch_header _header;
     iobuf _records;
     model::term_id _term;
