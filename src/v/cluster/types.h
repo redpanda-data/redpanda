@@ -3057,24 +3057,6 @@ struct node_decommission_progress {
     std::vector<partition_reconfiguration_state> current_reconfigurations;
 };
 
-/*
- * Partition Allocation Domains is the way to make certain partition replicas
- * distributed evenly across the nodes of the cluster. When partition allocation
- * is done within any domain but `common`, all existing allocations outside
- * of that domain will be ignored while assigning partition a node.
- * The `common` domain will consider allocations in all domains.
- * Negative values are used for hardcoded domains, positive values are reserved
- * for future use as user assigned domains, and may be used for a feature that
- * would allow users to designate certain topics to have their partition
- * replicas and leaders evenly distrbuted regardless of other topics.
- */
-using partition_allocation_domain
-  = named_type<int32_t, struct partition_allocation_domain_tag>;
-namespace partition_allocation_domains {
-constexpr auto common = partition_allocation_domain(0);
-constexpr auto consumer_offsets = partition_allocation_domain(-1);
-} // namespace partition_allocation_domains
-
 enum class cloud_storage_mode : uint8_t {
     disabled = 0,
     write_only = 1,

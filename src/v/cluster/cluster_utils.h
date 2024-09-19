@@ -331,12 +331,6 @@ inline bool moving_to_node(
 
 cluster::errc map_update_interruption_error_code(std::error_code);
 
-partition_allocation_domain get_allocation_domain(model::topic_namespace_view);
-inline partition_allocation_domain
-get_allocation_domain(const model::ntp& ntp) {
-    return get_allocation_domain(model::topic_namespace_view(ntp));
-}
-
 partition_state get_partition_state(ss::lw_shared_ptr<cluster::partition>);
 partition_raft_state get_partition_raft_state(consensus_ptr);
 std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr);

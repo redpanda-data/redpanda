@@ -57,17 +57,13 @@ public:
 
     // Choose a shard for a replica and add the corresponding allocation.
     // node_id is required to belong to an existing node.
-    uint32_t allocate(model::node_id id, partition_allocation_domain);
+    uint32_t allocate(model::node_id id);
 
     // Operations on state
-    void
-    add_allocation(const model::broker_shard&, partition_allocation_domain);
-    void
-    remove_allocation(const model::broker_shard&, partition_allocation_domain);
-    void
-    add_final_count(const model::broker_shard&, partition_allocation_domain);
-    void
-    remove_final_count(const model::broker_shard&, partition_allocation_domain);
+    void add_allocation(const model::broker_shard&);
+    void remove_allocation(const model::broker_shard&);
+    void add_final_count(const model::broker_shard&);
+    void remove_final_count(const model::broker_shard&);
 
     bool validate_shard(model::node_id node, uint32_t shard) const;
 

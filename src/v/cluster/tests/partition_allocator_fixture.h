@@ -79,9 +79,7 @@ struct partition_allocator_fixture {
 
         for (auto& pas : units.value()->get_assignments()) {
             allocator().add_allocations_for_new_partition(
-              pas.replicas,
-              pas.group,
-              cluster::partition_allocation_domains::common);
+              pas.replicas, pas.group);
         }
     }
 
@@ -120,8 +118,7 @@ struct partition_allocator_fixture {
 
     cluster::allocation_request make_allocation_request(
       model::topic_namespace tn, int partitions, uint16_t replication_factor) {
-        cluster::allocation_request req(
-          std::move(tn), cluster::partition_allocation_domains::common);
+        cluster::allocation_request req(std::move(tn));
         req.partitions.reserve(partitions);
         for (int i = 0; i < partitions; ++i) {
             req.partitions.emplace_back(
