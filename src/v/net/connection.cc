@@ -17,6 +17,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/tls.hh>
 
+#include <exception>
 #include <system_error>
 
 namespace net {
@@ -78,7 +79,7 @@ bool is_reconnect_error(const std::system_error& e) {
  */
 std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     try {
-        rethrow_exception(e);
+        std::rethrow_exception(e);
     } catch (const std::system_error& e) {
         if (is_reconnect_error(e)) {
             return e.code().message();
@@ -119,7 +120,7 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
 
 bool is_auth_error(std::exception_ptr e) {
     try {
-        rethrow_exception(e);
+        std::rethrow_exception(e);
     } catch (const authentication_exception& e) {
         return true;
     } catch (...) {

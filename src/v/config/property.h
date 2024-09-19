@@ -23,6 +23,7 @@
 #include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
+#include <exception>
 #include <functional>
 #include <optional>
 
@@ -260,7 +261,7 @@ protected:
         }
 
         if (ex) {
-            rethrow_exception(ex);
+            std::rethrow_exception(ex);
         }
     }
 
