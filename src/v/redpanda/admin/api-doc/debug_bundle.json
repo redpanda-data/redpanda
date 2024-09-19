@@ -201,5 +201,56 @@
         }
       }
     }
+  },
+  "delete": {
+    "description": "Attempts to delete the generated debug bundle file",
+    "summary": "Attempts to delete the generated debug bundle file",
+    "operationId": "delete_debug_bundle_file",
+    "parameters": [
+      {
+        "name": "filename",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "204": {
+        "description": "OK"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "404": {
+        "description": "Not found",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
   }
 }

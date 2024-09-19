@@ -134,6 +134,13 @@ void admin_server::register_debug_bundle_routes() {
         std::unique_ptr<ss::http::reply> rep) {
           return get_debug_bundle_file(std::move(req), std::move(rep));
       });
+    register_route_raw_async<superuser>(
+      ss::httpd::debug_bundle_json::delete_debug_bundle_file,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return delete_debug_bundle_file(std::move(req), std::move(rep));
+      });
 }
 
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
@@ -231,6 +238,17 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_debug_bundle(
 
 ss::future<std::unique_ptr<ss::http::reply>>
 admin_server::get_debug_bundle_file(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    auto job_id_str = req->get_path_param("filename");
+    co_return make_json_body(
+      ss::http::reply::status_type::not_implemented,
+      ss::json::json_void{},
+      std::move(rep));
+}
+
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::delete_debug_bundle_file(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
     auto job_id_str = req->get_path_param("filename");
