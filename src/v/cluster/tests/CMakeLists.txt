@@ -217,6 +217,20 @@ rp_test(
   ARGS "-- -c 1"
   LABELS cluster
 )
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME partition_properties_stm_test
+  SOURCES
+     partition_properties_stm_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::cluster
+    v::raft_fixture
+    v::model_test_utils
+  ARGS "-- -c 1"
+  LABELS cluster
+)
 
 rp_test(
   BENCHMARK_TEST
