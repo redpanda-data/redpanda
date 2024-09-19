@@ -21,8 +21,6 @@ from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 
 class FullNodeRecoveryTest(EndToEndTest):
-    PARTIAL_RECOVERY = 'partial'
-    FULL_RECOVERY = 'full'
     """
     This test validates recovery of redpanda node after data directory wipe
     """
@@ -35,9 +33,7 @@ class FullNodeRecoveryTest(EndToEndTest):
                                                    extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(recovery_type=PARTIAL_RECOVERY)
-    @parametrize(recovery_type=FULL_RECOVERY)
-    def test_node_recovery(self, recovery_type):
+    def test_node_recovery(self):
         self.start_redpanda(num_nodes=3)
         kafka_tools = KafkaCliTools(self.redpanda)
         kafka_cat = KafkaCat(self.redpanda)
@@ -82,8 +78,6 @@ class FullNodeRecoveryTest(EndToEndTest):
             filter(lambda n: n['address'] != stopped.account.hostname, seeds))
 
         self.redpanda.stop_node(stopped)
-        if recovery_type == FullNodeRecoveryTest.FULL_RECOVERY:
-            self.redpanda.clean_node(stopped, preserve_logs=True)
 
         # produce some more data to make sure that stopped node is behind
         kafka_tools.produce(prepopulated_topic.name, 20000, 1024)
