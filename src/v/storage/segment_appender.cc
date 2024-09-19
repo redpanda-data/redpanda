@@ -13,6 +13,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "config/configuration.h"
+#include "model/record.h"
 #include "reflection/adl.h"
 #include "ssx/semaphore.h"
 #include "storage/chunk_cache.h"
@@ -112,7 +113,14 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
 ss::future<> segment_appender::append(const model::record_batch& batch) {
     _batch_types_to_write |= 1LU << static_cast<uint8_t>(batch.header().type);
 
-    co_await append(storage::batch_header_to_disk_iobuf(batch.header()));
+    auto hdrbuf = storage::batch_header_to_disk_iobuf(batch.header());
+
+    auto batch_disk_size = hdrbuf.size_bytes() + batch.data().size_bytes();
+    if (need_fallocate_for_write(batch_disk_size)) {
+        co_await do_next_adaptive_fallocation(batch_disk_size);
+    }
+
+    co_await append(hdrbuf);
     co_await append(batch.data());
 }
 
@@ -156,8 +164,8 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             continue;
         }
 
-        if (next_committed_offset() + n > _fallocation_offset) {
-            co_await do_next_adaptive_fallocation();
+        if (need_fallocate_for_write(n)) {
+            co_await do_next_adaptive_fallocation(n);
             continue;
         }
 
@@ -326,13 +334,32 @@ ss::future<> segment_appender::close() {
       .then([this] { return _out.close(); });
 }
 
-ss::future<> segment_appender::do_next_adaptive_fallocation() {
+ss::future<>
+segment_appender::do_next_adaptive_fallocation(size_t next_write_size) {
     auto step = _opts.resources.get_falloc_step(_opts.segment_size);
     if (step == 0) {
         // Don't fallocate.  This happens if we're low on disk, or if
         // the user has configured a 0 max falloc step.
         return ss::make_ready_future<>();
     }
+
+    // Optimize fallocation if we have a segment size hint.
+    if (_opts.segment_size) {
+        if (_fallocation_offset >= _opts.segment_size) {
+            // If we are already at the segment size, fallocate just to support
+            // the next write.
+            step = next_write_size;
+        } else if (_fallocation_offset + step >= _opts.segment_size) {
+            // If we are about to exceed the segment size, fallocate to the
+            // segment size and then some to support the extra write just before
+            // the segment is rolled.
+            step = *_opts.segment_size - _fallocation_offset
+                   + config::shard_local_cfg().kafka_batch_max_bytes();
+        }
+    }
+
+    // Allocate enough to satisfy the next write.
+    step = std::max(step, next_write_size);
 
     return ss::with_semaphore(
              _concurrent_flushes,

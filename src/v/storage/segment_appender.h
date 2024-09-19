@@ -139,7 +139,7 @@ private:
     using chunk_ptr = ss::lw_shared_ptr<chunk>;
 
     void dispatch_background_head_write();
-    ss::future<> do_next_adaptive_fallocation();
+    ss::future<> do_next_adaptive_fallocation(size_t next_write_size);
     ss::future<> hydrate_last_half_page();
     ss::future<> do_truncation(size_t);
     ss::future<> do_append(const char* buf, size_t n);
@@ -156,6 +156,10 @@ private:
      */
     size_t next_committed_offset() const {
         return _committed_offset + (_head ? _head->bytes_pending() : 0);
+    }
+
+    bool need_fallocate_for_write(size_t write_size_bytes) {
+        return next_committed_offset() + write_size_bytes > _fallocation_offset;
     }
 
     // Reset the bit-map tracking unwritten batch types in the `_head` chunk.
