@@ -196,3 +196,23 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
     BOOST_REQUIRE_EQUAL(result.filtered_out_files, 2);
     BOOST_REQUIRE_EQUAL(result.regular_files.size(), 3);
 }
+
+
+SEASTAR_THREAD_TEST_CASE(random_file_one) {
+    temporary_dir tmpdir("directory-walker");
+    cloud_storage::recursive_directory_walker _walker;
+    const std::filesystem::path target_dir = tmpdir.get_path();
+    const std::filesystem::path file_path = target_dir / "file1.txt";
+
+    auto flags = ss::open_flags::wo | ss::open_flags::create
+                 | ss::open_flags::exclusive;
+    auto file1 = ss::open_file_dma(file_path.native(), flags).get();
+    file1.close().get();
+
+    access_time_tracker tracker;
+    auto result = _walker.find_random_file(target_dir.native(), tracker, 3).get();
+
+    
+    BOOST_REQUIRE_EQUAL(result.size, 0);
+    BOOST_REQUIRE_EQUAL(result.path, file_path.native());
+}
