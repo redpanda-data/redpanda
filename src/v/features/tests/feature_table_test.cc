@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 
-#include "base/vlog.h"
 #include "features/feature_table.h"
 #include "features/feature_table_snapshot.h"
 #include "security/license.h"
