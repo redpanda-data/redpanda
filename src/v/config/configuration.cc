@@ -628,7 +628,7 @@ configuration::configuration()
       *this,
       "rm_sync_timeout_ms",
       "Time to wait state catch up before rejecting a request",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10s)
   , find_coordinator_timeout_ms(*this, "find_coordinator_timeout_ms")
   , seq_table_min_size(*this, "seq_table_min_size")

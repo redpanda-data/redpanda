@@ -374,7 +374,7 @@ private:
     bool _is_abort_idx_reduction_requested{false};
     aborted_tx_state _aborted_tx_state;
     ss::timer<tx::clock_type> auto_abort_timer;
-    std::chrono::milliseconds _sync_timeout;
+    config::binding<std::chrono::milliseconds> _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
     std::chrono::milliseconds _abort_interval_ms;
     uint32_t _abort_index_segment_size;
