@@ -110,6 +110,24 @@ ss::future<model::offset> build_offset_map(
             cfg.asrc->check();
         }
         auto seg = *iter;
+        if (seg->index().has_clean_compact_timestamp()) {
+            // This segment has already been fully deduplicated, so building the
+            // offset map for it would be pointless.
+            vlog(
+              gclog.trace,
+              "segment is already cleanly compacted, no need to add it to the "
+              "offset_map: {}",
+              seg->filename());
+
+            min_segment_fully_indexed = seg->offsets().get_base_offset();
+
+            if (iter == segs.begin()) {
+                break;
+            } else {
+                --iter;
+                continue;
+            }
+        }
         vlog(gclog.trace, "Adding segment to offset map: {}", seg->filename());
 
         try {

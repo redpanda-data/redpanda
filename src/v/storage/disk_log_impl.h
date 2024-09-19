@@ -204,6 +204,11 @@ public:
         _last_compaction_window_start_offset = o;
     }
 
+    const std::optional<model::offset>&
+    get_last_compaction_window_start_offset() const {
+        return _last_compaction_window_start_offset;
+    }
+
     readers_cache& readers() { return *_readers_cache; }
 
     storage_resources& resources();

@@ -363,6 +363,92 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     ASSERT_NO_FATAL_FAILURE(check_records(cardinality, num_segments - 1).get());
 }
 
+TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
+    constexpr auto duplicates_per_key = 10;
+    constexpr auto num_segments = 25;
+    constexpr auto total_records = 100;
+    constexpr auto cardinality = total_records / duplicates_per_key; // 10
+    size_t records_per_segment = total_records / num_segments;       // 4
+    generate_data(num_segments, cardinality, records_per_segment).get();
+
+    // Compact, but with a map size that requires us to compact multiple times
+    // to compact everything.
+    ss::abort_source never_abort;
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+    storage::compaction_config cfg(
+      disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
+      ss::default_priority_class(),
+      never_abort,
+      std::nullopt,
+      cardinality - 1);
+    disk_log.sliding_window_compact(cfg).get();
+    const auto& segs = disk_log.segments();
+
+    auto segments_compacted = disk_log.get_probe().get_segments_compacted();
+
+    // After first round of compaction, we should have a value for the window
+    // start offset.
+    ASSERT_TRUE(disk_log.get_last_compaction_window_start_offset().has_value());
+
+    // Add an additional segment. This won't be considered for sliding window
+    // compaction until the first window of segments is fully compacted.
+    generate_data(1, cardinality, 1, 1, total_records).get();
+
+    // Another attempt to compact will actually rewrite segments, but not the
+    // last one.
+    disk_log.sliding_window_compact(cfg).get();
+    auto segments_compacted_2 = disk_log.get_probe().get_segments_compacted();
+    ASSERT_LT(segments_compacted, segments_compacted_2);
+
+    // segs.size() - 2 to account for active segment.
+    for (int i = 0; i < segs.size() - 2; ++i) {
+        auto& seg = segs[i];
+        ASSERT_TRUE(seg->finished_windowed_compaction());
+        ASSERT_TRUE(seg->finished_self_compaction());
+        ASSERT_TRUE(seg->index().has_clean_compact_timestamp());
+    }
+
+    // The last added segment should not have had any compaction operations
+    // performed.
+    ASSERT_FALSE(segs[segs.size() - 2]->finished_windowed_compaction());
+    ASSERT_FALSE(segs[segs.size() - 2]->finished_self_compaction());
+    ASSERT_FALSE(segs[segs.size() - 2]->index().has_clean_compact_timestamp());
+
+    // We should have compacted all the way down to the start of the log, and
+    // reset the start offset.
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
+
+    // Another round of compaction to cleanly compact the newly added segment.
+    disk_log.sliding_window_compact(cfg).get();
+
+    // Now, these values should be set.
+    ASSERT_TRUE(segs[segs.size() - 2]->finished_windowed_compaction());
+    ASSERT_TRUE(segs[segs.size() - 2]->finished_self_compaction());
+    ASSERT_TRUE(segs[segs.size() - 2]->index().has_clean_compact_timestamp());
+
+    auto segments_compacted_3 = disk_log.get_probe().get_segments_compacted();
+    ASSERT_LT(segments_compacted_2, segments_compacted_3);
+
+    // We would have fully indexed the new segment, and since the rest of the
+    // segments are already cleanly compacted, our start window should once
+    // again have been reset.
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
+
+    // But the above compaction should deduplicate any remaining keys.
+    // Subsequent compactions will be no-ops.
+    disk_log.sliding_window_compact(cfg).get();
+    auto segments_compacted_4 = disk_log.get_probe().get_segments_compacted();
+    ASSERT_EQ(segments_compacted_3, segments_compacted_4);
+
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
+
+    ASSERT_NO_FATAL_FAILURE(check_records(cardinality, num_segments - 1).get());
+}
+
 class CompactionFixtureBatchSizeParamTest
   : public CompactionFixtureTest
   , public ::testing::WithParamInterface<size_t> {};
@@ -506,7 +592,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
         model::offset end_offset = consume_to_end
                                      ? model::offset::max()
                                      : model::offset{random_generators::get_int(
-                                       start_offset(), log_end_offset())};
+                                         start_offset(), log_end_offset())};
 
         storage::log_reader_config reader_cfg{
           start_offset,
