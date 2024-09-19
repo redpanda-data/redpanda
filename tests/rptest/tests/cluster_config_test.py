@@ -2322,3 +2322,34 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         value = config[
             "enable_experimental_unrecoverable_data_corrupting_features"]
         assert int(value) == key, f"{value} != {key}"
+
+    @cluster(num_nodes=3)
+    def test_cannot_disable(self):
+        """
+        Test that once experimental is enabled, it cannot be disabled.
+        """
+        # first, enable (same as test above)
+        key = int(time.time() - 60)
+        patch_result = self.admin.patch_cluster_config(upsert=dict(
+            enable_experimental_unrecoverable_data_corrupting_features=key))
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+        config = self.admin.get_cluster_config()
+        value = config[
+            "enable_experimental_unrecoverable_data_corrupting_features"]
+        assert int(value) == key, f"{value} != {key}"
+
+        # next, try to set the key to anything
+        for key in [int(time.time() - 60), ""]:
+            try:
+                patch_result = self.admin.patch_cluster_config(upsert=dict(
+                    enable_experimental_unrecoverable_data_corrupting_features=
+                    key, ), )
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code != 400:
+                    raise
+                errors = e.response.json()
+                assert f"Experimental feature flag cannot be changed once enabled." in errors[
+                    "enable_experimental_unrecoverable_data_corrupting_features"], f"{errors}"
+            else:
+                raise RuntimeError("Expected error")
