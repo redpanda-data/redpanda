@@ -17,7 +17,7 @@
 namespace iceberg {
 
 struct field_summary {
-    bool contains_null;
+    bool contains_null{false};
     std::optional<bool> contains_nan;
     std::optional<bytes> lower_bound;
     std::optional<bytes> upper_bound;
