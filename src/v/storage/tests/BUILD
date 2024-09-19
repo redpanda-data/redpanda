@@ -1,6 +1,14 @@
 load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
+    name = "kvstore_fixture",
+    hdrs = [
+        "kvstore_fixture.h",
+    ],
+    include_prefix = "storage/tests",
+)
+
+redpanda_test_cc_library(
     name = "disk_log_builder",
     srcs = [
         "utils/disk_log_builder.cc",
@@ -127,5 +135,24 @@ redpanda_cc_gtest(
         "//src/v/storage:key_offset_map",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "kvstore_test",
+    timeout = "short",
+    srcs = [
+        "kvstore_test.cc",
+    ],
+    deps = [
+        ":kvstore_fixture",
+        "//src/v/bytes:random",
+        "//src/v/config",
+        "//src/v/random:generators",
+        "//src/v/reflection:adl",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
