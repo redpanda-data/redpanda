@@ -41,7 +41,7 @@ build --incompatible_strict_action_env
 
 # Make sure we're explicitly using the linux sandbox and not falling back to weaker
 # sandboxing.
-common --strategy=linux-sandbox --spawn_strategy=linux-sandbox
+common --spawn_strategy=linux-sandbox
 
 # =================================
 # Sanitizer
