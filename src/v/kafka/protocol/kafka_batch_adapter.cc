@@ -40,7 +40,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     if (unlikely(!v2_format)) {
         return {}; // verified  in the adapt() call
     }
-    auto crc = in.consume_be_type<int32_t>();
+    auto crc = in.consume_be_type<uint32_t>();
 
     auto attrs = model::record_batch_attributes(in.consume_be_type<int16_t>());
 
@@ -95,7 +95,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     return header;
 }
 
-void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
+void kafka_batch_adapter::verify_crc(uint32_t expected_crc, iobuf_parser in) {
     auto crc = crc::crc32c();
 
     // move the cursor to correct offset where the data to be checksummed
@@ -117,9 +117,7 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
         return ss::stop_iteration::no;
     });
 
-    // the crc is calculated over the bytes we receive as a uint32_t, but the
-    // crc arrives off the wire as a signed 32-bit value.
-    if (unlikely((uint32_t)expected_crc != crc.value())) {
+    if (unlikely(expected_crc != crc.value())) {
         valid_crc = false;
         vlog(
           klog.warn,
