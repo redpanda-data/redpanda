@@ -25,6 +25,7 @@
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -115,7 +116,7 @@ ss::future<> partition_manager::start() {
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
-  std::vector<model::broker> initial_nodes,
+  std::vector<raft::vnode> initial_nodes,
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle,
   raft::keep_snapshotted_log keep_snapshotted_log,
   std::optional<xshard_transfer_state> xst_state,
