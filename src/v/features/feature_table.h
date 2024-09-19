@@ -109,6 +109,55 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "lightweight_heartbeats",
 };
 
+// The latest_version associated with past releases. Increment this
+// on protocol changes to raft0 structures, like adding new services and on each
+// major version release.
+//
+// Although some previous stable branches have included feature version
+// bumps, this is _not_ the intended usage, as stable branches are
+// meant to be safely downgradable within the branch, and new features
+// imply that new data formats may be written.
+//
+// The enum variants values should be dense between MIN and MAX inclusive.
+enum class release_version : int64_t {
+    MIN = 3,
+    v22_1_1 = MIN,
+    v22_1_5 = 4,
+    v22_2_1 = 5,
+    v22_2_6 = 6,
+    v22_3_1 = 7,
+    v22_3_6 = 8,
+    v23_1_1 = 9,
+    v23_2_1 = 10,
+    v23_3_1 = 11,
+    v24_1_1 = 12,
+    v24_2_1 = 13,
+    v24_3_1 = 14,
+    MAX = v24_3_1, // affects the latest_version
+};
+
+constexpr cluster::cluster_version to_cluster_version(release_version rv) {
+    switch (rv) {
+    case release_version::v22_1_1:
+    case release_version::v22_1_5:
+    case release_version::v22_2_1:
+    case release_version::v22_2_6:
+    case release_version::v22_3_1:
+    case release_version::v22_3_6:
+    case release_version::v23_1_1:
+    case release_version::v23_2_1:
+    case release_version::v23_3_1:
+    case release_version::v24_1_1:
+    case release_version::v24_2_1:
+    case release_version::v24_3_1:
+        return cluster::cluster_version{static_cast<int64_t>(rv)};
+    }
+    vassert(false, "Invalid release_version");
+}
+
+bool is_major_version_upgrade(
+  cluster::cluster_version from, cluster::cluster_version to);
+
 /**
  * The definition of a feature specifies rules for when it should
  * be activated,

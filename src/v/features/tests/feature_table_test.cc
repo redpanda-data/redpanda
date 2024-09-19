@@ -357,3 +357,30 @@ SEASTAR_THREAD_TEST_CASE(feature_table_probe_expiry_metric_test) {
     BOOST_CHECK_EQUAL(ft::calculate_expiry_metric(license, expiry + 1s), 0);
     BOOST_CHECK_EQUAL(ft::calculate_expiry_metric(std::nullopt), -1);
 }
+
+SEASTAR_THREAD_TEST_CASE(is_major_version_upgrade_test) {
+    BOOST_CHECK(!is_major_version_upgrade(
+      to_cluster_version(release_version::v22_1_1),
+      to_cluster_version(release_version::v22_1_1)));
+    BOOST_CHECK(!is_major_version_upgrade(
+      to_cluster_version(release_version::v22_1_1),
+      to_cluster_version(release_version::v22_1_5)));
+    BOOST_CHECK(is_major_version_upgrade(
+      to_cluster_version(release_version::v22_1_1),
+      to_cluster_version(release_version::v22_2_1)));
+    BOOST_CHECK(is_major_version_upgrade(
+      to_cluster_version(release_version::v22_1_5),
+      to_cluster_version(release_version::v22_2_1)));
+    BOOST_CHECK(!is_major_version_upgrade(
+      to_cluster_version(release_version::v22_3_1),
+      to_cluster_version(release_version::v22_1_1)));
+    BOOST_CHECK(is_major_version_upgrade(
+      cluster::cluster_version{2},
+      to_cluster_version(release_version::v22_3_1)));
+    BOOST_CHECK(is_major_version_upgrade(
+      cluster::cluster_version{-1},
+      to_cluster_version(release_version::v22_3_1)));
+    BOOST_CHECK(is_major_version_upgrade(
+      to_cluster_version(release_version::v24_3_1),
+      cluster::cluster_version{15}));
+}
