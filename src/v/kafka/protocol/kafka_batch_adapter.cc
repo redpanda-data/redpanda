@@ -108,23 +108,28 @@ void kafka_batch_adapter::verify_crc(
     //   - 1 magic
     //   - 4 expected crc
     //
+    auto total_bytes = in.bytes_left();
     static constexpr size_t checksum_data_offset_start = 21;
     in.skip(checksum_data_offset_start);
 
     // 2. consume & checksum the CRC
-    in.consume(in.bytes_left(), [&crc](const char* src, size_t n) {
-        // NOLINTNEXTLINE
-        crc.extend(reinterpret_cast<const uint8_t*>(src), n);
-        return ss::stop_iteration::no;
-    });
+    auto consumed_bytes = in.consume(
+      in.bytes_left(), [&crc](const char* src, size_t n) {
+          // NOLINTNEXTLINE
+          crc.extend(reinterpret_cast<const uint8_t*>(src), n);
+          return ss::stop_iteration::no;
+      });
 
     if (unlikely(header.crc != crc.value())) {
         valid_crc = false;
         vlog(
           klog.warn,
-          "Cannot validate Kafka record batch {}. Mismatching CRC {}.",
+          "Cannot validate Kafka record batch {}. Mismatching CRC {}, "
+          "checksummed bytes {}, total bytes: {}",
           header,
-          crc.value());
+          crc.value(),
+          consumed_bytes,
+          total_bytes);
     } else {
         valid_crc = true;
     }
@@ -150,7 +155,8 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     auto remainder = kbatch.share(
       batch_length, kbatch.size_bytes() - batch_length);
-    kbatch.trim_back(remainder.size_bytes());
+    auto trimmed_bytes = remainder.size_bytes();
+    kbatch.trim_back(trimmed_bytes);
 
     auto crcparser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
     auto parser = iobuf_parser(std::move(kbatch));
@@ -165,6 +171,13 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     verify_crc(header, std::move(crcparser));
     if (unlikely(!valid_crc)) {
+        if (trimmed_bytes > 0) {
+            vlog(
+              klog.info,
+              "Trimmed bytes {} from batch: {}",
+              trimmed_bytes,
+              header);
+        }
         return remainder;
     }
 
