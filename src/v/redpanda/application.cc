@@ -406,7 +406,7 @@ GitHub Issues: https://github.com/redpanda-data/redpanda/issues - Report and tra
 Support: https://support.redpanda.com - Contact the support team privately
 Product Feedback: https://redpanda.com/feedback - Let us know how we can improve your experience
 Slack: https://redpanda.com/slack - Chat about all things Redpanda. Join the conversation!
-Twitter: https://twitter.com/redpandadata - All the latest Redpanda news!
+X: https://twitter.com/redpandadata - All the latest Redpanda news!
 
 )banner";
 
