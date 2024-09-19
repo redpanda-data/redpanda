@@ -186,3 +186,20 @@ redpanda_cc_btest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "concat_segment_reader_test",
+    timeout = "short",
+    srcs = [
+        "concat_segment_reader_test.cc",
+    ],
+    deps = [
+        ":disk_log_builder",
+        "//src/v/bytes:iostream",
+        "//src/v/model/tests:random",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
