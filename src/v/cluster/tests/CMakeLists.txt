@@ -128,3 +128,15 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::seastar_testing_main v::cluster
   LABELS cluster
 )
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME tx_coordinator
+  SOURCES
+    tx_topic_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES
+    v::seastar_testing_main
+    v::application
+  ARGS "-- -c 1"
+  LABELS cluster
+)
