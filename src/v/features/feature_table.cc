@@ -589,6 +589,12 @@ const std::optional<security::license>& feature_table::get_license() const {
     return _license;
 }
 
+void feature_table::testing_activate_feature(feature f) {
+    auto& feat = get_state(f);
+    feat.transition_active();
+    on_update();
+}
+
 void feature_table::testing_activate_all() {
     for (auto& s : _feature_state) {
         if (

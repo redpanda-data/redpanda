@@ -2713,15 +2713,11 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         // some of initialization that would usually wait for the controller
         // to commit some state to its log.
         vlog(_log.warn, "Running in unit test mode");
-        if (
-          feature_table.local().get_active_version()
-          == cluster::invalid_version) {
-            vlog(_log.info, "Switching on all features");
-            feature_table
-              .invoke_on_all(
-                [](features::feature_table& ft) { ft.testing_activate_all(); })
-              .get();
-        }
+        vlog(_log.info, "Switching on all features");
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& ft) { ft.testing_activate_all(); })
+          .get();
     } else {
         // Only populate migrators in non-unit-test mode
         _migrators.push_back(

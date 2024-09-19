@@ -518,6 +518,11 @@ public:
      */
     void testing_activate_all();
 
+    /**
+     * Explicitly activate the given feature.
+     */
+    void testing_activate_feature(feature f);
+
     model::offset get_applied_offset() const { return _applied_offset; }
 
     enum class version_durability : uint8_t {
