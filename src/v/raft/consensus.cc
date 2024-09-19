@@ -55,6 +55,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <iterator>
 #include <optional>
 #include <ranges>
@@ -2331,7 +2332,7 @@ consensus::read_snapshot_metadata() {
     }
     co_await snapshot_reader->close();
     if (eptr) {
-        rethrow_exception(eptr);
+        std::rethrow_exception(eptr);
     }
     co_return metadata;
 }

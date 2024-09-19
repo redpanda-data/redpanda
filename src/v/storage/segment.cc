@@ -38,6 +38,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <exception>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -361,7 +362,7 @@ ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
     return ss::remove_file(path.string())
       .handle_exception([path](const std::exception_ptr& e) {
           try {
-              rethrow_exception(e);
+              std::rethrow_exception(e);
           } catch (const std::filesystem::filesystem_error& e) {
               if (e.code() == std::errc::no_such_file_or_directory) {
                   // Do not log: ENOENT on removal is success

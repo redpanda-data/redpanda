@@ -30,6 +30,8 @@
 #include <seastar/net/api.hh>
 #include <seastar/util/later.hh>
 
+#include <exception>
+
 namespace net {
 
 server::server(server_configuration c, ss::logger& log)
@@ -113,7 +115,7 @@ void server::start() {
 bool is_gate_closed_exception(std::exception_ptr e) {
     try {
         if (e) {
-            rethrow_exception(e);
+            std::rethrow_exception(e);
         }
     } catch (const ss::gate_closed_exception&) {
         return true;
