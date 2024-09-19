@@ -156,3 +156,19 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "appender_chunk_manipulations_test",
+    timeout = "short",
+    srcs = [
+        "appender_chunk_manipulations.cc",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/random:generators",
+        "//src/v/storage:segment_appender",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
