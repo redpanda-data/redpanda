@@ -148,4 +148,58 @@
       }
     }
   }
+},
+"/v1/debug/bundle/file/{filename}": {
+  "get": {
+    "description": "Returns the generated debug bundle ZIP file",
+    "summary": "Returns the generated debug bundle ZIP file",
+    "operationId": "get_debug_bundle_file",
+    "parameters": [
+      {
+        "name": "filename",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json",
+      "application/zip"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "404": {
+        "description": "Not found",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
 }

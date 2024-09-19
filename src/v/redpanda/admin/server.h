@@ -673,6 +673,8 @@ private:
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<std::unique_ptr<ss::http::reply>> delete_debug_bundle(
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> get_debug_bundle_file(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,
