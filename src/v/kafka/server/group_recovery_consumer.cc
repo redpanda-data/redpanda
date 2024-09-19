@@ -123,7 +123,9 @@ ss::future<> group_recovery_consumer::handle_commit(
 ss::future<> group_recovery_consumer::handle_version_fence(
   features::feature_table::version_fence fence) {
     vlog(klog.trace, "recovered version fence");
-    if (fence.active_version >= cluster::cluster_version{9}) {
+    if (
+      fence.active_version
+      >= to_cluster_version(features::release_version::v23_1_1)) {
         _state.has_offset_retention_feature_fence = true;
     }
     co_return;
