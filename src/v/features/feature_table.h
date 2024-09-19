@@ -158,6 +158,91 @@ struct feature_spec {
     prepare_policy prepare_rule;
 };
 
+enum class release_version : int64_t {
+    MIN = 3,
+    v22_1_1 = MIN,
+    v22_1_5 = 4,
+    v22_2_1 = 5,
+    v22_2_6 = 6,
+    v22_3_1 = 7,
+    v22_3_6 = 8,
+    v23_1_1 = 9,
+    v23_2_1 = 10,
+    v23_3_1 = 11,
+    v24_1_1 = 12,
+    v24_2_1 = 13,
+    v24_3_1 = 14,
+    MAX = v24_3_1,
+};
+
+constexpr cluster::cluster_version to_cluster_version(release_version rv) {
+    return cluster::cluster_version{static_cast<int64_t>(rv)};
+}
+
+constexpr bool is_major_version_release(cluster::cluster_version version) {
+    if (
+      version < static_cast<int64_t>(release_version::MIN)
+      || version > static_cast<int64_t>(release_version::MAX)) {
+        // Unknown versions default to being a major version release
+        return true;
+    }
+    switch (static_cast<release_version>(version())) {
+    case release_version::v22_1_1:
+        return true;
+    case release_version::v22_1_5:
+        return false;
+    case release_version::v22_2_1:
+        return true;
+    case release_version::v22_2_6:
+        return false;
+    case release_version::v22_3_1:
+        return true;
+    case release_version::v22_3_6:
+        return false;
+    case release_version::v23_1_1:
+        return true;
+    case release_version::v23_2_1:
+    case release_version::v23_3_1:
+    case release_version::v24_1_1:
+    case release_version::v24_2_1:
+    case release_version::v24_3_1:
+        return true;
+    }
+    __builtin_unreachable();
+}
+
+constexpr bool is_major_version_upgrade(
+  cluster::cluster_version from, cluster::cluster_version to) {
+    for (cluster::cluster_version i = from + 1L; i <= to; ++i) {
+        if (is_major_version_release(i)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static_assert(!is_major_version_upgrade(
+  to_cluster_version(release_version::v22_1_1),
+  to_cluster_version(release_version::v22_1_1)));
+static_assert(!is_major_version_upgrade(
+  to_cluster_version(release_version::v22_1_1),
+  to_cluster_version(release_version::v22_1_5)));
+static_assert(is_major_version_upgrade(
+  to_cluster_version(release_version::v22_1_1),
+  to_cluster_version(release_version::v22_2_1)));
+static_assert(is_major_version_upgrade(
+  to_cluster_version(release_version::v22_1_5),
+  to_cluster_version(release_version::v22_2_1)));
+static_assert(!is_major_version_upgrade(
+  to_cluster_version(release_version::v22_3_1),
+  to_cluster_version(release_version::v22_1_1)));
+static_assert(is_major_version_upgrade(
+  cluster::cluster_version{2}, to_cluster_version(release_version::v22_3_1)));
+static_assert(is_major_version_upgrade(
+  cluster::cluster_version{-1}, to_cluster_version(release_version::v22_3_1)));
+static_assert(is_major_version_upgrade(
+  to_cluster_version(release_version::v24_3_1), cluster::cluster_version{15}));
+
 constexpr static std::array feature_schema{
   feature_spec{
     cluster::cluster_version{5},
