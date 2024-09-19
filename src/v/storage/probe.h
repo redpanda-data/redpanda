@@ -113,11 +113,16 @@ public:
      */
     void clear_metrics() { _metrics.clear(); }
 
+    void add_bytes_prefix_truncated(size_t bytes) {
+        _bytes_prefix_truncated += bytes;
+    }
+
 private:
     uint64_t _partition_bytes = 0;
     uint64_t _bytes_written = 0;
     uint64_t _bytes_read = 0;
     uint64_t _cached_bytes_read = 0;
+    uint64_t _bytes_prefix_truncated = 0;
 
     uint64_t _batches_written = 0;
     uint64_t _batches_read = 0;

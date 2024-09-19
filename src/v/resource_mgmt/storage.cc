@@ -14,10 +14,12 @@
 #include "cloud_storage/cache_service.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "storage/disk_log_impl.h"
 #include "utils/human.h"
 #include "vlog.h"
 
+#include <seastar/core/metrics_registration.hh>
 #include <seastar/util/log.hh>
 
 static ss::logger rlog("resource_mgmt");
@@ -47,7 +49,8 @@ disk_space_manager::disk_space_manager(
   , _disk_reservation_percent(std::move(disk_reservation_percent))
   , _data_disk_size(_local_monitor->local().get_state_cached().data_disk.total)
   , _target_size(0)
-  , _policy(_pm, _storage) {
+  , _policy(_pm, _storage)
+  , _probe(this) {
     update_target_size(); // initialize
     _enabled.watch([this] {
         vlog(
@@ -76,6 +79,7 @@ ss::future<> disk_space_manager::start() {
         _data_disk_nid = _storage_node->local().register_disk_notification(
           node::disk_type::data,
           [this](node::disk_space_info info) { _data_disk_info = info; });
+        _probe.setup_metrics();
     }
     co_return;
 }
@@ -507,6 +511,11 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
         co_return;
     }
 
+    _probe.set_total_usage(usage.usage.total());
+    _probe.set_retention_reclaimable(usage.reclaim.retention);
+    _probe.set_available_reclaimable(usage.reclaim.available);
+    _probe.set_local_retention_reclaimable(usage.reclaim.local_retention);
+
     /*
      * inform local monitor of latest usage/reclaim info for health report
      */
@@ -541,6 +550,8 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           human::bytes(config::shard_local_cfg().log_segment_size()),
           human::bytes(target_size));
         _previous_reclaim = false;
+        _probe.set_target_excess(0);
+        _probe.set_reclaim_estimate(0);
         co_return;
     }
     _previous_reclaim = true;
@@ -558,6 +569,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     const auto target_excess = static_cast<uint64_t>(
       real_target_excess
       * config::shard_local_cfg().retention_local_trim_overage_coeff());
+    _probe.set_target_excess(target_excess);
 
     /*
      * when log storage has exceeded the target usage, then there are some knobs
@@ -595,21 +607,30 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
         if (schedule.sched_size > 0) {
             auto estimate = _policy.evict_until_local_retention(
               schedule, target_excess);
+            _probe.set_reclaim_local(estimate);
 
             if (estimate < target_excess) {
-                estimate += _policy.evict_until_low_space_non_hinted(
+                const auto amount = _policy.evict_until_low_space_non_hinted(
                   schedule, target_excess - estimate);
+                _probe.set_reclaim_low_non_hinted(amount);
+                estimate += amount;
             }
 
             if (estimate < target_excess) {
-                estimate += _policy.evict_until_low_space_hinted(
+                const auto amount = _policy.evict_until_low_space_hinted(
                   schedule, target_excess - estimate);
+                _probe.set_reclaim_low_hinted(amount);
+                estimate += amount;
             }
 
             if (estimate < target_excess) {
-                estimate += _policy.evict_until_active_segment(
+                const auto amount = _policy.evict_until_active_segment(
                   schedule, target_excess - estimate);
+                _probe.set_reclaim_active_segment(amount);
+                estimate += amount;
             }
+
+            _probe.set_reclaim_estimate(estimate);
 
             /*
              * at this point if we haven't been able to meet the target then
@@ -641,6 +662,96 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * ask storage across all nodes to apply retention rules asap.
      */
     co_await _storage->invoke_on_all([](api& api) { api.trigger_gc(); });
+}
+
+disk_space_manager::probe::probe(disk_space_manager* sm)
+  : _sm(sm) {}
+
+void disk_space_manager::probe::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+
+    const auto group_name = prometheus_sanitize::metrics_name(
+      "space_management");
+
+    std::vector<sm::impl::metric_definition_impl> defs;
+
+    /*
+     * The currently configured target size for the data disk. When disk
+     * usage exceeds this amount then the expectation is that space
+     * management will reclaim data.
+     *
+     * If space management is disabled the metric value is 0.
+     */
+    defs.emplace_back(sm::make_gauge(
+      "target_disk_size_bytes",
+      [this]() { return _sm->enabled() ? _sm->_target_size : 0; },
+      sm::description("Target maximum number of stored bytes.")));
+
+    defs.emplace_back(sm::make_gauge(
+      "disk_usage_bytes",
+      [this]() { return _total_usage; },
+      sm::description(
+        "Total amount of disk usage under control of space management.")));
+
+    defs.emplace_back(sm::make_gauge(
+      "retention_reclaimable_bytes",
+      [this]() { return _retention_reclaimable; },
+      sm::description("Total amount of reclaimable data through standard "
+                      "retention policy (ref: retention.{ms,bytes}).")));
+
+    defs.emplace_back(sm::make_gauge(
+      "available_reclaimable_bytes",
+      [this]() { return _available_reclaimable; },
+      sm::description("Total amount of available reclaimable data by space "
+                      "management.")));
+
+    defs.emplace_back(sm::make_gauge(
+      "local_retention_reclaimable_bytes",
+      [this]() { return _local_retention_reclaimable; },
+      sm::description(
+        "Total amount of reclaimable data above the local "
+        "retention target (ref: retention.local.target.{ms,bytes}).")));
+
+    defs.emplace_back(sm::make_gauge(
+      "target_excess_bytes",
+      [this]() { return _target_excess; },
+      sm::description("Amount of data usage that exceeds target threshold.")));
+
+    defs.emplace_back(sm::make_gauge(
+      "reclaim_local_bytes",
+      [this]() { return _reclaim_local; },
+      sm::description("Estimated amount of data above local retention to be "
+                      "reclaimed by space management")));
+
+    defs.emplace_back(sm::make_gauge(
+      "reclaim_low_non_hinted_bytes",
+      [this]() { return _reclaim_low_non_hinted; },
+      sm::description("Estimated amount of data above the non-hinted low-space "
+                      "threshold to be reclaimed by space management")));
+
+    defs.emplace_back(sm::make_gauge(
+      "reclaim_low_hinted_bytes",
+      [this]() { return _reclaim_low_hinted; },
+      sm::description("Estimated amount of data above the hinted low-space "
+                      "threshold to be reclaimed by space management")));
+
+    defs.emplace_back(sm::make_gauge(
+      "reclaim_active_segment_bytes",
+      [this]() { return _reclaim_active_segment; },
+      sm::description("Estimated amount of data above the active segment to be "
+                      "reclaimed by space management")));
+
+    defs.emplace_back(sm::make_gauge(
+      "reclaim_estimate_bytes",
+      [this]() { return _reclaim_estimate; },
+      sm::description("Estimated amount of data to be reclaimed by space "
+                      "management in last schedule.")));
+
+    _metrics.add_group(group_name, std::move(defs), {}, {sm::shard_label});
 }
 
 } // namespace storage
