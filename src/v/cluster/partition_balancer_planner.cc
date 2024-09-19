@@ -1147,7 +1147,7 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
 
     // Add constraint for balanced total replica counts
     constraints.ensure_new_level();
-    constraints.add(max_final_capacity(get_allocation_domain(ntp())));
+    constraints.add(max_final_capacity());
 
     // Add constraint on least disk usage
     constraints.ensure_new_level();
@@ -1166,9 +1166,8 @@ partition_balancer_planner::reassignable_partition::move_replica(
   partition_balancer_planner::change_reason reason) {
     if (!_reallocated) {
         _reallocated = request_context::reassignment_info{
-          .partition
-          = _ctx._parent._partition_allocator.make_allocated_partition(
-            _ntp, replicas(), get_allocation_domain(_ntp)),
+          .partition = _ctx._parent._partition_allocator
+                         .make_allocated_partition(_ntp, replicas()),
           .reconfiguration_policy
           = request_context::map_change_reason_to_policy(reason)};
     }
@@ -1851,8 +1850,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
             topic_count = double(counts.at(id)) / alloc_node.max_capacity();
         }
 
-        auto total_count = double(alloc_node.domain_final_partitions(
-                             get_allocation_domain(ntp)))
+        auto total_count = double(alloc_node.final_partitions())
                            / alloc_node.max_capacity();
 
         return scores_t{topic_count, total_count};
@@ -1875,7 +1873,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
 
     // Reaches its minimum of 1.0 when replica counts (scaled by the node
     // capacity) are equal across all nodes.
-    auto calc_objective = [&](partition_allocation_domain domain) {
+    auto calc_objective = [&]() {
         double sum = 0;
         double sum_sq = 0;
         for (const auto& id : ctx.all_nodes) {
@@ -1884,7 +1882,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                 throw balancer_tick_aborted_exception{
                   fmt::format("node id: {} disappeared", id)};
             }
-            auto count = double(it->second->domain_final_partitions(domain))
+            auto count = double(it->second->final_partitions())
                          / it->second->max_capacity();
             sum += count;
             sum_sq += count * count;
@@ -1897,13 +1895,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         return ctx.all_nodes.size() * sum_sq / (sum * sum);
     };
 
-    absl::flat_hash_map<partition_allocation_domain, double>
-      domain2orig_objective;
-    for (auto domain :
-         {partition_allocation_domains::common,
-          partition_allocation_domains::consumer_offsets}) {
-        domain2orig_objective[domain] = calc_objective(domain);
-    }
+    double orig_objective = calc_objective();
 
     // The algorithm is simple: just go over all replicas and try to move them
     // to a better node (this is driven by allocation constraints). If we
@@ -1962,15 +1954,12 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
           return ss::stop_iteration::no;
       });
 
-    for (const auto& [domain, orig_objective] : domain2orig_objective) {
-        double cur_objective = calc_objective(domain);
-        vlog(
-          clusterlog.info,
-          "counts rebalancing objective in domain {}: {:.6} -> {:.6}",
-          domain,
-          orig_objective,
-          cur_objective);
-    }
+    double cur_objective = calc_objective();
+    vlog(
+      clusterlog.info,
+      "counts rebalancing objective: {:.6} -> {:.6}",
+      orig_objective,
+      cur_objective);
 
     auto all_nodes_healthy = [&] {
         // don't count rebalance as finished if not all nodes are fully

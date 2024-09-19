@@ -50,10 +50,8 @@ hard_constraint disk_not_overflowed_by_partition(
 /*
  * Scores nodes based on partition count after all moves have been finished
  * returning `0` for fully allocated nodes and `max_capacity` for empty nodes.
- * If partition_allocation_domain != common, takes into account only counts
- * in this domain.
  */
-soft_constraint max_final_capacity(partition_allocation_domain);
+soft_constraint max_final_capacity();
 
 /*
  * constraint scores nodes on free disk space

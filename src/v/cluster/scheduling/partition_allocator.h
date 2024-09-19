@@ -66,9 +66,7 @@ public:
     /// Create allocated_partition object from current replicas for use with the
     /// allocate_replica method.
     allocated_partition make_allocated_partition(
-      model::ntp ntp,
-      std::vector<model::broker_shard> replicas,
-      partition_allocation_domain) const;
+      model::ntp ntp, std::vector<model::broker_shard> replicas) const;
 
     /// try to substitute an existing replica with a newly allocated one and add
     /// it to the allocated_partition object. If the request fails,
@@ -116,21 +114,16 @@ public:
     // Partition state updates
 
     /// Best effort. Do not throw if we cannot find the replicas.
-    void add_allocations(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-    void remove_allocations(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-    void add_final_counts(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-    void remove_final_counts(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
+    void add_allocations(const std::vector<model::broker_shard>&);
+    void remove_allocations(const std::vector<model::broker_shard>&);
+    void add_final_counts(const std::vector<model::broker_shard>&);
+    void remove_final_counts(const std::vector<model::broker_shard>&);
 
     void add_allocations_for_new_partition(
       const std::vector<model::broker_shard>& replicas,
-      raft::group_id group_id,
-      partition_allocation_domain domain) {
-        add_allocations(replicas, domain);
-        add_final_counts(replicas, domain);
+      raft::group_id group_id) {
+        add_allocations(replicas);
+        add_final_counts(replicas);
         _state->update_highest_group_id(group_id);
     }
 

@@ -371,7 +371,7 @@ static allocation_request make_allocation_request(
   const custom_assignable_topic_configuration& ca_cfg, bool topic_aware) {
     // no custom assignments, lets allocator decide based on partition count
     const auto& tp_ns = ca_cfg.cfg.tp_ns;
-    allocation_request req(tp_ns, get_allocation_domain(tp_ns));
+    allocation_request req(tp_ns);
     if (!ca_cfg.has_custom_assignment()) {
         req.partitions.reserve(ca_cfg.cfg.partition_count);
         for (auto p = 0; p < ca_cfg.cfg.partition_count; ++p) {
@@ -1409,7 +1409,7 @@ static allocation_request make_allocation_request(
   const create_partitions_configuration& cfg) {
     const auto new_partitions_cnt = cfg.new_total_partition_count
                                     - current_partitions_count;
-    allocation_request req(cfg.tp_ns, get_allocation_domain(cfg.tp_ns));
+    allocation_request req(cfg.tp_ns);
     req.existing_replica_counts = std::move(existing_replica_counts);
     req.partitions.reserve(new_partitions_cnt);
     for (auto p = 0; p < new_partitions_cnt; ++p) {
@@ -1694,7 +1694,7 @@ ss::future<result<allocation_units::pointer>> do_increase_replication_factor(
   double max_disk_usage_ratio,
   const topics_frontend::capacity_info& capacity_info,
   std::optional<node2count_t> existing_replica_counts) {
-    allocation_request req(ns_tp, get_allocation_domain(ns_tp));
+    allocation_request req(ns_tp);
     req.partitions.reserve(assignments.size());
     co_await ssx::async_for_each(
       assignments.begin(),
@@ -1866,7 +1866,7 @@ allocation_request make_allocation_request(
   replication_factor tp_replication_factor,
   const std::vector<model::node_id>& new_replicas) {
     auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
-    allocation_request req(nt, get_allocation_domain(nt));
+    allocation_request req(nt);
     req.partitions.reserve(1);
     allocation_constraints constraints;
     constraints.add(on_nodes(new_replicas));

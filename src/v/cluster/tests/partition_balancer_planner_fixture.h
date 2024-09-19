@@ -112,8 +112,7 @@ public:
         cluster::topic_configuration cfg(
           test_ns, model::topic(topic), partitions, replication_factor);
 
-        cluster::allocation_request req(
-          cfg.tp_ns, cluster::partition_allocation_domains::common);
+        cluster::allocation_request req(cfg.tp_ns);
         req.partitions.reserve(partitions);
         for (auto p = 0; p < partitions; ++p) {
             req.partitions.emplace_back(

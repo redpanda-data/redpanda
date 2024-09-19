@@ -219,14 +219,13 @@ struct allocation_units {
 
 private:
     friend class partition_allocator;
-    allocation_units(allocation_state&, partition_allocation_domain);
+    allocation_units(allocation_state&);
 
 private:
     ss::chunked_fifo<partition_assignment> _assignments;
     chunked_vector<model::broker_shard> _added_replicas;
     // keep the pointer to make this type movable
     ss::weak_ptr<allocation_state> _state;
-    partition_allocation_domain _domain;
     // oncore checker to ensure destruction happens on the same core
     [[no_unique_address]] oncore _oncore;
 };
@@ -278,10 +277,7 @@ private:
 
     // construct an object from an original assignment
     allocated_partition(
-      model::ntp,
-      std::vector<model::broker_shard>,
-      partition_allocation_domain,
-      allocation_state&);
+      model::ntp, std::vector<model::broker_shard>, allocation_state&);
 
     struct previous_replica {
         model::broker_shard bs;
@@ -301,7 +297,6 @@ private:
     replicas_t _replicas;
     std::optional<absl::flat_hash_map<model::node_id, uint32_t>>
       _original_node2shard;
-    partition_allocation_domain _domain;
     ss::weak_ptr<allocation_state> _state;
     // oncore checker to ensure destruction happens on the same core
     [[no_unique_address]] oncore _oncore;
@@ -348,10 +343,8 @@ using node2count_t = absl::flat_hash_map<model::node_id, size_t>;
 
 struct allocation_request {
     allocation_request() = delete;
-    explicit allocation_request(
-      model::topic_namespace nt, const partition_allocation_domain domain_)
-      : _nt(std::move(nt))
-      , domain(domain_) {}
+    explicit allocation_request(model::topic_namespace nt)
+      : _nt(std::move(nt)) {}
     allocation_request(const allocation_request&) = delete;
     allocation_request(allocation_request&&) = default;
     allocation_request& operator=(const allocation_request&) = delete;
@@ -360,7 +353,6 @@ struct allocation_request {
 
     model::topic_namespace _nt;
     ss::chunked_fifo<partition_constraints> partitions;
-    partition_allocation_domain domain;
     // if present, new partitions will be allocated using topic-aware counts
     // objective.
     std::optional<node2count_t> existing_replica_counts;

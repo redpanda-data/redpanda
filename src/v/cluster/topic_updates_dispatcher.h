@@ -116,19 +116,16 @@ private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
     template<typename T>
-    void
-    add_allocations_for_new_partitions(const T&, partition_allocation_domain);
+    void add_allocations_for_new_partitions(const T&);
 
     void update_allocations_for_reconfiguration(
       const std::vector<model::broker_shard>& previous,
-      const std::vector<model::broker_shard>& target,
-      partition_allocation_domain);
+      const std::vector<model::broker_shard>& target);
 
     void deallocate_topic(
       const model::topic_namespace&,
       const assignments_set&,
-      const in_progress_map&,
-      partition_allocation_domain);
+      const in_progress_map&);
 
     ss::future<std::error_code>
       do_topic_delete(topic_lifecycle_transition, model::offset);

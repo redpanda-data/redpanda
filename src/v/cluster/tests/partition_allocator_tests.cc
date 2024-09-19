@@ -292,8 +292,7 @@ FIXTURE_TEST(recovery_test, partition_allocator_fixture) {
     };
     // 100 topics with 12 partitions each replicated on 3 nodes each
     auto replicas = create_replicas(100, 12);
-    allocator().add_allocations(
-      replicas, cluster::partition_allocation_domains::common);
+    allocator().add_allocations(replicas);
     // each node in the cluster holds one replica for each partition,
     // so it has to have topics * partitions shards allocated
     cluster::allocation_node::allocation_capacity allocated_shards{100 * 12};
@@ -425,9 +424,7 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
                 capacity--;
                 for (auto& as : res.value()->get_assignments()) {
                     allocator().add_allocations_for_new_partition(
-                      as.replicas,
-                      as.group,
-                      cluster::partition_allocation_domains::common);
+                      as.replicas, as.group);
                 }
             }
 
@@ -450,9 +447,7 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
         if (res) {
             for (auto& as : res.value()->get_assignments()) {
                 allocator().add_allocations_for_new_partition(
-                  as.replicas,
-                  as.group,
-                  cluster::partition_allocation_domains::common);
+                  as.replicas, as.group);
             }
         }
     }
@@ -482,8 +477,7 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
     const auto& orig_assignments = res.value()->get_assignments();
 
     auto make_reallocate_req = [&] {
-        cluster::allocation_request req(
-          tn, cluster::partition_allocation_domains::common);
+        cluster::allocation_request req(tn);
         for (const auto& assignment : orig_assignments) {
             req.partitions.push_back(
               cluster::partition_constraints(assignment, 3));
@@ -584,82 +578,13 @@ FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
     BOOST_REQUIRE(racks.contains("rack-b"));
 }
 
-FIXTURE_TEST(even_distribution_pri_allocation, partition_allocator_fixture) {
-    // allocate some regular partitions in the cluster but leave space
-    register_node(0, 2);
-    register_node(1, 2);
-    register_node(2, 2);
-    auto req_reg = make_allocation_request(max_capacity() / 4, 3);
-    auto units_reg = allocator().allocate(std::move(req_reg)).get().value();
-    // add empty nodes
-    register_node(3, 2);
-    register_node(4, 2);
-
-    // do several rounds of priority allocation
-    std::list<cluster::allocation_units::pointer> units;
-    for (int i = 0; i != 21; ++i) {
-        auto req = make_allocation_request(11 + i * 3, 1);
-        // there is only one priority allocation domain yet
-        static constexpr auto prio_domain
-          = cluster::partition_allocation_domains::consumer_offsets;
-        req.domain = prio_domain;
-        units.push_back(
-          std::move(allocator().allocate(std::move(req)).get().value()));
-
-        // invariant: number of partitions allocated in the priority domain
-        // across all nodes must be even, i.e. must not vary by more than one
-        // partition
-        const auto priority_part_capacity_minmax = std::minmax_element(
-          allocator().state().allocation_nodes().cbegin(),
-          allocator().state().allocation_nodes().cend(),
-          [](const auto& lhs, const auto& rhs) {
-              return lhs.second->domain_partition_capacity(prio_domain)
-                     < rhs.second->domain_partition_capacity(prio_domain);
-          });
-        BOOST_CHECK_LE(
-          priority_part_capacity_minmax.second->second
-              ->domain_partition_capacity(prio_domain)
-            - priority_part_capacity_minmax.first->second
-                ->domain_partition_capacity(prio_domain),
-          cluster::allocation_node::allocation_capacity(1));
-
-        // invariant: sum(max_capacity()-domain_partition_capacity(d)) for d in
-        // all_domains == max_capacity()-partition_capacity()
-        // as long as node is not overallocated
-        BOOST_CHECK(std::all_of(
-          allocator().state().allocation_nodes().cbegin(),
-          allocator().state().allocation_nodes().cend(),
-          [](const auto& allocation_nodes_v) {
-              const cluster::allocation_node& n = *allocation_nodes_v.second;
-              return n.domain_partition_capacity(
-                       cluster::partition_allocation_domains::consumer_offsets)
-                       + n.domain_partition_capacity(
-                         cluster::partition_allocation_domains::common)
-                       - n.max_capacity()
-                     == n.partition_capacity();
-          }));
-
-        // occassionaly deallocate prior allocations
-        if (i % 2 == 0) {
-            units.pop_front();
-            // after deallocation, partitions in the priority domain are not
-            // necessarily allocated evenly any more. However the next iteration
-            // of the test would fill the irregularities because there will be
-            // more partitions allocated (re: i*3) than what has been
-            // deallocated
-        }
-    }
-}
-
 void check_allocated_counts(
   const cluster::partition_allocator& allocator,
-  const std::vector<size_t>& expected,
-  cluster::partition_allocation_domain domain
-  = cluster::partition_allocation_domains::common) {
+  const std::vector<size_t>& expected) {
     std::vector<size_t> counts;
     for (const auto& [id, node] : allocator.state().allocation_nodes()) {
         BOOST_REQUIRE(id() == counts.size());
-        counts.push_back(node->domain_allocated_partitions(domain));
+        counts.push_back(node->allocated_partitions());
     }
     logger.debug("allocated counts: {}, expected: {}", counts, expected);
     BOOST_CHECK_EQUAL(counts, expected);
@@ -667,13 +592,11 @@ void check_allocated_counts(
 
 void check_final_counts(
   const cluster::partition_allocator& allocator,
-  const std::vector<size_t>& expected,
-  cluster::partition_allocation_domain domain
-  = cluster::partition_allocation_domains::common) {
+  const std::vector<size_t>& expected) {
     std::vector<size_t> counts;
     for (const auto& [id, node] : allocator.state().allocation_nodes()) {
         BOOST_REQUIRE(id() == counts.size());
-        counts.push_back(node->domain_final_partitions(domain));
+        counts.push_back(node->final_partitions());
     }
     logger.debug("final counts: {}, expected: {}", counts, expected);
     BOOST_CHECK_EQUAL(counts, expected);
@@ -696,7 +619,6 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
     register_node(2, 1);
 
     // allocate a partition with 3 replicas on 3 nodes
-    auto domain = cluster::partition_allocation_domains::common;
     auto req = make_allocation_request(1, 3);
     auto res = allocator().allocate(std::move(req)).get();
     auto original_replicas = res.value()->get_assignments().front().replicas;
@@ -712,7 +634,7 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         auto ntp = model::ntp{tn.ns, tn.tp, partition_id};
         cluster::allocated_partition reallocated
           = allocator().make_allocated_partition(
-            std::move(ntp), original_replicas, domain);
+            std::move(ntp), original_replicas);
 
         cluster::allocation_constraints not_on_old_nodes;
         not_on_old_nodes.add(cluster::distinct_from(original_replicas));
@@ -923,10 +845,7 @@ FIXTURE_TEST(
     auto id = partition_2->get_assignments().front().id;
     auto ntp = model::ntp{tn.ns, tn.tp, id};
     cluster::allocated_partition reallocated
-      = allocator().make_allocated_partition(
-        std::move(ntp),
-        original_replicas,
-        cluster::partition_allocation_domains::common);
+      = allocator().make_allocated_partition(std::move(ntp), original_replicas);
 
     auto moved = allocator().reallocate_replica(
       reallocated, model::node_id{0}, not_on_0);
@@ -1008,7 +927,6 @@ FIXTURE_TEST(revert_allocation_step, partition_allocator_fixture) {
     register_node(2, 1);
 
     // allocate a partition with 3 replicas on 3 nodes
-    auto domain = cluster::partition_allocation_domains::common;
     auto req = make_allocation_request(1, 3);
     auto res = allocator().allocate(std::move(req)).get();
     auto original_replicas = res.value()->get_assignments().front().replicas;
@@ -1024,7 +942,7 @@ FIXTURE_TEST(revert_allocation_step, partition_allocator_fixture) {
         auto ntp = model::ntp{tn.ns, tn.tp, partition_id};
         cluster::allocated_partition reallocated
           = allocator().make_allocated_partition(
-            std::move(ntp), original_replicas, domain);
+            std::move(ntp), original_replicas);
         auto step1 = allocator().reallocate_replica(
           reallocated, n(0), on_node(n(3)));
         BOOST_REQUIRE(step1);

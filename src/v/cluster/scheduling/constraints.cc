@@ -234,18 +234,13 @@ hard_constraint disk_not_overflowed_by_partition(
       max_disk_usage_ratio, partition_size, node_disk_reports));
 }
 
-soft_constraint max_final_capacity(partition_allocation_domain domain) {
+soft_constraint max_final_capacity() {
     struct impl : soft_constraint::impl {
-        explicit impl(partition_allocation_domain domain_)
-          : domain(domain_) {}
-
         soft_constraint_evaluator make_evaluator(
           const allocated_partition&,
           std::optional<model::node_id> prev) const final {
-            return [domain = domain, prev](const allocation_node& node) {
-                auto count = domain == partition_allocation_domains::common
-                               ? node.final_partitions()
-                               : node.domain_final_partitions(domain);
+            return [prev](const allocation_node& node) {
+                auto count = node.final_partitions();
                 if (prev != node.id()) {
                     count += 1;
                 }
@@ -260,11 +255,9 @@ soft_constraint max_final_capacity(partition_allocation_domain domain) {
         }
 
         ss::sstring name() const final { return "max final capacity"; }
-
-        partition_allocation_domain domain;
     };
 
-    return soft_constraint(std::make_unique<impl>(domain));
+    return soft_constraint(std::make_unique<impl>());
 }
 
 soft_constraint least_disk_filled(

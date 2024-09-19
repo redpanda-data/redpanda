@@ -159,12 +159,10 @@ bool allocation_state::node_local_core_assignment_enabled() const {
       features::feature::node_local_core_assignment);
 }
 
-void allocation_state::add_allocation(
-  const model::broker_shard& replica,
-  const partition_allocation_domain domain) {
+void allocation_state::add_allocation(const model::broker_shard& replica) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->add_allocation(domain);
+        it->second->add_allocation();
         if (!node_local_core_assignment_enabled()) {
             it->second->add_allocation(replica.shard);
         }
@@ -177,12 +175,10 @@ void allocation_state::add_allocation(
     }
 }
 
-void allocation_state::remove_allocation(
-  const model::broker_shard& replica,
-  const partition_allocation_domain domain) {
+void allocation_state::remove_allocation(const model::broker_shard& replica) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->remove_allocation(domain);
+        it->second->remove_allocation();
         if (!node_local_core_assignment_enabled()) {
             it->second->remove_allocation(replica.shard);
         }
@@ -195,15 +191,14 @@ void allocation_state::remove_allocation(
     }
 }
 
-uint32_t allocation_state::allocate(
-  model::node_id id, const partition_allocation_domain domain) {
+uint32_t allocation_state::allocate(model::node_id id) {
     verify_shard();
     auto it = _nodes.find(id);
     vassert(
       it != _nodes.end(), "allocated node with id {} have to be present", id);
 
-    it->second->add_allocation(domain);
-    it->second->add_final_count(domain);
+    it->second->add_allocation();
+    it->second->add_final_count();
     if (node_local_core_assignment_enabled()) {
 #ifndef NDEBUG
         // return invalid shard in debug mode so that we can spot places where
@@ -217,21 +212,17 @@ uint32_t allocation_state::allocate(
     }
 }
 
-void allocation_state::add_final_count(
-  const model::broker_shard& replica,
-  const partition_allocation_domain domain) {
+void allocation_state::add_final_count(const model::broker_shard& replica) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->add_final_count(domain);
+        it->second->add_final_count();
     }
 }
 
-void allocation_state::remove_final_count(
-  const model::broker_shard& replica,
-  const partition_allocation_domain domain) {
+void allocation_state::remove_final_count(const model::broker_shard& replica) {
     verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->remove_final_count(domain);
+        it->second->remove_final_count();
     }
 }
 

@@ -181,14 +181,6 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
     }
 }
 
-partition_allocation_domain
-get_allocation_domain(const model::topic_namespace_view tp_ns) {
-    if (tp_ns == model::kafka_consumer_offsets_nt) {
-        return partition_allocation_domains::consumer_offsets;
-    }
-    return partition_allocation_domains::common;
-}
-
 std::optional<model::revision_id> log_revision_on_node(
   const topic_table::partition_replicas_view& replicas_view,
   model::node_id node) {

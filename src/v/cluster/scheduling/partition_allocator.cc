@@ -284,7 +284,7 @@ partition_allocator::allocate(allocation_request request) {
               min_count_in_map("min topic-wise count", *node2count));
         }
         effective_constraints.ensure_new_level();
-        effective_constraints.add(max_final_capacity(request.domain));
+        effective_constraints.add(max_final_capacity());
         effective_constraints.add(p_constraints.constraints);
 
         auto ntp = model::ntp(nt.ns, nt.tp, p_constraints.partition_id);
@@ -299,7 +299,6 @@ partition_allocator::allocate(allocation_request request) {
           .partition = allocated_partition(
             std::move(ntp),
             std::move(p_constraints.existing_replicas),
-            request.domain,
             *_state),
           .constraints = std::move(effective_constraints),
           .replication_factor = p_constraints.replication_factor,
@@ -346,7 +345,7 @@ partition_allocator::allocate(allocation_request request) {
         co_await ss::coroutine::maybe_yield();
     }
 
-    allocation_units units(*_state, request.domain);
+    allocation_units units(*_state);
     units._assignments.reserve(allocations.size());
     co_await ssx::async_for_each(
       allocations.begin(), allocations.end(), [&](allocation_info& p) {
@@ -375,9 +374,8 @@ result<allocated_partition> partition_allocator::reallocate_partition(
       current_replicas,
       replicas_to_reallocate);
 
-    auto domain = get_allocation_domain(ntp);
     allocated_partition res{
-      std::move(ntp), std::move(current_replicas), domain, *_state};
+      std::move(ntp), std::move(current_replicas), *_state};
 
     if (replicas_to_reallocate.empty()) {
         // nothing to do
@@ -396,7 +394,7 @@ result<allocated_partition> partition_allocator::reallocate_partition(
           min_count_in_map("min topic-wise count", *node2count));
     }
     effective_constraints.ensure_new_level();
-    effective_constraints.add(max_final_capacity(res._domain));
+    effective_constraints.add(max_final_capacity());
     effective_constraints.add(std::move(constraints));
 
     for (model::node_id prev : replicas_to_reallocate) {
@@ -423,11 +421,8 @@ result<allocated_partition> partition_allocator::reallocate_partition(
 }
 
 allocated_partition partition_allocator::make_allocated_partition(
-  model::ntp ntp,
-  std::vector<model::broker_shard> replicas,
-  partition_allocation_domain domain) const {
-    return allocated_partition{
-      std::move(ntp), std::move(replicas), domain, *_state};
+  model::ntp ntp, std::vector<model::broker_shard> replicas) const {
+    return allocated_partition{std::move(ntp), std::move(replicas), *_state};
 }
 
 result<reallocation_step> partition_allocator::reallocate_replica(
@@ -475,34 +470,30 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
 }
 
 void partition_allocator::add_allocations(
-  const std::vector<model::broker_shard>& to_add,
-  const partition_allocation_domain domain) {
+  const std::vector<model::broker_shard>& to_add) {
     for (const auto& bs : to_add) {
-        _state->add_allocation(bs, domain);
+        _state->add_allocation(bs);
     }
 }
 
 void partition_allocator::remove_allocations(
-  const std::vector<model::broker_shard>& to_remove,
-  const partition_allocation_domain domain) {
+  const std::vector<model::broker_shard>& to_remove) {
     for (const auto& bs : to_remove) {
-        _state->remove_allocation(bs, domain);
+        _state->remove_allocation(bs);
     }
 }
 
 void partition_allocator::add_final_counts(
-  const std::vector<model::broker_shard>& to_add,
-  const partition_allocation_domain domain) {
+  const std::vector<model::broker_shard>& to_add) {
     for (const auto& bs : to_add) {
-        _state->add_final_count(bs, domain);
+        _state->add_final_count(bs);
     }
 }
 
 void partition_allocator::remove_final_counts(
-  const std::vector<model::broker_shard>& to_remove,
-  const partition_allocation_domain domain) {
+  const std::vector<model::broker_shard>& to_remove) {
     for (const auto& bs : to_remove) {
-        _state->remove_final_count(bs, domain);
+        _state->remove_final_count(bs);
     }
 }
 
@@ -536,10 +527,9 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
 
     const auto& topics_snap = snap.topics.topics;
     for (const auto& [ns_tp, topic] : topics_snap) {
-        auto domain = get_allocation_domain(ns_tp);
         for (const auto& [p_id, partition] : topic.partitions) {
             for (const auto& bs : partition.replicas) {
-                new_state->add_allocation(bs, domain);
+                new_state->add_allocation(bs);
             }
 
             const std::vector<model::broker_shard>* final_replicas = nullptr;
@@ -551,7 +541,7 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
                 auto additional_replicas = subtract(
                   update.target_assignment, partition.replicas);
                 for (const auto& bs : additional_replicas) {
-                    new_state->add_allocation(bs, domain);
+                    new_state->add_allocation(bs);
                 }
 
                 // final counts depend on the update state
@@ -565,7 +555,7 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
             }
 
             for (const auto& bs : *final_replicas) {
-                new_state->add_final_count(bs, domain);
+                new_state->add_final_count(bs);
             }
 
             co_await ss::coroutine::maybe_yield();

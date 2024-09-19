@@ -55,13 +55,11 @@ PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
             replicas = units->get_assignments().front().replicas;
             allocator().add_allocations_for_new_partition(
               units->get_assignments().front().replicas,
-              units->get_assignments().front().group,
-              cluster::partition_allocation_domains::common);
+              units->get_assignments().front().group);
         }
         perf_tests::do_not_optimize(replicas);
         perf_tests::start_measuring_time();
-        allocator().remove_allocations(
-          replicas, cluster::partition_allocation_domains::common);
+        allocator().remove_allocations(replicas);
         perf_tests::stop_measuring_time();
     });
 }
@@ -85,8 +83,6 @@ PERF_TEST_F(partition_allocator_fixture, recovery) {
 
     perf_tests::start_measuring_time();
     allocator().add_allocations_for_new_partition(
-      replicas,
-      raft::group_id(replicas.size() / 3),
-      cluster::partition_allocation_domains::common);
+      replicas, raft::group_id(replicas.size() / 3));
     perf_tests::stop_measuring_time();
 }

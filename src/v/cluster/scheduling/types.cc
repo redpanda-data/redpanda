@@ -41,10 +41,8 @@ void allocation_constraints::add(allocation_constraints other) {
       std::back_inserter(soft_constraints));
 }
 
-allocation_units::allocation_units(
-  allocation_state& state, const partition_allocation_domain domain)
-  : _state(state.weak_from_this())
-  , _domain(domain) {}
+allocation_units::allocation_units(allocation_state& state)
+  : _state(state.weak_from_this()) {}
 
 allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
@@ -52,19 +50,17 @@ allocation_units::~allocation_units() {
         return;
     }
     for (const auto& replica : _added_replicas) {
-        _state->remove_allocation(replica, _domain);
-        _state->remove_final_count(replica, _domain);
+        _state->remove_allocation(replica);
+        _state->remove_final_count(replica);
     }
 }
 
 allocated_partition::allocated_partition(
   model::ntp ntp,
   std::vector<model::broker_shard> replicas,
-  partition_allocation_domain domain,
   allocation_state& state)
   : _ntp(std::move(ntp))
   , _replicas(std::move(replicas))
-  , _domain(domain)
   , _state(state.weak_from_this()) {}
 
 std::optional<allocated_partition::previous_replica>
@@ -98,9 +94,9 @@ model::broker_shard allocated_partition::add_replica(
 
     if (prev) {
         if (!_original_node2shard->contains(prev->bs.node_id)) {
-            _state->remove_allocation(prev->bs, _domain);
+            _state->remove_allocation(prev->bs);
         }
-        _state->remove_final_count(prev->bs, _domain);
+        _state->remove_final_count(prev->bs);
     }
 
     model::broker_shard replica{.node_id = node};
@@ -108,10 +104,10 @@ model::broker_shard allocated_partition::add_replica(
         it != _original_node2shard->end()) {
         // this is an original replica, preserve the shard
         replica.shard = it->second;
-        _state->add_final_count(replica, _domain);
+        _state->add_final_count(replica);
     } else {
         // the replica is new, choose the shard and add allocation
-        replica.shard = _state->allocate(node, _domain);
+        replica.shard = _state->allocate(node);
     }
 
     if (prev) {
@@ -190,15 +186,15 @@ errc allocated_partition::try_revert(const reallocation_step& step) {
         _replicas.pop_back();
     }
 
-    _state->remove_final_count(step.current(), _domain);
+    _state->remove_final_count(step.current());
     if (!_original_node2shard->contains(step.current().node_id)) {
-        _state->remove_allocation(step.current(), _domain);
+        _state->remove_allocation(step.current());
     }
 
     if (step.previous()) {
-        _state->add_final_count(*step.previous(), _domain);
+        _state->add_final_count(*step.previous());
         if (!_original_node2shard->contains(step.previous()->node_id)) {
-            _state->add_allocation(*step.previous(), _domain);
+            _state->add_allocation(*step.previous());
         }
     }
 
@@ -217,8 +213,8 @@ allocated_partition::~allocated_partition() {
         auto orig_it = _original_node2shard->find(bs.node_id);
         if (orig_it == _original_node2shard->end()) {
             // new replica
-            _state->remove_allocation(bs, _domain);
-            _state->remove_final_count(bs, _domain);
+            _state->remove_allocation(bs);
+            _state->remove_final_count(bs);
         } else {
             // original replica that didn't change, erase from the map in
             // preparation for the loop below
@@ -228,7 +224,7 @@ allocated_partition::~allocated_partition() {
 
     for (const auto& kv : *_original_node2shard) {
         model::broker_shard bs{kv.first, kv.second};
-        _state->add_final_count(bs, _domain);
+        _state->add_final_count(bs);
     }
 }
 
@@ -245,8 +241,7 @@ std::ostream& operator<<(std::ostream& o, const partition_constraints& pc) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const allocation_request& req) {
-    fmt::print(
-      o, "{{partion_constraints: {}, domain: {}}}", req.partitions, req.domain);
+    fmt::print(o, "{{partion_constraints: {}}}", req.partitions);
     return o;
 }
 } // namespace cluster
