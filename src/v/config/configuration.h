@@ -47,6 +47,51 @@ namespace config {
 /// All application modules depend on configuration. The configuration module
 /// can not depend on any other module to prevent cyclic dependencies.
 
+struct configuration;
+
+/*
+ * A configuration property wrapper that fails validation unless experimental
+ * property support has already been enabled.
+ *
+ * Note that our configuration system does not understand dependencies between
+ * configuration options. So if experimental feature support were enabled within
+ * the same request that tried to modify an experimental feature property it may
+ * fail depending on which order updates were applied to the config store.
+ *
+ * The simplest way to circumvent this is to enable support in one request,
+ * and then proceed to interact with experiemntal feature properties.
+ */
+template<typename T>
+class experimental_feature_property : public property<T> {
+public:
+    experimental_feature_property(
+      configuration& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta,
+      T def,
+      property<T>::validator validator = property<T>::noop_validator)
+      : property<T>(
+          conf,
+          name,
+          desc,
+          meta,
+          def,
+          [&conf, validator = std::move(validator)](
+            const auto& v) -> std::optional<ss::sstring> {
+              if (experimental_features_enabled(conf)) {
+                  // delegate to the underlying property's validator
+                  return validator(v);
+              }
+              return "Experimental feature support is not enabled.";
+          })
+
+    {}
+
+private:
+    static bool experimental_features_enabled(const configuration&);
+};
+
 struct configuration final : public config_store {
     constexpr static auto target_produce_quota_byte_rate_default
       = 0; // disabled
@@ -628,10 +673,17 @@ struct configuration final : public config_store {
 
     error_map_t load(const YAML::Node& root_node);
 
+public:
+    experimental_feature_property<int>
+      experimental_feature_property_testing_only;
+
 private:
     // to query if experimental features are enabled in order to log a nag. it
     // does not use the query to control any experimental feature.
     friend class ::monitor_unsafe;
+
+    template<typename T>
+    friend class experimental_feature_property;
 
     /*
      * This configuration property shouldn't be queried directly. Rather, it is
@@ -645,6 +697,12 @@ private:
                   .empty();
     }
 };
+
+template<typename T>
+bool experimental_feature_property<T>::experimental_features_enabled(
+  const configuration& conf) {
+    return conf.experimental_features_enabled();
+}
 
 configuration& shard_local_cfg();
 

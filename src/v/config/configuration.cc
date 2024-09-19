@@ -3353,6 +3353,12 @@ configuration::configuration()
        tls_version::v1_1,
        tls_version::v1_2,
        tls_version::v1_3})
+  , experimental_feature_property_testing_only(
+      *this,
+      "experimental_feature_property_testing_only",
+      "Experimental feature property for testing only.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , enable_experimental_unrecoverable_data_corrupting_features(
       *this,
       "enable_experimental_unrecoverable_data_corrupting_features",
