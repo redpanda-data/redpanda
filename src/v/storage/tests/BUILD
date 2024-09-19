@@ -172,3 +172,17 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "backlog_controller_test",
+    timeout = "short",
+    srcs = [
+        "backlog_controller_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+    ],
+)
