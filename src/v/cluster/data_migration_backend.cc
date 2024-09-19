@@ -849,13 +849,16 @@ ss::future<> backend::handle_migration_update(id id) {
     auto units = co_await _mutex.get_units(_as);
     vlog(dm_log.debug, "lock acquired for data migration {} notification", id);
 
-    bool need_wakeup = false;
-
     auto new_maybe_metadata = _table.get_migration(id);
     auto new_state = new_maybe_metadata ? std::make_optional<state>(
                                             new_maybe_metadata->get().state)
                                         : std::nullopt;
     vlog(dm_log.debug, "migration {} new state is {}", id, new_state);
+
+    work_scope new_scope;
+    if (new_maybe_metadata) {
+        new_scope = get_work_scope(new_maybe_metadata->get());
+    }
 
     // forget about the migration if it went forward or is gone
     auto old_it = std::as_const(_migration_states).find(id);
@@ -867,8 +870,9 @@ ss::future<> backend::handle_migration_update(id id) {
           id,
           old_mrstate.scope.sought_state);
         vassert(
-          !new_maybe_metadata || new_state >= old_mrstate.scope.sought_state,
-          "migration state went from seeking {} back to {}",
+          !new_scope.sought_state
+            || new_scope.sought_state >= old_mrstate.scope.sought_state,
+          "migration state went from seeking {} back seeking to seeking {}",
           old_mrstate.scope.sought_state,
           new_state);
         vlog(dm_log.debug, "dropping migration {} reconciliation state", id);
@@ -881,24 +885,19 @@ ss::future<> backend::handle_migration_update(id id) {
         }
     }
     // create new state if needed
-    if (new_maybe_metadata) {
-        const auto& new_metadata = new_maybe_metadata->get();
-        auto scope = get_work_scope(new_metadata);
-        if (scope.sought_state.has_value()) {
-            vlog(
-              dm_log.debug, "creating migration {} reconciliation state", id);
-            auto new_it = _migration_states.emplace_hint(old_it, id, scope);
-            if (scope.topic_work_needed || scope.partition_work_needed) {
-                co_await reconcile_migration(new_it->second, new_metadata);
-            } else {
-                // yes it is done as there is nothing to do
-                to_advance_if_done(new_it);
-            }
-            need_wakeup = true;
+    if (new_scope.sought_state) {
+        vlog(dm_log.debug, "creating migration {} reconciliation state", id);
+        auto new_it = _migration_states.emplace_hint(old_it, id, new_scope);
+        if (new_scope.topic_work_needed || new_scope.partition_work_needed) {
+            co_await reconcile_migration(
+              new_it->second, new_maybe_metadata->get());
+        } else {
+            // yes it is done as there is nothing to do
+            to_advance_if_done(new_it);
         }
     }
 
-    if (_is_coordinator && need_wakeup) {
+    if (new_scope.sought_state && _is_coordinator) {
         wakeup();
     }
 }
