@@ -2306,3 +2306,19 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
                 "enable_experimental_unrecoverable_data_corrupting_features"], f"{errors}"
         else:
             raise RuntimeError("Expected error")
+
+    @cluster(num_nodes=3)
+    def test_accept_valid_enable_key(self):
+        """
+        Test that a valid key enables experimental feature property.
+        """
+        # key must be within 1 hour
+        key = int(time.time() - 60)
+        patch_result = self.admin.patch_cluster_config(upsert=dict(
+            enable_experimental_unrecoverable_data_corrupting_features=key))
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+        config = self.admin.get_cluster_config()
+        value = config[
+            "enable_experimental_unrecoverable_data_corrupting_features"]
+        assert int(value) == key, f"{value} != {key}"
