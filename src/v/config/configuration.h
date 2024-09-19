@@ -625,6 +625,19 @@ struct configuration final : public config_store {
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
+
+private:
+    /*
+     * This configuration property shouldn't be queried directly. Rather, it is
+     * used to enable the use of other feature-specific experimental properties.
+     */
+    property<ss::sstring>
+      enable_experimental_unrecoverable_data_corrupting_features;
+
+    bool experimental_features_enabled() const {
+        return !enable_experimental_unrecoverable_data_corrupting_features()
+                  .empty();
+    }
 };
 
 configuration& shard_local_cfg();
