@@ -38,6 +38,8 @@
 #include <chrono>
 #include <vector>
 
+class monitor_unsafe;
+
 namespace config {
 
 /// Redpanda configuration
@@ -627,6 +629,10 @@ struct configuration final : public config_store {
     error_map_t load(const YAML::Node& root_node);
 
 private:
+    // to query if experimental features are enabled in order to log a nag. it
+    // does not use the query to control any experimental feature.
+    friend class ::monitor_unsafe;
+
     /*
      * This configuration property shouldn't be queried directly. Rather, it is
      * used to enable the use of other feature-specific experimental properties.

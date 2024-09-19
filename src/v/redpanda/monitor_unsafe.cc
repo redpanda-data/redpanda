@@ -63,6 +63,17 @@ void monitor_unsafe::invoke_unsafe_log_update(
     }
 }
 
+void monitor_unsafe::log_experimental_feature_warning() {
+    if (!config::shard_local_cfg().experimental_features_enabled()) {
+        return;
+    }
+
+    vlog(
+      clusterlog.warn,
+      "WARNING: experimental features have been enabled which may result in "
+      "instability, unrecoverable data loss, or the inability to upgrade.");
+}
+
 ss::future<> monitor_unsafe::maybe_log_unsafe_nag() {
     auto nag_check_retry
       = config::shard_local_cfg().legacy_unsafe_log_warning_interval_sec();
@@ -77,6 +88,8 @@ ss::future<> monitor_unsafe::maybe_log_unsafe_nag() {
           "rejected.  Try disabling 'legacy_permit_unsafe_log_operation'.  If "
           "you need assistance, please contact Redpanda support");
     }
+
+    log_experimental_feature_warning();
 
     try {
         co_await ss::sleep_abortable(nag_check_retry, _as);
