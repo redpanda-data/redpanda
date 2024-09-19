@@ -50,7 +50,7 @@ Tinygo - By default tinygo are release builds (-opt=2) for maximum performance.
 		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, extraArgs []string) {
 			cfg, err := project.LoadCfg(fs)
-			out.MaybeDie(err, "unable to find the transform, are you in the same directory as the %q?", project.ConfigFileName)
+			out.MaybeDie(err, "unable to load configuration file %q: %v", project.ConfigFileName, err)
 			switch cfg.Language {
 			case project.WasmLangTinygoWithGoroutines:
 				fallthrough
