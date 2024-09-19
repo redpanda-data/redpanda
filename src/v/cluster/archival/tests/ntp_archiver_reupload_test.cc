@@ -125,7 +125,8 @@ struct reupload_fixture : public archiver_fixture {
                            seg.term,
                            ss::default_priority_class(),
                            128_KiB,
-                           10)
+                           10,
+                           1_MiB)
                          .get0();
         write_random_batches(segment, seg.num_records.value(), 2);
         disk_log_impl()->segments().add(segment);

@@ -229,20 +229,6 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
     return def;
 }
 
-uint64_t segment_size_from_config(const ntp_config& ntpc) {
-    auto def = config::shard_local_cfg().log_segment_size();
-
-    if (!ntpc.has_overrides()) {
-        return def;
-    }
-    auto& o = ntpc.get_overrides();
-    if (o.segment_size) {
-        return o.segment_size.value();
-    } else {
-        return def;
-    }
-}
-
 ss::future<roaring::Roaring>
 natural_index_of_entries_to_keep(compacted_index_reader reader) {
     reader.reset();
