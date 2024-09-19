@@ -221,7 +221,8 @@ public:
     ss::future<ss::circular_buffer<model::record_batch>>
     read_batches_in_range(model::offset min, model::offset max);
 
-    ss::future<model::offset> random_batch_base_offset(model::offset max);
+    ss::future<model::offset> random_batch_base_offset(
+      model::offset max, std::optional<model::offset> min = std::nullopt);
 
     /// \brief Sets a callback function to be invoked when the leader dispatches
     /// a message to followers.
