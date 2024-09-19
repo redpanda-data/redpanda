@@ -6,6 +6,8 @@ redpanda_cc_gtest(
     srcs = [
         "leb128_test.cc",
     ],
+    cpu = 1,
+    memory = "64MiB",
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
@@ -23,6 +25,8 @@ redpanda_cc_gtest(
     srcs = [
         "parser_test.cc",
     ],
+    cpu = 1,
+    memory = "128MiB",
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

@@ -19,6 +19,8 @@ redpanda_cc_gtest(
     name = "model_test",
     timeout = "short",
     srcs = ["model_test.cc"],
+    cpu = 1,
+    memory = "128MiB",
     deps = [
         ":utils",
         "//src/v/json",
@@ -32,6 +34,8 @@ redpanda_cc_gtest(
     name = "record_batcher_test",
     timeout = "short",
     srcs = ["record_batcher_test.cc"],
+    cpu = 1,
+    memory = "128MiB",
     deps = [
         ":utils",
         "//src/v/base",
@@ -45,6 +49,8 @@ redpanda_cc_gtest(
     name = "log_manager_test",
     timeout = "short",
     srcs = ["log_manager_test.cc"],
+    cpu = 1,
+    memory = "128MiB",
     deps = [
         ":utils",
         "//src/v/base",

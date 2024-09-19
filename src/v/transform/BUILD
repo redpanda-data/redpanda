@@ -40,15 +40,43 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "transfer_queue",
+    hdrs = [
+        "transfer_queue.h",
+    ],
+    include_prefix = "transform",
+    visibility = ["//src/v/transform:__subpackages__"],
+    deps = [
+        ":memory_limiter",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "memory_limiter",
+    srcs = [
+        "memory_limiter.cc",
+    ],
+    hdrs = [
+        "memory_limiter.h",
+    ],
+    include_prefix = "transform",
+    visibility = ["//src/v/transform:__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:human",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "transform",
     srcs = [
         "api.cc",
         "io.h",
-        "memory_limiter.cc",
-        "memory_limiter.h",
         "probe.cc",
         "probe.h",
-        "transfer_queue.h",
         "transform_logger.h",
         "transform_manager.cc",
         "transform_manager.h",
@@ -64,6 +92,8 @@ redpanda_cc_library(
     deps = [
         ":commit_batcher",
         ":logger",
+        ":memory_limiter",
+        ":transfer_queue",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
