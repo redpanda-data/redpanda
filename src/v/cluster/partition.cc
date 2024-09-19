@@ -19,6 +19,7 @@
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/logger.h"
+#include "cluster/partition_properties_stm.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
@@ -420,6 +421,9 @@ ss::future<> partition::start(
     _archival_meta_stm
       = _raft->stm_manager()->get<cluster::archival_metadata_stm>();
 
+    // store partition properties stm offset for fast access
+    _partition_properties_stm
+      = _raft->stm_manager()->get<cluster::partition_properties_stm>();
     // Start the probe after the partition is fully initialised
     _probe.setup_metrics(ntp);
 
@@ -1573,6 +1577,28 @@ partition::force_abort_replica_set_update(model::revision_id rev) {
     return _raft->abort_configuration_change(rev);
 }
 consensus_ptr partition::raft() const { return _raft; }
+
+ss::future<std::error_code> partition::disable_writes() {
+    if (!_feature_table.local().is_active(
+          features::feature::partition_properties_stm)) {
+        return ssx::now<std::error_code>(errc::feature_disabled);
+    }
+    if (_partition_properties_stm == nullptr) {
+        return ssx::now<std::error_code>(errc::invalid_partition_operation);
+    }
+    return _partition_properties_stm->disable_writes();
+}
+
+ss::future<std::error_code> partition::enable_writes() {
+    if (!_feature_table.local().is_active(
+          features::feature::partition_properties_stm)) {
+        return ssx::now<std::error_code>(errc::feature_disabled);
+    }
+    if (_partition_properties_stm == nullptr) {
+        return ssx::now<std::error_code>(errc::invalid_partition_operation);
+    }
+    return _partition_properties_stm->enable_writes();
+}
 
 } // namespace cluster
 
