@@ -43,6 +43,7 @@ SKIP_FEATURES = [
     Features.audit_logging,  # NOTE(oren): omit due to shutdown issues
     Features.
     cloud_storage,  # TODO(oren): initially omitted because it's a bit complicated to initialize infra
+    Features.fips  # NOTE(oren): omit because it's too much of a pain for CDT
 ]
 
 
