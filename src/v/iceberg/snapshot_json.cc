@@ -51,6 +51,7 @@ snapshot parse_snapshot(const json::Value& v) {
     if (parent_id_opt.has_value()) {
         parent_id.emplace(parent_id_opt.value());
     }
+    auto seq_num = parse_required_i64(v, "sequence-number");
     auto timestamp_ms = parse_required_i64(v, "timestamp-ms");
     auto manifest_list_path = parse_required_str(v, "manifest-list");
     auto schema_id_opt = parse_optional_i32(v, "schema-id");
@@ -91,6 +92,7 @@ snapshot parse_snapshot(const json::Value& v) {
     return snapshot{
           .id = snapshot_id{id},
           .parent_snapshot_id = parent_id,
+          .sequence_number = sequence_number{seq_num},
           .timestamp_ms = model::timestamp{timestamp_ms},
           .summary = snapshot_summary{
               .operation = operation.value(),
@@ -114,6 +116,8 @@ void rjson_serialize(
         w.Key("parent-snapshot-id");
         w.Int64(s.parent_snapshot_id.value()());
     }
+    w.Key("sequence-number");
+    w.Int64(s.sequence_number());
     w.Key("timestamp-ms");
     w.Int64(s.timestamp_ms.value());
     w.Key("manifest-list");

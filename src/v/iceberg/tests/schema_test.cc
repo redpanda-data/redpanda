@@ -125,3 +125,13 @@ TEST(SchemaTest, TestGetTypesNestedSchemaNestedFilter) {
           std::holds_alternative<int_type>(std::get<primitive_type>(*type)));
     }
 }
+
+TEST(SchemaTest, TestCopy) {
+    schema s{
+      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+      .schema_id = schema::id_t{4},
+      .identifier_field_ids = {nested_field::id_t{10}},
+    };
+    auto s_copy = s.copy();
+    ASSERT_EQ(s, s_copy);
+}

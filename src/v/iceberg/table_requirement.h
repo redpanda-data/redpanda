@@ -36,6 +36,7 @@ struct assert_last_assigned_partition_id {
 // performing a given update.
 using requirement = std::variant<
   assert_create,
+  assert_current_schema_id,
   assert_table_uuid,
   last_assigned_field_match,
   assert_last_assigned_partition_id>;

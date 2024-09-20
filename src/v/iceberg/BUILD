@@ -344,6 +344,7 @@ redpanda_cc_library(
         ":datatypes",
         "//src/v/container:chunked_hash_map",
         "//src/v/utils:named_type",
+        "@abseil-cpp//absl/container:btree",
     ],
 )
 
@@ -386,6 +387,9 @@ redpanda_cc_library(
     ],
     hdrs = [
         "schema_json.h",
+    ],
+    implementation_deps = [
+        "@abseil-cpp//absl/container:btree",
     ],
     include_prefix = "iceberg",
     deps = [

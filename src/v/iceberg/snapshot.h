@@ -59,6 +59,10 @@ struct snapshot {
     // snapshot for a table.
     std::optional<snapshot_id> parent_snapshot_id;
 
+    // Monotonically increasing counter that tracks the order of changes in the
+    // table.
+    sequence_number sequence_number;
+
     // Timestamp at which this snapshot was created.
     model::timestamp timestamp_ms;
 
