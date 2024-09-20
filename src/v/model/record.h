@@ -464,7 +464,7 @@ struct record_batch_header
     offset base_offset;
     /// \brief redpanda extension
     record_batch_type type;
-    int32_t crc{0};
+    uint32_t crc{0};
 
     // -- below the CRC are checksummed by the kafka crc. see @crc field
 

@@ -46,7 +46,7 @@ model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
     using offset_t = model::offset::type;
     auto off = model::offset(reflection::adl<offset_t>{}.from(parser));
     auto type = reflection::adl<model::record_batch_type>{}.from(parser);
-    auto crc = reflection::adl<int32_t>{}.from(parser);
+    auto crc = reflection::adl<uint32_t>{}.from(parser);
     using attr_t = model::record_batch_attributes::type;
     auto attrs = model::record_batch_attributes(
       reflection::adl<attr_t>{}.from(parser));

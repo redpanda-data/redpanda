@@ -40,7 +40,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     if (unlikely(!v2_format)) {
         return {}; // verified  in the adapt() call
     }
-    auto crc = in.consume_be_type<int32_t>();
+    auto crc = in.consume_be_type<uint32_t>();
 
     auto attrs = model::record_batch_attributes(in.consume_be_type<int16_t>());
 
@@ -95,7 +95,8 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     return header;
 }
 
-void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
+void kafka_batch_adapter::verify_crc(
+  const model::record_batch_header& header, iobuf_parser in) {
     auto crc = crc::crc32c();
 
     // move the cursor to correct offset where the data to be checksummed
@@ -105,28 +106,30 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     //   - 4 batch length
     //   - 4 partition leader epoch
     //   - 1 magic
-    //   - 4 exepcted crc
+    //   - 4 expected crc
     //
+    auto total_bytes = in.bytes_left();
     static constexpr size_t checksum_data_offset_start = 21;
     in.skip(checksum_data_offset_start);
 
     // 2. consume & checksum the CRC
-    in.consume(in.bytes_left(), [&crc](const char* src, size_t n) {
-        // NOLINTNEXTLINE
-        crc.extend(reinterpret_cast<const uint8_t*>(src), n);
-        return ss::stop_iteration::no;
-    });
+    auto consumed_bytes = in.consume(
+      in.bytes_left(), [&crc](const char* src, size_t n) {
+          // NOLINTNEXTLINE
+          crc.extend(reinterpret_cast<const uint8_t*>(src), n);
+          return ss::stop_iteration::no;
+      });
 
-    // the crc is calculated over the bytes we receive as a uint32_t, but the
-    // crc arrives off the wire as a signed 32-bit value.
-    if (unlikely((uint32_t)expected_crc != crc.value())) {
+    if (unlikely(header.crc != crc.value())) {
         valid_crc = false;
         vlog(
           klog.warn,
-          "Cannot validate Kafka record batch. Missmatching CRC. Expected:{}, "
-          "Got:{}",
-          expected_crc,
-          crc.value());
+          "Cannot validate Kafka record batch {}. Mismatching CRC {}, "
+          "checksummed bytes {}, total bytes: {}",
+          header,
+          crc.value(),
+          consumed_bytes,
+          total_bytes);
     } else {
         valid_crc = true;
     }
@@ -152,11 +155,10 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     auto remainder = kbatch.share(
       batch_length, kbatch.size_bytes() - batch_length);
-    kbatch.trim_back(remainder.size_bytes());
+    auto trimmed_bytes = remainder.size_bytes();
+    kbatch.trim_back(trimmed_bytes);
 
-    auto crcparser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
-    auto parser = iobuf_parser(std::move(kbatch));
-
+    auto parser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
     auto header = read_header(parser);
     if (unlikely(!v2_format)) {
         vlog(
@@ -165,9 +167,16 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
         return remainder;
     }
 
-    verify_crc(header.crc, std::move(crcparser));
+    auto crcparser = iobuf_parser(std::move(kbatch));
+    verify_crc(header, std::move(crcparser));
     if (unlikely(!valid_crc)) {
-        vlog(klog.warn, "batch has invalid CRC: {}", header);
+        if (trimmed_bytes > 0) {
+            vlog(
+              klog.info,
+              "Trimmed bytes {} from batch: {}",
+              trimmed_bytes,
+              header);
+        }
         return remainder;
     }
 
