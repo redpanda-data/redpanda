@@ -143,6 +143,7 @@ admin_server::mount_topics(std::unique_ptr<ss::http::request> req) {
     apply_validator(validator, json_doc);
     cluster::data_migrations::inbound_migration migration;
 
+    migration.auto_advance = true;
     migration.topics = parse_inbound_topics(json_doc);
     auto result = co_await _controller->get_data_migration_frontend()
                     .local()
@@ -170,6 +171,7 @@ admin_server::unmount_topics(std::unique_ptr<ss::http::request> req) {
     apply_validator(validator, json_doc);
     cluster::data_migrations::outbound_migration migration;
 
+    migration.auto_advance = true;
     migration.topics = parse_topics(json_doc);
     auto result = co_await _controller->get_data_migration_frontend()
                     .local()

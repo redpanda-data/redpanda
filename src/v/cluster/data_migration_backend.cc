@@ -772,27 +772,34 @@ void backend::to_advance_if_done(
     }
 }
 
+ss::future<> backend::advance(id migration_id, state sought_state) {
+    std::error_code ec;
+    if (sought_state == state::deleted) {
+        ec = co_await _frontend.remove_migration(migration_id);
+    } else {
+        ec = co_await _frontend.update_migration_state(
+          migration_id, sought_state);
+    }
+    vlogl(
+      dm_log,
+      (ec == make_error_code(errc::success)) ? ss::log_level::debug
+                                             : ss::log_level::warn,
+      "request to advance migration {} into state {} has "
+      "been processed with error code {}",
+      migration_id,
+      sought_state,
+      ec);
+}
+
 void backend::spawn_advances() {
     for (auto& [migration_id, advance_info] : _advance_requests) {
         if (advance_info.sent) {
             continue;
         }
         advance_info.sent = true;
-        auto& sought_state = advance_info.sought_state;
+        auto sought_state = advance_info.sought_state;
         ssx::spawn_with_gate(_gate, [this, migration_id, sought_state]() {
-            return _frontend.update_migration_state(migration_id, sought_state)
-              .then([migration_id, sought_state](std::error_code ec) {
-                  vlogl(
-                    dm_log,
-                    (ec == make_error_code(errc::success))
-                      ? ss::log_level::debug
-                      : ss::log_level::warn,
-                    "request to advance migration {} into state {} has "
-                    "been processed with error code {}",
-                    migration_id,
-                    sought_state,
-                    ec);
-              });
+            return advance(migration_id, sought_state);
         });
     }
 }
@@ -867,6 +874,12 @@ ss::future<> backend::handle_migration_update(id id) {
         vlog(dm_log.debug, "dropping migration {} reconciliation state", id);
         co_await drop_migration_reconciliation_rstate(old_it);
     }
+    // delete old advance requests
+    if (auto it = _advance_requests.find(id); it != _advance_requests.end()) {
+        if (!new_state || it->second.sought_state <= new_state) {
+            _advance_requests.erase(it);
+        }
+    }
     // create new state if needed
     if (new_maybe_metadata) {
         const auto& new_metadata = new_maybe_metadata->get();
@@ -875,14 +888,13 @@ ss::future<> backend::handle_migration_update(id id) {
             vlog(
               dm_log.debug, "creating migration {} reconciliation state", id);
             auto new_it = _migration_states.emplace_hint(old_it, id, scope);
-            co_await reconcile_migration(new_it->second, new_metadata);
+            if (scope.topic_work_needed || scope.partition_work_needed) {
+                co_await reconcile_migration(new_it->second, new_metadata);
+            } else {
+                // yes it is done as there is nothing to do
+                to_advance_if_done(new_it);
+            }
             need_wakeup = true;
-        }
-    }
-    // delete old advance requests
-    if (auto it = _advance_requests.find(id); it != _advance_requests.end()) {
-        if (!new_state || it->second.sought_state <= new_state) {
-            _advance_requests.erase(it);
         }
     }
 
@@ -918,6 +930,11 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
       delta.type,
       migration_id);
     auto& mrstate = _migration_states.find(migration_id)->second;
+    if (
+      !mrstate.scope.partition_work_needed
+      && !mrstate.scope.topic_work_needed) {
+        co_return;
+    }
     auto& tstate = mrstate.outstanding_topics[nt];
     clear_tstate_belongings(nt, tstate);
     tstate.clear();
@@ -1434,7 +1451,40 @@ backend::get_work_scope(const migration_metadata& metadata) {
     return std::visit(
       [&metadata](const auto& migration) {
           migration_direction_tag<std::decay_t<decltype(migration)>> tag;
-          return get_work_scope(tag, metadata);
+          auto scope = get_work_scope(tag, metadata);
+          if (migration.auto_advance && !scope.sought_state) {
+              switch (metadata.state) {
+              case state::planned:
+                  scope.sought_state = state::preparing;
+                  break;
+              case state::prepared:
+                  scope.sought_state = state::executing;
+                  break;
+              case state::executed:
+                  scope.sought_state = state::cut_over;
+                  break;
+              case state::finished:
+                  scope.sought_state = state::deleted;
+                  break;
+              case state::cancelled:
+                  // An auto-advance migration can only be cancelled manually if
+                  // it got stuck. Let's not deleted it automatically in case
+                  // we'd like to investigate how it happened.
+                  break;
+              case state::deleted:
+                  vassert(false, "A migration cannot be in a deleted state");
+              case state::preparing:
+              case state::executing:
+              case state::cut_over:
+              case state::canceling:
+                  vassert(
+                    false,
+                    "Work scope not found for migration {} transient state {}",
+                    metadata.id,
+                    metadata.state);
+              }
+          }
+          return scope;
       },
       metadata.migration);
 }

@@ -262,12 +262,15 @@ class RoleMemberUpdateResponse:
 
 
 class NamespacedTopic:
-    def __init__(self, topic: str, namespace: str = "kafka"):
+    def __init__(self, topic: str, namespace: str | None = "kafka"):
         self.ns = namespace
         self.topic = topic
 
     def as_dict(self):
-        return {'ns': self.ns, 'topic': self.topic}
+        ret = {'topic': self.topic}
+        if self.ns is not None:
+            ret['ns'] = self.ns
+        return ret
 
     @classmethod
     def from_json(cls, body: bytes):
@@ -1693,3 +1696,21 @@ class Admin:
 
         path = f"migrations/{migration_id}"
         return self._request("DELETE", path, node=node)
+
+    def unmount_topics(self,
+                       topics: list[NamespacedTopic],
+                       node: Optional[ClusterNode] = None):
+        path = "topics/unmount"
+        return self._request("POST",
+                             path,
+                             node=node,
+                             json={"topics": [t.as_dict() for t in topics]})
+
+    def mount_topics(self,
+                     topics: list[InboundTopic],
+                     node: Optional[ClusterNode] = None):
+        path = "topics/mount"
+        return self._request("POST",
+                             path,
+                             node=node,
+                             json={"topics": [t.as_dict() for t in topics]})

@@ -60,6 +60,8 @@ migrated_resource_state get_resource_state<inbound_migration>(state state) {
     case state::finished:
     case state::cancelled:
         return migrated_resource_state::non_restricted;
+    case state::deleted:
+        vassert(false, "a migration cannot be in deleted state");
     }
 }
 
@@ -79,6 +81,8 @@ migrated_resource_state get_resource_state<outbound_migration>(state state) {
     case state::finished:
     case state::cancelled:
         return migrated_resource_state::non_restricted;
+    case state::deleted:
+        vassert(false, "a migration cannot be in deleted state");
     }
 }
 
