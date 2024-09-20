@@ -63,14 +63,14 @@ void monitor_unsafe::invoke_unsafe_log_update(
     }
 }
 
-void monitor_unsafe::log_experimental_feature_warning() {
-    if (!config::shard_local_cfg().experimental_features_enabled()) {
+void monitor_unsafe::log_development_feature_warning() {
+    if (!config::shard_local_cfg().development_features_enabled()) {
         return;
     }
 
     vlog(
       clusterlog.warn,
-      "WARNING: experimental features have been enabled which may result in "
+      "WARNING: development features have been enabled which may result in "
       "instability, unrecoverable data loss, or the inability to upgrade.");
 }
 
@@ -89,7 +89,7 @@ ss::future<> monitor_unsafe::maybe_log_unsafe_nag() {
           "you need assistance, please contact Redpanda support");
     }
 
-    log_experimental_feature_warning();
+    log_development_feature_warning();
 
     try {
         co_await ss::sleep_abortable(nag_check_retry, _as);

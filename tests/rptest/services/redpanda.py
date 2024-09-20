@@ -3457,7 +3457,7 @@ class RedpandaService(RedpandaServiceBase):
                                       timeout,
                                       admin_client=admin_client)
 
-    def enable_experimental_feature_support(self, key=int(time.time())):
+    def enable_development_feature_support(self, key=int(time.time())):
         """
         Enable experimental feature support.
 
@@ -3466,7 +3466,7 @@ class RedpandaService(RedpandaServiceBase):
         """
         self.set_cluster_config(
             dict(
-                enable_experimental_unrecoverable_data_corrupting_features=key,
+                enable_developmental_unrecoverable_data_corrupting_features=key,
             ))
 
     def _wait_for_config_version(self,

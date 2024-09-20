@@ -61,14 +61,14 @@ struct configuration;
  * The simplest way to circumvent this is to enable support in one request,
  * and then proceed to interact with experiemntal feature properties.
  *
- * Experimental properties are hidden from the outside world until experimental
+ * Development properties are hidden from the outside world until experimental
  * property support is enabled, at which point the visibility of the property is
  * identical to the wrapped property.
  */
 template<typename T>
-class experimental_feature_property : public property<T> {
+class development_feature_property : public property<T> {
 public:
-    experimental_feature_property(
+    development_feature_property(
       configuration& conf,
       std::string_view name,
       std::string_view desc,
@@ -83,25 +83,25 @@ public:
           def,
           [&conf, validator = std::move(validator)](
             const auto& v) -> std::optional<ss::sstring> {
-              if (experimental_features_enabled(conf)) {
+              if (development_features_enabled(conf)) {
                   // delegate to the underlying property's validator
                   return validator(v);
               }
-              return "Experimental feature support is not enabled.";
+              return "Development feature support is not enabled.";
           })
       , _conf(conf)
 
     {}
 
     bool is_hidden() const override {
-        if (experimental_features_enabled(_conf)) {
+        if (development_features_enabled(_conf)) {
             return property<T>::is_hidden();
         }
         return true;
     }
 
 private:
-    static bool experimental_features_enabled(const configuration&);
+    static bool development_features_enabled(const configuration&);
     configuration& _conf;
 };
 
@@ -687,8 +687,7 @@ struct configuration final : public config_store {
     error_map_t load(const YAML::Node& root_node);
 
 public:
-    experimental_feature_property<int>
-      experimental_feature_property_testing_only;
+    development_feature_property<int> development_feature_property_testing_only;
 
 private:
     // to query if experimental features are enabled in order to log a nag. it
@@ -696,7 +695,7 @@ private:
     friend class ::monitor_unsafe;
 
     template<typename T>
-    friend class experimental_feature_property;
+    friend class development_feature_property;
 
     /*
      * This configuration property shouldn't be queried directly. Rather, it is
@@ -710,18 +709,18 @@ private:
      * to set values for all properties that it discovers.
      */
     hidden_when_default_property<ss::sstring>
-      enable_experimental_unrecoverable_data_corrupting_features;
+      enable_developmental_unrecoverable_data_corrupting_features;
 
-    bool experimental_features_enabled() const {
-        return !enable_experimental_unrecoverable_data_corrupting_features()
+    bool development_features_enabled() const {
+        return !enable_developmental_unrecoverable_data_corrupting_features()
                   .empty();
     }
 };
 
 template<typename T>
-bool experimental_feature_property<T>::experimental_features_enabled(
+bool development_feature_property<T>::development_features_enabled(
   const configuration& conf) {
-    return conf.experimental_features_enabled();
+    return conf.development_features_enabled();
 }
 
 configuration& shard_local_cfg();

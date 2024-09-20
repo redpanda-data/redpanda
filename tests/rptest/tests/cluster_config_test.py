@@ -2282,7 +2282,7 @@ class ClusterConfigUnknownTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes[0])
 
 
-class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
+class DevelopmentFeatureTest(RedpandaTest):
     def __init__(self, test_context):
         super().__init__(
             test_context,
@@ -2290,7 +2290,7 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
                 # controls freq of nag
                 legacy_unsafe_log_warning_interval_sec=5, ))
         self.admin = Admin(self.redpanda)
-        self._property_name = "experimental_feature_property_testing_only"
+        self._property_name = "development_feature_property_testing_only"
 
     @cluster(num_nodes=3)
     def test_reject_invalid_enable_key(self):
@@ -2300,13 +2300,13 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         # key must be within 1 hour
         key = int(time.time() - (3600 * 1.5))
         try:
-            self.redpanda.enable_experimental_feature_support(key=key)
+            self.redpanda.enable_development_feature_support(key=key)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code != 400:
                 raise
             errors = e.response.json()
             assert f"Invalid key '{key}'. Must be within 1 hour" in errors[
-                "enable_experimental_unrecoverable_data_corrupting_features"], f"{errors}"
+                "enable_developmental_unrecoverable_data_corrupting_features"], f"{errors}"
         else:
             raise RuntimeError("Expected error")
 
@@ -2316,10 +2316,10 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         Test that a valid key enables experimental feature property.
         """
         key = int(time.time() - 60)
-        self.redpanda.enable_experimental_feature_support(key=key)
+        self.redpanda.enable_development_feature_support(key=key)
         config = self.admin.get_cluster_config()
         value = config[
-            "enable_experimental_unrecoverable_data_corrupting_features"]
+            "enable_developmental_unrecoverable_data_corrupting_features"]
         assert int(value) == key, f"{value} != {key}"
 
     @cluster(num_nodes=3)
@@ -2328,33 +2328,33 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         Test that once experimental is enabled, it cannot be disabled.
         """
         # enable, then try to set the key to anything
-        self.redpanda.enable_experimental_feature_support()
+        self.redpanda.enable_development_feature_support()
         for key in [int(time.time() - 60), ""]:
             try:
-                self.redpanda.enable_experimental_feature_support(key=key)
+                self.redpanda.enable_development_feature_support(key=key)
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code != 400:
                     raise
                 errors = e.response.json()
-                assert f"Experimental feature flag cannot be changed once enabled." in errors[
-                    "enable_experimental_unrecoverable_data_corrupting_features"], f"{errors}"
+                assert f"Development feature flag cannot be changed once enabled." in errors[
+                    "enable_developmental_unrecoverable_data_corrupting_features"], f"{errors}"
             else:
                 raise RuntimeError("Expected error")
 
     @cluster(num_nodes=3)
-    def test_experimental_feature_nag(self):
+    def test_development_feature_nag(self):
         """
         Test that nag is printed when experimental feature flag enabled.
         """
-        self.redpanda.enable_experimental_feature_support()
+        self.redpanda.enable_development_feature_support()
         wait_until(lambda: self.redpanda.search_log_all(
-            "WARNING: experimental features have been enabled"),
+            "WARNING: development features have been enabled"),
                    timeout_sec=10,
                    backoff_sec=1.0,
                    err_msg=f"Expected to see experimental feature nag")
 
     @cluster(num_nodes=3)
-    def test_experimental_property_visibility(self):
+    def test_development_property_visibility(self):
         """
         Test that a non-active experimental feature is hidden.
         """
@@ -2362,14 +2362,14 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         config = self.admin.get_cluster_config()
         assert self._property_name not in config
 
-        self.redpanda.enable_experimental_feature_support()
+        self.redpanda.enable_development_feature_support()
 
         # after enabling experimental features it is visible
         config = self.admin.get_cluster_config()
         assert self._property_name in config
 
     @cluster(num_nodes=3)
-    def test_experimental_property_cannot_be_set(self):
+    def test_development_property_cannot_be_set(self):
         """
         Test that non-active experimental features cannot be set.
         """
@@ -2382,12 +2382,12 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
             if e.response.status_code != 400:
                 raise
             errors = e.response.json()
-            assert f"Experimental feature support is not enabled." in errors[
+            assert f"Development feature support is not enabled." in errors[
                 self._property_name], f"{errors}"
         else:
             raise RuntimeError("Expected error")
 
-        self.redpanda.enable_experimental_feature_support()
+        self.redpanda.enable_development_feature_support()
 
         # after enabling experimental features it can be set
         patch_result = self.admin.patch_cluster_config(

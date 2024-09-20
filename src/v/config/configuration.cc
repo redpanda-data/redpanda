@@ -3353,16 +3353,16 @@ configuration::configuration()
        tls_version::v1_1,
        tls_version::v1_2,
        tls_version::v1_3})
-  , experimental_feature_property_testing_only(
+  , development_feature_property_testing_only(
       *this,
-      "experimental_feature_property_testing_only",
-      "Experimental feature property for testing only.",
+      "development_feature_property_testing_only",
+      "Development feature property for testing only.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
-  , enable_experimental_unrecoverable_data_corrupting_features(
+  , enable_developmental_unrecoverable_data_corrupting_features(
       *this,
-      "enable_experimental_unrecoverable_data_corrupting_features",
-      "Experimental features should never be enabled in a production cluster, "
+      "enable_developmental_unrecoverable_data_corrupting_features",
+      "Development features should never be enabled in a production cluster, "
       "or any cluster where stability, data loss, or the ability to upgrade "
       "are a concern. To enable experimental features, set the value of this "
       "configuration option to the current unix epoch expressed in seconds. "
@@ -3371,9 +3371,9 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       "",
       [this](const ss::sstring& v) -> std::optional<ss::sstring> {
-          if (experimental_features_enabled()) {
+          if (development_features_enabled()) {
               return fmt::format(
-                "Experimental feature flag cannot be changed once enabled.");
+                "Development feature flag cannot be changed once enabled.");
           }
 
           const auto time_since_epoch
