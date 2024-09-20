@@ -177,8 +177,12 @@ ss::future<> members_backend::reconciliation_loop() {
               "{}",
               std::current_exception());
         }
-        // when an error occurred wait before next retry
-        co_await ss::sleep_abortable(_retry_timeout, _as.local());
+        try {
+            // when an error occurred wait before next retry
+            co_await ss::sleep_abortable(_retry_timeout, _as.local());
+        } catch (const ss::sleep_aborted&) {
+            // We are shutting down, while loop will exit
+        }
     }
 }
 
@@ -263,7 +267,11 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
 
 ss::future<std::error_code> members_backend::reconcile() {
     // if nothing to do, wait
-    co_await _new_updates.wait([this] { return !_updates.empty(); });
+    try {
+        co_await _new_updates.wait([this] { return !_updates.empty(); });
+    } catch (const ss::broken_condition_variable& e) {
+        co_return errc::shutting_down;
+    }
     vlog(clusterlog.trace, "reconcile() found {} updates", _updates.size());
     auto u = co_await _lock.get_units();
 
@@ -639,7 +647,13 @@ void members_backend::handle_reallocation_finished(model::node_id id) {
 ss::future<> members_backend::reconcile_raft0_updates() {
     vlog(clusterlog.trace, "starting raft 0 reconciliation");
     while (!_as.local().abort_requested()) {
-        co_await _new_updates.wait([this] { return !_raft0_updates.empty(); });
+        try {
+            co_await _new_updates.wait(
+              [this] { return !_raft0_updates.empty(); });
+        } catch (const ss::broken_condition_variable& e) {
+            co_return;
+        }
+
         vlog(
           clusterlog.trace, "raft_0 updates_size: {}", _raft0_updates.size());
         // check the _raft0_updates as the predicate may not longer hold
