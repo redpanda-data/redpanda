@@ -73,9 +73,9 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
         // because for a test its too much to deal with i/o alignment, etc..
         int fd = ::open(mgr.snapshot_path().c_str(), O_WRONLY);
         BOOST_REQUIRE(fd > 0);
-        ::write(fd, &fd, sizeof(fd));
-        ::fsync(fd);
-        ::close(fd);
+        BOOST_REQUIRE(::write(fd, &fd, sizeof(fd)) > 0);
+        BOOST_REQUIRE(::fsync(fd) == 0);
+        BOOST_REQUIRE(::close(fd) == 0);
     }
 
     auto reader = mgr.open_snapshot().get0();
@@ -112,9 +112,9 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
         int fd = ::open(mgr.snapshot_path().c_str(), O_WRONLY);
         BOOST_REQUIRE(fd > 0);
         ::lseek(fd, storage::snapshot_header::ondisk_size, SEEK_SET);
-        ::write(fd, &fd, sizeof(fd));
-        ::fsync(fd);
-        ::close(fd);
+        BOOST_REQUIRE(::write(fd, &fd, sizeof(fd)) > 0);
+        BOOST_REQUIRE(::fsync(fd) == 0);
+        BOOST_REQUIRE(::close(fd) == 0);
     }
 
     auto reader = mgr.open_snapshot().get0();

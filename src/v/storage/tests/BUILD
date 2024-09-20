@@ -231,3 +231,19 @@ redpanda_cc_btest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "snapshot_test",
+    timeout = "short",
+    srcs = [
+        "snapshot_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:random",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
+    ],
+)
