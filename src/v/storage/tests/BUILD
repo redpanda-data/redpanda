@@ -302,3 +302,23 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "readers_cache_test",
+    timeout = "short",
+    srcs = [
+        "readers_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/storage:resources",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
