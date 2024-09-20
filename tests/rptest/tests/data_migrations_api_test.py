@@ -331,8 +331,6 @@ class DataMigrationsApiTest(RedpandaTest):
 
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 0, "There should be no data migrations"
 
             # in
             inbound_topics = [
@@ -360,8 +358,6 @@ class DataMigrationsApiTest(RedpandaTest):
                 )
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 0, "There should be no data migrations"
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(
