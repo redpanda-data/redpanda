@@ -361,8 +361,14 @@ public:
             vlog(fsm._ctxlog.info, "starting ntp_archiver {}", new_leadership);
             prev.clear();
             next.reset_units = fsm._part->get_archiver_reset_units();
-            vassert(
-              next.reset_units.has_value(), "Reset units are not acquired");
+            if (!next.reset_units.has_value()) {
+                // The archiver_manager is stopping
+                vlog(fsm._ctxlog.warn, "Reset units are not acquired");
+                auto err = std::make_exception_ptr(
+                  ss::abort_requested_exception());
+                fsm.process_event(ev_archiver_failure{.error = err});
+                return;
+            }
             auto completion =
               [&fsm](ss::future<ss::lw_shared_ptr<ntp_archiver>> fut) {
                   if (fut.failed()) {
