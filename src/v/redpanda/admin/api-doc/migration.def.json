@@ -41,7 +41,8 @@
             }
         },
         "copy_to": {
-            "type": "bucket_configuration"
+            "type": "bucket_configuration",
+            "$ref": "bucket_configuration"
         },
         "auto_advance": {
             "type": "boolean",
@@ -61,7 +62,7 @@
         "topics": {
             "type": "array",
             "items": {
-                "type": "inbound_topic"
+                "$ref": "inbound_topic"
             }
         },
         "consumer_groups": {
@@ -85,11 +86,13 @@
     "properties": {
         "source_topic": {
             "description": "Name of the topic in the source cluster",
-            "type": "namespaced_topic"
+            "type": "namespaced_topic",
+            "$ref": "namespaced_topic"
         },
         "alias": {
             "description": "Name of the topic in the destination cluster",
-            "type": "namespaced_topic"
+            "type": "namespaced_topic",
+            "$ref": "namespaced_topic"
         }
     }
 },
@@ -136,7 +139,8 @@
             "type": "string"
         },
         "migration": {
-            "type": "outbound_migration"
+            "type": "outbound_migration",
+            "$ref": "outbound_migration"
         }
     }
 },
@@ -152,7 +156,8 @@
             "description": "Current migration state"
         },
         "migration": {
-            "type": "inbound_migration"
+            "type": "inbound_migration",
+            "$ref": "inbound_migration"
         }
     }
 },
@@ -165,7 +170,7 @@
         "topics": {
             "type": "array",
             "items": {
-                "type": "inbound_topic"
+                "$ref": "inbound_topic"
             },
             "description": "List of topics to mount"
         }
