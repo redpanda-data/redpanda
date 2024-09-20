@@ -1044,7 +1044,24 @@ public:
     }
 
     model::offset get_next_uploaded_offset() const override {
-        return _part->archival_meta_stm()->manifest().get_last_offset();
+        // We have to increment last offset to guarantee progress.
+        // The manifest's last offset contains dirty_offset of the
+        // latest uploaded segment but '_policy' requires offset that
+        // belongs to the next offset or the gap. No need to do this
+        // if we haven't uploaded anything.
+        //
+        // When there are no segments but there is a non-zero 'last_offset', all
+        // cloud segments have been removed for retention. In that case, we
+        // still need to take into account 'last_offset'.
+        const auto& manifest = _part->archival_meta_stm()->manifest();
+        auto last_offset = manifest.get_last_offset();
+
+        auto base_offset = manifest.size() == 0
+                               && last_offset == model::offset(0)
+                             ? model::offset(0)
+                             : last_offset + model::offset(1);
+
+        return base_offset;
     }
 
     model::offset get_applied_offset() const override {
