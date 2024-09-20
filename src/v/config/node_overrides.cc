@@ -26,7 +26,7 @@ std::istream& operator>>(std::istream& is, config::node_id_override& v) {
     std::string s;
     is >> s;
 
-    const static re2::RE2 pattern{R"(^([^:]+):([^:]+):([^:]+)$)"};
+    static const re2::RE2 pattern{R"(^([^:]+):([^:]+):([^:]+)$)"};
     vassert(pattern.ok(), "Regex compilation failed");
 
     std::string curr, uuid, id;
