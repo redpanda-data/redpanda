@@ -3,6 +3,7 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 redpanda_cc_library(
     name = "types",
     hdrs = [
+        "dl_placeholder.h",
         "logger.h",
         "types.h",
         "errc.h",
