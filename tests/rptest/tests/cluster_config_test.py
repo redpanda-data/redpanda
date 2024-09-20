@@ -2308,7 +2308,7 @@ class DevelopmentFeatureTest(RedpandaTest):
             assert f"Invalid key '{key}'. Must be within 1 hour" in errors[
                 "enable_developmental_unrecoverable_data_corrupting_features"], f"{errors}"
         else:
-            raise RuntimeError("Expected error")
+            assert False, "Expected error"
 
     @cluster(num_nodes=3)
     def test_accept_valid_enable_key(self):
@@ -2339,7 +2339,7 @@ class DevelopmentFeatureTest(RedpandaTest):
                 assert f"Development feature flag cannot be changed once enabled." in errors[
                     "enable_developmental_unrecoverable_data_corrupting_features"], f"{errors}"
             else:
-                raise RuntimeError("Expected error")
+                assert False, "Expected error"
 
     @cluster(num_nodes=3)
     def test_development_feature_nag(self):
@@ -2385,7 +2385,7 @@ class DevelopmentFeatureTest(RedpandaTest):
             assert f"Development feature support is not enabled." in errors[
                 self._property_name], f"{errors}"
         else:
-            raise RuntimeError("Expected error")
+            assert False, "Expected error"
 
         self.redpanda.enable_development_feature_support()
 
