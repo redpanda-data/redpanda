@@ -2292,18 +2292,6 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         self.admin = Admin(self.redpanda)
         self._property_name = "experimental_feature_property_testing_only"
 
-    def _enable(self):
-        # key must be within 1 hour
-        key = int(time.time() - 60)
-        patch_result = self.admin.patch_cluster_config(upsert=dict(
-            enable_experimental_unrecoverable_data_corrupting_features=key))
-        wait_for_version_sync(self.admin, self.redpanda,
-                              patch_result['config_version'])
-        config = self.admin.get_cluster_config()
-        value = config[
-            "enable_experimental_unrecoverable_data_corrupting_features"]
-        assert int(value) == key, f"{value} != {key}"
-
     @cluster(num_nodes=3)
     def test_reject_invalid_enable_key(self):
         """
@@ -2312,9 +2300,7 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         # key must be within 1 hour
         key = int(time.time() - (3600 * 1.5))
         try:
-            patch_result = self.admin.patch_cluster_config(upsert=dict(
-                enable_experimental_unrecoverable_data_corrupting_features=key,
-            ), )
+            self.redpanda.enable_experimental_feature_support(key=key)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code != 400:
                 raise
@@ -2329,7 +2315,12 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         """
         Test that a valid key enables experimental feature property.
         """
-        self._enable()
+        key = int(time.time() - 60)
+        self.redpanda.enable_experimental_feature_support(key=key)
+        config = self.admin.get_cluster_config()
+        value = config[
+            "enable_experimental_unrecoverable_data_corrupting_features"]
+        assert int(value) == key, f"{value} != {key}"
 
     @cluster(num_nodes=3)
     def test_cannot_disable(self):
@@ -2337,12 +2328,10 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         Test that once experimental is enabled, it cannot be disabled.
         """
         # enable, then try to set the key to anything
-        self._enable()
+        self.redpanda.enable_experimental_feature_support()
         for key in [int(time.time() - 60), ""]:
             try:
-                patch_result = self.admin.patch_cluster_config(upsert=dict(
-                    enable_experimental_unrecoverable_data_corrupting_features=
-                    key, ), )
+                self.redpanda.enable_experimental_feature_support(key=key)
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code != 400:
                     raise
@@ -2357,7 +2346,7 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         """
         Test that nag is printed when experimental feature flag enabled.
         """
-        self._enable()
+        self.redpanda.enable_experimental_feature_support()
         wait_until(lambda: self.redpanda.search_log_all(
             "WARNING: experimental features have been enabled"),
                    timeout_sec=10,
@@ -2373,7 +2362,7 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         config = self.admin.get_cluster_config()
         assert self._property_name not in config
 
-        self._enable()
+        self.redpanda.enable_experimental_feature_support()
 
         # after enabling experimental features it is visible
         config = self.admin.get_cluster_config()
@@ -2398,7 +2387,7 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         else:
             raise RuntimeError("Expected error")
 
-        self._enable()
+        self.redpanda.enable_experimental_feature_support()
 
         # after enabling experimental features it can be set
         patch_result = self.admin.patch_cluster_config(
