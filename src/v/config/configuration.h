@@ -701,8 +701,15 @@ private:
     /*
      * This configuration property shouldn't be queried directly. Rather, it is
      * used to enable the use of other feature-specific experimental properties.
+     *
+     * This property is hidden when its value is the same as its default, which
+     * corresponds to the case in which experimental features are not enabled.
+     *
+     * In addition to this property thus being hidden in production scenarios,
+     * it also fixes several tests like rpk-import-export that expect to be able
+     * to set values for all properties that it discovers.
      */
-    property<ss::sstring>
+    hidden_when_default_property<ss::sstring>
       enable_experimental_unrecoverable_data_corrupting_features;
 
     bool experimental_features_enabled() const {

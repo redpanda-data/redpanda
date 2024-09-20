@@ -936,4 +936,22 @@ private:
         }
     }
 };
+
+template<typename T>
+class hidden_when_default_property : public property<T> {
+public:
+    hidden_when_default_property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta,
+      T def,
+      property<T>::validator validator = property<T>::noop_validator)
+      : property<T>(conf, name, desc, meta, def, std::move(validator)) {}
+
+    bool is_hidden() const override {
+        return this->value() == this->default_value();
+    }
+};
+
 }; // namespace config
