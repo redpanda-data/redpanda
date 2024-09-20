@@ -4,6 +4,7 @@ redpanda_cc_library(
     name = "types",
     hdrs = [
         "logger.h",
+        "types.h",
     ],
     include_prefix = "cloud_topics",
     visibility = ["//visibility:public"],
