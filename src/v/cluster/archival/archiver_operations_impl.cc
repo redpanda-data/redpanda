@@ -415,6 +415,13 @@ public:
               = !config::shard_local_cfg()
                    .cloud_storage_disable_upload_consistency_checks();
             auto part = _pm->get_partition(upl_res.ntp);
+            if (part == nullptr) {
+                vlog(
+                  _rtclog.info,
+                  "admit_uploads - can't find partition {}",
+                  upl_res.ntp);
+                co_return error_outcome::unexpected_failure;
+            }
             std::vector<cloud_storage::segment_meta> metadata;
             for (size_t ix = 0; ix < num_segments; ix++) {
                 auto sg = upl_res.results.at(ix);
@@ -1142,6 +1149,9 @@ public:
     ss::shared_ptr<detail::cluster_partition_api>
     get_partition(const model::ntp& ntp) override {
         auto part = _pm.get(ntp);
+        if (part == nullptr) {
+            return nullptr;
+        }
         return ss::make_shared<cluster_partition>(part);
     }
 
