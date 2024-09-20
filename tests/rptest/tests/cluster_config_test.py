@@ -2290,6 +2290,7 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
                 # controls freq of nag
                 legacy_unsafe_log_warning_interval_sec=5, ))
         self.admin = Admin(self.redpanda)
+        self._property_name = "experimental_feature_property_testing_only"
 
     def _enable(self):
         # key must be within 1 hour
@@ -2362,3 +2363,18 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=1.0,
                    err_msg=f"Expected to see experimental feature nag")
+
+    @cluster(num_nodes=3)
+    def test_experimental_property_visibility(self):
+        """
+        Test that a non-active experimental feature is hidden.
+        """
+        # experimental feature property is not visible
+        config = self.admin.get_cluster_config()
+        assert self._property_name not in config
+
+        self._enable()
+
+        # after enabling experimental features it is visible
+        config = self.admin.get_cluster_config()
+        assert self._property_name in config
