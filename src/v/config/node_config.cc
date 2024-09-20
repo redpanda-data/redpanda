@@ -234,6 +234,15 @@ node_config::node_config() noexcept
       "Path to the directory that contains the OpenSSL FIPS-compliant module.",
       {.visibility = visibility::user},
       std::nullopt)
+  , node_id_overrides(
+      *this,
+      "node_id_overrides",
+      "List of node ID and UUID overrides to be applied at broker startup. "
+      "Each entry includes the current UUID and desired ID and UUID. Each "
+      "entry applies to a given node if and only if 'current' matches that "
+      "node's current UUID.",
+      {.visibility = visibility::user},
+      {})
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

@@ -1421,7 +1421,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                       start_timeout=None,
                       stop_timeout=None,
                       auto_assign_node_id=False,
-                      omit_seeds_on_idx_one=True):
+                      omit_seeds_on_idx_one=True,
+                      extra_cli: list[str] = []):
 
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         with concurrent.futures.ThreadPoolExecutor(
@@ -1438,7 +1439,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                         override_cfg_params=override_cfg_params,
                         timeout=start_timeout,
                         auto_assign_node_id=auto_assign_node_id,
-                        omit_seeds_on_idx_one=omit_seeds_on_idx_one), nodes))
+                        omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                        extra_cli=extra_cli), nodes))
 
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
@@ -2948,7 +2950,7 @@ class RedpandaService(RedpandaServiceBase):
                 self._audit_log_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
                 self._audit_log_config.crl_file = RedpandaService.TLS_CA_CRL_FILE
 
-    def start_redpanda(self, node):
+    def start_redpanda(self, node, extra_cli: list[str] = []):
         preamble, res_args = self._resource_settings.to_cli(
             dedicated_node=self._dedicated_nodes)
 
@@ -2970,6 +2972,7 @@ class RedpandaService(RedpandaServiceBase):
             " --abort-on-seastar-bad-alloc "
             " --dump-memory-diagnostics-on-alloc-failure-kind=all "
             f" {res_args} "
+            f" {' '.join(extra_cli)}"
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         node.account.ssh(cmd)
@@ -3106,7 +3109,8 @@ class RedpandaService(RedpandaServiceBase):
                    auto_assign_node_id: bool = False,
                    omit_seeds_on_idx_one: bool = True,
                    skip_readiness_check: bool = False,
-                   node_id_override: int | None = None):
+                   node_id_override: int | None = None,
+                   extra_cli: list[str] = []):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -3142,7 +3146,7 @@ class RedpandaService(RedpandaServiceBase):
                 )
 
         def start_rp():
-            self.start_redpanda(node)
+            self.start_redpanda(node, extra_cli=extra_cli)
 
             if expect_fail:
                 wait_until(
