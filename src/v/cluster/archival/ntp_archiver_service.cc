@@ -3231,13 +3231,10 @@ ss::future<bool> ntp_archiver::do_upload_remote(
 }
 
 size_t ntp_archiver::get_local_segment_size() const {
-    auto log_segment_size = config::shard_local_cfg().log_segment_size.value();
-    const auto& cfg = _parent.raft()->log_config();
-    if (cfg.has_overrides()) {
-        log_segment_size = cfg.get_overrides().segment_size.value_or(
-          log_segment_size);
-    }
-    return log_segment_size;
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(
+      *_parent.raft()->log());
+
+    return disk_log.max_segment_size();
 }
 
 ss::future<bool>
