@@ -22,7 +22,7 @@ rp_test(
     v::kafka_test_utils
     v::datalake
     v::model_test_utils
-  LABELS storage
+  LABELS datalake
   ARGS "-- -c 1"
 )
 
@@ -38,6 +38,18 @@ rp_test(
     v::datalake
     v::model_test_utils
     v::iceberg_test_utils
-  LABELS storage
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  GTEST
+  BINARY_NAME parquet_writer_test
+  SOURCES parquet_writer_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake
+    v::iceberg_test_utils
+  LABELS datalake
   ARGS "-- -c 1"
 )
