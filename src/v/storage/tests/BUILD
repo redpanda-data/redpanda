@@ -247,3 +247,23 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "record_batch_builder_test",
+    timeout = "short",
+    srcs = [
+        "record_batch_builder_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/reflection:adl",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:btree",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
