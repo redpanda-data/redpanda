@@ -32,6 +32,9 @@ def const_delay(delay_seconds=10):
 
 
 class Finjector:
+    # we cannot guarantee start idempotency
+    LOG_ALLOW_LIST = ["failed to lock pidfile. already locked"]
+
     def __init__(self, redpanda, scale):
         self.redpanda = redpanda
         self.enable_manual = False
@@ -132,6 +135,7 @@ class Finjector:
     def _cleanup(self):
         make_failure_injector(self.redpanda)._heal_all()
         make_failure_injector(self.redpanda)._continue_all()
+        make_failure_injector(self.redpanda)._undo_all()
 
 
 class EndToEndFinjectorTest(EndToEndTest):
