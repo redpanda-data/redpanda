@@ -267,3 +267,17 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "scoped_file_tracker_test",
+    timeout = "short",
+    srcs = [
+        "scoped_file_tracker_test.cc",
+    ],
+    deps = [
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:btree",
+        "@googletest//:gtest",
+    ],
+)
