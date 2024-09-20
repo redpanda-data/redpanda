@@ -2378,3 +2378,33 @@ class ClusterEnableExperimentalFeaturesTest(RedpandaTest):
         # after enabling experimental features it is visible
         config = self.admin.get_cluster_config()
         assert self._property_name in config
+
+    @cluster(num_nodes=3)
+    def test_experimental_property_cannot_be_set(self):
+        """
+        Test that non-active experimental features cannot be set.
+        """
+        # cannot set
+        set_value = 43
+        try:
+            patch_result = self.admin.patch_cluster_config(
+                upsert={self._property_name: set_value})
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 400:
+                raise
+            errors = e.response.json()
+            assert f"Experimental feature support is not enabled." in errors[
+                self._property_name], f"{errors}"
+        else:
+            raise RuntimeError("Expected error")
+
+        self._enable()
+
+        # after enabling experimental features it can be set
+        patch_result = self.admin.patch_cluster_config(
+            upsert={self._property_name: set_value})
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
+        config = self.admin.get_cluster_config()
+        value = config[self._property_name]
+        assert int(value) == set_value, f"{value} != {set_value}"
