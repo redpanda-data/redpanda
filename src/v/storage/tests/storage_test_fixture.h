@@ -209,9 +209,14 @@ public:
           resources,
           feature_table) {
         configure_unit_test_logging();
-        // avoid double metric registrations
+        // avoid double metric registrations - disk_log_builder and other
+        // helpers also start a feature_table and other structs that register
+        // metrics
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
+            config::shard_local_cfg()
+              .get("disable_public_metrics")
+              .set_value(true);
             config::shard_local_cfg()
               .get("log_segment_size_min")
               .set_value(std::optional<uint64_t>{});
@@ -230,6 +235,7 @@ public:
         feature_table.stop().get();
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").reset();
+            config::shard_local_cfg().get("disable_public_metrics").reset();
             config::shard_local_cfg().get("log_segment_size_min").reset();
         }).get();
     }

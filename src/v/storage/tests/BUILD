@@ -291,6 +291,7 @@ redpanda_cc_gtest(
     deps = [
         ":disk_log_builder",
         ":disk_log_builder_fixture",
+        "//src/v/config",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/random:generators",

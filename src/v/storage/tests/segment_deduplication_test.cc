@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/configuration.h"
 #include "gmock/gmock.h"
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
@@ -220,6 +221,17 @@ TEST(FindSlidingRangeTest, TestEmptySegmentNoCompactibleRecords) {
 }
 
 TEST(BuildOffsetMap, TestBuildSimpleMap) {
+    ss::smp::invoke_on_all([] {
+        config::shard_local_cfg().disable_metrics.set_value(true);
+        config::shard_local_cfg().disable_public_metrics.set_value(true);
+    }).get();
+    auto defer_config_reset = ss::defer([] {
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg().disable_metrics.reset();
+            config::shard_local_cfg().disable_public_metrics.reset();
+        }).get();
+    });
+
     storage::disk_log_builder b;
     build_segments(b, 3);
     auto cleanup = ss::defer([&] { b.stop().get(); });
