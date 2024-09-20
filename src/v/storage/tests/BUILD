@@ -281,3 +281,24 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "segment_deduplication_test",
+    timeout = "short",
+    srcs = [
+        "segment_deduplication_test.cc",
+    ],
+    deps = [
+        ":disk_log_builder",
+        ":disk_log_builder_fixture",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/storage:chunk_cache",
+        "//src/v/storage:key_offset_map",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
