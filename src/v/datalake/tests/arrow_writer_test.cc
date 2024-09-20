@@ -34,7 +34,7 @@ iceberg::struct_type test_schema(iceberg::field_required required) {
     schema.fields.emplace_back(
       nested_field::create(5, "test_double", required, double_type{}));
     schema.fields.emplace_back(
-      nested_field::create(6, "test_decimal", required, decimal_type{8, 16}));
+      nested_field::create(6, "test_decimal", required, decimal_type{16, 8}));
     schema.fields.emplace_back(
       nested_field::create(7, "test_date", required, date_type{}));
     schema.fields.emplace_back(
@@ -86,7 +86,7 @@ test_int: int32
 test_long: int64
 test_float: float
 test_double: double
-test_decimal: decimal128(8, 16)
+test_decimal: decimal128(16, 8)
 test_date: date32[day]
 test_time: time64[us]
 test_timestamp: timestamp[us]
@@ -111,7 +111,7 @@ test_int: int32 not null
 test_long: int64 not null
 test_float: float not null
 test_double: double not null
-test_decimal: decimal128(8, 16) not null
+test_decimal: decimal128(16, 8) not null
 test_date: date32[day] not null
 test_time: time64[us] not null
 test_timestamp: timestamp[us] not null
@@ -291,13 +291,13 @@ std::string get_expected_translation_output() {
     0,
     0
   ]
--- child 5 type: decimal128(8, 16)
+-- child 5 type: decimal128(16, 8)
   [
-    0.E-16,
-    0.E-16,
-    0.E-16,
-    0.E-16,
-    0.E-16
+    0.E-8,
+    0.E-8,
+    0.E-8,
+    0.E-8,
+    0.E-8
   ]
 -- child 6 type: date32[day]
   [
