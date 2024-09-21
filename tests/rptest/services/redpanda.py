@@ -3457,13 +3457,14 @@ class RedpandaService(RedpandaServiceBase):
                                       timeout,
                                       admin_client=admin_client)
 
-    def enable_development_feature_support(self, key=int(time.time())):
+    def enable_development_feature_support(self, key: Optional[int] = None):
         """
         Enable experimental feature support.
 
         The key must be equal to the current broker time expressed as unix epoch
         in seconds, and be within 1 hour.
         """
+        key = int(time.time()) if key == None else key
         self.set_cluster_config(
             dict(
                 enable_developmental_unrecoverable_data_corrupting_features=key,
