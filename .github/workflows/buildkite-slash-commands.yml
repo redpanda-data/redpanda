@@ -1,8 +1,8 @@
+---
 name: BK slash-command
-
 on:
   repository_dispatch:
-    types: 
+    types:
       - cdt-command
       - ci-repeat-command
       - dt-command
@@ -23,7 +23,6 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
-
       - name: get secrets from aws sm
         uses: aws-actions/aws-secretsmanager-get-secrets@v2
         with:
@@ -31,20 +30,17 @@ jobs:
             ,sdlc/prod/github/actions_bot_token
             ,sdlc/prod/github/buildkite_token
           parse-json-secrets: true
-
       - uses: actions/checkout@v4
-        with: 
-          repository: redpanda-data/sparse-checkout 
+        with:
+          repository: redpanda-data/sparse-checkout
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           path: sparse-checkout
-
-      - uses: ./sparse-checkout 
+      - uses: ./sparse-checkout
         with:
           repository: redpanda-data/vtools
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           patterns: actions
-          path: ghca 
-
+          path: ghca
       - name: Buildkite slash command action
         uses: ./ghca/actions/buildkite-slash-commands
         with:
@@ -52,7 +48,6 @@ jobs:
           buildkite_org: redpanda
           buildkite_pipeline: redpanda
           command: ${{ github.event.client_payload.slash_command.command }}
-
       - name: Success reaction
         uses: peter-evans/create-or-update-comment@v2
         with:
@@ -60,7 +55,6 @@ jobs:
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
           reaction-type: hooray
-
       - name: Error response
         if: failure()
         uses: ./ghca/actions/slash-command-error
