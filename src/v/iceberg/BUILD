@@ -426,6 +426,7 @@ redpanda_cc_library(
         ":manifest_entry",
         ":schema",
         "//src/v/model",
+        "@abseil-cpp//absl/container:btree",
     ],
 )
 
@@ -439,9 +440,9 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":json_utils",
-        "//src/v/container:chunked_hash_map",
         "//src/v/model",
         "//src/v/strings:string_switch",
+        "@abseil-cpp//absl/container:btree",
     ],
     include_prefix = "iceberg",
     deps = [

@@ -8,12 +8,13 @@
 // by the Apache License, Version 2.0
 #include "iceberg/snapshot_json.h"
 
-#include "container/chunked_hash_map.h"
 #include "iceberg/json_utils.h"
 #include "iceberg/snapshot.h"
 #include "json/document.h"
 #include "model/timestamp.h"
 #include "strings/string_switch.h"
+
+#include <absl/container/btree_map.h>
 
 namespace iceberg {
 
@@ -66,7 +67,7 @@ snapshot parse_snapshot(const json::Value& v) {
           summary_json.GetType()));
     }
     std::optional<snapshot_operation> operation;
-    chunked_hash_map<ss::sstring, ss::sstring> other_map;
+    absl::btree_map<ss::sstring, ss::sstring> other_map;
     for (const auto& m : summary_json.GetObject()) {
         if (!m.name.IsString() || !m.value.IsString()) {
             throw std::invalid_argument(fmt::format(
