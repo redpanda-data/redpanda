@@ -23,7 +23,7 @@ inline void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   bytes& t,
-  std::size_t const bytes_left_limit) {
+  const std::size_t bytes_left_limit) {
     bytes str(
       bytes::initialized_later{},
       read_nested<serde_size_t>(in, bytes_left_limit));

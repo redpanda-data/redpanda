@@ -64,7 +64,8 @@ static group get() {
 }
 
 static const std::vector<member_protocol> test_group_protos = {
-  {kafka::protocol_name("n0"), bytes::from_string("d0")}, {kafka::protocol_name("n1"), bytes::from_string("d1")}};
+  {kafka::protocol_name("n0"), bytes::from_string("d0")},
+  {kafka::protocol_name("n1"), bytes::from_string("d1")}};
 
 static member_ptr get_group_member(
   ss::sstring id = "m",
@@ -332,8 +333,10 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
     for (auto& m : md) {
         conf[m.member_id] = m;
     }
-    BOOST_TEST(conf[kafka::member_id("m")].metadata == bytes::from_string("foo"));
-    BOOST_TEST(conf[kafka::member_id("n")].metadata == bytes::from_string("bar"));
+    BOOST_TEST(
+      conf[kafka::member_id("m")].metadata == bytes::from_string("foo"));
+    BOOST_TEST(
+      conf[kafka::member_id("n")].metadata == bytes::from_string("bar"));
 }
 
 SEASTAR_THREAD_TEST_CASE(select_protocol) {
@@ -430,7 +433,8 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      chunked_vector<member_protocol>{{kafka::protocol_name("n2"), bytes::from_string("d0")}});
+      chunked_vector<member_protocol>{
+        {kafka::protocol_name("n2"), bytes::from_string("d0")}});
     (void)g.add_member(m2);
 
     // n2 is not supported bc the first member doesn't support it

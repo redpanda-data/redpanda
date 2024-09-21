@@ -1550,7 +1550,8 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     static constexpr size_t batch_size = 1_KiB; // Size visible to Kafka API
     static constexpr size_t input_batch_count = 100;
 
-    append_exactly(log, input_batch_count, batch_size, bytes::from_string("key"))
+    append_exactly(
+      log, input_batch_count, batch_size, bytes::from_string("key"))
       .get0(); // 100*1_KiB
 
     // Test becomes non-deterministic if we allow flush in background: flush

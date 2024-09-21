@@ -53,7 +53,8 @@ restore_from_disk(storage::kvstore& kvstore) {
     std::optional<iobuf> period, windows, data;
     try {
         period = kvstore.get(kv_ks::usage, bytes::from_string(period_key));
-        windows = kvstore.get(kv_ks::usage, bytes::from_string(max_duration_key));
+        windows = kvstore.get(
+          kv_ks::usage, bytes::from_string(max_duration_key));
         data = kvstore.get(kv_ks::usage, bytes::from_string(buckets_key));
     } catch (const std::exception& ex) {
         vlog(
@@ -84,7 +85,8 @@ static ss::future<> clear_persisted_state(storage::kvstore& kvstore) {
     using kv_ks = storage::kvstore::key_space;
     try {
         co_await kvstore.remove(kv_ks::usage, bytes::from_string(period_key));
-        co_await kvstore.remove(kv_ks::usage, bytes::from_string(max_duration_key));
+        co_await kvstore.remove(
+          kv_ks::usage, bytes::from_string(max_duration_key));
         co_await kvstore.remove(kv_ks::usage, bytes::from_string(buckets_key));
     } catch (const std::exception& ex) {
         vlog(klog.debug, "Ignoring exception from storage layer: {}", ex);

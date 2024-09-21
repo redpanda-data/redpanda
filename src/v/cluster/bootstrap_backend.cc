@@ -234,7 +234,9 @@ ss::future<> bootstrap_backend::apply_cluster_uuid(model::cluster_uuid uuid) {
           storage.set_cluster_uuid(new_cluster_uuid);
       });
     co_await _storage.local().kvs().put(
-      cluster_uuid_key_space, bytes::from_string(cluster_uuid_key), serde::to_iobuf(uuid));
+      cluster_uuid_key_space,
+      bytes::from_string(cluster_uuid_key),
+      serde::to_iobuf(uuid));
     _cluster_uuid_applied = uuid;
     vlog(clusterlog.debug, "Cluster UUID initialized {}", uuid);
 }

@@ -22,7 +22,8 @@
 namespace kafka {
 
 static const chunked_vector<member_protocol> test_protos = {
-  {kafka::protocol_name("n0"), bytes::from_string("d0")}, {kafka::protocol_name("n1"), bytes::from_string("d1")}};
+  {kafka::protocol_name("n0"), bytes::from_string("d0")},
+  {kafka::protocol_name("n1"), bytes::from_string("d1")}};
 
 static group_member get_member() {
     return group_member(
@@ -47,7 +48,8 @@ static join_group_response make_join_response() {
 }
 
 static sync_group_response make_sync_response() {
-    return sync_group_response(error_code::none, bytes::from_string("this is some bytes"));
+    return sync_group_response(
+      error_code::none, bytes::from_string("this is some bytes"));
 }
 
 SEASTAR_THREAD_TEST_CASE(constructor) {

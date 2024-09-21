@@ -103,7 +103,8 @@ TEST_F(WasmTestFixture, SchemaRegistry) {
     auto records = transformed.copy_records();
     ASSERT_EQ(records.size(), 1);
     EXPECT_EQ(
-      iobuf_to_bytes(records[0].value()), bytes::from_string(R"JSON({"a":4,"b":"foo"})JSON"));
+      iobuf_to_bytes(records[0].value()),
+      bytes::from_string(R"JSON({"a":4,"b":"foo"})JSON"));
 }
 
 TEST_F(WasmTestFixture, MemoryIsLimited) {
