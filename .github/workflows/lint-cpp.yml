@@ -1,9 +1,8 @@
+---
 name: Lint cpp
-
 on:
   push:
-    branches:
-      - 'dev'
+    branches: [dev]
     paths:
       - '**.h'
       - '**.cc'
@@ -19,20 +18,19 @@ on:
       - '**.cpp'
       - '**.proto'
       - '**.java'
-
 jobs:
   cpp:
     name: Lint files with clang-format
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Install Baselisk
-      run: |
-        mkdir -v -p $HOME/.local/bin
-        wget -O $HOME/.local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-        chmod +x $HOME/.local/bin/bazel
-    - name: Run clang-format
-      run: |
-        bazel run //tools:clang_format
-        git diff --exit-code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Baselisk
+        run: |
+          mkdir -v -p $HOME/.local/bin
+          wget -O $HOME/.local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x $HOME/.local/bin/bazel
+      - name: Run clang-format
+        run: |
+          bazel run //tools:clang_format
+          git diff --exit-code
