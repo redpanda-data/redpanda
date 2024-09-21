@@ -92,12 +92,6 @@ public:
 
     void resize(size_type size) { data_.resize(size); }
 
-    void append(const_pointer p, size_t n) {
-        const auto prev_size = data_.size();
-        data_.resize(prev_size + n);
-        std::copy_n(p, n, data_.begin() + prev_size);
-    }
-
     void push_back(value_type v) { data_.push_back(v); }
 
     friend bool operator==(const bytes&, const bytes&) = default;

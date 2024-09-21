@@ -23,12 +23,6 @@ static constexpr std::string_view period_key{"period"};
 static constexpr std::string_view max_duration_key{"max_duration"};
 static constexpr std::string_view buckets_key{"buckets"};
 
-static bytes key_to_bytes(std::string_view sv) {
-    bytes k;
-    k.append(reinterpret_cast<const uint8_t*>(sv.begin()), sv.size());
-    return k;
-}
-
 struct persisted_state {
     std::chrono::seconds configured_period;
     size_t configured_windows;
@@ -41,15 +35,15 @@ persist_to_disk(storage::kvstore& kvstore, persisted_state s) {
 
     co_await kvstore.put(
       kv_ks::usage,
-      key_to_bytes(period_key),
+      bytes::from_string(period_key),
       serde::to_iobuf(s.configured_period));
     co_await kvstore.put(
       kv_ks::usage,
-      key_to_bytes(max_duration_key),
+      bytes::from_string(max_duration_key),
       serde::to_iobuf(s.configured_windows));
     co_await kvstore.put(
       kv_ks::usage,
-      key_to_bytes(buckets_key),
+      bytes::from_string(buckets_key),
       serde::to_iobuf(std::move(s.current_state)));
 }
 
@@ -58,9 +52,9 @@ restore_from_disk(storage::kvstore& kvstore) {
     using kv_ks = storage::kvstore::key_space;
     std::optional<iobuf> period, windows, data;
     try {
-        period = kvstore.get(kv_ks::usage, key_to_bytes(period_key));
-        windows = kvstore.get(kv_ks::usage, key_to_bytes(max_duration_key));
-        data = kvstore.get(kv_ks::usage, key_to_bytes(buckets_key));
+        period = kvstore.get(kv_ks::usage, bytes::from_string(period_key));
+        windows = kvstore.get(kv_ks::usage, bytes::from_string(max_duration_key));
+        data = kvstore.get(kv_ks::usage, bytes::from_string(buckets_key));
     } catch (const std::exception& ex) {
         vlog(
           klog.debug,
@@ -89,9 +83,9 @@ restore_from_disk(storage::kvstore& kvstore) {
 static ss::future<> clear_persisted_state(storage::kvstore& kvstore) {
     using kv_ks = storage::kvstore::key_space;
     try {
-        co_await kvstore.remove(kv_ks::usage, key_to_bytes(period_key));
-        co_await kvstore.remove(kv_ks::usage, key_to_bytes(max_duration_key));
-        co_await kvstore.remove(kv_ks::usage, key_to_bytes(buckets_key));
+        co_await kvstore.remove(kv_ks::usage, bytes::from_string(period_key));
+        co_await kvstore.remove(kv_ks::usage, bytes::from_string(max_duration_key));
+        co_await kvstore.remove(kv_ks::usage, bytes::from_string(buckets_key));
     } catch (const std::exception& ex) {
         vlog(klog.debug, "Ignoring exception from storage layer: {}", ex);
     }

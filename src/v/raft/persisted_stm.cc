@@ -216,11 +216,7 @@ kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
   , _kvstore(kvstore) {}
 
 bytes kvstore_backed_stm_snapshot::snapshot_key() const {
-    bytes k;
-    k.append(
-      reinterpret_cast<const uint8_t*>(_snapshot_key.begin()),
-      _snapshot_key.size());
-    return k;
+    return bytes::from_string(_snapshot_key);
 }
 
 const ss::sstring& kvstore_backed_stm_snapshot::name() { return _name; }
@@ -596,9 +592,7 @@ ss::future<> do_copy_persistent_stm_state(
   ss::sharded<storage::api>& api) {
     const auto key_as_str = raft::kvstore_backed_stm_snapshot::snapshot_key(
       snapshot_name, ntp);
-    bytes key;
-    key.append(
-      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
+    auto key = bytes::from_string(key_as_str);
 
     auto snapshot = source_kvs.get(storage::kvstore::key_space::stms, key);
     if (snapshot) {
@@ -614,9 +608,7 @@ ss::future<> do_remove_persistent_stm_state(
   ss::sstring snapshot_name, model::ntp ntp, storage::kvstore& kvs) {
     const auto key_as_str = raft::kvstore_backed_stm_snapshot::snapshot_key(
       snapshot_name, ntp);
-    bytes key;
-    key.append(
-      reinterpret_cast<const uint8_t*>(key_as_str.begin()), key_as_str.size());
+    auto key = bytes::from_string(key_as_str);
     co_await kvs.remove(storage::kvstore::key_space::stms, key);
 }
 } // namespace raft

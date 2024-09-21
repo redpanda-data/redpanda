@@ -31,9 +31,7 @@ bytes wat2wasm(std::string_view wat) {
     wasm_byte_vec_new_empty(&wasm_bytes);
     wasmtime_error_t* error = wasmtime_wat2wasm(
       wat.data(), wat.size(), &wasm_bytes);
-    bytes b;
-    // NOLINTNEXTLINE(*-reinterpret-cast)
-    b.append(reinterpret_cast<uint8_t*>(wasm_bytes.data), wasm_bytes.size);
+    bytes b(reinterpret_cast<uint8_t*>(wasm_bytes.data), wasm_bytes.size);
     wasm_byte_vec_delete(&wasm_bytes);
     if (error != nullptr) {
         throw std::runtime_error("invalid wat");
