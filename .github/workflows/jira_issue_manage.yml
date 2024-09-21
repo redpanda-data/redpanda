@@ -1,3 +1,4 @@
+---
 name: Manage JIRA Issue
 on:
   issues:
@@ -9,8 +10,6 @@ on:
       - deleted
       - labeled
       - unlabeled
-
-
 jobs:
   manage_jira_issue:
     runs-on: ubuntu-latest
