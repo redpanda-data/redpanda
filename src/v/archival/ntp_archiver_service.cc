@@ -2879,8 +2879,12 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
               return std::make_pair(std::nullopt, std::nullopt);
           },
           [this](candidate_creation_error& error) -> ret_t {
-              vlog(
-                _rtclog.warn, "Failed to make reupload candidate: {}", error);
+              const auto log_level = log_level_for_error(error);
+              vlogl(
+                _rtclog,
+                log_level,
+                "Failed to make reupload candidate: {}",
+                error);
               return std::make_pair(std::nullopt, std::nullopt);
           });
     }
