@@ -14,9 +14,11 @@ GOFUMPTCMD=gofumpt
 ifeq ($(shell uname),Darwin)
     BAZELCMD := bazelisk
     BAZEL_GAZELLE_CMD := run --config system-clang //:gazelle
+    GOFUMPT_OS_CMD := $(shell find . -type f -name '*.go' -print0 | xargs -0 -n 1 $(GOFUMPTCMD) -w)
 else
 	BAZELCMD := bazel
     BAZEL_GAZELLE_CMD := run //:gazelle
+    GOFUMPT_OS_CMD := 	$(shell find -type f -name '*.go' | xargs -n1 $(GOFUMPTCMD) -w)
 endif
 
 GOOS ?= $(shell go env GOOS)
@@ -59,7 +61,7 @@ install_gofumpt:
 
 run_gofumpt:
 	@echo "running gofumpt"
-	$(shell find -type f -name '*.go' | xargs -n1 $(GOFUMPTCMD) -w)
+	$(GOFUMPT_OS_CMD)
 
 install_golangci_lint:
 	@echo "installing golangci-lint"
