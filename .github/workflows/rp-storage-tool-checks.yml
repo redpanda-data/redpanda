@@ -1,9 +1,8 @@
+---
 name: Lint & Test rp-storage-tool
-
 on:
   push:
-    branches:
-      - 'dev'
+    branches: [dev]
     paths:
       - 'tools/rp_storage_tool/**'
     tags-ignore:
@@ -11,7 +10,6 @@ on:
   pull_request:
     paths:
       - 'tools/rp_storage_tool/**'
-
 jobs:
   check:
     name: Compile check
@@ -30,21 +28,18 @@ jobs:
         with:
           command: check
           args: --manifest-path tools/rp_storage_tool/Cargo.toml
-
   test:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         with:
