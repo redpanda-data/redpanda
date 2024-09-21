@@ -98,6 +98,8 @@ public:
         std::copy_n(p, n, data_.begin() + prev_size);
     }
 
+    void push_back(value_type v) { data_.push_back(v); }
+
     friend bool operator==(const bytes&, const bytes&) = default;
 
     friend bool operator<(const bytes& a, const bytes& b) {
