@@ -65,9 +65,6 @@ public:
     bytes(std::initializer_list<uint8_t> x)
       : data_(x) {}
 
-    bytes(const value_type* begin, const value_type* end)
-      : data_(begin, end) {}
-
     template<typename InputIterator>
     bytes(InputIterator begin, InputIterator end)
       : data_(begin, end) {}
