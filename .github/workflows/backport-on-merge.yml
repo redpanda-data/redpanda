@@ -1,24 +1,18 @@
+---
 # Invoke the backport bot whenever we merge into dev.
-
 name: backport-on-merge
-
 on:
   push:
-    branches:
-      - dev
-
+    branches: [dev]
 env:
   SCRIPT_DIR: "${{ github.workspace }}/.github/workflows/scripts/backport-command"
   PR_NUMBER: ${{ github.event.number }}
-
 jobs:
   backport-on-merge:
     runs-on: ubuntu-latest
-
     steps:
       - name: checkout
         uses: actions/checkout@v4
-
       # Find the PR associated with this push, if there is one.
       - uses: jwalton/gh-find-current-pr@v1
         id: findPr
