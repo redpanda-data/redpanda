@@ -1018,16 +1018,18 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
 
     for (size_t i = 0; i < num_transforms; i++) {
         auto request_key = model::transform_offsets_key{};
-        request_key.id = model::transform_id{i};
+        request_key.id = model::transform_id{
+          static_cast<model::transform_id::type>(i)};
         request_key.output_topic = model::output_topic_index{0};
         set_errors_to_inject(random_generators::get_int(0, 2));
         for (size_t j = 0; j < num_src_partitions; j++) {
-            request_key.partition = model::partition_id{j};
+            request_key.partition = model::partition_id{
+              static_cast<model::partition_id::type>(j)};
             auto read_result = client()->offset_fetch(request_key).get();
             ASSERT_TRUE(!read_result.has_error());
             ASSERT_EQ(read_result.value(), std::nullopt);
             auto request_val = model::transform_offsets_value{
-              .offset = kafka::offset{j}};
+              .offset = kafka::offset{static_cast<kafka::offset::type>(j)}};
             auto coordinator = client()->find_coordinator(request_key).get();
             ASSERT_TRUE(coordinator.has_value());
             auto result = client()
