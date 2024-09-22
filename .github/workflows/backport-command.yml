@@ -24,8 +24,7 @@ jobs:
       target_milestone: ${{ steps.get_backport_type.outputs.target_milestone }}
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -46,13 +45,13 @@ jobs:
         run: $SCRIPT_DIR/get_backport_type.sh
         shell: bash
       - name: Failed reaction
-        uses: peter-evans/create-or-update-comment@v1
+        uses: peter-evans/create-or-update-comment@v4
         if: failure()
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
-          reaction-type: "-1"
+          reactions: "-1"
       - name: Post Error
         if: failure()
         env:
@@ -69,8 +68,7 @@ jobs:
     env:
       BACKPORT_BRANCH: ${{ needs.backport-type.outputs.backport_branch }}
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -160,20 +158,20 @@ jobs:
         run: $SCRIPT_DIR/create_pr.sh
         shell: bash
       - name: Add reaction
-        uses: peter-evans/create-or-update-comment@v1
+        uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
-          reaction-type: hooray
+          reactions: hooray
       - name: Failed reaction
-        uses: peter-evans/create-or-update-comment@v1
+        uses: peter-evans/create-or-update-comment@v4
         if: failure()
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
-          reaction-type: "-1"
+          reactions: "-1"
       - name: Post Error
         if: failure()
         env:
