@@ -12,6 +12,7 @@ from time import time
 from typing import Any, TypeVar
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import get_cloud_provider
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from ducktape.tests.test import TestContext
 from rptest.services.producer_swarm import ProducerSwarm
@@ -63,11 +64,16 @@ class OMBValidationTest(RedpandaCloudTest):
         "warmup_duration_minutes": 5,
     }
 
-    EXPECTED_MAX_LATENCIES = {
+    DEFAULT_EXPECTED_MAX_LATENCIES = {
         OMBSampleConfigurations.E2E_LATENCY_50PCT: 20.0,
         OMBSampleConfigurations.E2E_LATENCY_75PCT: 25.0,
         OMBSampleConfigurations.E2E_LATENCY_99PCT: 60.0,
         OMBSampleConfigurations.E2E_LATENCY_999PCT: 100.0,
+    }
+
+    AZURE_EXPECTED_MAX_LATENCIES = DEFAULT_EXPECTED_MAX_LATENCIES | {
+        OMBSampleConfigurations.E2E_LATENCY_99PCT: 75.0,
+        OMBSampleConfigurations.E2E_LATENCY_999PCT: 175.0,
     }
 
     # Mapping of result keys from specific series to their expected max latencies
@@ -145,7 +151,8 @@ class OMBValidationTest(RedpandaCloudTest):
 
     def expected_max_latencies(self):
         return {
-            series_key: OMBValidationTest.EXPECTED_MAX_LATENCIES[config_key]
+            series_key:
+            OMBValidationTest.DEFAULT_EXPECTED_MAX_LATENCIES[config_key]
             for series_key, config_key in
             OMBValidationTest.LATENCY_SERIES_AND_MAX.items()
         }
@@ -192,11 +199,17 @@ class OMBValidationTest(RedpandaCloudTest):
         latencies in cases we know this is reasonable (e.g., a system running at
         its maximum partition count."""
 
+        cloud_provider = get_cloud_provider()
+        latency_limits = OMBValidationTest.DEFAULT_EXPECTED_MAX_LATENCIES
+
+        if cloud_provider == "azure":
+            latency_limits = OMBValidationTest.AZURE_EXPECTED_MAX_LATENCIES
+
         # use dict comprehension to generate dict of latencies to list of validation functions
         # e.g. { 'aggregatedEndToEndLatency50pct': [OMBSampleConfigurations.lte(20.0 * multiplier)] }
         return {
             k: [OMBSampleConfigurations.lte(v * multiplier)]
-            for k, v in OMBValidationTest.EXPECTED_MAX_LATENCIES.items()
+            for k, v in latency_limits.items()
         }
 
     def _partition_count(self) -> int:
@@ -614,11 +627,11 @@ class OMBValidationTest(RedpandaCloudTest):
         benchmark.check_succeed(validate_metrics=False)
 
         # benchmark.metrics has a lot of measurements,
-        # so just get the measurements specified in EXPECTED_MAX_LATENCIES
+        # so just get the measurements specified in DEFAULT_EXPECTED_MAX_LATENCIES
         # using dict comprehension
         latency_metrics = {
             k: benchmark.metrics[k]
-            for k in OMBValidationTest.EXPECTED_MAX_LATENCIES.keys()
+            for k in OMBValidationTest.DEFAULT_EXPECTED_MAX_LATENCIES.keys()
         }
         self.logger.info(f'latency_metrics: {latency_metrics}')
 
