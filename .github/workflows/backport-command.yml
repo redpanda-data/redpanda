@@ -12,6 +12,9 @@ env:
   ARG1: ${{ github.event.client_payload.slash_command.args.unnamed.arg1 }}
   MILESTONE_ARG: ${{ github.event.client_payload.slash_command.args.named.milestone }}
   TARGET_FULL_REPO: ${{ github.event.client_payload.slash_command.args.named.org }}/${{ github.event.client_payload.slash_command.args.named.repo }}
+permissions:
+  id-token: write
+  contents: read
 jobs:
   # assumptions:
   #   label "kind/backport" exists
@@ -25,14 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
-      - name: get secrets from aws sm
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
         with:
           secret-ids: |
             ,sdlc/prod/github/actions_bot_token
@@ -69,14 +69,11 @@ jobs:
       BACKPORT_BRANCH: ${{ needs.backport-type.outputs.backport_branch }}
     steps:
       - uses: actions/checkout@v4
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_SM_READONLY_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SM_READONLY_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
-      - name: get secrets from aws sm
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
         with:
           secret-ids: |
             ,sdlc/prod/github/actions_bot_token
