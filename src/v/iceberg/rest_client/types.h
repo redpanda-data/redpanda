@@ -60,4 +60,6 @@ struct credentials {
     ss::sstring client_secret;
 };
 
+ss::sstring make_identifier(std::initializer_list<ss::sstring> identifiers);
+
 } // namespace iceberg::rest_client

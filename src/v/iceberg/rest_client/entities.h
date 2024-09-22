@@ -21,4 +21,14 @@ struct name_space : public http::rest_client::rest_entity {
     inline ss::sstring resource_name() const override { return "namespaces"; }
 };
 
+struct table : public http::rest_client::rest_entity {
+    table(
+      std::string_view base_url,
+      std::initializer_list<ss::sstring> namespace_parts);
+
+    ss::sstring resource_name() const override;
+
+    ss::sstring ns;
+};
+
 } // namespace iceberg::rest_client

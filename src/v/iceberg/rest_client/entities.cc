@@ -18,4 +18,13 @@ namespace iceberg::rest_client {
 name_space::name_space(std::string_view base_url)
   : rest_entity{base_url} {}
 
+table::table(
+  std::string_view base_url, std::initializer_list<ss::sstring> namespace_parts)
+  : rest_entity{base_url}
+  , ns{make_identifier(namespace_parts)} {}
+
+ss::sstring table::resource_name() const {
+    return fmt::format("namespaces/{}/tables", ns);
+}
+
 } // namespace iceberg::rest_client

@@ -115,6 +115,43 @@ ss::future<> catalog_client::list_namespaces(retry_chain_node& rtc) {
       .and_then(parse_json);
 }
 
+ss::future<> catalog_client::list_namespace_tables(
+  std::initializer_list<ss::sstring> namespace_parts, retry_chain_node& rtc) {
+    co_await ensure_token_is_valid(rtc);
+    (co_await perform_request(
+       rtc,
+       table{root_url(), namespace_parts}.list().with_bearer_auth(token())))
+      .and_then(parse_json);
+}
+
+ss::future<> catalog_client::get_table(
+  std::initializer_list<ss::sstring> namespace_parts,
+  ss::sstring table_name,
+  retry_chain_node& rtc) {
+    co_await ensure_token_is_valid(rtc);
+    (co_await perform_request(
+       rtc,
+       table{root_url(), namespace_parts}
+         .get(table_name)
+         .with_bearer_auth(token())))
+      .and_then(parse_json);
+}
+
+ss::future<> catalog_client::commit_table_updates(
+  std::initializer_list<ss::sstring> namespace_parts,
+  ss::sstring table_name,
+  retry_chain_node& rtc) {
+    co_await ensure_token_is_valid(rtc);
+    (co_await perform_request(
+       rtc,
+       table{root_url(), namespace_parts}
+         .update(table_name)
+         .with_bearer_auth(token())
+         .with_content_type("application/json"),
+       iobuf::from("{}")))
+      .and_then(parse_json);
+}
+
 ss::sstring catalog_client::token() const {
     return _oauth_token.value_or(oauth_token{}).token;
 }

@@ -44,6 +44,20 @@ public:
 
     ss::future<> list_namespaces(retry_chain_node& rtc);
 
+    ss::future<> list_namespace_tables(
+      std::initializer_list<ss::sstring> namespace_parts,
+      retry_chain_node& rtc);
+
+    ss::future<> get_table(
+      std::initializer_list<ss::sstring> namespace_parts,
+      ss::sstring table_name,
+      retry_chain_node& rtc);
+
+    ss::future<> commit_table_updates(
+      std::initializer_list<ss::sstring> namespace_parts,
+      ss::sstring table_name,
+      retry_chain_node& rtc);
+
     ss::sstring token() const;
 
     // The root url calculated from base url, prefix and api version. Given a
@@ -51,6 +65,8 @@ public:
     // is "/b/v2/x/y/". The root url is prepended before rest entities used when
     // making calls to the catalog service
     ss::sstring root_url() const;
+
+    ss::future<> f();
 
 private:
     // Acquires token if current token is unset (default state) or expired
