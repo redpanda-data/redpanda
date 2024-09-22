@@ -34,6 +34,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Build integration tests
         working-directory: src/transform-sdk/tests
         run: go test -c -o ./wasm-integration-test
@@ -51,6 +52,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Run tests
         working-directory: src/transform-sdk/go/transform
         run: go test -v ./...
@@ -68,6 +70,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Set up Tinygo
         working-directory: src/transform-sdk/go/transform
         run: |
