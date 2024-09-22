@@ -30,10 +30,8 @@ jobs:
     name: Build integration tests
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Build integration tests
@@ -49,17 +47,14 @@ jobs:
     name: Test Golang Transform SDK
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Run tests
         working-directory: src/transform-sdk/go/transform
         run: go test -v ./...
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
+      - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --timeout 5m
@@ -69,10 +64,8 @@ jobs:
     needs: [test-golang, build-integration-tests]
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Set up Tinygo
@@ -106,8 +99,7 @@ jobs:
     name: Test Rust Transform SDK
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Set up Rust
         run: |
           rustup update --no-self-update ${{ env.RUST_VERSION }}
@@ -127,8 +119,7 @@ jobs:
     needs: [test-rust, build-integration-tests]
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Set up Rust
         run: |
           rustup update --no-self-update ${{ env.RUST_VERSION }}
@@ -164,8 +155,7 @@ jobs:
     container:
       image: fedora:40
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Set up Clang
         run: dnf install -y clang clang-tools-extra libcxx libcxxabi libcxx-devel libcxxabi-devel cmake
       - name: Run tests
@@ -187,8 +177,7 @@ jobs:
     container:
       image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Build integration tests
         working-directory: src/transform-sdk/cpp/examples
         run: cmake -B build && cmake --build build
@@ -213,8 +202,7 @@ jobs:
     container:
       image: fedora:40
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Set up Clang
         run: dnf install -y clang clang-tools-extra libcxx libcxxabi libcxx-devel libcxxabi-devel cmake git
       - name: Run tests
@@ -236,8 +224,7 @@ jobs:
     container:
       image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Install node
         uses: actions/setup-node@v4
         with:
