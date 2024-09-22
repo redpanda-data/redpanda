@@ -190,7 +190,7 @@ struct fetch_config {
           cfg.abort_source.has_value()
             ? cfg.abort_source.value().get().abort_requested()
             : false,
-          cfg.client_address.value_or(model::client_address_t{"unknown"}));
+          cfg.client_address.value_or(model::client_address_t{}));
         return o;
     }
 };
