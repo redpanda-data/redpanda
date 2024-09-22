@@ -22,6 +22,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.22
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Create golang specific tag
         id: gotag
         uses: actions/github-script@v7
