@@ -19,8 +19,7 @@ jobs:
           secret-ids: |
             ,sdlc/prod/github/buildkite_token
           parse-json-secrets: true
-      - name: trigger redpanda promote pipeline
-        uses: "buildkite/trigger-pipeline-action@v2.0.0"
+      - uses: buildkite/trigger-pipeline-action@v2
         with:
           buildkite_api_access_token: ${{ env.BUILDKITE_TOKEN }}
           pipeline: "redpanda/redpanda"
