@@ -18,10 +18,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.22
       - name: Create golang specific tag
@@ -47,8 +45,7 @@ jobs:
     name: Publish Rust Transform SDK
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Set up Rust
         run: rustup update stable --no-self-update && rustup default stable
       - name: configure aws credentials
@@ -74,13 +71,11 @@ jobs:
     name: Publish JavaScript Transform SDK
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
