@@ -19,8 +19,7 @@ jobs:
           secret-ids: |
             ,sdlc/prod/github/actions_bot_token
           parse-json-secrets: true
-      - name: Slash Command Dispatch
-        uses: peter-evans/slash-command-dispatch@v2
+      - uses: peter-evans/slash-command-dispatch@v4
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           permission: read
