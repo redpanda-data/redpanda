@@ -49,12 +49,12 @@ jobs:
           buildkite_pipeline: redpanda
           command: ${{ github.event.client_payload.slash_command.command }}
       - name: Success reaction
-        uses: peter-evans/create-or-update-comment@v2
+        uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
-          reaction-type: hooray
+          reactions: hooray
       - name: Error response
         if: failure()
         uses: ./ghca/actions/slash-command-error
