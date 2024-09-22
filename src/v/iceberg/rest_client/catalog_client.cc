@@ -14,6 +14,7 @@
 #include "bytes/iobuf_parser.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
+#include "iceberg/rest_client/entities.h"
 #include "iceberg/rest_client/parsers.h"
 #include "json/prettywriter.h"
 #include "json/stringbuffer.h"
@@ -105,6 +106,13 @@ ss::future<> catalog_client::acquire_token(retry_chain_node& rtc) {
     if (!_oauth_token.has_value()) {
         throw std::runtime_error{"could not acquire token!"};
     }
+}
+
+ss::future<> catalog_client::list_namespaces(retry_chain_node& rtc) {
+    co_await ensure_token_is_valid(rtc);
+    (co_await perform_request(
+       rtc, name_space{root_url()}.list().with_bearer_auth(token())))
+      .and_then(parse_json);
 }
 
 ss::sstring catalog_client::token() const {

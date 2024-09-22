@@ -42,6 +42,8 @@ public:
     // Acquires token from catalog API by exchanging credentials
     ss::future<> acquire_token(retry_chain_node& rtc);
 
+    ss::future<> list_namespaces(retry_chain_node& rtc);
+
     ss::sstring token() const;
 
     // The root url calculated from base url, prefix and api version. Given a
