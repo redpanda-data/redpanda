@@ -5,11 +5,13 @@ on:
     branches: [dev]
     paths:
       - 'tests/models/**'
+      - '.github/workflows/p.yml'
     tags-ignore:
       - '**'
   pull_request:
     paths:
       - 'tests/models/**'
+      - '.github/workflows/p.yml'
 jobs:
   cpp:
     name: Compile and check P models
