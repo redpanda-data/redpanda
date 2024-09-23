@@ -45,7 +45,8 @@ FIXTURE_TEST(test_simple_token_request, fixture) {
     auto resp = cl.fetch_credentials().get0();
     BOOST_REQUIRE(std::holds_alternative<iobuf>(resp));
     BOOST_REQUIRE_EQUAL(
-      iobuf_to_bytes(std::get<iobuf>(resp)), cloud_role_tests::gcp_oauth_token);
+      iobuf_to_bytes(std::get<iobuf>(resp)),
+      bytes::from_string(cloud_role_tests::gcp_oauth_token));
     BOOST_REQUIRE(has_call(cloud_role_tests::gcp_url));
 }
 
@@ -98,7 +99,8 @@ FIXTURE_TEST(test_aws_role_fetch_on_startup, fixture) {
 
     BOOST_REQUIRE(std::holds_alternative<iobuf>(resp));
     BOOST_REQUIRE_EQUAL(
-      iobuf_to_bytes(std::get<iobuf>(resp)), cloud_role_tests::aws_creds);
+      iobuf_to_bytes(std::get<iobuf>(resp)),
+      bytes::from_string(cloud_role_tests::aws_creds));
 }
 
 FIXTURE_TEST(test_sts_credentials_fetch, fixture) {

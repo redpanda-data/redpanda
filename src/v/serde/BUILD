@@ -216,3 +216,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "bytes",
+    hdrs = [
+        "rw/bytes.h",
+    ],
+    include_prefix = "serde",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+        "//src/v/bytes",
+    ],
+)

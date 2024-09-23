@@ -2507,7 +2507,8 @@ void application::start_bootstrap_services() {
     // Before we start up our bootstrapping RPC service, load any relevant
     // on-disk state we may need: existing cluster UUID, node ID, etc.
     if (std::optional<iobuf> cluster_uuid_buf = storage.local().kvs().get(
-          cluster::cluster_uuid_key_space, bytes(cluster::cluster_uuid_key));
+          cluster::cluster_uuid_key_space,
+          bytes::from_string(cluster::cluster_uuid_key));
         cluster_uuid_buf) {
         const auto cluster_uuid = model::cluster_uuid{
           serde::from_iobuf<uuid_t>(std::move(*cluster_uuid_buf))};
@@ -2566,7 +2567,7 @@ void application::start_bootstrap_services() {
     auto configured_node_id = config::node().node_id();
     if (auto invariants_buf = storage.local().kvs().get(
           storage::kvstore::key_space::controller,
-          cluster::controller::invariants_key);
+          cluster::controller::invariants_key());
         invariants_buf) {
         auto invariants
           = reflection::from_iobuf<cluster::configuration_invariants>(
@@ -2589,7 +2590,7 @@ void application::start_bootstrap_services() {
 
     // Load the local node UUID, or create one if none exists.
     auto& kvs = storage.local().kvs();
-    static const bytes node_uuid_key = "node_uuid";
+    static const auto node_uuid_key = bytes::from_string("node_uuid");
     model::node_uuid node_uuid;
     auto node_uuid_buf = kvs.get(
       storage::kvstore::key_space::controller, node_uuid_key);
@@ -2674,7 +2675,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
                                  .kvs()
                                  .get(
                                    storage::kvstore::key_space::controller,
-                                   cluster::controller::invariants_key)
+                                   cluster::controller::invariants_key())
                                  .has_value();
 
     model::node_id node_id;

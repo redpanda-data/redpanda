@@ -28,9 +28,7 @@ std::ostream& operator<<(std::ostream& os, const bytes& b) {
     return os << bytes_view(b);
 }
 
-namespace std {
 std::ostream& operator<<(std::ostream& os, const bytes_view& b) {
     fmt::print(os, "{{bytes:{}}}", b.size());
     return os;
 }
-} // namespace std

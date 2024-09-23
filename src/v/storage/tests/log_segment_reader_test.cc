@@ -295,7 +295,7 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset) {
 
 SEASTAR_THREAD_TEST_CASE(iobuf_is_zero_test) {
     const auto a = random_generators::gen_alphanum_string(1024);
-    const auto b = bytes("abc");
+    const auto b = bytes::from_string("abc");
     std::array<char, 1024> zeros{0};
     std::array<char, 1> one{1};
 

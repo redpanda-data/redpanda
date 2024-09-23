@@ -26,15 +26,15 @@ namespace security {
 
 BOOST_AUTO_TEST_CASE(credential_store_test) {
     const scram_credential cred0(
-      bytes("salty"),
-      bytes("i'm a server key"),
-      bytes("i'm the stored key"),
+      bytes::from_string("salty"),
+      bytes::from_string("i'm a server key"),
+      bytes::from_string("i'm the stored key"),
       123456);
 
     const scram_credential cred1(
-      bytes("salty2"),
-      bytes("i'm a server key2"),
-      bytes("i'm the stored key2"),
+      bytes::from_string("salty2"),
+      bytes::from_string("i'm a server key2"),
+      bytes::from_string("i'm the stored key2"),
       1234567);
 
     auto cred0_copy = cred0;
@@ -70,15 +70,15 @@ BOOST_AUTO_TEST_CASE(credential_store_test) {
 
 BOOST_AUTO_TEST_CASE(credential_store_test_principal) {
     const scram_credential cred0(
-      bytes("salty"),
-      bytes("i'm a server key"),
-      bytes("i'm the stored key"),
+      bytes::from_string("salty"),
+      bytes::from_string("i'm a server key"),
+      bytes::from_string("i'm the stored key"),
       123456);
 
     const scram_credential cred1(
-      bytes("salty2"),
-      bytes("i'm a server key2"),
-      bytes("i'm the stored key2"),
+      bytes::from_string("salty2"),
+      bytes::from_string("i'm a server key2"),
+      bytes::from_string("i'm the stored key2"),
       1234567,
       acl_principal{principal_type::ephemeral_user, "ephemeral"});
 

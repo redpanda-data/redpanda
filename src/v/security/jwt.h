@@ -498,9 +498,11 @@ public:
           [](std::string_view bv) -> result<json::Document> {
             try {
                 auto bytes = detail::base64_url_decode(bv);
-                auto str = detail::char_view_cast<char>(bytes);
                 json::Document dom;
-                dom.Parse(str.data(), str.length());
+                dom.Parse(
+                  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                  reinterpret_cast<const char*>(bytes.data()),
+                  bytes.size());
                 return dom;
             } catch (const base64_url_decoder_exception&) {
                 return errc::jws_invalid_b64;
@@ -536,8 +538,11 @@ public:
 
         auto second_dot = jose_enc[0].length() + 1 + jose_enc[1].length();
         auto msg = sv.substr(0, second_dot);
-        if (!verifier->second.verify(
-              detail::char_view_cast<bytes_view::value_type>(msg), signature)) {
+        bytes_view msg_view(
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<const uint8_t*>(msg.data()),
+          msg.size());
+        if (!verifier->second.verify(msg_view, signature)) {
             return errc::jws_invalid_sig;
         }
 

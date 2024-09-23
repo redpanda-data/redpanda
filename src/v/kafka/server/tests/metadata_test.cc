@@ -149,7 +149,7 @@ protected:
         BOOST_REQUIRE_GE(
           server_first.iterations(), security::scram_sha256::min_iterations);
         security::client_final_message client_final(
-          bytes("n,,"), server_first.nonce());
+          bytes::from_string("n,,"), server_first.nonce());
         auto salted_password = security::scram_sha256::hi(
           bytes(password.cbegin(), password.cend()),
           server_first.salt(),
