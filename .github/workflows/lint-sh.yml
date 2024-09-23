@@ -5,12 +5,14 @@ on:
     branches: [dev]
     paths:
       - '**.sh'
+      - '.github/workflows/lint-sh.yml'
     tags-ignore:
       - '**'
   pull_request:
     paths:
       - '**.sh'
       - tests/docker/ducktape-deps/tinygo-wasi-transforms
+      - '.github/workflows/lint-sh.yml'
 jobs:
   sh:
     name: Lint shell scripts
