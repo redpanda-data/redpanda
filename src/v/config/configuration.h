@@ -682,6 +682,9 @@ struct configuration final : public config_store {
 
     enum_property<tls_version> tls_min_version;
 
+    // datalake configurations
+    development_feature_property<bool> iceberg_enabled;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

@@ -302,6 +302,9 @@ public:
     }
 
     bool iceberg_enabled() const {
+        if (!config::shard_local_cfg().iceberg_enabled) {
+            return false;
+        }
         return _overrides ? _overrides->iceberg_enabled
                           : default_iceberg_enabled;
     }
