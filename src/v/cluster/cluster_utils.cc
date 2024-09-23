@@ -286,6 +286,7 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     } else {
         state.start_cloud_offset = state.next_cloud_offset = model::offset{-1};
     }
+    state.iceberg_enabled = partition->get_ntp_config().iceberg_enabled();
     state.raft_state = get_partition_raft_state(partition->raft());
     return state;
 }

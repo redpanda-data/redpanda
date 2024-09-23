@@ -1148,6 +1148,10 @@
                     "type": "long",
                     "description": "Next cloud offset"
                 },
+                "iceberg_enabled": {
+                    "type": "boolean",
+                    "description": "Whether iceberg translation is enabled on this replica."
+                },
                 "raft_state": {
                     "type": "raft_replica_state",
                     "description": "Underlying raft replica state of the partition instance"

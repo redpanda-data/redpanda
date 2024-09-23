@@ -2790,7 +2790,7 @@ struct partition_raft_state
 
 struct partition_state
   : serde::
-      envelope<partition_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<partition_state, serde::version<1>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     model::offset start_offset;
@@ -2808,6 +2808,7 @@ struct partition_state
     bool is_remote_fetch_enabled;
     bool is_cloud_data_available;
     ss::sstring read_replica_bucket;
+    bool iceberg_enabled;
     partition_raft_state raft_state;
 
     auto serde_fields() {
@@ -2827,7 +2828,8 @@ struct partition_state
           is_remote_fetch_enabled,
           is_cloud_data_available,
           read_replica_bucket,
-          raft_state);
+          raft_state,
+          iceberg_enabled);
     }
 
     friend bool operator==(const partition_state&, const partition_state&)
