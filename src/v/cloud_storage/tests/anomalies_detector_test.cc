@@ -11,17 +11,22 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/inventory/utils.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
+#include "config/node_config.h"
+#include "hashing/xx.h"
 #include "http/tests/http_imposter.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/util/short_streams.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -225,7 +230,7 @@ ss::sstring iobuf_to_string(iobuf buf) {
 
 } // namespace
 
-class bucket_view_fixture : http_imposter_fixture {
+class bucket_view_fixture : public http_imposter_fixture {
 public:
     static constexpr auto host_name = "localhost";
     static constexpr auto port = 4447;
@@ -374,6 +379,30 @@ public:
         remove_object(ssx::sformat("/{}", path().string()));
     }
 
+    struct write_hash_opts {
+        absl::flat_hash_set<cloud_storage::segment_meta> skip_metas;
+    };
+
+    ss::future<> write_hashes_to_disk(const write_hash_opts& opts) {
+        return cloud_storage::inventory::flush_ntp_hashes(
+          config::node().cloud_storage_inventory_hash_path(),
+          get_stm_manifest().get_ntp(),
+          path_hashes(opts.skip_metas),
+          0);
+    }
+
+    fragmented_vector<uint64_t> path_hashes(
+      const absl::flat_hash_set<cloud_storage::segment_meta>& skip_metas) {
+        std::vector<ss::sstring> paths;
+        std::ranges::copy(
+          manifest_paths(_stm_manifest, skip_metas), std::back_inserter(paths));
+        for (const auto& m : _spillover_manifests) {
+            std::ranges::copy(
+              manifest_paths(m, skip_metas), std::back_inserter(paths));
+        }
+        return path_hashes(std::move(paths));
+    }
+
 private:
     void remove_json_stm_manifest(
       const cloud_storage::partition_manifest& manifest) {
@@ -481,6 +510,28 @@ private:
         }
     }
 
+    std::vector<ss::sstring> manifest_paths(
+      const cloud_storage::partition_manifest& manifest,
+      const absl::flat_hash_set<cloud_storage::segment_meta>& skip_metas) {
+        std::vector<ss::sstring> paths;
+        for (const auto& seg_meta : manifest) {
+            if (!skip_metas.contains(seg_meta)) {
+                paths.emplace_back(
+                  manifest.generate_segment_path(seg_meta, path_provider)()
+                    .string());
+            }
+        }
+        return paths;
+    }
+
+    fragmented_vector<uint64_t> path_hashes(std::vector<ss::sstring> paths) {
+        fragmented_vector<uint64_t> hashes;
+        for (auto& path : paths) {
+            hashes.push_back(xxhash_64(path.data(), path.size()));
+        }
+        return hashes;
+    }
+
     cloud_storage_clients::s3_configuration get_client_configuration() {
         net::unresolved_address server_addr(host_name, port);
 
@@ -523,6 +574,7 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
         BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
         BOOST_REQUIRE(!result.detected.has_value());
         BOOST_REQUIRE(!result.last_scrubbed_offset.has_value());
+        BOOST_REQUIRE(result.detected.segment_existence_checked);
     }
 
     {
@@ -538,6 +590,7 @@ FIXTURE_TEST(test_no_anomalies, bucket_view_fixture) {
         // manifest
         BOOST_REQUIRE_EQUAL(
           result.last_scrubbed_offset, get_stm_manifest().get_last_offset());
+        BOOST_REQUIRE(result.detected.segment_existence_checked);
     }
 }
 
@@ -566,6 +619,7 @@ FIXTURE_TEST(test_missing_segments, bucket_view_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       result.detected, flatten_partial_results(partial_results).detected);
+    BOOST_REQUIRE(result.detected.segment_existence_checked);
 }
 
 FIXTURE_TEST(test_segment_depth_limit, bucket_view_fixture) {
@@ -1202,4 +1256,123 @@ BOOST_AUTO_TEST_CASE(test_anomalies_size_limit2) {
     }
     BOOST_REQUIRE_EQUAL(result.missing_segments.size(), 100);
     BOOST_REQUIRE_EQUAL(result.num_discarded_missing_segments, 180);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_should_make_api_call_when_inv_scrub_disabled) {
+    // If inventory scrub is disabled, the usage of query object implies that
+    // scrub is intentionally done without inventory data, so API calls should
+    // be enabled.
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(false);
+    auto q
+      = cloud_storage::existence_query_context::load(false, model::ntp{}).get();
+    BOOST_REQUIRE(!q.is_inv_data_available);
+    BOOST_REQUIRE(q.should_lookup_in_cloud_storage({}));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_should_not_make_api_call_when_inv_data_missing) {
+    // Inv. scrub is enabled but no data found on disk.  The intention behind
+    // using inventory data is to avoid API calls, so skip making calls because
+    // we will have to make one call for every segment.
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+    auto q
+      = cloud_storage::existence_query_context::load(false, model::ntp{}).get();
+    BOOST_REQUIRE(!q.is_inv_data_available);
+    BOOST_REQUIRE(!q.should_lookup_in_cloud_storage({}));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_should_make_api_call_when_inv_data_missing_and_override_set) {
+    // If override is set, make calls even if the data set is missing
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+    auto q
+      = cloud_storage::existence_query_context::load(true, model::ntp{}).get();
+    BOOST_REQUIRE(!q.is_inv_data_available);
+    BOOST_REQUIRE(q.should_lookup_in_cloud_storage({}));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_query_lookup_when_data_loaded_successfully) {
+    // The happy path - scrub enabled, data found on disk.
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+
+    model::ntp ntp{model::ns{"n"}, model::topic{"t"}, model::partition_id{0}};
+    constexpr std::string_view test_path{"t"};
+
+    cloud_storage::inventory::flush_ntp_hashes(
+      config::node().cloud_storage_inventory_hash_path(),
+      ntp,
+      {xxhash_64(test_path.data(), test_path.size())},
+      0)
+      .get();
+    auto q = cloud_storage::existence_query_context::load(false, ntp).get();
+
+    BOOST_REQUIRE(q.is_inv_data_available);
+    BOOST_REQUIRE(!q.should_lookup_in_cloud_storage(
+      cloud_storage::remote_segment_path{test_path}));
+}
+
+namespace {
+
+bool is_call_to_check_for_segment(const http_test_utils::request_info ri) {
+    return ri.method == "HEAD" && ri.url.ends_with(".log.1");
+}
+
+} // namespace
+
+FIXTURE_TEST(test_no_calls_made_for_segment_checks, bucket_view_fixture) {
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+
+    init_view(
+      stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
+
+    write_hashes_to_disk({.skip_metas = {}}).get();
+
+    // 5 ops can manage a full scrub: 1 stm download, 2 HEAD checks for spill, 2
+    // downloads for spill
+    auto result = run_detector(archival::run_quota_t{5});
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    BOOST_REQUIRE(!result.detected.has_value());
+    BOOST_REQUIRE(!result.last_scrubbed_offset.has_value());
+
+    // No segments are checked using API calls
+    auto possible_calls_for_segment_check = get_requests(
+      is_call_to_check_for_segment);
+    BOOST_REQUIRE(possible_calls_for_segment_check.empty());
+    BOOST_REQUIRE(result.detected.segment_existence_checked);
+}
+
+FIXTURE_TEST(test_calls_made_when_segment_missing, bucket_view_fixture) {
+    scoped_config sc{};
+    sc.get("cloud_storage_inventory_based_scrub_enabled").set_value(true);
+
+    init_view(
+      stm_manifest, {spillover_manifest_at_0, spillover_manifest_at_20});
+
+    const auto& first_spill = get_spillover_manifests().at(0);
+    const auto& spill_segment = first_spill.begin();
+    remove_segment(first_spill, *spill_segment);
+
+    write_hashes_to_disk({.skip_metas = {*spill_segment}}).get();
+
+    auto result = run_detector(archival::run_quota_t{6});
+    BOOST_REQUIRE_EQUAL(result.status, cloud_storage::scrub_status::full);
+    BOOST_REQUIRE(result.detected.has_value());
+    const auto& missing_segs = result.detected.missing_segments;
+    BOOST_REQUIRE_EQUAL(missing_segs.size(), 1);
+    BOOST_REQUIRE(missing_segs.contains(*spill_segment));
+
+    auto possible_calls_for_segment_check = get_requests(
+      is_call_to_check_for_segment);
+    BOOST_REQUIRE_EQUAL(possible_calls_for_segment_check.size(), 1);
+    BOOST_REQUIRE(result.detected.segment_existence_checked);
+
+    auto path = first_spill.generate_segment_path(
+      *spill_segment, path_provider);
+    BOOST_REQUIRE_EQUAL(
+      fmt::format("/{}", path().native()),
+      possible_calls_for_segment_check[0].url);
 }

@@ -78,18 +78,6 @@ private:
     // memory used falls below the max hash size limit.
     ss::future<> flush(write_all_t write_all_entries = write_all_t::no);
 
-    // Writes hashes for a single NTP to a data file. The data file is
-    // located in path: namespace/topic/partition_id/{seq}. The parent
-    // directories are created if missing. A new data file is created for each
-    // flush operation.
-    ss::future<> flush_ntp_hashes(
-      model::ntp ntp, fragmented_vector<uint64_t> hashes, uint64_t file_name);
-    ss::future<>
-    write_hashes_to_file(ss::file& f, fragmented_vector<uint64_t> hashes);
-
-    ss::future<> write_hashes_to_file(
-      ss::output_stream<char>& stream, fragmented_vector<uint64_t> hashes);
-
     // The root directory for hash files
     std::filesystem::path _hash_store_path;
 

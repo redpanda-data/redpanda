@@ -323,7 +323,7 @@ void scrub_segment_meta(
   segment_meta_anomalies& detected);
 
 struct anomalies
-  : serde::envelope<anomalies, serde::version<1>, serde::compat_version<0>> {
+  : serde::envelope<anomalies, serde::version<2>, serde::compat_version<0>> {
     // Missing partition manifests
     bool missing_partition_manifest{false};
     // Spillover manifests referenced by the manifest which were not
@@ -343,6 +343,10 @@ struct anomalies
     uint32_t num_discarded_missing_segments{0};
     uint32_t num_discarded_metadata_anomalies{0};
 
+    // Shows whether segment existence checks were done as part of the scrub.
+    // These checks may be skipped if inventory data is missing on disk.
+    bool segment_existence_checked{false};
+
     auto serde_fields() {
         return std::tie(
           missing_partition_manifest,
@@ -352,7 +356,8 @@ struct anomalies
           last_complete_scrub,
           num_discarded_missing_spillover_manifests,
           num_discarded_missing_segments,
-          num_discarded_metadata_anomalies);
+          num_discarded_metadata_anomalies,
+          segment_existence_checked);
     }
 
     bool has_value() const;

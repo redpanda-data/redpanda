@@ -45,6 +45,16 @@ ntp_path_hashes::ntp_path_hashes(
   , _rtc{_as}
   , _ctxlog{cst_log, _rtc, _ntp.path()} {}
 
+ntp_path_hashes::ntp_path_hashes(ntp_path_hashes&& other) noexcept
+  : _ntp{std::move(other._ntp)}
+  , _ntp_hashes_path{std::move(other._ntp_hashes_path)}
+  , _path_hashes{std::move(other._path_hashes)}
+  , _possible_collisions{std::move(other._possible_collisions)}
+  , _loaded{other._loaded}
+  , _rtc{_as}
+  , _ctxlog{cst_log, _rtc, _ntp.path()}
+  , _gate{std::move(other._gate)} {}
+
 ss::future<bool> ntp_path_hashes::load_hashes() {
     auto h = _gate.hold();
     if (co_await ss::file_exists(_ntp_hashes_path.string())) {

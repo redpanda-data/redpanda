@@ -12,7 +12,7 @@
 
 #include "cloud_storage/inventory/inv_consumer.h"
 
-#include "bytes/iostream.h"
+#include "cloud_storage/inventory/utils.h"
 #include "cloud_storage/logger.h"
 #include "hashing/xx.h"
 #include "serde/rw/rw.h"
@@ -140,6 +140,7 @@ inventory_consumer::flush(inventory_consumer::write_all_t write_all_entries) {
         for (auto& [ntp, flush_state] : _ntp_flush_states) {
             if (!flush_state.hashes.empty()) {
                 co_await flush_ntp_hashes(
+                  _hash_store_path,
                   ntp,
                   std::move(flush_state.hashes),
                   flush_state.next_file_name);
@@ -182,6 +183,7 @@ inventory_consumer::flush(inventory_consumer::write_all_t write_all_entries) {
         _ntp_flush_states[entries[idx].ntp].next_file_name += 1;
 
         co_await flush_ntp_hashes(
+          _hash_store_path,
           std::move(entries[idx].ntp),
           std::move(entries[idx].hashes),
           entries[idx].file_name);
@@ -201,56 +203,6 @@ inventory_consumer::flush(inventory_consumer::write_all_t write_all_entries) {
     for (; idx < entries.size(); ++idx) {
         _ntp_flush_states[entries[idx].ntp].hashes = std::move(
           entries[idx].hashes);
-    }
-}
-
-ss::future<> inventory_consumer::flush_ntp_hashes(
-  model::ntp ntp, fragmented_vector<uint64_t> hashes, uint64_t file_name) {
-    auto ntp_hash_path = _hash_store_path / std::string_view{ntp.path()};
-    const auto ntp_hash_dir = ntp_hash_path.string();
-
-    if (!co_await ss::file_exists(ntp_hash_dir)) {
-        co_await ss::recursive_touch_directory(ntp_hash_dir);
-    }
-
-    ntp_hash_path /= fmt::format("{}", file_name);
-    vlog(
-      cst_log.trace,
-      "Writing {} hashe(s) to file {}",
-      hashes.size(),
-      ntp_hash_path);
-    co_return co_await ss::with_file_close_on_failure(
-      ss::open_file_dma(
-        ntp_hash_path.string(), ss::open_flags::create | ss::open_flags::wo),
-      [hashes = std::move(hashes), this](auto& f) mutable {
-          return write_hashes_to_file(f, std::move(hashes));
-      });
-}
-
-ss::future<> inventory_consumer::write_hashes_to_file(
-  ss::file& f, fragmented_vector<uint64_t> hashes) {
-    std::exception_ptr ep;
-    auto stream = co_await ss::make_file_output_stream(f);
-    auto res = co_await ss::coroutine::as_future(
-      write_hashes_to_file(stream, std::move(hashes)));
-    co_await stream.close();
-    if (res.failed()) {
-        std::rethrow_exception(res.get_exception());
-    }
-}
-
-ss::future<> inventory_consumer::write_hashes_to_file(
-  ss::output_stream<char>& stream, fragmented_vector<uint64_t> hashes) {
-    iobuf serialized;
-    serde::write(serialized, std::move(hashes));
-
-    iobuf chunk_size;
-    serde::write(chunk_size, serialized.size_bytes());
-
-    co_await write_iobuf_to_output_stream(std::move(chunk_size), stream);
-
-    for (const auto& frag : serialized) {
-        co_await stream.write(frag.get(), frag.size());
     }
 }
 

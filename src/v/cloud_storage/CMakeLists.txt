@@ -56,6 +56,7 @@ v_cc_library(
     inventory/report_parser.cc
     inventory/inv_consumer.cc
     inventory/ntp_hashes.cc
+    inventory/utils.cc
   DEPS
     Seastar::seastar
     v::bytes

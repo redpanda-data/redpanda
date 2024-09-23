@@ -116,7 +116,9 @@ partition_validator::do_validate_manifest_metadata() {
       op_rtc_,
       cloud_storage::anomalies_detector::segment_depth_t{
         static_cast<cloud_storage::anomalies_detector::segment_depth_t::type>(
-          checks_.max_segment_depth)}));
+          checks_.max_segment_depth)},
+      std::nullopt,
+      true));
 
     if (anomalies_fut.failed()) {
         // propagate shutdown exceptions, but treat other exceptions as hard
@@ -153,7 +155,7 @@ partition_validator::do_validate_manifest_metadata() {
     // this unpack is to trigger a compilation error if a new field is added
     // to cloud_storage::anomalies. If a new anomalies is added, it should
     // be also handled here
-    const auto& [no_partition_manifest, missing_spillovers, missing_segments, segment_anomalies, ignore1, ignore2, ignore3, ignore4]
+    const auto& [no_partition_manifest, missing_spillovers, missing_segments, segment_anomalies, ignore1, ignore2, ignore3, ignore4, ignore5]
       = anomalies.detected;
 
     if (no_partition_manifest) {
