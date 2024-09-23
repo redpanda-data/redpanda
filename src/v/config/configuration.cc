@@ -3352,7 +3352,50 @@ configuration::configuration()
       {tls_version::v1_0,
        tls_version::v1_1,
        tls_version::v1_2,
-       tls_version::v1_3}) {}
+       tls_version::v1_3})
+  , development_feature_property_testing_only(
+      *this,
+      "development_feature_property_testing_only",
+      "Development feature property for testing only.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , enable_developmental_unrecoverable_data_corrupting_features(
+      *this,
+      "enable_developmental_unrecoverable_data_corrupting_features",
+      "Development features should never be enabled in a production cluster, "
+      "or any cluster where stability, data loss, or the ability to upgrade "
+      "are a concern. To enable experimental features, set the value of this "
+      "configuration option to the current unix epoch expressed in seconds. "
+      "The value must be within one hour of the current time on the broker."
+      "Once experimental features are enabled they cannot be disabled",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "",
+      [this](const ss::sstring& v) -> std::optional<ss::sstring> {
+          if (development_features_enabled()) {
+              return fmt::format(
+                "Development feature flag cannot be changed once enabled.");
+          }
+
+          const auto time_since_epoch
+            = std::chrono::system_clock::now().time_since_epoch();
+
+          try {
+              const auto key = std::chrono::seconds(
+                boost::lexical_cast<int64_t>(v));
+
+              const auto dur = std::chrono::abs(time_since_epoch - key);
+              if (dur > std::chrono::hours(1)) {
+                  return fmt::format(
+                    "Invalid key '{}'. Must be within 1 hour of the current "
+                    "unix epoch in seconds.",
+                    key.count());
+              }
+          } catch (const boost::bad_lexical_cast&) {
+              return fmt::format("Could not convert '{}' to integer", v);
+          }
+
+          return std::nullopt;
+      }) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

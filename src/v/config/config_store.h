@@ -140,7 +140,7 @@ public:
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {
-            if (property->get_visibility() == visibility::deprecated) {
+            if (property->is_hidden()) {
                 continue;
             }
 
@@ -173,7 +173,7 @@ public:
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {
-            if (property->get_visibility() == visibility::deprecated) {
+            if (property->is_hidden()) {
                 continue;
             }
 

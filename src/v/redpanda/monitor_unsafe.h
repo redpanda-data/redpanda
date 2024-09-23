@@ -32,6 +32,7 @@ public:
 
 private:
     void unsafe_log_update();
+    void log_development_feature_warning();
     ss::future<> maybe_log_unsafe_nag();
 
     ss::sharded<features::feature_table>& _feature_table;

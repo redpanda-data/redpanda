@@ -38,12 +38,72 @@
 #include <chrono>
 #include <vector>
 
+class monitor_unsafe;
+
 namespace config {
 
 /// Redpanda configuration
 ///
 /// All application modules depend on configuration. The configuration module
 /// can not depend on any other module to prevent cyclic dependencies.
+
+struct configuration;
+
+/*
+ * A configuration property wrapper that fails validation unless experimental
+ * property support has already been enabled.
+ *
+ * Note that our configuration system does not understand dependencies between
+ * configuration options. So if experimental feature support were enabled within
+ * the same request that tried to modify an experimental feature property it may
+ * fail depending on which order updates were applied to the config store.
+ *
+ * The simplest way to circumvent this is to enable support in one request,
+ * and then proceed to interact with experiemntal feature properties.
+ *
+ * Development properties are hidden from the outside world until experimental
+ * property support is enabled, at which point the visibility of the property is
+ * identical to the wrapped property.
+ */
+template<typename T>
+class development_feature_property : public property<T> {
+public:
+    development_feature_property(
+      configuration& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta,
+      T def,
+      property<T>::validator validator = property<T>::noop_validator)
+      : property<T>(
+          conf,
+          name,
+          desc,
+          meta,
+          def,
+          [&conf, validator = std::move(validator)](
+            const auto& v) -> std::optional<ss::sstring> {
+              if (development_features_enabled(conf)) {
+                  // delegate to the underlying property's validator
+                  return validator(v);
+              }
+              return "Development feature support is not enabled.";
+          })
+      , _conf(conf)
+
+    {}
+
+    bool is_hidden() const override {
+        if (development_features_enabled(_conf)) {
+            return property<T>::is_hidden();
+        }
+        return true;
+    }
+
+private:
+    static bool development_features_enabled(const configuration&);
+    configuration& _conf;
+};
 
 struct configuration final : public config_store {
     constexpr static auto target_produce_quota_byte_rate_default
@@ -625,7 +685,43 @@ struct configuration final : public config_store {
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
+
+public:
+    development_feature_property<int> development_feature_property_testing_only;
+
+private:
+    // to query if experimental features are enabled in order to log a nag. it
+    // does not use the query to control any experimental feature.
+    friend class ::monitor_unsafe;
+
+    template<typename T>
+    friend class development_feature_property;
+
+    /*
+     * This configuration property shouldn't be queried directly. Rather, it is
+     * used to enable the use of other feature-specific experimental properties.
+     *
+     * This property is hidden when its value is the same as its default, which
+     * corresponds to the case in which experimental features are not enabled.
+     *
+     * In addition to this property thus being hidden in production scenarios,
+     * it also fixes several tests like rpk-import-export that expect to be able
+     * to set values for all properties that it discovers.
+     */
+    hidden_when_default_property<ss::sstring>
+      enable_developmental_unrecoverable_data_corrupting_features;
+
+    bool development_features_enabled() const {
+        return !enable_developmental_unrecoverable_data_corrupting_features()
+                  .empty();
+    }
 };
+
+template<typename T>
+bool development_feature_property<T>::development_features_enabled(
+  const configuration& conf) {
+    return conf.development_features_enabled();
+}
 
 configuration& shard_local_cfg();
 
