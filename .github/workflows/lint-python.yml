@@ -5,11 +5,13 @@ on:
     branches: [dev]
     paths:
       - '**.py'
+      - '.github/workflows/lint-python.yml'
     tags-ignore:
       - '**'
   pull_request:
     paths:
       - '**.py'
+      - '.github/workflows/lint-python.yml'
 jobs:
   py:
     name: Lint python files
