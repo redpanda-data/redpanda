@@ -15,6 +15,7 @@
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
+#include "json/pointer.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -32,6 +33,7 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
 #include <boost/graph/adjacency_list.hpp>
@@ -105,6 +107,24 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
       .match_all(to_uri(draft201909), to_uri(draft201909, true), draft201909)
       .match_all(to_uri(draft202012), to_uri(draft202012, true), draft202012)
       .default_match(std::nullopt);
+}
+
+// type to contain the canonical uri for an id, in the form host/path
+// useful to limit the degree of freedom of the uri (https vs http, ports, user
+// info, etc)
+using json_id_uri = named_type<ss::sstring, struct json_id_uri_tag>;
+
+// mapping of $id to jsonpointer to the parent object
+// it contains at least the root $id for doc. If the root $id is not
+// present, then the default value "" is used
+using id_to_schema_pointer = absl::
+  flat_hash_map<json_id_uri, std::pair<json::Pointer, json_schema_dialect>>;
+
+json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
+    // ensure that only scheme, host and path are used
+    return json_id_uri{
+      jsoncons::uri{uri.scheme(), "", uri.host(), "", uri.path(), "", ""}
+        .string()};
 }
 
 struct document_context {
@@ -201,6 +221,15 @@ struct pj {
         auto osw = json::OStreamWrapper{os};
         auto writer = json::Writer<json::OStreamWrapper>{osw};
         p.v.Accept(writer);
+        return os;
+    }
+};
+
+struct pjp {
+    const json::Pointer& p;
+    friend std::ostream& operator<<(std::ostream& os, const pjp& p) {
+        auto osw = json::OStreamWrapper{os};
+        p.p.Stringify(osw);
         return os;
     }
 };
