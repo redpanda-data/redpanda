@@ -222,4 +222,33 @@ void rjson_serialize(
     stringize(w, v);
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::node_uuid& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::node_id_override& v) {
+    w.StartObject();
+
+    w.Key("current_uuid");
+    stringize(w, v.key);
+    w.Key("new_uuid");
+    stringize(w, v.uuid);
+    w.Key("new_id");
+    stringize(w, v.id);
+
+    w.EndObject();
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const std::vector<config::node_id_override>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
 } // namespace json
