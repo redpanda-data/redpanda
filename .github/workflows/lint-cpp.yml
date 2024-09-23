@@ -9,6 +9,7 @@ on:
       - '**.cpp'
       - '**.proto'
       - '**.java'
+      - '.github/workflows/lint-cpp.yml'
     tags-ignore:
       - '**'
   pull_request:
@@ -18,6 +19,7 @@ on:
       - '**.cpp'
       - '**.proto'
       - '**.java'
+      - '.github/workflows/lint-cpp.yml'
 jobs:
   cpp:
     name: Lint files with clang-format
