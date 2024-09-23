@@ -23,6 +23,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache-dependency-path: src/go/rpk/go.mod
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
