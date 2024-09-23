@@ -5,11 +5,13 @@ on:
     branches: [dev]
     paths:
       - 'src/go/**'
+      - '.github/workflows/lint-golang.yml'
     tags-ignore:
       - '**'
   pull_request:
     paths:
       - 'src/go/**'
+      - '.github/workflows/lint-golang.yml'
 jobs:
   go:
     name: Lint go files
