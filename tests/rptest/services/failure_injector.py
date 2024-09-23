@@ -71,6 +71,7 @@ class FailureInjectorBase:
     def __exit__(self, type, value, traceback):
         self._heal_all()
         self._continue_all()
+        self._start_all()
 
     def inject_failure(self, spec):
         if spec in self._in_flight:
@@ -157,6 +158,9 @@ class FailureInjectorBase:
         pass
 
     def _continue_all(self):
+        pass
+
+    def _start_all(self):
         pass
 
     def _suspend(self, node):
@@ -265,6 +269,18 @@ class FailureInjector(FailureInjectorBase):
             spec
             for spec in self._in_flight
             if spec.type != FailureSpec.FAILURE_SUSPEND
+        }
+
+    def _start_all(self):
+        self.redpanda.logger.info(
+            f"starting redpanda on nodes that were stopped")
+        for n in self.redpanda.nodes:
+            self._start(n)
+        self._in_flight = {
+            spec
+            for spec in self._in_flight
+            if spec.type != FailureSpec.FAILURE_KILL
+            or spec.type != FailureSpec.FAILURE_TERMINATE
         }
 
     def _suspend(self, node):
