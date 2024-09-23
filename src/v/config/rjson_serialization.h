@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
+#include "config/node_overrides.h"
 #include "config/seed_server.h"
 #include "config/tests/custom_aggregate.h"
 #include "config/tls_config.h"
@@ -99,4 +100,15 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const model::recovery_validation_mode&);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, const model::node_uuid&);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, const config::node_id_override&);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&,
+  const std::vector<config::node_id_override>&);
+
 } // namespace json

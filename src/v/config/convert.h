@@ -588,4 +588,26 @@ struct convert<model::recovery_validation_mode> {
     }
 };
 
+template<>
+struct convert<model::node_uuid> {
+    using type = model::node_uuid;
+    static Node encode(const type& rhs) {
+        return Node(ssx::sformat("{}", rhs));
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        auto out = [&value]() -> std::optional<model::node_uuid> {
+            try {
+                return model::node_uuid(uuid_t::from_string(value));
+            } catch (const std::runtime_error& e) {
+                return std::nullopt;
+            }
+        }();
+        if (out.has_value()) {
+            rhs = out.value();
+        }
+        return out.has_value();
+    }
+};
+
 } // namespace YAML

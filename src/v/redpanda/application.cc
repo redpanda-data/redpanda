@@ -398,6 +398,11 @@ int application::run(int ac, char** av) {
       "redpanda-cfg",
       po::value<std::string>(),
       ".yaml file config for redpanda");
+    app.add_options()(
+      "node-id-overrides",
+      po::value<std::vector<config::node_id_override>>()->multitoken(),
+      "Override node UUID and ID iff current UUID matches "
+      "- usage: <current UUID>:<new UUID>:<new ID>");
 
     // Validate command line args using options registered by the app and
     // seastar. Keep the resulting variables in a temporary map so they don't
@@ -416,6 +421,14 @@ int application::run(int ac, char** av) {
         if (vm["version"].as<bool>()) {
             std::cout << redpanda_version() << std::endl;
             return 0;
+        }
+
+        if (!vm["node-id-overrides"].empty()) {
+            fmt::print(
+              std::cout,
+              "Node ID overrides: {}",
+              vm["node-id-overrides"]
+                .as<std::vector<config::node_id_override>>());
         }
     }
     // use endl for explicit flushing
@@ -808,6 +821,15 @@ void application::hydrate_config(const po::variables_map& cfg) {
           "`redpanda.rack = ''` from your node config as in the future this "
           "may result in Redpanda failing to start");
         config::node().rack.set_value(std::nullopt);
+    }
+
+    // load ID overrides
+    if (!cfg["node-id-overrides"].empty()) {
+        ss::smp::invoke_on_all([&cfg] {
+            config::node().node_id_overrides.set_value(
+              cfg["node-id-overrides"]
+                .as<std::vector<config::node_id_override>>());
+        }).get();
     }
 
     // This includes loading from local bootstrap file or legacy
@@ -2354,6 +2376,25 @@ void application::start_bootstrap_services() {
             serde::to_iobuf(node_uuid))
           .get();
     }
+
+    _node_overrides.maybe_set_overrides(
+      node_uuid, config::node().node_id_overrides());
+
+    // Apply UUID override to node config if present
+    if (auto u = _node_overrides.node_uuid(); u.has_value()) {
+        vlog(
+          _log.warn,
+          "Overriding UUID for node: {} -> {}",
+          node_uuid,
+          u.value());
+        node_uuid = u.value();
+        kvs
+          .put(
+            storage::kvstore::key_space::controller,
+            node_uuid_key,
+            serde::to_iobuf(node_uuid))
+          .get();
+    }
     storage
       .invoke_on_all([node_uuid](storage::api& storage) mutable {
           storage.set_node_uuid(node_uuid);
@@ -2409,6 +2450,18 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           "Running with already-established node ID {}",
           config::node().node_id());
         node_id = config::node().node_id().value();
+    } else if (auto id = _node_overrides.node_id(); id.has_value()) {
+        vlog(
+          _log.warn,
+          "Overriding node ID: {} -> {}",
+          config::node().node_id(),
+          id);
+        node_id = id.value();
+        // null out the config'ed ID indiscriminately; it will be set outside
+        // the conditional
+        ss::smp::invoke_on_all([] {
+            config::node().node_id.set_value(std::nullopt);
+        }).get();
     } else {
         auto registration_result = cd.register_with_cluster().get();
         node_id = registration_result.assigned_node_id;
