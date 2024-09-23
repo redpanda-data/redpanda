@@ -50,8 +50,8 @@ public:
 private:
     struct work_scope {
         std::optional<state> sought_state;
-        bool partition_work_needed;
-        bool topic_work_needed;
+        bool partition_work_needed = false;
+        bool topic_work_needed = false;
     };
     struct topic_reconciliation_state {
         size_t idx_in_migration;

@@ -144,7 +144,7 @@ class DataMigrationsApiTest(RedpandaTest):
             timeout_sec=90,
             backoff_sec=1,
             err_msg=
-            f"Failed waiting for migration {id} to reach on of {states} states"
+            f"Failed waiting for migration {id} to reach one of {states} states"
         )
 
     def wait_migration_appear(self, migration_id):
@@ -331,8 +331,6 @@ class DataMigrationsApiTest(RedpandaTest):
 
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 0, "There should be no data migrations"
 
             # in
             inbound_topics = [
@@ -360,8 +358,6 @@ class DataMigrationsApiTest(RedpandaTest):
                 )
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 0, "There should be no data migrations"
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(

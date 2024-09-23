@@ -154,7 +154,7 @@ bool metadata_cache::should_reject_writes() const {
 
 bool metadata_cache::should_reject_reads(model::topic_namespace_view tp) const {
     return _migrated_resources.local().get_topic_state(tp)
-           >= data_migrations::migrated_resource_state::fully_blocked;
+           >= data_migrations::migrated_resource_state::create_only;
 }
 
 bool metadata_cache::should_reject_writes(

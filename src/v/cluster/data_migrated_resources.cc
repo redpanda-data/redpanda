@@ -51,6 +51,7 @@ migrated_resource_state get_resource_state<inbound_migration>(state state) {
     case state::planned:
         return migrated_resource_state::metadata_locked;
     case state::preparing:
+        return migrated_resource_state::create_only;
     case state::prepared:
     case state::canceling:
     case state::executing:
