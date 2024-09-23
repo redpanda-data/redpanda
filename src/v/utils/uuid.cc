@@ -54,4 +54,6 @@ std::istream& operator>>(std::istream& is, uuid_t& u) {
     return is;
 }
 
-uuid_t::operator ss::sstring() const { return fmt::format("{}", RP_FMT_STREAMED(_uuid)); }
+uuid_t::operator ss::sstring() const {
+    return fmt::format("{}", RP_FMT_STREAMED(_uuid));
+}
