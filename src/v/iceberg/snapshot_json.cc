@@ -42,6 +42,23 @@ snapshot_operation operation_from_str(const ss::sstring& operation_str) {
       .match(operation_to_str(delete_data), delete_data);
 }
 
+constexpr std::string_view ref_type_to_str(snapshot_ref_type t) {
+    using enum snapshot_ref_type;
+    switch (t) {
+    case tag:
+        return "tag";
+    case branch:
+        return "branch";
+    }
+}
+
+snapshot_ref_type ref_type_from_str(const ss::sstring& ref_type_str) {
+    using enum snapshot_ref_type;
+    return string_switch<snapshot_ref_type>(ref_type_str)
+      .match(ref_type_to_str(tag), tag)
+      .match(ref_type_to_str(branch), branch);
+}
+
 } // namespace
 
 snapshot parse_snapshot(const json::Value& v) {
@@ -103,6 +120,22 @@ snapshot parse_snapshot(const json::Value& v) {
     };
 }
 
+snapshot_reference parse_snapshot_ref(const json::Value& v) {
+    auto id = parse_required_i64(v, "snapshot-id");
+    auto type_str = parse_required_str(v, "type");
+    auto type = ref_type_from_str(type_str);
+    auto max_ref_age_ms = parse_optional_i64(v, "max-ref-age-ms");
+    auto max_snapshot_age_ms = parse_optional_i64(v, "max-snapshot-age-ms");
+    auto min_snapshots_to_keep = parse_optional_i32(v, "min-snapshots-to-keep");
+    return snapshot_reference{
+      .snapshot_id = snapshot_id{id},
+      .type = type,
+      .max_ref_age_ms = max_ref_age_ms,
+      .max_snapshot_age_ms = max_snapshot_age_ms,
+      .min_snapshots_to_keep = min_snapshots_to_keep,
+    };
+}
+
 } // namespace iceberg
 
 namespace json {
@@ -136,6 +169,28 @@ void rjson_serialize(
     }
     w.EndObject();
 
+    w.EndObject();
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const iceberg::snapshot_reference& s) {
+    w.StartObject();
+    w.Key("snapshot-id");
+    w.Int64(s.snapshot_id());
+    w.Key("type");
+    w.String(ss::sstring(iceberg::ref_type_to_str(s.type)));
+    if (s.max_ref_age_ms.has_value()) {
+        w.Key("max-ref-age-ms");
+        w.Int64(s.max_ref_age_ms.value());
+    }
+    if (s.max_snapshot_age_ms.has_value()) {
+        w.Key("max-snapshot-age-ms");
+        w.Int64(s.max_snapshot_age_ms.value());
+    }
+    if (s.min_snapshots_to_keep.has_value()) {
+        w.Key("min-snapshots-to-keep");
+        w.Int(s.min_snapshots_to_keep.value());
+    }
     w.EndObject();
 }
 

@@ -79,4 +79,37 @@ struct snapshot {
     friend bool operator==(const snapshot&, const snapshot&) = default;
 };
 
+// The type of snapshot reference.
+enum class snapshot_ref_type {
+    // A label for an individual snapshot.
+    tag,
+
+    // A mutable named reference. Can be updated by committing a new snapshot
+    // as a branch's referened snapshot.
+    branch,
+};
+
+// Represents a named reference to a snapshot.
+// NOTE: the name of the reference is tracked outside of the reference itself,
+// e.g. in table metadata.
+struct snapshot_reference {
+    snapshot_id snapshot_id;
+    snapshot_ref_type type;
+
+    // For snapshot references except the 'main' branch, a positive number for
+    // the max age of the snapshot reference to keep while expiring snapshots.
+    std::optional<int64_t> max_ref_age_ms;
+
+    // For branch type only, a positive number for the max age of snapshots to
+    // keep when expiring, including the latest snapshot.
+    std::optional<int64_t> max_snapshot_age_ms;
+
+    // For branch type only, a positive number for the minimum number of
+    // snapshots to keep in a branch while expiring snapshots.
+    std::optional<int32_t> min_snapshots_to_keep;
+
+    friend bool operator==(const snapshot_reference&, const snapshot_reference&)
+      = default;
+};
+
 } // namespace iceberg
