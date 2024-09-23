@@ -705,3 +705,9 @@ struct hash<model::broker> {
     }
 };
 } // namespace std
+
+RP_OSTREAM_FMT(model::topic_namespace)
+RP_OSTREAM_FMT(model::broker_shard)
+RP_OSTREAM_FMT(model::broker_endpoint)
+RP_OSTREAM_FMT(model::broker_properties)
+RP_OSTREAM_FMT(model::partition_metadata)

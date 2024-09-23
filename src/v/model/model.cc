@@ -25,6 +25,7 @@
 #include <seastar/net/ip.hh>
 
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 #include <iostream>
 #include <type_traits>
@@ -219,7 +220,7 @@ std::ostream& operator<<(std::ostream& o, const model::broker& b) {
       b.id(),
       b.kafka_advertised_listeners(),
       b.rpc_address(),
-      b.rack(),
+      RP_FMT_STREAMED(b.rack()),
       b.properties());
     return o;
 }
@@ -235,7 +236,7 @@ std::ostream& operator<<(std::ostream& o, const partition_metadata& p_md) {
       o,
       "{{id: {}, leader_id: {}, replicas: {}}}",
       p_md.id,
-      p_md.leader_node,
+      RP_FMT_STREAMED(p_md.leader_node),
       p_md.replicas);
     return o;
 }

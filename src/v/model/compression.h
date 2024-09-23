@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/fmt.h"
 
 #include <cstdint>
 #include <iosfwd>
@@ -79,3 +80,5 @@ inline std::ostream& operator<<(std::ostream& os, const compression& c) {
 std::istream& operator>>(std::istream&, compression&);
 
 } // namespace model
+
+RP_OSTREAM_FMT(model::compression)

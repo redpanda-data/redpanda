@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/fmt.h"
 #include "base/seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -116,3 +117,6 @@ inline timestamp new_timestamp() {
 
 inline timestamp timestamp::now() { return new_timestamp(); }
 } // namespace model
+
+RP_OSTREAM_FMT(model::timestamp)
+RP_OSTREAM_FMT(model::timestamp_type)

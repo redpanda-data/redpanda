@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/fmt.h"
 #include "base/seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -15,7 +16,6 @@
 #include <absl/hash/hash.h>
 #include <boost/uuid/uuid.hpp>
 
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -64,3 +64,5 @@ private:
 
     underlying_t _uuid;
 };
+
+RP_OSTREAM_FMT(uuid_t)

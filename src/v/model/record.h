@@ -974,3 +974,5 @@ private:
 };
 
 } // namespace model
+
+RP_OSTREAM_FMT(model::producer_identity)

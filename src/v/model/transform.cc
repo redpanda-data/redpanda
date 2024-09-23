@@ -26,6 +26,8 @@
 #include <seastar/core/smp.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <fmt/ranges.h>
+
 #include <algorithm>
 #include <optional>
 #include <stdexcept>

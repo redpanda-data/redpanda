@@ -456,3 +456,7 @@ private:
 };
 
 } // namespace model
+
+RP_OSTREAM_FMT(model::transform_report::processor::state)
+RP_OSTREAM_FMT(model::transform_from_start)
+RP_OSTREAM_FMT(model::transform_from_end)

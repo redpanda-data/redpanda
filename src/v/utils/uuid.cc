@@ -40,7 +40,7 @@ uuid_t uuid_t::from_string(std::string_view str) {
 }
 
 std::ostream& operator<<(std::ostream& os, const uuid_t& u) {
-    return os << fmt::format("{}", u._uuid);
+    return os << fmt::format("{}", RP_FMT_STREAMED(u._uuid));
 }
 
 std::istream& operator>>(std::istream& is, uuid_t& u) {
@@ -54,4 +54,4 @@ std::istream& operator>>(std::istream& is, uuid_t& u) {
     return is;
 }
 
-uuid_t::operator ss::sstring() const { return fmt::format("{}", _uuid); }
+uuid_t::operator ss::sstring() const { return fmt::format("{}", RP_FMT_STREAMED(_uuid)); }

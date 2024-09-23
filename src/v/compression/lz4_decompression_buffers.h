@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/fmt.h"
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "thirdparty/lz4/lz4frame.h"
@@ -143,3 +144,6 @@ void* alloc_lz4_obj(void* state, size_t size);
 // flags are updated.
 void free_lz4_obj(void* state, void* address);
 }
+
+RP_OSTREAM_FMT(
+  compression::lz4_decompression_buffers::alloc_ctx::allocation_state)

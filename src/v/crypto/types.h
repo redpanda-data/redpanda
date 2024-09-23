@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/fmt.h"
 #include "base/seastarx.h"
 
 #include <seastar/util/bool_class.hh>
@@ -29,3 +30,5 @@ std::ostream& operator<<(std::ostream&, format_type);
 
 using is_private_key_t = ss::bool_class<struct is_private_key_tag>;
 } // namespace crypto
+
+RP_OSTREAM_FMT(crypto::digest_type)

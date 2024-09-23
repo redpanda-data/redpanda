@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/fmt.h"
 #include "base/seastarx.h"
 #include "serde/envelope.h"
 
@@ -73,3 +74,5 @@ struct hash<net::unresolved_address> {
     }
 };
 } // namespace std
+
+RP_OSTREAM_FMT(net::unresolved_address)

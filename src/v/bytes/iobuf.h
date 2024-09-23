@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/fmt.h"
 #include "base/likely.h"
 #include "base/oncore.h"
 #include "base/seastarx.h"
@@ -462,3 +463,5 @@ inline void iobuf::trim_back(size_t n) {
 }
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
+
+RP_OSTREAM_FMT(iobuf)

@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/fmt.h"
+
 #include <cstdint>
 #include <ostream>
 #include <source_location>
@@ -54,3 +56,5 @@ struct file_line {
 };
 
 } // namespace vlog
+
+RP_OSTREAM_FMT(vlog::file_line)
