@@ -1,3 +1,4 @@
+---
 # Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
@@ -6,12 +7,10 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
 name: rpk
 on:
   push:
-    branches:
-      - 'dev'
+    branches: [dev]
     paths:
       - 'src/go/rpk/**'
       - '.github/workflows/rpk-build.yml'
@@ -19,7 +18,6 @@ on:
     paths:
       - 'src/go/rpk/**'
       - '.github/workflows/rpk-build.yml'
-
 jobs:
   test:
     name: Test rpk
@@ -29,16 +27,13 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     steps:
-
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: stable
           cache-dependency-path: 'src/go/rpk/go.sum'
-
       - name: Run tests
         working-directory: src/go/rpk/
         run: go run gotest.tools/gotestsum@v1.11.0 -- -cover ./...
