@@ -26,7 +26,7 @@ from ducktape.utils.util import wait_until
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
 # strict variant of VERSION_RE that only matches "vX.Y.Z" strings
 STRICT_VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
-RELEASES_CACHE_FILE = "/tmp/redpanda_releases.json"
+RELEASES_CACHE_FILE = "/tmp/ducktape_cache/redpanda_releases.json"
 RELEASES_CACHE_FILE_TTL = timedelta(minutes=30)
 
 # environment variable to pass to ducktape the list of released versions.
