@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 
 #include <cstdint>
@@ -205,3 +206,9 @@ struct hash<named_type<T, Tag>> {
     }
 };
 } // namespace std
+
+#if FMT_VERSION >= 90100
+template<typename T, typename Tag, typename IsConstexpr>
+struct fmt::formatter<detail::base_named_type<T, Tag, IsConstexpr>>
+  : fmt::ostream_formatter {};
+#endif
