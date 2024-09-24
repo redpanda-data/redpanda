@@ -396,6 +396,8 @@ struct partitions_filter
     friend bool operator==(const partitions_filter&, const partitions_filter&)
       = default;
 
+    friend std::ostream& operator<<(std::ostream& o, const partitions_filter&);
+
     auto serde_fields() { return std::tie(namespaces); }
 };
 
