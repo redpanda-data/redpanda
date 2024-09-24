@@ -306,7 +306,8 @@ ss::future<> kvstore::roll() {
                  std::nullopt,
                  _resources,
                  _feature_table,
-                 _ntp_sanitizer_config)
+                 _ntp_sanitizer_config,
+                 _conf.max_segment_size)
           .then([this](ss::lw_shared_ptr<segment> seg) {
               _segment = std::move(seg);
           });
@@ -349,7 +350,8 @@ ss::future<> kvstore::roll() {
                        std::nullopt,
                        _resources,
                        _feature_table,
-                       _ntp_sanitizer_config)
+                       _ntp_sanitizer_config,
+                       _conf.max_segment_size)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
                     _segment = std::move(seg);
                 });

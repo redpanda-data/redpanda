@@ -80,6 +80,29 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "log_manager_test",
+    timeout = "short",
+    srcs = [
+        "log_manager_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:random",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/storage:logger",
+        "//src/v/storage:record_batch_utils",
+        "//src/v/storage:segment_appender",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "index_state_test",
     timeout = "short",
     srcs = [

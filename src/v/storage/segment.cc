@@ -809,7 +809,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   std::optional<batch_cache_index> batch_cache,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
-  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
+  size_t segment_size_hint) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
@@ -820,16 +821,25 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              resources,
              feature_table,
              ntp_sanitizer_config)
-      .then([path, &ntpc, pc, &resources, ntp_sanitizer_config](
-              ss::lw_shared_ptr<segment> seg) mutable {
+      .then([path,
+             &ntpc,
+             pc,
+             segment_size_hint,
+             &resources,
+             ntp_sanitizer_config](ss::lw_shared_ptr<segment> seg) mutable {
           return with_segment(
             std::move(seg),
-            [path, &ntpc, pc, &resources, ntp_sanitizer_config](
+            [path,
+             &ntpc,
+             pc,
+             segment_size_hint,
+             &resources,
+             ntp_sanitizer_config](
               const ss::lw_shared_ptr<segment>& seg) mutable {
                 return internal::make_segment_appender(
                          path,
                          internal::number_of_chunks_from_config(ntpc),
-                         internal::segment_size_from_config(ntpc),
+                         segment_size_hint,
                          pc,
                          resources,
                          std::move(ntp_sanitizer_config))
