@@ -64,7 +64,11 @@ static void display_status_1(std::string_view m, OM_uint32 code, int type) {
             vlog(seclog.info, "gss status from {}", m);
             break;
         } else {
-            vlog(seclog.info, "GSS_API error {}: {}", m, msg);
+            vlog(
+              seclog.info,
+              "GSS_API error {}: {}",
+              m,
+              msg.operator std::string_view());
         }
 
         if (!msg_ctx) {
