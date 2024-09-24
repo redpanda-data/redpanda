@@ -386,7 +386,7 @@ std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr ptr) {
         partition_stm_state state;
         state.name = stm->name();
         state.last_applied_offset = stm->last_applied();
-        state.max_collectible_offset = stm->last_applied();
+        state.max_collectible_offset = stm->max_collectible_offset();
         result.push_back(std::move(state));
     }
     return result;
