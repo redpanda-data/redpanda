@@ -2,6 +2,7 @@ find_package(Arrow REQUIRED)
 find_package(Parquet REQUIRED)
 find_package(Protobuf REQUIRED)
 
+add_subdirectory(coordinator)
 
 v_cc_library(
   NAME datalake
