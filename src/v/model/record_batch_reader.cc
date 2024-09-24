@@ -163,7 +163,7 @@ record_batch_reader make_generating_record_batch_reader(
         bool is_end_of_stream() const final { return _end_of_stream; }
 
         void print(std::ostream& os) final {
-            fmt::print(os, "{generating batch reader}");
+            os << "{generating batch reader}";
         }
 
     protected:

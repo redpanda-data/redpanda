@@ -99,9 +99,7 @@ public:
         });
     }
 
-    void print(std::ostream& os) final {
-        fmt::print(os, "{term assigning reader}");
-    }
+    void print(std::ostream& os) final { os << "{term assigning reader}"; }
 
 private:
     std::unique_ptr<model::record_batch_reader::impl> _source;
