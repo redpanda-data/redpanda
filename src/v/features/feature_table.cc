@@ -15,12 +15,18 @@
 #include "cluster/version.h"
 #include "config/configuration.h"
 #include "features/logger.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "version/version.h"
 
 #include <seastar/core/abort_source.hh>
 
+#include <chrono>
+#include <memory>
+
 // The feature table is closely related to cluster and uses many types from it
 using namespace cluster;
+using namespace std::chrono_literals;
 
 namespace features {
 
@@ -200,6 +206,60 @@ static std::array test_extra_schema{
     feature_spec::prepare_policy::always},
 };
 
+class feature_table::probe {
+public:
+    explicit probe(const feature_table& parent)
+      : _parent(parent) {}
+
+    probe(const probe&) = delete;
+    probe& operator=(const probe&) = delete;
+    probe(probe&&) = delete;
+    probe& operator=(probe&&) = delete;
+    ~probe() noexcept = default;
+
+    void setup_metrics() {
+        if (ss::this_shard_id() != 0) {
+            return;
+        }
+
+        if (!config::shard_local_cfg().disable_metrics()) {
+            setup_metrics_for(_metrics);
+        }
+
+        if (!config::shard_local_cfg().disable_public_metrics()) {
+            setup_metrics_for(_public_metrics);
+        }
+    }
+
+    void setup_metrics_for(metrics::metric_groups_base& metrics) {
+        namespace sm = ss::metrics;
+
+        static_assert(
+          !std::is_move_constructible_v<feature_table>
+            && !std::is_move_assignable_v<feature_table>
+            && !std::is_copy_constructible_v<feature_table>
+            && !std::is_copy_assignable_v<feature_table>,
+          "The probe captures a reference to this");
+
+        metrics.add_group(
+          prometheus_sanitize::metrics_name("cluster:features"),
+          {
+            sm::make_gauge(
+              "enterprise_license_expiry_sec",
+              [&ft = _parent]() {
+                  return calculate_expiry_metric(ft.get_license());
+              },
+              sm::description("Number of seconds remaining until the "
+                              "Enterprise license expires"))
+              .aggregate({sm::shard_label}),
+          });
+    }
+
+    const feature_table& _parent;
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
+};
+
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
     // in integration tests.
@@ -232,9 +292,15 @@ feature_table::feature_table() {
             }
         }
     }
+
+    _probe = std::make_unique<probe>(*this);
+    _probe->setup_metrics();
 }
 
+feature_table::~feature_table() noexcept = default;
+
 ss::future<> feature_table::stop() {
+    _probe.reset();
     _as.request_abort();
 
     // Don't trust callers to have fired their abort source in the right
@@ -695,6 +761,18 @@ void feature_table::assert_compatible_version(bool override) {
             }
         }
     }
+}
+
+long long feature_table::calculate_expiry_metric(
+  const std::optional<security::license>& license,
+  security::license::clock::time_point now) {
+    if (!license) {
+        return -1;
+    }
+
+    auto rem = license->expiration() - now;
+    auto rem_capped = std::max(rem.zero(), rem);
+    return rem_capped / 1s;
 }
 
 } // namespace features
