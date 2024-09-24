@@ -12,6 +12,8 @@
 
 #include "cloud_topics/types.h"
 #include "serde/envelope.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/uuid.h"
 
 // This header contains definition of the dl_placeholder batch
 

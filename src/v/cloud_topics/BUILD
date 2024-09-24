@@ -41,11 +41,10 @@ redpanda_cc_library(
     include_prefix = "cloud_topics",
     deps = [
         ":types",
-        "//src/v/model",
         "//src/v/serde",
+        "//src/v/serde:named_type",
         "//src/v/serde:uuid",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
-        "@fmt",
     ],
 )
