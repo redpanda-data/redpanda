@@ -11,11 +11,13 @@
 
 #include "debug_bundle/types.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <gtest/gtest.h>
 
 #include <iomanip>
+#include <optional>
 
 using namespace debug_bundle;
 
@@ -65,4 +67,27 @@ TEST(types_test, test_partition_print) {
        model::partition_id{7}}};
 
     EXPECT_EQ(fmt::format("{}", p), "kafka/test/1,3,5,7");
+}
+
+TEST(types_test, convert_string_to_partition_selection) {
+    auto make = partition_selection::from_string_view;
+    EXPECT_FALSE(make("").has_value());
+    EXPECT_FALSE(make(" ").has_value());
+    EXPECT_FALSE(make("//").has_value());
+    EXPECT_FALSE(make("/foo/bar/1").has_value());
+    EXPECT_FALSE(make("foo/bar/t").has_value());
+    EXPECT_FALSE(make("foo/bar/").has_value());
+    EXPECT_FALSE(make("foo/bar/1d").has_value());
+    EXPECT_FALSE(make(" foo/bar/1").has_value());
+    EXPECT_FALSE(make("foo/bar/1 ").has_value());
+
+    partition_selection foo_bar_1{
+      {model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}}}};
+
+    EXPECT_EQ(*make("foo/bar/1"), foo_bar_1);
+
+    partition_selection bar_1_2{
+      {model::kafka_namespace, model::topic{"bar"}},
+      {{model::partition_id{1}, model::partition_id{2}}}};
+    EXPECT_EQ(*make("bar/1,2"), bar_1_2);
 }

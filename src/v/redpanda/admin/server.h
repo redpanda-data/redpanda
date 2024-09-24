@@ -18,6 +18,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
 #include "config/endpoint_tls_config.h"
+#include "debug_bundle/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/server/fwd.h"
 #include "model/metadata.h"
@@ -93,7 +94,8 @@ public:
       ss::sharded<security::audit::audit_log_manager>&,
       std::unique_ptr<cluster::tx_manager_migrator>&,
       ss::sharded<kafka::server>&,
-      ss::sharded<cluster::tx_gateway_frontend>&);
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<debug_bundle::service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -432,6 +434,7 @@ private:
     void register_recovery_mode_routes();
     void register_data_migration_routes();
     void register_topic_routes();
+    void register_debug_bundle_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -665,6 +668,18 @@ private:
     ss::future<ss::json::json_return_type>
       unmount_topics(std::unique_ptr<ss::http::request>);
 
+    // Debug Bundle routes
+    ss::future<std::unique_ptr<ss::http::reply>> post_debug_bundle(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> get_debug_bundle(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> delete_debug_bundle(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> get_debug_bundle_file(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> delete_debug_bundle_file(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+
     ss::future<> throw_on_error(
       ss::http::request& req,
       std::error_code ec,
@@ -723,6 +738,7 @@ private:
     std::unique_ptr<cluster::tx_manager_migrator>& _tx_manager_migrator;
     ss::sharded<kafka::server>& _kafka_server;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<debug_bundle::service>& _debug_bundle_service;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

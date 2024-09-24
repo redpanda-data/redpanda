@@ -62,6 +62,8 @@ struct scram_creds {
     security::credential_user username;
     security::credential_password password;
     ss::sstring mechanism;
+
+    friend bool operator==(const scram_creds&, const scram_creds&) = default;
 };
 /// Variant so it can be expanded as new authn methods are added to rpk
 using debug_bundle_authn_options = std::variant<scram_creds>;
@@ -71,6 +73,13 @@ using debug_bundle_authn_options = std::variant<scram_creds>;
 struct partition_selection {
     model::topic_namespace tn;
     absl::btree_set<model::partition_id> partitions;
+
+    static std::optional<partition_selection>
+      from_string_view(std::string_view);
+
+    friend bool
+    operator==(const partition_selection&, const partition_selection&)
+      = default;
 };
 
 std::ostream& operator<<(std::ostream& o, const partition_selection& p);
@@ -85,6 +94,10 @@ struct debug_bundle_parameters {
     std::optional<time_variant> logs_until;
     std::optional<std::chrono::seconds> metrics_interval_seconds;
     std::optional<std::vector<partition_selection>> partition;
+
+    friend bool
+    operator==(const debug_bundle_parameters&, const debug_bundle_parameters&)
+      = default;
 };
 
 /// The state of the debug bundle process

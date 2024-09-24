@@ -1,0 +1,256 @@
+"/v1/debug/bundle": {
+  "post": {
+    "description": "Posting to this endpoint will trigger the start of an rpk debug bundle process.  If a process is already executing, this endpoint will return a 409 error.  If there is an issue with starting the process, this endpoint will return a 500 error.",
+    "summary": "Start an rpk debug bundle",
+    "operationId": "post_debug_bundle",
+    "consumes": [
+        "application/json"
+    ],
+    "parameters": [
+      {
+        "name": "config",
+        "in": "body",
+        "required": true,
+        "schema": {
+          "$ref": "#/definitions/bundle_start_config"
+        }
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/bundle_start_response"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "422": {
+        "description": "Format error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal server error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  },
+  "get": {
+    "description": "Returns the status of a debug bundle process.  If one was never kicked off and bundle does not exist, this will return 409",
+    "summary": "Returns the status of a debug bundle process.",
+    "operationId": "get_debug_bundle",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/get_bundle_status"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+},
+"/v1/debug/bundle/{jobid}": {
+  "delete": {
+    "description": "Attempts to kill a running bundle process.  Providing an incorrect `job_id` returns a 422.  If the process is not currently running, the request will return a 409 error.  Internal errors will return a 500 status.",
+    "summary": "Abort a running bundle process.",
+    "operationId": "delete_debug_bundle",
+    "consumes": [
+      "application/json"
+    ],
+    "parameters": [
+      {
+        "name": "jobid",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "204": {
+        "description": "No content"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "422": {
+        "description": "Format Error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+},
+"/v1/debug/bundle/file/{filename}": {
+  "get": {
+    "description": "Returns the generated debug bundle ZIP file",
+    "summary": "Returns the generated debug bundle ZIP file",
+    "operationId": "get_debug_bundle_file",
+    "parameters": [
+      {
+        "name": "filename",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json",
+      "application/zip"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "404": {
+        "description": "Not found",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  },
+  "delete": {
+    "description": "Attempts to delete the generated debug bundle file",
+    "summary": "Attempts to delete the generated debug bundle file",
+    "operationId": "delete_debug_bundle_file",
+    "parameters": [
+      {
+        "name": "filename",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "204": {
+        "description": "OK"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "404": {
+        "description": "Not found",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+}

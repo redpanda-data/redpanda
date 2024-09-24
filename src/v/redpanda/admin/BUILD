@@ -95,6 +95,14 @@ seastar_cc_swagger_library(
     ],
 )
 
+seastar_cc_swagger_library(
+    name = "debug_bundle",
+    src = "api-doc/debug_bundle.json",
+    definitions = [
+        "api-doc/debug_bundle.def.json",
+    ],
+)
+
 redpanda_cc_library(
     name = "cluster_config_schema_util",
     srcs = [
@@ -137,6 +145,7 @@ redpanda_cc_library(
     name = "admin",
     srcs = [
         "debug.cc",
+        "debug_bundle.cc",
         "kafka.cc",
         "migrations.cc",
         "partition.cc",
@@ -155,6 +164,7 @@ redpanda_cc_library(
         "api-doc/cluster_config.json.hh",
         "api-doc/config.json.hh",
         "api-doc/debug.json.hh",
+        "api-doc/debug_bundle.json.hh",
         "api-doc/features.json.hh",
         "api-doc/hbadger.json.hh",
         "api-doc/migration.json.hh",
@@ -180,6 +190,7 @@ redpanda_cc_library(
         ":config",
         ":data_migration_utils",
         ":debug",
+        ":debug_bundle",
         ":features",
         ":hbadger",
         ":migration",
@@ -199,6 +210,8 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/container:lw_shared_container",
+        "//src/v/debug_bundle",
+        "//src/v/debug_bundle:json",
         "//src/v/features",
         "//src/v/features:enterprise_features",
         "//src/v/finjector",
@@ -210,6 +223,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy",
         "//src/v/pandaproxy:config",
         "//src/v/raft",
+        "//src/v/reflection:type_traits",
         "//src/v/resource_mgmt:cpu_profiler",
         "//src/v/resource_mgmt:memory_sampling",
         "//src/v/rpc",
@@ -224,6 +238,7 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
         "//src/v/transform",
+        "//src/v/utils:functional",
         "//src/v/utils:unresolved_address",
         "//src/v/wasm:api",
         "@abseil-cpp//absl/container:flat_hash_map",
@@ -232,6 +247,7 @@ redpanda_cc_library(
         "@boost//:lexical_cast",
         "@boost//:range",
         "@fmt",
+        "@rapidjson",
         "@seastar",
     ],
 )

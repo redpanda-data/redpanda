@@ -1,0 +1,123 @@
+"scram_authn": {
+  "type": "object",
+  "required": ["mechanism", "username", "password"],
+  "properties": {
+    "mechanism": {
+      "description": "SCRAM mechanism",
+      "type": "string"
+    },
+    "username": {
+      "description": "username used by RPK to authenticate against Kafka and Admin API",
+      "type": "string"
+    },
+    "password": {
+      "description": "password used by RPK to authenticate against Kafka and Admin API",
+      "type": "string"
+    }
+  }
+},
+"bundle_start_config_params": {
+  "type": "object",
+  "required": [],
+  "properties": {
+    "authentication": {
+      "description": "Authentication object",
+      "type": "scram_authn"
+    },
+    "controller_logs_size_limit_bytes": {
+      "type": "int"
+    },
+    "cpu_profiler_wait_seconds": {
+      "type": "int"
+    },
+    "logs_since": {
+      "description": "Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options.",
+      "type": "string"
+    },
+    "logs_size_limit_bytes": {
+      "type": "int"
+    },
+    "logs_until": {
+      "description": "Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options.",
+      "type": "string"
+    },
+    "metrics_interval_seconds": {
+      "type": "int"
+    },
+    "partition": {
+      "type": "string"
+    }
+  }
+},
+"bundle_start_config": {
+  "type": "object",
+  "required": ["job_id"],
+  "properties": {
+    "job_id": {
+      "description": "The Job UUID to use",
+      "type": "string"
+    },
+    "config": {
+      "description": "The parameters",
+      "type": "bundle_start_config_params"
+    }
+  }
+},
+"bundle_start_response": {
+  "type": "object",
+  "required": ["job_id"],
+  "properties": {
+    "job_id": {
+      "description": "The Job UUID associated with the debug bundle process",
+      "type": "string"
+    }
+  }
+},
+"get_bundle_status": {
+  "type": "object",
+  "required": ["job_id", "status", "created"],
+  "properties": {
+    "job_id": {
+      "description": "The Job UUID associated with the debug bundle process",
+      "type": "string"
+    },
+    "status": {
+      "description": "The status of the job",
+      "type": "string"
+    },
+    "created": {
+      "description": "When the job was started, in milliseconds since epoch",
+      "type": "int"
+    },
+    "filename": {
+      "description": "Path in API to get the file",
+      "type": "string"
+    },
+    "stdout": {
+      "description": "Only filled in once the process completes.  Content of stdout from rpk",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stderr": {
+      "description": "Only filled in once the process completes.  Content of stderr from rpk",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+},
+"error_body": {
+  "type": "object",
+  "required": ["code", "message"],
+  "properties": {
+    "code": {
+      "type": "int"
+    },
+    "message": {
+      "type": "string"
+    }
+  }
+}

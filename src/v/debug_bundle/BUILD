@@ -31,7 +31,24 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/strings",
         "@fmt",
+        "@re2",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "json",
+    hdrs = [
+        "json.h",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":debug_bundle",
+        "//src/v/base",
+        "//src/v/json",
+        "//src/v/reflection:type_traits",
     ],
 )
