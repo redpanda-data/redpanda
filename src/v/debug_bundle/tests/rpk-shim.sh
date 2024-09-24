@@ -23,6 +23,6 @@ fi
 
 sleep_time="${RPK_SHIM_SLEEP_TIME:-5}"
 
-echo "${original_args[*]}" | tee "$output_file"
+echo "${original_args[*]}" | tee "${output_file}"
 
 sleep "${sleep_time}"

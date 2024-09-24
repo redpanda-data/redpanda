@@ -20,6 +20,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
 #include <gtest/gtest.h>
 
@@ -580,4 +581,54 @@ TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_bad_job_id) {
     EXPECT_EQ(
       del_res.assume_error().code(),
       debug_bundle::error_code::job_id_not_recognized);
+}
+
+ss::future<> wait_for_file_to_be_created(
+  const std::filesystem::path& file, const std::chrono::seconds timeout) {
+    const auto start_time = debug_bundle::clock::now();
+    while (debug_bundle::clock::now() - start_time <= timeout) {
+        if (co_await ss::file_exists(file.native())) {
+            co_return;
+        }
+        co_await ss::check_for_io_immediately();
+    }
+    throw std::runtime_error(
+      fmt::format("Timed out waiting for process file '{}' to exist", file));
+}
+TEST_F_CORO(debug_bundle_service_started_fixture, check_clean_up) {
+    using namespace std::chrono_literals;
+    debug_bundle::job_id_t job1(uuid_t::create());
+    std::filesystem::path job1_file
+      = _data_dir
+        / fmt::format(
+          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job1);
+    debug_bundle::job_id_t job2(uuid_t::create());
+    std::filesystem::path job2_file
+      = _data_dir
+        / fmt::format(
+          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job2);
+    {
+        auto res
+          = co_await _service.local().initiate_rpk_debug_bundle_collection(
+            job1, {});
+        ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+        ASSERT_NO_THROW_CORO(
+          co_await wait_for_file_to_be_created(job1_file, 10s));
+        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job1);
+        ASSERT_TRUE_CORO(term_res.has_value())
+          << term_res.assume_error().message();
+    }
+    {
+        auto res
+          = co_await _service.local().initiate_rpk_debug_bundle_collection(
+            job2, {});
+        ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+        ASSERT_NO_THROW_CORO(
+          co_await wait_for_file_to_be_created(job2_file, 10s));
+        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job2);
+        ASSERT_TRUE_CORO(term_res.has_value())
+          << term_res.assume_error().message();
+    }
+    EXPECT_FALSE(co_await ss::file_exists(job1_file.native()));
+    EXPECT_TRUE(co_await ss::file_exists(job2_file.native()));
 }

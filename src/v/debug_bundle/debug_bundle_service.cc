@@ -67,9 +67,13 @@ void print_arguments(const std::vector<ss::sstring>& args) {
     vlog(lg.debug, "Starting RPK debug bundle: {}", msg);
 }
 
+std::string form_debug_bundle_file_name(job_id_t job_id) {
+    return fmt::format("{}.zip", job_id);
+}
+
 std::filesystem::path form_debug_bundle_file_path(
   const std::filesystem::path& base_path, job_id_t job_id) {
-    return base_path / fmt::format("{}.zip", job_id);
+    return base_path / form_debug_bundle_file_name(job_id);
 }
 
 bool is_valid_rfc1123(std::string_view ns) {
@@ -271,6 +275,14 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
               error_code::debug_bundle_process_running,
               "Debug process already running");
         }
+    }
+
+    try {
+        co_await cleanup_previous_run();
+    } catch (const std::exception& e) {
+        co_return error_info(
+          error_code::internal_error,
+          fmt::format("Failed to clean up previous run: {}", e.what()));
     }
 
     // Make a copy of it now and use it throughout the initialize process
@@ -556,6 +568,21 @@ result<std::vector<ss::sstring>> service::build_rpk_arguments(
     }
 
     return rv;
+}
+
+ss::future<> service::cleanup_previous_run() const {
+    if (_rpk_process == nullptr) {
+        co_return;
+    }
+
+    auto& debug_bundle_file = _rpk_process->output_file_path().native();
+    if (co_await ss::file_exists(debug_bundle_file)) {
+        vlog(
+          lg.debug,
+          "Cleaning up previous debug bundle run {}",
+          debug_bundle_file);
+        co_await ss::remove_file(debug_bundle_file);
+    }
 }
 
 std::optional<debug_bundle_status> service::process_status() const {

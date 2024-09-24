@@ -133,6 +133,11 @@ private:
       std::string_view debug_bundle_file_path, debug_bundle_parameters params);
 
     /**
+     * @brief Cleans up files from previous debug bundle run
+     */
+    ss::future<> cleanup_previous_run() const;
+
+    /**
      * @brief Returns the status of the running process
      *
      * @return std::optional<debug_bundle_status> Will return std::nullopt if
