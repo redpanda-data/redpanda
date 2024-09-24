@@ -27,5 +27,7 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/serde",
         "//src/v/serde:uuid",
+        "//src/v/utils:named_type",
+        "//src/v/utils:uuid",
     ],
 )
