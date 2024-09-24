@@ -87,3 +87,27 @@ redpanda_cc_library(
         "//src/v/reflection:type_traits",
     ],
 )
+
+redpanda_cc_library(
+    name = "metadata",
+    hdrs = [
+        "metadata.h",
+    ],
+    implementation_deps = [
+        "//src/v/serde:vector",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
+    deps = [
+        ":types",
+        "//src/v/bytes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/serde",
+        "//src/v/serde:bytes",
+        "//src/v/serde:named_type",
+        "//src/v/serde:uuid",
+        "//src/v/serde:variant",
+        "//src/v/utils:uuid",
+        "@seastar",
+    ],
+)

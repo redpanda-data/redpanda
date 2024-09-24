@@ -4,6 +4,7 @@ rp_test(
     BINARY_NAME gtest_debug_bundle
     SOURCES
       json_test.cc
+      metadata_test.cc
       types_test.cc
     LIBRARIES
       v::debug_bundle
