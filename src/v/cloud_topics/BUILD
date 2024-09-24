@@ -1,10 +1,23 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "logger",
+    srcs = [
+        "logger.cc",
+    ],
+    hdrs = [
+        "logger.h",
+    ],
+    include_prefix = "cloud_topics",
+    deps = [
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "types",
     hdrs = [
         "dl_placeholder.h",
-        "logger.h",
         "types.h",
         "errc.h",
     ],

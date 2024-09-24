@@ -2,7 +2,7 @@
 v_cc_library(
   NAME cloud_topics
   SRCS
-    logger.h
+    logger.cc
   DEPS
     v::model
     v::serde

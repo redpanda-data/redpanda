@@ -7,13 +7,8 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-
-#pragma once
-
-#include <seastar/util/log.hh>
+#include "cloud_topics/logger.h"
 
 namespace cloud_topics {
-
-extern seastar::logger cd_log;
-
+seastar::logger cd_log("cloud_topics");
 }
