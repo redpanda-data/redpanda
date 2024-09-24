@@ -9,9 +9,11 @@ rpcgen(TARGET generated_datalake_coordinator_rpc
 v_cc_library(
     NAME datalake_coordinator
     SRCS
+        frontend.cc
         state_machine.cc
     DEPS
         generated_datalake_coordinator_rpc
+        v::cluster
         v::model
         v::rpc
         Seastar::seastar
