@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# Hide a bunch of Bazel's built in output.
+# So it's as close to a proxy for the clang-format
+# executable as possible.
+
+bazel run @llvm_18_toolchain//:clang-format \
+  --noshow_progress \
+  --ui_event_filters=,+error,+fail \
+  --show_result=0 \
+  --logging=0 \
+  -- $@

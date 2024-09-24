@@ -54,7 +54,7 @@ py_binary(
 
 sh_binary(
     name = "clang_format",
-    srcs = ["clang_format.sh"],
+    srcs = ["format_cc.sh"],
     args = [
         "$(rootpath @llvm_18_toolchain//:clang-format)",
     ],
@@ -64,4 +64,10 @@ sh_binary(
     # Only build this target on demand, so we don't download
     # this toolchain if we're using a different one for the build.
     tags = ["manual"],
+)
+
+# Just in case you accidently mix it up
+alias(
+    name = "format_clang",
+    actual = ":clang_format",
 )
