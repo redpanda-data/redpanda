@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "bytes/hash.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
@@ -46,10 +47,19 @@ struct repeated {
  * A dynamic representation of a proto3 map.
  */
 struct map {
-    using key = std::
-      variant<double, float, int32_t, int64_t, uint32_t, uint64_t, bool, iobuf>;
+    using key = std::variant<
+      std::monostate, // Can be unset
+      double,
+      float,
+      int32_t,
+      int64_t,
+      uint32_t,
+      uint64_t,
+      bool,
+      iobuf>;
 
     using value = std::variant<
+      std::monostate, // Can be unset
       double,
       float,
       int32_t, // Can be an enum value

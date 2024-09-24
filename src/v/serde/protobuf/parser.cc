@@ -14,6 +14,8 @@
 #include "bytes/iobuf_parser.h"
 #include "utils/vint.h"
 
+#include <seastar/util/variant_utils.hh>
+
 #include <google/protobuf/descriptor.h>
 
 #include <algorithm>
@@ -298,14 +300,73 @@ private:
         }
     }
 
-    template<typename T>
-    void update_field(int32_t field_number, T&& value) {
+    void
+    update_field(int32_t field_number, std::unique_ptr<parsed::message> value) {
         auto* field = current_->descriptor->FindFieldByNumber(field_number);
         if (field == nullptr) {
             throw std::runtime_error(
               fmt::format("unknown field number: {}", field_number));
+        }
+        if (field->is_map()) {
+            convert_to_map_and_update(*field, std::move(value));
         } else {
-            update_field(*field, std::forward<T>(value));
+            update_field(*field, std::move(value));
+        }
+    }
+
+    void convert_to_map_and_update(
+      const pb::FieldDescriptor& field,
+      std::unique_ptr<parsed::message> value) {
+        const auto* key_descriptor = field.message_type()->map_key();
+        parsed::map::key key = std::monostate{};
+        auto it = value->fields.find(key_descriptor->number());
+        if (it != value->fields.end()) {
+            key = ss::visit(
+              it->second,
+              [](double val) -> parsed::map::key { return val; },
+              [](float val) -> parsed::map::key { return val; },
+              [](int32_t val) -> parsed::map::key { return val; },
+              [](int64_t val) -> parsed::map::key { return val; },
+              [](uint32_t val) -> parsed::map::key { return val; },
+              [](uint64_t val) -> parsed::map::key { return val; },
+              [](bool val) -> parsed::map::key { return val; },
+              [](iobuf& val) -> parsed::map::key { return std::move(val); },
+              [](const auto&) -> parsed::map::key {
+                  throw std::runtime_error(
+                    "invariant: unable to convert type to map key");
+              });
+        }
+        const auto* val_descriptor = field.message_type()->map_value();
+        parsed::map::value val = std::monostate{};
+        it = value->fields.find(val_descriptor->number());
+        if (it != value->fields.end()) {
+            val = ss::visit(
+              it->second,
+              [](double val) -> parsed::map::value { return val; },
+              [](float val) -> parsed::map::value { return val; },
+              [](int32_t val) -> parsed::map::value { return val; },
+              [](int64_t val) -> parsed::map::value { return val; },
+              [](uint32_t val) -> parsed::map::value { return val; },
+              [](uint64_t val) -> parsed::map::value { return val; },
+              [](bool val) -> parsed::map::value { return val; },
+              [](iobuf& val) -> parsed::map::value { return std::move(val); },
+              [](std::unique_ptr<parsed::message>& val) -> parsed::map::value {
+                  return std::move(val);
+              },
+              [](const auto&) -> parsed::map::value {
+                  throw std::runtime_error(
+                    "invariant: unable to convert type to map value");
+              });
+        }
+
+        it = current_->message->fields.find(field.number());
+        if (it == current_->message->fields.end()) {
+            parsed::map map;
+            map.entries.emplace(std::move(key), std::move(val));
+            current_->message->fields.emplace(field.number(), std::move(map));
+        } else {
+            auto& map = std::get<parsed::map>(it->second);
+            map.entries.emplace(std::move(key), std::move(val));
         }
     }
 
@@ -337,8 +398,8 @@ private:
     }
 
     /**
-     * Update a repeated field. If T is itself `repeated` then concat the two
-     * sequences, otherwise append the last value.
+     * Update a repeated field. If T is itself `repeated` then concat the
+     * two sequences, otherwise append the last value.
      *
      * field_number must be of a repeated type.
      */
@@ -346,9 +407,7 @@ private:
     void append_repeated_field(int32_t field_number, T&& value) {
         auto it = current_->message->fields.find(field_number);
         if (it == current_->message->fields.end()) {
-            if constexpr (
-              std::is_same_v<T, parsed::repeated>
-              || std::is_same_v<T, parsed::map>) {
+            if constexpr (std::is_same_v<T, parsed::repeated>) {
                 current_->message->fields.emplace(
                   field_number, std::forward<T>(value));
             } else {
@@ -357,11 +416,6 @@ private:
                 parsed::repeated repeated{std::move(vec)};
                 current_->message->fields.emplace(
                   field_number, std::move(repeated));
-            }
-        } else if constexpr (std::is_same_v<T, parsed::map>) {
-            auto& map = std::get<parsed::map>(it->second);
-            for (auto& [key, val] : value) {
-                map.entries.insert_or_assign(std::move(key), std::move(val));
             }
         } else {
             auto& repeated = std::get<parsed::repeated>(it->second);
@@ -385,8 +439,8 @@ private:
 
     void stage_message(
       int32_t field_number, iobuf iobuf, const pb::Descriptor& descriptor) {
-        // Matches the golang max message depth (the highest of all runtimes as
-        // far as I understand it).
+        // Matches the golang max message depth (the highest of all runtimes
+        // as far as I understand it).
         constexpr size_t max_nested_message_depth = 10000;
         if (state_.size() >= max_nested_message_depth) {
             throw std::runtime_error("max nested message depth reached");
@@ -422,7 +476,8 @@ private:
         chunked_vector<std::invoke_result_t<decltype(reader)>> vec;
         if (amount > current_->parser.bytes_left()) {
             throw std::runtime_error(fmt::format(
-              "invalid packed field field: (bytes_needed={}, bytes_left={})",
+              "invalid packed field field: (bytes_needed={}, "
+              "bytes_left={})",
               amount,
               current_->parser.bytes_left()));
         }
@@ -545,10 +600,11 @@ private:
     }
 
     // The state of the current message being parsed. As we encounter new
-    // messages we will push an entry onto state_ so that we are not stack bound
-    // with respect to protobuf nested message depth.
+    // messages we will push an entry onto state_ so that we are not stack
+    // bound with respect to protobuf nested message depth.
     struct state {
-        // The field_number of the proto to push back onto it's parent message.
+        // The field_number of the proto to push back onto it's parent
+        // message.
         int32_t field_number;
         // The parser for this current protobuf only
         iobuf_parser parser;
