@@ -10,6 +10,7 @@ v_cc_library(
     NAME datalake_coordinator
     SRCS
         frontend.cc
+        service.cc
         state_machine.cc
     DEPS
         generated_datalake_coordinator_rpc
