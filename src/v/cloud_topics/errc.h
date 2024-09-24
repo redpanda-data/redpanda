@@ -17,6 +17,8 @@ enum class errc : int16_t {
     success,
     timeout,
     upload_failure,
+    shutting_down,
+    unexpected_failure,
 };
 
 struct errc_category final : public std::error_category {
@@ -30,6 +32,10 @@ struct errc_category final : public std::error_category {
             return "timeout";
         case errc::upload_failure:
             return "upload_failure";
+        case errc::shutting_down:
+            return "shutting_down";
+        case errc::unexpected_failure:
+            return "unexpected_failure";
         }
     }
 };
