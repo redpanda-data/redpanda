@@ -35,7 +35,7 @@ template<>
 struct fmt::formatter<seastar::memory::allocation_site>
   : fmt::formatter<std::string_view> {
     fmt::appender
-    format(const seastar::memory::allocation_site&, fmt::format_context&);
+    format(const seastar::memory::allocation_site&, fmt::format_context&) const;
 };
 
 /// Very simple service enabling memory profiling on all shards.

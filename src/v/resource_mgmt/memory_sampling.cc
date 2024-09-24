@@ -35,7 +35,8 @@ constexpr std::string_view confluence_reference() {
 }
 
 fmt::appender fmt::formatter<seastar::memory::allocation_site>::format(
-  const seastar::memory::allocation_site& site, fmt::format_context& ctx) {
+  const seastar::memory::allocation_site& site,
+  fmt::format_context& ctx) const {
     return fmt::format_to(
       ctx.out(),
       "size: {} count: {} at: {}",
