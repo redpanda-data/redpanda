@@ -26,6 +26,7 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
