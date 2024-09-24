@@ -17525,7 +17525,7 @@
     "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "y9h5L2NtWbogyWSOJgqnUaU50MTPWAW+waelXSirMVg=",
-        "usagesDigest": "0WfL6NdG8mlekoTYr0fwcmDznysoY3G9ft36/b+Sq3k=",
+        "usagesDigest": "rx6fzHx7r0EvnNXJQ3ZCLqEzXQj3VhGP7rK8iTnZ/RU=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -17540,22 +17540,20 @@
               "exec_arch": "",
               "exec_os": "",
               "llvm_mirror": "",
-              "llvm_version": "",
-              "llvm_versions": {
-                "": "17.0.6"
-              },
+              "llvm_version": "17.0.6",
+              "llvm_versions": {},
               "netrc": "",
               "sha256": {
-                "linux-aarch64": "259da3d332e2080ecfe5a059dedb8f485f0b20e6ed2e3880bc5a5b57084f4036",
-                "linux-x86_64": "2c06b2acb362a10b9e7ac3b0aebdccd710a5329d9c7ee46c10889fdf00a41b9f"
+                "linux-aarch64": "28edd46b9666d99c31aa255dfa5497dba95f095d731c6c398fb0e2c0402a958f",
+                "linux-x86_64": "d75de539f9791b35eb4b58bed6c7605a846857c1b203c160a6dad2d620f8b090"
               },
               "strip_prefix": {},
               "urls": {
                 "linux-aarch64": [
-                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"
                 ],
                 "linux-x86_64": [
-                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"
                 ]
               }
             }
@@ -17570,10 +17568,8 @@
               "exec_arch": "",
               "exec_os": "",
               "llvm_mirror": "",
-              "llvm_version": "",
-              "llvm_versions": {
-                "": "18.1.8"
-              },
+              "llvm_version": "18.1.8",
+              "llvm_versions": {},
               "netrc": "",
               "sha256": {
                 "linux-aarch64": "95223a9fd35a2cfea2582b34519bbf65ff6bed498a378eb545a9d4fb8ee5a832",

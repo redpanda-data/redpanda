@@ -27,6 +27,7 @@ cc_library(
         "include/pciaccess.h",
     ],
     copts = [
+        "-Wno-unused-result",
         "-Wpointer-arith",
         "-Wmissing-declarations",
         "-Wformat=2",
