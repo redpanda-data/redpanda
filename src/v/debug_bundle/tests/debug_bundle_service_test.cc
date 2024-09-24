@@ -312,13 +312,34 @@ TEST_F_CORO(debug_bundle_service_started_fixture, terminate_process) {
     }
 
     {
-        auto status = co_await _service.local().rpk_debug_bundle_status();
-        ASSERT_FALSE_CORO(status.has_failure())
-          << res.as_failure().error().message();
+        std::optional<debug_bundle::debug_bundle_status_data> status{};
 
+        // Retry status check with a generous timeout to mitigate inherent
+        // (but benign) race condition agains the status-setter background
+        // fiber.
+        // If we blow the timeout, that is probably indicative of a more
+        // pernicious, system-level bug in the process management module
+        // and will need further investigation.
+        using namespace std::chrono_literals;
+        constexpr auto timeout = 30s;
+        constexpr auto interval = 200ms;
+        auto expiry = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < expiry) {
+            auto st = co_await _service.local().rpk_debug_bundle_status();
+            ASSERT_FALSE_CORO(st.has_failure())
+              << st.as_failure().error().message();
+            status.emplace(std::move(st).assume_value());
+            if (
+              status.value().status
+              != debug_bundle::debug_bundle_status::running) {
+                break;
+            }
+            co_await ss::sleep(interval);
+        }
+
+        ASSERT_TRUE_CORO(status.has_value());
         EXPECT_EQ(
-          status.assume_value().status,
-          debug_bundle::debug_bundle_status::error);
+          status.value().status, debug_bundle::debug_bundle_status::error);
     }
 
     {
