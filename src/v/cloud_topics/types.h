@@ -13,7 +13,7 @@
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
-#include <cinttypes>
+#include <cstdint>
 #include <ostream>
 
 namespace cloud_topics {
