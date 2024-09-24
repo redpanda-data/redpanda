@@ -130,7 +130,8 @@ public:
       ss::sharded<features::feature_table>& feature_table,
       std::optional<ntp_sanitizer_config> sanitizer_config,
       std::optional<model::timestamp> broker_timestamp = std::nullopt,
-      std::optional<model::timestamp> clean_compact_timestamp = std::nullopt);
+      std::optional<model::timestamp> clean_compact_timestamp = std::nullopt,
+      bool may_have_tombstone_records = true);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
@@ -213,6 +214,17 @@ public:
     // Get the compacted timestamp.
     std::optional<model::timestamp> clean_compact_timestamp() const {
         return _state.clean_compact_timestamp;
+    }
+
+    void set_may_have_tombstone_records(bool b) {
+        if (_state.may_have_tombstone_records != b) {
+            _needs_persistence = true;
+        }
+        _state.may_have_tombstone_records = b;
+    }
+
+    bool may_have_tombstone_records() const {
+        return _state.may_have_tombstone_records;
     }
 
     ss::future<bool> materialize_index();

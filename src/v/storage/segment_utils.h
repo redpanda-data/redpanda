@@ -258,20 +258,26 @@ inline bool is_compactible(const model::record_batch& b) {
 offset_delta_time should_apply_delta_time_offset(
   ss::sharded<features::feature_table>& feature_table);
 
-// Optionally returns the timestamp past which a tombstone may be removed.
-// This returns a value iff the segment `s` has been marked as cleanly
-// compacted, and the compaction_config has a value assigned for
-// `tombstone_retention_ms`. In all other cases, `std::nullopt` is returned,
-// indicating that tombstone records will not be removed if encountered.
-std::optional<model::timestamp> get_tombstone_delete_horizon(
+// Checks if a segment is past the tombstone deletion horizon.
+//
+// Returns true iff the segment `s` has been marked as cleanly
+// compacted, the `compaction_config` has a value assigned for
+// `tombstone_retention_ms`, and the current timestamp is greater than
+// `clean_compact_timestamp + tombstone_retention_ms`. In all other cases,
+// the returned value is false, indicating that tombstone records in the segment
+// are not yet eligible for removal.
+bool is_past_tombstone_delete_horizon(
   ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
 
-// Returns true iff the record `r` is a tombstone, and the timestamp returned by
-// `now()` is past the `tombstone_delete_horizon` timestamp (in the case it has
-// a value). Returns false in all other cases.
-bool should_remove_tombstone_record(
-  const model::record& r,
-  std::optional<model::timestamp> tombstone_delete_horizon);
+// Checks if a segment may have any tombstones currently eligible for deletion.
+//
+// Returns true if the segment is marked as potentially having tombstone
+// records, and if the result of evaluating
+// `is_past_tombstone_delete_horizon(seg, cfg)` is also true. This can return
+// false-positives, since segments that have not yet gone through the compaction
+// process are assumed to potentially contain tombstones until proven otherwise.
+bool may_have_removable_tombstones(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
 
 // Mark a segment as completed window compaction, and whether it is "clean" (in
 // which case the `clean_compact_timestamp` is set in the segment's index).

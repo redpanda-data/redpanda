@@ -187,13 +187,26 @@ public:
     std::optional<model::offset> retention_offset(gc_config) const final;
 
     // Collects an iterable list of segments over which to perform sliding
-    // window compaction.
+    // window compaction. This can include segments which have already had their
+    // keys de-duplicated in every segment between the start of the log and
+    // themselves (these are referred to as "clean" segments). These segments
+    // would be no-ops to include in sliding window compaction, but they are
+    // included in the range anyways in order to allow for timely tombstone
+    // record removal via self-compaction, and to ensure that this function
+    // returns a contiguous range of segments. It is up to the caller to filter
+    // out these already cleanly-compacted segments.
     segment_set find_sliding_range(
       const compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
-    void set_last_compaction_window_start_offset(model::offset o) {
+    void
+    set_last_compaction_window_start_offset(std::optional<model::offset> o) {
         _last_compaction_window_start_offset = o;
+    }
+
+    const std::optional<model::offset>&
+    get_last_compaction_window_start_offset() const {
+        return _last_compaction_window_start_offset;
     }
 
     readers_cache& readers() { return *_readers_cache; }

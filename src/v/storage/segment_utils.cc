@@ -367,8 +367,8 @@ ss::future<storage::index_state> do_copy_segment_data(
     auto old_broker_timestamp = seg->index().broker_timestamp();
     auto old_clean_compact_timestamp = seg->index().clean_compact_timestamp();
 
-    const std::optional<model::timestamp> tombstone_delete_horizon
-      = get_tombstone_delete_horizon(seg, cfg);
+    const bool past_tombstone_delete_horizon
+      = internal::is_past_tombstone_delete_horizon(seg, cfg);
 
     // find out which offsets will survive compaction
     auto idx_path = seg->reader().path().to_compacted_index();
@@ -401,19 +401,26 @@ ss::future<storage::index_state> do_copy_segment_data(
       "copying compacted segment data from {} to {}",
       seg->reader().filename(),
       tmpname);
-
+    bool may_have_tombstone_records = false;
     auto should_keep = [compacted_list = std::move(compacted_offsets),
-                        tombstone_delete_horizon = tombstone_delete_horizon](
+                        past_tombstone_delete_horizon,
+                        &may_have_tombstone_records](
                          const model::record_batch& b,
                          const model::record& r,
                          bool) {
-        // Potentially deal with tombstone record removal
-        if (should_remove_tombstone_record(r, tombstone_delete_horizon)) {
+        // Deal with tombstone record removal
+        if (r.is_tombstone() && past_tombstone_delete_horizon) {
             return ss::make_ready_future<bool>(false);
         }
 
         const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-        return ss::make_ready_future<bool>(compacted_list.contains(o));
+        const auto keep = compacted_list.contains(o);
+
+        if (r.is_tombstone() && keep) {
+            may_have_tombstone_records = true;
+        }
+
+        return ss::make_ready_future<bool>(keep);
     };
 
     model::offset segment_last_offset{};
@@ -448,6 +455,9 @@ ss::future<storage::index_state> do_copy_segment_data(
     // restore broker timestamp and clean compact timestamp
     new_index.broker_timestamp = old_broker_timestamp;
     new_index.clean_compact_timestamp = old_clean_compact_timestamp;
+
+    // Set may_have_tombstone_records
+    new_index.may_have_tombstone_records = may_have_tombstone_records;
 
     co_return new_index;
 }
@@ -714,7 +724,9 @@ ss::future<compaction_result> self_compact_segment(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
     }
 
-    if (s->finished_self_compaction() || !s->has_compactible_offsets(cfg)) {
+    if (
+      !s->has_compactible_offsets(cfg)
+      || (s->finished_self_compaction() && !may_have_removable_tombstones(s, cfg))) {
         co_return compaction_result{s->size_bytes()};
     }
 
@@ -882,6 +894,12 @@ make_concatenated_segment(
         return new_ts;
     }();
 
+    // If any of the segments contain a tombstone record, then the new index
+    // should reflect that.
+    auto new_may_have_tombstone_records = std::ranges::any_of(
+      segments,
+      [](const auto& s) { return s->index().may_have_tombstone_records(); });
+
     segment_index index(
       index_name,
       offsets.get_base_offset(),
@@ -889,7 +907,8 @@ make_concatenated_segment(
       feature_table,
       cfg.sanitizer_config,
       new_broker_timestamp,
-      new_clean_compact_timestamp);
+      new_clean_compact_timestamp,
+      new_may_have_tombstone_records);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
@@ -1124,32 +1143,24 @@ void mark_segment_as_finished_window_compaction(
     }
 }
 
-std::optional<model::timestamp> get_tombstone_delete_horizon(
+bool is_past_tombstone_delete_horizon(
   ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
-    std::optional<model::timestamp> tombstone_delete_horizon = {};
-    const auto& tombstone_retention_ms_opt = cfg.tombstone_retention_ms;
     if (
       seg->index().has_clean_compact_timestamp()
-      && tombstone_retention_ms_opt.has_value()) {
-        tombstone_delete_horizon = model::timestamp(
+      && cfg.tombstone_retention_ms.has_value()) {
+        auto tombstone_delete_horizon = model::timestamp(
           seg->index().clean_compact_timestamp()->value()
           + cfg.tombstone_retention_ms->count());
+        return (model::timestamp::now() > tombstone_delete_horizon);
     }
-    return tombstone_delete_horizon;
+
+    return false;
 }
 
-bool should_remove_tombstone_record(
-  const model::record& r,
-  std::optional<model::timestamp> tombstone_delete_horizon) {
-    if (!r.is_tombstone()) {
-        return false;
-    }
-
-    if (!tombstone_delete_horizon.has_value()) {
-        return false;
-    }
-
-    return (model::timestamp::now() > tombstone_delete_horizon.value());
+bool may_have_removable_tombstones(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
+    return seg->index().may_have_tombstone_records()
+           && is_past_tombstone_delete_horizon(seg, cfg);
 }
 
 } // namespace storage::internal

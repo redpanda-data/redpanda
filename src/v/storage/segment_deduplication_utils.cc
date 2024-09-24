@@ -110,6 +110,24 @@ ss::future<model::offset> build_offset_map(
             cfg.asrc->check();
         }
         auto seg = *iter;
+        if (seg->index().has_clean_compact_timestamp()) {
+            // This segment has already been fully deduplicated, so building the
+            // offset map for it would be pointless.
+            vlog(
+              gclog.trace,
+              "segment is already cleanly compacted, no need to add it to the "
+              "offset_map: {}",
+              seg->filename());
+
+            min_segment_fully_indexed = seg->offsets().get_base_offset();
+
+            if (iter == segs.begin()) {
+                break;
+            } else {
+                --iter;
+                continue;
+            }
+        }
         vlog(gclog.trace, "Adding segment to offset map: {}", seg->filename());
 
         try {
@@ -166,12 +184,14 @@ ss::future<index_state> deduplicate_segment(
     auto compaction_placeholder_enabled = feature_table.local().is_active(
       features::feature::compaction_placeholder_batch);
 
-    const std::optional<model::timestamp> tombstone_delete_horizon
-      = internal::get_tombstone_delete_horizon(seg, cfg);
+    const bool past_tombstone_delete_horizon
+      = internal::is_past_tombstone_delete_horizon(seg, cfg);
+    bool may_have_tombstone_records = false;
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map,
+       &may_have_tombstone_records,
        segment_last_offset = seg->offsets().get_committed_offset(),
-       tombstone_delete_horizon = tombstone_delete_horizon,
+       past_tombstone_delete_horizon,
        compaction_placeholder_enabled](
         const model::record_batch& b,
         const model::record& r,
@@ -190,13 +210,20 @@ ss::future<index_state> deduplicate_segment(
                 b.header());
               return ss::make_ready_future<bool>(true);
           }
-          // Potentially deal with tombstone record removal
-          if (internal::should_remove_tombstone_record(
-                r, tombstone_delete_horizon)) {
+
+          // Deal with tombstone record removal
+          if (r.is_tombstone() && past_tombstone_delete_horizon) {
               return ss::make_ready_future<bool>(false);
           }
 
-          return should_keep(map, b, r);
+          return should_keep(map, b, r).then(
+            [&may_have_tombstone_records,
+             is_tombstone = r.is_tombstone()](bool keep) {
+                if (is_tombstone && keep) {
+                    may_have_tombstone_records = true;
+                }
+                return keep;
+            });
       },
       &appender,
       seg->path().is_internal_topic(),
@@ -208,8 +235,14 @@ ss::future<index_state> deduplicate_segment(
 
     auto new_idx = co_await std::move(rdr).consume(
       std::move(copy_reducer), model::no_timeout);
+
+    // restore broker timestamp and clean compact timestamp
     new_idx.broker_timestamp = seg->index().broker_timestamp();
     new_idx.clean_compact_timestamp = seg->index().clean_compact_timestamp();
+
+    // Set may_have_tombstone_records
+    new_idx.may_have_tombstone_records = may_have_tombstone_records;
+
     co_return new_idx;
 }
 
