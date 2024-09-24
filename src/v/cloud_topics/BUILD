@@ -37,7 +37,6 @@ redpanda_cc_library(
         "dl_placeholder.h",
     ],
     include_prefix = "cloud_topics",
-    visibility = ["//visibility:public"],
     deps = [
         ":types",
         "//src/v/model",
