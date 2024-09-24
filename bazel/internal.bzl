@@ -27,4 +27,10 @@ def redpanda_copts():
     copts.append("-Wno-missing-field-initializers")
     copts.append("-Wimplicit-fallthrough")
 
+    # for fmt v9 so that we do not need to write fmt::formatter wrappers for
+    # every output stream operator. note that we can't move to fmt >=v10 because
+    # this workaround macro was removed. so we'll need to rewrite the format
+    # handling for >1000 types.
+    copts.append("-DFMT_DEPRECATED_OSTREAM")
+
     return copts
