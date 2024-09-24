@@ -188,8 +188,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
 }
 
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_debug_bundle(
-  std::unique_ptr<ss::http::request> req,
-  std::unique_ptr<ss::http::reply> rep) {
+  std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply> rep) {
     auto res = co_await _debug_bundle_service.local().rpk_debug_bundle_status();
     if (res.has_error()) {
         co_return make_error_body(res.assume_error(), std::move(rep));
