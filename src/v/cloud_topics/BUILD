@@ -20,13 +20,26 @@ redpanda_cc_library(
         "types.cc",
     ],
     hdrs = [
-        "dl_placeholder.h",
-        "types.h",
         "errc.h",
+        "types.h",
+    ],
+    include_prefix = "cloud_topics",
+    deps = [
+        "//src/v/utils:named_type",
+        "//src/v/utils:uuid",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
+    name = "placeholder",
+    hdrs = [
+        "dl_placeholder.h",
     ],
     include_prefix = "cloud_topics",
     visibility = ["//visibility:public"],
     deps = [
+        ":types",
         "//src/v/model",
         "//src/v/serde",
         "//src/v/serde:uuid",
