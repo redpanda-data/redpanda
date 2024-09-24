@@ -22,10 +22,12 @@
 #include "model/metadata.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
+#include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>

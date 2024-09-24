@@ -1830,6 +1830,13 @@ configuration::configuration()
       "metadata will be updated after each segment upload.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60s)
+  , cloud_storage_aggregated_log_upload_interval_ms(
+      *this,
+      "cloud_storage_aggregated_log_upload_interval_ms",
+      "Defines how frequently the aggregated log segments are uploaded on "
+      "every broker.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      200ms)
   , cloud_storage_readreplica_manifest_sync_timeout_ms(
       *this,
       "cloud_storage_readreplica_manifest_sync_timeout_ms",

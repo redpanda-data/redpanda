@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #pragma once
+#include <type_traits>
 
 class iobuf;
 class iobuf_parser;

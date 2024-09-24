@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cloud_data/aggregated_uploader.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/archival/fwd.h"
@@ -118,6 +119,8 @@ public:
     ss::sharded<archival::upload_housekeeping_service>
       archival_upload_housekeeping;
     ss::sharded<archival::archiver_manager> archiver_manager;
+    ss::sharded<cloud_data::aggregated_uploader<ss::lowres_clock>>
+      aggregated_uploader;
     ss::sharded<cluster::topic_recovery_status_frontend>
       topic_recovery_status_frontend;
     ss::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;

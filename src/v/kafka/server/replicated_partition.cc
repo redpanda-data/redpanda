@@ -28,6 +28,8 @@
 
 #include <optional>
 
+/*TODO: remove*/ static ss::logger fetch_log("replicated_part_logger");
+
 namespace kafka {
 replicated_partition::replicated_partition(
   ss::lw_shared_ptr<cluster::partition> p) noexcept
@@ -67,8 +69,11 @@ replicated_partition::sync_effective_start(
               }
               return error_code;
           }
-          return kafka_start_offset_with_override(
+          auto ko = kafka_start_offset_with_override(
             synced_start_offset_override.value());
+          /*TODO: remove*/ vlog(
+            fetch_log.info, "NEEDLE-RP, sync_effective_start -> {}", ko);
+          return ko;
       });
 }
 
@@ -78,7 +83,9 @@ model::offset replicated_partition::start_offset() const {
     if (!start_offset_override.has_value()) {
         return partition_kafka_start_offset();
     }
-    return kafka_start_offset_with_override(start_offset_override.value());
+    auto ko = kafka_start_offset_with_override(start_offset_override.value());
+    /*TODO: remove*/ vlog(fetch_log.info, "NEEDLE-RP, start_offset -> {}", ko);
+    return ko;
 }
 
 model::offset replicated_partition::high_watermark() const {
@@ -163,12 +170,15 @@ kafka::leader_epoch replicated_partition::leader_epoch() const {
 ss::future<storage::translating_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> debounce_deadline) {
+    /*TODO: remove*/ vlog(fetch_log.info, "NEEDLE-RP, make_reader <- {}", cfg);
     if (
       _partition->is_read_replica_mode_enabled()
       && _partition->cloud_data_available()) {
         // No need to translate the offsets in this case since all fetch
         // requestS in read replica are served via remote_partition which
         // does its own translation.
+        /*TODO: remove*/ vlog(
+          fetch_log.info, "NEEDLE-RP, make_reader (cloud) <- {}", cfg);
         co_return co_await _partition->make_cloud_reader(cfg);
     }
 
@@ -176,15 +186,21 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
       may_read_from_cloud(model::offset_cast(cfg.start_offset))
       && cfg.start_offset >= _partition->start_cloud_offset()) {
         cfg.type_filter = {model::record_batch_type::raft_data};
+        /*TODO: remove*/ vlog(
+          fetch_log.info, "NEEDLE-RP, make_reader (cloud) <- {}", cfg);
         co_return co_await _partition->make_cloud_reader(
           cfg, debounce_deadline);
     }
 
-    cfg.start_offset = _translator->to_log_offset(cfg.start_offset);
-    cfg.max_offset = _translator->to_log_offset(cfg.max_offset);
-    cfg.type_filter = {model::record_batch_type::raft_data};
+    if (!_partition->is_shadow_topic()) {
+        cfg.start_offset = _translator->to_log_offset(cfg.start_offset);
+        cfg.max_offset = _translator->to_log_offset(cfg.max_offset);
+        cfg.type_filter = {model::record_batch_type::raft_data};
+        cfg.translate_offsets = storage::translate_offsets::yes;
+    }
 
-    cfg.translate_offsets = storage::translate_offsets::yes;
+    /*TODO: remove*/ vlog(
+      fetch_log.info, "NEEDLE-RP, make_reader (local) <- {}", cfg);
     auto rdr = co_await _partition->make_reader(cfg, debounce_deadline);
     co_return storage::translating_reader(std::move(rdr), _translator);
 }
@@ -351,7 +367,8 @@ raft::replicate_stages replicated_partition::replicate(
             make_error_code(kafka::error_code::invalid_topic_exception))};
     }
 
-    auto res = _partition->replicate_in_stages(batch_id, std::move(rdr), opts);
+    auto res = _partition->debounce_and_replicate_in_stages(
+      batch_id, std::move(rdr), opts);
 
     raft::replicate_stages out(raft::errc::success);
     out.request_enqueued = std::move(res.request_enqueued);
@@ -382,6 +399,11 @@ model::offset replicated_partition::partition_kafka_start_offset() const {
       && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
         return _partition->start_cloud_offset();
     }
+
+    /*TODO: remove*/ vlog(
+      fetch_log.info,
+      "NEEDLE-RP, partition_kafka_start_offset -> {}",
+      local_kafka_start_offset);
     return local_kafka_start_offset;
 }
 

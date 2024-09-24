@@ -62,13 +62,14 @@ enum class [[nodiscard]] cache_element_status {
 std::ostream& operator<<(std::ostream& o, cache_element_status);
 
 class cache;
+class cloud_storage_cache_api;
 
 /// RAII guard for bytes reserved in the cache: constructed prior to a call
 /// to cache::put, and may be destroyed afterwards.
 class space_reservation_guard {
 public:
     space_reservation_guard(
-      cache& cache, uint64_t bytes, size_t objects) noexcept
+      cloud_storage_cache_api& cache, uint64_t bytes, size_t objects) noexcept
       : _cache(cache)
       , _bytes(bytes)
       , _objects(objects) {}
@@ -94,14 +95,72 @@ public:
     void wrote_data(uint64_t, size_t);
 
 private:
-    cache& _cache;
+    cloud_storage_cache_api& _cache;
 
     // Size acquired at time of reservation
     uint64_t _bytes{0};
     size_t _objects{0};
 };
 
-class cache : public ss::peering_sharded_service<cache> {
+class cloud_storage_cache_api {
+public:
+    cloud_storage_cache_api() = default;
+    cloud_storage_cache_api(const cloud_storage_cache_api&) = default;
+    cloud_storage_cache_api& operator=(const cloud_storage_cache_api&)
+      = default;
+    cloud_storage_cache_api(cloud_storage_cache_api&&) = default;
+    cloud_storage_cache_api& operator=(cloud_storage_cache_api&&) = default;
+    ~cloud_storage_cache_api() = default;
+
+    /// Get cached value as a stream if it exists on disk
+    ///
+    /// \param key is a cache key
+    virtual ss::future<std::optional<cache_item>>
+    get(std::filesystem::path key) = 0;
+
+    /// Add new value to the cache, overwrite if it's already exist
+    ///
+    /// \param key is a cache key
+    /// \param io_priority is an io priority of disk write operation
+    /// \param data is an input stream containing data
+    /// \param write_buffer_size is a write buffer size for disk write
+    /// \param write_behind number of pages that can be written asynchronously
+    /// \param reservation caller must have reserved cache space before
+    /// proceeding with put
+    virtual ss::future<> put(
+      std::filesystem::path key,
+      ss::input_stream<char>& data,
+      space_reservation_guard& reservation,
+      ss::io_priority_class io_priority
+      = priority_manager::local().shadow_indexing_priority(),
+      size_t write_buffer_size = default_write_buffer_size,
+      unsigned int write_behind = default_writebehind)
+      = 0;
+
+    /// \brief Checks if the value is cached
+    ///
+    /// \note returned value \c cache_element_status::in_progress is
+    /// shard-local, it indicates that the object is being written by this
+    /// shard. If the value is being written by another shard, this function
+    /// returns only committed result. The value
+    /// \c cache_element_status::in_progress can be used as a hint since ntp are
+    /// stored on the same shard most of the time.
+    virtual ss::future<cache_element_status>
+    is_cached(const std::filesystem::path& key) = 0;
+
+    // Call this before starting a download, to trim the cache if necessary
+    // and wait until enough free space is available.
+    virtual ss::future<space_reservation_guard>
+      reserve_space(uint64_t, size_t) = 0;
+
+    // Release capacity acquired via `reserve_space`.  This spawns
+    // a background fiber in order to be callable from the guard destructor.
+    virtual void reserve_space_release(uint64_t, size_t, uint64_t, size_t) = 0;
+};
+
+class cache
+  : public ss::peering_sharded_service<cache>
+  , public cloud_storage_cache_api {
 public:
     /// C-tor.
     ///

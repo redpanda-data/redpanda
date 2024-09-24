@@ -13,6 +13,7 @@
 namespace cloud_storage {
 
 class cache;
+class cloud_storage_api;
 class partition_recovery_manager;
 class remote;
 class remote_partition;

@@ -386,6 +386,14 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::data_migration_cmd";
     case record_batch_type::group_fence_tx:
         return o << "batch_type::group_fence_tx";
+    case record_batch_type::dl_placeholder:
+        return o << "batch_type::dl_placeholder";
+    case record_batch_type::dl_delimiter:
+        return o << "batch_type::dl_placeholder";
+    case record_batch_type::dl_stm_cmd:
+        return o << "batch_type::dl_stm_cmd";
+    case record_batch_type::dl_header:
+        return o << "batch_type::dl_header";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

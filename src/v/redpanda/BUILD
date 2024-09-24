@@ -17,6 +17,8 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/cloud_io:remote",
+        "//src/v/cloud_data:aggregated_uploader",
+        "//src/v/cloud_data:dl_stm",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",

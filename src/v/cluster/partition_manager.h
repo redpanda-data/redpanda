@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_data/aggregated_uploader.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cluster/archival/fwd.h"
@@ -45,6 +46,7 @@ public:
       ss::sharded<cloud_storage::partition_recovery_manager>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
+      ss::sharded<cloud_data::aggregated_uploader<ss::lowres_clock>>& agg_upl,
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
@@ -273,6 +275,8 @@ private:
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<cloud_data::aggregated_uploader<ss::lowres_clock>>&
+      _aggregated_uploader;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<features::feature_table>& _feature_table;
