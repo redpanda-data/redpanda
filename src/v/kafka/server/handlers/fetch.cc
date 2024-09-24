@@ -1849,7 +1849,7 @@ std::optional<model::node_id> rack_aware_replica_selector::select_replica(
 }
 
 std::ostream& operator<<(std::ostream& o, const consumer_info& ci) {
-    fmt::print(o, "rack_id: {}, fetch_offset: {}", ci);
+    fmt::print(o, "rack_id: {}, fetch_offset: {}", ci.rack_id, ci.fetch_offset);
     return o;
 }
 } // namespace kafka
