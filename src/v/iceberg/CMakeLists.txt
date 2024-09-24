@@ -36,6 +36,7 @@ v_cc_library(
     manifest_entry_type.cc
     manifest_entry_values.cc
     manifest_io.cc
+    manifest_file_packer.cc
     manifest_list_avro.cc
     partition_key.cc
     partition_key_type.cc

@@ -79,6 +79,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "manifest_file_packer_test",
+    timeout = "short",
+    srcs = [
+        "manifest_file_packer_test.cc",
+    ],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:manifest_file_packer",
+        "//src/v/iceberg:manifest_list",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "manifest_io_test",
     timeout = "short",
     srcs = [

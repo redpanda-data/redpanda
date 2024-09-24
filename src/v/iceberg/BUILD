@@ -182,6 +182,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_file_packer",
+    srcs = [
+        "manifest_file_packer.cc",
+    ],
+    hdrs = [
+        "manifest_file_packer.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest_list",
+        "//src/v/container:fragmented_vector",
+    ],
+)
+
+redpanda_cc_library(
     name = "manifest_io",
     srcs = [
         "manifest_io.cc",
