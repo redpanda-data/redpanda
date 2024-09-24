@@ -8,6 +8,7 @@ v_cc_library(
   NAME datalake
   SRCS
     arrow_translator.cc
+    datalake_manager.cc
     parquet_writer.cc
     record_multiplexer.cc
     schemaless_translator.cc
