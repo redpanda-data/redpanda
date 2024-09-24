@@ -85,6 +85,7 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/coordinator/state_machine.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
@@ -2917,6 +2918,7 @@ void application::start_runtime_services(
           pm.register_factory<cluster::partition_properties_stm_factory>(
             storage.local().kvs(),
             config::shard_local_cfg().rm_sync_timeout_ms.bind());
+          pm.register_factory<datalake::coordinator::stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
