@@ -435,8 +435,12 @@ ss::future<> log_manager::housekeeping_loop() {
 
         try {
             co_await housekeeping_scan(lowest_ts_to_retain());
-        } catch (const std::exception& e) {
-            vlog(stlog.info, "Error processing housekeeping(): {}", e);
+        } catch (...) {
+            auto eptr = std::current_exception();
+            if (ssx::is_shutdown_exception(eptr)) {
+                std::rethrow_exception(eptr);
+            }
+            vlog(stlog.warn, "Error processing housekeeping(): {}", eptr);
         }
 
         co_await ss::coroutine::switch_to(prev_sg);
