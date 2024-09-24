@@ -13,8 +13,9 @@
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
+#include <fmt/core.h>
+
 #include <cstdint>
-#include <ostream>
 
 namespace cloud_topics {
 
@@ -22,17 +23,6 @@ enum class dl_stm_key {
     overlay,
     // TODO: add all commands
 };
-
-inline std::ostream& operator<<(std::ostream& o, dl_stm_key key) {
-    switch (key) {
-    case dl_stm_key::overlay:
-        o << "overlay";
-        break;
-    default:
-        o << "unknown";
-    }
-    return o;
-}
 
 /// Offset in the cloud storage object
 using first_byte_offset_t = named_type<uint64_t, struct first_byte_offset_tag>;
@@ -50,3 +40,10 @@ enum class dl_stm_object_ownership {
 };
 
 } // namespace cloud_topics
+
+template<>
+struct fmt::formatter<cloud_topics::dl_stm_key>
+  : fmt::formatter<std::string_view> {
+    auto format(cloud_topics::dl_stm_key, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};

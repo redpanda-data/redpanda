@@ -16,6 +16,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "types",
+    srcs = [
+        "types.cc",
+    ],
     hdrs = [
         "dl_placeholder.h",
         "types.h",
@@ -29,5 +32,6 @@ redpanda_cc_library(
         "//src/v/serde:uuid",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
+        "@fmt",
     ],
 )
