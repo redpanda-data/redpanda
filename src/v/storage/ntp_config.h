@@ -33,6 +33,7 @@ public:
     // is handled during adl/serde decode).
     static constexpr bool default_remote_delete{true};
     static constexpr bool legacy_remote_delete{false};
+    static constexpr bool default_iceberg_enabled{false};
 
     static constexpr std::chrono::milliseconds read_replica_retention{3600000};
 
@@ -76,6 +77,7 @@ public:
 
         std::optional<std::chrono::milliseconds> flush_ms;
         std::optional<size_t> flush_bytes;
+        bool iceberg_enabled{default_iceberg_enabled};
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -297,6 +299,14 @@ public:
         const auto& cluster_default
           = config::shard_local_cfg().log_cleanup_policy();
         return cleanup_policy_override().value_or(cluster_default);
+    }
+
+    bool iceberg_enabled() const {
+        if (!config::shard_local_cfg().iceberg_enabled) {
+            return false;
+        }
+        return _overrides ? _overrides->iceberg_enabled
+                          : default_iceberg_enabled;
     }
 
 private:

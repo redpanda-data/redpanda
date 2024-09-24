@@ -114,7 +114,7 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       "remote_delete: {}, segment_ms: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {}}}",
+      "flush_bytes: {} iceberg_enabled: {}}}",
       v.compaction_strategy,
       v.cleanup_policy_bitflags,
       v.segment_size,
@@ -129,7 +129,8 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       v.initial_retention_local_target_ms,
       v.write_caching,
       v.flush_ms,
-      v.flush_bytes);
+      v.flush_bytes,
+      v.iceberg_enabled);
 
     return o;
 }

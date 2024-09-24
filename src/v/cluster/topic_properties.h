@@ -33,7 +33,7 @@ namespace cluster {
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<9>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<10>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -71,7 +71,8 @@ struct topic_properties
       std::optional<model::vcluster_id> mpx_virtual_cluster_id,
       std::optional<model::write_caching_mode> write_caching,
       std::optional<std::chrono::milliseconds> flush_ms,
-      std::optional<size_t> flush_bytes)
+      std::optional<size_t> flush_bytes,
+      bool iceberg_enabled)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -108,7 +109,8 @@ struct topic_properties
       , mpx_virtual_cluster_id(mpx_virtual_cluster_id)
       , write_caching(write_caching)
       , flush_ms(flush_ms)
-      , flush_bytes(flush_bytes) {}
+      , flush_bytes(flush_bytes)
+      , iceberg_enabled(iceberg_enabled) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -162,6 +164,7 @@ struct topic_properties
     std::optional<model::write_caching_mode> write_caching;
     std::optional<std::chrono::milliseconds> flush_ms;
     std::optional<size_t> flush_bytes;
+    bool iceberg_enabled{storage::ntp_config::default_iceberg_enabled};
 
     // Label to be used when generating paths of remote objects (manifests,
     // segments, etc) of this topic.
@@ -217,7 +220,8 @@ struct topic_properties
           flush_ms,
           flush_bytes,
           remote_label,
-          remote_topic_namespace_override);
+          remote_topic_namespace_override,
+          iceberg_enabled);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)

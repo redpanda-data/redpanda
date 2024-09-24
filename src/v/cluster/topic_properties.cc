@@ -39,7 +39,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "write_caching: {}, "
       "flush_ms: {}, "
       "flush_bytes: {}, "
-      "remote_label: {}}}",
+      "remote_label: {}, iceberg_enabled: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -72,7 +72,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.write_caching,
       properties.flush_ms,
       properties.flush_bytes,
-      properties.remote_label);
+      properties.remote_label,
+      properties.iceberg_enabled);
 
     return o;
 }
@@ -108,7 +109,8 @@ bool topic_properties::has_overrides() const {
            || initial_retention_local_target_bytes.is_engaged()
            || initial_retention_local_target_ms.is_engaged()
            || write_caching.has_value() || flush_ms.has_value()
-           || flush_bytes.has_value() || remote_label.has_value();
+           || flush_bytes.has_value() || remote_label.has_value()
+           || (iceberg_enabled != storage::ntp_config::default_iceberg_enabled);
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -141,6 +143,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.write_caching = write_caching;
     ret.flush_ms = flush_ms;
     ret.flush_bytes = flush_bytes;
+    ret.iceberg_enabled = iceberg_enabled;
     return ret;
 }
 
@@ -228,7 +231,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       std::nullopt,
       std::nullopt,
-      std::nullopt};
+      std::nullopt,
+      false};
 }
 
 } // namespace reflection

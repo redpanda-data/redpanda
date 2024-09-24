@@ -251,6 +251,10 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.flush_bytes = get_config_value<size_t>(
       config_entries, topic_property_flush_bytes);
 
+    cfg.properties.iceberg_enabled
+      = get_bool_value(config_entries, topic_property_iceberg_enabled)
+          .value_or(storage::ntp_config::default_iceberg_enabled);
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 

@@ -67,7 +67,8 @@ static constexpr auto supported_configs = std::to_array(
    topic_property_initial_retention_local_target_ms,
    topic_property_write_caching,
    topic_property_flush_ms,
-   topic_property_flush_bytes});
+   topic_property_flush_bytes,
+   topic_property_iceberg_enabled});
 
 bool is_supported(std::string_view name) {
     return std::any_of(

@@ -3353,6 +3353,17 @@ configuration::configuration()
        tls_version::v1_1,
        tls_version::v1_2,
        tls_version::v1_3})
+  , iceberg_enabled(
+      *this,
+      "iceberg_enabled",
+      "When set to true, enables the feature that translates topic data to "
+      "iceberg tables. This configuration only enables the feature at the "
+      "cluster level and requires individual topics to explicitly opt in by "
+      "setting the iceberg.enabled property to true. When the configuration "
+      "is set to false, disables the feature at the cluster level effectively "
+      "turning it off for all topics.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",

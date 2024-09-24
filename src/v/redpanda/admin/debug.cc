@@ -803,6 +803,7 @@ admin_server::get_partition_state_handler(
         replica.is_cloud_data_available = state.is_cloud_data_available;
         replica.start_cloud_offset = state.start_cloud_offset;
         replica.next_cloud_offset = state.next_cloud_offset;
+        replica.iceberg_enabled = state.iceberg_enabled;
         fill_raft_state(replica, std::move(state));
         response.replicas.push(std::move(replica));
     }
