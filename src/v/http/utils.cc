@@ -11,6 +11,8 @@
 
 #include "http/utils.h"
 
+#include <boost/algorithm/string/join.hpp>
+
 namespace http {
 
 ss::future<boost::beast::http::status>
@@ -25,6 +27,14 @@ ss::future<iobuf> drain(http::client::response_stream_ref response) {
         buffer.append(co_await response->recv_some());
     }
     co_return buffer;
+}
+
+iobuf form_encode_data(absl::flat_hash_map<ss::sstring, ss::sstring> data) {
+    std::vector<ss::sstring> pairs;
+    for (const auto& [k, v] : data) {
+        pairs.emplace_back(fmt::format("{}={}", k, v));
+    }
+    return iobuf::from(boost::algorithm::join(pairs, "&"));
 }
 
 } // namespace http

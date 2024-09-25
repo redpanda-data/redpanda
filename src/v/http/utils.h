@@ -20,4 +20,6 @@ status(http::client::response_stream_ref response);
 
 ss::future<iobuf> drain(http::client::response_stream_ref response);
 
+iobuf form_encode_data(absl::flat_hash_map<ss::sstring, ss::sstring> data);
+
 } // namespace http

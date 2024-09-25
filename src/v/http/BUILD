@@ -36,6 +36,7 @@ redpanda_cc_library(
         "//src/v/utils:prefix_logger",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:algorithm",
         "@boost//:asio",
         "@boost//:beast",
         "@boost//:optional",
