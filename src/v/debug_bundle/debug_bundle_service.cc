@@ -332,13 +332,43 @@ service::rpk_debug_bundle_path(job_id_t job_id) {
     co_return _rpk_process->_output_file_path;
 }
 
-ss::future<result<void>> service::delete_rpk_debug_bundle() {
+ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
     if (ss::this_shard_id() != service_shard) {
-        co_return co_await container().invoke_on(service_shard, [](service& s) {
-            return s.delete_rpk_debug_bundle();
-        });
+        co_return co_await container().invoke_on(
+          service_shard,
+          [job_id](service& s) { return s.delete_rpk_debug_bundle(job_id); });
     }
-    co_return error_info(error_code::debug_bundle_process_never_started);
+    auto units = co_await _process_control_mutex.get_units();
+    auto status = process_status();
+    if (!status.has_value()) {
+        co_return error_info(error_code::debug_bundle_process_never_started);
+    }
+    switch (status.value()) {
+    case debug_bundle_status::running:
+        co_return error_info(error_code::debug_bundle_process_running);
+    case debug_bundle_status::success:
+    case debug_bundle_status::error:
+        // Attempt the removal of the file even if the process errored out just
+        // in case the file was created
+        break;
+    }
+    if (_rpk_process->_job_id != job_id) {
+        co_return error_info(error_code::job_id_not_recognized);
+    }
+    try {
+        if (co_await ss::file_exists(
+              _rpk_process->_output_file_path.native())) {
+            co_await ss::remove_file(_rpk_process->_output_file_path.native());
+        }
+    } catch (const std::exception& e) {
+        co_return error_info(
+          error_code::internal_error,
+          fmt::format(
+            "Failed to delete debug bundle file {}: {}",
+            _rpk_process->_output_file_path,
+            e.what()));
+    }
+    co_return outcome::success();
 }
 
 std::vector<ss::sstring>

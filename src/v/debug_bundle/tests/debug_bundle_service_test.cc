@@ -469,3 +469,65 @@ TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_bad_job_id) {
       file_path.assume_error().code(),
       debug_bundle::error_code::job_id_not_recognized);
 }
+
+TEST_F_CORO(debug_bundle_service_started_fixture, delete_file) {
+    using namespace std::chrono_literals;
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+    ASSERT_NO_THROW_CORO(
+      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+
+    auto expected_path = _data_dir
+                         / debug_bundle::service::debug_bundle_dir_name
+                         / fmt::format("{}.zip", job_id);
+
+    ASSERT_TRUE_CORO(co_await ss::file_exists(expected_path.native()));
+
+    auto del_res = co_await _service.local().delete_rpk_debug_bundle(job_id);
+    ASSERT_TRUE_CORO(del_res.has_value()) << del_res.assume_error().message();
+
+    EXPECT_FALSE(co_await ss::file_exists(expected_path.native()));
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_not_started) {
+    auto del_res = co_await _service.local().delete_rpk_debug_bundle(
+      debug_bundle::job_id_t(uuid_t::create()));
+    ASSERT_FALSE_CORO(del_res.has_value());
+    EXPECT_EQ(
+      del_res.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_never_started);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_running) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+    auto del_res = co_await _service.local().delete_rpk_debug_bundle(job_id);
+    ASSERT_FALSE_CORO(del_res.has_value());
+    EXPECT_EQ(
+      del_res.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_running);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_bad_job_id) {
+    using namespace std::chrono_literals;
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+    ASSERT_NO_THROW_CORO(
+      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+
+    auto del_res = co_await _service.local().delete_rpk_debug_bundle(
+      debug_bundle::job_id_t(uuid_t::create()));
+    ASSERT_FALSE_CORO(del_res.has_value());
+    EXPECT_EQ(
+      del_res.assume_error().code(),
+      debug_bundle::error_code::job_id_not_recognized);
+}

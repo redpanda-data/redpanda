@@ -109,12 +109,14 @@ public:
 
     /**
      * @brief Attempts to delete the debug bundle file
+     * @param job_id The job id of the file to delete
      *
      * @return ss::future<result<void>> The result with possible error codes:
      * * error_code::debug_bundle_process_never_started
+     * * error_code::debug_bundle_process_running - The process is still running
      * * error_code::internal_error
      */
-    ss::future<result<void>> delete_rpk_debug_bundle();
+    ss::future<result<void>> delete_rpk_debug_bundle(job_id_t job_id);
 
 private:
     /**
