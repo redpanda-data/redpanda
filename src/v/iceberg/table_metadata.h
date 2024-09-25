@@ -75,7 +75,12 @@ struct table_metadata {
     chunked_vector<sort_order> sort_orders;
     sort_order::id_t default_sort_order_id;
 
-    // TODO: (optional) refs
+    // A map of snapshot references. The map keys are the unique snapshot
+    // reference names in the table, and the map values are snapshot reference
+    // objects. There is always a main branch reference pointing to the
+    // current-snapshot-id even if the refs map is null.
+    std::optional<chunked_hash_map<ss::sstring, snapshot_reference>> refs;
+
     // TODO: (optional) statistics
     // TODO: (optional) partition_statistics
 

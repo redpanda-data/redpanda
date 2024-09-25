@@ -81,7 +81,20 @@ TEST(TableMetadataJsonSerde, TestTableMetadata) {
       "manifest-list": "s3://foo/bar/baz/2",
       "schema-id": 1
     }
-  ]
+  ],
+  "refs": {
+    "main": {
+      "snapshot-id": 5937117119577207000,
+      "type": "branch",
+      "max-ref-age-ms": 255486129308,
+      "max-snapshot-age-ms": 255486129307,
+      "min-snapshots-to-keep": 12345
+    },
+    "foo": {
+      "snapshot-id": 5937117119577207000,
+      "type": "tag"
+    }
+  }
 }
 )";
     json::Document parsed_orig_json;
@@ -114,6 +127,9 @@ TEST(TableMetadataJsonSerde, TestTableMetadata) {
     ASSERT_EQ(3055729675574597004, parsed.current_snapshot_id.value()());
     ASSERT_TRUE(parsed.snapshots.has_value());
     ASSERT_EQ(2, parsed.snapshots->size());
+    ASSERT_TRUE(parsed.refs.has_value());
+    ASSERT_TRUE(parsed.refs->contains("main"));
+    ASSERT_TRUE(parsed.refs->contains("foo"));
 
     const auto parsed_orig_as_str = meta_to_json_str(parsed);
     json::Document parsed_roundtrip_json;

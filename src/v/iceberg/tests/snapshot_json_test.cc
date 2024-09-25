@@ -23,6 +23,12 @@ ss::sstring snapshot_to_json_str(const snapshot& s) {
     rjson_serialize(w, s);
     return buf.GetString();
 }
+ss::sstring snapshot_ref_to_json_str(const snapshot_reference& s) {
+    json::StringBuffer buf;
+    json::Writer<json::StringBuffer> w(buf);
+    rjson_serialize(w, s);
+    return buf.GetString();
+}
 } // namespace
 
 TEST(SnapshotJsonSerde, TestSnapshot) {
@@ -95,4 +101,54 @@ TEST(SnapshotJsonSerde, TestSnapshotMissingOptionals) {
     const auto roundtrip_snap = parse_snapshot(parsed_roundtrip_json);
 
     ASSERT_EQ(roundtrip_snap, snap);
+}
+
+TEST(SnapshotJsonSerde, TestSnapshotReferences) {
+    const auto test_ref_str = R"({
+        "snapshot-id": 5937117119577207000,
+        "type": "branch",
+        "max-ref-age-ms": 255486129308,
+        "max-snapshot-age-ms": 255486129307,
+        "min-snapshots-to-keep": 12345
+      })";
+    json::Document parsed_orig_json;
+    parsed_orig_json.Parse(test_ref_str);
+    const auto ref = parse_snapshot_ref(parsed_orig_json);
+    ASSERT_EQ(ref.snapshot_id(), 5937117119577207000);
+    ASSERT_EQ(ref.type, snapshot_ref_type::branch);
+    ASSERT_TRUE(ref.max_snapshot_age_ms.has_value());
+    ASSERT_EQ(ref.max_snapshot_age_ms.value(), 255486129307);
+    ASSERT_TRUE(ref.max_ref_age_ms.has_value());
+    ASSERT_EQ(ref.max_ref_age_ms.value(), 255486129308);
+    ASSERT_TRUE(ref.min_snapshots_to_keep.has_value());
+    ASSERT_EQ(ref.min_snapshots_to_keep.value(), 12345);
+
+    const auto parsed_orig_as_str = snapshot_ref_to_json_str(ref);
+    json::Document parsed_roundtrip_json;
+    parsed_roundtrip_json.Parse(parsed_orig_as_str);
+    const auto roundtrip_ref = parse_snapshot_ref(parsed_roundtrip_json);
+
+    ASSERT_EQ(roundtrip_ref, ref);
+}
+
+TEST(SnapshotJsonSerde, TestSnapshotReferencesMissingOptionals) {
+    const auto test_ref_str = R"({
+        "snapshot-id": 5937117119577207000,
+        "type": "tag"
+      })";
+    json::Document parsed_orig_json;
+    parsed_orig_json.Parse(test_ref_str);
+    const auto ref = parse_snapshot_ref(parsed_orig_json);
+    ASSERT_EQ(ref.snapshot_id(), 5937117119577207000);
+    ASSERT_EQ(ref.type, snapshot_ref_type::tag);
+    ASSERT_FALSE(ref.max_snapshot_age_ms.has_value());
+    ASSERT_FALSE(ref.max_ref_age_ms.has_value());
+    ASSERT_FALSE(ref.min_snapshots_to_keep.has_value());
+
+    const auto parsed_orig_as_str = snapshot_ref_to_json_str(ref);
+    json::Document parsed_roundtrip_json;
+    parsed_roundtrip_json.Parse(parsed_orig_as_str);
+    const auto roundtrip_ref = parse_snapshot_ref(parsed_roundtrip_json);
+
+    ASSERT_EQ(roundtrip_ref, ref);
 }

@@ -162,6 +162,23 @@ table_metadata parse_table_meta(const json::Value& v) {
     for (const auto& s : sort_orders_json) {
         sort_orders.emplace_back(parse_sort_order(s));
     }
+
+    auto refs_json = parse_optional_object(v, "refs");
+    std::optional<chunked_hash_map<ss::sstring, snapshot_reference>> refs;
+    if (refs_json.has_value()) {
+        refs.emplace();
+        for (const auto& r : refs_json.value()) {
+            if (!r.name.IsString()) {
+                throw std::invalid_argument(fmt::format(
+                  "Expected 'refs' field to be string-object map: {} => {}",
+                  r.name.GetType(),
+                  r.value.GetType()));
+            }
+            auto ref = parse_snapshot_ref(r.value);
+            refs->emplace(r.name.GetString(), ref);
+        }
+    }
+
     auto default_sort_order_id = parse_required_i32(v, "default-sort-order-id");
     return table_metadata{
       .format_version = format_version_from_int(format_version),
@@ -180,6 +197,7 @@ table_metadata parse_table_meta(const json::Value& v) {
       .snapshots = std::move(snapshots),
       .sort_orders = std::move(sort_orders),
       .default_sort_order_id = sort_order::id_t{default_sort_order_id},
+      .refs = std::move(refs),
     };
 }
 
@@ -285,6 +303,16 @@ void rjson_serialize(
     w.EndArray();
     w.Key("default-sort-order-id");
     w.Int(m.default_sort_order_id());
+
+    if (m.refs.has_value()) {
+        w.Key("refs");
+        w.StartObject();
+        for (const auto& [name, ref] : m.refs.value()) {
+            w.Key(name);
+            rjson_serialize(w, ref);
+        }
+        w.EndObject();
+    }
     w.EndObject();
 }
 

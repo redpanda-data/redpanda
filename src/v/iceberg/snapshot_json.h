@@ -17,12 +17,15 @@
 namespace iceberg {
 
 snapshot parse_snapshot(const json::Value&);
+snapshot_reference parse_snapshot_ref(const json::Value&);
 
 } // namespace iceberg
 
 namespace json {
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot& m);
+  json::Writer<json::StringBuffer>& w, const iceberg::snapshot& s);
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const iceberg::snapshot_reference& s);
 
 } // namespace json
