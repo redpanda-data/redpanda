@@ -14,6 +14,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/mux_state_machine.h"
+#include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/tests/simple_raft_fixture.h"
 #include "reflection/adl.h"
 #include "state_machine_base.h"

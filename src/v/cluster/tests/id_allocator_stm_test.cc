@@ -6,9 +6,9 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-
 #include "base/outcome.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/tests/raft_fixture_retry_policy.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/record.h"

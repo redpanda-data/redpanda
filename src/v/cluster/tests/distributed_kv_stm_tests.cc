@@ -9,6 +9,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/distributed_kv_stm.h"
+#include "cluster/tests/raft_fixture_retry_policy.h"
 #include "errc.h"
 #include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_group_fixture.h"

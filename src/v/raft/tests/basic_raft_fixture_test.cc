@@ -12,6 +12,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "raft/tests/raft_fixture.h"
+#include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
