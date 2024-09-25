@@ -15,7 +15,7 @@ import zipfile
 import json
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricSamples, MetricsEndpoint
 from rptest.util import expect_exception, get_cluster_license, get_second_cluster_license
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
@@ -209,6 +209,25 @@ class RpkClusterTest(RedpandaTest):
         else:
             assert False, f"Unexpected success: '{r}'"
 
+    def _get_license_expiry(self) -> int:
+        METRICS_NAME = "cluster_features_enterprise_license_expiry_sec"
+
+        def get_metrics_value(metrics_endpoint: MetricsEndpoint) -> int:
+            metrics = self.redpanda.metrics_sample(
+                sample_pattern=METRICS_NAME, metrics_endpoint=metrics_endpoint)
+            assert isinstance(metrics, MetricSamples), \
+                    f'Failed to get metrics for {METRICS_NAME}'
+
+            samples = [sample for sample in metrics.samples]
+            assert len(samples) == len(self.redpanda.nodes), \
+                f'Invalid number of samples: {len(samples)}'
+            return int(samples[0].value)
+
+        internal_val = get_metrics_value(MetricsEndpoint.METRICS)
+        public_val = get_metrics_value(MetricsEndpoint.PUBLIC_METRICS)
+        assert internal_val == public_val, f"Mismatch: {internal_val} != {public_val}"
+        return internal_val
+
     @cluster(num_nodes=3)
     def test_upload_and_query_cluster_license_rpk(self):
         """
@@ -220,6 +239,12 @@ class RpkClusterTest(RedpandaTest):
             self.logger.info(
                 "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
+
+        wait_until(lambda: self._get_license_expiry() == -1,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True,
+                   err_msg="Unset license should return a -1 expiry")
 
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(bytes(license, 'UTF-8'))
@@ -237,6 +262,14 @@ class RpkClusterTest(RedpandaTest):
             backoff_sec=1,
             retry_on_exc=True,
             err_msg="unable to retrieve license information")
+
+        wait_until(
+            lambda: self._get_license_expiry() > 0,
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="The expiry metric should be positive with a valid license"
+        )
 
         expected_license = {
             'expires':
