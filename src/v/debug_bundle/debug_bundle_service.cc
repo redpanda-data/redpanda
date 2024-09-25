@@ -120,6 +120,16 @@ std::filesystem::path form_debug_bundle_storage_directory() {
       / service::debug_bundle_dir_name);
 }
 
+ss::future<iobuf> read_file(std::string_view path) {
+    iobuf buf;
+    auto file = co_await ss::open_file_dma(path, ss::open_flags::ro);
+    auto h = ss::defer([file]() mutable { ssx::background = file.close(); });
+    auto istrm = ss::make_file_input_stream(file);
+    auto ostrm = make_iobuf_ref_output_stream(buf);
+    co_await ss::copy(istrm, ostrm);
+    co_return buf;
+}
+
 ss::future<> write_file(std::string_view path, iobuf buf) {
     auto file = co_await ss::open_file_dma(
       path, ss::open_flags::create | ss::open_flags::rw);
@@ -134,6 +144,12 @@ bool was_run_successful(ss::experimental::process::wait_status wait_status) {
     auto* exited = std::get_if<ss::experimental::process::wait_exited>(
       &wait_status);
     return exited != nullptr && exited->exit_code == 0;
+}
+
+ss::future<bool>
+validate_sha256_checksum(std::string_view path, bytes_view checksum) {
+    auto sum = co_await calculate_sha256_sum(path);
+    co_return sum == checksum;
 }
 } // namespace
 
@@ -169,6 +185,19 @@ public:
         _rpk_process->set_stderr_consumer(
           output_handler{.output_buffer = _cerr});
     }
+
+    explicit debug_bundle_process(metadata md, std::optional<process_output> po)
+      : _job_id(md.job_id)
+      , _wait_result(md.get_wait_status())
+      , _output_file_path(md.debug_bundle_file_path)
+      , _process_output_file_path(md.process_output_file_path)
+      , _cout(
+          po.has_value() ? std::move(po.value().cout)
+                         : chunked_vector<ss::sstring>{})
+      , _cerr(
+          po.has_value() ? std::move(po.value().cerr)
+                         : chunked_vector<ss::sstring>{})
+      , _created_time(md.get_created_at()) {}
 
     debug_bundle_process() = delete;
     debug_bundle_process(debug_bundle_process&&) = default;
@@ -275,12 +304,15 @@ ss::future<> service::start() {
           _rpk_path_binding().native());
     }
 
+    co_await maybe_reload_previous_run();
+
     lg.debug("Service started");
 }
 
 ss::future<> service::stop() {
     lg.debug("Service stopping");
     if (ss::this_shard_id() == service_shard) {
+        auto units = co_await _process_control_mutex.get_units();
         if (is_running()) {
             try {
                 co_await _rpk_process->terminate(1s);
@@ -293,6 +325,7 @@ ss::future<> service::stop() {
         }
     }
     co_await _gate.close();
+    _rpk_process.reset(nullptr);
 }
 
 ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
@@ -650,6 +683,10 @@ ss::future<> service::cleanup_previous_run() const {
         co_await ss::remove_file(process_output_file);
     }
 
+    co_await remove_kvstore_entry();
+}
+
+ss::future<> service::remove_kvstore_entry() const {
     co_await _kvstore->remove(
       storage::kvstore::key_space::debug_bundle,
       bytes::from_string(debug_bundle_metadata_key));
@@ -762,6 +799,92 @@ ss::future<> service::handle_wait_result(job_id_t job_id) {
           lg.warn, "Failed to set metadata for job {}: {}", job_id, e.what());
         co_return;
     }
+}
+ss::future<> service::maybe_reload_previous_run() {
+    auto md_buf = _kvstore->get(
+      storage::kvstore::key_space::debug_bundle,
+      bytes::from_string(debug_bundle_metadata_key));
+
+    if (!md_buf) {
+        vlog(lg.debug, "No previous run detected");
+        co_return;
+    }
+
+    iobuf_parser p(std::move(*md_buf));
+    auto md = serde::read<metadata>(p);
+
+    auto run_was_successful = was_run_successful(md.get_wait_status());
+    auto& debug_bundle_file_path = md.debug_bundle_file_path;
+    auto& process_output_file_path = md.process_output_file_path;
+
+    const auto cleanup_files = [](const metadata& md) -> ss::future<> {
+        if (co_await ss::file_exists(md.debug_bundle_file_path)) {
+            co_await ss::remove_file(md.debug_bundle_file_path);
+        }
+
+        if (co_await ss::file_exists(md.process_output_file_path)) {
+            co_await ss::remove_file(md.process_output_file_path);
+        }
+    };
+
+    if (
+      run_was_successful && !co_await ss::file_exists(debug_bundle_file_path)) {
+        vlog(
+          lg.debug,
+          "Debug bundle file {} does not exist, cannot reload metadata",
+          debug_bundle_file_path);
+        co_await cleanup_files(md);
+        co_return co_await remove_kvstore_entry();
+    }
+
+    if (
+      run_was_successful
+      && !co_await validate_sha256_checksum(
+        debug_bundle_file_path, md.sha256_checksum)) {
+        vlog(
+          lg.debug,
+          "Debug bundle file {} checksum mismatch",
+          debug_bundle_file_path);
+        co_await cleanup_files(md);
+        co_return co_await remove_kvstore_entry();
+    }
+
+    vlog(
+      lg.info,
+      "Detected a valid previous run that was {}successful",
+      run_was_successful ? "" : "un");
+
+    std::optional<process_output> po;
+    auto process_output_file_exists = co_await ss::file_exists(
+      process_output_file_path);
+    if (process_output_file_exists) {
+        try {
+            auto buf = co_await read_file(process_output_file_path);
+            iobuf_parser p(std::move(buf));
+            po.emplace(serde::read<process_output>(p));
+        } catch (const std::exception& e) {
+            vlog(
+              lg.warn,
+              "Failed to read process output from {}: {}",
+              process_output_file_path,
+              e.what());
+        }
+    }
+
+    if (!po) {
+        vlog(
+          lg.warn,
+          "Failed to reload process output for job {} from {}.  Incomplete "
+          "metadata reload",
+          md.job_id,
+          process_output_file_path);
+        if (process_output_file_exists) {
+            co_await ss::remove_file(process_output_file_path);
+        }
+    }
+
+    _rpk_process = std::make_unique<debug_bundle_process>(
+      std::move(md), std::move(po));
 }
 
 } // namespace debug_bundle

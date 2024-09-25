@@ -621,7 +621,8 @@ TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_bad_job_id) {
 }
 
 ss::future<> wait_for_file_to_be_created(
-  const std::filesystem::path& file, const std::chrono::seconds timeout) {
+  const std::filesystem::path& file,
+  const std::chrono::seconds timeout = std::chrono::seconds{10}) {
     const auto start_time = debug_bundle::clock::now();
     while (debug_bundle::clock::now() - start_time <= timeout) {
         if (co_await ss::file_exists(file.native())) {
@@ -745,4 +746,186 @@ TEST_F_CORO(debug_bundle_service_started_fixture, validate_metadata) {
     auto expected = ssx::sformat(
       "debug bundle --output {} --verbose\n", job_file.native());
     EXPECT_EQ(po.cout[0], expected) << po.cout[0] << " != " << expected;
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, validate_restart) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    co_await run_bundle(job_id);
+
+    auto status = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status.has_value()) << status.assume_error().message();
+
+    co_await restart_service();
+
+    auto status_restart = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status_restart.has_value())
+      << status_restart.assume_error().message();
+
+    EXPECT_EQ(status.assume_value(), status_restart.assume_value());
+}
+
+TEST_F_CORO(
+  debug_bundle_service_started_fixture, validate_restart_remove_file) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    co_await run_bundle(job_id);
+
+    auto file_path = co_await _service.local().rpk_debug_bundle_path(job_id);
+    ASSERT_TRUE_CORO(file_path.has_value())
+      << file_path.assume_error().message();
+
+    // Remove the file and restart the service - the metadata should be removed
+    co_await ss::remove_file(file_path.assume_value().native());
+
+    co_await restart_service();
+
+    auto status_restart = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_FALSE_CORO(status_restart.has_value());
+    EXPECT_EQ(
+      status_restart.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_never_started);
+
+    EXPECT_FALSE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, validate_invalid_sha) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    co_await run_bundle(job_id);
+
+    ASSERT_NO_THROW_CORO(co_await wait_for_kvstore_to_populate(_kvstore.get()));
+
+    {
+        auto metadata_buf = _kvstore->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key));
+        ASSERT_TRUE_CORO(metadata_buf.has_value());
+        iobuf_parser parser(std::move(metadata_buf.value()));
+        auto metadata = serde::read<debug_bundle::metadata>(parser);
+        metadata.sha256_checksum = bytes::from_string("invalid");
+        iobuf buf;
+        serde::write(buf, std::move(metadata));
+        co_await _kvstore->put(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key),
+          std::move(buf));
+    }
+
+    co_await restart_service();
+
+    auto status_restart = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_FALSE_CORO(status_restart.has_value());
+    EXPECT_EQ(
+      status_restart.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_never_started);
+
+    EXPECT_FALSE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, restart_unsuccessful_run) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+    auto status = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
+
+    EXPECT_EQ(
+      status.assume_value().status, debug_bundle::debug_bundle_status::running);
+
+    auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job_id);
+    ASSERT_TRUE_CORO(term_res.has_value()) << term_res.assume_error().message();
+
+    ASSERT_NO_THROW_CORO(status = co_await wait_for_process_to_finish());
+
+    ASSERT_TRUE_CORO(status.has_value()) << status.assume_error().message();
+
+    EXPECT_EQ(
+      status.assume_value().status, debug_bundle::debug_bundle_status::error);
+
+    co_await restart_service();
+
+    auto status_restart = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status_restart.has_value())
+      << status_restart.assume_error().message();
+    EXPECT_EQ(
+      status_restart.assume_value().status,
+      debug_bundle::debug_bundle_status::error);
+
+    EXPECT_TRUE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, restart_remove_out_file) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    co_await run_bundle(job_id);
+
+    std::filesystem::path process_output_file
+      = _data_dir / debug_bundle::service::debug_bundle_dir_name
+        / fmt::format("{}.out", job_id);
+
+    ASSERT_NO_THROW_CORO(
+      co_await wait_for_file_to_be_created(process_output_file));
+
+    co_await ss::remove_file(process_output_file.native());
+
+    co_await restart_service();
+
+    auto status_restart = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status_restart.has_value())
+      << status_restart.assume_error().message();
+
+    EXPECT_TRUE(status_restart.assume_value().cout.empty());
+    EXPECT_TRUE(status_restart.assume_value().cerr.empty());
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, restart_garbage_out_file) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    co_await run_bundle(job_id);
+
+    std::filesystem::path process_output_file
+      = _data_dir / debug_bundle::service::debug_bundle_dir_name
+        / fmt::format("{}.out", job_id);
+
+    ASSERT_NO_THROW_CORO(
+      co_await wait_for_file_to_be_created(process_output_file));
+
+    co_await ss::remove_file(process_output_file.native());
+
+    auto h = co_await ss::open_file_dma(
+      process_output_file.native().c_str(),
+      ss::open_flags::rw | ss::open_flags::create);
+
+    const auto data = random_generators::gen_alphanum_string(1024);
+    auto istrm = make_iobuf_input_stream(iobuf::from(data));
+    auto ostrm = co_await ss::make_file_output_stream(h);
+    co_await ss::copy(istrm, ostrm);
+    co_await ostrm.flush();
+    co_await ostrm.close();
+
+    co_await restart_service();
+
+    auto status_restart = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status_restart.has_value())
+      << status_restart.assume_error().message();
+
+    EXPECT_TRUE(status_restart.assume_value().cout.empty());
+    EXPECT_TRUE(status_restart.assume_value().cerr.empty());
 }

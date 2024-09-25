@@ -30,7 +30,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "debug_bundle_service_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "debug_bundle_service_test.cc",
     ],

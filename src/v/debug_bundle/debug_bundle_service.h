@@ -143,6 +143,11 @@ private:
     ss::future<> cleanup_previous_run() const;
 
     /**
+     * @brief Removes debug bundle entry from kvstore
+     */
+    ss::future<> remove_kvstore_entry() const;
+
+    /**
      * @brief Set the metadata object within the kvstore
      *
      * @param job_id The job id
@@ -168,6 +173,15 @@ private:
      * @param job_id The associated job ID
      */
     ss::future<> handle_wait_result(job_id_t job_id);
+
+    /**
+     * @brief Attempts to reload a previous run
+     *
+     * If a previous run exists in the kvstore upon service start, will attempt
+     * to reload the metadata and make that debug bundle available to the user
+     *
+     */
+    ss::future<> maybe_reload_previous_run();
 
 private:
     /// Handler used to emplace stdout/stderr into a buffer
