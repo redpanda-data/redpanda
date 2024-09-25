@@ -33,7 +33,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitServerlessAdmin(p)
 
-			api, err := adminapi.NewClient(fs, p)
+			api, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 			functionName := args[0]
 

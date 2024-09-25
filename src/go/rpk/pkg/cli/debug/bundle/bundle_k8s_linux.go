@@ -277,7 +277,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 				TLS:       p.AdminAPI.TLS,
 			},
 		}
-		cl, err := adminapi.NewClient(fs, p)
+		cl, err := adminapi.NewClient(ctx, fs, p)
 		if err != nil {
 			return fmt.Errorf("unable to initialize admin client: %v", err)
 		}
@@ -346,7 +346,7 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 					TLS:       p.AdminAPI.TLS,
 				},
 			}
-			cl, err := adminapi.NewClient(fs, p, rpadmin.ClientTimeout(profilerWait+2*time.Second))
+			cl, err := adminapi.NewClient(ctx, fs, p, rpadmin.ClientTimeout(profilerWait+2*time.Second))
 			if err != nil {
 				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
 				continue
