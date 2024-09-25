@@ -289,7 +289,13 @@ bool group::supports_protocols(const join_group_request& r) const {
       _members.size(),
       r.data.protocol_type,
       r.data.protocols,
-      fmt::join(_supported_protocols, ", "));
+      fmt::join(
+        std::views::transform(
+          _supported_protocols,
+          [](const auto& p) {
+              return fmt::format("({}, {})", p.first, p.second);
+          }),
+        ","));
 
     // first member decides so make sure its defined
     if (in_state(group_state::empty)) {

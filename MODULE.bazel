@@ -36,7 +36,7 @@ single_version_override(
 bazel_dep(name = "abseil-cpp", version = "20240722.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "crc32c", version = "1.1.0")
-bazel_dep(name = "fmt", version = "8.1.1")
+bazel_dep(name = "fmt", version = "9.1.0")
 bazel_dep(name = "googletest", version = "1.15.2")
 bazel_dep(name = "liburing", version = "2.5")
 bazel_dep(name = "lz4", version = "1.9.4")

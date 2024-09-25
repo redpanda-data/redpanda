@@ -105,7 +105,8 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         if (v.IsString()) {
             // TODO: Improve this with HowardHinnant/date or
             // std::chrono::zoned_time
-            std::istringstream ss(v.GetString(), v.GetStringLength());
+            // TODO: Remove the intermediate string in c++26
+            std::istringstream ss(std::string{as_string_view(v)});
             std::tm tmp{};
             ss >> std::get_time(&tmp, "%FT%T");
             if (ss.fail()) {

@@ -3493,22 +3493,3 @@ struct adl<cluster::move_cancellation_result> {
     }
 };
 } // namespace reflection
-
-namespace absl {
-
-template<typename K, typename V>
-std::ostream& operator<<(std::ostream& o, const absl::flat_hash_map<K, V>& r) {
-    o << "{";
-    bool first = true;
-    for (const auto& [k, v] : r) {
-        if (!first) {
-            o << ", ";
-        }
-        o << "{" << k << " -> " << v << "}";
-        first = false;
-    }
-    o << "}";
-    return o;
-}
-
-} // namespace absl

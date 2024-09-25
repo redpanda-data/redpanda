@@ -2,6 +2,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 add_compile_options(-Wall)
+add_compile_definitions(FMT_DEPRECATED_OSTREAM)
 
 #
 # When enabled clang-tidy will be invoked along side the compiler, and

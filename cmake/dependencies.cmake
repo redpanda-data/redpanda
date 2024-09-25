@@ -29,7 +29,7 @@ fetch_dep(absl
 
 fetch_dep(fmt
   REPO https://github.com/fmtlib/fmt.git
-  TAG 8.1.1)
+  TAG 9.1.0)
 
 # CMakeLists.txt is patched to avoid registering tests. We still want the
 # Seastar testing library to be built, but we don't want the tests to run. This
