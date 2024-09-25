@@ -102,6 +102,30 @@ bool iobuf::operator==(const iobuf& o) const {
     return true;
 }
 
+bool iobuf::operator<(const iobuf& o) const {
+    auto lhs = byte_iterator(cbegin(), cend());
+    auto lhs_end = byte_iterator(cend(), cend());
+    auto rhs = byte_iterator(o.cbegin(), o.cend());
+    auto rhs_end = byte_iterator(o.cend(), o.cend());
+    while (lhs != lhs_end && rhs != rhs_end) {
+        char l = *lhs;
+        char r = *rhs;
+        if (l < r) {
+            return true;
+        }
+        if (l > r) {
+            return false;
+        }
+        ++lhs;
+        ++rhs;
+    }
+    if (rhs != rhs_end) {
+        // lhs is a prefix of rhs.
+        return true;
+    }
+    return false;
+}
+
 bool iobuf::operator==(std::string_view o) const {
     if (_size != o.size()) {
         return false;
