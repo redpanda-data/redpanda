@@ -377,7 +377,8 @@ class LocalDiskReportTimeTest(RedpandaTest):
                             30 * 1024,
                             1024,
                             throughput=500,
-                            acks=-1)
+                            acks=-1,
+                            linger_ms=50)
 
         node = self.redpanda.nodes[0]
         reported = admin.get_local_storage_usage(
