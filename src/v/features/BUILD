@@ -14,6 +14,9 @@ redpanda_cc_library(
         "fwd.h",
         "logger.h",
     ],
+    implementation_deps = [
+        "//src/v/metrics",
+    ],
     include_prefix = "features",
     visibility = ["//visibility:public"],
     deps = [
