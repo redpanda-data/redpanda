@@ -11,6 +11,7 @@
 #include "cluster/data_migration_table.h"
 #include "cluster/data_migration_types.h"
 #include "commands.h"
+#include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "data_migrated_resources.h"
 #include "data_migration_types.h"
@@ -114,6 +115,7 @@ struct data_migration_table_fixture : public seastar_test {
             auto p_cnt = random_generators::get_int(1, 64);
 
             topic_configuration cfg(tp_ns.ns, tp_ns.tp, p_cnt, 3);
+            cfg.properties.shadow_indexing = model::shadow_indexing_mode::full;
             ss::chunked_fifo<partition_assignment> assignments;
             for (auto i = 0; i < p_cnt; ++i) {
                 assignments.push_back(
