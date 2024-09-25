@@ -8,9 +8,6 @@ v_cc_library(
   SRCS
     arrow_translator.cc
     parquet_writer.cc
-    protobuf_to_arrow_converter.cc
-    proto_to_arrow_scalar.cc
-    proto_to_arrow_struct.cc
     record_multiplexer.cc
     schemaless_translator.cc
     schema_protobuf.cc
