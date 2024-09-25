@@ -13,7 +13,6 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "gtest/gtest.h"
-#include "random/generators.h"
 #include "serde/protobuf/parser.h"
 // TODO: Fix bazelbuild/bazel#4446
 #include "src/v/serde/protobuf/tests/test_messages_edition2023.pb.h"
@@ -33,6 +32,7 @@
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
+#include <variant>
 
 namespace serde::pb {
 namespace {
@@ -99,6 +99,15 @@ public:
             throw std::runtime_error("Parsing txtpb failed");
         }
         return output;
+    }
+
+    std::unique_ptr<parsed::message> parse_raw(std::string_view txtpb) {
+        auto expected = construct_message(txtpb);
+        iobuf out;
+        auto binpb = expected->SerializeAsString();
+        out.append(binpb.data(), binpb.size());
+        return ::serde::pb::parse(std::move(out), *expected->GetDescriptor())
+          .get();
     }
 
     testing::AssertionResult parse(std::string_view txtpb) {
@@ -232,8 +241,10 @@ private:
               reflect->SetString(output, field, std::move(str));
           },
           [=, this](const parsed::map& v) {
-              auto pbmap = convert_to_protobuf(v, field->message_type());
-              reflect->SetAllocatedMessage(output, pbmap.release(), field);
+              auto entries = convert_to_protobuf(v, field->message_type());
+              for (auto& entry : entries) {
+                  reflect->AddAllocatedMessage(output, field, entry.release());
+              }
           });
     }
 
@@ -301,34 +312,58 @@ private:
           });
     }
 
-    std::unique_ptr<pb::Message>
+    std::vector<std::unique_ptr<pb::Message>>
     convert_to_protobuf(const parsed::map& map, const pb::Descriptor* desc) {
-        auto output = std::unique_ptr<pb::Message>(
-          factory_.GetPrototype(desc)->New());
+        std::vector<std::unique_ptr<pb::Message>> entries;
         for (const auto& [k, v] : map.entries) {
-            auto k_field = ss::visit(
-              k,
-              [](const iobuf& v) { return parsed::message::field(v.copy()); },
-              [](const auto& v) { return parsed::message::field(v); });
-            convert_to_protobuf(1, k_field, output.get());
+            auto output = std::unique_ptr<pb::Message>(
+              factory_.GetPrototype(desc)->New());
+            auto key_field = desc->map_key();
             ss::visit(
-              v,
+              k,
+              [](const std::monostate&) {},
               [&, this](const iobuf& v) {
                   convert_to_protobuf(
-                    2, parsed::message::field(v.copy()), output.get());
-              },
-              [&](const std::unique_ptr<parsed::message>& v) {
-                  auto field = desc->FindFieldByNumber(2);
-                  auto msg = convert_to_protobuf(*v, field->message_type());
-                  output->GetReflection()->SetAllocatedMessage(
-                    output.get(), msg.release(), field);
+                    key_field->number(),
+                    parsed::message::field(v.copy()),
+                    output.get());
               },
               [&, this](const auto& v) {
                   convert_to_protobuf(
-                    2, parsed::message::field(v), output.get());
+                    key_field->number(),
+                    parsed::message::field(v),
+                    output.get());
               });
+            auto value_field = desc->map_value();
+            ss::visit(
+              v,
+              [](const std::monostate&) {},
+              [&, this](const iobuf& v) {
+                  convert_to_protobuf(
+                    value_field->number(),
+                    parsed::message::field(v.copy()),
+                    output.get());
+              },
+              [&, this](const std::unique_ptr<parsed::message>& v) {
+                  if (value_field->message_type() == nullptr) {
+                      throw std::runtime_error(fmt::format(
+                        "expected message type got: {}",
+                        value_field->DebugString()));
+                  }
+                  auto msg = convert_to_protobuf(
+                    *v, value_field->message_type());
+                  output->GetReflection()->SetAllocatedMessage(
+                    output.get(), msg.release(), value_field);
+              },
+              [&, this](const auto& v) {
+                  convert_to_protobuf(
+                    value_field->number(),
+                    parsed::message::field(v),
+                    output.get());
+              });
+            entries.push_back(std::move(output));
         }
-        return output;
+        return entries;
     }
 
     pb::DynamicMessageFactory factory_;
@@ -487,6 +522,51 @@ optional_sint32: -1
 # proto-file: test_messages_edition2023.proto
 # proto-message: TestAllTypesEdition2023
 optional_sfixed32: -1
+)"));
+}
+
+TEST_F(ProtobufParserFixture, Map) {
+    auto msg = parse_raw(R"(
+# proto-file: three.proto
+# proto-message: Map
+meta {
+  key: "foo"
+  value: "bar"
+}
+meta {
+  key: "baz"
+  value: "qux"
+}
+meta {
+  value: "nokey"
+}
+meta {
+  key: "novalue"
+}
+)");
+    ASSERT_EQ(msg->fields.size(), 1);
+    ASSERT_TRUE(msg->fields.contains(1));
+    const auto& field = msg->fields[1];
+    ASSERT_TRUE(std::holds_alternative<parsed::map>(field));
+    const auto& map = std::get<parsed::map>(field);
+    EXPECT_EQ(map.entries.size(), 4);
+    EXPECT_TRUE(parse(R"(
+# proto-file: three.proto
+# proto-message: Entries
+entry {
+  key: "foo"
+  value: 42
+}
+entry {
+  key: "baz"
+  value: 53
+}
+entry {
+  key: "novalue"
+}
+entry {
+  value: 99
+}
 )"));
 }
 

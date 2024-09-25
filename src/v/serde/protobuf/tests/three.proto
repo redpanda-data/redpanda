@@ -76,3 +76,11 @@ message Version4 {
         bool data = 3;
     }
 }
+
+message Map {
+    map<string, string> meta = 1;
+}
+
+message Entries {
+    map<string, int32> entry = 1;
+}
