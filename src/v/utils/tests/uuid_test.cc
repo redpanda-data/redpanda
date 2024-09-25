@@ -36,6 +36,11 @@ SEASTAR_THREAD_TEST_CASE(test_uuid_default_construct) {
       uuid, uuid_t::from_string("00000000-0000-0000-0000-000000000000"));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_lt) {
+    BOOST_REQUIRE_LT(
+      uuid_t{}, uuid_t::from_string("00000000-0000-0000-0000-000000000001"));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_named_uuid_type) {
     auto uuid1 = test_uuid(uuid_t::create());
     auto uuid2 = test_uuid(uuid_t::create());

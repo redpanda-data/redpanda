@@ -234,6 +234,7 @@ public:
     /// ignores allocation strategy, and number of details::io_fragments
     /// it is a byte-per-byte comparator
     bool operator==(const iobuf&) const;
+    bool operator<(const iobuf&) const;
     bool operator!=(const iobuf&) const;
 
     bool operator==(std::string_view) const;

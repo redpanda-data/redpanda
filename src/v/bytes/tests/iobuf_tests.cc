@@ -44,6 +44,14 @@ SEASTAR_THREAD_TEST_CASE(test_copy_equal) {
     BOOST_CHECK_EQUAL(buf, copy);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_lt) {
+    BOOST_CHECK_LT(iobuf::from(""), iobuf::from("cat"));
+    BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("dog"));
+    BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("catastrophe"));
+    BOOST_CHECK_EQUAL(false, iobuf::from("cat") < iobuf::from("cat"));
+    BOOST_CHECK_EQUAL(false, iobuf{} < iobuf{});
+}
+
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
     append_sequence(buf, 5);
