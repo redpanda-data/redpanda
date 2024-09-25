@@ -23,6 +23,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 struct debug_bundle_service_fixture : public seastar_test {
     ss::future<> SetUpAsync() override {
         const char* script_path = std::getenv("RPK_SHIM");
@@ -44,6 +46,36 @@ struct debug_bundle_service_fixture : public seastar_test {
 
     ss::future<> TearDownAsync() override { co_await _service.stop(); }
 
+    ss::future<> restart_service() {
+        ASSERT_NO_THROW_CORO(co_await _service.stop());
+        ASSERT_NO_THROW_CORO(co_await _service.start());
+        ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
+          [](debug_bundle::service& s) { return s.start(); }));
+    }
+
+    ss::future<debug_bundle::result<debug_bundle::debug_bundle_status_data>>
+    wait_for_process_to_finish(
+      const std::chrono::seconds timeout = std::chrono::seconds{10},
+      const std::chrono::milliseconds backoff = std::chrono::milliseconds{
+        100}) {
+        const auto start_time = debug_bundle::clock::now();
+        while (debug_bundle::clock::now() - start_time <= timeout) {
+            auto status = co_await _service.local().rpk_debug_bundle_status();
+            if (!status.has_value()) {
+                throw std::system_error(
+                  status.assume_error().code(),
+                  status.assume_error().message());
+            }
+            if (
+              status.assume_value().status
+              != debug_bundle::debug_bundle_status::running) {
+                co_return status;
+            }
+            co_await ss::sleep(backoff);
+        }
+        throw std::runtime_error("Timed out waiting for process to exit");
+    }
+
     std::filesystem::path _rpk_shim_path;
     std::filesystem::path _data_dir;
     ss::sharded<debug_bundle::service> _service;
@@ -57,6 +89,26 @@ struct debug_bundle_service_started_fixture
           [](debug_bundle::service& s) -> ss::future<> {
               co_await s.start();
           }));
+    }
+
+    ss::future<> run_bundle(
+      debug_bundle::job_id_t job_id,
+      debug_bundle::debug_bundle_parameters params = {},
+      std::chrono::seconds timeout = std::chrono::seconds{10}) {
+        auto res
+          = co_await _service.local().initiate_rpk_debug_bundle_collection(
+            job_id, std::move(params));
+        ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+        ASSERT_NO_THROW_CORO(
+          std::ignore = co_await wait_for_process_to_finish(timeout));
+
+        auto status = co_await _service.local().rpk_debug_bundle_status();
+        ASSERT_TRUE_CORO(status.has_value()) << status.assume_error().message();
+        ASSERT_EQ_CORO(
+          status.assume_value().status,
+          debug_bundle::debug_bundle_status::success);
+        co_return;
     }
 };
 
@@ -74,25 +126,6 @@ TEST_F_CORO(debug_bundle_service_fixture, bad_rpk_path) {
     // We should still expect the service to start, but it will emit a warning
     ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
       [](debug_bundle::service& s) -> ss::future<> { co_await s.start(); }));
-}
-
-ss::future<debug_bundle::result<debug_bundle::debug_bundle_status_data>>
-wait_for_process_to_finish(
-  ss::sharded<debug_bundle::service>& service,
-  const std::chrono::seconds timeout) {
-    const auto start_time = debug_bundle::clock::now();
-    while (debug_bundle::clock::now() - start_time <= timeout) {
-        auto status = co_await service.local().rpk_debug_bundle_status();
-        if (!status.has_value()) {
-            throw std::runtime_error("status contains error");
-        }
-        if (
-          status.assume_value().status
-          != debug_bundle::debug_bundle_status::running) {
-            co_return status;
-        }
-    }
-    throw std::runtime_error("Timed out waiting for process to exit");
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, change_bundle_dir) {
@@ -131,8 +164,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
     EXPECT_EQ(status.assume_value().file_name, fmt::format("{}.zip", job_id));
     EXPECT_FALSE(status.assume_value().file_size.has_value());
 
-    ASSERT_NO_THROW_CORO(
-      status = co_await wait_for_process_to_finish(_service, 10s));
+    ASSERT_NO_THROW_CORO(status = co_await wait_for_process_to_finish());
 
     ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
 
@@ -417,14 +449,9 @@ TEST_F_CORO(debug_bundle_service_started_fixture, termiate_never_ran) {
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path) {
-    using namespace std::chrono_literals;
     debug_bundle::job_id_t job_id(uuid_t::create());
 
-    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
-      job_id, {});
-    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
-    ASSERT_NO_THROW_CORO(
-      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+    co_await run_bundle(job_id);
 
     auto expected_path = _data_dir
                          / debug_bundle::service::debug_bundle_dir_name
@@ -463,8 +490,7 @@ TEST_F_CORO(
     auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job_id);
     ASSERT_TRUE_CORO(term_res.has_value()) << term_res.assume_error().message();
 
-    ASSERT_NO_THROW_CORO(
-      status = co_await wait_for_process_to_finish(_service, 10s));
+    ASSERT_NO_THROW_CORO(status = co_await wait_for_process_to_finish());
 
     ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
 
@@ -493,15 +519,9 @@ TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_running) {
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_bad_job_id) {
-    using namespace std::chrono_literals;
     debug_bundle::job_id_t job_id(uuid_t::create());
 
-    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
-      job_id, {});
-    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
-
-    ASSERT_NO_THROW_CORO(
-      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+    co_await run_bundle(job_id);
 
     auto file_path = co_await _service.local().rpk_debug_bundle_path(
       debug_bundle::job_id_t(uuid_t::create()));
@@ -512,14 +532,9 @@ TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_bad_job_id) {
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, delete_file) {
-    using namespace std::chrono_literals;
     debug_bundle::job_id_t job_id(uuid_t::create());
 
-    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
-      job_id, {});
-    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
-    ASSERT_NO_THROW_CORO(
-      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+    co_await run_bundle(job_id);
 
     auto expected_path = _data_dir
                          / debug_bundle::service::debug_bundle_dir_name
@@ -556,14 +571,8 @@ TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_running) {
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, delete_file_bad_job_id) {
-    using namespace std::chrono_literals;
     debug_bundle::job_id_t job_id(uuid_t::create());
-
-    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
-      job_id, {});
-    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
-    ASSERT_NO_THROW_CORO(
-      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+    co_await run_bundle(job_id);
 
     auto del_res = co_await _service.local().delete_rpk_debug_bundle(
       debug_bundle::job_id_t(uuid_t::create()));
