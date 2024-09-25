@@ -99,7 +99,7 @@ private:
  * given cluster. Providing a way to evaluate a given reassignment of
  * leadership and a recommendation of reassignments to improve error.
  */
-class even_topic_distributon_constraint final
+class even_topic_distribution_constraint final
   : public soft_constraint
   , public index {
     // Avoid rounding errors when determining if a move improves balance by
@@ -113,25 +113,26 @@ class even_topic_distributon_constraint final
     using topic_map = chunked_hash_map<topic_id_t, ValueType>;
 
 public:
-    even_topic_distributon_constraint(
+    even_topic_distribution_constraint(
       group_id_to_topic_revision_t group_to_topic_rev,
       const shard_index& si,
       const muted_index& mi);
 
-    even_topic_distributon_constraint(
-      even_topic_distributon_constraint&&) noexcept
+    even_topic_distribution_constraint(
+      even_topic_distribution_constraint&&) noexcept
       = default;
-    even_topic_distributon_constraint&
-    operator=(even_topic_distributon_constraint&&) noexcept
+    even_topic_distribution_constraint&
+    operator=(even_topic_distribution_constraint&&) noexcept
       = default;
 
-    even_topic_distributon_constraint(const even_topic_distributon_constraint&)
+    even_topic_distribution_constraint(
+      const even_topic_distribution_constraint&)
       = delete;
-    even_topic_distributon_constraint&
-    operator=(const even_topic_distributon_constraint&)
+    even_topic_distribution_constraint&
+    operator=(const even_topic_distribution_constraint&)
       = delete;
 
-    ~even_topic_distributon_constraint() override = default;
+    ~even_topic_distribution_constraint() override = default;
 
     double error() const { return _error; }
 

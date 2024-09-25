@@ -15,7 +15,7 @@
 
 namespace cluster::leader_balancer_types {
 
-even_topic_distributon_constraint::even_topic_distributon_constraint(
+even_topic_distribution_constraint::even_topic_distribution_constraint(
   group_id_to_topic_revision_t group_to_topic_rev,
   const shard_index& si,
   const muted_index& mi)
@@ -27,7 +27,7 @@ even_topic_distributon_constraint::even_topic_distributon_constraint(
     calculate_error();
 }
 
-void even_topic_distributon_constraint::update_index(const reassignment& r) {
+void even_topic_distribution_constraint::update_index(const reassignment& r) {
     // _topic_partition_index, _topic_replica_index, and _topic_opt_leaders
     // will not change from moving leadership. They will only change if the
     // replicas themselves are moved. Hence no need to update them here.
@@ -47,7 +47,7 @@ void even_topic_distributon_constraint::update_index(const reassignment& r) {
 }
 
 std::optional<reassignment>
-even_topic_distributon_constraint::recommended_reassignment() {
+even_topic_distribution_constraint::recommended_reassignment() {
     // This method is deprecated and is ony used in `leader_balancer_greedy`
     // which doesn't use the `even_topic_distributon_constraint`. Hence there is
     // no need to implement it here. Once the greedy balancer has been removed
@@ -55,7 +55,7 @@ even_topic_distributon_constraint::recommended_reassignment() {
     vassert(false, "not implemented");
 }
 
-void even_topic_distributon_constraint::rebuild_indexes() {
+void even_topic_distribution_constraint::rebuild_indexes() {
     _topic_shard_index.clear();
     _topic_replica_index.clear();
     _topic_partition_index.clear();
@@ -90,7 +90,7 @@ void even_topic_distributon_constraint::rebuild_indexes() {
  *  where total_shards is the number of shards a topic has replicas on.
  *        total_partitions is the number of partitions the topic has.
  */
-void even_topic_distributon_constraint::calc_topic_skew() {
+void even_topic_distribution_constraint::calc_topic_skew() {
     _topic_skew.clear();
     _topic_opt_leaders.clear();
 
@@ -117,7 +117,7 @@ void even_topic_distributon_constraint::calc_topic_skew() {
 /*
  * Compute new error for the given reassignment.
  */
-double even_topic_distributon_constraint::adjusted_error(
+double even_topic_distribution_constraint::adjusted_error(
   double current_error,
   const topic_id_t& topic_id,
   const model::broker_shard& from,

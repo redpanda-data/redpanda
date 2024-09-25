@@ -62,7 +62,7 @@ void random_search_eval_bench(bool measure_all) {
     }
 
     random_t rt{index};
-    cluster::leader_balancer_types::even_topic_distributon_constraint tdc(
+    cluster::leader_balancer_types::even_topic_distribution_constraint tdc(
       std::move(gid_topic), si, mi);
     cluster::leader_balancer_types::even_shard_load_constraint slc(si, mi);
 

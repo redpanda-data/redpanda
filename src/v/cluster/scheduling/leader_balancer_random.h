@@ -164,7 +164,7 @@ private:
     std::unique_ptr<shard_index> _si;
     random_reassignments _reassignments;
 
-    even_topic_distributon_constraint _etdc;
+    even_topic_distribution_constraint _etdc;
     even_shard_load_constraint _eslc;
 };
 
