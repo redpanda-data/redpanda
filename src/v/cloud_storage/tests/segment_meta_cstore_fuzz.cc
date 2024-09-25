@@ -463,11 +463,27 @@ struct fmt::formatter<cstore_operation>
               []<typename OP>(OP const& op) {
                   if constexpr (reflection::arity<OP>() == 0) {
                       return fmt::format("{}", serde::type_str<OP>());
-                  } else {
+                  } else if constexpr (reflection::arity<OP>() == 1) {
                       return fmt::format(
-                        "{}{}",
+                        "{}({})",
                         serde::type_str<OP>(),
-                        reflection::to_tuple(op));
+                        std::get<0>(reflection::to_tuple(op)));
+                  } else if constexpr (reflection::arity<OP>() == 2) {
+                      return fmt::format(
+                        "{}({},{})",
+                        serde::type_str<OP>(),
+                        std::get<0>(reflection::to_tuple(op)),
+                        std::get<1>(reflection::to_tuple(op)));
+                  } else if constexpr (reflection::arity<OP>() == 3) {
+                      return fmt::format(
+                        "{}({},{},{})",
+                        serde::type_str<OP>(),
+                        std::get<0>(reflection::to_tuple(op)),
+                        std::get<1>(reflection::to_tuple(op)),
+                        std::get<2>(reflection::to_tuple(op)));
+                  } else {
+                      static_assert(
+                        base::unsupported_type<OP>::value, "unsupported type");
                   }
               },
               op);
