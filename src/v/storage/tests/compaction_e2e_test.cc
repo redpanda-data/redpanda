@@ -874,12 +874,10 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
       num_segments, num_tombstones, batches_per_segment, tombstones_per_batch)
       .get();
 
-    auto tombstone_retention_ms = 1000ms;
-
     // Perform first round of sliding window compaction.
     bool did_compact = do_sliding_window_compact(
                          log->segments().back()->offsets().get_base_offset(),
-                         tombstone_retention_ms)
+                         std::nullopt)
                          .get();
 
     ASSERT_TRUE(did_compact);
@@ -909,13 +907,14 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
         }
     }
 
-    // Sleep for tombstone.retention.ms time, so that the next time we attempt
-    // to compact the tombstone records will be eligible for deletion.
-    ss::sleep(tombstone_retention_ms).get();
+    // Sleep for a very short amount of time to ensure that tombstone records
+    // will be eligible for deletion during the next round of compaction
+    ss::sleep(100ms).get();
 
+    // Use 1ms to ensure segment is considered for self-compaction, due to
+    // having removable tombstones.
     did_compact = do_sliding_window_compact(
-                    log->segments().back()->offsets().get_base_offset(),
-                    tombstone_retention_ms)
+                    log->segments().back()->offsets().get_base_offset(), 1ms)
                     .get();
 
     ASSERT_TRUE(did_compact);
