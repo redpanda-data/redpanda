@@ -105,7 +105,8 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         if (v.IsString()) {
             // TODO: Improve this with HowardHinnant/date or
             // std::chrono::zoned_time
-            std::istringstream ss(v.GetString(), v.GetStringLength());
+            std::string ss_str(v.GetString(), v.GetStringLength());
+            std::istringstream ss(std::move(ss_str));
             std::tm tmp{};
             ss >> std::get_time(&tmp, "%FT%T");
             if (ss.fail()) {
