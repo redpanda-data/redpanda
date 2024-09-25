@@ -37,7 +37,7 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 			config.CheckExitCloudAdmin(p)
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Make HTTP POST request to leader that stops all self tests on all nodes

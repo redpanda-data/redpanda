@@ -54,7 +54,7 @@ the jobs launched. Possible results are:
 			config.CheckExitCloudAdmin(p)
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Make HTTP GET request to any node requesting for status

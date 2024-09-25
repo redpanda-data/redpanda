@@ -20,6 +20,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,7 +121,7 @@ func getAuth(p *config.RpkProfile) (Auth, error) {
 
 // NewClient returns an AdminAPI client that talks to each of the addresses in
 // the rpk.admin_api section of the config.
-func NewClient(fs afero.Fs, p *config.RpkProfile, opts ...Opt) (*AdminAPI, error) {
+func NewClient(ctx context.Context, fs afero.Fs, p *config.RpkProfile, opts ...Opt) (*AdminAPI, error) {
 	a := &p.AdminAPI
 
 	addrs := a.Addresses
@@ -132,7 +133,15 @@ func NewClient(fs afero.Fs, p *config.RpkProfile, opts ...Opt) (*AdminAPI, error
 	if err != nil {
 		return nil, err
 	}
-	return newAdminAPI(addrs, auth, tc, p.FromCloud, opts...)
+
+	cl, err := newAdminAPI(addrs, auth, tc, p.FromCloud, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if msg := licenseFeatureChecks(ctx, fs, cl, p); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+	}
+	return cl, nil
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
@@ -657,4 +666,46 @@ func MaxRetries(r int) Opt {
 	return clientOpt{func(cl *pester.Client) {
 		cl.MaxRetries = r
 	}}
+}
+
+// licenseFeatureChecks checks if the user is talking to a cluster that has
+// enterprise features enabled without a license and returns a message with a
+// warning.
+func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *AdminAPI, p *config.RpkProfile) string {
+	var msg string
+	// We only do a check if:
+	//   1. LicenseCheck == nil: never checked before OR last check was in
+	//      violation. (we only save successful responses).
+	//   2. LicenseStatus was last checked more than 7 days ago.
+	if p.LicenseCheck == nil || p.LicenseCheck != nil && time.Unix(p.LicenseCheck.LastUpdate, 0).AddDate(0, 0, 7).Before(time.Now()) {
+		resp, err := cl.GetEnterpriseFeatures(ctx)
+		if err != nil {
+			zap.L().Sugar().Warnf("unable to check licensed enterprise features in the cluster: %v", err)
+			return ""
+		}
+		// We don't write a profile if the config doesn't exist.
+		y, exists := p.ActualConfig()
+		var licenseCheck *config.LicenseStatusCache
+		if resp.Violation {
+			var features []string
+			for _, f := range resp.Features {
+				if f.Enabled {
+					features = append(features, f.Name)
+				}
+			}
+			msg = fmt.Sprintf("A Redpanda Enterprise Edition license is required to use enterprise features: %v. For more information, see https://docs.redpanda.com/current/get-started/licenses.", features)
+		} else {
+			licenseCheck = &config.LicenseStatusCache{
+				LastUpdate: time.Now().Unix(),
+			}
+		}
+		if exists && y != nil {
+			actProfile := y.Profile(p.Name)
+			actProfile.LicenseCheck = licenseCheck
+			if err := y.Write(fs); err != nil {
+				zap.L().Sugar().Warnf("unable to save licensed enterprise features check cache to profile: %v", err)
+			}
+		}
+	}
+	return msg
 }

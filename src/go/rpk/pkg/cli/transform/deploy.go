@@ -125,7 +125,7 @@ The --var flag can be repeated to specify multiple variables like so:
 				})
 				out.MaybeDie(err, "unable to deploy transform to Cloud Cluster: %v", err)
 			} else {
-				api, err := adminapi.NewClient(fs, p)
+				api, err := adminapi.NewClient(cmd.Context(), fs, p)
 				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 				err = api.DeployWasmTransform(cmd.Context(), t, wasm)
