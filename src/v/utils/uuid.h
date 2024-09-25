@@ -64,3 +64,5 @@ private:
 
     underlying_t _uuid;
 };
+
+bool operator<(const uuid_t& l, const uuid_t& r);

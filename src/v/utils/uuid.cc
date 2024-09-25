@@ -55,3 +55,5 @@ std::istream& operator>>(std::istream& is, uuid_t& u) {
 }
 
 uuid_t::operator ss::sstring() const { return fmt::format("{}", _uuid); }
+
+bool operator<(const uuid_t& l, const uuid_t& r) { return l.uuid() < r.uuid(); }
