@@ -62,6 +62,7 @@ v_cc_library(
     values_avro.cc
     values_bytes.cc
     rest_client/parsers.cc
+    rest_client/retry_policy.cc
   DEPS
     Avro::avro
     v::bytes

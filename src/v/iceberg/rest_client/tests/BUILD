@@ -13,3 +13,17 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "retry_policy_tests",
+    timeout = "short",
+    srcs = [
+        "retry_policy_tests.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/iceberg/rest_client:retry_policy",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
