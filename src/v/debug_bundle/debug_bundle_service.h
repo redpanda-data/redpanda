@@ -21,6 +21,7 @@
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/process.hh>
 
 namespace debug_bundle {
 
@@ -36,6 +37,9 @@ public:
     static constexpr ss::shard_id service_shard = 0;
     /// Name of the debug bundle directory
     static constexpr std::string_view debug_bundle_dir_name = "debug-bundle";
+    /// Key used to store metadata in the kvstore
+    static constexpr std::string_view debug_bundle_metadata_key
+      = "debug_bundle_metadata";
     /**
      * @brief Construct a new debug bundle service object
      */
@@ -139,6 +143,13 @@ private:
     ss::future<> cleanup_previous_run() const;
 
     /**
+     * @brief Set the metadata object within the kvstore
+     *
+     * @param job_id The job id
+     */
+    ss::future<> set_metadata(job_id_t job_id);
+
+    /**
      * @brief Returns the status of the running process
      *
      * @return std::optional<debug_bundle_status> Will return std::nullopt if
@@ -150,6 +161,13 @@ private:
      * @return Whether or not the RPK debug bundle process is running
      */
     bool is_running() const;
+
+    /**
+     * @brief Handles the result after waiting on the rpk debug bundle process
+     *
+     * @param job_id The associated job ID
+     */
+    ss::future<> handle_wait_result(job_id_t job_id);
 
 private:
     /// Handler used to emplace stdout/stderr into a buffer

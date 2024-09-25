@@ -4,6 +4,7 @@ v_cc_library(
       debug_bundle_service.cc
       error.cc
       types.cc
+      utils.cc
     DEPS
       v::config
       v::utils

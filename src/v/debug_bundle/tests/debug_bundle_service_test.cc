@@ -9,28 +9,35 @@
  * by the Apache License, Version 2.0
  */
 
+#include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/property.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "debug_bundle/error.h"
+#include "debug_bundle/metadata.h"
 #include "debug_bundle/types.h"
+#include "debug_bundle/utils.h"
 #include "features/feature_table.h"
 #include "random/generators.h"
+#include "ssx/sformat.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/kvstore.h"
 #include "storage/storage_resources.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
+#include <seastar/util/process.hh>
 
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <variant>
 
 struct debug_bundle_service_fixture : public seastar_test {
     ss::future<> SetUpAsync() override {
@@ -628,15 +635,17 @@ ss::future<> wait_for_file_to_be_created(
 TEST_F_CORO(debug_bundle_service_started_fixture, check_clean_up) {
     using namespace std::chrono_literals;
     debug_bundle::job_id_t job1(uuid_t::create());
-    std::filesystem::path job1_file
-      = _data_dir
-        / fmt::format(
-          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job1);
+    auto job1_file = _data_dir / debug_bundle::service::debug_bundle_dir_name
+                     / fmt::format("{}.zip", job1);
+    auto job1_out_file = _data_dir
+                         / debug_bundle::service::debug_bundle_dir_name
+                         / fmt::format("{}.out", job1);
     debug_bundle::job_id_t job2(uuid_t::create());
-    std::filesystem::path job2_file
-      = _data_dir
-        / fmt::format(
-          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job2);
+    auto job2_file = _data_dir / debug_bundle::service::debug_bundle_dir_name
+                     / fmt::format("{}.zip", job2);
+    auto job2_out_file = _data_dir
+                         / debug_bundle::service::debug_bundle_dir_name
+                         / fmt::format("{}.out", job2);
     {
         auto res
           = co_await _service.local().initiate_rpk_debug_bundle_collection(
@@ -644,9 +653,8 @@ TEST_F_CORO(debug_bundle_service_started_fixture, check_clean_up) {
         ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
         ASSERT_NO_THROW_CORO(
           co_await wait_for_file_to_be_created(job1_file, 10s));
-        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job1);
-        ASSERT_TRUE_CORO(term_res.has_value())
-          << term_res.assume_error().message();
+        ASSERT_NO_THROW_CORO(
+          co_await wait_for_file_to_be_created(job1_out_file, 10s));
     }
     {
         auto res
@@ -655,10 +663,86 @@ TEST_F_CORO(debug_bundle_service_started_fixture, check_clean_up) {
         ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
         ASSERT_NO_THROW_CORO(
           co_await wait_for_file_to_be_created(job2_file, 10s));
-        auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job2);
-        ASSERT_TRUE_CORO(term_res.has_value())
-          << term_res.assume_error().message();
+        ASSERT_NO_THROW_CORO(
+          co_await wait_for_file_to_be_created(job2_out_file, 10s));
     }
     EXPECT_FALSE(co_await ss::file_exists(job1_file.native()));
-    EXPECT_TRUE(co_await ss::file_exists(job2_file.native()));
+    EXPECT_FALSE(co_await ss::file_exists(job1_out_file.native()));
+}
+
+ss::future<> wait_for_kvstore_to_populate(
+  storage::kvstore* kvstore,
+  std::chrono::seconds timeout = std::chrono::seconds{10}) {
+    const auto start_time = debug_bundle::clock::now();
+    while (debug_bundle::clock::now() - start_time <= timeout) {
+        auto metadata_buf = kvstore->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key));
+        if (metadata_buf.has_value()) {
+            co_return;
+        }
+        co_await ss::check_for_io_immediately();
+    }
+    throw std::runtime_error("Timed out waiting for metadata to be written");
+}
+
+ss::future<iobuf> read_file_contents(std::string_view file_path) {
+    auto file = co_await ss::open_file_dma(
+      file_path.data(), ss::open_flags::ro);
+    auto h = ss::defer([file]() mutable { ssx::background = file.close(); });
+    auto istrm = ss::make_file_input_stream(file);
+    iobuf buf;
+    auto ostrm = make_iobuf_ref_output_stream(buf);
+    co_await ss::copy(istrm, ostrm);
+    co_return buf;
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, validate_metadata) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    co_await run_bundle(job_id);
+
+    std::filesystem::path job_file
+      = _data_dir
+        / fmt::format(
+          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job_id);
+    ASSERT_TRUE_CORO(co_await ss::file_exists(job_file.native()));
+
+    std::filesystem::path process_output_file
+      = _data_dir / debug_bundle::service::debug_bundle_dir_name
+        / fmt::format("{}.out", job_id);
+
+    ASSERT_NO_THROW_CORO(co_await wait_for_kvstore_to_populate(_kvstore.get()));
+
+    auto metadata_buf = _kvstore->get(
+      storage::kvstore::key_space::debug_bundle,
+      bytes::from_string(debug_bundle::service::debug_bundle_metadata_key));
+    ASSERT_TRUE_CORO(metadata_buf.has_value());
+
+    iobuf_parser parser(std::move(metadata_buf.value()));
+    auto metadata = serde::read<debug_bundle::metadata>(parser);
+    EXPECT_EQ(metadata.job_id, job_id);
+    EXPECT_EQ(metadata.debug_bundle_file_path, job_file);
+    EXPECT_EQ(metadata.process_output_file_path, process_output_file);
+    auto wait_result = metadata.get_wait_status();
+    ASSERT_TRUE_CORO(
+      std::holds_alternative<ss::experimental::process::wait_exited>(
+        wait_result));
+    EXPECT_EQ(
+      std::get<ss::experimental::process::wait_exited>(wait_result).exit_code,
+      0);
+    EXPECT_EQ(
+      metadata.sha256_checksum,
+      co_await debug_bundle::calculate_sha256_sum(job_file.native()));
+
+    ASSERT_TRUE_CORO(co_await ss::file_exists(process_output_file.native()));
+    auto process_output_buf = co_await read_file_contents(
+      process_output_file.native());
+
+    iobuf_parser process_output_parser(std::move(process_output_buf));
+    auto po = serde::read<debug_bundle::process_output>(process_output_parser);
+    ASSERT_FALSE_CORO(po.cout.empty());
+    auto expected = ssx::sformat(
+      "debug bundle --output {} --verbose\n", job_file.native());
+    EXPECT_EQ(po.cout[0], expected) << po.cout[0] << " != " << expected;
 }

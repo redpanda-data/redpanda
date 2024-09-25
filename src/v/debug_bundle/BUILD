@@ -10,6 +10,10 @@ redpanda_cc_library(
         "fwd.h",
     ],
     implementation_deps = [
+        ":metadata",
+        ":utils",
+        "//src/v/bytes:iostream",
+        "//src/v/crypto",
         "//src/v/ssx:future_util",
         "//src/v/utils:external_process",
         "@boost//:algorithm",
@@ -110,5 +114,26 @@ redpanda_cc_library(
         "//src/v/serde:variant",
         "//src/v/utils:uuid",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "utils",
+    srcs = [
+        "utils.cc",
+    ],
+    hdrs = [
+        "utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/crypto",
+        "//src/v/ssx:future_util",
+        "@seastar",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
+    deps = [
+        "//src/v/bytes",
     ],
 )
