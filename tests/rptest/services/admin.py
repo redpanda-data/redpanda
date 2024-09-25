@@ -11,19 +11,17 @@ from enum import Enum
 from logging import Logger
 import random
 import json
-import requests
 import time
-from time import sleep
 import urllib.parse
-from requests.adapters import HTTPAdapter
-from requests.exceptions import RequestException
-from urllib3.util.retry import Retry
-from ducktape.cluster.cluster import ClusterNode
-from typing import Any, List, Optional, Callable, NamedTuple, Protocol, cast
-from rptest.util import wait_until_result
-from requests.exceptions import HTTPError
-from requests import Response
+from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
 from json.decoder import JSONDecodeError
+from ducktape.cluster.cluster import ClusterNode
+import requests
+from requests import Response
+from requests.adapters import HTTPAdapter
+from requests.exceptions import HTTPError, RequestException
+from urllib3.util.retry import Retry
+from rptest.util import wait_until_result
 
 DEFAULT_TIMEOUT = 30
 
