@@ -231,6 +231,7 @@ def redpanda_cc_btest_no_seastar(
         ],
         srcs = srcs,
         defines = defines,
+        copts = redpanda_copts(),
         deps = ["@boost//:test.so"] + deps,
     )
 
