@@ -235,7 +235,7 @@ func runWithFlags(ctx context.Context, fs afero.Fs, p *config.RpkProfile, langFl
 }
 
 func createUser(ctx context.Context, fs afero.Fs, p *config.RpkProfile, user, pass string) error {
-	cl, err := adminapi.NewClient(fs, p)
+	cl, err := adminapi.NewClient(ctx, fs, p)
 	if err != nil {
 		return fmt.Errorf("unable to initialize admin client: %v", err)
 	}

@@ -48,7 +48,7 @@ func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Co
 				out.Die("specify at least one topic when --partition is used, exiting.")
 			}
 
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			response, err = cl.Reconfigurations(cmd.Context())

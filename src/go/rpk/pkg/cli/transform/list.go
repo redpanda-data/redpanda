@@ -95,7 +95,7 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 				out.MaybeDie(err, "unable to list transforms from Cloud: %v", err)
 				l = dataplaneToAdminTransformMetadata(res.Msg.Transforms)
 			} else {
-				api, err := adminapi.NewClient(fs, p)
+				api, err := adminapi.NewClient(cmd.Context(), fs, p)
 				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 				l, err = api.ListWasmTransforms(cmd.Context())

@@ -147,7 +147,7 @@ committed offset. Recall that this state is maintained until the transform is de
 				})
 				out.MaybeDie(err, "unable to deploy transform to Cloud Cluster: %v", err)
 			} else {
-				api, err := adminapi.NewClient(fs, p)
+				api, err := adminapi.NewClient(cmd.Context(), fs, p)
 				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 				err = api.DeployWasmTransform(cmd.Context(), t, wasm)
