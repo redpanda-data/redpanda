@@ -147,6 +147,14 @@ void leader_balancer::on_leadership_change(
         _in_flight_changes.erase(it);
         check_unregister_leadership_change_notification();
 
+        auto muted_it = _muted.find(group);
+        if (muted_it != _muted.end()) {
+            // Unmute on next balancer iteration (prevent the scenario when the
+            // group is transferred, unmuted, and immediately transferred
+            // again).
+            muted_it->second = clock_type::now();
+        }
+
         if (_throttled) {
             _throttled = false;
             _timer.cancel();
@@ -572,6 +580,11 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           *transfer, clock_type::now() + _mute_timeout()};
         check_register_leadership_change_notification();
 
+        // Add the group to the muted set to avoid thrashing. If the transfer is
+        // successful, it will soon be removed by the leadership notification.
+        _muted.try_emplace(
+          transfer->group, clock_type::now() + _mute_timeout());
+
         auto success = co_await do_transfer(*transfer);
         if (!success) {
             vlog(
@@ -596,6 +609,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
              * don't delay a lot.
              */
             _probe.leader_transfer_error();
+
             co_await ss::sleep_abortable(5s, _as.local());
             co_return ss::stop_iteration::no;
 
@@ -604,16 +618,6 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
             num_dispatched += 1;
             strategy->apply_movement(*transfer);
         }
-
-        /*
-         * if leadership moved, or it timed out we'll mute the group for a while
-         * and continue to avoid any thrashing. notice that we don't check for
-         * movement to the exact shard we requested. this is because we want to
-         * avoid thrashing (we'll still mute the group), but also because we may
-         * have simply been racing with organic leadership movement.
-         */
-        _muted.try_emplace(
-          transfer->group, clock_type::now() + _mute_timeout());
     }
 
     co_return ss::stop_iteration::no;
