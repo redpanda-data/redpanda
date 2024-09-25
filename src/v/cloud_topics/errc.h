@@ -11,7 +11,7 @@
 
 #include <system_error>
 
-namespace cloud_topics {
+namespace experimental::cloud_topics {
 
 enum class errc : int16_t {
     success,
@@ -42,7 +42,7 @@ inline const std::error_category& error_category() noexcept {
 inline std::error_code make_error_code(errc e) noexcept {
     return {static_cast<int>(e), error_category()};
 }
-} // namespace cloud_topics
+} // namespace experimental::cloud_topics
 namespace std {
 template<>
 struct is_error_code_enum<cloud_topics::errc> : true_type {};

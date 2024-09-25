@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-namespace cloud_topics {
+namespace experimental::cloud_topics {
 
 enum class dl_stm_key {
     overlay,
@@ -39,11 +39,12 @@ enum class dl_stm_object_ownership {
     shared,
 };
 
-} // namespace cloud_topics
+} // namespace experimental::cloud_topics
 
 template<>
-struct fmt::formatter<cloud_topics::dl_stm_key>
+struct fmt::formatter<experimental::cloud_topics::dl_stm_key>
   : fmt::formatter<std::string_view> {
-    auto format(cloud_topics::dl_stm_key, fmt::format_context& ctx) const
-      -> decltype(ctx.out());
+    auto format(
+      experimental::cloud_topics::dl_stm_key,
+      fmt::format_context& ctx) const -> decltype(ctx.out());
 };

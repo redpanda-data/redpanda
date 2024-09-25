@@ -12,5 +12,7 @@
 #include <gtest/gtest.h>
 
 TEST(DlStmKey, Formatting) {
-    ASSERT_EQ(fmt::format("{}", cloud_topics::dl_stm_key::overlay), "overlay");
+    ASSERT_EQ(
+      fmt::format("{}", experimental::cloud_topics::dl_stm_key::overlay),
+      "overlay");
 }
