@@ -18,6 +18,7 @@
 #include "utils/waiter_queue.h"
 
 #include <array>
+#include <memory>
 #include <string_view>
 #include <unordered_set>
 
@@ -444,6 +445,11 @@ public:
     static cluster::cluster_version get_earliest_logical_version();
 
     feature_table();
+    feature_table(const feature_table&) = delete;
+    feature_table& operator=(const feature_table&) = delete;
+    feature_table(feature_table&&) = delete;
+    feature_table& operator=(feature_table&&) = delete;
+    ~feature_table() noexcept;
 
     feature_state& get_state(feature f_id);
     const feature_state& get_state(feature f_id) const {
@@ -545,7 +551,15 @@ public:
     // Assert out on startup if we appear to have upgraded too far
     void assert_compatible_version(bool);
 
+    // Visible for testing
+    static long long calculate_expiry_metric(
+      const std::optional<security::license>& license,
+      security::license::clock::time_point now
+      = security::license::clock::now());
+
 private:
+    class probe;
+
     // Only for use by our friends feature backend & manager
     void set_active_version(
       cluster::cluster_version,
@@ -601,6 +615,7 @@ private:
 
     ss::gate _gate;
     ss::abort_source _as;
+    std::unique_ptr<probe> _probe;
 };
 
 } // namespace features
