@@ -717,7 +717,7 @@ ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
 }
 
 bool partition::should_construct_archiver() {
-    // NOTE: construct and archiver even if shadow indexing isn't enabled, e.g.
+    // NOTE: construct an archiver even if shadow indexing isn't enabled, e.g.
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
     const auto& ntp_config = _raft->log()->config();
