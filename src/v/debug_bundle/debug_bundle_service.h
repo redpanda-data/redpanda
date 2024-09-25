@@ -16,6 +16,7 @@
 #include "container/fragmented_vector.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
+#include "storage/fwd.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
@@ -38,7 +39,7 @@ public:
     /**
      * @brief Construct a new debug bundle service object
      */
-    service();
+    explicit service(storage::kvstore* kvstore);
 
     /// Destructor
     ~service() noexcept;
@@ -153,6 +154,8 @@ private:
 private:
     /// Handler used to emplace stdout/stderr into a buffer
     struct output_handler;
+    /// KV store used to store metadata
+    storage::kvstore* _kvstore;
     /// Structure used to hold information about the running rpk debug bundle
     /// process
     class debug_bundle_process;

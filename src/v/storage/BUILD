@@ -209,6 +209,7 @@ redpanda_cc_library(
     include_prefix = "storage",
     visibility = [
         "//src/v/cluster/tests:__pkg__",
+        "//src/v/debug_bundle/tests:__pkg__",
         "//src/v/storage/tests:__pkg__",
     ],
     deps = [

@@ -11,13 +11,19 @@
 
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "config/property.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
+#include "features/feature_table.h"
 #include "random/generators.h"
+#include "storage/file_sanitizer_types.h"
+#include "storage/kvstore.h"
+#include "storage/storage_resources.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
@@ -42,14 +48,34 @@ struct debug_bundle_service_fixture : public seastar_test {
 
         config::node().data_directory.set_value(_data_dir);
         config::shard_local_cfg().rpk_path.set_value(_rpk_shim_path);
-        co_await _service.start();
+
+        _kvconfig = get_kvstore_config();
+        co_await _feature_table.start();
+        co_await _feature_table.invoke_on_all(
+          [](features::feature_table& f) { f.testing_activate_all(); });
+        _kvstore = std::make_unique<storage::kvstore>(
+          *_kvconfig, ss::this_shard_id(), _resources, _feature_table);
+        co_await _kvstore->start();
+        co_await _service.start(_kvstore.get());
     }
 
-    ss::future<> TearDownAsync() override { co_await _service.stop(); }
+    ss::future<> TearDownAsync() override {
+        co_await _service.stop();
+        co_await _kvstore->stop();
+        co_await _feature_table.stop();
+    }
+
+    std::unique_ptr<storage::kvstore_config> get_kvstore_config() {
+        return std::make_unique<storage::kvstore_config>(
+          8192,
+          config::mock_binding(std::chrono::milliseconds(10)),
+          _data_dir.native(),
+          storage::make_sanitized_file_config());
+    }
 
     ss::future<> restart_service() {
         ASSERT_NO_THROW_CORO(co_await _service.stop());
-        ASSERT_NO_THROW_CORO(co_await _service.start());
+        ASSERT_NO_THROW_CORO(co_await _service.start(_kvstore.get()));
         ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
           [](debug_bundle::service& s) { return s.start(); }));
     }
@@ -79,6 +105,10 @@ struct debug_bundle_service_fixture : public seastar_test {
 
     std::filesystem::path _rpk_shim_path;
     std::filesystem::path _data_dir;
+    std::unique_ptr<storage::kvstore_config> _kvconfig;
+    storage::storage_resources _resources{};
+    std::unique_ptr<storage::kvstore> _kvstore;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<debug_bundle::service> _service;
 };
 

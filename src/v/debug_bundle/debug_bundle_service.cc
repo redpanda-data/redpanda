@@ -203,8 +203,9 @@ private:
     clock::time_point _created_time;
 };
 
-service::service()
-  : _debug_bundle_dir(form_debug_bundle_storage_directory())
+service::service(storage::kvstore* kvstore)
+  : _kvstore(kvstore)
+  , _debug_bundle_dir(form_debug_bundle_storage_directory())
   , _debug_bundle_storage_dir_binding(
       config::shard_local_cfg().debug_bundle_storage_dir.bind())
   , _rpk_path_binding(config::shard_local_cfg().rpk_path.bind())

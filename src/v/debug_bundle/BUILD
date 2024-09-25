@@ -23,6 +23,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/config",
         "//src/v/container:fragmented_vector",
+        "//src/v/storage",
         "//src/v/utils:mutex",
         "@fmt",
         "@seastar",
