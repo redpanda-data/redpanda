@@ -374,3 +374,98 @@ TEST_F_CORO(debug_bundle_service_started_fixture, termiate_never_ran) {
       term_res.assume_error().code(),
       debug_bundle::error_code::debug_bundle_process_never_started);
 }
+
+TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path) {
+    using namespace std::chrono_literals;
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+    ASSERT_NO_THROW_CORO(
+      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+
+    auto expected_path = _data_dir
+                         / debug_bundle::service::debug_bundle_dir_name
+                         / fmt::format("{}.zip", job_id);
+
+    auto file_path = co_await _service.local().rpk_debug_bundle_path(job_id);
+    ASSERT_TRUE_CORO(file_path.has_value())
+      << file_path.assume_error().message();
+    EXPECT_EQ(file_path.assume_value(), expected_path);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_not_started) {
+    auto file_path = co_await _service.local().rpk_debug_bundle_path(
+      debug_bundle::job_id_t(uuid_t::create()));
+    ASSERT_FALSE_CORO(file_path.has_value());
+    EXPECT_EQ(
+      file_path.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_never_started);
+}
+
+TEST_F_CORO(
+  debug_bundle_service_started_fixture, get_file_path_process_failed) {
+    using namespace std::chrono_literals;
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+    auto status = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
+
+    EXPECT_EQ(
+      status.assume_value().status, debug_bundle::debug_bundle_status::running);
+
+    auto term_res = co_await _service.local().cancel_rpk_debug_bundle(job_id);
+    ASSERT_TRUE_CORO(term_res.has_value()) << term_res.assume_error().message();
+
+    ASSERT_NO_THROW_CORO(
+      status = co_await wait_for_process_to_finish(_service, 10s));
+
+    ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
+
+    EXPECT_EQ(
+      status.assume_value().status, debug_bundle::debug_bundle_status::error);
+
+    auto file_path = co_await _service.local().rpk_debug_bundle_path(job_id);
+    ASSERT_FALSE_CORO(file_path.has_value());
+    EXPECT_EQ(
+      file_path.assume_error().code(),
+      debug_bundle::error_code::process_failed);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_running) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+    auto file_path = co_await _service.local().rpk_debug_bundle_path(job_id);
+    ASSERT_FALSE_CORO(file_path.has_value());
+    EXPECT_EQ(
+      file_path.assume_error().code(),
+      debug_bundle::error_code::debug_bundle_process_running);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, get_file_path_bad_job_id) {
+    using namespace std::chrono_literals;
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, {});
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+    ASSERT_NO_THROW_CORO(
+      std::ignore = co_await wait_for_process_to_finish(_service, 10s));
+
+    auto file_path = co_await _service.local().rpk_debug_bundle_path(
+      debug_bundle::job_id_t(uuid_t::create()));
+    ASSERT_FALSE_CORO(file_path.has_value());
+    EXPECT_EQ(
+      file_path.assume_error().code(),
+      debug_bundle::error_code::job_id_not_recognized);
+}
