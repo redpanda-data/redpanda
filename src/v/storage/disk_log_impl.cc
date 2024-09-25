@@ -1552,7 +1552,8 @@ ss::future<> disk_log_impl::new_segment(
         t,
         pc,
         config::shard_local_cfg().storage_read_buffer_size(),
-        config::shard_local_cfg().storage_read_readahead_count())
+        config::shard_local_cfg().storage_read_readahead_count(),
+        _max_segment_size)
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
