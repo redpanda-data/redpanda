@@ -398,8 +398,10 @@ void materialized_resources::trim_segment_readers(size_t target_free) {
 void materialized_resources::trim_segments(std::optional<size_t> target_free) {
     vlog(
       cst_log.debug,
-      "collecting stale materialized segments, {} segments materialized",
-      _materialized.size());
+      "collecting stale materialized segments, {} segments materialized; "
+      "target_free: {}",
+      _materialized.size(),
+      target_free);
 
     auto now = ss::lowres_clock::now();
 
@@ -411,6 +413,7 @@ void materialized_resources::trim_segments(std::optional<size_t> target_free) {
 
         // We freed enough, drop out of iterating over segments
         if (target_free && _mem_units.current() >= target_free) {
+            vlog(cst_log.debug, "Reached target_free. Won't try to trim more.");
             break;
         }
 
