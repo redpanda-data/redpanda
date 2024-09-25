@@ -38,7 +38,8 @@ public:
 
     explicit migrations_table(
       ss::sharded<migrated_resources>& resources,
-      ss::sharded<topic_table>& topics);
+      ss::sharded<topic_table>& topics,
+      bool enabled);
 
     using notification_id = named_type<uint64_t, struct notification_id_tag>;
     using notification_callback = ss::noncopyable_function<void(id)>;
@@ -132,6 +133,8 @@ private:
     absl::node_hash_map<id, migration_metadata> _migrations;
     ss::sharded<migrated_resources>& _resources;
     ss::sharded<topic_table>& _topics;
+    bool _enabled;
+
     notification_list<notification_callback, notification_id> _callbacks;
 };
 } // namespace cluster::data_migrations

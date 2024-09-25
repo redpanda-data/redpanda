@@ -25,9 +25,12 @@
 namespace cluster::data_migrations {
 
 migrations_table::migrations_table(
-  ss::sharded<migrated_resources>& resources, ss::sharded<topic_table>& topics)
+  ss::sharded<migrated_resources>& resources,
+  ss::sharded<topic_table>& topics,
+  bool enabled)
   : _resources(resources)
-  , _topics(topics) {}
+  , _topics(topics)
+  , _enabled(enabled) {}
 
 bool migrations_table::is_valid_state_transition(state current, state target) {
     switch (current) {
@@ -201,6 +204,11 @@ migrations_table::apply(create_data_migration_cmd cmd) {
 std::optional<migrations_table::validation_error>
 migrations_table::validate_migrated_resources(
   const data_migration& migration) const {
+    // cloud_storage_api is checked on startup
+    if (!_enabled) {
+        return validation_error{"cloud storage disabled"};
+    }
+
     return ss::visit(migration, [this](const auto& migration) {
         return validate_migrated_resources(migration);
     });
@@ -237,9 +245,24 @@ std::optional<migrations_table::validation_error>
 migrations_table::validate_migrated_resources(
   const outbound_migration& odm) const {
     for (const auto& t : odm.topics) {
-        if (!_topics.local().contains(t)) {
+        if (t.ns != model::kafka_namespace) {
+            return validation_error{ssx::sformat(
+              "topic with name {} is not in default namespace, so probably it "
+              "has archiver disabled",
+              t)};
+        }
+
+        auto maybe_topic_cfg = _topics.local().get_topic_cfg(t);
+        if (!maybe_topic_cfg) {
             return validation_error{ssx::sformat(
               "topic with name {} does not exists in current cluster", t)};
+        }
+
+        if (!model::is_archival_enabled(
+              maybe_topic_cfg->properties.shadow_indexing.value_or(
+                model::shadow_indexing_mode::disabled))) {
+            return validation_error{ssx::sformat(
+              "topic with name {} does not have archiving enabled", t)};
         }
 
         if (_resources.local().is_already_migrated(t)) {
