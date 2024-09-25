@@ -21,8 +21,9 @@
 
 namespace iceberg::rest_client {
 
-// An http call related error, either a status code or a string describing an
-// exception caught during the call.
+// An error seen during an http call, represented either by a status code, or a
+// string in case of an exception.
+// TODO - use exception_ptr instead of string
 using http_call_error = std::variant<boost::beast::http::status, ss::sstring>;
 
 using parse_error_msg = named_type<ss::sstring, struct parse_error_msg_t>;
@@ -32,9 +33,16 @@ struct json_parse_error {
     parse_error_msg error;
 };
 
-// The domain error represents the sum of all error types which can be
-// encountered during rest-client operations.
-using domain_error = std::variant<json_parse_error>;
+// Error returned when retry limit is exhausted due to a breached time deadline.
+// Contains errors encountered during retries for logging
+struct retries_exhausted {
+    std::vector<http_call_error> errors;
+};
+
+// Represents the sum of all error types which can be encountered during
+// rest-client operations.
+using domain_error
+  = std::variant<json_parse_error, http_call_error, retries_exhausted>;
 
 // The core result type used by all operations in the iceberg/rest-client which
 // can fail. Allows chaining of operations together and short-circuiting when an
