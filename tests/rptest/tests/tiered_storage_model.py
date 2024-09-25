@@ -1454,7 +1454,7 @@ class TestCase(dict):
             if r is not None:
                 test.get_logger().info(
                     f"Result of {v.name()} is {r} with confidence {c}")
-                if r == False or c < 0.5:
+                if r is False or c < CONFIDENCE_THRESHOLD:
                     num_failed += 1
             else:
                 test.get_logger().info(f"Result of {v.name()} is None")

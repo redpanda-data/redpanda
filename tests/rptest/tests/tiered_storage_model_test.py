@@ -572,29 +572,28 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         self.start_validators(test_case)
         self.run_bg_validators(test_case)
 
-        try:
-            # Setup stage
-            self.prepare_stage(TestRunStage.Startup, test_case)
-            self.run_stage_validators(TestRunStage.Startup, test_case)
+        # Setup stage
+        self.prepare_stage(TestRunStage.Startup, test_case)
+        self.run_stage_validators(TestRunStage.Startup, test_case)
 
-            # Producing the data
-            self.prepare_stage(TestRunStage.Produce, test_case)
-            self.produce_until_validated(test_case)
+        # Producing the data
+        self.prepare_stage(TestRunStage.Produce, test_case)
+        self.produce_until_validated(test_case)
 
-            # Intermediate step
-            self.prepare_stage(TestRunStage.Intermediate, test_case)
-            self.run_stage_validators(TestRunStage.Intermediate, test_case)
+        # Intermediate step
+        self.prepare_stage(TestRunStage.Intermediate, test_case)
+        self.run_stage_validators(TestRunStage.Intermediate, test_case)
 
-            # Consuming the data
-            self.prepare_stage(TestRunStage.Consume, test_case)
-            self.consume_until_validated(test_case)
+        # Consuming the data
+        self.prepare_stage(TestRunStage.Consume, test_case)
+        self.consume_until_validated(test_case)
 
-            # Shutting down
-            self.prepare_stage(TestRunStage.Shutdown, test_case)
-            self.run_stage_validators(TestRunStage.Shutdown, test_case)
+        # Shutting down
+        self.prepare_stage(TestRunStage.Shutdown, test_case)
+        self.run_stage_validators(TestRunStage.Shutdown, test_case)
 
-            self.shutdown_bg_tasks()
-        finally:
-            # Check that all validators are done and raise error if
-            # some of them failed.
-            test_case.assert_validators(self)
+        self.shutdown_bg_tasks()
+
+        # Check that all validators are done and raise error if
+        # some of them failed.
+        test_case.assert_validators(self)
