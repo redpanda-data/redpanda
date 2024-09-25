@@ -117,6 +117,15 @@ class DataMigrationsApiTest(RedpandaTest):
         migrations = self.admin.list_data_migrations(node).json()
         return {migration["id"]: migration for migration in migrations}
 
+    def get_migration(self, id, node=None):
+        try:
+            return self.admin.get_data_migration(id, node).json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return None
+            else:
+                raise
+
     def on_all_live_nodes(self, migration_id, predicate):
         success_cnt = 0
         exception_cnt = 0
@@ -124,8 +133,10 @@ class DataMigrationsApiTest(RedpandaTest):
             try:
                 map = self.get_migrations_map(n)
                 self.logger.debug(f"migrations on node {n.name}: {map}")
-                if predicate(map[migration_id] if migration_id in
-                             map else None):
+                list_item = map[migration_id] if migration_id in map else None
+                individual = self.get_migration(migration_id, n)
+
+                if predicate(list_item) and predicate(individual):
                     success_cnt += 1
                 else:
                     return False
@@ -310,7 +321,7 @@ class DataMigrationsApiTest(RedpandaTest):
         self.redpanda.si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "missing_segments"})
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_higher_level_migration_api(self):
         topics = [TopicSpec(partition_count=3) for i in range(5)]
 

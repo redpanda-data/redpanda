@@ -1674,6 +1674,12 @@ class Admin:
         path = "migrations"
         return self._request("GET", path, node=node)
 
+    def get_data_migration(self,
+                           migration_id: int,
+                           node: Optional[ClusterNode] = None):
+        path = f"migrations/{migration_id}"
+        return self._request("GET", path, node=node)
+
     def create_data_migration(self,
                               migration: InboundDataMigration
                               | OutboundDataMigration,
