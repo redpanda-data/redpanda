@@ -454,3 +454,30 @@ TEST(ValuesTest, TestPrimitivesCopy) {
         ASSERT_EQ(v, value{std::move(v_copy)});
     }
 }
+
+TEST(ValuesTest, TestLessThan) {
+    auto vals = unique_values_primitive_types();
+    for (const auto& v : vals) {
+        ASSERT_FALSE(v < v);
+    }
+    ASSERT_LT(value{boolean_value{false}}, value{boolean_value{true}});
+    ASSERT_LT(value{int_value{0}}, value{int_value{1}});
+    ASSERT_LT(value{long_value{0}}, value{long_value{1}});
+    ASSERT_LT(value{float_value{0.0}}, value{float_value{1.0}});
+    ASSERT_LT(value{double_value{0.0}}, value{double_value{1.0}});
+    ASSERT_LT(value{decimal_value{0}}, value{decimal_value{1}});
+    ASSERT_LT(value{date_value{0}}, value{date_value{1}});
+    ASSERT_LT(value{time_value{0}}, value{time_value{1}});
+    ASSERT_LT(value{timestamp_value{0}}, value{timestamp_value{1}});
+    ASSERT_LT(value{timestamptz_value{0}}, value{timestamptz_value{1}});
+    ASSERT_LT(
+      value{string_value{iobuf::from("aaa")}},
+      value{string_value{iobuf::from("aab")}});
+    ASSERT_LT(
+      value{binary_value{iobuf::from("aaa")}},
+      value{binary_value{iobuf::from("aab")}});
+    ASSERT_LT(value{uuid_value{uuid_t{}}}, value{uuid_value{uuid_t::create()}});
+    ASSERT_LT(
+      value{fixed_value{iobuf::from("aaa")}},
+      value{fixed_value{iobuf::from("aab")}});
+}

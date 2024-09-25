@@ -126,12 +126,6 @@ void ostream_val_ptr(std::ostream& o, const std::optional<value>& v) {
     o << "none";
 }
 
-} // namespace
-
-primitive_value make_copy(const primitive_value& v) {
-    return std::visit(primitive_copying_visitor{}, v);
-}
-
 struct primitive_value_comparison_visitor {
     template<typename T, typename U>
     bool operator()(const T&, const U&) const {
@@ -145,8 +139,37 @@ struct primitive_value_comparison_visitor {
     }
 };
 
+struct primitive_value_lt_visitor {
+    template<typename T, typename U>
+    bool operator()(const T& t, const U& u) const {
+        static_assert(!std::is_same_v<T, U>);
+        throw std::invalid_argument(
+          fmt::format("Cannot evaluate {} < {}", t, u));
+    }
+    template<typename T>
+    requires requires(T t) { t.val->iobuf; }
+    bool operator()(const T& lhs, const T& rhs) const {
+        return lhs == rhs;
+    }
+    template<typename T>
+    requires requires(T t) { t.val; }
+    bool operator()(const T& lhs, const T& rhs) const {
+        return lhs.val < rhs.val;
+    }
+};
+
+} // namespace
+
+primitive_value make_copy(const primitive_value& v) {
+    return std::visit(primitive_copying_visitor{}, v);
+}
+
 bool operator==(const primitive_value& lhs, const primitive_value& rhs) {
     return std::visit(primitive_value_comparison_visitor{}, lhs, rhs);
+}
+
+bool operator<(const primitive_value& lhs, const primitive_value& rhs) {
+    return std::visit(primitive_value_lt_visitor{}, lhs, rhs);
 }
 
 bool operator==(const struct_value& lhs, const struct_value& rhs) {
