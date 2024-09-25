@@ -121,7 +121,7 @@ class TieredStorageReaderStressTest(RedpandaTest):
             hydrations_count = 0
             for family in metrics:
                 for sample in family.samples:
-                    if sample.name == "redpanda_cloud_storage_readers":
+                    if sample.name == "redpanda_cloud_storage_segment_readers":
                         segment_reader_count += int(sample.value)
                     if sample.name == "redpanda_cloud_storage_partition_readers":
                         partition_reader_count += int(sample.value)
