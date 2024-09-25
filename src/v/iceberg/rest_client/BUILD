@@ -31,3 +31,19 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
     ],
 )
+
+redpanda_cc_library(
+    name = "retry_policy",
+    srcs = [
+        "retry_policy.cc",
+    ],
+    hdrs = [
+        "retry_policy.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        ":rest_client_types",
+        "//src/v/http",
+        "//src/v/net",
+    ],
+)

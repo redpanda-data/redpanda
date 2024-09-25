@@ -17,8 +17,13 @@
 #include <seastar/core/sstring.hh>
 
 #include <ada/expected.h>
+#include <boost/beast/http/status.hpp>
 
 namespace iceberg::rest_client {
+
+// An http call related error, either a status code or a string describing an
+// exception caught during the call.
+using http_call_error = std::variant<boost::beast::http::status, ss::sstring>;
 
 using parse_error_msg = named_type<ss::sstring, struct parse_error_msg_t>;
 
