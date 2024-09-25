@@ -126,6 +126,13 @@ class DataMigrationsApiTest(RedpandaTest):
             else:
                 raise
 
+    def assure_not_deletable(self, id, node=None):
+        try:
+            self.admin.delete_data_migration(id, node)
+            assert False
+        except:
+            pass
+
     def on_all_live_nodes(self, migration_id, predicate):
         success_cnt = 0
         exception_cnt = 0
@@ -157,6 +164,9 @@ class DataMigrationsApiTest(RedpandaTest):
             err_msg=
             f"Failed waiting for migration {id} to reach one of {states} states"
         )
+        if all(state not in ('planned', 'finished', 'cancelled')
+               for state in states):
+            self.assure_not_deletable(id)
 
     def wait_migration_appear(self, migration_id):
         def migration_is_present(id: int):
