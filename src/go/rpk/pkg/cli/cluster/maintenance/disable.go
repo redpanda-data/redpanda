@@ -42,7 +42,7 @@ func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)
 
-			client, err := adminapi.NewClient(fs, p)
+			client, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			b, err := client.Broker(cmd.Context(), nodeID)

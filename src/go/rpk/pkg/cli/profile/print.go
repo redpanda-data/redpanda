@@ -46,7 +46,8 @@ in the rpk.yaml file.
 			if p == nil {
 				out.Die("profile %s does not exist", args[0])
 			}
-
+			// We hide the license check.
+			p.LicenseCheck = nil
 			m, err := yaml.Marshal(p)
 			out.MaybeDie(err, "unable to encode profile: %v", err)
 			fmt.Println(string(m))
