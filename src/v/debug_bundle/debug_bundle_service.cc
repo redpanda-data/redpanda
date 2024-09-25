@@ -22,15 +22,13 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/coroutine/exception.hh>
 #include <seastar/util/process.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <boost/algorithm/string/join.hpp>
 #include <fmt/format.h>
 #include <re2/re2.h>
-
-#include <optional>
-#include <string_view>
 
 using namespace std::chrono_literals;
 
@@ -135,6 +133,51 @@ public:
         }
     }
 
+    ss::future<> terminate(std::chrono::milliseconds timeout) {
+        if (_rpk_process) {
+            return _rpk_process->terminate(timeout);
+        }
+        return ss::now();
+    }
+
+    ss::future<ss::experimental::process::wait_status> wait() {
+        vassert(
+          _rpk_process != nullptr,
+          "RPK process should be created if calling wait()");
+        try {
+            co_return _wait_result.emplace(co_await _rpk_process->wait());
+        } catch (const std::exception& e) {
+            _wait_result.emplace(ss::experimental::process::wait_exited{1});
+            co_return ss::coroutine::return_exception(e);
+        }
+    }
+
+    debug_bundle_status process_status() const {
+        if (_wait_result.has_value()) {
+            return ss::visit(
+              _wait_result.value(),
+              [](ss::experimental::process::wait_exited e) {
+                  if (e.exit_code == 0) {
+                      return debug_bundle_status::success;
+                  } else {
+                      return debug_bundle_status::error;
+                  }
+              },
+              [](ss::experimental::process::wait_signaled) {
+                  return debug_bundle_status::error;
+              });
+        }
+        return debug_bundle_status::running;
+    }
+
+    job_id_t job_id() const { return _job_id; }
+    const std::filesystem::path& output_file_path() const {
+        return _output_file_path;
+    }
+    const chunked_vector<ss::sstring>& cout() const { return _cout; }
+    const chunked_vector<ss::sstring>& cerr() const { return _cerr; }
+    clock::time_point created_time() const { return _created_time; }
+
 private:
     job_id_t _job_id;
     std::unique_ptr<external_process::external_process> _rpk_process;
@@ -143,8 +186,6 @@ private:
     chunked_vector<ss::sstring> _cout;
     chunked_vector<ss::sstring> _cerr;
     clock::time_point _created_time;
-
-    friend class service;
 };
 
 service::service(const std::filesystem::path& data_dir)
@@ -181,7 +222,7 @@ ss::future<> service::stop() {
     if (ss::this_shard_id() == service_shard) {
         if (is_running()) {
             try {
-                co_await _rpk_process->_rpk_process->terminate(1s);
+                co_await _rpk_process->terminate(1s);
             } catch (const std::exception& e) {
                 lg.warn(
                   "Failed to terminate running process while stopping service: "
@@ -246,13 +287,11 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
     // Kick off the wait by waiting for the process to finish and then emplacing
     // the result
     ssx::spawn_with_gate(_gate, [this]() {
-        return _rpk_process->_rpk_process->wait()
-          .then([this](auto res) { _rpk_process->_wait_result.emplace(res); })
-          .handle_exception_type([this](const std::exception& e) {
+        return _rpk_process->wait()
+          .then([](auto) { return ss::now(); })
+          .handle_exception_type([](const std::exception& e) {
               lg.error(
                 "wait() failed while running rpk debug bundle: {}", e.what());
-              _rpk_process->_wait_result.emplace(
-                ss::experimental::process::wait_exited{1});
           });
     });
 
@@ -278,12 +317,12 @@ ss::future<result<void>> service::cancel_rpk_debug_bundle(job_id_t job_id) {
       _rpk_process,
       "_rpk_process should be populated if the process has been executed");
 
-    if (job_id != _rpk_process->_job_id) {
+    if (job_id != _rpk_process->job_id()) {
         co_return error_info(error_code::job_id_not_recognized);
     }
 
     try {
-        co_await _rpk_process->_rpk_process->terminate(1s);
+        co_await _rpk_process->terminate(1s);
     } catch (const std::system_error& e) {
         if (
           e.code() == external_process::error_code::process_already_completed) {
@@ -314,7 +353,7 @@ service::rpk_debug_bundle_status() {
       _rpk_process,
       "_rpk_process should be populated if the process has been executed");
 
-    auto& output_file = _rpk_process->_output_file_path.native();
+    auto& output_file = _rpk_process->output_file_path().native();
 
     std::optional<size_t> file_size;
     if (status.value() == debug_bundle_status::success) {
@@ -331,13 +370,13 @@ service::rpk_debug_bundle_status() {
     }
 
     co_return debug_bundle_status_data{
-      .job_id = _rpk_process->_job_id,
+      .job_id = _rpk_process->job_id(),
       .status = status.value(),
-      .created_timestamp = _rpk_process->_created_time,
-      .file_name = _rpk_process->_output_file_path.filename().native(),
+      .created_timestamp = _rpk_process->created_time(),
+      .file_name = _rpk_process->output_file_path().filename().native(),
       .file_size = file_size,
-      .cout = _rpk_process->_cout.copy(),
-      .cerr = _rpk_process->_cerr.copy()};
+      .cout = _rpk_process->cout().copy(),
+      .cerr = _rpk_process->cerr().copy()};
 }
 
 ss::future<result<std::filesystem::path>>
@@ -360,17 +399,17 @@ service::rpk_debug_bundle_path(job_id_t job_id) {
     case debug_bundle_status::error:
         co_return error_info(error_code::process_failed);
     }
-    if (job_id != _rpk_process->_job_id) {
+    if (job_id != _rpk_process->job_id()) {
         co_return error_info(error_code::job_id_not_recognized);
     }
-    if (!co_await ss::file_exists(_rpk_process->_output_file_path.native())) {
+    if (!co_await ss::file_exists(_rpk_process->output_file_path().native())) {
         co_return error_info(
           error_code::internal_error,
           fmt::format(
             "Debug bundle file {} not found",
-            _rpk_process->_output_file_path.native()));
+            _rpk_process->output_file_path().native()));
     }
-    co_return _rpk_process->_output_file_path;
+    co_return _rpk_process->output_file_path();
 }
 
 ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
@@ -393,20 +432,20 @@ ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
         // in case the file was created
         break;
     }
-    if (_rpk_process->_job_id != job_id) {
+    if (_rpk_process->job_id() != job_id) {
         co_return error_info(error_code::job_id_not_recognized);
     }
     try {
         if (co_await ss::file_exists(
-              _rpk_process->_output_file_path.native())) {
-            co_await ss::remove_file(_rpk_process->_output_file_path.native());
+              _rpk_process->output_file_path().native())) {
+            co_await ss::remove_file(_rpk_process->output_file_path().native());
         }
     } catch (const std::exception& e) {
         co_return error_info(
           error_code::internal_error,
           fmt::format(
             "Failed to delete debug bundle file {}: {}",
-            _rpk_process->_output_file_path,
+            _rpk_process->output_file_path(),
             e.what()));
     }
     co_return outcome::success();
@@ -490,32 +529,14 @@ std::optional<debug_bundle_status> service::process_status() const {
     if (_rpk_process == nullptr) {
         return std::nullopt;
     }
-    if (
-      _rpk_process->_rpk_process->is_running()
-      || !_rpk_process->_wait_result.has_value()) {
-        return debug_bundle_status::running;
-    }
-    return ss::visit(
-      _rpk_process->_wait_result.value(),
-      [](ss::experimental::process::wait_exited e) {
-          if (e.exit_code == 0) {
-              return debug_bundle_status::success;
-          } else {
-              return debug_bundle_status::error;
-          }
-      },
-      [](ss::experimental::process::wait_signaled) {
-          return debug_bundle_status::error;
-      });
+    return _rpk_process->process_status();
 }
 
 bool service::is_running() const {
-    if (auto status = process_status();
-        status.has_value() && *status == debug_bundle_status::running) {
-        return true;
-    } else {
+    if (_rpk_process == nullptr) {
         return false;
     }
+    return _rpk_process->process_status() == debug_bundle_status::running;
 }
 
 } // namespace debug_bundle
