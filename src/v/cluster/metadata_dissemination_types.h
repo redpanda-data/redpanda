@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "serde/envelope.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/util/bool_class.hh>
