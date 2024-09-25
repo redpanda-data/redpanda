@@ -85,7 +85,7 @@ wait_for_process_to_finish(
     const auto start_time = debug_bundle::clock::now();
     while (debug_bundle::clock::now() - start_time <= timeout) {
         auto status = co_await service.local().rpk_debug_bundle_status();
-        if (status.has_failure()) {
+        if (!status.has_value()) {
             throw std::runtime_error("status contains error");
         }
         if (
@@ -104,11 +104,10 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, {});
-    ASSERT_FALSE_CORO(res.has_failure()) << res.as_failure().error().message();
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
 
     auto status = co_await _service.local().rpk_debug_bundle_status();
-    ASSERT_FALSE_CORO(status.has_failure())
-      << res.as_failure().error().message();
+    ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
 
     EXPECT_EQ(
       status.assume_value().status, debug_bundle::debug_bundle_status::running);
@@ -118,8 +117,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
     ASSERT_NO_THROW_CORO(
       status = co_await wait_for_process_to_finish(_service, 10s));
 
-    ASSERT_FALSE_CORO(status.has_failure())
-      << res.as_failure().error().message();
+    ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
 
     EXPECT_EQ(
       status.assume_value().status, debug_bundle::debug_bundle_status::success);
@@ -206,7 +204,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, std::move(params));
-    ASSERT_FALSE_CORO(res.has_failure()) << res.assume_error().message();
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
 
     const auto max_retries = 5;
     const auto timeout_time = 1s;
@@ -214,7 +212,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
     auto num_retries = 0;
     while (num_retries < max_retries) {
         auto status = co_await _service.local().rpk_debug_bundle_status();
-        ASSERT_FALSE_CORO(status.has_failure()) << res.assume_error().message();
+        ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
 
         EXPECT_EQ(
           status.assume_value().status,
@@ -240,7 +238,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, try_running_multiple) {
           return s.initiate_rpk_debug_bundle_collection(
             debug_bundle::job_id_t(uuid_t::create()), {});
       });
-    ASSERT_FALSE_CORO(res.has_failure()) << res.as_failure().error().message();
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
 
     auto res2 = co_await _service.invoke_on(
       (debug_bundle::service::service_shard + 1) % ss::smp::count,
@@ -249,7 +247,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, try_running_multiple) {
             debug_bundle::job_id_t(uuid_t::create()), {});
       });
 
-    ASSERT_TRUE_CORO(res2.has_failure());
+    ASSERT_FALSE_CORO(res2.has_value());
     EXPECT_EQ(
       res2.assume_error().code(),
       debug_bundle::error_code::debug_bundle_process_running);
@@ -261,7 +259,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_no_rpk_binary) {
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       debug_bundle::job_id_t(uuid_t::create()), {});
 
-    ASSERT_TRUE_CORO(res.has_failure());
+    ASSERT_FALSE_CORO(res.has_value());
     EXPECT_EQ(
       res.assume_error().code(),
       debug_bundle::error_code::rpk_binary_not_present);
@@ -274,14 +272,14 @@ TEST_F_CORO(debug_bundle_service_started_fixture, rpk_binary_no_exec) {
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       debug_bundle::job_id_t(uuid_t::create()), {});
-    ASSERT_TRUE_CORO(res.has_failure());
+    ASSERT_FALSE_CORO(res.has_value());
     EXPECT_EQ(
       res.assume_error().code(), debug_bundle::error_code::internal_error);
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, status_no_run) {
     auto res = co_await _service.local().rpk_debug_bundle_status();
-    ASSERT_TRUE_CORO(res.has_failure());
+    ASSERT_FALSE_CORO(res.has_value());
     EXPECT_EQ(
       res.assume_error().code(),
       debug_bundle::error_code::debug_bundle_process_never_started);
@@ -292,12 +290,11 @@ TEST_F_CORO(debug_bundle_service_started_fixture, terminate_process) {
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, {});
-    ASSERT_FALSE_CORO(res.has_failure()) << res.as_failure().error().message();
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
 
     {
         auto status = co_await _service.local().rpk_debug_bundle_status();
-        ASSERT_FALSE_CORO(status.has_failure())
-          << res.as_failure().error().message();
+        ASSERT_TRUE_CORO(status.has_value()) << res.assume_error().message();
 
         EXPECT_EQ(
           status.assume_value().status,
@@ -307,8 +304,8 @@ TEST_F_CORO(debug_bundle_service_started_fixture, terminate_process) {
     {
         auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
           job_id);
-        ASSERT_FALSE_CORO(term_res.has_failure())
-          << term_res.as_failure().error().message();
+        ASSERT_TRUE_CORO(term_res.has_value())
+          << term_res.assume_error().message();
     }
 
     {
@@ -326,8 +323,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, terminate_process) {
         auto expiry = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < expiry) {
             auto st = co_await _service.local().rpk_debug_bundle_status();
-            ASSERT_FALSE_CORO(st.has_failure())
-              << st.as_failure().error().message();
+            ASSERT_TRUE_CORO(st.has_value()) << st.assume_error().message();
             status.emplace(std::move(st).assume_value());
             if (
               status.value().status
@@ -345,7 +341,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, terminate_process) {
     {
         auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
           job_id);
-        ASSERT_TRUE_CORO(term_res.has_failure());
+        ASSERT_FALSE_CORO(term_res.has_value());
         EXPECT_EQ(
           term_res.assume_error().code(),
           debug_bundle::error_code::debug_bundle_process_not_running);
@@ -358,12 +354,12 @@ TEST_F_CORO(
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, {});
-    ASSERT_FALSE_CORO(res.has_failure()) << res.as_failure().error().message();
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
 
     {
         auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
           debug_bundle::job_id_t(uuid_t::create()));
-        ASSERT_TRUE_CORO(term_res.has_failure());
+        ASSERT_FALSE_CORO(term_res.has_value());
         EXPECT_EQ(
           term_res.assume_error().code(),
           debug_bundle::error_code::job_id_not_recognized);
@@ -373,7 +369,7 @@ TEST_F_CORO(
 TEST_F_CORO(debug_bundle_service_started_fixture, termiate_never_ran) {
     auto term_res = co_await _service.local().cancel_rpk_debug_bundle(
       debug_bundle::job_id_t(uuid_t::create()));
-    ASSERT_TRUE_CORO(term_res.has_failure());
+    ASSERT_FALSE_CORO(term_res.has_value());
     EXPECT_EQ(
       term_res.assume_error().code(),
       debug_bundle::error_code::debug_bundle_process_never_started);
