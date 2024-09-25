@@ -643,3 +643,23 @@ redpanda_cc_library(
         "@avro",
     ],
 )
+
+redpanda_cc_library(
+    name = "values_bytes",
+    srcs = [
+        "values_bytes.cc",
+    ],
+    hdrs = [
+        "values_bytes.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/utils:uuid",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":datatypes",
+        ":values",
+        "//src/v/bytes",
+    ],
+)

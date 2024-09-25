@@ -38,6 +38,7 @@ rp_test(
     transform_utils_test.cc
     values_test.cc
     values_avro_test.cc
+    values_bytes_test.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams
