@@ -289,6 +289,17 @@ ss::future<chunked_vector<migration_metadata>> frontend::list_migrations() {
     });
 }
 
+ss::future<result<migration_metadata>>
+frontend::get_migration(id migration_id) {
+    return container().invoke_on(
+      data_migrations_shard, [migration_id](frontend& local) {
+          auto maybe_migration = local._table.get_migration(migration_id);
+          return maybe_migration
+                   ? result<migration_metadata>(maybe_migration->get().copy())
+                   : errc::data_migration_not_exists;
+      });
+}
+
 ss::future<std::error_code> frontend::insert_barrier() {
     const auto barrier_deadline = _operation_timeout
                                   + model::timeout_clock::now();

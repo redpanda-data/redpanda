@@ -46,6 +46,8 @@ public:
 
     ss::future<check_ntp_states_reply> check_ntp_states_on_foreign_node(
       model::node_id node, check_ntp_states_request&& req);
+
+    ss::future<result<migration_metadata>> get_migration(id);
     ss::future<chunked_vector<migration_metadata>> list_migrations();
 
 private:

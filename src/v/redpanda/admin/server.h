@@ -655,6 +655,8 @@ private:
     // Data migration routes
     ss::future<std::unique_ptr<ss::http::reply>> list_data_migrations(
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+    ss::future<std::unique_ptr<ss::http::reply>> get_data_migration(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<std::unique_ptr<ss::http::reply>> add_data_migration(
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<ss::json::json_return_type>
