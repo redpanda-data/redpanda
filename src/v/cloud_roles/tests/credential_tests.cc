@@ -86,7 +86,7 @@ BOOST_AUTO_TEST_CASE(test_azure_oauth_headers) {
 
     {
         bh::request_header<> h{};
-        applier.add_auth(h);
+        BOOST_REQUIRE(!applier.add_auth(h));
         BOOST_REQUIRE_EQUAL(h.at("Authorization"), "Bearer a-token");
         BOOST_REQUIRE_EQUAL(
           h.at("x-ms-version"), cloud_roles::azure_storage_api_version);
@@ -96,7 +96,7 @@ BOOST_AUTO_TEST_CASE(test_azure_oauth_headers) {
       .oauth_token = cloud_roles::oauth_token_str{"second-token"}});
     {
         bh::request_header<> h{};
-        applier.add_auth(h);
+        BOOST_REQUIRE(!applier.add_auth(h));
         BOOST_REQUIRE_EQUAL(h.at("Authorization"), "Bearer second-token");
         BOOST_REQUIRE_EQUAL(
           h.at("x-ms-version"), cloud_roles::azure_storage_api_version);
