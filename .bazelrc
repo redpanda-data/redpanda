@@ -21,6 +21,9 @@ build:system-clang-17 --action_env=CXX=clang++-17 --host_action_env=CXX=clang++-
 build:system-clang-18 --config=system-clang
 build:system-clang-18 --action_env=CC=clang-18 --host_action_env=CC=clang-18
 build:system-clang-18 --action_env=CXX=clang++-18 --host_action_env=CXX=clang++-18
+build:system-clang-19 --config=system-clang
+build:system-clang-19 --action_env=CC=clang-19 --host_action_env=CC=clang-19
+build:system-clang-19 --action_env=CXX=clang++-19 --host_action_env=CXX=clang++-19
 
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1065
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1186#issuecomment-2053550487
