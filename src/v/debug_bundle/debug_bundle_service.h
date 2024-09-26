@@ -120,7 +120,7 @@ private:
      * @return std::vector<ss::sstring> The list of strings to pass to
      * external_process
      */
-    std::vector<ss::sstring>
+    result<std::vector<ss::sstring>>
     build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params);
 
     /**

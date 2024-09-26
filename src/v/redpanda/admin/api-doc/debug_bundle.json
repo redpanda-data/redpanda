@@ -78,6 +78,9 @@
                 },
                 "tls_insecure_skip_verify": {
                   "type": "boolean"
+                },
+                "namespace": {
+                  "type": "string"
                 }
               }
             }

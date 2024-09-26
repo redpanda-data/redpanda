@@ -172,6 +172,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
           model::partition_id{6}}}};
     bool tls_enabled = true;
     bool tls_insecure_skip_verify = false;
+    ss::sstring k8s_namespace_name = "redpanda-namespace";
 
     debug_bundle::debug_bundle_parameters params{
       .authn_options = debug_bundle::
@@ -184,14 +185,16 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       .metrics_interval_seconds = metrics_interval_seconds,
       .partition = partition,
       .tls_enabled = tls_enabled,
-      .tls_insecure_skip_verify = tls_insecure_skip_verify};
+      .tls_insecure_skip_verify = tls_insecure_skip_verify,
+      .k8s_namespace = debug_bundle::k8s_namespace{k8s_namespace_name}};
 
     ss::sstring expected_params(fmt::format(
       "debug bundle --output {}/{}.zip --verbose -Xuser={} -Xpass={} "
       "-Xsasl.mechanism={} --controller-logs-size-limit {}B "
       "--cpu-profiler-wait {}s --logs-since {} --logs-size-limit {}B "
       "--logs-until {} --metrics-interval {}s --partition {}/{}/1,2,3 "
-      "{}/{}/4,5,6 -Xtls.enabled=true -Xtls.insecure_skip_verify=false\n",
+      "{}/{}/4,5,6 -Xtls.enabled=true -Xtls.insecure_skip_verify=false "
+      "--namespace {}\n",
       (_data_dir / debug_bundle::service::debug_bundle_dir_name).native(),
       job_id,
       username,
@@ -206,7 +209,8 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       tn1.ns,
       tn1.tp,
       tn2.ns,
-      tn2.tp));
+      tn2.tp,
+      k8s_namespace_name));
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, std::move(params));
@@ -236,6 +240,18 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
         ASSERT_NE_CORO(++num_retries, max_retries)
           << "Maximum number of retries reached!";
     }
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, test_invalid_k8s_name) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    ss::sstring invalid_k8s_namespace_name = "redpanda-namespace.*/";
+    debug_bundle::debug_bundle_parameters params{
+      .k8s_namespace = debug_bundle::k8s_namespace{invalid_k8s_namespace_name}};
+    auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
+      job_id, std::move(params));
+    ASSERT_FALSE_CORO(res.has_value());
+    EXPECT_EQ(
+      res.assume_error().code(), debug_bundle::error_code::invalid_parameters);
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, try_running_multiple) {

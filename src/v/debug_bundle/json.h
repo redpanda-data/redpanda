@@ -280,6 +280,13 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             } else {
                 return std::move(r).assume_error();
             }
+            if (auto r = from_json<decltype(params.k8s_namespace)>(
+                  obj, "namespace", false);
+                r.has_value()) {
+                params.k8s_namespace = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
 
             return std::move(params);
         }
