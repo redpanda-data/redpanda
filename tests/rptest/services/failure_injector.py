@@ -71,6 +71,7 @@ class FailureInjectorBase:
     def __exit__(self, type, value, traceback):
         self._heal_all()
         self._continue_all()
+        self._undo_all()
 
     def inject_failure(self, spec):
         if spec in self._in_flight:
@@ -97,15 +98,16 @@ class FailureInjectorBase:
                 else:
 
                     def cleanup():
-                        if spec in self._in_flight:
-                            self._stop_func(spec.type)(spec.node)
+                        try:
                             self._in_flight.remove(spec)
-                        else:
+                        except KeyError:
                             # The stop timers may outlive the test, handle case
                             # where they run after we already had a heal_all call.
                             self.redpanda.logger.warn(
                                 f"Skipping failure stop action, already cleaned up?"
                             )
+                        else:
+                            self._stop_func(spec.type)(spec.node)
 
                     stop_timer = threading.Timer(function=cleanup,
                                                  args=[],
@@ -157,6 +159,9 @@ class FailureInjectorBase:
         pass
 
     def _continue_all(self):
+        pass
+
+    def _undo_all(self):
         pass
 
     def _suspend(self, node):
@@ -266,6 +271,16 @@ class FailureInjector(FailureInjectorBase):
             for spec in self._in_flight
             if spec.type != FailureSpec.FAILURE_SUSPEND
         }
+
+    def _undo_all(self):
+        self.redpanda.logger.info(f"running scheduled undos earlier")
+        while self._in_flight:
+            try:
+                spec = self._in_flight.pop()
+            except KeyError:
+                pass  # timer just emptied the set: GIL off???
+            else:
+                self._stop_func(spec.type)(spec.node)
 
     def _suspend(self, node):
         self.redpanda.logger.info(
