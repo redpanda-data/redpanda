@@ -76,6 +76,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "catalog",
+    hdrs = [
+        "catalog.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":partition",
+        ":schema",
+        ":transaction",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "datatypes",
     srcs = [
         "datatypes.cc",
