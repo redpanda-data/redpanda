@@ -76,6 +76,7 @@ TEST(SchemaTest, TestGetFromNullSchema) {
     };
     const auto ids_to_types = s.ids_to_types();
     ASSERT_TRUE(ids_to_types.empty());
+    ASSERT_FALSE(s.highest_field_id().has_value());
 }
 
 TEST(SchemaTest, TestGetFromEmptySchema) {
@@ -87,6 +88,7 @@ TEST(SchemaTest, TestGetFromEmptySchema) {
     };
     const auto ids_to_types = s.ids_to_types();
     ASSERT_TRUE(ids_to_types.empty());
+    ASSERT_FALSE(s.highest_field_id().has_value());
 }
 
 TEST(SchemaTest, TestGetTypesNestedSchemaNoneFilter) {
@@ -134,4 +136,15 @@ TEST(SchemaTest, TestCopy) {
     };
     auto s_copy = s.copy();
     ASSERT_EQ(s, s_copy);
+}
+
+TEST(SchemaTest, TestGetHighestField) {
+    schema s{
+      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+      .schema_id = schema::id_t{4},
+      .identifier_field_ids = {nested_field::id_t{10}},
+    };
+    auto highest = s.highest_field_id();
+    ASSERT_TRUE(highest.has_value());
+    ASSERT_EQ(highest.value(), nested_field::id_t{17});
 }

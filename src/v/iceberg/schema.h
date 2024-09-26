@@ -31,6 +31,7 @@ struct schema {
     // returns types of all ids in the schema.
     ids_types_map_t
       ids_to_types(chunked_hash_set<nested_field::id_t> = {}) const;
+    std::optional<nested_field::id_t> highest_field_id() const;
 
     schema copy() const {
         return schema{

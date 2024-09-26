@@ -12,6 +12,8 @@
 #include "iceberg/schema.h"
 #include "model/timestamp.h"
 
+#include <absl/container/btree_map.h>
+
 namespace iceberg {
 
 enum class snapshot_operation {
@@ -41,7 +43,7 @@ struct snapshot_summary {
     // NOTE: these aren't necessarily important to Redpanda's Iceberg write
     // path, but are still important to serialize, as they may be used for
     // optimization by Iceberg readers.
-    chunked_hash_map<ss::sstring, ss::sstring> other;
+    absl::btree_map<ss::sstring, ss::sstring> other;
 
     friend bool operator==(const snapshot_summary&, const snapshot_summary&)
       = default;

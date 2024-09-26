@@ -69,4 +69,25 @@ schema::ids_to_types(chunked_hash_set<nested_field::id_t> target_ids) const {
     return ret;
 }
 
+std::optional<nested_field::id_t> schema::highest_field_id() const {
+    chunked_vector<const nested_field*> to_visit;
+    for (const auto& field : schema_struct.fields) {
+        to_visit.emplace_back(field.get());
+    }
+    std::optional<nested_field::id_t> highest;
+    while (!to_visit.empty()) {
+        auto* field = to_visit.back();
+        to_visit.pop_back();
+        if (!field) {
+            continue;
+        }
+        const auto& type = field->type;
+        highest.emplace(
+          highest.has_value() ? std::max(highest.value(), field->id)
+                              : field->id());
+        std::visit(nested_field_collecting_visitor{to_visit}, type);
+    }
+    return highest;
+}
+
 } // namespace iceberg
