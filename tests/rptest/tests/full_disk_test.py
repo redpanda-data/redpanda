@@ -288,7 +288,7 @@ class FullDiskReclaimTest(RedpandaTest):
             return pred(observed_total)
 
         # write around 30 megabytes into the topic
-        produce_total_bytes(self.redpanda, self.topic, nbytes(30))
+        produce_total_bytes(self.redpanda, self.topic, nbytes(100))
 
         # wait until all that data shows up. add some fuzz factor to avoid
         # timeouts due to placement skew or other such issues.
