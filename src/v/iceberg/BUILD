@@ -128,6 +128,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "filesystem_catalog",
+    srcs = [
+        "filesystem_catalog.cc",
+    ],
+    hdrs = [
+        "filesystem_catalog.h",
+    ],
+    implementation_deps = [
+        ":manifest_entry",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":catalog",
+        ":datatypes",
+        ":partition",
+        ":schema",
+        ":table_io",
+        ":table_metadata",
+        ":table_update_applier",
+        ":transaction",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/model",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "manifest",
     hdrs = [
         "manifest.h",

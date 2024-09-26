@@ -31,6 +31,7 @@ v_cc_library(
     action.cc
     datatypes.cc
     datatypes_json.cc
+    filesystem_catalog.cc
     json_utils.cc
     logger.cc
     manifest_avro.cc
