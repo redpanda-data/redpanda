@@ -102,7 +102,7 @@ constexpr int32_t SCHEMA_REGISTRY_ERROR = -2;
 
 } // namespace
 
-schema_registry_module::schema_registry_module(schema_registry* sr)
+schema_registry_module::schema_registry_module(schema::registry* sr)
   : _sr(sr) {}
 
 void schema_registry_module::check_abi_version_0() {}

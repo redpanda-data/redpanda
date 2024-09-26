@@ -15,6 +15,10 @@
 
 #include <seastar/core/future.hh>
 
+namespace schema {
+class registry;
+} // namespace schema
+
 namespace wasm::wasmtime {
-std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry>);
+std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema::registry>);
 }
