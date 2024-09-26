@@ -259,9 +259,8 @@ private:
      */
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
-        auto f = s.start(std::forward<Args>(args)...);
         _deferred.emplace_back([&s] { s.stop().get(); });
-        return f;
+        return s.start(std::forward<Args>(args)...);
     }
 
     template<typename Service, typename... Args>

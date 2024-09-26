@@ -264,7 +264,11 @@ static void set_auditing_kafka_client_defaults(
 application::application(ss::sstring logger_name)
   : _log(std::move(logger_name)) {};
 
-application::~application() = default;
+application::~application() {
+    while (!_deferred.empty()) {
+        _deferred.pop_back();
+    }
+}
 
 void application::shutdown() {
     storage.invoke_on_all(&storage::api::stop_cluster_uuid_waiters).get();
@@ -2488,7 +2492,7 @@ void application::wire_up_bootstrap_services() {
     syschecks::systemd_message(
       "Constructing internal RPC services {}", rpc_cfg.local())
       .get();
-    _rpc.start(&rpc_cfg).get();
+    construct_service(_rpc, &rpc_cfg).get();
 }
 
 void application::start_bootstrap_services() {
