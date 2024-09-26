@@ -72,6 +72,9 @@
                 },
                 "partition": {
                   "type": "string"
+                },
+                "tls_enabled": {
+                  "type": "boolean"
                 }
               }
             }

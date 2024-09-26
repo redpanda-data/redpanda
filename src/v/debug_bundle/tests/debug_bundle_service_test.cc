@@ -170,6 +170,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
           model::partition_id{4},
           model::partition_id{5},
           model::partition_id{6}}}};
+    bool tls_enabled = true;
 
     debug_bundle::debug_bundle_parameters params{
       .authn_options = debug_bundle::
@@ -180,14 +181,15 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       .logs_size_limit_bytes = logs_size_limit,
       .logs_until = logs_until_tp,
       .metrics_interval_seconds = metrics_interval_seconds,
-      .partition = partition};
+      .partition = partition,
+      .tls_enabled = tls_enabled};
 
     ss::sstring expected_params(fmt::format(
       "debug bundle --output {}/{}.zip --verbose -Xuser={} -Xpass={} "
       "-Xsasl.mechanism={} --controller-logs-size-limit {}B "
       "--cpu-profiler-wait {}s --logs-since {} --logs-size-limit {}B "
       "--logs-until {} --metrics-interval {}s --partition {}/{}/1,2,3 "
-      "{}/{}/4,5,6\n",
+      "{}/{}/4,5,6 -Xtls.enabled=true\n",
       (_data_dir / debug_bundle::service::debug_bundle_dir_name).native(),
       job_id,
       username,

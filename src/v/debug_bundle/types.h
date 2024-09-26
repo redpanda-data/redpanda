@@ -94,6 +94,7 @@ struct debug_bundle_parameters {
     std::optional<time_variant> logs_until;
     std::optional<std::chrono::seconds> metrics_interval_seconds;
     std::optional<std::vector<partition_selection>> partition;
+    std::optional<bool> tls_enabled;
 
     friend bool
     operator==(const debug_bundle_parameters&, const debug_bundle_parameters&)

@@ -49,6 +49,7 @@ constexpr std::string_view logs_size_limit_variable = "--logs-size-limit";
 constexpr std::string_view logs_until_variable = "--logs-until";
 constexpr std::string_view metrics_interval_variable = "--metrics-interval";
 constexpr std::string_view partition_variable = "--partition";
+constexpr std::string_view tls_enabled_variable = "-Xtls.enabled";
 
 bool contains_sensitive_info(const ss::sstring& arg) {
     if (arg.find(password_variable) != ss::sstring::npos) {
@@ -367,6 +368,10 @@ service::build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params) {
         rv.emplace_back(partition_variable);
         rv.emplace_back(
           ssx::sformat("{}", fmt::join(params.partition.value(), " ")));
+    }
+    if (params.tls_enabled.has_value()) {
+        rv.emplace_back(
+          ssx::sformat("{}={}", tls_enabled_variable, *params.tls_enabled));
     }
 
     return rv;
