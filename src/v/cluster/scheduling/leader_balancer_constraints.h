@@ -302,4 +302,23 @@ private:
     std::pair<load_t, load_map_t> build_load_indexes() const;
 };
 
+// Constraint implementing leaders pinning preference objective.
+class pinning_constraint final : public soft_constraint {
+public:
+    pinning_constraint(
+      const group_id_to_topic_id& group2topic,
+      preference_index&& preference_idx)
+      : _group2topic(group2topic)
+      , _preference_idx(std::move(preference_idx)) {}
+
+private:
+    double evaluate_internal(const reassignment& r) override;
+
+    std::optional<reassignment> recommended_reassignment() override;
+
+private:
+    std::reference_wrapper<const group_id_to_topic_id> _group2topic;
+    preference_index _preference_idx;
+};
+
 } // namespace cluster::leader_balancer_types

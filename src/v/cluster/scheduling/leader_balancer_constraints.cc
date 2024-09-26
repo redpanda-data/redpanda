@@ -288,4 +288,44 @@ std::vector<shard_load> even_shard_load_constraint::stats() const {
     return ret;
 }
 
+double pinning_constraint::evaluate_internal(const reassignment& r) {
+    int diff = 0;
+
+    const leaders_preference* preference = &_preference_idx.default_preference;
+
+    topic_id_t topic_id = _group2topic.get().at(r.group);
+    auto pref_it = _preference_idx.topic2preference.find(topic_id);
+    if (pref_it != _preference_idx.topic2preference.end()) {
+        preference = &pref_it->second;
+    }
+
+    if (preference->racks.empty()) {
+        return diff;
+    }
+
+    auto from_it = _preference_idx.node2rack.find(r.from.node_id);
+    if (
+      from_it != _preference_idx.node2rack.end()
+      && preference->racks.contains(from_it->second)) {
+        diff -= 1;
+    }
+
+    auto to_it = _preference_idx.node2rack.find(r.to.node_id);
+    if (
+      to_it != _preference_idx.node2rack.end()
+      && preference->racks.contains(to_it->second)) {
+        diff += 1;
+    }
+
+    return diff;
+}
+
+std::optional<reassignment> pinning_constraint::recommended_reassignment() {
+    // This method is deprecated and is ony used in `leader_balancer_greedy`
+    // which doesn't use the `even_topic_distributon_constraint`. Hence there is
+    // no need to implement it here. Once the greedy balancer has been removed
+    // this should be removed as well.
+    vassert(false, "not implemented");
+}
+
 } // namespace cluster::leader_balancer_types
