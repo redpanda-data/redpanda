@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/arrow_translator.h"
+#include "datalake/tests/test_data.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/tests/value_generator.h"
 #include "iceberg/values.h"
@@ -19,64 +20,6 @@
 #include <optional>
 #include <stdexcept>
 
-iceberg::struct_type test_schema(iceberg::field_required required) {
-    using namespace iceberg;
-    struct_type schema;
-
-    schema.fields.emplace_back(
-      nested_field::create(1, "test_bool", required, boolean_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(2, "test_int", required, int_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(3, "test_long", required, long_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(4, "test_float", required, float_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(5, "test_double", required, double_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(6, "test_decimal", required, decimal_type{8, 16}));
-    schema.fields.emplace_back(
-      nested_field::create(7, "test_date", required, date_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(8, "test_time", required, time_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(9, "test_timestamp", required, timestamp_type{}));
-    schema.fields.emplace_back(nested_field::create(
-      10, "test_timestamptz", required, timestamptz_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(11, "test_string", required, string_type{}));
-    schema.fields.emplace_back(
-      nested_field::create(12, "test_uuid", required, uuid_type{}));
-    schema.fields.emplace_back(nested_field::create(
-      13, "test_fixed", required, fixed_type{11})); // length of "Hello world"
-    schema.fields.emplace_back(
-      nested_field::create(14, "test_binary", required, binary_type{}));
-
-    struct_type nested_schema;
-    nested_schema.fields.emplace_back(
-      nested_field::create(1, "nested_bool", required, boolean_type{}));
-    nested_schema.fields.emplace_back(
-      nested_field::create(2, "nested_int", required, int_type{}));
-    nested_schema.fields.emplace_back(
-      nested_field::create(3, "nested_long", required, long_type{}));
-
-    schema.fields.emplace_back(nested_field::create(
-      15, "test_struct", required, std::move(nested_schema)));
-
-    schema.fields.emplace_back(nested_field::create(
-      16,
-      "test_list",
-      required,
-      list_type::create(1, required, string_type{})));
-
-    schema.fields.push_back(nested_field::create(
-      17,
-      "test_map",
-      required,
-      map_type::create(1, string_type{}, 2, required, long_type{})));
-    return schema;
-}
-
 TEST(ArrowWriterTest, TranslatesSchemas) {
     datalake::arrow_translator writer(test_schema(iceberg::field_required::no));
     auto schema = writer.build_arrow_schema();
@@ -86,7 +29,7 @@ test_int: int32
 test_long: int64
 test_float: float
 test_double: double
-test_decimal: decimal128(8, 16)
+test_decimal: decimal128(16, 8)
 test_date: date32[day]
 test_time: time64[us]
 test_timestamp: timestamp[us]
@@ -111,7 +54,7 @@ test_int: int32 not null
 test_long: int64 not null
 test_float: float not null
 test_double: double not null
-test_decimal: decimal128(8, 16) not null
+test_decimal: decimal128(16, 8) not null
 test_date: date32[day] not null
 test_time: time64[us] not null
 test_timestamp: timestamp[us] not null
@@ -291,13 +234,13 @@ std::string get_expected_translation_output() {
     0,
     0
   ]
--- child 5 type: decimal128(8, 16)
+-- child 5 type: decimal128(16, 8)
   [
-    0.E-16,
-    0.E-16,
-    0.E-16,
-    0.E-16,
-    0.E-16
+    0.E-8,
+    0.E-8,
+    0.E-8,
+    0.E-8,
+    0.E-8
   ]
 -- child 6 type: date32[day]
   [
