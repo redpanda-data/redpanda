@@ -270,6 +270,10 @@ metrics_reporter::build_metrics_snapshot() {
         snapshot.id_hash = license->checksum;
     }
 
+    snapshot.has_valid_license = license.has_value()
+                                 && license.value().is_expired();
+    snapshot.has_enterprise_features = feature_report.any();
+
     co_return snapshot;
 }
 
@@ -539,6 +543,12 @@ void rjson_serialize(
 
     w.Key("id_hash");
     w.String(snapshot.id_hash);
+
+    w.Key("has_valid_license");
+    w.Bool(snapshot.has_valid_license);
+
+    w.Key("has_enterprise_features");
+    w.Bool(snapshot.has_enterprise_features);
 
     w.EndObject();
 }
