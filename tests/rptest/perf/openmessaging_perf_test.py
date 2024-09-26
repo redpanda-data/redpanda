@@ -39,7 +39,7 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
             "message_size": 1024,
             "payload_file": "payload/payload-1Kb.data",
             "consumer_backlog_size_GB": 0,
-            "test_duration_minutes": 5,
+            "test_duration_minutes": 2,
             "warmup_duration_minutes": 2,
         }
         driver = {
