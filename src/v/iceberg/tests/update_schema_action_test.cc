@@ -182,3 +182,20 @@ TEST_F(UpdateSchemaActionTest, TestNewMultipleSchemas) {
         .current_schema_id(),
       0);
 }
+
+TEST_F(UpdateSchemaActionTest, TestInvalidSchema) {
+    // Removing columns is not yet supported.
+    transaction tx(create_table());
+    auto new_schema = make_schema(12345);
+    new_schema.schema_struct.fields.pop_back();
+
+    auto res = tx.set_schema(std::move(new_schema)).get();
+    ASSERT_TRUE(res.has_error());
+    ASSERT_TRUE(tx.error().has_value());
+
+    // Adding a new schema after attempting a bad update also fails.
+    auto new_new_schema = make_schema(12345, 1);
+    res = tx.set_schema(std::move(new_new_schema)).get();
+    ASSERT_TRUE(res.has_error());
+    ASSERT_TRUE(tx.error().has_value());
+}

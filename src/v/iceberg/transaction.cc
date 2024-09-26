@@ -17,8 +17,12 @@ namespace iceberg {
 
 ss::future<transaction::txn_outcome>
 transaction::apply(std::unique_ptr<action> a) {
+    if (error_.has_value()) {
+        co_return error_.value();
+    }
     auto u = co_await std::move(*a).build_updates();
     if (u.has_error()) {
+        error_ = u.error();
         co_return u.error();
     }
     co_return update_metadata(std::move(u.value()));
@@ -48,7 +52,9 @@ transaction::txn_outcome transaction::update_metadata(updates_and_reqs ur) {
         case success:
             break;
         case unexpected_state:
-            return action::errc::unexpected_state;
+            auto ret = action::errc::unexpected_state;
+            error_ = ret;
+            return ret;
         }
         updates_.updates.emplace_back(std::move(new_update));
     }

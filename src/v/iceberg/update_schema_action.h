@@ -15,6 +15,7 @@
 namespace iceberg {
 
 // Action for updating the current schema to the given schema.
+// TODO: only adding new columns works. Handle removing or altering columns.
 class update_schema_action : public action {
 public:
     update_schema_action(const table_metadata& table, schema new_schema)

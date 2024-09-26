@@ -39,8 +39,10 @@ public:
     // is assigned based on the state of the table.
     ss::future<txn_outcome> set_schema(schema);
 
-    // TODO: we should have these return an error type when the transaction has
-    // run into an error.
+    std::optional<action::errc> error() const { return error_; }
+
+    // NOTE: it is up to the caller to ensure the transaction has not hit any
+    // errors before calling these.
     const table_metadata& table() const { return table_; }
     const updates_and_reqs& updates() const { return updates_; }
 
@@ -51,6 +53,10 @@ private:
     // Applies the given updates to the table metadata, validating the
     // requirements.
     txn_outcome update_metadata(updates_and_reqs);
+
+    // First error seen by this transaction, if any. If set, no further
+    // operations with this transaction will succeed.
+    std::optional<action::errc> error_;
 
     // Table metadata off which to base this transaction.
     table_metadata table_;
