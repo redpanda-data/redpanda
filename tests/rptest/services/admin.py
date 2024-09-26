@@ -1799,3 +1799,7 @@ class Admin:
     def get_debug_bundle_file(self, filename: str, node: MaybeNode = None):
         path = f"debug/bundle/file/{filename}"
         return self._request("GET", path, node=node)
+
+    def delete_debug_bundle_file(self, filename: str, node: MaybeNode = None):
+        path = f"debug/bundle/file/{filename}"
+        return self._request("DELETE", path, node=node)

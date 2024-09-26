@@ -317,9 +317,23 @@ ss::future<std::unique_ptr<ss::http::reply>>
 admin_server::delete_debug_bundle_file(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
-    auto job_id_str = req->get_path_param("filename");
+    auto filename = req->get_path_param("filename");
+
+    auto job_id_res = get_debug_bundle_job_id(
+      co_await _debug_bundle_service.local().rpk_debug_bundle_status(),
+      filename);
+    if (job_id_res.has_error()) {
+        co_return make_error_body(job_id_res.assume_error(), std::move(rep));
+    }
+
+    auto del_res = co_await _debug_bundle_service.local()
+                     .delete_rpk_debug_bundle(job_id_res.assume_value());
+    if (del_res.has_error()) {
+        co_return make_error_body(del_res.assume_error(), std::move(rep));
+    }
+
     co_return make_json_body(
-      ss::http::reply::status_type::not_implemented,
+      ss::http::reply::status_type::no_content,
       ss::json::json_void{},
       std::move(rep));
 }

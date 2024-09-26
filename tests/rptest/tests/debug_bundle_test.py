@@ -117,3 +117,8 @@ class DebugBundleTest(RedpandaTest):
         file = f"{data_dir}/{filename}"
         assert self._get_sha256sum(node, file) == hashlib.sha256(
             res.content).hexdigest()
+
+        res = admin.delete_debug_bundle_file(filename=filename, node=node)
+        assert res.status_code == requests.codes.no_content, res.json()
+        assert res.headers['Content-Type'] == 'application/json', res.json()
+        assert not node.account.exists(file)
