@@ -200,6 +200,11 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             return std::move(set);
         }
         return parse_error(": expected an array");
+    } else if constexpr (std::is_same_v<T, bool>) {
+        if (v.IsBool()) {
+            return v.GetBool();
+        }
+        return parse_error(": expected bool");
     } else if constexpr (std::is_same_v<T, debug_bundle_parameters>) {
         debug_bundle_parameters params;
         if (v.IsObject()) {
@@ -258,6 +263,27 @@ debug_bundle::result<T> from_json(const json::Value& v) {
                   obj, "partition", false);
                 r.has_value()) {
                 params.partition = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.tls_enabled)>(
+                  obj, "tls_enabled", false);
+                r.has_value()) {
+                params.tls_enabled = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.tls_insecure_skip_verify)>(
+                  obj, "tls_insecure_skip_verify", false);
+                r.has_value()) {
+                params.tls_insecure_skip_verify = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.k8s_namespace)>(
+                  obj, "namespace", false);
+                r.has_value()) {
+                params.k8s_namespace = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }

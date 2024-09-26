@@ -54,7 +54,9 @@ using JsonTestTypes = ::testing::Types<
   partition_selection,
   debug_bundle_parameters,
   std::vector<int>,
-  absl::btree_set<int>>;
+  absl::btree_set<int>,
+  bool,
+  k8s_namespace>;
 TYPED_TEST_SUITE(JsonTypeTest, JsonTestTypes);
 
 TYPED_TEST(JsonTypeTest, BasicType) {
@@ -123,7 +125,10 @@ TYPED_TEST(JsonTypeTest, BasicType) {
   "partition": [
     "foo/bar/1,2",
     "baz/1,2,3"
-   ]
+   ],
+  "tls_enabled": true,
+  "tls_insecure_skip_verify": false,
+  "namespace": "k8s-namespace"
 })";
         const std::string_view test_time = "2024-09-05T14:34:02";
         std::istringstream ss(test_time.data());
@@ -134,22 +139,20 @@ TYPED_TEST(JsonTypeTest, BasicType) {
         tmp.tm_isdst = -1;
         std::time_t tt = std::mktime(&tmp);
 
-        this->expected = debug_bundle_parameters{
-          .authn_options
-          = scram_creds{.username = security::credential_user{"user"}, .password = security::credential_password{"pass"}, .mechanism = "SCRAM-SHA-256"},
-          .controller_logs_size_limit_bytes = 42,
-          .cpu_profiler_wait_seconds = 42s,
-          .logs_since = special_date::yesterday,
-          .logs_size_limit_bytes = 42,
-          .logs_until = clock::from_time_t(tt),
-          .metrics_interval_seconds = 42s,
-          .partition = std::vector<partition_selection>{
-            {{model::ns{"foo"}, model::topic{"bar"}},
-             {{model::partition_id{1}, model::partition_id{2}}}},
-            {{model::kafka_namespace, model::topic{"baz"}},
-             {{model::partition_id{1},
-               model::partition_id{2},
-               model::partition_id{3}}}}}};
+        this->expected
+          = debug_bundle_parameters{
+            .authn_options
+            = scram_creds{.username = security::credential_user{"user"}, .password = security::credential_password{"pass"}, .mechanism = "SCRAM-SHA-256"},
+            .controller_logs_size_limit_bytes = 42,
+            .cpu_profiler_wait_seconds = 42s,
+            .logs_since = special_date::yesterday,
+            .logs_size_limit_bytes = 42,
+            .logs_until = clock::from_time_t(tt),
+            .metrics_interval_seconds = 42s,
+            .partition = std::vector<partition_selection>{{{model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}, model::partition_id{2}}}}, {{model::kafka_namespace, model::topic{"baz"}}, {{model::partition_id{1}, model::partition_id{2}, model::partition_id{3}}}}},
+            .tls_enabled = true,
+            .tls_insecure_skip_verify = false,
+            .k8s_namespace = debug_bundle::k8s_namespace("k8s-namespace")};
     } else if constexpr (detail::
                            is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"([1,2,3])";
@@ -158,6 +161,12 @@ TYPED_TEST(JsonTypeTest, BasicType) {
                            is_specialization_of_v<TypeParam, absl::btree_set>) {
         this->json_input = R"([1,2,3])";
         this->expected = {1, 2, 3};
+    } else if constexpr (std::is_same_v<TypeParam, bool>) {
+        this->json_input = R"(true)";
+        this->expected = true;
+    } else if constexpr (std::is_same_v<TypeParam, k8s_namespace>) {
+        this->json_input = R"("k8s-namespace")";
+        this->expected = k8s_namespace("k8s-namespace");
     } else {
         static_assert(always_false_v<TypeParam>, "not implemented");
     }
@@ -235,6 +244,12 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
                            is_specialization_of_v<TypeParam, absl::btree_set>) {
         this->json_input = R"(42)";
         this->expected = {1, 2, 3};
+    } else if constexpr (std::is_same_v<TypeParam, bool>) {
+        this->json_input = R"("blergh")";
+        this->expected = true;
+    } else if constexpr (std::is_same_v<TypeParam, k8s_namespace>) {
+        this->json_input = R"(42)";
+        this->expected = k8s_namespace("k8s-namespace");
     } else {
         static_assert(always_false_v<TypeParam>, "not implemented");
     }

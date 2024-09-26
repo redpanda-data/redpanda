@@ -4,7 +4,7 @@
     "summary": "Start an rpk debug bundle",
     "operationId": "post_debug_bundle",
     "consumes": [
-        "application/json"
+      "application/json"
     ],
     "parameters": [
       {
@@ -12,7 +12,79 @@
         "in": "body",
         "required": true,
         "schema": {
-          "$ref": "#/definitions/bundle_start_config"
+          "description": "Configuration for the debug bundle process",
+          "type": "object",
+          "required": [
+            "job_id"
+          ],
+          "properties": {
+            "job_id": {
+              "description": "The Job UUID to use",
+              "type": "string"
+            },
+            "config": {
+              "description": "The parameters",
+              "type": "object",
+              "required": [],
+              "properties": {
+                "authentication": {
+                  "description": "Authentication object",
+                  "type": "object",
+                  "required": [
+                    "mechanism",
+                    "username",
+                    "password"
+                  ],
+                  "properties": {
+                    "mechanism": {
+                      "description": "SCRAM mechanism",
+                      "type": "string"
+                    },
+                    "username": {
+                      "description": "username used by RPK to authenticate against Kafka and Admin API",
+                      "type": "string"
+                    },
+                    "password": {
+                      "description": "password used by RPK to authenticate against Kafka and Admin API",
+                      "type": "string"
+                    }
+                  }
+                },
+                "controller_logs_size_limit_bytes": {
+                  "type": "integer"
+                },
+                "cpu_profiler_wait_seconds": {
+                  "type": "integer"
+                },
+                "logs_since": {
+                  "description": "Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options.",
+                  "type": "string"
+                },
+                "logs_size_limit_bytes": {
+                  "type": "integer"
+                },
+                "logs_until": {
+                  "description": "Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options.",
+                  "type": "string"
+                },
+                "metrics_interval_seconds": {
+                  "type": "integer"
+                },
+                "partition": {
+                  "type": "string"
+                },
+                "tls_enabled": {
+                  "type": "boolean"
+                },
+                "tls_insecure_skip_verify": {
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     ],

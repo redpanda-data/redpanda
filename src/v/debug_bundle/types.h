@@ -84,6 +84,8 @@ struct partition_selection {
 
 std::ostream& operator<<(std::ostream& o, const partition_selection& p);
 
+using k8s_namespace = named_type<ss::sstring, struct k8s_namespace_tag>;
+
 /// Parameters used to spawn rpk debug bundle
 struct debug_bundle_parameters {
     std::optional<debug_bundle_authn_options> authn_options;
@@ -94,6 +96,9 @@ struct debug_bundle_parameters {
     std::optional<time_variant> logs_until;
     std::optional<std::chrono::seconds> metrics_interval_seconds;
     std::optional<std::vector<partition_selection>> partition;
+    std::optional<bool> tls_enabled;
+    std::optional<bool> tls_insecure_skip_verify;
+    std::optional<k8s_namespace> k8s_namespace;
 
     friend bool
     operator==(const debug_bundle_parameters&, const debug_bundle_parameters&)
