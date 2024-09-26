@@ -92,6 +92,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<security::role_store>& role_store,
       ss::sharded<plugin_table>*,
+      ss::sharded<feature_manager>*,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -117,6 +118,7 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<security::role_store>& _role_store;
     ss::sharded<plugin_table>* _plugin_table;
+    ss::sharded<feature_manager>* _feature_manager;
     ss::sharded<ss::abort_source>& _as;
     prefix_logger _logger;
     ss::timer<> _tick_timer;
