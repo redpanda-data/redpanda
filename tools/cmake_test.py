@@ -341,10 +341,15 @@ class TestRunner():
         src_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                "..")
         lsan_suppressions = os.path.join(src_dir, "lsan_suppressions.txt")
+        ubsan_suppressions = os.path.join(src_dir, "ubsan_suppressions.txt")
         assert os.path.isfile(
             lsan_suppressions
         ), f"cannot find lsan suppressions at {lsan_suppressions}"
+        assert os.path.isfile(
+            ubsan_suppressions
+        ), f"cannot find ubsan suppressions at {ubsan_suppressions}"
         env["LSAN_OPTIONS"] = f"suppressions={lsan_suppressions}"
+        env["UBSAN_OPTIONS"] += f":suppressions={ubsan_suppressions}"
 
         # We only capture stderr because that's where backtraces go
         # FIXME: avoid usage of the unsafe shell=True if possible, or sanitized the cmd input
