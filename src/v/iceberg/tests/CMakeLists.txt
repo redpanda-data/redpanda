@@ -24,6 +24,7 @@ rp_test(
     manifest_file_packer_test.cc
     manifest_io_test.cc
     manifest_serialization_test.cc
+    merge_append_action_test.cc
     partition_key_test.cc
     partition_key_type_test.cc
     partition_test.cc

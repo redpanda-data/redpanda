@@ -11,6 +11,7 @@
 #include "base/seastarx.h"
 #include "container/fragmented_vector.h"
 #include "iceberg/action.h"
+#include "iceberg/manifest_io.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/table_requirement.h"
@@ -31,13 +32,15 @@ namespace iceberg {
 class transaction {
 public:
     using txn_outcome = checked<std::nullopt_t, action::errc>;
-    explicit transaction(table_metadata table)
-      : table_(std::move(table)) {}
+    explicit transaction(manifest_io& io, table_metadata table)
+      : io_(io)
+      , table_(std::move(table)) {}
 
     // Sets the current schema, adding it to the table and assigning a new
     // schema id if it doesn't exist. Note, the schema id is ignored, and one
     // is assigned based on the state of the table.
     ss::future<txn_outcome> set_schema(schema);
+    ss::future<txn_outcome> merge_append(chunked_vector<data_file>);
 
     std::optional<action::errc> error() const { return error_; }
 
@@ -53,6 +56,8 @@ private:
     // Applies the given updates to the table metadata, validating the
     // requirements.
     txn_outcome update_metadata(updates_and_reqs);
+
+    manifest_io& io_;
 
     // First error seen by this transaction, if any. If set, no further
     // operations with this transaction will succeed.

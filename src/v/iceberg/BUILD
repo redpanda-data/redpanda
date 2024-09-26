@@ -282,6 +282,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "merge_append_action",
+    srcs = [
+        "merge_append_action.cc",
+    ],
+    hdrs = [
+        "merge_append_action.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":manifest",
+        ":manifest_file_packer",
+        ":snapshot",
+        ":table_requirement",
+        "//src/v/random:generators",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":action",
+        ":manifest_entry",
+        ":manifest_io",
+        ":manifest_list",
+        ":schema",
+        ":table_metadata",
+        ":values_bytes",
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition",
     hdrs = [
         "partition.h",
@@ -609,6 +638,8 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":action",
+        ":manifest_io",
+        ":merge_append_action",
         ":schema",
         ":table_metadata",
         ":table_requirement",
