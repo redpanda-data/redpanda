@@ -169,6 +169,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.iceberg_enabled = iceberg_enabled;
     ret.cloud_topic_enabled = cloud_topic_enabled;
     ret.iceberg_translation_interval_ms = iceberg_translation_interval_ms;
+    ret.tombstone_retention_ms = delete_retention_ms;
     return ret;
 }
 
