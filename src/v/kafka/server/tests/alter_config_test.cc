@@ -21,10 +21,12 @@
 #include "kafka/protocol/schemata/describe_configs_response.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "kafka/server/rm_group_frontend.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
@@ -846,4 +848,41 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       new_describe_resp);
     assert_property_value(
       test_tp, "iceberg.enabled", "false", new_describe_resp);
+}
+
+FIXTURE_TEST(test_alter_config_internal_topic, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    // create an internal topic
+    BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
+                    app.coordinator_ntp_mapper.local(),
+                    app.controller->get_topics_frontend().local(),
+                    1)
+                    .get());
+    // enable authorization on it, to be able to make alter requests.
+    scoped_config config;
+    config.get("kafka_nodelete_topics").set_value(std::vector<ss::sstring>{});
+
+    absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+    properties.emplace("iceberg.enabled", "true");
+
+    auto resp = alter_configs(make_alter_topic_config_resource_cv(
+      model::kafka_consumer_offsets_topic, properties));
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::invalid_config);
+
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      incr_properties;
+    incr_properties.emplace(
+      "iceberg.enabled",
+      std::make_pair("true", kafka::config_resource_operation::set));
+    auto incr_resp = incremental_alter_configs(
+      make_incremental_alter_topic_config_resource_cv(
+        model::kafka_consumer_offsets_topic, incr_properties));
+    BOOST_REQUIRE_EQUAL(incr_resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      incr_resp.data.responses[0].error_code,
+      kafka::error_code::invalid_config);
 }

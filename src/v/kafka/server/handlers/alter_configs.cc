@@ -149,6 +149,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
             }
             if (cfg.name == topic_property_remote_delete) {
                 parse_and_set_bool(
+                  tp_ns,
                   update.properties.remote_delete,
                   cfg.value,
                   kafka::config_resource_operation::set,
@@ -278,10 +279,12 @@ create_topic_properties_update(alter_configs_resource& resource) {
             }
             if (cfg.name == topic_property_iceberg_enabled) {
                 parse_and_set_bool(
+                  tp_ns,
                   update.properties.iceberg_enabled,
                   cfg.value,
                   kafka::config_resource_operation::set,
-                  storage::ntp_config::default_iceberg_enabled);
+                  storage::ntp_config::default_iceberg_enabled,
+                  iceberg_config_validator{});
                 continue;
             }
 

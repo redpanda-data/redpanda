@@ -324,6 +324,13 @@ struct noop_validator {
     }
 };
 
+struct noop_bool_validator {
+    std::optional<ss::sstring>
+    operator()(model::topic_namespace_view, const ss::sstring&, bool) {
+        return std::nullopt;
+    }
+};
+
 struct segment_size_validator {
     std::optional<ss::sstring>
     operator()(const ss::sstring&, const size_t& value) {
@@ -443,6 +450,17 @@ struct flush_bytes_validator {
         auto value = maybe_value.value();
         if (value <= 0) {
             return fmt::format("config value too low, expected to be > 0");
+        }
+        return std::nullopt;
+    }
+};
+
+struct iceberg_config_validator {
+    std::optional<ss::sstring>
+    operator()(model::topic_namespace_view tns, const ss::sstring&, bool) {
+        if (!model::is_user_topic(tns)) {
+            return fmt::format(
+              "Iceberg configuration cannot be altered on non user topics");
         }
         return std::nullopt;
     }
@@ -580,11 +598,23 @@ inline void parse_and_set_optional_bool_alpha(
     }
 }
 
+template<typename Validator = noop_bool_validator>
+requires requires(
+  model::topic_namespace_view tn,
+  const ss::sstring& str,
+  Validator validator,
+  bool val) {
+    {
+        validator(tn, str, val)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+}
 inline void parse_and_set_bool(
+  model::topic_namespace_view tn,
   cluster::property_update<bool>& property,
   const std::optional<ss::sstring>& value,
   config_resource_operation op,
-  bool default_value) {
+  bool default_value,
+  Validator validator = noop_bool_validator{}) {
     // A remove on a concrete (non-nullable) property is a reset to default,
     // as is an assignment to nullopt.
     if (
@@ -600,6 +630,10 @@ inline void parse_and_set_bool(
             property.value = string_switch<bool>(*value)
                                .match("true", true)
                                .match("false", false);
+            auto v_error = validator(tn, *value, property.value);
+            if (v_error) {
+                throw validation_error{*v_error};
+            }
         } catch (const std::runtime_error&) {
             // Our callers expect this exception type on malformed values
             throw boost::bad_lexical_cast();
