@@ -58,4 +58,12 @@ void enterprise_feature_report::set(
     }
 }
 
+bool enterprise_feature_report::test(license_required_feature feat) {
+    auto en = _enabled.contains(feat);
+    auto di = _disabled.contains(feat);
+    vassert(
+      en != di, "Enterprise features should be either enabled xor disabled");
+    return en;
+}
+
 } // namespace features

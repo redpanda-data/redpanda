@@ -24,6 +24,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/validators.h"
+#include "features/enterprise_features.h"
 #include "hashing/secure.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -242,12 +243,17 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.original_logical_version
       = _feature_table.local().get_original_version();
 
-    snapshot.has_kafka_gssapi = absl::c_any_of(
-      config::shard_local_cfg().sasl_mechanisms(),
-      [](auto const& mech) { return mech == "GSSAPI"; });
+    auto feature_report = co_await _feature_manager->invoke_on(
+      cluster::feature_manager::backend_shard,
+      [](const cluster::feature_manager& fm) {
+          return fm.report_enterprise_features();
+      });
 
-    snapshot.has_oidc = config::oidc_is_enabled_kafka()
-                        || config::oidc_is_enabled_http();
+    snapshot.has_kafka_gssapi = feature_report.test(
+      features::license_required_feature::gssapi);
+
+    snapshot.has_oidc = feature_report.test(
+      features::license_required_feature::oidc);
 
     snapshot.rbac_role_count = _role_store.local().size();
 
