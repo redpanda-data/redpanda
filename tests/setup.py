@@ -26,7 +26,8 @@ setup(
         'googleapis-common-protos==1.60.0', 'google.cloud.compute==1.14.0',
         'google-cloud-storage==2.11.0', 'proto-plus==1.22.3', 'rsa==4.9',
         'python-keycloak@git+https://github.com/redpanda-data/python-keycloak.git@10b822cb0320c54dbf5bf4fd00435afb1487415d',
-        'z3-solver==4.12.2', 'hypothesis==6.82', 'jsonschema==4.10.0'
+        'z3-solver==4.12.2', 'hypothesis==6.82', 'jsonschema==4.10.0',
+        'polaris.management@git+https://github.com/apache/polaris.git@1a6b3eb3963355f78c5ca916cc1d66ecd1493092#&subdirectory=regtests/client/python'
     ],
     scripts=[],
 )
