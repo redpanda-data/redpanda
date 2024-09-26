@@ -298,7 +298,7 @@ class TestRunner():
         env["BOOST_TEST_CATCH_SYSTEM_ERRORS"] = "no"
         env["BOOST_TEST_REPORT_LEVEL"] = "no"
         env["BOOST_LOGGER"] = "HRF,test_suite"
-        env["UBSAN_OPTIONS"] = "halt_on_error=1:abort_on_error=1"
+        env["UBSAN_OPTIONS"] = "halt_on_error=1:abort_on_error=1:report_error_type=1"
         env["ASAN_OPTIONS"] = "disable_coredump=0:abort_on_error=1"
 
         # FIXME: workaround for https://app.clubhouse.io/vectorized/story/897
