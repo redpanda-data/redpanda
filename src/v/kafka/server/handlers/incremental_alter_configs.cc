@@ -219,6 +219,7 @@ create_topic_properties_update(
             }
             if (cfg.name == topic_property_remote_delete) {
                 parse_and_set_bool(
+                  tp_ns,
                   update.properties.remote_delete,
                   cfg.value,
                   op,
@@ -302,10 +303,12 @@ create_topic_properties_update(
             }
             if (cfg.name == topic_property_iceberg_enabled) {
                 parse_and_set_bool(
+                  tp_ns,
                   update.properties.iceberg_enabled,
                   cfg.value,
                   op,
-                  storage::ntp_config::default_iceberg_enabled);
+                  storage::ntp_config::default_iceberg_enabled,
+                  iceberg_config_validator{});
                 continue;
             }
 
