@@ -658,6 +658,7 @@ ss::future<> controller::start(
             std::ref(_feature_table),
             std::ref(_roles),
             std::addressof(_plugin_table),
+            std::addressof(_feature_manager),
             std::ref(_as));
       })
       .then([this] {
