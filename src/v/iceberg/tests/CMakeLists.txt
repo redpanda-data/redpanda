@@ -33,6 +33,7 @@ rp_test(
     snapshot_json_test.cc
     struct_accessor_test.cc
     table_metadata_json_test.cc
+    table_update_applier_test.cc
     test_schemas.cc
     transform_json_test.cc
     transform_utils_test.cc
