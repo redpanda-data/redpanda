@@ -95,21 +95,28 @@ public:
 
     /**
      * @brief Returns the path to the debug bundle file
+     * @param job_id The job id of the file to get
      *
      * @return ss::future<result<std::filesystem::path>> The result with
      * possible error codes:
+     * * error_code::debug_bundle_process_running - The process is still running
+     * * error_code::process_failed - The process errored out so no file
+     *   available
      * * error_code::debug_bundle_process_never_started
      */
-    ss::future<result<std::filesystem::path>> rpk_debug_bundle_path();
+    ss::future<result<std::filesystem::path>>
+    rpk_debug_bundle_path(job_id_t job_id);
 
     /**
      * @brief Attempts to delete the debug bundle file
+     * @param job_id The job id of the file to delete
      *
      * @return ss::future<result<void>> The result with possible error codes:
      * * error_code::debug_bundle_process_never_started
+     * * error_code::debug_bundle_process_running - The process is still running
      * * error_code::internal_error
      */
-    ss::future<result<void>> delete_rpk_debug_bundle();
+    ss::future<result<void>> delete_rpk_debug_bundle(job_id_t job_id);
 
 private:
     /**
