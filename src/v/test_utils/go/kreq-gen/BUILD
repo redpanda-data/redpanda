@@ -9,7 +9,7 @@ go_binary(
 go_library(
     name = "kreq-gen_lib",
     srcs = ["kafka-request-generator.go"],
-    importpath = "github.com/redpanda-data/redpanda/src/go/kreq-gen",
+    importpath = "github.com/redpanda-data/redpanda/src/v/test_utils/go/kreq-gen",
     visibility = ["//visibility:private"],
     deps = ["@com_github_twmb_franz_go_pkg_kmsg//:kmsg"],
 )
