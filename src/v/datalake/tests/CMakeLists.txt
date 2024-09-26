@@ -1,6 +1,7 @@
 set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 
 rp_test(
+  UNIT_TEST
   GTEST
   BINARY_NAME gtest_record_multiplexer
   SOURCES gtest_record_multiplexer_test.cc
@@ -16,6 +17,7 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
   GTEST
   BINARY_NAME gtest_arrow_writer
   SOURCES arrow_writer_test.cc
@@ -32,6 +34,7 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
   GTEST
   BINARY_NAME parquet_writer_test
   SOURCES parquet_writer_test.cc
