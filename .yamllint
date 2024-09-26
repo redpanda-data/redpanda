@@ -1,0 +1,9 @@
+---
+extends: default
+rules:
+  line-length:
+    max: 900
+  indentation:
+    spaces: 2
+  truthy:
+    allowed-values: ['true', 'false', 'on']
