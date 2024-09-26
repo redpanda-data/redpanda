@@ -198,7 +198,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     // Create a new cluster.
     raft0 = nullptr;
     restart(should_wipe::yes);
-    config::shard_local_cfg().for_each([](auto& p) { p.reset(); });
+    task_local_cfg.get("log_segment_size_jitter_percent").reset();
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] {
         return app.storage.local().get_cluster_uuid().has_value();
     });
