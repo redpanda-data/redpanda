@@ -1049,6 +1049,8 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       updated_properties.iceberg_translation_interval_ms,
       overrides.iceberg_translation_interval_ms);
+    incremental_update(
+      updated_properties.delete_retention_ms, overrides.delete_retention_ms);
 
     auto& properties = tp->second.get_configuration().properties;
     // no configuration change, no need to generate delta

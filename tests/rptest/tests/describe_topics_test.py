@@ -295,6 +295,14 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Controls how often iceberg translation is attempted on the topic partitions."
             ),
+            "delete.retention.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="-1",
+                #TODO(willem): doc_string="The retention time for tombstone records in a compacted topic"
+                doc_string="",
+                #TODO(willem): remove DYNAMIC_TOPIC_CONFIG once cluster default is added
+                source_type="DYNAMIC_TOPIC_CONFIG")
         }
 
         tp_spec = TopicSpec()

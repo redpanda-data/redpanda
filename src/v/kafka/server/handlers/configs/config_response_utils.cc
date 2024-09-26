@@ -808,6 +808,23 @@ config_response_container_t make_topic_configs(
         }
     }
 
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      topic_property_delete_retention_ms,
+      metadata_cache.get_default_delete_retention_ms(),
+      topic_property_delete_retention_ms,
+      hide_disabled_tristate(
+        topic_properties.delete_retention_ms,
+        metadata_cache.get_default_delete_retention_ms()),
+      include_synonyms,
+      /*TODO:
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().tombstone_retention_ms.desc()),
+      */
+      std::nullopt);
+
     constexpr std::string_view key_validation
       = "Enable validation of the schema id for keys on a record";
     constexpr std::string_view val_validation
