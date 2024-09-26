@@ -183,6 +183,15 @@ get_enum_value(const config_map_t& config, std::string_view key) {
     return ret;
 }
 
+static std::optional<config::leaders_preference>
+get_leaders_preference(const config_map_t& config) {
+    if (auto it = config.find(topic_property_leaders_preference);
+        it != config.end()) {
+        return config::leaders_preference::parse(it->second);
+    }
+    return std::nullopt;
+}
+
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t) {
     auto cfg = cluster::topic_configuration(
@@ -254,6 +263,8 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.iceberg_enabled
       = get_bool_value(config_entries, topic_property_iceberg_enabled)
           .value_or(storage::ntp_config::default_iceberg_enabled);
+
+    cfg.properties.leaders_preference = get_leaders_preference(config_entries);
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
