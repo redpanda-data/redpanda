@@ -2488,7 +2488,7 @@ void application::wire_up_bootstrap_services() {
     syschecks::systemd_message(
       "Constructing internal RPC services {}", rpc_cfg.local())
       .get();
-    _rpc.start(&rpc_cfg).get();
+    construct_service(_rpc, &rpc_cfg).get();
 }
 
 void application::start_bootstrap_services() {
