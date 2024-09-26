@@ -167,8 +167,9 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
           std::move(job_id).assume_error(), std::move(rep));
     }
 
-    auto params = from_json<debug_bundle::debug_bundle_parameters>(
-      obj, "config", false);
+    auto params
+      = from_json<std::optional<debug_bundle::debug_bundle_parameters>>(
+        obj, "config", false);
     if (params.has_error()) {
         co_return make_error_body(
           std::move(params).assume_error(), std::move(rep));
@@ -176,7 +177,9 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
 
     auto res = co_await _debug_bundle_service.local()
                  .initiate_rpk_debug_bundle_collection(
-                   job_id.assume_value(), std::move(params).assume_value());
+                   job_id.assume_value(),
+                   std::move(params).assume_value().value_or(
+                     debug_bundle::debug_bundle_parameters{}));
     if (res.has_error()) {
         co_return make_error_body(res.assume_error(), std::move(rep));
     }

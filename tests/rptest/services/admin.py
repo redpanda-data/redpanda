@@ -15,6 +15,7 @@ import time
 import urllib.parse
 from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
 from json.decoder import JSONDecodeError
+from uuid import UUID
 from ducktape.cluster.cluster import ClusterNode
 import requests
 from requests import Response
@@ -22,6 +23,7 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError, RequestException
 from urllib3.util.retry import Retry
 from rptest.util import wait_until_result
+from rptest.services.redpanda_types import SaslCredentials
 
 DEFAULT_TIMEOUT = 30
 
@@ -360,6 +362,69 @@ class EnterpriseLicenseStatus(Enum):
     valid = "valid"
     expired = "expired"
     not_present = "not_present"
+
+
+class DebugBundleEncoder(json.JSONEncoder):
+    """
+    DebugBundleEncoder is a custom JSON encoder that extends the default JSONEncoder
+    to handle named tuples and UUIDs.
+
+    Attributes:
+        ignore_none (bool): If True, fields with None values are ignored during encoding.
+
+    Methods:
+        default(o):
+            Overrides the default method to provide custom serialization for named tuples
+            and UUIDs. Named tuples are converted to dictionaries, and UUIDs are converted
+            to strings. Other types are handled by the superclass method.
+
+        encode(o: Any) -> str:
+            Overrides the encode method to ensure that the custom default method is used
+            during encoding.
+
+    Usage:
+        encoder = DebugBundleEncoder(ignore_none=True)
+        json_str = encoder.encode(your_object)
+    """
+    def __init__(self, *args, ignore_none: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ignore_none = ignore_none
+
+    def default(self, o):
+        if isinstance(o, tuple) and hasattr(o, '_fields'):  # Detect NamedTuple
+            return {
+                k: self.default(v)
+                for k, v in o._asdict().items()
+                if not (self.ignore_none and v is None)
+            }
+        if isinstance(o, UUID):
+            return str(o)
+        if isinstance(o,
+                      (dict, list, tuple, str, int, float, bool)) or o is None:
+            return o
+        return super().default(o)
+
+    def encode(self, o: Any) -> str:
+        return super().encode(self.default(o))
+
+
+class DebugBundleStartConfigParams(NamedTuple):
+    authentication: Optional[SaslCredentials] = None
+    controller_logs_size_limit_bytes: Optional[int] = None
+    cpu_profiler_wait_seconds: Optional[int] = None
+    logs_since: Optional[str] = None
+    logs_size_limit_bytes: Optional[int] = None
+    logs_until: Optional[str] = None
+    metrics_interval_seconds: Optional[int] = None
+    partition: Optional[str] = None
+    tls_enabled: Optional[bool] = None
+    tls_insecure_skip_verify: Optional[bool] = None
+    namespace: Optional[str] = None
+
+
+class DebugBundleStartConfig(NamedTuple):
+    job_id: UUID
+    config: Optional[DebugBundleStartConfigParams] = None
 
 
 class Admin:
@@ -1712,3 +1777,21 @@ class Admin:
                              path,
                              node=node,
                              json={"topics": [t.as_dict() for t in topics]})
+
+    def post_debug_bundle(self,
+                          config: DebugBundleStartConfig,
+                          ignore_none: bool = True,
+                          node: MaybeNode = None):
+        path = "debug/bundle"
+        body = json.dumps(config,
+                          cls=DebugBundleEncoder,
+                          ignore_none=ignore_none)
+        return self._request("POST", path, data=body, node=node)
+
+    def get_debug_bundle(self, node: MaybeNode = None):
+        path = "debug/bundle"
+        return self._request("GET", path, node=node)
+
+    def delete_debug_bundle(self, job_id: UUID, node: MaybeNode = None):
+        path = f"debug/bundle/{job_id}"
+        return self._request("DELETE", path, node=node)
