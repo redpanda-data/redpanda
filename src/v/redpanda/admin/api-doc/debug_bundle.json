@@ -75,6 +75,9 @@
                 },
                 "tls_enabled": {
                   "type": "boolean"
+                },
+                "tls_insecure_skip_verify": {
+                  "type": "boolean"
                 }
               }
             }

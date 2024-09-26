@@ -273,6 +273,13 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             } else {
                 return std::move(r).assume_error();
             }
+            if (auto r = from_json<decltype(params.tls_insecure_skip_verify)>(
+                  obj, "tls_insecure_skip_verify", false);
+                r.has_value()) {
+                params.tls_insecure_skip_verify = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
 
             return std::move(params);
         }

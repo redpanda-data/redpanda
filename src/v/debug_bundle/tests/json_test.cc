@@ -125,7 +125,8 @@ TYPED_TEST(JsonTypeTest, BasicType) {
     "foo/bar/1,2",
     "baz/1,2,3"
    ],
-  "tls_enabled": true
+  "tls_enabled": true,
+  "tls_insecure_skip_verify": false
 })";
         const std::string_view test_time = "2024-09-05T14:34:02";
         std::istringstream ss(test_time.data());
@@ -147,7 +148,8 @@ TYPED_TEST(JsonTypeTest, BasicType) {
             .logs_until = clock::from_time_t(tt),
             .metrics_interval_seconds = 42s,
             .partition = std::vector<partition_selection>{{{model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}, model::partition_id{2}}}}, {{model::kafka_namespace, model::topic{"baz"}}, {{model::partition_id{1}, model::partition_id{2}, model::partition_id{3}}}}},
-            .tls_enabled = true};
+            .tls_enabled = true,
+            .tls_insecure_skip_verify = false};
     } else if constexpr (detail::
                            is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"([1,2,3])";
