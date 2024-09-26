@@ -23,6 +23,7 @@
 #include "utils/functional.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/http/file_handler.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/short_streams.hh>
@@ -105,6 +106,26 @@ std::unique_ptr<ss::http::reply> make_error_body(
 
 } // namespace
 
+namespace debug_bundle {
+
+ss::future<std::unique_ptr<ss::http::reply>> file_handler::handle(
+  const ss::sstring& file,
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    {
+        auto mime_type = file.ends_with(".zip") ? "application/zip"
+                                                : "application/octet-stream";
+        return read(file, std::move(req), std::move(rep))
+          .then([mime_type](std::unique_ptr<ss::http::reply> rep) {
+              // read incorrectly sets the mime_type, fix it up.
+              rep->set_mime_type(mime_type);
+              return rep;
+          });
+    }
+}
+
+} // namespace debug_bundle
+
 void admin_server::register_debug_bundle_routes() {
     register_route_raw_async<superuser>(
       ss::httpd::debug_bundle_json::post_debug_bundle,
@@ -127,13 +148,13 @@ void admin_server::register_debug_bundle_routes() {
         std::unique_ptr<ss::http::reply> rep) {
           return delete_debug_bundle(std::move(req), std::move(rep));
       });
-    register_route_raw_async<superuser>(
+    register_route<superuser>(
       ss::httpd::debug_bundle_json::get_debug_bundle_file,
-      [this](
-        std::unique_ptr<ss::http::request> req,
-        std::unique_ptr<ss::http::reply> rep) {
+      admin_server::request_handler_fn{[this](
+                                         std::unique_ptr<ss::http::request> req,
+                                         std::unique_ptr<ss::http::reply> rep) {
           return get_debug_bundle_file(std::move(req), std::move(rep));
-      });
+      }});
     register_route_raw_async<superuser>(
       ss::httpd::debug_bundle_json::delete_debug_bundle_file,
       [this](
@@ -238,15 +259,58 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_debug_bundle(
       std::move(rep));
 }
 
+namespace {
+
+debug_bundle::result<debug_bundle::job_id_t> get_debug_bundle_job_id(
+  debug_bundle::result<debug_bundle::debug_bundle_status_data> status_res,
+  const ss::sstring& filename) {
+    if (status_res.has_error()) {
+        return std::move(status_res).assume_error();
+    }
+
+    switch (status_res.assume_value().status) {
+    case debug_bundle::debug_bundle_status::running:
+        return debug_bundle::error_info{
+          debug_bundle::error_code::debug_bundle_process_running,
+          "Process still running"};
+    case debug_bundle::debug_bundle_status::error:
+        return debug_bundle::error_info{
+          debug_bundle::error_code::internal_error, "Process errored out"};
+    case debug_bundle::debug_bundle_status::success:
+        break;
+    }
+
+    if (status_res.assume_value().file_name != filename) {
+        return debug_bundle::error_info{
+          debug_bundle::error_code::job_id_not_recognized, "File Not Found"};
+    }
+
+    return status_res.assume_value().job_id;
+}
+
+} // namespace
+
 ss::future<std::unique_ptr<ss::http::reply>>
 admin_server::get_debug_bundle_file(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
-    auto job_id_str = req->get_path_param("filename");
-    co_return make_json_body(
-      ss::http::reply::status_type::not_implemented,
-      ss::json::json_void{},
-      std::move(rep));
+    auto filename = req->get_path_param("filename");
+
+    auto job_id_res = get_debug_bundle_job_id(
+      co_await _debug_bundle_service.local().rpk_debug_bundle_status(),
+      filename);
+    if (job_id_res.has_error()) {
+        co_return make_error_body(job_id_res.assume_error(), std::move(rep));
+    }
+
+    auto path_res = co_await _debug_bundle_service.local()
+                      .rpk_debug_bundle_path(job_id_res.assume_value());
+    if (path_res.has_error()) {
+        co_return make_error_body(path_res.assume_error(), std::move(rep));
+    }
+
+    co_return co_await _debug_bundle_file_handler.local().handle(
+      path_res.assume_value().native(), std::move(req), std::move(rep));
 }
 
 ss::future<std::unique_ptr<ss::http::reply>>

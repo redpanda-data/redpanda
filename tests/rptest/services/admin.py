@@ -1795,3 +1795,7 @@ class Admin:
     def delete_debug_bundle(self, job_id: UUID, node: MaybeNode = None):
         path = f"debug/bundle/{job_id}"
         return self._request("DELETE", path, node=node)
+
+    def get_debug_bundle_file(self, filename: str, node: MaybeNode = None):
+        path = f"debug/bundle/file/{filename}"
+        return self._request("GET", path, node=node)

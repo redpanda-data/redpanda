@@ -335,6 +335,8 @@ admin_server::admin_server(
 }
 
 ss::future<> admin_server::start() {
+    co_await _debug_bundle_file_handler.start();
+
     _blocked_reactor_notify_reset_timer.set_callback([this] {
         return ss::smp::invoke_on_all([ms = _default_blocked_reactor_notify] {
             ss::engine().update_blocked_reactor_notify_ms(ms);
@@ -353,7 +355,8 @@ ss::future<> admin_server::start() {
 
 ss::future<> admin_server::stop() {
     _blocked_reactor_notify_reset_timer.cancel();
-    return _server.stop();
+    co_await _server.stop();
+    co_await _debug_bundle_file_handler.stop();
 }
 
 void admin_server::configure_admin_routes() {

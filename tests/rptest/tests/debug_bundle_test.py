@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import hashlib
 import random
 from uuid import uuid4
 import requests
@@ -33,6 +34,11 @@ class DebugBundleTest(RedpandaTest):
                                               num_brokers=num_brokers,
                                               log_config=log_config,
                                               **kwargs)
+
+    def _get_sha256sum(self, node, file):
+        cap = node.account.ssh_capture(f"sha256sum -b {file}",
+                                       allow_fail=False)
+        return "".join(cap).strip().split(maxsplit=1)[0]
 
     @cluster(num_nodes=1)
     @matrix(ignore_none=[True, False])
@@ -86,7 +92,8 @@ class DebugBundleTest(RedpandaTest):
         assert res.status_code == requests.codes.ok, res.json()
         assert res.json()['status'] == 'success', res.json()
         assert res.json()['job_id'] == str(job_id), res.json()
-        assert res.json()['filename'] == f"{job_id}.zip", res.json()
+        filename = res.json()['filename']
+        assert filename == f"{job_id}.zip", res.json()
 
         # Delete the debug bundle after it has completed, expect a conflict
         try:
@@ -95,3 +102,18 @@ class DebugBundleTest(RedpandaTest):
         except requests.HTTPError as e:
             assert e.response.status_code == requests.codes.conflict, res.json(
             )
+
+        res = admin.get_debug_bundle_file(filename=filename, node=node)
+        assert res.status_code == requests.codes.ok, res.json()
+        assert res.headers['Content-Type'] == 'application/zip', res.json()
+        try:
+            data_dir = admin.get_cluster_config(node=node,
+                                                key="debug_bundle_storage_dir")
+        except requests.HTTPError as e:
+            data_dir = admin.get_node_config(
+                node=node
+            )['data_directory']['data_directory'] + "/debug-bundle"
+
+        file = f"{data_dir}/{filename}"
+        assert self._get_sha256sum(node, file) == hashlib.sha256(
+            res.content).hexdigest()
