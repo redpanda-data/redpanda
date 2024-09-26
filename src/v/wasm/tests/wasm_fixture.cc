@@ -19,9 +19,9 @@
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "schema/registry.h"
 #include "storage/record_batch_builder.h"
 #include "wasm/engine.h"
-#include "wasm/schema_registry.h"
 #include "wasm/tests/wasm_fixture.h"
 #include "wasm/tests/wasm_logger.h"
 #include "wasm/wasmtime.h"
@@ -48,7 +48,7 @@ namespace ppsr = pandaproxy::schema_registry;
 
 // this is a fake schema registry that works enough for the tests we need to do
 // with wasm.
-class fake_schema_registry : public wasm::schema_registry {
+class fake_schema_registry : public schema::registry {
 public:
     bool is_enabled() const override { return true; };
 

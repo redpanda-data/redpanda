@@ -17,6 +17,9 @@ class engine;
 class factory;
 class runtime;
 class caching_runtime;
-class schema_registry;
 class logger;
 } // namespace wasm
+
+namespace schema_registry {
+class registry;
+}

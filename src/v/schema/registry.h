@@ -14,7 +14,7 @@
 #include "pandaproxy/schema_registry/api.h"
 #include "pandaproxy/schema_registry/types.h"
 
-namespace wasm {
+namespace schema {
 /**
  * A wrapper around the schema registry implementation within Redpanda.
  *
@@ -25,17 +25,17 @@ namespace wasm {
  * create a dummy implementation for this case.
  *
  */
-class schema_registry {
+class registry {
 public:
-    static std::unique_ptr<schema_registry>
+    static std::unique_ptr<registry>
     make_default(pandaproxy::schema_registry::api*);
 
-    schema_registry() = default;
-    schema_registry(const schema_registry&) = delete;
-    schema_registry& operator=(const schema_registry&) = delete;
-    schema_registry(schema_registry&&) = default;
-    schema_registry& operator=(schema_registry&&) = default;
-    virtual ~schema_registry() = default;
+    registry() = default;
+    registry(const registry&) = delete;
+    registry& operator=(const registry&) = delete;
+    registry(registry&&) = default;
+    registry& operator=(registry&&) = default;
+    virtual ~registry() = default;
 
     virtual bool is_enabled() const = 0;
 
@@ -49,4 +49,4 @@ public:
     virtual ss::future<pandaproxy::schema_registry::schema_id>
       create_schema(pandaproxy::schema_registry::unparsed_schema) = 0;
 };
-} // namespace wasm
+} // namespace schema

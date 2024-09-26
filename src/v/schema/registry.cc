@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "schema_registry.h"
+#include "schema/registry.h"
 
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"
@@ -20,13 +20,13 @@
 #include <memory>
 #include <stdexcept>
 
-namespace wasm {
+namespace schema {
 
 namespace {
 
 namespace ppsr = pandaproxy::schema_registry;
 
-class schema_registry_impl : public schema_registry {
+class schema_registry_impl : public registry {
 public:
     explicit schema_registry_impl(ss::sharded<ppsr::service>* service)
       : _service(service) {}
@@ -65,7 +65,7 @@ private:
     ss::sharded<ppsr::service>* _service;
 };
 
-class disabled_schema_registry : public schema_registry {
+class disabled_schema_registry : public registry {
 public:
     bool is_enabled() const override { return false; };
 
@@ -86,10 +86,10 @@ public:
 };
 } // namespace
 
-std::unique_ptr<schema_registry> schema_registry::make_default(ppsr::api* sr) {
+std::unique_ptr<registry> registry::make_default(ppsr::api* sr) {
     if (!sr) {
         return std::make_unique<disabled_schema_registry>();
     }
     return std::make_unique<schema_registry_impl>(&sr->_service);
 }
-} // namespace wasm
+} // namespace schema

@@ -5,7 +5,6 @@ v_cc_library(
     logger.cc
     impl.cc
     transform_probe.cc
-    schema_registry.cc
     schema_registry_module.cc
     transform_module.cc
     wasi.cc
@@ -16,6 +15,7 @@ v_cc_library(
   DEPS
     wasmtime
     v::wasm_parser
+    v::schema
     v::storage
     v::model
     v::pandaproxy_schema_registry

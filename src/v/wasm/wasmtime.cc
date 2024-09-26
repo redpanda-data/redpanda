@@ -149,7 +149,7 @@ private:
 
 class wasmtime_runtime : public runtime {
 public:
-    explicit wasmtime_runtime(std::unique_ptr<schema_registry> sr);
+    explicit wasmtime_runtime(std::unique_ptr<schema::registry> sr);
 
     ss::future<> start(runtime::config c) override;
 
@@ -193,7 +193,7 @@ private:
       heap_allocator::request, wasmtime_linear_memory_t* memory_ret);
 
     handle<wasm_engine_t, &wasm_engine_delete> _engine;
-    std::unique_ptr<schema_registry> _sr;
+    std::unique_ptr<schema::registry> _sr;
     ssx::singleton_thread_worker _alien_thread;
     ss::sharded<wasm::heap_allocator> _heap_allocator;
     ss::sharded<stack_allocator> _stack_allocator;
@@ -480,7 +480,7 @@ public:
       model::transform_metadata metadata,
       ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
         preinitialized,
-      schema_registry* sr,
+      schema::registry* sr,
       std::unique_ptr<wasm::logger> logger)
       : _runtime(runtime)
       , _meta(std::move(metadata))
@@ -1284,7 +1284,7 @@ public:
       model::transform_metadata meta,
       ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>>
         preinitialized,
-      schema_registry* sr)
+      schema::registry* sr)
       : _runtime(runtime)
       , _preinitialized(std::move(preinitialized))
       , _meta(std::move(meta))
@@ -1302,10 +1302,10 @@ private:
     wasmtime_runtime* _runtime;
     ss::foreign_ptr<ss::lw_shared_ptr<preinitialized_instance>> _preinitialized;
     model::transform_metadata _meta;
-    schema_registry* _sr;
+    schema::registry* _sr;
 };
 
-wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema_registry> sr)
+wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema::registry> sr)
   : _sr(std::move(sr)) {
     wasm_config_t* config = wasm_config_new();
 
@@ -1739,7 +1739,7 @@ ss::future<> wasmtime_runtime::validate(model::wasm_binary_iobuf buf) {
 
 } // namespace
 
-std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema_registry> sr) {
+std::unique_ptr<runtime> create_runtime(std::unique_ptr<schema::registry> sr) {
     return std::make_unique<wasmtime_runtime>(std::move(sr));
 }
 
