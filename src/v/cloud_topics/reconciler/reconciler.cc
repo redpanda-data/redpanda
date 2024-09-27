@@ -131,8 +131,11 @@ ss::future<> reconciler::reconciliation_loop() {
         try {
             co_await reconcile();
         } catch (...) {
-            vlog(
-              lg.info,
+            const auto is_shutdown = ssx::is_shutdown_exception(
+              std::current_exception());
+            vlogl(
+              lg,
+              is_shutdown ? ss::log_level::debug : ss::log_level::info,
               "Recoverable error during reconciliation: {}",
               std::current_exception());
         }
