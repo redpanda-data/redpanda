@@ -26,7 +26,8 @@ from ducktape.utils.util import wait_until
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
 # strict variant of VERSION_RE that only matches "vX.Y.Z" strings
 STRICT_VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
-RELEASES_CACHE_FILE = "/tmp/ducktape_cache/redpanda_releases.json"
+RELEASES_CACHE_FILE_PARENT = "/tmp/ducktape_cache"
+RELEASES_CACHE_FILE = f"{RELEASES_CACHE_FILE_PARENT}/redpanda_releases.json"
 RELEASES_CACHE_FILE_TTL = timedelta(minutes=30)
 
 # environment variable to pass to ducktape the list of released versions.
@@ -326,6 +327,7 @@ class RedpandaInstaller:
     def _released_versions_json(self):
         def get_cached_data():
             try:
+                os.makedirs(RELEASES_CACHE_FILE_PARENT, exist_ok=True)
                 st = os.stat(RELEASES_CACHE_FILE)
                 mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
                 if datetime.now(
