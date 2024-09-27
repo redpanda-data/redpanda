@@ -40,3 +40,28 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name="aggregator",
+    srcs = [
+        "aggregator.cc",
+    ],
+    hdrs = [
+        "aggregator.h",
+    ],
+    include_prefix="cloud_topics/batcher",
+    deps = [
+        ":write_request",
+        ":serializer",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:placeholder",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iostream",
+        "//src/v/model",
+        "@seastar",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
