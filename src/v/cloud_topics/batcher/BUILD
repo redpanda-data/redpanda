@@ -10,14 +10,16 @@ redpanda_cc_library(
     hdrs = [
         "serializer.h",
     ],
+    implementation_deps = [
+        "//src/v/cloud_topics:logger",
+        "//src/v/storage:record_batch_utils",
+    ],
     include_prefix = "cloud_topics/batcher",
     deps = [
         "//src/v/base",
-        "//src/v/bytes",
         "//src/v/bytes:iobuf",
-        "//src/v/cloud_topics:logger",
+        "//src/v/container:fragmented_vector",
         "//src/v/model",
-        "//src/v/storage:record_batch_utils",
     ],
 )
 
