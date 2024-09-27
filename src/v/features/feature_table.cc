@@ -122,6 +122,8 @@ std::string_view to_string_view(feature f) {
         return "partition_properties_stm";
     case feature::shadow_indexing_split_topic_property_update:
         return "shadow_indexing_split_topic_property_update";
+    case feature::datalake_iceberg:
+        return "datalake_iceberg";
 
     /*
      * testing features
