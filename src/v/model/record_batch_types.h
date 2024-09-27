@@ -54,8 +54,9 @@ enum class record_batch_type : int8_t {
     group_fence_tx = 33,      // fence batch in group transactions
     partition_properties_update
     = 34, // special batch type used to update partition properties
-    datalake_coordinator = 35, // datalake::coordinator::*
-    MAX = datalake_coordinator,
+    datalake_coordinator = 35,       // datalake::coordinator::*
+    datalake_translation_state = 36, // maintains state for translation progress
+    MAX = datalake_translation_state,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
@@ -72,7 +73,8 @@ inline std::vector<model::record_batch_type> offset_translator_batch_types() {
       model::record_batch_type::archival_metadata,
       model::record_batch_type::version_fence,
       model::record_batch_type::prefix_truncate,
-      model::record_batch_type::partition_properties_update};
+      model::record_batch_type::partition_properties_update,
+      model::record_batch_type::datalake_translation_state};
 }
 
 } // namespace model
