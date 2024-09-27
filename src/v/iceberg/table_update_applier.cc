@@ -84,7 +84,7 @@ struct update_applying_visitor {
           meta.partition_specs.end(),
           [sid](const partition_spec& spec) { return spec.spec_id == sid; });
         if (s != meta.partition_specs.end()) {
-            vlog(log.error, "Partition spec id {} doesn't exist", sid);
+            vlog(log.error, "Partition spec id {} already exists", sid);
             return outcome::unexpected_state;
         }
         meta.partition_specs.emplace_back(update.spec.copy());
@@ -125,14 +125,14 @@ struct update_applying_visitor {
             to_remove.emplace(id);
         }
         chunked_vector<snapshot> new_list;
-        new_list.reserve(meta.snapshots->size() - to_remove.size());
+        new_list.reserve(meta.snapshots->size());
         for (auto& snap : *meta.snapshots) {
             if (to_remove.contains(snap.id)) {
                 continue;
             }
             new_list.emplace_back(std::move(snap));
         }
-        *meta.snapshots = std::move(new_list);
+        meta.snapshots = std::move(new_list);
         // TODO: once we add support for statistics, need to remove them too.
         return outcome::success;
     }
