@@ -13,7 +13,6 @@
 #include "bytes/random.h"
 #include "cloud_io/io_result.h"
 #include "cloud_topics/batcher/batcher.h"
-#include "remote_mock.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -21,6 +20,7 @@
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
+#include "remote_mock.h"
 #include "storage/record_batch_utils.h"
 #include "test_utils/test.h"
 
@@ -48,7 +48,8 @@ struct reader_with_content {
     model::record_batch_reader reader;
 };
 
-reader_with_content get_random_reader(int num_batches, int num_records) { // NOLINT
+reader_with_content
+get_random_reader(int num_batches, int num_records) { // NOLINT
     chunked_vector<bytes> keys;
     chunked_vector<bytes> records;
     ss::chunked_fifo<model::record_batch> fifo;
@@ -57,7 +58,7 @@ reader_with_content get_random_reader(int num_batches, int num_records) { // NOL
         // Build a record batch
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(offset));
-        
+
         for (int r = 0; r < num_records; r++) {
             auto k = random_generators::make_iobuf(32);
             auto v = random_generators::make_iobuf(256);
@@ -71,9 +72,9 @@ reader_with_content get_random_reader(int num_batches, int num_records) { // NOL
     auto reader = model::make_fragmented_memory_record_batch_reader(
       std::move(fifo));
     return {
-        .keys = std::move(keys),
-        .records = std::move(records),
-        .reader = std::move(reader),
+      .keys = std::move(keys),
+      .records = std::move(records),
+      .reader = std::move(reader),
     };
 }
 
@@ -89,7 +90,8 @@ TEST_CORO(batcher_test, single_write_request) {
     auto [keys, records, reader] = get_random_reader(10, 10);
 
     const auto timeout = 1s;
-    auto fut = batcher.write_and_debounce(model::controller_ntp, std::move(reader), timeout);
+    auto fut = batcher.write_and_debounce(
+      model::controller_ntp, std::move(reader), timeout);
     while (!fut.available()) {
         ss::manual_clock::advance(100ms);
         co_await ss::yield();

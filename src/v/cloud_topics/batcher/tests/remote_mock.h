@@ -62,11 +62,11 @@ public:
         co_await seastar::sleep<Clock>(std::chrono::milliseconds(jitter));
 
         if (_next_upload_result == cloud_io::upload_result::success) {
-            _requests.insert(
-              std::make_pair(req.transfer_details.key(), std::move(req.payload)));
+            _requests.insert(std::make_pair(
+              req.transfer_details.key(), std::move(req.payload)));
         } else {
-            _failed_requests.insert(
-              std::make_pair(req.transfer_details.key(), std::move(req.payload)));
+            _failed_requests.insert(std::make_pair(
+              req.transfer_details.key(), std::move(req.payload)));
         }
         co_return _next_upload_result;
     }
