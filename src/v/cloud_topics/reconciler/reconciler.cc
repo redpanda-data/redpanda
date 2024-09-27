@@ -198,7 +198,7 @@ ss::future<cloud_io::upload_result> reconciler::upload_object(iobuf payload) {
 
     retry_chain_node rtc(
       _as,
-      ss::lowres_clock::now() + std::chrono::seconds(2),
+      ss::lowres_clock::now() + std::chrono::seconds(20),
       std::chrono::seconds(1));
 
     co_return co_await _cloud_io->local().upload_object({
