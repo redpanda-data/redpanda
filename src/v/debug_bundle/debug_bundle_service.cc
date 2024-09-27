@@ -225,6 +225,8 @@ public:
         vassert(
           _rpk_process != nullptr,
           "RPK process should be created if calling wait()");
+        auto set_finish_time = ss::defer(
+          [this] { _finished_time = clock::now(); });
         try {
             co_return _wait_result.emplace(co_await _rpk_process->wait());
         } catch (const std::exception& e) {
@@ -261,6 +263,7 @@ public:
     const chunked_vector<ss::sstring>& cout() const { return _cout; }
     const chunked_vector<ss::sstring>& cerr() const { return _cerr; }
     clock::time_point created_time() const { return _created_time; }
+    clock::time_point finished_time() const { return _finished_time; }
     ss::experimental::process::wait_status get_wait_result() const {
         vassert(_wait_result.has_value(), "wait_result must have been set");
         return _wait_result.value();
@@ -275,6 +278,7 @@ private:
     chunked_vector<ss::sstring> _cout;
     chunked_vector<ss::sstring> _cerr;
     clock::time_point _created_time;
+    clock::time_point _finished_time;
 };
 
 service::service(storage::kvstore* kvstore)
