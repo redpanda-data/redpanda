@@ -37,6 +37,7 @@ rp_test(
     test_schemas.cc
     transform_json_test.cc
     transform_utils_test.cc
+    update_schema_action_test.cc
     values_test.cc
     values_avro_test.cc
     values_bytes_test.cc

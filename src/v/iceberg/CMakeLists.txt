@@ -28,6 +28,7 @@ v_cc_library(
   NAME iceberg
   SRCS
     ${avro_hdrs}
+    action.cc
     datatypes.cc
     datatypes_json.cc
     json_utils.cc
@@ -49,9 +50,11 @@ v_cc_library(
     table_metadata_json.cc
     table_update_applier.cc
     time_transform_visitor.cc
+    transaction.cc
     transform.cc
     transform_json.cc
     transform_utils.cc
+    update_schema_action.cc
     values.cc
     values_avro.cc
     values_bytes.cc
