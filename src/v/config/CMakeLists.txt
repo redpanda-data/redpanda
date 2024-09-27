@@ -12,6 +12,7 @@ v_cc_library(
     throughput_control_group.cc
     tls_config.cc
     node_overrides.cc
+    leaders_preference.cc
   DEPS
     v::json
     v::model
