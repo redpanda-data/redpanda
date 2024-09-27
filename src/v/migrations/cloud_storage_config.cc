@@ -135,7 +135,7 @@ ss::future<> cloud_storage_config::do_mutate() {
                          : model::shadow_indexing_mode::fetch;
             }
 
-            update.properties.shadow_indexing = make_property_set(
+            update.properties.get_shadow_indexing() = make_property_set(
               std::make_optional(mode));
 
             vlog(

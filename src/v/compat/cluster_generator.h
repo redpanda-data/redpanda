@@ -759,52 +759,52 @@ struct instance_generator<cluster::incremental_topic_custom_updates> {
 template<>
 struct instance_generator<cluster::incremental_topic_updates> {
     static cluster::incremental_topic_updates random() {
-        return {
-          .compression = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<model::compression>::random();
-              });
-          }),
-          .cleanup_policy_bitflags = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<
-                    model::cleanup_policy_bitflags>::random();
-              });
-          }),
-          .compaction_strategy = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<
-                    model::compaction_strategy>::random();
-              });
-          }),
-          .timestamp_type = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<model::timestamp_type>::random();
-              });
-          }),
-          .segment_size = random_property_update([] {
-              return tests::random_optional(
-                [] { return random_generators::get_int<size_t>(); });
-          }),
-          .retention_bytes = random_property_update([] {
-              return tests::random_tristate(
-                [] { return random_generators::get_int<size_t>(); });
-          }),
-          .retention_duration = random_property_update([] {
-              return tests::random_tristate(
-                [] { return tests::random_duration_ms(); });
-          }),
-          .shadow_indexing = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<
-                    model::shadow_indexing_mode>::random();
-              });
-          }),
-          .remote_delete = random_property_update([] {
-              // Enable ADL roundtrip, which always decodes as false
-              // for legacy topics
-              return false;
-          })};
+        cluster::incremental_topic_updates updates;
+        updates.compression = random_property_update([] {
+            return tests::random_optional(
+              [] { return instance_generator<model::compression>::random(); });
+        });
+        updates.cleanup_policy_bitflags = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<
+                  model::cleanup_policy_bitflags>::random();
+            });
+        });
+        updates.compaction_strategy = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<model::compaction_strategy>::random();
+            });
+        });
+        updates.timestamp_type = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<model::timestamp_type>::random();
+            });
+        });
+        updates.segment_size = random_property_update([] {
+            return tests::random_optional(
+              [] { return random_generators::get_int<size_t>(); });
+        });
+        updates.retention_bytes = random_property_update([] {
+            return tests::random_tristate(
+              [] { return random_generators::get_int<size_t>(); });
+        });
+        updates.retention_duration = random_property_update([] {
+            return tests::random_tristate(
+              [] { return tests::random_duration_ms(); });
+        });
+        updates.get_shadow_indexing() = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<
+                  model::shadow_indexing_mode>::random();
+            });
+        });
+        updates.remote_delete = random_property_update([] {
+            // Enable ADL roundtrip, which always decodes as false
+            // for legacy topics
+            return false;
+        });
+
+        return updates;
     }
 
     static std::vector<cluster::incremental_topic_updates> limits() {

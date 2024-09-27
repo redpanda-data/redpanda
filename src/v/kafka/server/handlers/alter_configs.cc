@@ -93,8 +93,12 @@ create_topic_properties_update(alter_configs_resource& resource) {
      *
      * See: https://github.com/redpanda-data/redpanda/issues/7451
      */
-    update.properties.shadow_indexing.op = op_t::none;
     update.properties.remote_delete.op = op_t::none;
+
+    // Legacy
+    auto& update_properties_shadow_indexing
+      = update.properties.get_shadow_indexing();
+    update_properties_shadow_indexing.op = op_t::none;
 
     // Now that the defaults are set, continue to set properties from the
     // request
@@ -147,6 +151,34 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   kafka::config_resource_operation::set);
                 continue;
             }
+            if (cfg.name == topic_property_remote_read) {
+                // Legacy update for shadow indexing field
+                {
+                    auto set_value
+                      = update_properties_shadow_indexing.value
+                          ? model::add_shadow_indexing_flag(
+                              *update_properties_shadow_indexing.value,
+                              model::shadow_indexing_mode::fetch)
+                          : model::shadow_indexing_mode::fetch;
+                    parse_and_set_shadow_indexing_mode(
+                      update_properties_shadow_indexing, cfg.value, set_value);
+                }
+                continue;
+            }
+            if (cfg.name == topic_property_remote_write) {
+                // Legacy update for shadow indexing field
+                {
+                    auto set_value
+                      = update_properties_shadow_indexing.value
+                          ? model::add_shadow_indexing_flag(
+                              *update_properties_shadow_indexing.value,
+                              model::shadow_indexing_mode::archival)
+                          : model::shadow_indexing_mode::archival;
+                    parse_and_set_shadow_indexing_mode(
+                      update_properties_shadow_indexing, cfg.value, set_value);
+                }
+                continue;
+            }
             if (cfg.name == topic_property_remote_delete) {
                 parse_and_set_bool(
                   tp_ns,
@@ -161,26 +193,6 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   update.properties.segment_ms,
                   cfg.value,
                   kafka::config_resource_operation::set);
-                continue;
-            }
-            if (cfg.name == topic_property_remote_write) {
-                auto set_value = update.properties.shadow_indexing.value
-                                   ? model::add_shadow_indexing_flag(
-                                       *update.properties.shadow_indexing.value,
-                                       model::shadow_indexing_mode::archival)
-                                   : model::shadow_indexing_mode::archival;
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing, cfg.value, set_value);
-                continue;
-            }
-            if (cfg.name == topic_property_remote_read) {
-                auto set_value = update.properties.shadow_indexing.value
-                                   ? model::add_shadow_indexing_flag(
-                                       *update.properties.shadow_indexing.value,
-                                       model::shadow_indexing_mode::fetch)
-                                   : model::shadow_indexing_mode::fetch;
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing, cfg.value, set_value);
                 continue;
             }
             if (cfg.name == topic_property_retention_duration) {

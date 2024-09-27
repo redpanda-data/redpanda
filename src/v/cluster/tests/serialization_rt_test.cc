@@ -843,25 +843,27 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           [] { return random_generators::get_int<size_t>(0, 100000); })));
     }
     {
-        cluster::incremental_topic_updates updates{
-          .compression = random_property_update(
-            tests::random_optional([] { return model::random_compression(); })),
-          .cleanup_policy_bitflags = random_property_update(
-            tests::random_optional(
-              [] { return model::random_cleanup_policy(); })),
-          .compaction_strategy = random_property_update(tests::random_optional(
-            [] { return model::random_compaction_strategy(); })),
-          .timestamp_type = random_property_update(tests::random_optional(
-            [] { return model::random_timestamp_type(); })),
-          .segment_size = random_property_update(tests::random_optional(
-            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
-          .retention_bytes = random_property_update(tests::random_tristate(
-            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
-          .retention_duration = random_property_update(
-            tests::random_tristate([] { return tests::random_duration_ms(); })),
-          .shadow_indexing = random_property_update(tests::random_optional(
-            [] { return model::random_shadow_indexing_mode(); })),
-          .remote_delete = random_property_update(tests::random_bool())};
+        cluster::incremental_topic_updates updates;
+        updates.compression = random_property_update(
+          tests::random_optional([] { return model::random_compression(); }));
+        updates.cleanup_policy_bitflags = random_property_update(
+          tests::random_optional(
+            [] { return model::random_cleanup_policy(); }));
+        updates.compaction_strategy = random_property_update(
+          tests::random_optional(
+            [] { return model::random_compaction_strategy(); }));
+        updates.timestamp_type = random_property_update(tests::random_optional(
+          [] { return model::random_timestamp_type(); }));
+        updates.segment_size = random_property_update(tests::random_optional(
+          [] { return random_generators::get_int(100_MiB, 1_GiB); }));
+        updates.retention_bytes = random_property_update(tests::random_tristate(
+          [] { return random_generators::get_int(100_MiB, 1_GiB); }));
+        updates.retention_duration = random_property_update(
+          tests::random_tristate([] { return tests::random_duration_ms(); }));
+        updates.remote_delete = random_property_update(tests::random_bool());
+        updates.get_shadow_indexing() = random_property_update(
+          tests::random_optional(
+            [] { return model::random_shadow_indexing_mode(); }));
         roundtrip_test(updates);
     }
     { roundtrip_test(old_random_topic_configuration()); }
@@ -2061,23 +2063,26 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto val_validation = tests::random_bool();
         auto val_strategy = tests::random_subject_name_strategy();
 
-        cluster::incremental_topic_updates updates{
-          .record_key_schema_id_validation = random_property_update(
-            tests::random_optional([=] { return key_validation; })),
-          .record_key_schema_id_validation_compat = random_property_update(
-            tests::random_optional([=] { return key_validation; })),
-          .record_key_subject_name_strategy = random_property_update(
-            tests::random_optional([=] { return key_strategy; })),
-          .record_key_subject_name_strategy_compat = random_property_update(
-            tests::random_optional([=] { return key_strategy; })),
-          .record_value_schema_id_validation = random_property_update(
-            tests::random_optional([=] { return val_validation; })),
-          .record_value_schema_id_validation_compat = random_property_update(
-            tests::random_optional([=] { return val_validation; })),
-          .record_value_subject_name_strategy = random_property_update(
-            tests::random_optional([=] { return val_strategy; })),
-          .record_value_subject_name_strategy_compat = random_property_update(
-            tests::random_optional([=] { return val_strategy; }))};
+        cluster::incremental_topic_updates updates;
+        updates.record_key_schema_id_validation = random_property_update(
+          tests::random_optional([=] { return key_validation; }));
+        updates.record_key_schema_id_validation_compat = random_property_update(
+          tests::random_optional([=] { return key_validation; }));
+        updates.record_key_subject_name_strategy = random_property_update(
+          tests::random_optional([=] { return key_strategy; }));
+        updates.record_key_subject_name_strategy_compat
+          = random_property_update(
+            tests::random_optional([=] { return key_strategy; }));
+        updates.record_value_schema_id_validation = random_property_update(
+          tests::random_optional([=] { return val_validation; }));
+        updates.record_value_schema_id_validation_compat
+          = random_property_update(
+            tests::random_optional([=] { return val_validation; }));
+        updates.record_value_subject_name_strategy = random_property_update(
+          tests::random_optional([=] { return val_strategy; }));
+        updates.record_value_subject_name_strategy_compat
+          = random_property_update(
+            tests::random_optional([=] { return val_strategy; }));
 
         roundtrip_test(updates);
     }

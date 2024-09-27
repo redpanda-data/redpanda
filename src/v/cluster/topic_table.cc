@@ -899,8 +899,6 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       updated_properties.timestamp_type, overrides.timestamp_type);
     incremental_update(
-      updated_properties.shadow_indexing, overrides.shadow_indexing);
-    incremental_update(
       updated_properties.batch_max_bytes, overrides.batch_max_bytes);
     incremental_update(
       updated_properties.retention_local_target_bytes,
@@ -908,6 +906,8 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       updated_properties.retention_local_target_ms,
       overrides.retention_local_target_ms);
+    incremental_update(
+      updated_properties.shadow_indexing, overrides.get_shadow_indexing());
     incremental_update(
       updated_properties.remote_delete,
       overrides.remote_delete,

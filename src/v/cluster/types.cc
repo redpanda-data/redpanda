@@ -356,7 +356,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.segment_size,
       i.retention_bytes,
       i.retention_duration,
-      i.shadow_indexing,
+      i.get_shadow_indexing(),
       i.batch_max_bytes,
       i.retention_local_target_bytes,
       i.retention_local_target_ms,
@@ -1162,7 +1162,7 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing,
+      t.get_shadow_indexing(),
       t.batch_max_bytes,
       t.retention_local_target_bytes,
       t.retention_local_target_ms,
@@ -1239,9 +1239,9 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
     if (
       version
       <= cluster::incremental_topic_updates::version_with_shadow_indexing) {
-        updates.shadow_indexing = adl<cluster::property_update<
+        updates.get_shadow_indexing() = adl<cluster::property_update<
           std::optional<model::shadow_indexing_mode>>>{}
-                                    .from(in);
+                                          .from(in);
     }
 
     if (

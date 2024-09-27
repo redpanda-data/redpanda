@@ -189,14 +189,6 @@ create_topic_properties_update(
                   update.properties.retention_duration, cfg.value, op);
                 continue;
             }
-            if (cfg.name == topic_property_remote_write) {
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing,
-                  cfg.value,
-                  op,
-                  model::shadow_indexing_mode::archival);
-                continue;
-            }
             if (cfg.name == topic_property_retention_local_target_bytes) {
                 parse_and_set_tristate(
                   update.properties.retention_local_target_bytes,
@@ -210,11 +202,25 @@ create_topic_properties_update(
                 continue;
             }
             if (cfg.name == topic_property_remote_read) {
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing,
-                  cfg.value,
-                  op,
-                  model::shadow_indexing_mode::fetch);
+                // Legacy update for shadow indexing field
+                {
+                    parse_and_set_shadow_indexing_mode(
+                      update.properties.get_shadow_indexing(),
+                      cfg.value,
+                      op,
+                      model::shadow_indexing_mode::fetch);
+                }
+                continue;
+            }
+            if (cfg.name == topic_property_remote_write) {
+                // Legacy update for shadow indexing field
+                {
+                    parse_and_set_shadow_indexing_mode(
+                      update.properties.get_shadow_indexing(),
+                      cfg.value,
+                      op,
+                      model::shadow_indexing_mode::archival);
+                }
                 continue;
             }
             if (cfg.name == topic_property_remote_delete) {
