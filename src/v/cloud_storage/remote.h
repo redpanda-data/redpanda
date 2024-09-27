@@ -476,6 +476,8 @@ public:
     seastar::gate& gate() { return io().gate(); };
     ss::abort_source& as() { return io().as(); }
 
+    remote_probe& get_probe() { return _probe; }
+
 private:
     cloud_io::remote& io() { return _io.local(); }
     const cloud_io::remote& io() const { return _io.local(); }
