@@ -27,10 +27,7 @@ struct update_applying_visitor {
 
     outcome operator()(const add_schema& update) {
         auto sid = update.schema.schema_id;
-        auto s = std::find_if(
-          meta.schemas.begin(),
-          meta.schemas.end(),
-          [sid](const schema& schema) { return schema.schema_id == sid; });
+        auto s = std::ranges::find(meta.schemas, sid, &schema::schema_id);
         if (s != meta.schemas.end()) {
             vlog(log.error, "Schema {} already exists", sid);
             return outcome::unexpected_state;
@@ -66,10 +63,7 @@ struct update_applying_visitor {
             meta.current_schema_id = max_id;
             return outcome::success;
         }
-        auto s = std::find_if(
-          meta.schemas.begin(),
-          meta.schemas.end(),
-          [sid](const schema& schema) { return schema.schema_id == sid; });
+        auto s = std::ranges::find(meta.schemas, sid, &schema::schema_id);
         if (s == meta.schemas.end()) {
             vlog(log.error, "Schema {} doesn't exist", sid);
             return outcome::unexpected_state;
@@ -79,10 +73,8 @@ struct update_applying_visitor {
     }
     outcome operator()(const add_spec& update) {
         auto sid = update.spec.spec_id;
-        auto s = std::find_if(
-          meta.partition_specs.begin(),
-          meta.partition_specs.end(),
-          [sid](const partition_spec& spec) { return spec.spec_id == sid; });
+        auto s = std::ranges::find(
+          meta.partition_specs, sid, &partition_spec::spec_id);
         if (s != meta.partition_specs.end()) {
             vlog(log.error, "Partition spec id {} already exists", sid);
             return outcome::unexpected_state;
@@ -95,10 +87,7 @@ struct update_applying_visitor {
         if (!meta.snapshots.has_value()) {
             meta.snapshots.emplace();
         }
-        auto s = std::find_if(
-          meta.snapshots->begin(),
-          meta.snapshots->end(),
-          [sid](const snapshot& snap) { return snap.id == sid; });
+        auto s = std::ranges::find(*meta.snapshots, sid, &snapshot::id);
         if (s != meta.snapshots->end()) {
             vlog(log.error, "Snapshot id {} already exists", sid);
             return outcome::unexpected_state;
@@ -138,10 +127,11 @@ struct update_applying_visitor {
     }
     outcome operator()(const set_snapshot_ref& update) {
         auto sid = update.ref.snapshot_id;
-        auto s = std::find_if(
-          meta.snapshots->begin(),
-          meta.snapshots->end(),
-          [sid](const snapshot& snap) { return snap.id == sid; });
+        if (!meta.snapshots.has_value()) {
+            vlog(log.error, "No snapshots exist, looking for {}", sid);
+            return outcome::unexpected_state;
+        }
+        auto s = std::ranges::find(*meta.snapshots, sid, &snapshot::id);
         if (s == meta.snapshots->end()) {
             vlog(log.error, "Snapshot id {} doesn't exist", sid);
             return outcome::unexpected_state;
