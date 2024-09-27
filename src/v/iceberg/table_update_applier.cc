@@ -125,7 +125,7 @@ struct update_applying_visitor {
             to_remove.emplace(id);
         }
         chunked_vector<snapshot> new_list;
-        new_list.reserve(meta.snapshots->size() - to_remove.size());
+        new_list.reserve(meta.snapshots->size());
         for (auto& snap : *meta.snapshots) {
             if (to_remove.contains(snap.id)) {
                 continue;
