@@ -33,3 +33,24 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "aggregator_test",
+    timeout = "short",
+    srcs = [
+        "aggregator_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics/batcher:aggregator",
+        "//src/v/cloud_topics/batcher:serializer",
+        "//src/v/cloud_topics/batcher:write_request",
+        "//src/v/bytes",
+        "//src/v/bytes:iostream",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/model/tests:random",
+        "//src/v/random:generators",
+        "@seastar",
+        "@googletest//:gtest",
+    ],
+)
