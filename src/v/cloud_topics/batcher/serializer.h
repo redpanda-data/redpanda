@@ -14,7 +14,7 @@
 #include "bytes/iobuf.h"
 #include "model/record_batch_reader.h"
 
-namespace cloud_topics::details {
+namespace experimental::cloud_topics::details {
 
 /// This is a substitute for the placeholder batch.
 /// It's needed to produce the actual placeholder
@@ -42,4 +42,4 @@ struct serialized_chunk {
 ss::future<serialized_chunk>
 serialize_in_memory_record_batch_reader(model::record_batch_reader rdr);
 
-} // namespace cloud_topics::details
+} // namespace experimental::cloud_topics::details

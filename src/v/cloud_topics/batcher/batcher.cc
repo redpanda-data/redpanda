@@ -47,7 +47,7 @@
 
 using namespace std::chrono_literals;
 
-namespace cloud_topics {
+namespace experimental::cloud_topics {
 
 template<class Clock>
 batcher<Clock>::batcher(
@@ -270,4 +270,4 @@ batcher<Clock>::write_and_debounce(
 template class batcher<ss::lowres_clock>;
 template class batcher<ss::manual_clock>;
 
-} // namespace cloud_topics
+} // namespace experimental::cloud_topics

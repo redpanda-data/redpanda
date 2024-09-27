@@ -21,7 +21,7 @@
 
 #include <absl/container/btree_map.h>
 
-namespace cloud_topics::details {
+namespace experimental::cloud_topics::details {
 
 /// List of placeholder batches that has to be propagated
 /// to the particular write request.
@@ -83,4 +83,4 @@ private:
     size_t _size_bytes{0};
 };
 
-} // namespace cloud_topics::details
+} // namespace experimental::cloud_topics::details

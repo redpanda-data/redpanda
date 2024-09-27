@@ -28,6 +28,8 @@
 
 using namespace std::chrono_literals;
 
+namespace cloud_topics = experimental::cloud_topics;
+
 static ss::logger test_log("aggregator_test_log"); // NOLINT
 
 cloud_topics::details::serialized_chunk get_random_serialized_chunk(

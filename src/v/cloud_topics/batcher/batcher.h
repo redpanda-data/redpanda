@@ -44,7 +44,7 @@
 
 #include <chrono>
 
-namespace cloud_topics {
+namespace experimental::cloud_topics {
 
 struct batcher_result {
     uuid_t uuid;
@@ -149,4 +149,4 @@ private:
 
     ss::condition_variable _cv;
 };
-} // namespace cloud_topics
+} // namespace experimental::cloud_topics

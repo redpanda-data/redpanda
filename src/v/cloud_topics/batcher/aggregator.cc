@@ -20,7 +20,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/defer.hh>
 
-namespace cloud_topics::details {
+namespace experimental::cloud_topics::details {
 
 template<class Clock>
 aggregator<Clock>::aggregator(object_id id)
@@ -187,4 +187,4 @@ size_t aggregator<Clock>::size_bytes() const noexcept {
 
 template class aggregator<ss::lowres_clock>;
 template class aggregator<ss::manual_clock>;
-} // namespace cloud_topics::details
+} // namespace experimental::cloud_topics::details

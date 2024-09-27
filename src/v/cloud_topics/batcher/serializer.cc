@@ -14,7 +14,7 @@
 #include "model/timeout_clock.h"
 #include "storage/record_batch_utils.h"
 
-namespace cloud_topics::details {
+namespace experimental::cloud_topics::details {
 
 /// Construct iobuf out of record_batch_reader.
 /// Works for single ntp.
@@ -68,4 +68,4 @@ serialize_in_memory_record_batch_reader(model::record_batch_reader rdr) {
     };
 }
 
-} // namespace cloud_topics::details
+} // namespace experimental::cloud_topics::details

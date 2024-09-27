@@ -51,5 +51,5 @@ inline std::error_code make_error_code(errc e) noexcept {
 } // namespace experimental::cloud_topics
 namespace std {
 template<>
-struct is_error_code_enum<cloud_topics::errc> : true_type {};
+struct is_error_code_enum<experimental::cloud_topics::errc> : true_type {};
 } // namespace std

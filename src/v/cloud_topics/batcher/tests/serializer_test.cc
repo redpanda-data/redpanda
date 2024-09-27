@@ -23,6 +23,8 @@
 
 #include <chrono>
 
+namespace cloud_topics = experimental::cloud_topics;
+
 model::record_batch_reader
 get_random_batches(int num_batches, int num_records_per_batch) { // NOLINT
     ss::circular_buffer<model::record_batch> batches;

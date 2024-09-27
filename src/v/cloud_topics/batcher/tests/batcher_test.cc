@@ -40,6 +40,8 @@
 
 inline ss::logger test_log("aggregated_uploader_gtest");
 
+namespace cloud_topics = experimental::cloud_topics;
+
 struct reader_with_content {
     chunked_vector<bytes> keys;
     chunked_vector<bytes> records;

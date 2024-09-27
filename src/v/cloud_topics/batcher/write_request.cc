@@ -12,7 +12,7 @@
 
 #include "cloud_topics/batcher/serializer.h"
 
-namespace cloud_topics::details {
+namespace experimental::cloud_topics::details {
 
 template<class Clock>
 write_request<Clock>::write_request(
@@ -61,4 +61,4 @@ bool write_request<Clock>::has_expired() const noexcept {
 
 template struct write_request<ss::lowres_clock>;
 template struct write_request<ss::manual_clock>;
-} // namespace cloud_topics::details
+} // namespace experimental::cloud_topics::details

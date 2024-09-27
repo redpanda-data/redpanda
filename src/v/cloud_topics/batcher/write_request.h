@@ -20,7 +20,7 @@
 
 #include <seastar/core/weak_ptr.hh>
 
-namespace cloud_topics::details {
+namespace experimental::cloud_topics::details {
 
 using batcher_req_index = named_type<int64_t, struct batcher_req_index_tag>;
 
@@ -76,4 +76,4 @@ template<class Clock>
 using write_request_list
   = intrusive_list<write_request<Clock>, &write_request<Clock>::_hook>;
 
-} // namespace cloud_topics::details
+} // namespace experimental::cloud_topics::details
