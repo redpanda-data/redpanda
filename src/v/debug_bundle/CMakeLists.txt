@@ -3,6 +3,7 @@ v_cc_library(
     SRCS
       debug_bundle_service.cc
       error.cc
+      probe.cc
       types.cc
       utils.cc
     DEPS
