@@ -19,13 +19,8 @@ namespace experimental::cloud_topics::details {
 /// Construct iobuf out of record_batch_reader.
 /// Works for single ntp.
 struct serializing_consumer {
-    explicit serializing_consumer(
-      iobuf* output_buf, chunked_vector<lw_placeholder>* batches)
-      : _output(output_buf)
-      , _batches(batches) {}
-
     ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-        auto offset = _output->size_bytes();
+        auto offset = _output.size_bytes();
         auto base = batch.base_offset();
         auto num_records = batch.header().record_count;
         auto tmp_copy = batch.copy();
@@ -34,10 +29,10 @@ struct serializing_consumer {
         auto rec_iobuf = std::move(batch).release_data();
 
         // Propagate to the output
-        _output->append(std::move(hdr_iobuf));
-        _output->append(std::move(rec_iobuf));
-        auto batch_size = _output->size_bytes() - offset;
-        _batches->push_back({
+        _output.append(std::move(hdr_iobuf));
+        _output.append(std::move(rec_iobuf));
+        auto batch_size = _output.size_bytes() - offset;
+        _batches.push_back({
           .num_records = num_records,
           .base = base,
           .size_bytes = batch_size,
@@ -48,24 +43,21 @@ struct serializing_consumer {
           ss::stop_iteration::no);
     }
 
-    bool end_of_stream() const { return false; }
+    serialized_chunk end_of_stream() {
+        return {
+          .payload = std::move(_output),
+          .batches = std::move(_batches),
+        };
+    }
 
-    iobuf* _output;
-    chunked_vector<lw_placeholder>* _batches;
+    iobuf _output;
+    chunked_vector<lw_placeholder> _batches;
 };
 
 ss::future<serialized_chunk>
 serialize_in_memory_record_batch_reader(model::record_batch_reader rdr) {
-    iobuf payload;
-    chunked_vector<lw_placeholder> batches;
-    serializing_consumer cons(&payload, &batches);
-    // The result can be ignored because 'serializing_consumer::end_of_stream'
-    // always returns 'false'
-    std::ignore = co_await std::move(rdr).consume(cons, model::no_timeout);
-    co_return serialized_chunk{
-      .payload = std::move(payload),
-      .batches = std::move(batches),
-    };
+    co_return co_await std::move(rdr).consume(
+      serializing_consumer{}, model::no_timeout);
 }
 
 } // namespace experimental::cloud_topics::details
