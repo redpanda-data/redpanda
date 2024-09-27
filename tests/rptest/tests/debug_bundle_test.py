@@ -14,13 +14,26 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin, DebugBundleStartConfig, DebugBundleStartConfigParams
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig
 from rptest.tests.redpanda_test import RedpandaTest
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'admin_api_server': 'trace',
+                               'debug-bundle-service': 'trace'
+                           })
 
 
 class DebugBundleTest(RedpandaTest):
     """
     Smoke test for debug bundle admin API
     """
+    def __init__(self, context, num_brokers=1, **kwargs) -> None:
+        super(DebugBundleTest, self).__init__(context,
+                                              num_brokers=num_brokers,
+                                              log_config=log_config,
+                                              **kwargs)
+
     @cluster(num_nodes=1)
     @matrix(ignore_none=[True, False])
     def test_post_debug_bundle(self, ignore_none: bool):
