@@ -20,6 +20,6 @@ class caching_runtime;
 class logger;
 } // namespace wasm
 
-namespace schema_registry {
+namespace schema {
 class registry;
 }

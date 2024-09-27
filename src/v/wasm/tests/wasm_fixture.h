@@ -25,7 +25,9 @@
 #include <memory>
 #include <vector>
 
-class fake_schema_registry;
+namespace schema {
+class fake_registry;
+}
 
 class WasmTestFixture : public ::testing::Test {
 public:
@@ -70,7 +72,7 @@ private:
     ss::shared_ptr<wasm::factory> _factory;
     ss::shared_ptr<wasm::engine> _engine;
     std::unique_ptr<wasm::transform_probe> _probe;
-    fake_schema_registry* _sr;
+    schema::fake_registry* _sr;
     model::transform_metadata _meta;
     std::vector<ss::sstring> _log_lines;
 };
