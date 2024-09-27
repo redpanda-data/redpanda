@@ -194,10 +194,6 @@ ss::future<> feature_manager::stop() {
     co_await _gate.close();
 }
 
-bool feature_manager::license_required_feature_enabled() const {
-    return report_enterprise_features().any();
-}
-
 features::enterprise_feature_report
 feature_manager::report_enterprise_features() const {
     const auto& cfg = config::shard_local_cfg();
@@ -268,16 +264,19 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         }
     }
     if (_feature_table.local().is_active(features::feature::license)) {
-        if (license_required_feature_enabled()) {
+        auto enterprise_features = report_enterprise_features();
+        if (enterprise_features.any()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
                   clusterlog.warn,
-                  "Looks like you’ve enabled a Redpanda Enterprise feature(s) "
-                  "without a valid license. Please enter an active Redpanda "
-                  "license key (e.g. rpk cluster license set <key>). If you "
-                  "don’t have one, please request a new/trial license at "
-                  "https://redpanda.com/license-request");
+                  "A Redpanda Enterprise Edition license is required to use "
+                  "enterprise features: ([{}]). Enter an active license key "
+                  "(for example, rpk cluster license set <key>). To request a "
+                  "license, see https://redpanda.com/license-request. For more "
+                  "information, see "
+                  "https://docs.redpanda.com/current/get-started/licenses.",
+                  enterprise_features.enabled());
             }
         }
     }

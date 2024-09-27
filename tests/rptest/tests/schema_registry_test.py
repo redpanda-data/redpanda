@@ -3843,7 +3843,8 @@ class SchemaRegistryLicenseTest(RedpandaTest):
         })
 
     def _has_license_nag(self):
-        return self.redpanda.search_log_any("Enterprise feature(s).*")
+        return self.redpanda.search_log_any(
+            "license is required to use enterprise features")
 
     def _license_nag_is_set(self):
         return self.redpanda.search_log_all(

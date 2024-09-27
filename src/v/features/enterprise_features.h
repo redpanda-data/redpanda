@@ -45,6 +45,27 @@ public:
     bool test(license_required_feature);
     range enabled() const { return _enabled; }
     range disabled() const { return _disabled; }
+
+    // This method returns true if there are any feature(s) enabled that require
+    // the enterprise license.  Currently the following features require a
+    // license:
+    // +-------------+---------------------------------+---------------+
+    // | Config Type | Config Name                     | Value(s)      |
+    // +-------------+---------------------------------+---------------+
+    // | Cluster     | `audit_enabled`                 | `true`        |
+    // | Cluster     | `cloud_storage_enabled`         | `true`        |
+    // | Cluster     | `partition_auto_balancing_mode` | `continuous`  |
+    // | Cluster     | `core_balancing_continous`      | `true`        |
+    // | Cluster     | `sasl_mechanisms`               | `GSSAPI`      |
+    // | Cluster     | `sasl_mechanisms`               | `OAUTHBEARER` |
+    // | Cluster     | `http_authentication`           | `OIDC`        |
+    // | Cluster     | `enable_schema_id_validation`   | `redpanda`    |
+    // | Cluster     | `enable_schema_id_validation`   | `compat`      |
+    // | Node        | `fips_mode`                     | `enabled`     |
+    // | Node        | `fips_mode`                     | `permissive`  |
+    // +-------------+---------------------------------+---------------+
+    //
+    // Also if there are any non default roles in the role store.
     bool any() const { return !_enabled.empty(); }
 
 private:
