@@ -2553,6 +2553,10 @@ class RedpandaService(RedpandaServiceBase):
 
         self._expect_max_controller_records = 1000
 
+    def redpanda_env_preamble(self):
+        # Pass environment variables via FOO=BAR shell expressions
+        return " ".join([f"{k}={v}" for (k, v) in self._environment.items()])
+
     def set_seed_servers(self, node_list):
         assert len(node_list) > 0
         self._seed_servers = node_list
@@ -2961,9 +2965,7 @@ class RedpandaService(RedpandaServiceBase):
                 dict(LLVM_PROFILE_FILE=
                      f"\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\""))
 
-        # Pass environment variables via FOO=BAR shell expressions
-        env_preamble = " ".join(
-            [f"{k}={v}" for (k, v) in self._environment.items()])
+        env_preamble = self.redpanda_env_preamble()
 
         cmd = (
             f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
@@ -3879,7 +3881,8 @@ class RedpandaService(RedpandaServiceBase):
         """
         Returns the redpanda binary version as a string.
         """
-        version_cmd = f"{self.find_binary('redpanda')} --version"
+        env_preamble = self.redpanda_env_preamble()
+        version_cmd = f"{env_preamble} {self.find_binary('redpanda')} --version"
         VERSION_LINE_RE = re.compile(".*(v\\d+\\.\\d+\\.\\d+).*")
         # NOTE: not all versions of Redpanda support the --version field, even
         # though they print out the version.
