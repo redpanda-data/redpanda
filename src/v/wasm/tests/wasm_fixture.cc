@@ -20,6 +20,7 @@
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "schema/registry.h"
+#include "schema/tests/fake_registry.h"
 #include "storage/record_batch_builder.h"
 #include "wasm/engine.h"
 #include "wasm/tests/wasm_fixture.h"
@@ -41,81 +42,7 @@ using namespace std::chrono_literals;
 namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
 static ss::logger dummy_logger("wasm_test_logger");
-
-namespace ppsr = pandaproxy::schema_registry;
-
 } // namespace
-
-// this is a fake schema registry that works enough for the tests we need to do
-// with wasm.
-class fake_schema_registry : public schema::registry {
-public:
-    bool is_enabled() const override { return true; };
-
-    ss::future<ppsr::canonical_schema_definition>
-    get_schema_definition(ppsr::schema_id id) const override {
-        for (const auto& s : _schemas) {
-            if (s.id == id) {
-                co_return s.schema.def().share();
-            }
-        }
-        throw std::runtime_error("unknown schema id");
-    }
-    ss::future<ppsr::subject_schema> get_subject_schema(
-      ppsr::subject sub,
-      std::optional<ppsr::schema_version> version) const override {
-        std::optional<ppsr::subject_schema> found;
-        for (const auto& s : _schemas) {
-            if (s.schema.sub() != sub) {
-                continue;
-            }
-            if (version && *version != s.version) {
-                continue;
-            }
-            if (found && found->version > s.version) {
-                continue;
-            }
-            found.emplace(s.share());
-        }
-        co_return std::move(found).value();
-    }
-
-    ss::future<ppsr::schema_id>
-    create_schema(ppsr::unparsed_schema unparsed) override {
-        // This is wrong, but simple for our testing.
-        for (const auto& s : _schemas) {
-            if (s.schema.def().raw()() == unparsed.def().raw()()) {
-                co_return s.id;
-            }
-        }
-        auto version = ppsr::schema_version(0);
-        for (const auto& s : _schemas) {
-            if (s.schema.sub() == unparsed.sub()) {
-                version = std::max(version, s.version);
-            }
-        }
-        // TODO: validate references too
-        auto [sub, unparsed_def] = std::move(unparsed).destructure();
-        auto [def, type, refs] = std::move(unparsed_def).destructure();
-        _schemas.push_back({
-          .schema = ppsr::canonical_schema(
-            std::move(sub),
-            ppsr::canonical_schema_definition(
-              ppsr::canonical_schema_definition::raw_string{std::move(def)()},
-              type,
-              std::move(refs))),
-          .version = version + 1,
-          .id = ppsr::schema_id(int32_t(_schemas.size() + 1)),
-          .deleted = ppsr::is_deleted::no,
-        });
-        co_return _schemas.back().id;
-    }
-
-    const std::vector<ppsr::subject_schema>& get_all() { return _schemas; }
-
-private:
-    std::vector<ppsr::subject_schema> _schemas;
-};
 
 void WasmTestFixture::SetUpTestSuite() {
     // This is a bit of a hack to set the signal set for the ss::async thread
@@ -137,7 +64,7 @@ void WasmTestFixture::SetUpTestSuite() {
 
 void WasmTestFixture::SetUp() {
     _probe = std::make_unique<wasm::transform_probe>();
-    auto sr = std::make_unique<fake_schema_registry>();
+    auto sr = std::make_unique<schema::fake_registry>();
     _sr = sr.get();
     _runtime = wasm::wasmtime::create_runtime(std::move(sr));
     // Support creating up to 4 instances in a test
