@@ -35,6 +35,7 @@ redpanda_cc_library(
         "//src/v/cloud_io:remote",
         "//src/v/cluster",
         "//src/v/cluster:notification",
+        "//src/v/container:fragmented_vector",
         "//src/v/kafka/server",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/model",

@@ -16,6 +16,7 @@
 #include "cluster/notification.h"
 #include "cluster/partition.h"
 #include "cluster/partition_manager.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -107,7 +108,7 @@ private:
      */
     struct object {
         iobuf data;
-        std::vector<object_range_info> ranges;
+        chunked_vector<object_range_info> ranges;
 
         // add a range from the given partition
         void add(range, const attached_partition&);
