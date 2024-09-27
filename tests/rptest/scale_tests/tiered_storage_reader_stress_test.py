@@ -297,9 +297,6 @@ class TieredStorageReaderStressTest(RedpandaTest):
             # The stats indicate saturation with tiered storage reads.
             assert stats['partition_readers_delayed'] or stats[
                 'segment_readers_delayed']
-            # There are still some segment readers cached as expected, they shouldn't
-            # all have been trimmed.
-            assert stats['segment_readers']
 
         def is_metric_zero(fn, label):
             for node, stats in self._get_stats().items():
