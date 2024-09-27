@@ -33,8 +33,6 @@ namespace debug_bundle {
  */
 class service final : public ss::peering_sharded_service<service> {
 public:
-    /// Default shard operations will be performed on
-    static constexpr ss::shard_id service_shard = 0;
     /// Name of the debug bundle directory
     static constexpr std::string_view debug_bundle_dir_name = "debug-bundle";
     /// Key used to store metadata in the kvstore
