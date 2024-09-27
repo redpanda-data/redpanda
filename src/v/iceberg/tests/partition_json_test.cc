@@ -14,15 +14,6 @@
 
 using namespace iceberg;
 
-namespace {
-ss::sstring spec_to_json_str(const partition_spec& s) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, s);
-    return buf.GetString();
-}
-} // namespace
-
 TEST(PartitionJsonSerde, TestEmptyPartitionSpec) {
     const auto test_str = R"(
         {
@@ -36,7 +27,7 @@ TEST(PartitionJsonSerde, TestEmptyPartitionSpec) {
     ASSERT_EQ(1, parsed.spec_id());
     ASSERT_TRUE(parsed.fields.empty());
 
-    const auto parsed_orig_as_str = spec_to_json_str(parsed);
+    const auto parsed_orig_as_str = iceberg::to_json_str(parsed);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip = parse_partition_spec(parsed_roundtrip_json);
@@ -84,7 +75,7 @@ TEST(PartitionJsonSerde, TestPartitionSpec) {
     ASSERT_EQ(bucket_transform{16}, parsed.fields[1].transform);
     ASSERT_EQ(truncate_transform{4}, parsed.fields[2].transform);
 
-    const auto parsed_orig_as_str = spec_to_json_str(parsed);
+    const auto parsed_orig_as_str = to_json_str(parsed);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip = parse_partition_spec(parsed_roundtrip_json);

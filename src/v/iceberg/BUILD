@@ -64,6 +64,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "json_writer",
+    hdrs = [
+        "json_writer.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/json",
+        "//src/v/strings:utf8",
+    ],
+)
+
+redpanda_cc_library(
     name = "datatypes",
     srcs = [
         "datatypes.cc",
@@ -93,6 +105,7 @@ redpanda_cc_library(
     deps = [
         ":datatypes",
         ":json_utils",
+        ":json_writer",
         "//src/v/json",
         "//src/v/strings:string_switch",
     ],
@@ -335,6 +348,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":json_utils",
+        ":json_writer",
         ":transform_json",
         "//src/v/strings:string_switch",
     ],
@@ -458,6 +472,7 @@ redpanda_cc_library(
         ":datatypes",
         ":datatypes_json",
         ":json_utils",
+        ":json_writer",
         ":schema",
         "//src/v/json",
     ],
@@ -487,6 +502,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":json_utils",
+        ":json_writer",
         "//src/v/model",
         "//src/v/strings:string_switch",
         "@abseil-cpp//absl/container:btree",
@@ -536,6 +552,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
+        ":json_writer",
         ":table_metadata",
         "//src/v/json",
     ],

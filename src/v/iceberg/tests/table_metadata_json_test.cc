@@ -7,21 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "iceberg/json_writer.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/table_metadata_json.h"
 
 #include <gtest/gtest.h>
 
 using namespace iceberg;
-
-namespace {
-ss::sstring meta_to_json_str(const table_metadata& m) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, m);
-    return buf.GetString();
-}
-} // namespace
 
 TEST(TableMetadataJsonSerde, TestTableMetadata) {
     // This metadata was mostly taken from the Iceberg Rust project.
@@ -131,7 +123,7 @@ TEST(TableMetadataJsonSerde, TestTableMetadata) {
     ASSERT_TRUE(parsed.refs->contains("main"));
     ASSERT_TRUE(parsed.refs->contains("foo"));
 
-    const auto parsed_orig_as_str = meta_to_json_str(parsed);
+    const auto parsed_orig_as_str = iceberg::to_json_str(parsed);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip = parse_table_meta(parsed_roundtrip_json);
@@ -204,7 +196,7 @@ TEST(TableMetadataJsonSerde, TestTableMetadataNoOptionals) {
     ASSERT_EQ(3, parsed.sort_orders[0].order_id());
     ASSERT_EQ(2, parsed.sort_orders[0].fields.size());
 
-    const auto parsed_orig_as_str = meta_to_json_str(parsed);
+    const auto parsed_orig_as_str = iceberg::to_json_str(parsed);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip = parse_table_meta(parsed_roundtrip_json);

@@ -8,11 +8,9 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "iceberg/json_writer.h"
 #include "iceberg/snapshot.h"
-#include "json/_include_first.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
 
 namespace iceberg {
 
@@ -23,9 +21,8 @@ snapshot_reference parse_snapshot_ref(const json::Value&);
 
 namespace json {
 
+void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s);
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot& s);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot_reference& s);
+  iceberg::json_writer& w, const iceberg::snapshot_reference& s);
 
 } // namespace json

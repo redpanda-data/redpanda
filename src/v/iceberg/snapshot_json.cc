@@ -141,8 +141,7 @@ snapshot_reference parse_snapshot_ref(const json::Value& v) {
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot& s) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s) {
     w.StartObject();
     w.Key("snapshot-id");
     w.Int64(s.id());
@@ -174,7 +173,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot_reference& s) {
+  iceberg::json_writer& w, const iceberg::snapshot_reference& s) {
     w.StartObject();
     w.Key("snapshot-id");
     w.Int64(s.snapshot_id());

@@ -51,7 +51,7 @@ partition_spec parse_partition_spec(const json::Value& v) {
 namespace json {
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::partition_field& m) {
+  iceberg::json_writer& w, const iceberg::partition_field& m) {
     w.StartObject();
     w.Key("source-id");
     w.Int(m.source_id());
@@ -65,7 +65,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::partition_spec& m) {
+  iceberg::json_writer& w, const iceberg::partition_spec& m) {
     w.StartObject();
     w.Key("spec-id");
     w.Int(m.spec_id());

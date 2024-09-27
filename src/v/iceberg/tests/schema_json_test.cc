@@ -7,24 +7,15 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "iceberg/json_writer.h"
 #include "iceberg/schema.h"
 #include "iceberg/schema_json.h"
 #include "iceberg/tests/test_schemas.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
 
 #include <gtest/gtest.h>
 
 using namespace iceberg;
-
-namespace {
-ss::sstring schema_to_json_str(const schema& t) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, t);
-    return buf.GetString();
-}
-} // namespace
 
 TEST(SchemaJsonSerde, TestNestedSchema) {
     json::Document parsed_orig_json;
@@ -38,7 +29,7 @@ TEST(SchemaJsonSerde, TestNestedSchema) {
     ASSERT_EQ(parsed_schema.identifier_field_ids.size(), 1);
     ASSERT_EQ((*parsed_schema.identifier_field_ids.begin())(), 1);
 
-    const ss::sstring parsed_orig_as_str = schema_to_json_str(parsed_schema);
+    const ss::sstring parsed_orig_as_str = to_json_str(parsed_schema);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     auto parsed_roundtrip_schema = parse_schema(parsed_roundtrip_json);

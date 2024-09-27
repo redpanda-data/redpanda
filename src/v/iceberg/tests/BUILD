@@ -55,6 +55,7 @@ redpanda_cc_gtest(
         ":test_schemas",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:datatypes_json",
+        "//src/v/iceberg:json_writer",
         "//src/v/json",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
@@ -183,6 +184,7 @@ redpanda_cc_gtest(
         "partition_json_test.cc",
     ],
     deps = [
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:partition",
         "//src/v/iceberg:partition_json",
         "//src/v/test_utils:gtest",
@@ -264,6 +266,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":test_schemas",
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:schema",
         "//src/v/iceberg:schema_json",
         "//src/v/json",
@@ -293,6 +296,7 @@ redpanda_cc_gtest(
         "snapshot_json_test.cc",
     ],
     deps = [
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:snapshot",
         "//src/v/iceberg:snapshot_json",
         "//src/v/json",
@@ -323,6 +327,7 @@ redpanda_cc_gtest(
         "table_metadata_json_test.cc",
     ],
     deps = [
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:table_metadata",
         "//src/v/iceberg:table_metadata_json",
         "//src/v/test_utils:gtest",

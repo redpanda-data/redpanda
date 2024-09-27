@@ -8,11 +8,9 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "iceberg/json_writer.h"
 #include "iceberg/schema.h"
-#include "json/_include_first.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
 
 namespace iceberg {
 
@@ -22,7 +20,6 @@ schema parse_schema(const json::Value&);
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::schema& s);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::schema& s);
 
 } // namespace json
