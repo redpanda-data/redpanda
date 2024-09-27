@@ -218,6 +218,8 @@ public:
     static ss::future<>
     remove_kvstore_state(const model::ntp&, storage::kvstore&);
 
+    size_t max_segment_size() const;
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -322,7 +324,6 @@ private:
     size_t get_log_truncation_counter() const noexcept override;
 
 private:
-    size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
     // configuration. This takes into consideration any segment size
     // overrides since the last time it was called.
