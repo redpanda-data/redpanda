@@ -16,6 +16,22 @@
 
 namespace experimental::cloud_topics::details {
 
+lw_placeholder::lw_placeholder(
+  int32_t num_records,
+  model::offset base_offset,
+  // NOLINTNEXTLINE
+  uint64_t size_bytes,
+  uint64_t physical_offset) noexcept
+  : num_records(num_records)
+  , base(base_offset)
+  , size_bytes(size_bytes)
+  , physical_offset(physical_offset) {}
+
+serialized_chunk::serialized_chunk(
+  iobuf payload, chunked_vector<lw_placeholder> batches) noexcept
+  : payload(std::move(payload))
+  , batches(std::move(batches)) {}
+
 /// Construct iobuf out of record_batch_reader.
 /// Works for single ntp.
 struct serializing_consumer {
@@ -31,22 +47,14 @@ struct serializing_consumer {
         _output.append(std::move(hdr_iobuf));
         _output.append(std::move(rec_iobuf));
         auto batch_size = _output.size_bytes() - offset;
-        _batches.push_back({
-          .num_records = num_records,
-          .base = base,
-          .size_bytes = batch_size,
-          .physical_offset = offset,
-        });
+        _batches.emplace_back(num_records, base, batch_size, offset);
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
 
     serialized_chunk end_of_stream() {
-        return {
-          .payload = std::move(_output),
-          .batches = std::move(_batches),
-        };
+        return {std::move(_output), std::move(_batches)};
     }
 
     iobuf _output;

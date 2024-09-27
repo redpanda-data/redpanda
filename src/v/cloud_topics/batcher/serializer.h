@@ -21,6 +21,9 @@ namespace experimental::cloud_topics::details {
 /// It's needed to produce the actual placeholder
 /// batch.
 struct lw_placeholder { // NOLINT
+    // TODO use stronger types
+    lw_placeholder(int32_t, model::offset, uint64_t, uint64_t) noexcept;
+
     int32_t num_records;
     model::offset base;
     uint64_t size_bytes;
@@ -34,6 +37,9 @@ struct lw_placeholder { // NOLINT
 /// is supposed to be used to create placeholder batches
 /// (one placeholder is created for every raft_data batch)
 struct serialized_chunk {
+    serialized_chunk() noexcept = default;
+    serialized_chunk(iobuf, chunked_vector<lw_placeholder>) noexcept;
+
     iobuf payload;
     chunked_vector<lw_placeholder> batches;
 };
