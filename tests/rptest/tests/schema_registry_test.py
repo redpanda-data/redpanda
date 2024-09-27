@@ -1073,6 +1073,19 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result = result_raw.json()
         # assert result["schema"] == json.dumps(schema_def)
 
+        self.logger.debug(
+            "Post schema 1 with escape chars in the subject name")
+        name = f"{topic}%25252fkey"
+        name_quoted = urllib.parse.quote(name)
+        result_raw = self._post_subjects_subject_versions(subject=name_quoted,
+                                                          data=schema_1_data)
+        self.logger.warn(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        result_raw = self._get_subjects_subject_versions(subject=name_quoted)
+        assert result_raw.status_code == requests.codes.ok
+        subjs = self._get_subjects().json()
+        assert name in subjs, f"Expected '{name}' in subjects response, got {json.dumps(subjs, indent=1)}"
+
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_version_many(self):
         """
