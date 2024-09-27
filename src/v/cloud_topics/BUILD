@@ -1,6 +1,6 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-package(default_visibility = ["//src/v/cloud_topics/tests:__pkg__"])
+package(default_visibility = ["//src/v/cloud_topics/tests:__pkg__", "//src/v/cloud_topics/batcher:__pkg__"])
 
 redpanda_cc_library(
     name = "logger",
