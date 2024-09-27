@@ -830,7 +830,8 @@ ss::future<> backend::handle_raft0_leadership_update() {
         // start coordinating
         for (auto& [id, mrstate] : _migration_states) {
             for (auto& [nt, tstate] : mrstate.outstanding_topics) {
-                co_await reconcile_topic(nt, tstate, id, mrstate.scope, false);
+                co_await reconcile_existing_topic(
+                  nt, tstate, id, mrstate.scope, false);
             }
         }
         // resend advance requests
@@ -949,7 +950,8 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
     tstate.clear();
     // We potentially re-enqueue an already coordinated partition here.
     // The first RPC reply will clear it.
-    co_await reconcile_topic(nt, tstate, migration_id, mrstate.scope, false);
+    co_await reconcile_existing_topic(
+      nt, tstate, migration_id, mrstate.scope, false);
 
     // local partition work
     if (has_local_replica(delta.ntp)) {
@@ -1148,7 +1150,7 @@ ss::future<> backend::drop_migration_reconciliation_rstate(
     _migration_states.erase(rs_it);
 }
 
-ss::future<> backend::reconcile_topic(
+ss::future<> backend::reconcile_existing_topic(
   const model::topic_namespace& nt,
   topic_reconciliation_state& tstate,
   id migration,
@@ -1269,15 +1271,23 @@ ss::future<> backend::reconcile_migration(
                   enumerated_nts,
                   [this, &metadata, &mrstate](const auto& idx_nt) {
                       auto& [idx, nt] = idx_nt;
-                      auto& tstate = mrstate.outstanding_topics[nt];
-                      tstate.idx_in_migration = idx;
-                      _topic_migration_map.emplace(nt, metadata.id);
-                      return reconcile_topic(
-                        nt, tstate, metadata.id, mrstate.scope, true);
+                      return reconcile_topic(metadata.id, idx, nt, mrstate);
                   });
             });
       },
       metadata.migration);
+}
+
+ss::future<> backend::reconcile_topic(
+  const id migration_id,
+  size_t idx_in_migration,
+  const model::topic_namespace& nt,
+  migration_reconciliation_state& mrstate) {
+    auto& tstate = mrstate.outstanding_topics[nt];
+    tstate.idx_in_migration = idx_in_migration;
+    _topic_migration_map.emplace(nt, migration_id);
+    co_return co_await reconcile_existing_topic(
+      nt, tstate, migration_id, mrstate.scope, true);
 }
 
 std::optional<std::reference_wrapper<backend::replica_work_state>>
