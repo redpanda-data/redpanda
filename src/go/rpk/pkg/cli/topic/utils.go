@@ -52,7 +52,7 @@ func parseKVs(in []string) (map[string]string, error) {
 
 func regexTopics(adm *kadm.Client, expressions []string) ([]string, error) {
 	// Now we list all topics to match against our expressions.
-	topics, err := adm.ListTopics(context.Background())
+	topics, err := adm.ListTopicsWithInternal(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("unable to list topics: %w", err)
 	}
