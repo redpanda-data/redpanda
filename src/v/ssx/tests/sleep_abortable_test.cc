@@ -31,6 +31,14 @@ SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort1) {
     BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
 }
 
+SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort1_pre) {
+    ss::abort_source as;
+
+    as.request_abort();
+    auto fut = ssx::sleep_abortable(1000s, as);
+    BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
+}
+
 SEASTAR_THREAD_TEST_CASE(sleep_abortable_normal1) {
     ss::abort_source as;
     ssx::sleep_abortable(10ms, as).get();
@@ -51,6 +59,15 @@ SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort2) {
     BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
 }
 
+SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort2_pre) {
+    ss::abort_source as1;
+    ss::abort_source as2;
+
+    as1.request_abort();
+    auto fut = ssx::sleep_abortable(1000s, as1, as2);
+    BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
+}
+
 SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort3) {
     ss::abort_source as1, as2, as3;
 
@@ -60,11 +77,26 @@ SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort3) {
     BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
 }
 
+SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort3_pre) {
+    ss::abort_source as1, as2, as3;
+
+    as3.request_abort();
+    auto fut = ssx::sleep_abortable(1000s, as1, as2, as3);
+    BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
+}
+
 SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort4) {
     ss::abort_source as1, as2, as3, as4;
     auto fut = ssx::sleep_abortable(1000s, as1, as2, as3, as4);
     ss::sleep(100ms).get();
     as2.request_abort();
+    BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
+}
+
+SEASTAR_THREAD_TEST_CASE(sleep_abortable_abort4_pre) {
+    ss::abort_source as1, as2, as3, as4;
+    as2.request_abort();
+    auto fut = ssx::sleep_abortable(1000s, as1, as2, as3, as4);
     BOOST_REQUIRE_THROW(fut.get(), ss::sleep_aborted);
 }
 
