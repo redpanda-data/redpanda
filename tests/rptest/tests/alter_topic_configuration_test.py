@@ -10,6 +10,7 @@
 import random
 import string
 import subprocess
+from rptest.services.admin import Admin
 from rptest.clients.kcl import RawKCL
 from rptest.utils.si_utils import BucketView, NT
 from ducktape.utils.util import wait_until
@@ -290,13 +291,39 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         assert altered_output["redpanda.remote.read"] == "false"
         assert altered_output["redpanda.remote.write"] == "false"
 
-        # delete topic configs (value from configuration should be used)
+        # Assert cluster values are both True
+        admin = Admin(self.redpanda)
+        cluster_conf = admin.get_cluster_config()
+        assert cluster_conf['cloud_storage_enable_remote_read'] == True
+        assert cluster_conf['cloud_storage_enable_remote_write'] == True
+
+        # delete topic configs (value from cluster configuration should be used)
         self.client().delete_topic_config(topic, "redpanda.remote.read")
         self.client().delete_topic_config(topic, "redpanda.remote.write")
+
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
         assert altered_output["redpanda.remote.read"] == "true"
         assert altered_output["redpanda.remote.write"] == "true"
+
+        # Set cluster values to False
+        self.redpanda.set_cluster_config({
+            'cloud_storage_enable_remote_read':
+            False,
+            'cloud_storage_enable_remote_write':
+            False
+        })
+        cluster_conf = admin.get_cluster_config()
+        assert cluster_conf['cloud_storage_enable_remote_read'] == False
+        assert cluster_conf['cloud_storage_enable_remote_write'] == False
+
+        # delete topic configs (value from cluster configuration should be used)
+        self.client().delete_topic_config(topic, "redpanda.remote.read")
+        self.client().delete_topic_config(topic, "redpanda.remote.write")
+
+        altered_output = self.client().describe_topic_configs(topic)
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "false"
 
     @cluster(num_nodes=3)
     def test_topic_manifest_reupload(self):

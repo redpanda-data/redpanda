@@ -599,6 +599,10 @@ struct incremental_topic_updates
     property_update<tristate<size_t>> retention_local_target_bytes;
     property_update<tristate<std::chrono::milliseconds>>
       retention_local_target_ms;
+    property_update<bool> remote_read{
+      false, incremental_update_operation::none};
+    property_update<bool> remote_write{
+      false, incremental_update_operation::none};
     property_update<bool> remote_delete{
       false, incremental_update_operation::none};
     property_update<tristate<std::chrono::milliseconds>> segment_ms;
@@ -665,7 +669,9 @@ struct incremental_topic_updates
           flush_ms,
           flush_bytes,
           iceberg_enabled,
-          leaders_preference);
+          leaders_preference,
+          remote_read,
+          remote_write);
     }
 
     friend std::ostream&
@@ -676,6 +682,8 @@ struct incremental_topic_updates
       = default;
 
 private:
+    // This field is kept here for legacy purposes, but should be considered
+    // deprecated in favour of remote_read and remote_write.
     property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
 };
 

@@ -137,6 +137,8 @@ ss::future<> cloud_storage_config::do_mutate() {
 
             update.properties.get_shadow_indexing() = make_property_set(
               std::make_optional(mode));
+            update.properties.remote_read = make_property_set(remote_read);
+            update.properties.remote_write = make_property_set(remote_write);
 
             vlog(
               featureslog.info, "Updating tiered storage topic {}", i.first.tp);

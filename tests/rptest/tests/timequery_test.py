@@ -56,11 +56,14 @@ class BaseTimeQuery:
 
         if cloud_storage:
             for k, v in {
-                    'redpanda.remote.read': True,
-                    'redpanda.remote.write': True,
+                    'redpanda.remote.read': 'true',
+                    'redpanda.remote.write': 'true',
                     'retention.local.target.bytes': local_retention
             }.items():
                 self.client().alter_topic_config(topic.name, k, v)
+            desc = self.client().describe_topic_configs(topic.name)
+            assert desc['redpanda.remote.read'] == 'true'
+            assert desc['redpanda.remote.write'] == 'true'
 
         # Configure topic to trust client-side timestamps, so that
         # we can generate fake ones for the test
