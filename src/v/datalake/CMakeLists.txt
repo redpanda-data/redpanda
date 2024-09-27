@@ -13,6 +13,7 @@ v_cc_library(
     record_multiplexer.cc
     schemaless_translator.cc
     schema_protobuf.cc
+    protobuf_utils.cc
   DEPS
     v::datalake_coordinator
     v::storage

@@ -14,6 +14,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "protobuf_utils",
+    srcs = [
+        "protobuf_utils.cc",
+    ],
+    hdrs = [
+        "protobuf_utils.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "@protobuf",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_protobuf",
     srcs = [
         "schema_protobuf.cc",
@@ -25,6 +40,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":conversion_outcome",
+        ":protobuf_utils",
         "//src/v/iceberg:datatypes",
         "@fmt",
         "@protobuf",
