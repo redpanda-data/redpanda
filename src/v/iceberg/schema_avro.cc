@@ -188,8 +188,8 @@ avro::Schema field_to_avro(const nested_field& field) {
 }
 
 avro::Schema
-struct_type_to_avro(const struct_type& type, const ss::sstring& name) {
-    avro::RecordSchema avro_schema(name);
+struct_type_to_avro(const struct_type& type, std::string_view name) {
+    avro::RecordSchema avro_schema(std::string{name});
     const auto& fields = type.fields;
     for (const auto& field_ptr : fields) {
         const auto child_schema = field_to_avro(*field_ptr);

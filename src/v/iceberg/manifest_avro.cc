@@ -35,9 +35,9 @@
 namespace iceberg {
 
 namespace {
-schema schema_from_str(const std::string& s) {
+schema schema_from_str(std::string_view s) {
     json::Document parsed_schema;
-    parsed_schema.Parse(s);
+    parsed_schema.Parse(s.data(), s.size());
     return parse_schema(parsed_schema);
 }
 

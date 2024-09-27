@@ -18,6 +18,6 @@ namespace iceberg {
 // NOTE: while there are no complex JSON types here, the transforms are
 // expected to be serialized as a part of JSON files (e.g. table metadata).
 ss::sstring transform_to_str(const transform&);
-transform transform_from_str(const ss::sstring&);
+transform transform_from_str(std::string_view);
 
 } // namespace iceberg

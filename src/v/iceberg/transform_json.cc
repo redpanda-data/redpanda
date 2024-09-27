@@ -39,7 +39,7 @@ ss::sstring transform_to_str(const transform& t) {
     return std::visit(transform_str_visitor{}, t);
 }
 
-transform transform_from_str(const ss::sstring& s) {
+transform transform_from_str(std::string_view s) {
     if (s.starts_with("bucket")) {
         auto n_str = extract_between('[', ']', s);
         auto n = std::stoul(ss::sstring(n_str));

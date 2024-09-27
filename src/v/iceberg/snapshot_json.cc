@@ -34,7 +34,7 @@ constexpr std::string_view operation_to_str(snapshot_operation o) {
     }
 }
 
-snapshot_operation operation_from_str(const ss::sstring& operation_str) {
+snapshot_operation operation_from_str(std::string_view operation_str) {
     using enum snapshot_operation;
     return string_switch<snapshot_operation>(operation_str)
       .match(operation_to_str(append), append)
@@ -53,7 +53,7 @@ constexpr std::string_view ref_type_to_str(snapshot_ref_type t) {
     }
 }
 
-snapshot_ref_type ref_type_from_str(const ss::sstring& ref_type_str) {
+snapshot_ref_type ref_type_from_str(std::string_view ref_type_str) {
     using enum snapshot_ref_type;
     return string_switch<snapshot_ref_type>(ref_type_str)
       .match(ref_type_to_str(tag), tag)

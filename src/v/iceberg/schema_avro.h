@@ -20,7 +20,7 @@ namespace iceberg {
 // The resulting schema is annotated with Iceberg attributes (e.g. 'field-id',
 // 'element-id').
 avro::Schema field_to_avro(const nested_field& field);
-avro::Schema struct_type_to_avro(const struct_type&, const ss::sstring& name);
+avro::Schema struct_type_to_avro(const struct_type&, std::string_view name);
 
 // Translates the given Avro schema into its corresponding field/type, throwing
 // an exception if the schema is not a valid Iceberg schema (e.g. missing
