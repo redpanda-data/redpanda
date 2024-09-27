@@ -9,6 +9,6 @@
  */
 #include "cloud_topics/logger.h"
 
-namespace cloud_topics {
+namespace experimental::cloud_topics {
 seastar::logger cd_log("cloud_topics");
 }

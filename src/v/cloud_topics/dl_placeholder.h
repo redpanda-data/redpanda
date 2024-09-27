@@ -17,7 +17,7 @@
 
 // This header contains definition of the dl_placeholder batch
 
-namespace cloud_topics {
+namespace experimental::cloud_topics {
 
 struct dl_placeholder // NOLINT
   : serde::
@@ -38,4 +38,4 @@ enum class dl_placeholder_record_key {
     empty,
 };
 
-} // namespace cloud_topics
+} // namespace experimental::cloud_topics
