@@ -40,7 +40,8 @@ struct update_applying_visitor {
             if (new_last_col_id < meta.last_column_id) {
                 vlog(
                   log.error,
-                  "Expected a highest last column id, {} < {}",
+                  "Expected new last column id to be >= previous last column "
+                  "id: {} < {}",
                   new_last_col_id,
                   meta.last_column_id);
                 return outcome::unexpected_state;
