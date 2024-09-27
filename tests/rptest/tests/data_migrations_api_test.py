@@ -33,7 +33,7 @@ import requests
 
 MIGRATION_LOG_ALLOW_LIST = [
     'Error during log recovery: cloud_storage::missing_partition_exception',
-]
+] + Finjector.LOG_ALLOW_LIST
 
 
 def make_namespaced_topic(topic: str) -> NamespacedTopic:
