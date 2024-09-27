@@ -860,15 +860,19 @@ ss::future<> backend::handle_migration_update(id id) {
     auto units = co_await _mutex.get_units(_as);
     vlog(dm_log.debug, "lock acquired for data migration {} notification", id);
 
-    auto new_maybe_metadata = _table.get_migration(id);
-    auto new_state = new_maybe_metadata ? std::make_optional<state>(
-                                            new_maybe_metadata->get().state)
-                                        : std::nullopt;
+    auto new_ref = _table.get_migration(id);
+    // copying as it may go from the table on scheduling points
+    auto new_metadata = new_ref ? std::make_optional<migration_metadata>(
+                                    new_ref->get().copy())
+                                : std::nullopt;
+    auto new_state = new_metadata
+                       ? std::make_optional<state>(new_metadata->state)
+                       : std::nullopt;
     vlog(dm_log.debug, "migration {} new state is {}", id, new_state);
 
     work_scope new_scope;
-    if (new_maybe_metadata) {
-        new_scope = get_work_scope(new_maybe_metadata->get());
+    if (new_metadata) {
+        new_scope = get_work_scope(*new_metadata);
     }
 
     // forget about the migration if it went forward or is gone
@@ -900,8 +904,7 @@ ss::future<> backend::handle_migration_update(id id) {
         vlog(dm_log.debug, "creating migration {} reconciliation state", id);
         auto new_it = _migration_states.emplace_hint(old_it, id, new_scope);
         if (new_scope.topic_work_needed || new_scope.partition_work_needed) {
-            co_await reconcile_migration(
-              new_it->second, new_maybe_metadata->get());
+            co_await reconcile_migration(new_it->second, *new_metadata);
         } else {
             // yes it is done as there is nothing to do
             to_advance_if_done(new_it);
