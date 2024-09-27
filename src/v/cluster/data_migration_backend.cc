@@ -307,11 +307,10 @@ ss::future<> backend::work_once() {
         _nodes_to_retry.erase(node_id);
         co_await send_rpc(node_id);
     }
-    co_await ssx::async_for_each(
-      to_schedule_topic_work, [this](const auto& nt) {
-          _topic_work_to_retry.erase(nt);
-          return schedule_topic_work(nt);
-      });
+    for (const auto& nt : to_schedule_topic_work) {
+        _topic_work_to_retry.erase(nt);
+        co_await schedule_topic_work(nt);
+    }
     spawn_advances();
     if (next_tick == model::timeout_clock::time_point::max()) {
         _timer.cancel();
@@ -1261,20 +1260,21 @@ ss::future<> backend::reconcile_migration(
       metadata.id,
       mrstate.scope.sought_state);
     co_await std::visit(
-      [this, &metadata, &mrstate](const auto& migration) mutable {
+      [this, migration_id = metadata.id, &mrstate](
+        const auto& migration) mutable {
           return ss::do_with(
-            migration.topic_nts(),
-            [this, &metadata, &mrstate](const auto& nts) {
-                // poor man's `nts | std::views::enumerate`
-                auto enumerated_nts = std::views::transform(
-                  nts, [index = -1](const auto& nt) mutable {
-                      return std::forward_as_tuple(++index, nt);
-                  });
-                return ssx::async_for_each(
+            // poor man's `migration.topic_nts() | std::views::enumerate`
+            std::views::transform(
+              migration.topic_nts(),
+              [index = -1](const auto& nt) mutable {
+                  return std::forward_as_tuple(++index, nt);
+              }),
+            [this, migration_id, &mrstate](auto& enumerated_nts) {
+                return ss::do_for_each(
                   enumerated_nts,
-                  [this, &metadata, &mrstate](const auto& idx_nt) {
+                  [this, migration_id, &mrstate](const auto& idx_nt) {
                       auto& [idx, nt] = idx_nt;
-                      return reconcile_topic(metadata.id, idx, nt, mrstate);
+                      return reconcile_topic(migration_id, idx, nt, mrstate);
                   });
             });
       },
