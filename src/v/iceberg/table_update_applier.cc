@@ -132,7 +132,7 @@ struct update_applying_visitor {
             }
             new_list.emplace_back(std::move(snap));
         }
-        *meta.snapshots = std::move(new_list);
+        meta.snapshots = std::move(new_list);
         // TODO: once we add support for statistics, need to remove them too.
         return outcome::success;
     }
