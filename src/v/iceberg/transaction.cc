@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #include "iceberg/transaction.h"
 
+#include "iceberg/merge_append_action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_requirement.h"
 #include "iceberg/table_update_applier.h"
@@ -63,6 +64,13 @@ transaction::txn_outcome transaction::update_metadata(updates_and_reqs ur) {
 
 ss::future<transaction::txn_outcome> transaction::set_schema(schema s) {
     auto a = std::make_unique<update_schema_action>(table_, std::move(s));
+    co_return co_await apply(std::move(a));
+}
+
+ss::future<transaction::txn_outcome>
+transaction::merge_append(chunked_vector<data_file> files) {
+    auto a = std::make_unique<merge_append_action>(
+      io_, table_, std::move(files));
     co_return co_await apply(std::move(a));
 }
 
