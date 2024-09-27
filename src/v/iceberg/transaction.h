@@ -13,12 +13,8 @@
 #include "iceberg/action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_metadata.h"
-#include "iceberg/table_requirement.h"
-#include "iceberg/table_update.h"
 
 #include <seastar/core/future.hh>
-
-#include <variant>
 
 namespace iceberg {
 
