@@ -84,7 +84,7 @@ struct update_applying_visitor {
           meta.partition_specs.end(),
           [sid](const partition_spec& spec) { return spec.spec_id == sid; });
         if (s != meta.partition_specs.end()) {
-            vlog(log.error, "Partition spec id {} doesn't exist", sid);
+            vlog(log.error, "Partition spec id {} already exists", sid);
             return outcome::unexpected_state;
         }
         meta.partition_specs.emplace_back(update.spec.copy());
