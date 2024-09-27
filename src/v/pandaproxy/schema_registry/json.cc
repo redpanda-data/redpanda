@@ -345,38 +345,45 @@ try_validate_json_schema(const jsoncons::json& schema) {
 
 result<document_context> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
-    auto schema_stream = json::chunked_input_stream{
-      buf.share(0, buf.size_bytes())};
-    auto schema = json::Document{};
-    if (schema.ParseStream(schema_stream).HasParseError()) {
+    iobuf_istream is{buf.share(0, buf.size_bytes())};
+
+    auto decoder = jsoncons::json_decoder<jsoncons::json>{};
+    auto reader = jsoncons::basic_json_reader(is.istream(), decoder);
+    auto ec = std::error_code{};
+    reader.read(ec);
+    if (ec || !decoder.is_valid()) {
         // not a valid json document, return error
         return error_info{
           error_code::schema_invalid,
           fmt::format(
-            "Malformed json schema: {} at offset {}",
-            rapidjson::GetParseError_En(schema.GetParseError()),
-            schema.GetErrorOffset())};
+            "Malformed json schema: {} at line {} column {}",
+            ec ? ec.message() : "Invalid document",
+            reader.line(),
+            reader.column())};
     }
+    auto schema = decoder.get_result();
 
     // get the dialect, try to directly validate it against the appropriate
     // metaschema
     auto dialect = std::optional<json_schema_dialect>{};
 
-    if (schema.IsObject()) {
+    if (schema.is_object()) {
         // "true/false" are valid schemas so here we need to check that the
         // schema is an actual object
-        if (auto it = schema.FindMember("$schema"); it != schema.MemberEnd()) {
-            if (it->value.IsString()) {
-                dialect = from_uri(as_string_view(it->value));
+        if (auto it = schema.find("$schema");
+            it != schema.object_range().end()) {
+            if (it->value().is_string()) {
+                dialect = from_uri(it->value().as_string_view());
             }
 
-            if (it->value.IsString() == false || dialect == std::nullopt) {
+            if (it->value().is_string() == false || dialect == std::nullopt) {
                 // if present, "$schema" have to be a string, and it has to be
                 // one the implemented dialects. If not, return an error
                 return error_info{
                   error_code::schema_invalid,
                   fmt::format(
-                    "Unsupported json schema dialect: '{}'", pj{it->value})};
+                    "Unsupported json schema dialect: '{}'",
+                    jsoncons::print(it->value()))};
             }
         }
     }
@@ -384,17 +391,28 @@ result<document_context> parse_json(iobuf buf) {
     // We use jsoncons for validating the schema against the metaschema as
     // currently rapidjson doesn't support validating schemas newer than
     // draft 5.
-    iobuf_istream is{std::move(buf)};
-    auto jsoncons_schema = jsoncons::json::parse(is.istream());
     auto validation_res = dialect.has_value()
-                            ? validate_json_schema(
-                                dialect.value(), jsoncons_schema)
-                            : try_validate_json_schema(jsoncons_schema);
+                            ? validate_json_schema(dialect.value(), schema)
+                            : try_validate_json_schema(schema);
     if (validation_res.has_error()) {
         return validation_res.as_failure();
     }
 
-    return {std::move(schema), validation_res.assume_value()};
+    auto schema_stream = json::chunked_input_stream{std::move(buf)};
+    auto rapidjson_schema = json::Document{};
+    if (rapidjson_schema.ParseStream(schema_stream).HasParseError()) {
+        // not a valid json document, return error
+        // this is unlikely to happen, since we already parsed this stream with
+        // jsoncons, but the possibility of a bug exists
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Malformed json schema: {} at offset {}",
+            rapidjson::GetParseError_En(rapidjson_schema.GetParseError()),
+            rapidjson_schema.GetErrorOffset())};
+    }
+
+    return {std::move(rapidjson_schema), validation_res.assume_value()};
 }
 
 /// is_superset section

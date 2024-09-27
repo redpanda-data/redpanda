@@ -81,12 +81,12 @@ static const auto error_test_cases = std::to_array({
     R"({])",
     pps::error_info{
       pps::error_code::schema_invalid,
-      "Malformed json schema: Missing a name for object member. at offset 1"}},
+      "Malformed json schema: Expected object member key at line 1 column 2"}},
   error_test_case{
     "",
     pps::error_info{
       pps::error_code::schema_invalid,
-      "Malformed json schema: The document is empty. at offset 0"}},
+      "Malformed json schema: Invalid document at line 1 column 1"}},
   error_test_case{
     R"({"type": "thisisnotapropertype"})",
     pps::error_info{
