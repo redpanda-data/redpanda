@@ -38,7 +38,7 @@ struct serializing_consumer {
         auto offset = _output.size_bytes();
         auto base = batch.base_offset();
         auto num_records = batch.header().record_count;
-        //vlog(cd_log.trace, "serializing consumer batch: {}", batch);
+        // vlog(cd_log.trace, "serializing consumer batch: {}", batch);
         auto hdr_iobuf = storage::batch_header_to_disk_iobuf(batch.header());
         auto rec_iobuf = std::move(batch).release_data();
 
