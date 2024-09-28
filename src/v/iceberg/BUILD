@@ -240,18 +240,17 @@ redpanda_cc_library(
         ":manifest_avro",
         ":manifest_list_avro",
         "//src/v/bytes:iobuf",
-        "//src/v/cloud_storage_clients",
         "//src/v/ssx:future_util",
-        "//src/v/utils:retry_chain_node",
     ],
     include_prefix = "iceberg",
     deps = [
         ":manifest",
         ":manifest_list",
+        ":metadata_io",
         ":partition_key_type",
         "//src/v/base",
         "//src/v/cloud_io:remote",
-        "//src/v/model",
+        "//src/v/cloud_storage_clients",
         "//src/v/utils:named_type",
         "@seastar",
     ],
@@ -320,6 +319,24 @@ redpanda_cc_library(
         ":table_metadata",
         ":values_bytes",
         "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
+    name = "metadata_io",
+    hdrs = [
+        "metadata_io.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:retry_chain_node",
+        "@seastar",
     ],
 )
 

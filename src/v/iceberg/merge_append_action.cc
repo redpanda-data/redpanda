@@ -39,13 +39,13 @@ manifest_list_path get_manifest_list_path(
       "{}/metadata/snap-{}-{}-{}.avro", location, snap_id(), commit_uuid, num)};
 }
 
-action::errc to_action_errc(manifest_io::errc e) {
+action::errc to_action_errc(metadata_io::errc e) {
     switch (e) {
-    case manifest_io::errc::failed:
+    case metadata_io::errc::failed:
         return action::errc::io_failed;
-    case manifest_io::errc::shutting_down:
+    case metadata_io::errc::shutting_down:
         return action::errc::shutting_down;
-    case manifest_io::errc::timedout:
+    case metadata_io::errc::timedout:
         // NOTE: treat IO timeouts the same as other IO failures.
         // TODO: build out retry logic.
         return action::errc::io_failed;
@@ -313,7 +313,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     co_return ret;
 }
 
-ss::future<checked<size_t, manifest_io::errc>>
+ss::future<checked<size_t, metadata_io::errc>>
 merge_append_action::upload_as_manifest(
   const manifest_path& path,
   const schema& schema,
@@ -336,7 +336,7 @@ merge_append_action::upload_as_manifest(
     co_return co_await io_.upload_manifest(path, m);
 }
 
-ss::future<checked<chunked_vector<manifest_file>, manifest_io::errc>>
+ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
 merge_append_action::maybe_merge_mfiles_and_new_data(
   chunked_vector<manifest_file> to_merge,
   chunked_vector<data_file> new_data_files,
@@ -413,7 +413,7 @@ merge_append_action::maybe_merge_mfiles_and_new_data(
     co_return ret;
 }
 
-ss::future<checked<manifest_file, manifest_io::errc>>
+ss::future<checked<manifest_file, metadata_io::errc>>
 merge_append_action::merge_mfiles(
   chunked_vector<manifest_file> to_merge,
   const table_snapshot_ctx& ctx,
@@ -491,7 +491,7 @@ merge_append_action::merge_mfiles(
     co_return merged_file;
 }
 
-ss::future<checked<chunked_vector<manifest_file>, manifest_io::errc>>
+ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
 merge_append_action::pack_mlist_and_new_data(
   const table_snapshot_ctx& ctx,
   manifest_list old_mlist,
