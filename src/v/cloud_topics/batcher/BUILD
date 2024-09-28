@@ -51,18 +51,19 @@ redpanda_cc_library(
     hdrs = [
         "aggregator.h",
     ],
-    include_prefix = "cloud_topics/batcher",
-    deps = [
+    implementation_deps = [
         ":serializer",
-        ":write_request",
-        "//src/v/base",
-        "//src/v/bytes",
-        "//src/v/bytes:iostream",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:placeholder",
-        "//src/v/cloud_topics:types",
-        "//src/v/model",
         "//src/v/storage:record_batch_builder",
+    ],
+    include_prefix = "cloud_topics/batcher",
+    deps = [
+        ":write_request",
+        "//src/v/base",
+        "//src/v/cloud_topics:types",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
     ],

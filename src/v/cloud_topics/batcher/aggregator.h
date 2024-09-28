@@ -12,12 +12,13 @@
 
 #include "base/seastarx.h"
 #include "cloud_topics/batcher/write_request.h"
-#include "cloud_topics/dl_placeholder.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/types.h"
+#include "container/fragmented_vector.h"
 #include "model/record.h"
 
-#include <seastar/core/iostream.hh>
+#include <seastar/core/circular_buffer.hh>
+#include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/btree_map.h>
 

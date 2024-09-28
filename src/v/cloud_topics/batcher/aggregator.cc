@@ -10,11 +10,9 @@
 
 #include "cloud_topics/batcher/aggregator.h"
 
-#include "bytes/iostream.h"
 #include "cloud_topics/batcher/serializer.h"
 #include "cloud_topics/batcher/write_request.h"
-#include "cloud_topics/logger.h"
-#include "model/record.h"
+#include "cloud_topics/dl_placeholder.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/future.hh>
