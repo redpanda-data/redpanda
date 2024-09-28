@@ -68,7 +68,7 @@ public:
     /// Always consumes everything from the reader.
     ss::future<result<model::record_batch_reader>> write_and_debounce(
       model::ntp ntp,
-      model::record_batch_reader&& r,
+      model::record_batch_reader r,
       std::chrono::milliseconds timeout);
 
     ss::future<> start();

@@ -206,7 +206,7 @@ template<class Clock>
 ss::future<result<model::record_batch_reader>>
 batcher<Clock>::write_and_debounce(
   model::ntp ntp,
-  model::record_batch_reader&& r,
+  model::record_batch_reader r,
   std::chrono::milliseconds timeout) {
     auto h = _gate.hold();
     auto index = _index++;
