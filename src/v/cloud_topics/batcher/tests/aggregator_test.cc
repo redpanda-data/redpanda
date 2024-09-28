@@ -48,7 +48,7 @@ cloud_topics::details::serialized_chunk get_random_serialized_chunk(
     return fut.get();
 }
 
-TEST(aggregator, single_request_ack) {
+TEST(AggregatorTest, SingleRequestAck) {
     constexpr static auto timeout = 10s;
     auto chunk = get_random_serialized_chunk(10, 10);
     cloud_topics::details::write_request<ss::manual_clock> request(
@@ -69,7 +69,7 @@ TEST(aggregator, single_request_ack) {
     ASSERT_EQ(dest.size_bytes(), aggregator.size_bytes());
 }
 
-TEST(aggregator, single_request_dtor_with_staged_request) {
+TEST(AggregatorTest, SingleRequestDtorWithStagedRequest) {
     // Check that if the write request is added to the aggregator it
     // will eventually be acknowledged even if the method is not invoked
     // explicitly.
@@ -94,7 +94,7 @@ TEST(aggregator, single_request_dtor_with_staged_request) {
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
-TEST(aggregator, single_request_dtor_with_prepared_request) {
+TEST(AggregatorTest, SingleRequestDtorWithPreparedRequest) {
     // Check that if the write request is acknowledged with error if the
     // prepared request is never acknowledged and aggregator is destroyed.
     constexpr static auto timeout = 10s;
@@ -117,7 +117,7 @@ TEST(aggregator, single_request_dtor_with_prepared_request) {
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
-TEST(aggregator, single_request_dtor_with_lost_request_staged) {
+TEST(AggregatorTest, SingleRequestDtorWithLostRequestStaged) {
     // Checks situation when the aggregator is destroyed with staging write
     // requests but one write request is destroyed before the aggregator.
     constexpr static auto timeout = 10s;
@@ -145,7 +145,7 @@ TEST(aggregator, single_request_dtor_with_lost_request_staged) {
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
-TEST(aggregator, single_request_dtor_with_lost_request_prepared) {
+TEST(AggregatorTest, SingleRequestDtorWithLostRequestPrepared) {
     // Checks situation when the aggregator is destroyed with outstanding write
     // requests but one write request is destroyed before the aggregator. So
     // basically, this mimics a situation when we uploaded L0 object that has
@@ -178,7 +178,7 @@ TEST(aggregator, single_request_dtor_with_lost_request_prepared) {
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
-TEST(aggregator, single_request_with_lost_request_prepared) {
+TEST(AggregatorTest, SingleRequestWithLostRequestPrepared) {
     constexpr static auto timeout = 10s;
     auto chunk = get_random_serialized_chunk(10, 10);
     cloud_topics::details::write_request<ss::manual_clock> request(
