@@ -171,9 +171,7 @@ template<class Clock>
 void aggregator<Clock>::add(write_request<Clock>& req) {
     auto it = _staging.find(req.ntp);
     if (it == _staging.end()) {
-        auto ret = _staging.insert(
-          std::make_pair(req.ntp, write_request_list<Clock>()));
-        it = ret.first;
+        it = _staging.emplace_hint(it, req.ntp, write_request_list<Clock>());
     }
     req._hook.unlink();
     it->second.push_back(req);
