@@ -38,16 +38,32 @@ get_random_batches(int num_batches, int num_records_per_batch) { // NOLINT
     return model::make_memory_record_batch_reader(std::move(batches));
 }
 
-TEST(serializer, consume) {
-    auto test_data = get_random_batches(1000, 1);
-    // The function returns a ready future because the reader is not actually
-    // asynchronous.
+TEST(SerializerTest, EmptyReader) {
+    auto res = cloud_topics::details::serialize_in_memory_record_batch_reader(
+                 model::make_empty_record_batch_reader())
+                 .get();
+    ASSERT_TRUE(res.payload.empty());
+    ASSERT_TRUE(res.batches.empty());
+}
+
+class SerializerFixture
+  : public ::testing::TestWithParam<std::tuple<int, int>> {};
+
+TEST_P(SerializerFixture, Consume) {
+    auto num_batches = std::get<0>(GetParam());
+    auto num_records = std::get<1>(GetParam());
+    auto test_data = get_random_batches(num_batches, num_records);
     auto res = cloud_topics::details::serialize_in_memory_record_batch_reader(
                  std::move(test_data))
                  .get();
-    ASSERT_TRUE(res.payload.size_bytes() > 0);
-    ASSERT_TRUE(res.batches.size() == 1000);
+    ASSERT_GT(res.payload.size_bytes(), 0);
+    ASSERT_EQ(res.batches.size(), num_batches);
     ASSERT_TRUE(
       res.batches.back().physical_offset + res.batches.back().size_bytes
       == res.payload.size_bytes());
 }
+
+INSTANTIATE_TEST_SUITE_P(
+  SerializerRoundTrip,
+  SerializerFixture,
+  ::testing::Combine(::testing::Range(1, 10), ::testing::Range(0, 10)));
