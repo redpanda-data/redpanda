@@ -14,20 +14,9 @@
 #include "base/seastarx.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/batcher/write_request.h"
-#include "cloud_topics/dl_placeholder.h"
-#include "cloud_topics/errc.h"
-#include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
-#include "container/fragmented_vector.h"
-#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
-#include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "model/record_batch_types.h"
-#include "model/timeout_clock.h"
-#include "serde/rw/rw.h"
-#include "serde/rw/uuid.h"
-#include "storage/record_batch_builder.h"
 #include "utils/retry_chain_node.h"
 #include "utils/uuid.h"
 
@@ -54,12 +43,9 @@ struct batcher_result {
     std::unique_ptr<model::record_batch_reader> reader;
 };
 
-namespace details {
-
-/// Access point for unit-tests
+namespace testing_details {
 class batcher_accessor;
-
-} // namespace details
+} // namespace testing_details
 
 /// The data path uploader
 ///

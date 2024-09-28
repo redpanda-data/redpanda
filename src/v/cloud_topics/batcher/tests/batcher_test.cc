@@ -21,6 +21,7 @@
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "remote_mock.h"
+#include "storage/record_batch_builder.h"
 #include "storage/record_batch_utils.h"
 #include "test_utils/test.h"
 
