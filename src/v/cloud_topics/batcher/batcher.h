@@ -43,10 +43,6 @@ struct batcher_result {
     std::unique_ptr<model::record_batch_reader> reader;
 };
 
-namespace testing_details {
-class batcher_accessor;
-} // namespace testing_details
-
 /// The data path uploader
 ///
 /// The batcher collects a list of write_request instances in
