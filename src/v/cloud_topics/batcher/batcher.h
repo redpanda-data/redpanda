@@ -71,9 +71,6 @@ public:
     ss::future<> stop();
 
 private:
-    template<class C>
-    friend struct upload_data_flow_controller;
-
     /// Background fiber responsible for merging
     /// aggregated log data and sending it to the
     /// cloud storage
