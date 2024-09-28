@@ -67,7 +67,6 @@ template<class Clock>
 ss::future<> batcher<Clock>::stop() {
     _as.request_abort();
     co_await _gate.close();
-    co_return;
 }
 
 template<class Clock>
