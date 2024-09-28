@@ -11,6 +11,7 @@
 #include "cloud_topics/batcher/write_request.h"
 
 #include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/logger.h"
 
 namespace experimental::cloud_topics::details {
 

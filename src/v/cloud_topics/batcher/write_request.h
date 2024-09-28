@@ -14,9 +14,7 @@
 #include "base/seastarx.h"
 #include "cloud_topics/batcher/serializer.h"
 #include "cloud_topics/errc.h"
-#include "cloud_topics/logger.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 
 #include <seastar/core/weak_ptr.hh>
 

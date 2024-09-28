@@ -30,12 +30,13 @@ redpanda_cc_library(
     hdrs = [
         "write_request.h",
     ],
+    implementation_deps = [
+        "//src/v/cloud_topics:logger",
+    ],
     include_prefix = "cloud_topics/batcher",
     deps = [
         ":serializer",
         "//src/v/base",
-        "//src/v/bytes",
-        "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:types",
         "//src/v/model",
         "@seastar",
