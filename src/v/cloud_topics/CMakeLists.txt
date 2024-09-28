@@ -8,3 +8,5 @@ v_cc_library(
     v::model
     v::serde
 )
+
+add_subdirectory(reconciler)

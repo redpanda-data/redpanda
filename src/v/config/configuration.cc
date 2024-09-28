@@ -3364,6 +3364,12 @@ configuration::configuration()
       "turning it off for all topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , development_enable_cloud_topics(
+      *this,
+      "development_enable_cloud_topics",
+      "Enable cloud topics.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
