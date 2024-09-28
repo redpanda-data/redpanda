@@ -9,19 +9,13 @@
  */
 
 #include "cloud_topics/batcher/serializer.h"
-#include "model/namespace.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
-#include "model/timeout_clock.h"
-#include "random/generators.h"
 
 #include <seastar/core/circular_buffer.hh>
-#include <seastar/core/manual_clock.hh>
 
 #include <gtest/gtest.h>
-
-#include <chrono>
 
 namespace cloud_topics = experimental::cloud_topics;
 
