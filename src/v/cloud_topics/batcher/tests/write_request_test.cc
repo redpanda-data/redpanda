@@ -19,7 +19,7 @@
 
 namespace cloud_topics = experimental::cloud_topics;
 
-TEST(write_request, expiration) {
+TEST(WriteRequestTest, Expiration) {
     cloud_topics::details::write_request<ss::manual_clock> req(
       model::kvstore_ntp(ss::shard_id(0)),
       cloud_topics::details::batcher_req_index(0),
