@@ -332,6 +332,29 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "table_io_test",
+    timeout = "short",
+    srcs = [
+        "table_io_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_table_metadata",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:table_io",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "table_metadata_json_test",
     timeout = "short",
     srcs = [

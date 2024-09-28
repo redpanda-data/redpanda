@@ -532,6 +532,31 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_io",
+    srcs = [
+        "table_io.cc",
+    ],
+    hdrs = [
+        "table_io.h",
+    ],
+    implementation_deps = [
+        ":table_metadata_json",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/json",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":metadata_io",
+        ":table_metadata",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_metadata",
     hdrs = [
         "table_metadata.h",
