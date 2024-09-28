@@ -16,16 +16,11 @@
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
-#include "model/record.h"
 #include "model/record_batch_reader.h"
-#include "model/timeout_clock.h"
 #include "ssx/sformat.h"
-#include "storage/record_batch_utils.h"
 #include "utils/human.h"
 #include "utils/retry_chain_node.h"
-#include "utils/uuid.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -43,7 +38,6 @@
 
 #include <chrono>
 #include <exception>
-#include <iterator>
 
 using namespace std::chrono_literals;
 
