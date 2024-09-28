@@ -11,7 +11,6 @@ redpanda_cc_library(
         "serializer.h",
     ],
     implementation_deps = [
-        "//src/v/cloud_topics:logger",
         "//src/v/storage:record_batch_utils",
     ],
     include_prefix = "cloud_topics/batcher",

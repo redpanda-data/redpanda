@@ -10,7 +10,6 @@
 
 #include "cloud_topics/batcher/serializer.h"
 
-#include "cloud_topics/logger.h"
 #include "model/timeout_clock.h"
 #include "storage/record_batch_utils.h"
 
