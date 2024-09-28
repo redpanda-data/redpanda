@@ -10,31 +10,15 @@
 
 #include "cloud_topics/batcher/batcher.h"
 
+#include "cloud_io/remote.h"
 #include "cloud_topics/batcher/aggregator.h"
 #include "cloud_topics/batcher/serializer.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
 #include "config/configuration.h"
-#include "model/fundamental.h"
-#include "model/record_batch_reader.h"
 #include "ssx/sformat.h"
 #include "utils/human.h"
-#include "utils/retry_chain_node.h"
-
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/condition-variable.hh>
-#include <seastar/core/file-types.hh>
-#include <seastar/core/fstream.hh>
-#include <seastar/core/gate.hh>
-#include <seastar/core/iostream.hh>
-#include <seastar/core/lowres_clock.hh>
-#include <seastar/core/seastar.hh>
-#include <seastar/core/shard_id.hh>
-#include <seastar/core/sharded.hh>
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/timed_out_error.hh>
-#include <seastar/util/defer.hh>
 
 #include <chrono>
 #include <exception>

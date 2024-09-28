@@ -12,26 +12,30 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
-#include "cloud_io/remote.h"
+#include "base/units.h"
+#include "bytes/iobuf.h"
 #include "cloud_topics/batcher/write_request.h"
 #include "cloud_topics/types.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "utils/retry_chain_node.h"
 #include "utils/uuid.h"
 
-#include <seastar/core/circular_buffer.hh>
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/shard_id.hh>
-#include <seastar/core/sharded.hh>
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/temporary_buffer.hh>
 
 #include <absl/container/btree_map.h>
 
 #include <chrono>
+
+namespace cloud_io {
+template<typename Clock>
+class remote_api;
+}
 
 namespace experimental::cloud_topics {
 
