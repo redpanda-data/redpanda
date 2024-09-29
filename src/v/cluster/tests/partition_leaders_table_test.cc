@@ -10,12 +10,12 @@
  */
 
 #include "cluster/commands.h"
+#include "cluster/data_migrated_resources.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/producer_state.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
-#include "data_migrated_resources.h"
 #include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
