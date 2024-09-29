@@ -225,3 +225,23 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "shard_placement_table_test",
+    timeout = "moderate",
+    srcs = [
+        "shard_placement_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/features",
+        "//src/v/ssx:event",
+        "//src/v/storage",
+        "//src/v/storage:resources",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "//src/v/utils:prefix_logger",
+        "@seastar",
+    ],
+)

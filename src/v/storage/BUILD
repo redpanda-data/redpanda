@@ -207,6 +207,10 @@ redpanda_cc_library(
         "@seastar",
     ],
     include_prefix = "storage",
+    visibility = [
+        "//src/v/cluster/tests:__pkg__",
+        "//src/v/storage/tests:__pkg__",
+    ],
     deps = [
         "//src/v/base",
         "//src/v/config",
