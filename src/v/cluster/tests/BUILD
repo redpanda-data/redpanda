@@ -191,3 +191,17 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "cluster_recovery_table_test",
+    timeout = "short",
+    srcs = [
+        "cluster_recovery_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
