@@ -11,6 +11,17 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "leader_balancer_test_utils",
+    hdrs = [
+        "leader_balancer_constraints_utils.h",
+        "leader_balancer_test_utils.h",
+    ],
+    include_prefix = "cluster/tests",
+    deps = [
+    ],
+)
+
+redpanda_test_cc_library(
     name = "topic_table_fixture",
     hdrs = [
         "topic_table_fixture.h",
