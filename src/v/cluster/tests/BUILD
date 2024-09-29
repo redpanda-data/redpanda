@@ -126,3 +126,16 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "metrics_reporter_test",
+    timeout = "short",
+    srcs = [
+        "metrics_reporter_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+    ],
+)
