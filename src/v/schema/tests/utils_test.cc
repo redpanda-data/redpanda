@@ -26,6 +26,7 @@ TEST(SchemaUtils, SchemaIdForValidRecord) {
     buf.append(msg.data(), msg.size());
 
     auto res = schema::parse_schema_id(buf);
+
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(res.value()(), schema_id);
 }
@@ -41,6 +42,9 @@ TEST(SchemaUtils, SchemaIdForShortRecord) {
 
     auto res = schema::parse_schema_id(buf);
     ASSERT_FALSE(res.has_value());
+    ASSERT_TRUE(res.has_error());
+
+    EXPECT_EQ(res.error(), schema::schema_id_error::not_enough_bytes);
 }
 
 TEST(SchemaUtils, SchemaIdForBadMagic) {
@@ -54,4 +58,6 @@ TEST(SchemaUtils, SchemaIdForBadMagic) {
 
     auto res = schema::parse_schema_id(buf);
     ASSERT_FALSE(res.has_value());
+    ASSERT_TRUE(res.has_error());
+    EXPECT_EQ(res.error(), schema::schema_id_error::invalid_magic);
 }

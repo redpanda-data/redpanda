@@ -19,21 +19,25 @@
 
 namespace schema {
 
-std::optional<pandaproxy::schema_registry::schema_id>
+result<pandaproxy::schema_registry::schema_id, schema_id_error>
 parse_schema_id(const iobuf& buf) {
     if (buf.size_bytes() < sizeof(uint8_t) + sizeof(uint32_t)) {
         // A record with a schema id must have at least 5 bytes:
         // 1 byte magic + 4 bytes id
-        return std::nullopt;
+        return schema_id_error::not_enough_bytes;
     }
     iobuf_const_parser parser(buf);
 
     auto magic = parser.consume_type<uint8_t>();
     if (magic != 0) {
-        return std::nullopt;
+        return schema_id_error::invalid_magic;
     }
     auto schema_id = parser.consume_type<int32_t>();
     return pandaproxy::schema_registry::schema_id{schema_id};
 }
 
+const std::error_category& error_category() {
+    static schema_id_error_category e;
+    return e;
+}
 } // namespace schema

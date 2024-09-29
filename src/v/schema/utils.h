@@ -14,11 +14,49 @@
 #include "pandaproxy/schema_registry/types.h"
 
 #include <optional>
+#include <system_error>
 namespace schema {
+
+enum class schema_id_error {
+    ok = 0,
+    not_enough_bytes,
+    invalid_magic,
+};
+
+struct schema_id_error_category : std::error_category {
+    const char* name() const noexcept override { return "Schema ID Error"; }
+
+    std::string message(int ev) const override {
+        switch (static_cast<schema_id_error>(ev)) {
+        case schema_id_error::ok:
+            return "Ok";
+        case schema_id_error::not_enough_bytes:
+            return "Not enough bytes in message";
+        case schema_id_error::invalid_magic:
+            return "Invalid magic byte";
+        }
+    }
+    static const std::error_category& error_category() {
+        static schema_id_error_category e;
+        return e;
+    }
+};
+
+inline std::error_code make_error_code(schema::schema_id_error e) noexcept {
+    return {
+      static_cast<int>(e), schema::schema_id_error_category::error_category()};
+}
 
 // Extract schema information from the given buffer;
 // If there is no schema information, schema_id will be nullopt
-std::optional<pandaproxy::schema_registry::schema_id>
+result<pandaproxy::schema_registry::schema_id, schema_id_error>
 parse_schema_id(const iobuf& buf);
 
 } // namespace schema
+
+namespace std {
+
+template<>
+struct is_error_code_enum<schema::schema_id_error> : true_type {};
+
+} // namespace std
