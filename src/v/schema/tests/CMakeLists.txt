@@ -8,3 +8,15 @@ v_cc_library(
     Seastar::seastar
     v::schema
 )
+
+rp_test (
+  UNIT_TEST
+  GTEST
+  BINARY_NAME schema_utils
+  SOURCES utils_test.cc
+  LABELS schema
+  LIBRARIES
+    v::gtest_main
+    v::schema
+  ARGS "-- -c 1"
+)
