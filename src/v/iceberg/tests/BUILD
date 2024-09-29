@@ -382,6 +382,7 @@ redpanda_cc_gtest(
     srcs = [
         "update_schema_action_test.cc",
     ],
+    cpu = 1,
     deps = [
         ":test_schemas",
         "//src/v/cloud_io/tests:scoped_remote",
