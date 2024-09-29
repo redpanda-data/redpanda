@@ -155,3 +155,22 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "plugin_frontend_validation_test",
+    timeout = "short",
+    srcs = [
+        "plugin_frontend_validation_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:range",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
