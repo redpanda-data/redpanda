@@ -91,3 +91,20 @@ redpanda_cc_gtest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "leader_balancer_test",
+    timeout = "short",
+    srcs = [
+        "leader_balancer_test.cc",
+    ],
+    deps = [
+        ":leader_balancer_test_utils",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
+    ],
+)
