@@ -108,3 +108,21 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_btest(
+    name = "leader_balancer_constraints_test",
+    timeout = "short",
+    srcs = [
+        "leader_balancer_constraints_test.cc",
+    ],
+    deps = [
+        ":leader_balancer_test_utils",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
+    ],
+)
