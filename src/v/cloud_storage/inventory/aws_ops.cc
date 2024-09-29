@@ -14,6 +14,9 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote.h"
 #include "json/istreamwrapper.h"
+#include "ssx/future-util.h"
+
+#include <seastar/util/log.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -23,6 +26,7 @@
 #include <rapidjson/error/en.h>
 #include <re2/re2.h>
 
+#include <exception>
 #include <ranges>
 
 using boost::property_tree::ptree;
@@ -210,8 +214,19 @@ ss::future<op_result<report_metadata>> aws_ops::fetch_latest_report_metadata(
     try {
         co_return co_await do_fetch_latest_report_metadata(remote, parent_rtc);
     } catch (...) {
-        vlog(
-          cst_log.error,
+        // We are logging at error level here because we are not expecting
+        // exceptions to be thrown from this method. Errors are returned as
+        // results instead. If we get an exception, then likely it is a bug.
+        // Shutdown exceptions are ... an exception to this rule, and are logged
+        // at info level.
+        auto ex = std::current_exception();
+        auto ex_log_level = ss::log_level::error;
+        if (ssx::is_shutdown_exception(ex)) {
+            ex_log_level = ss::log_level::info;
+        }
+        vlogl(
+          cst_log,
+          ex_log_level,
           "Failed to fetch latest report metadata: {}",
           std::current_exception());
         co_return error_outcome::failed;
