@@ -174,3 +174,20 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "namespaced_cache_test",
+    timeout = "short",
+    srcs = [
+        "namespaced_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:intrusive",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
