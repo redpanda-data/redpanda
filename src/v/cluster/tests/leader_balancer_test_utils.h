@@ -19,9 +19,9 @@ namespace leader_balancer_test_utils {
  */
 static cluster::leader_balancer_strategy::index_type make_cluster_index(
   int node_count,
-  int shards_per_node,
-  int groups_per_shard,
-  int replica_count) {
+  unsigned shards_per_node,
+  unsigned groups_per_shard,
+  unsigned replica_count) {
     cluster::leader_balancer_strategy::index_type index;
 
     std::vector<model::broker_shard> shards;
