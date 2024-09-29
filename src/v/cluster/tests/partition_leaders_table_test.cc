@@ -53,10 +53,10 @@ struct test_fixture : public seastar_test {
     ss::future<size_t> count_leaderless_partitions() {
         size_t leaderless_cnt = 0;
         co_await leaders.for_each_leader([&leaderless_cnt](
-                                           model::topic_namespace_view tp_ns,
-                                           model::partition_id pid,
+                                           model::topic_namespace_view,
+                                           model::partition_id,
                                            std::optional<model::node_id> leader,
-                                           model::term_id term) {
+                                           model::term_id) {
             if (!leader) {
                 leaderless_cnt++;
             }
