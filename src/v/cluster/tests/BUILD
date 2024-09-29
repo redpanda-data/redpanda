@@ -205,3 +205,23 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "partition_leaders_table_test",
+    timeout = "short",
+    srcs = [
+        "partition_leaders_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft:fundamental",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
