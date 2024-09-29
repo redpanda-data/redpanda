@@ -139,3 +139,19 @@ redpanda_cc_btest(
         "@boost//:test",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "plugin_table_test",
+    timeout = "short",
+    srcs = [
+        "plugin_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
