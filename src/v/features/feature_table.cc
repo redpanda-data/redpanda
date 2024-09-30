@@ -165,7 +165,10 @@ constexpr cluster_version latest_version = to_cluster_version(
 constexpr cluster_version earliest_version = to_cluster_version(
   release_version::v23_3_1);
 
-} // namespace
+static_assert(
+  latest_version - earliest_version == 3L,
+  "Consider upgrading the earliest_version in lockstep whenever you increment "
+  "the latest_version");
 
 namespace {
 bool is_major_version_release(cluster::cluster_version version) {
