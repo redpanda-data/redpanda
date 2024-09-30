@@ -96,6 +96,9 @@ public:
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
       config::binding<size_t>&&,
+      config::binding<bool> enable_rack_awareness,
+      config::binding<config::leaders_preference>,
+      std::chrono::milliseconds metadata_dissemination_interval,
       consensus_ptr);
 
     ss::future<> start();
@@ -182,6 +185,11 @@ private:
      * cluster.
      */
     config::binding<size_t> _transfer_limit_per_shard;
+
+    config::binding<bool> _enable_rack_awareness;
+    config::binding<config::leaders_preference> _default_preference;
+
+    std::chrono::milliseconds _metadata_dissemination_interval;
 
     struct last_known_leader {
         model::broker_shard shard;

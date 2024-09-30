@@ -62,12 +62,18 @@ leader_balancer::leader_balancer(
   config::binding<std::chrono::milliseconds>&& mute_timeout,
   config::binding<std::chrono::milliseconds>&& node_mute_timeout,
   config::binding<size_t>&& transfer_limit_per_shard,
+  config::binding<bool> enable_rack_awareness,
+  config::binding<config::leaders_preference> default_preference,
+  std::chrono::milliseconds metadata_dissemination_interval,
   consensus_ptr raft0)
   : _enabled(std::move(enabled))
   , _idle_timeout(std::move(idle_timeout))
   , _mute_timeout(std::move(mute_timeout))
   , _node_mute_timeout(std::move(node_mute_timeout))
   , _transfer_limit_per_shard(std::move(transfer_limit_per_shard))
+  , _enable_rack_awareness(std::move(enable_rack_awareness))
+  , _default_preference(std::move(default_preference))
+  , _metadata_dissemination_interval(metadata_dissemination_interval)
   , _topics(topics)
   , _leaders(leaders)
   , _members(members)

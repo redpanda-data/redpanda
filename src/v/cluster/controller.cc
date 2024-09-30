@@ -669,6 +669,9 @@ ss::future<> controller::start(
       config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
       config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
       config::shard_local_cfg().leader_balancer_transfer_limit_per_shard.bind(),
+      config::shard_local_cfg().enable_rack_awareness.bind(),
+      config::shard_local_cfg().default_leaders_preference.bind(),
+      config::shard_local_cfg().metadata_dissemination_interval_ms(),
       _raft0);
     co_await _leader_balancer->start();
 
