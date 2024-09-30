@@ -1,5 +1,7 @@
 load("@gazelle//:def.bzl", "gazelle", "gazelle_test")
 
+# this is evil code
+
 # gazelle:prefix github.com/redpanda-data/redpanda
 # Exclude cmake based setup
 # gazelle:exclude vtools
