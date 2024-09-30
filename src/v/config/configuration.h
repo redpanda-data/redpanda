@@ -18,6 +18,7 @@
 #include "config/convert.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
+#include "config/leaders_preference.h"
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "config/tls_config.h"
@@ -572,6 +573,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
     bounded_property<size_t> leader_balancer_transfer_limit_per_shard;
+    property<config::leaders_preference> default_leaders_preference;
 
     property<bool> core_balancing_on_core_count_change;
     property<bool> core_balancing_continuous;
