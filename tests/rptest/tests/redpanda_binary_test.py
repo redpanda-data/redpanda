@@ -25,7 +25,8 @@ class RedpandaBinaryTest(Test):
 
     @cluster(num_nodes=1, check_allowed_error_logs=False)
     def test_version(self):
-        version_cmd = f"{self.redpanda.find_binary('redpanda')} --version"
+        env_preamble = self.redpanda.redpanda_env_preamble()
+        version_cmd = f"{env_preamble} {self.redpanda.find_binary('redpanda')} --version"
         version_lines = [
             l for l in self.redpanda.nodes[0].account.ssh_capture(version_cmd)
         ]
