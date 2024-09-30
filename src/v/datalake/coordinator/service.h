@@ -8,10 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/coordinator/rpc_service.h"
-
-namespace datalake::coordinator {
-class frontend;
-}
+#include "datalake/fwd.h"
 
 namespace datalake::coordinator::rpc {
 class service final : public impl::datalake_coordinator_rpc_service {

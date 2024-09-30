@@ -28,6 +28,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/fwd.h"
 #include "debug_bundle/fwd.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -74,13 +75,6 @@ class admin_server;
 namespace cluster {
 class cluster_discovery;
 } // namespace cluster
-
-namespace datalake {
-namespace coordinator {
-class frontend;
-};
-class datalake_manager;
-} // namespace datalake
 
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
