@@ -155,7 +155,8 @@ ss::future<> backend::start() {
             co_await handle_migration_update(id);
         }
 
-        ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+        ssx::repeat_until_gate_closed_or_aborted(
+          _gate, _as, [this]() { return loop_once(); });
 
         vlog(dm_log.info, "backend started");
     } else {
