@@ -116,3 +116,27 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "values_protobuf",
+    srcs = [
+        "values_protobuf.cc",
+    ],
+    hdrs = [
+        "values_protobuf.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":conversion_outcome",
+        ":protobuf_utils",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:values",
+        "//src/v/serde/protobuf",
+        "//src/v/ssx:future_util",
+        "@fmt",
+        "@protobuf",
+        "@seastar",
+    ],
+)
