@@ -36,4 +36,22 @@ ss::future<checked<size_t, metadata_io::errc>> table_io::upload_table_meta(
       });
 }
 
+ss::future<checked<int, metadata_io::errc>>
+table_io::download_version_hint(const version_hint_path& path) {
+    return download_object<int>(path(), "iceberg::version_hint", [](iobuf b) {
+        iobuf_parser p(std::move(b));
+        auto sz = p.bytes_left();
+        auto version_str = p.read_string(sz);
+        return std::stoi(version_str);
+    });
+}
+
+ss::future<checked<size_t, metadata_io::errc>>
+table_io::upload_version_hint(const version_hint_path& path, int version) {
+    return upload_object<int>(
+      path(), version, "iceberg::version_hint", [](int v) {
+          return iobuf::from(fmt::to_string(v));
+      });
+}
+
 } // namespace iceberg

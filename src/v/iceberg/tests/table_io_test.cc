@@ -18,6 +18,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace iceberg;
 
 namespace {
@@ -59,4 +61,34 @@ TEST_F(TableIOTest, TestTableMetadataRoundtrip) {
     ASSERT_FALSE(dl_res.has_error());
     const auto& m_roundtrip = dl_res.value();
     ASSERT_EQ(m, m_roundtrip);
+}
+
+TEST_F(TableIOTest, TestVersionHintRoundTrip) {
+    auto io = table_io(remote(), bucket_name);
+    const auto test_path = "foo/bar/baz";
+    std::vector<int> values{
+      0,
+      std::numeric_limits<int>::max(),
+      std::numeric_limits<int>::min(),
+    };
+    for (size_t i = 0; i < values.size(); ++i) {
+        auto v = values[i];
+        auto path = version_hint_path{fmt::format("{}-{}", test_path, i)};
+        auto up_res = io.upload_version_hint(path, v).get();
+        ASSERT_FALSE(up_res.has_error());
+        auto dl_res = io.download_version_hint(path).get();
+        ASSERT_FALSE(dl_res.has_error());
+        ASSERT_EQ(v, dl_res.value());
+    }
+}
+
+TEST_F(TableIOTest, TestInvalidVersionHint) {
+    auto io = table_io(remote(), bucket_name);
+    const auto test_path = version_hint_path{"foo/bar/baz"};
+    add_expectations({expectation{
+      .url = test_path().native(),
+      .body = "100000000000",
+    }});
+    auto dl_res = io.download_version_hint(test_path).get();
+    ASSERT_TRUE(dl_res.has_error());
 }
