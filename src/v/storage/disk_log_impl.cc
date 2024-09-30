@@ -404,6 +404,12 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
         _eviction_monitor.reset();
 
         co_return model::next_offset(max_offset);
+    } else {
+        vlog(
+          gclog.debug,
+          "[{}] no segments to evict up to {} offset; skipping eviction",
+          config().ntp(),
+          max_offset);
     }
 
     co_return _start_offset;
