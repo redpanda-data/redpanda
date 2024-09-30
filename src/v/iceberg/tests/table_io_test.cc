@@ -92,3 +92,18 @@ TEST_F(TableIOTest, TestInvalidVersionHint) {
     auto dl_res = io.download_version_hint(test_path).get();
     ASSERT_TRUE(dl_res.has_error());
 }
+
+TEST_F(TableIOTest, TestVersionHintCheckExists) {
+    auto io = table_io(remote(), bucket_name);
+    const auto test_path = version_hint_path{"foo/bar/baz"};
+    auto ex_res = io.version_hint_exists(test_path).get();
+    ASSERT_FALSE(ex_res.has_error());
+    ASSERT_FALSE(ex_res.value());
+
+    auto up_res = io.upload_version_hint(test_path, 1).get();
+    ASSERT_FALSE(up_res.has_error());
+
+    ex_res = io.version_hint_exists(test_path).get();
+    ASSERT_FALSE(ex_res.has_error());
+    ASSERT_TRUE(ex_res.value());
+}

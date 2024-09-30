@@ -54,4 +54,9 @@ table_io::upload_version_hint(const version_hint_path& path, int version) {
       });
 }
 
+ss::future<checked<bool, metadata_io::errc>>
+table_io::version_hint_exists(const version_hint_path& path) {
+    return object_exists(path, "iceberg::version_hint");
+}
+
 } // namespace iceberg

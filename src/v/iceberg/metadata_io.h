@@ -141,6 +141,44 @@ protected:
         }
     }
 
+    ss::future<checked<bool, metadata_io::errc>> object_exists(
+      const std::filesystem::path& path, std::string_view display_str) {
+        retry_chain_node retry(
+          io_.as(),
+          ss::lowres_clock::duration{30s},
+          {},
+          retry_strategy::disallow);
+        auto res = co_await ss::coroutine::as_future(io_.object_exists(
+          bucket_,
+          cloud_storage_clients::object_key{path},
+          retry,
+          display_str));
+        if (res.failed()) {
+            const auto ex = res.get_exception();
+            const auto msg = fmt::format(
+              "Exception while performing {} existence check: {}",
+              display_str,
+              ex);
+            if (ssx::is_shutdown_exception(ex)) {
+                vlog(log.debug, "{}", msg);
+                co_return errc::shutting_down;
+            }
+            vlog(log.error, "{}", msg);
+            co_return errc::failed;
+        }
+        switch (res.get()) {
+            using enum cloud_io::download_result;
+        case success:
+            co_return true;
+        case timedout:
+            co_return errc::timedout;
+        case notfound:
+            co_return false;
+        case failed:
+            co_return errc::failed;
+        }
+    }
+
 private:
     cloud_io::remote& io_;
     const cloud_storage_clients::bucket_name bucket_;

@@ -37,6 +37,9 @@ public:
 
     ss::future<checked<size_t, metadata_io::errc>>
     upload_version_hint(const version_hint_path& path, int version);
+
+    ss::future<checked<bool, metadata_io::errc>>
+    version_hint_exists(const version_hint_path& path);
 };
 
 } // namespace iceberg
