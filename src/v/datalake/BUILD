@@ -9,6 +9,7 @@ redpanda_cc_library(
     ],
     include_prefix = "datalake",
     deps = [
+        "//src/v/iceberg:values",
         "@seastar",
     ],
 )

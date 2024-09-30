@@ -9,6 +9,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "iceberg/values.h"
 
 namespace datalake {
 class schema_conversion_exception final : public std::exception {
@@ -28,5 +29,20 @@ private:
  */
 template<typename SchemaT>
 using conversion_outcome = result<SchemaT, schema_conversion_exception>;
+
+class value_conversion_exception final : public std::exception {
+public:
+    explicit value_conversion_exception(std::string msg) noexcept
+      : msg_(std::move(msg)) {}
+
+    const char* what() const noexcept final { return msg_.c_str(); }
+
+private:
+    std::string msg_;
+};
+
+using value_outcome = result<iceberg::value, value_conversion_exception>;
+using optional_value_outcome
+  = result<std::optional<iceberg::value>, value_conversion_exception>;
 
 }; // namespace datalake
