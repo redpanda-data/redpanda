@@ -67,13 +67,10 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
-    name = "schema_protobuf_test",
+    name = "datalake_protobuf_test",
     timeout = "short",
     srcs = [
-        "schema_protobuf_test.cc",
-    ],
-    data = [
-        "testdata/iceberg_ready_test_messages_edition2023.proto",
+        "datalake_protobuf_tests.cc",
     ],
     deps = [
         "//src/v/datalake:schema_protobuf",

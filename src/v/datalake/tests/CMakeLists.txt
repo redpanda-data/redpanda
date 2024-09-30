@@ -68,8 +68,9 @@ rp_test(
   UNIT_TEST
   GTEST
   USE_CWD
-  BINARY_NAME schema_protobuf
-  SOURCES schema_protobuf_test.cc
+  BINARY_NAME datalake_protobuf
+  SOURCES 
+    datalake_protobuf_tests.cc
   LIBRARIES
     v::gtest_main
     v::datalake
