@@ -11,6 +11,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":metadata",
+        ":probe",
         ":utils",
         "//src/v/bytes:iostream",
         "//src/v/crypto",

@@ -25,6 +25,9 @@
 
 namespace debug_bundle {
 
+/// Forward declare probe
+class probe;
+
 /**
  * @brief Service used to manage creation of debug bundles
  *
@@ -198,6 +201,8 @@ private:
     config::binding<std::filesystem::path> _rpk_path_binding;
     /// External process
     std::unique_ptr<debug_bundle_process> _rpk_process;
+    /// Metrics probe
+    std::unique_ptr<probe> _probe;
     /// Mutex to guard control over the rpk debug bundle process
     mutex _process_control_mutex;
     ss::gate _gate;

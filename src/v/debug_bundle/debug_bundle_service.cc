@@ -19,6 +19,7 @@
 #include "crypto/types.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/metadata.h"
+#include "debug_bundle/probe.h"
 #include "debug_bundle/types.h"
 #include "debug_bundle/utils.h"
 #include "ssx/future-util.h"
@@ -309,6 +310,9 @@ ss::future<> service::start() {
           _rpk_path_binding().native());
     }
 
+    _probe = std::make_unique<probe>();
+    _probe->setup_metrics();
+
     co_await maybe_reload_previous_run();
 
     lg.debug("Service started");
@@ -331,6 +335,7 @@ ss::future<> service::stop() {
     }
     co_await _gate.close();
     _rpk_process.reset(nullptr);
+    _probe.reset(nullptr);
 }
 
 ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
@@ -713,6 +718,9 @@ ss::future<> service::set_metadata(job_id_t job_id) {
         }
         sha256_checksum = co_await calculate_sha256_sum(
           debug_bundle_file.native());
+        _probe->successful_bundle_generation(_rpk_process->finished_time());
+    } else {
+        _probe->failed_bundle_generation(_rpk_process->finished_time());
     }
 
     metadata md(
@@ -889,6 +897,12 @@ ss::future<> service::maybe_reload_previous_run() {
 
     _rpk_process = std::make_unique<debug_bundle_process>(
       std::move(md), std::move(po));
+
+    if (run_was_successful) {
+        _probe->successful_bundle_generation(_rpk_process->finished_time());
+    } else {
+        _probe->failed_bundle_generation(_rpk_process->finished_time());
+    }
 }
 
 } // namespace debug_bundle
