@@ -44,6 +44,11 @@ sleep_abortable(typename Clock::duration dur, AbortSource&... src) {
         }
         seastar::weak_ptr<as_state> state;
     };
+
+    if ((src.abort_requested() || ...)) {
+        return seastar::make_exception_future<>(seastar::sleep_aborted());
+    }
+
     auto state = seastar::make_lw_shared<as_state>();
     state->subscriptions.reserve(sizeof...(AbortSource));
     as_callback cb(*state);
