@@ -619,6 +619,7 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // generally ~8000 bytes). Finally, we add max_frag_bytes to account for the
     // worse-cast overshoot during vector re-allocation.
     return default_memory_estimate(request_size) + size_estimate
-           + large_fragment_vector<metadata_response_partition>::max_frag_bytes;
+           + large_fragment_vector<
+             metadata_response_partition>::max_frag_bytes();
 }
 } // namespace kafka

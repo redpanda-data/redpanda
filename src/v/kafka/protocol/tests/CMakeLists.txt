@@ -1,4 +1,4 @@
-set(KAFKA_REQUEST_GENERATOR "${CMAKE_BINARY_DIR}/src/go/kreq-gen/kafka-request-generator")
+set(KAFKA_REQUEST_GENERATOR "${CMAKE_BINARY_DIR}/src/v/test_utils/go/kreq-gen/kafka-request-generator")
 
 rp_test(
   UNIT_TEST

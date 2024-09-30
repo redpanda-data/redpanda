@@ -91,7 +91,7 @@ public:
     bool empty() const noexcept { return data_.empty(); }
 
     void resize(size_type size) { data_.resize(size); }
-
+    void reserve(size_type size) { data_.reserve(size); }
     void push_back(value_type v) { data_.push_back(v); }
 
     friend bool operator==(const bytes&, const bytes&) = default;

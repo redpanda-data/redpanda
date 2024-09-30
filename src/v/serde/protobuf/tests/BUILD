@@ -37,6 +37,8 @@ redpanda_cc_gtest(
     srcs = [
         "parser_test.cc",
     ],
+    cpu = 1,
+    memory = "128MiB",
     deps = [
         ":test_messages_edition2023_cc_proto",
         ":three_cc_proto",

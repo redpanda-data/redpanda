@@ -60,15 +60,15 @@ public:
             calc_cap += f.capacity();
 
             if (i + 1 < v._frags.size()) {
-                if (f.size() < v.elems_per_frag) {
+                if (f.size() < v.elements_per_fragment()) {
                     return AssertionFailure() << fmt::format(
                              "fragment {} is undersized ({} < {})",
                              i,
                              f.size(),
-                             v.elems_per_frag);
+                             v.elements_per_fragment());
                 }
             }
-            if (f.capacity() > std::decay_t<decltype(v)>::max_frag_bytes) {
+            if (f.capacity() > std::decay_t<decltype(v)>::max_frag_bytes()) {
                 return AssertionFailure() << fmt::format(
                          "fragment {} capacity over max_frag_bytes ({})",
                          i,

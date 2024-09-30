@@ -52,21 +52,24 @@ private:
 
     // calculate the maximum number of elements per fragment while
     // keeping the element count a power of two
-    static constexpr size_t calc_elems_per_frag(size_t esize) {
-        size_t max = fragment_size_bytes / esize;
+    static consteval size_t calc_elems_per_frag() {
+        size_t max = fragment_size_bytes / sizeof(T);
         if constexpr (is_chunked_vector) {
-            max = max_allocation_size / esize;
+            max = max_allocation_size / sizeof(T);
         }
-        assert(max > 0);
         return std::bit_floor(max);
     }
 
-    static constexpr size_t elems_per_frag = calc_elems_per_frag(sizeof(T));
-
-    static_assert(
-      (elems_per_frag & (elems_per_frag - 1)) == 0,
-      "element count per fragment must be a power of 2");
-    static_assert(elems_per_frag >= 1);
+    /**
+     * The maximum number of bytes per fragment as specified in
+     * as part of the type. Note that for most types, the true
+     * number of bytes in a full fragment may as low as half
+     * of this amount (+1) since the number of elements is restricted
+     * to a power of two.
+     */
+    static consteval size_t calc_max_frag_bytes() {
+        return calc_elems_per_frag() * sizeof(T);
+    }
 
 public:
     using this_type = fragmented_vector<T, fragment_size_bytes>;
@@ -80,19 +83,6 @@ public:
     using difference_type = backing_type::difference_type;
     using pointer = T*;
     using const_pointer = const T*;
-
-    /**
-     * The maximum number of bytes per fragment as specified in
-     * as part of the type. Note that for most types, the true
-     * number of bytes in a full fragment may as low as half
-     * of this amount (+1) since the number of elements is restricted
-     * to a power of two.
-     */
-    static constexpr size_t max_frag_bytes = elems_per_frag * sizeof(T);
-
-    static_assert(
-      max_frag_bytes <= max_allocation_size,
-      "max size of a fragment must be <= 128KiB");
 
     fragmented_vector() noexcept = default;
     explicit fragmented_vector(allocator_type alloc)
@@ -180,7 +170,7 @@ public:
         --_size;
         if (_frags.back().empty()) {
             _frags.pop_back();
-            _capacity -= std::min(elems_per_frag, _capacity);
+            _capacity -= std::min(calc_elems_per_frag(), _capacity);
         }
         update_generation();
     }
@@ -203,7 +193,7 @@ public:
         while (n >= _frags.back().size()) {
             n -= _frags.back().size();
             _frags.pop_back();
-            _capacity -= elems_per_frag;
+            _capacity -= calc_elems_per_frag();
         }
 
         for (size_t i = 0; i < n; ++i) {
@@ -213,18 +203,22 @@ public:
     }
 
     const_reference at(size_t index) const {
+        static constexpr size_t elems_per_frag = calc_elems_per_frag();
         return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
     }
 
     reference at(size_t index) {
+        static constexpr size_t elems_per_frag = calc_elems_per_frag();
         return _frags.at(index / elems_per_frag).at(index % elems_per_frag);
     }
 
     const_reference operator[](size_t index) const {
+        static constexpr size_t elems_per_frag = calc_elems_per_frag();
         return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
     reference operator[](size_t index) {
+        static constexpr size_t elems_per_frag = calc_elems_per_frag();
         return _frags[index / elems_per_frag][index % elems_per_frag];
     }
 
@@ -275,6 +269,7 @@ public:
         // For fixed size fragments we noop, as we already reserve the full size
         // of vector
         if constexpr (is_chunked_vector) {
+            static constexpr size_t elems_per_frag = calc_elems_per_frag();
             if (new_cap > _capacity) {
                 if (_frags.empty()) {
                     auto& frag = _frags.emplace_back();
@@ -310,7 +305,11 @@ public:
     /**
      * Returns the (maximum) number of elements in each fragment of this vector.
      */
-    static constexpr size_t elements_per_fragment() { return elems_per_frag; }
+    static constexpr size_t elements_per_fragment() {
+        return calc_elems_per_frag();
+    }
+
+    static constexpr size_t max_frag_bytes() { return calc_max_frag_bytes(); }
 
     /**
      * Remove all elements from the vector.
@@ -499,6 +498,10 @@ private:
     }
 
     void add_capacity() {
+        static constexpr size_t elems_per_frag = calc_elems_per_frag();
+        static_assert(
+          calc_max_frag_bytes() <= max_allocation_size,
+          "max size of a fragment must be <= 128KiB");
         if constexpr (is_chunked_vector) {
             if (
               _frags.size() == 1 && _frags.back().capacity() < elems_per_frag) {
@@ -510,7 +513,8 @@ private:
             } else if (_frags.empty()) {
                 // At least one element or 32 bytes worth of elements for small
                 // items.
-                constexpr size_t initial_cap = std::max(1UL, 32UL / sizeof(T));
+                static constexpr size_t initial_cap = std::max(
+                  1UL, 32UL / sizeof(T));
                 _capacity = initial_cap;
                 _frags.emplace_back(_frags.get_allocator()).reserve(_capacity);
                 return;

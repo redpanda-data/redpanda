@@ -13,4 +13,5 @@ v_cc_library(
     runfiles.cc
   DEPS Seastar::seastar Seastar::seastar_testing GTest::gtest GTest::gmock v::bytes_random)
 
+add_subdirectory(go/kreq-gen)
 add_subdirectory(tests)
