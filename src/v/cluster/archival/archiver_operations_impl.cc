@@ -565,10 +565,13 @@ private:
             auto upload = co_await _upl_builder->prepare_segment_upload(
               part, range, _read_buffer_size(), sg, deadline);
             if (upload.has_error()) {
-                vlog(
-                  _rtclog.warn,
-                  "prepare_segment_upload failed {}",
-                  upload.error());
+                if (
+                  upload.error() != archival::error_outcome::not_enough_data) {
+                    vlog(
+                      _rtclog.warn,
+                      "prepare_segment_upload failed {}",
+                      upload.error().message());
+                }
                 co_return upload.error();
             }
             auto res = std::move(upload.value());
@@ -1193,10 +1196,12 @@ class upload_builder : public detail::segment_upload_builder_api {
         auto upl = co_await segment_upload::make_segment_upload(
           cp, range, read_buffer_size, sg, deadline);
         if (upl.has_error()) {
-            vlog(
-              archival_log.error,
-              "Can't find upload candidate: {}",
-              upl.error());
+            if (upl.error() != archival::error_outcome::not_enough_data) {
+                vlog(
+                  archival_log.error,
+                  "Can't find upload candidate: {}",
+                  upl.error().message());
+            }
             co_return upl.error();
         }
 
