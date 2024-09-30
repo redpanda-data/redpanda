@@ -333,6 +333,8 @@ class LocalDiskReportTimeTest(RedpandaTest):
     def test_target_min_capacity_wanted_time_based(self):
         admin = Admin(self.redpanda)
         default_segment_size = admin.get_cluster_config()["log_segment_size"]
+        storage_reserve_min_segments = admin.get_cluster_config(
+        )["storage_reserve_min_segments"]
 
         # produce roughly 30mb at 0.5mb/sec
         kafka_tools = KafkaCliTools(self.redpanda)
@@ -340,28 +342,37 @@ class LocalDiskReportTimeTest(RedpandaTest):
                             30 * 1024,
                             1024,
                             throughput=500,
-                            acks=-1)
+                            acks=-1,
+                            linger_ms=50)
 
         node = self.redpanda.nodes[0]
         reported = admin.get_local_storage_usage(
             node)["target_min_capacity_wanted"]
 
-        # params. the size is about 900k larger than what was written,
-        # attributable to per record overheads etc... and determined emperically
-        # by looking at trace log stats.
+        # The size is slightly larger than what was written, attributable to
+        # per record overheads, indices, fallocation, etc... The expected size
+        # is determined empirically by looking at trace log stats.
         size = 32664482
         time = 61
         retention = 3600
         expected = retention * (size / time)
 
-        # factor in the 2 segments worth of space for controller log
-        diff = abs(reported - expected - 2 * default_segment_size)
+        # Factor in the full segments worth of space for controller log.
+        # This mirrors the math in disk_log_impl.cc
+        controller_want_size = storage_reserve_min_segments * default_segment_size
 
-        # there is definitely going to be some fuzz factor needed here and may
-        # need updated, but after many runs 50mb was a good amount of slack.
-        assert diff <= (
-            100 * 2**20
-        ), f"diff {diff} reported {reported} expected {expected} default seg size {default_segment_size}"
+        diff = reported - controller_want_size - expected
+
+        # There is definitely going to be some fuzz factor needed here and may
+        # need updated.
+        diff_threshold = 100 * 2**20
+
+        self.logger.info(
+            f"{diff=} {diff_threshold=} {reported=} {expected=} {controller_want_size=}"
+        )
+        assert abs(
+            diff
+        ) <= diff_threshold, f"abs({diff=}) <= {diff_threshold=} {reported=} {expected=} {controller_want_size=}"
 
 
 class LocalDiskReportTest(RedpandaTest):
