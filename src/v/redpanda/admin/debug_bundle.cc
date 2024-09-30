@@ -200,6 +200,9 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_debug_bundle(
     body.created = res.assume_value().created_timestamp.time_since_epoch()
                    / std::chrono::milliseconds{1};
     body.filename = res.assume_value().file_name;
+    if (res.assume_value().file_size.has_value()) {
+        body.file_size = res.assume_value().file_size.value();
+    }
     for (const ss::sstring& l : res.assume_value().cout) {
         body.stdout.push(l);
     }

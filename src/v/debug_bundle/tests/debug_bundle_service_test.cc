@@ -102,6 +102,10 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
 
     debug_bundle::job_id_t job_id(uuid_t::create());
 
+    auto expected_file_path = _data_dir
+                              / debug_bundle::service::debug_bundle_dir_name
+                              / fmt::format("{}.zip", job_id);
+
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, {});
     ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
@@ -113,6 +117,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
       status.assume_value().status, debug_bundle::debug_bundle_status::running);
     EXPECT_EQ(status.assume_value().job_id, job_id);
     EXPECT_EQ(status.assume_value().file_name, fmt::format("{}.zip", job_id));
+    EXPECT_FALSE(status.assume_value().file_size.has_value());
 
     ASSERT_NO_THROW_CORO(
       status = co_await wait_for_process_to_finish(_service, 10s));
@@ -124,10 +129,14 @@ TEST_F_CORO(debug_bundle_service_started_fixture, run_process) {
     const auto& cout = status.assume_value().cout;
     EXPECT_FALSE(cout.empty());
     auto expected_args = fmt::format(
-      "debug bundle --output {}/{}.zip --verbose\n",
-      (_data_dir / debug_bundle::service::debug_bundle_dir_name).native(),
-      job_id);
+      "debug bundle --output {} --verbose\n", expected_file_path.native());
     EXPECT_EQ(cout[0], expected_args) << cout[0] << " != " << expected_args;
+
+    ASSERT_TRUE_CORO(co_await ss::file_exists(expected_file_path.native()));
+    auto expected_file_size = co_await ss::file_size(
+      expected_file_path.native());
+    ASSERT_TRUE_CORO(status.assume_value().file_size.has_value());
+    EXPECT_EQ(status.assume_value().file_size.value(), expected_file_size);
 }
 
 TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {

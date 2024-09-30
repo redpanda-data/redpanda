@@ -34,6 +34,10 @@
       "description": "Path in API to get the file",
       "type": "string"
     },
+    "file_size": {
+      "description": "Size of the file in bytes",
+      "type": "int"
+    },
     "stdout": {
       "description": "Only filled in once the process completes.  Content of stdout from rpk",
       "type": "array",
