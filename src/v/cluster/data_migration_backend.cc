@@ -155,7 +155,8 @@ ss::future<> backend::start() {
           = std::make_unique<cloud_storage::topic_mount_handler>(
             bucket, *_cloud_storage_api);
 
-        ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+        ssx::repeat_until_gate_closed_or_aborted(
+          _gate, _as, [this]() { return loop_once(); });
 
         vlog(dm_log.info, "backend started");
     } else {
