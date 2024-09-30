@@ -71,8 +71,8 @@ ss::sstring mem_tracker::pretty_print_ascii() const {
         // rooted at the current tracker to avoid an O(n^2) loop.
         result << pretty_print_ascii_level(
           top.first, tracker._label, tracker._consumption);
-        stack.pop();
         auto next_level = top.first + 1;
+        stack.pop();
         for (const auto& child : tracker._children) {
             stack.push(std::pair(next_level, std::cref(child)));
         }
