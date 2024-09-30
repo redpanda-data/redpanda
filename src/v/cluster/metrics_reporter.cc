@@ -15,7 +15,7 @@
 #include "bytes/iostream.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_stm.h"
-#include "cluster/fwd.h"
+#include "cluster/feature_manager.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -24,6 +24,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/validators.h"
+#include "features/enterprise_features.h"
 #include "hashing/secure.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -113,6 +114,7 @@ metrics_reporter::metrics_reporter(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<security::role_store>& role_store,
   ss::sharded<plugin_table>* pt,
+  ss::sharded<feature_manager>* fm,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _cluster_info(controller_stm.local().get_metrics_reporter_cluster_info())
@@ -124,6 +126,7 @@ metrics_reporter::metrics_reporter(
   , _feature_table(feature_table)
   , _role_store(role_store)
   , _plugin_table(pt)
+  , _feature_manager(fm)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -240,12 +243,17 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.original_logical_version
       = _feature_table.local().get_original_version();
 
-    snapshot.has_kafka_gssapi = absl::c_any_of(
-      config::shard_local_cfg().sasl_mechanisms(),
-      [](const auto& mech) { return mech == "GSSAPI"; });
+    auto feature_report = co_await _feature_manager->invoke_on(
+      cluster::feature_manager::backend_shard,
+      [](const cluster::feature_manager& fm) {
+          return fm.report_enterprise_features();
+      });
 
-    snapshot.has_oidc = config::oidc_is_enabled_kafka()
-                        || config::oidc_is_enabled_http();
+    snapshot.has_kafka_gssapi = feature_report.test(
+      features::license_required_feature::gssapi);
+
+    snapshot.has_oidc = feature_report.test(
+      features::license_required_feature::oidc);
 
     snapshot.rbac_role_count = _role_store.local().size();
 
@@ -261,6 +269,10 @@ metrics_reporter::build_metrics_snapshot() {
     if (license.has_value()) {
         snapshot.id_hash = license->checksum;
     }
+
+    snapshot.has_valid_license = license.has_value()
+                                 && license.value().is_expired();
+    snapshot.has_enterprise_features = feature_report.any();
 
     co_return snapshot;
 }
@@ -531,6 +543,12 @@ void rjson_serialize(
 
     w.Key("id_hash");
     w.String(snapshot.id_hash);
+
+    w.Key("has_valid_license");
+    w.Bool(snapshot.has_valid_license);
+
+    w.Key("has_enterprise_features");
+    w.Bool(snapshot.has_enterprise_features);
 
     w.EndObject();
 }
