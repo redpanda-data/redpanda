@@ -6,11 +6,11 @@ load("//bazel:test.bzl", "redpanda_cc_gtest")
 redpanda_cc_gtest(
     name = "value_test",
     timeout = "short",
-    cpu = 1,
-    memory = "64MiB",
     srcs = [
         "value_test.cc",
     ],
+    cpu = 1,
+    memory = "64MiB",
     deps = [
         "//src/v/serde/parquet:value",
         "//src/v/test_utils:gtest",
@@ -73,3 +73,19 @@ TEST_CASES = range(4)
     )
     for test_case in TEST_CASES
 ]
+
+redpanda_cc_gtest(
+    name = "encoding_test",
+    timeout = "short",
+    srcs = [
+        "encoding_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:encoding",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

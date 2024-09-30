@@ -58,3 +58,20 @@ redpanda_cc_library(
         "@abseil-cpp//absl/numeric:int128",
     ],
 )
+
+redpanda_cc_library(
+    name = "encoding",
+    srcs = [
+        "encoding.cc",
+    ],
+    hdrs = [
+        "encoding.h",
+    ],
+    include_prefix = "serde/parquet",
+    deps = [
+        ":value",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+    ],
+)
