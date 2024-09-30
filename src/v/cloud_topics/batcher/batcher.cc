@@ -20,6 +20,8 @@
 #include "ssx/sformat.h"
 #include "utils/human.h"
 
+#include <seastar/core/condition-variable.hh>
+
 #include <chrono>
 #include <exception>
 
@@ -91,6 +93,9 @@ void batcher<Clock>::remove_timed_out_write_requests() {
         if (wr.has_expired()) {
             expired.push_back(wr.weak_from_this());
         }
+    }
+    if (!expired.empty()) {
+        vlog(_logger.debug, "{} write requests have expired", expired.size());
     }
     for (auto& wp : expired) {
         if (wp != nullptr) {
@@ -168,76 +173,126 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 }
 
 template<class Clock>
-ss::future<> batcher<Clock>::wait_for_next_upload() {
+ss::future<errc> batcher<Clock>::wait_for_next_upload() noexcept {
     try {
         co_await _cv.wait<Clock>(Clock::now() + _upload_interval(), [this] {
             return _current_size >= 10_MiB; // TODO: use configuration parameter
         });
+    } catch (const ss::broken_condition_variable&) {
+        co_return errc::shutting_down;
     } catch (const ss::condition_variable_timed_out&) {
     }
+    co_return errc::success;
+}
+
+template<class Clock>
+ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
+    try {
+        // NOTE: the main workflow looks like this:
+        // - remove expired write requests
+        // - collect write requests which can be aggregated/uploaded as L0
+        //   object
+        // - create 'aggregator' and fill it with write requests (the
+        //   requests which are added to the aggregator shouldn't be removed
+        //   from _pending list)
+        // - the 'aggregator' is used to generate L0 object and upload it
+        // - the 'aggregator' is used to acknowledge (either success or
+        //   failure) all aggregated write requests
+        //
+        // The invariants here are:
+        // 1. expired write requests shouldn't be added to the 'aggregator'
+        // 2. if the request is added to the 'aggregator' its promise
+        //    shouldn't be set
+        //
+        // The first invariant is enforced by calling
+        // 'remote_timed_out_write_requests' in the same time slice as
+        // collecting the write requests. The second invariant is enforced
+        // by the strict order in which the ack() method is called
+        // explicitly after the operation is either committed or failed.
+
+        remove_timed_out_write_requests();
+
+        auto list = get_write_requests(
+          10_MiB); // TODO: use configuration parameter
+
+        if (list.ready.empty()) {
+            co_return true;
+        }
+
+        details::aggregator<Clock> aggregator;
+        while (!list.ready.empty()) {
+            auto& wr = list.ready.back();
+            wr._hook.unlink();
+            aggregator.add(wr);
+        }
+        // TODO: skip waiting if list.completed is not true
+        auto payload = aggregator.prepare();
+        auto result = co_await upload_object(
+          aggregator.get_object_id(), std::move(payload));
+        if (result.has_error()) {
+            // TODO: fix the error
+            // NOTE: it should be possible to translate the
+            // error to kafka error at the call site but I
+            // don't want to depend on kafka layer directly.
+            // Timeout should work well at this point.
+            aggregator.ack_error(errc::timeout);
+            co_return result.error();
+        }
+        aggregator.ack();
+        co_return list.complete;
+    } catch (...) {
+        auto err = std::current_exception();
+        if (ssx::is_shutdown_exception(err)) {
+            vlog(_logger.debug, "Batcher shutdown error: {}", err);
+            co_return errc::shutting_down;
+        }
+        vlog(_logger.error, "Unexpected batcher error: {}", err);
+        co_return errc::unexpected_failure;
+    }
+    __builtin_unreachable();
 }
 
 template<class Clock>
 ss::future<> batcher<Clock>::bg_controller_loop() {
     auto h = _gate.hold();
-    try {
-        while (!_as.abort_requested()) {
-            co_await wait_for_next_upload();
-
-            // NOTE(Evgeny): the main workflow looks like this:
-            // - remove expired write requests
-            // - collect write requests which can be aggregated/uploaded as L0
-            //   object
-            // - create 'aggregator' and fill it with write requests (the
-            //   requests which are added to the aggregator shouldn't be removed
-            //   from _pending list)
-            // - the 'aggregator' is used to generate L0 object and upload it
-            // - the 'aggregator' is used to acknowledge (either success or
-            //   failure) all aggregated write requests
-            //
-            // The invariants here are:
-            // 1. expired write requests shouldn't be added to the 'aggregator'
-            // 2. if the request is added to the 'aggregator' its promise
-            //    shouldn't be set
-            //
-            // The first invariant is enforced by calling
-            // 'remote_timed_out_write_requests' in the same time slice as
-            // collecting the write requests. The second invariant is enforced
-            // by the strict order in which the ack() method is called
-            // explicitly after the operation is either committed or failed.
-
-            remove_timed_out_write_requests();
-
-            auto list = get_write_requests(
-              10_MiB); // TODO: use configuration parameter
-
-            if (list.ready.empty()) {
-                continue;
-            }
-
-            details::aggregator<Clock> aggregator;
-            while (!list.ready.empty()) {
-                auto& wr = list.ready.back();
-                wr._hook.unlink();
-                aggregator.add(wr);
-            }
-            // TODO: skip waiting if list.completed is not true
-            auto payload = aggregator.prepare();
-            auto result = co_await upload_object(
-              aggregator.get_object_id(), std::move(payload));
-            if (result.has_error()) {
-                // TODO: fix the error
-                aggregator.ack_error(errc::timeout);
-            } else {
-                aggregator.ack();
+    bool more_work = false;
+    while (!_as.abort_requested()) {
+        if (!more_work) {
+            auto wait_res = co_await wait_for_next_upload();
+            if (wait_res != errc::success) {
+                // Shutting down
+                vlog(
+                  _logger.info,
+                  "Batcher upload loop is shutting down {}",
+                  wait_res);
+                co_return;
             }
         }
-    } catch (...) {
-        auto ptr = std::current_exception();
-        if (ssx::is_shutdown_exception(ptr)) {
-            vlog(_logger.debug, "bg_controller_loop is shutting down");
-        } else {
-            vlog(_logger.error, "bg_controller_loop has failed: {}", ptr);
+        // TODO: implement rate limiting
+        // take units from upload rate tb here and from failure tb
+        // in case of failure
+        auto res = co_await run_once();
+        if (res.has_error()) {
+            if (res.error() == errc::shutting_down) {
+                vlog(_logger.info, "Batcher upload loop is shutting down");
+                co_return;
+            } else {
+                // Some other (most likely upload) error
+                vlog(
+                  _logger.info, "Batcher upload loop error: {}", res.error());
+                // TODO: implement throttling/circuit breaking.
+                // The batcher should use two token buckets:
+                // - upload bucket should limit request rate and the limit
+                // should be higher
+                //   than configured upload frequency (to account for the case
+                //   when more than one L0 object is upload on every iteration)
+                // - failure bucket should limit failure rate. It should be set
+                // up to allow
+                //   lower frequency then the expected upload rate.
+                // So basically in case of error we should retry immediately but
+                // eventually we should be throttled.
+                more_work = true;
+            }
         }
     }
 }

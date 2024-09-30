@@ -47,6 +47,8 @@ struct batcher_result {
     std::unique_ptr<model::record_batch_reader> reader;
 };
 
+struct batcher_accessor;
+
 /// The data path uploader
 ///
 /// The batcher collects a list of write_request instances in
@@ -56,6 +58,8 @@ template<class Clock = ss::lowres_clock>
 class batcher {
     using clock_t = Clock;
     using timestamp_t = typename Clock::time_point;
+
+    friend struct batcher_accessor;
 
 public:
     explicit batcher(
@@ -75,6 +79,17 @@ public:
     ss::future<> stop();
 
 private:
+    /// Run one iteration of the background loop
+    ///
+    /// Single call
+    /// - filters out timed out requests
+    /// - aggregates requests to create one L0 object
+    /// - uploads L0 object
+    /// - generates placeholders and propagates them
+    ///
+    /// \returns false if the method should be called again, true otherwise
+    ss::future<result<bool>> run_once() noexcept;
+
     /// Background fiber responsible for merging
     /// aggregated log data and sending it to the
     /// cloud storage
@@ -106,7 +121,7 @@ private:
 
     /// Wait until upload interval elapses or until
     /// enough bytes are accumulated
-    ss::future<> wait_for_next_upload();
+    ss::future<errc> wait_for_next_upload() noexcept;
 
     /// Upload L0 object based on placeholders
     ///

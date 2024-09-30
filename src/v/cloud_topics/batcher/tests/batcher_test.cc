@@ -12,12 +12,15 @@
 #include "bytes/iostream.h"
 #include "bytes/random.h"
 #include "cloud_io/io_result.h"
+#include "cloud_io/remote.h"
 #include "cloud_topics/batcher/batcher.h"
+#include "cloud_topics/dl_placeholder.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
+#include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "remote_mock.h"
@@ -27,15 +30,18 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <system_error>
 
@@ -79,26 +85,165 @@ get_random_reader(int num_batches, int num_records) { // NOLINT
     };
 }
 
+namespace experimental::cloud_topics {
+struct batcher_accessor {
+    ss::future<result<bool>> run_once() noexcept { return batcher->run_once(); }
+
+    // Returns true if the write request is in the `_pending` collection
+    bool write_requests_pending(size_t n) {
+        return batcher->_pending.size() == n;
+    }
+
+    cloud_topics::batcher<ss::manual_clock>* batcher;
+};
+} // namespace experimental::cloud_topics
+
+ss::future<> sleep(std::chrono::milliseconds delta, int retry_limit = 100) {
+    ss::manual_clock::advance(delta);
+    for (int i = 0; i < retry_limit; i++) {
+        co_await ss::yield();
+    }
+}
+
+// Simulate sleep of certain duration and wait until the condition is met
+template<class Fn>
+ss::future<>
+sleep_until(std::chrono::milliseconds delta, Fn&& fn, int retry_limit = 100) {
+    ss::manual_clock::advance(delta);
+    for (int i = 0; i < retry_limit; i++) {
+        co_await ss::yield();
+        if (fn()) {
+            co_return;
+        }
+    }
+    GTEST_MESSAGE_("Test stalled", ::testing::TestPartResult::kFatalFailure);
+}
+
+inline cloud_topics::dl_placeholder
+parse_placeholder_batch(model::record_batch batch) {
+    iobuf payload = std::move(batch).release_data();
+    iobuf_parser parser(std::move(payload));
+    auto record = model::parse_one_record_from_buffer(parser);
+    iobuf value = std::move(record).release_value();
+    return serde::from_iobuf<cloud_topics::dl_placeholder>(std::move(value));
+}
+
 TEST_CORO(batcher_test, single_write_request) {
-    remote_mock<> mock;
+    remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::batcher<ss::manual_clock> batcher(bucket, mock);
-
-    // TODO: control the bg loop manually in the test
-    co_await batcher.start();
-    ss::manual_clock::advance(500ms);
-
-    auto [keys, records, reader] = get_random_reader(10, 10);
+    cloud_topics::batcher_accessor accessor{
+      .batcher = &batcher,
+    };
+    int num_batches = 10;
+    auto [_, records, reader] = get_random_reader(num_batches, 10);
+    // Expect single upload to be made
+    mock.expect_upload_object(records);
 
     const auto timeout = 1s;
     auto fut = batcher.write_and_debounce(
       model::controller_ntp, std::move(reader), timeout);
-    while (!fut.available()) {
-        ss::manual_clock::advance(100ms);
-        co_await ss::yield();
+
+    // Make sure the write request is in the _pending list
+    co_await sleep_until(
+      10ms, [&] { return accessor.write_requests_pending(1); });
+
+    auto res = co_await accessor.run_once();
+
+    ASSERT_TRUE_CORO(res.has_value());
+
+    auto write_res = co_await std::move(fut);
+    ASSERT_TRUE_CORO(write_res.has_value());
+
+    // Expect single L0 upload
+    ASSERT_EQ_CORO(mock.keys.size(), 1);
+    auto id = mock.keys.back();
+
+    // Check that uuid in the placeholder can be used to
+    // access the data in S3.
+    auto placeholder_batches = co_await model::consume_reader_to_memory(
+      std::move(write_res.value()), model::no_timeout);
+    ASSERT_EQ_CORO(placeholder_batches.size(), num_batches);
+    for (const model::record_batch& batch : placeholder_batches) {
+        auto placeholder = parse_placeholder_batch(batch.copy());
+        // TODO: revisit this code when the object path format will change
+        auto sid = ssx::sformat("{}", placeholder.id);
+        ASSERT_EQ_CORO(sid, id());
     }
-    auto res = co_await std::move(fut);
-    co_await batcher.stop();
+}
+
+TEST_CORO(batcher_test, many_write_requests) {
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::batcher<ss::manual_clock> batcher(bucket, mock);
+    cloud_topics::batcher_accessor accessor{
+      .batcher = &batcher,
+    };
+
+    std::vector<size_t> expected_num_batches = {10, 20, 10};
+    auto [_1, records1, reader1] = get_random_reader(10, 10);
+    auto [_2, records2, reader2] = get_random_reader(20, 10);
+    auto [_3, records3, reader3] = get_random_reader(10, 20);
+
+    chunked_vector<bytes> all_records;
+    std::copy(
+      std::make_move_iterator(records1.begin()),
+      std::make_move_iterator(records1.end()),
+      std::back_inserter(all_records));
+    std::copy(
+      std::make_move_iterator(records2.begin()),
+      std::make_move_iterator(records2.end()),
+      std::back_inserter(all_records));
+    std::copy(
+      std::make_move_iterator(records3.begin()),
+      std::make_move_iterator(records3.end()),
+      std::back_inserter(all_records));
+
+    // Expect single upload to be made
+    mock.expect_upload_object(all_records);
+
+    const auto timeout = 1s;
+    std::vector<ss::future<result<model::record_batch_reader>>> futures;
+    futures.push_back(batcher.write_and_debounce(
+      model::controller_ntp, std::move(reader1), timeout));
+    futures.push_back(batcher.write_and_debounce(
+      model::controller_ntp, std::move(reader2), timeout));
+    futures.push_back(batcher.write_and_debounce(
+      model::controller_ntp, std::move(reader3), timeout));
+
+    // Make sure that all write requests are in the _pending list
+    co_await sleep_until(
+      10ms, [&] { return accessor.write_requests_pending(3); });
+
+    // Single L0 object that contains data from all write requests
+    // should be "uploaded".
+    auto res = co_await accessor.run_once();
+
+    // Expect single L0 upload
+    ASSERT_EQ_CORO(mock.keys.size(), 1);
+    auto id = mock.keys.back();
+
+    ASSERT_TRUE_CORO(res.has_value());
+    // TODO: validate placeholders
+
+    auto results = co_await ss::when_all_succeed(std::move(futures));
+    size_t ix = 0;
+    for (auto& write_res : results) {
+        ASSERT_TRUE_CORO(write_res.has_value());
+        // Check that uuid in the placeholder can be used to
+        // access the data in S3. All placeholders should share the same
+        // uuid.
+        auto placeholder_batches = co_await model::consume_reader_to_memory(
+          std::move(write_res.value()), model::no_timeout);
+        ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches.at(ix));
+        for (const model::record_batch& batch : placeholder_batches) {
+            auto placeholder = parse_placeholder_batch(batch.copy());
+            // TODO: revisit this code when the object path format will change
+            auto sid = ssx::sformat("{}", placeholder.id);
+            ASSERT_EQ_CORO(sid, id());
+        }
+        ix++;
+    }
 }
 
 // TODO: add more tests
