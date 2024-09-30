@@ -923,11 +923,15 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     def stage_decommission_and_add(self):
         def cluster_ready_replicas(cluster_name):
             # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-            return int(
-                self.redpanda.kubectl.cmd([
-                    'get', 'cluster', cluster_name, '-n=redpanda',
-                    "-o=jsonpath='{.status.readyReplicas}'"
-                ]))
+            res = self.redpanda.kubectl.cmd([
+                'get', 'cluster', cluster_name, '-n=redpanda',
+                "-o=jsonpath='{.status.readyReplicas}'"
+            ])
+
+            if res.strip() == '':
+                return 0
+
+            return int(res)
 
         def deployment_ready_replicas():
             # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.status.readyReplicas}'
