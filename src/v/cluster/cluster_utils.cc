@@ -18,6 +18,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/fips_config.h"
+#include "partition_properties_stm.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "rpc/backoff_policy.h"
@@ -467,7 +468,9 @@ const std::vector<ss::sstring>& stm_snapshot_names() {
       cluster::archival_stm_snapshot,
       cluster::tm_stm_snapshot,
       cluster::id_allocator_snapshot,
-      cluster::rm_stm_snapshot};
+      cluster::rm_stm_snapshot,
+      cluster::partition_properties_stm_snapshot,
+    };
 
     return names;
 }

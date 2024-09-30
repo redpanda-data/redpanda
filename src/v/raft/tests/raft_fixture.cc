@@ -516,10 +516,10 @@ raft_node_instance::read_batches_in_range(
     co_return data_batches;
 }
 
-ss::future<model::offset>
-raft_node_instance::random_batch_base_offset(model::offset max) {
-    model::offset read_start(
-      random_generators::get_int<int64_t>(_raft->start_offset(), max));
+ss::future<model::offset> raft_node_instance::random_batch_base_offset(
+  model::offset max, std::optional<model::offset> min) {
+    model::offset read_start(random_generators::get_int<int64_t>(
+      min.value_or(_raft->start_offset()), max));
 
     model::offset last = model::next_offset(read_start);
 

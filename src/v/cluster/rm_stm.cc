@@ -75,7 +75,7 @@ rm_stm::rm_stm(
   ss::sharded<tx::producer_state_manager>& producer_state_manager,
   std::optional<model::vcluster_id> vcluster_id)
   : raft::persisted_stm<>(rm_stm_snapshot, logger, c)
-  , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
+  , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.bind())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
   , _abort_interval_ms(config::shard_local_cfg()
                          .abort_timed_out_transactions_interval_ms.value())
@@ -187,7 +187,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
   std::chrono::milliseconds transaction_timeout_ms,
   model::partition_id tm) {
     auto state_lock = co_await _state_lock.hold_read_lock();
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         vlog(
           _ctx_log.trace,
           "processing name:begin_tx pid:{}, tx_seq:{}, "
@@ -271,7 +271,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
     if (pid.epoch > current_pid.epoch) {
         // abort any transactions from the older instance of the producer.
         auto ar = co_await do_abort_tx(
-          synced_term, producer, std::nullopt, _sync_timeout);
+          synced_term, producer, std::nullopt, _sync_timeout());
         if (ar != tx::errc::none) {
             vlog(
               _ctx_log.warn,
@@ -375,7 +375,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
 
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()),
-          model::timeout_clock::now() + _sync_timeout)) {
+          model::timeout_clock::now() + _sync_timeout())) {
         vlog(
           _ctx_log.warn,
           "Timed out while waiting for offset {} to be applied (begin_tx "
@@ -761,7 +761,7 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
 }
 
 ss::future<result<partition_transactions>> rm_stm::get_transactions() {
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         co_return cluster::errc::not_leader;
     }
     partition_transactions ans;
@@ -785,7 +785,7 @@ ss::future<result<partition_transactions>> rm_stm::get_transactions() {
 }
 
 ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         co_return std::error_code(tx::errc::leader_not_found);
     }
     auto holder = co_await _state_lock.hold_read_lock();
@@ -895,7 +895,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
     }
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()),
-          model::timeout_clock::now() + _sync_timeout)) {
+          model::timeout_clock::now() + _sync_timeout())) {
         vlog(
           _ctx_log.warn,
           "Timed out while waiting for offset: {}, batch: {} to be applied "
@@ -917,7 +917,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
     if (!check_tx_permitted()) {
         co_return cluster::errc::generic_tx_error;
     }
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         vlog(
           _ctx_log.trace,
           "processing name:replicate_tx pid:{} => stale leader",
@@ -1068,7 +1068,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   model::record_batch_reader br,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         // it's ok not to set enqueued on early return because
         // the safety check in replicate_in_stages sets it automatically
         co_return cluster::errc::not_leader;
@@ -1106,7 +1106,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
   ss::lw_shared_ptr<available_promise<>> enqueued) {
     using ret_t = result<kafka_result>;
 
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         co_return cluster::errc::not_leader;
     }
 
@@ -1325,7 +1325,7 @@ rm_stm::get_expired_producers() const {
 }
 
 ss::future<std::chrono::milliseconds> rm_stm::do_abort_old_txes() {
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         co_return std::chrono::milliseconds::max();
     }
     if (!_is_autoabort_enabled) {
@@ -1348,7 +1348,7 @@ ss::future<> rm_stm::try_abort_old_tx(producer_ptr producer) {
 }
 
 ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
-    if (!co_await sync(_sync_timeout)) {
+    if (!co_await sync(_sync_timeout())) {
         co_return tx::errc::leader_not_found;
     }
     auto synced_term = _insync_term;
@@ -1366,7 +1366,7 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
         vlog(_ctx_log.trace, "trying to expire transaction: {}", *producer);
         auto r = co_await _tx_gateway_frontend.local().route_globally(
           cluster::try_abort_request(
-            tx_state->coordinator_partition, pid, tx_seq, _sync_timeout));
+            tx_state->coordinator_partition, pid, tx_seq, _sync_timeout()));
         if (r.ec == tx::errc::none) {
             if (r.commited) {
                 vlog(
@@ -1394,7 +1394,7 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
 
                 if (!co_await wait_no_throw(
                       cr.value().last_offset,
-                      model::timeout_clock::now() + _sync_timeout)) {
+                      model::timeout_clock::now() + _sync_timeout())) {
                     vlog(
                       _ctx_log.warn,
                       "Timed out while waiting for the commit marker at offset "
@@ -1436,7 +1436,7 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
 
                 if (!co_await wait_no_throw(
                       cr.value().last_offset,
-                      model::timeout_clock::now() + _sync_timeout)) {
+                      model::timeout_clock::now() + _sync_timeout())) {
                     vlog(
                       _ctx_log.warn,
                       "Timed out while waiting for the abort marker at offset: "
@@ -1487,7 +1487,7 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
 
         if (!co_await wait_no_throw(
               model::offset(cr.value().last_offset()),
-              model::timeout_clock::now() + _sync_timeout)) {
+              model::timeout_clock::now() + _sync_timeout())) {
             vlog(
               _ctx_log.warn,
               "Timed out while waiting for offset {} to be applied "

@@ -16,6 +16,7 @@
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/tests/raft_fixture.h"
+#include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "replicate.h"

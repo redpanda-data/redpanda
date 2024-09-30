@@ -12,7 +12,6 @@
 
 #pragma once
 #include "bytes/random.h"
-#include "cluster/errc.h"
 #include "config/mock_property.h"
 #include "config/property.h"
 #include "features/feature_table.h"
@@ -20,14 +19,11 @@
 #include "model/timeout_clock.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
-#include "raft/errc.h"
 #include "raft/fwd.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
-#include "random/generators.h"
-#include "serde/rw/bytes.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/test.h"
@@ -221,7 +217,8 @@ public:
     ss::future<ss::circular_buffer<model::record_batch>>
     read_batches_in_range(model::offset min, model::offset max);
 
-    ss::future<model::offset> random_batch_base_offset(model::offset max);
+    ss::future<model::offset> random_batch_base_offset(
+      model::offset max, std::optional<model::offset> min = std::nullopt);
 
     /// \brief Sets a callback function to be invoked when the leader dispatches
     /// a message to followers.
@@ -236,6 +233,8 @@ public:
     void on_dispatch(dispatch_callback_t);
 
     ss::shared_ptr<in_memory_test_protocol> get_protocol() { return _protocol; }
+
+    storage::kvstore& get_kvstore() { return _storage.local().kvs(); }
 
 private:
     model::node_id _id;
@@ -410,23 +409,6 @@ public:
         static E timeout_error() { return E::timeout; }
         static bool should_retry(const E& err) {
             return err == E::timeout || err == E::not_leader;
-        }
-    };
-    template<>
-    struct retry_policy<std::error_code> {
-        static std::error_code timeout_error() {
-            return raft::make_error_code(raft::errc::timeout);
-        }
-        static bool should_retry(const std::error_code& err) {
-            if (err.category() == raft::error_category()) {
-                return retry_policy<raft::errc>::should_retry(
-                  raft::errc(err.value()));
-            } else if (err.category() == cluster::error_category()) {
-                return retry_policy<cluster::errc>::should_retry(
-                  cluster::errc(err.value()));
-            } else {
-                return false;
-            }
         }
     };
 

@@ -37,6 +37,40 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "raft_fixiture_retry_policy",
+    hdrs = [
+        "raft_fixture_retry_policy.h",
+    ],
+    include_prefix = "raft/tests",
+    deps = [
+        "//src/v/raft",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "raft_fixture",
+    srcs = ["raft_fixture.cc"],
+    hdrs = [
+        "raft_fixture.h",
+    ],
+    include_prefix = "raft/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:random",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/random:generators",
+        "//src/v/rpc",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:unresolved_address",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "jitter_test",
     timeout = "short",

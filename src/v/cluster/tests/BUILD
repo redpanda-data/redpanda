@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "utils",
@@ -35,6 +35,47 @@ redpanda_cc_btest(
         "//src/v/raft",
         "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "raft_fixiture_retry_policy",
+    hdrs = [
+        "raft_fixture_retry_policy.h",
+    ],
+    include_prefix = "cluster/tests",
+    deps = [
+        "//src/v/cluster",
+        "//src/v/raft",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partition_properties_stm_test",
+    timeout = "short",
+    srcs = [
+        "partition_properties_stm_test.cc",
+    ],
+    deps = [
+        ":raft_fixiture_retry_policy",
+        ":utils",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:random",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/random:generators",
+        "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
     ],

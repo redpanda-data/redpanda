@@ -59,6 +59,7 @@
 #include "cluster/node_status_rpc_handler.h"
 #include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
+#include "cluster/partition_properties_stm.h"
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/producer_state_manager.h"
 #include "cluster/rm_partition_frontend.h"
@@ -2913,6 +2914,9 @@ void application::start_runtime_services(
             feature_table,
             controller->get_topics_state());
           pm.register_factory<kafka::group_tx_tracker_stm_factory>();
+          pm.register_factory<cluster::partition_properties_stm_factory>(
+            storage.local().kvs(),
+            config::shard_local_cfg().rm_sync_timeout_ms.bind());
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

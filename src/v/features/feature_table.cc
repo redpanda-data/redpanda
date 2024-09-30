@@ -118,6 +118,8 @@ std::string_view to_string_view(feature f) {
         return "transforms_specify_offset";
     case feature::remote_labels:
         return "remote_labels";
+    case feature::partition_properties_stm:
+        return "partition_properties_stm";
 
     /*
      * testing features

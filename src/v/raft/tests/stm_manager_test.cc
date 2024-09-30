@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/tests/stm_test_fixture.h"
 
 using namespace raft;

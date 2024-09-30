@@ -16,6 +16,7 @@
 #include "cluster/archival/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_probe.h"
+#include "cluster/partition_properties_stm.h"
 #include "cluster/types.h"
 #include "features/fwd.h"
 #include "model/record_batch_reader.h"
@@ -342,6 +343,9 @@ public:
     ss::shared_ptr<cloud_storage::async_manifest_view>
     get_cloud_storage_manifest_view();
 
+    ss::future<std::error_code> disable_writes();
+    ss::future<std::error_code> enable_writes();
+
 private:
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
@@ -366,6 +370,7 @@ private:
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
+    ss::shared_ptr<partition_properties_stm> _partition_properties_stm;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<features::feature_table>& _feature_table;
