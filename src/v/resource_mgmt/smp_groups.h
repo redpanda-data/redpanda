@@ -33,6 +33,8 @@ public:
           = default_max_nonlocal_requests;
         uint32_t transform_group_max_non_local_requests
           = default_max_nonlocal_requests;
+        uint32_t datalake_group_max_non_local_requests
+          = default_max_nonlocal_requests;
     };
 
     smp_groups() = default;
@@ -43,6 +45,7 @@ public:
     ss::smp_service_group cluster_smp_sg() { return *_cluster; }
     ss::smp_service_group proxy_smp_sg() { return *_proxy; }
     ss::smp_service_group transform_smp_sg() { return *_transform; }
+    ss::smp_service_group datalake_sg() { return *_datalake; }
 
     ss::future<> destroy_groups();
 
@@ -58,4 +61,5 @@ private:
     std::unique_ptr<ss::smp_service_group> _cluster;
     std::unique_ptr<ss::smp_service_group> _proxy;
     std::unique_ptr<ss::smp_service_group> _transform;
+    std::unique_ptr<ss::smp_service_group> _datalake;
 };

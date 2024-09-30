@@ -76,6 +76,8 @@ public:
         return _compaction_reserved_memory;
     }
 
+    size_t datalake_max_memory() const;
+
 private:
     /**
      * Total memory for a core after the user's Wasm and compaction

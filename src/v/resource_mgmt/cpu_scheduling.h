@@ -39,6 +39,7 @@ public:
         _self_test = co_await ss::create_scheduling_group("self_test", 100);
         _fetch = co_await ss::create_scheduling_group("fetch", 1000);
         _transforms = co_await ss::create_scheduling_group("transforms", 100);
+        _datalake = co_await ss::create_scheduling_group("datalake", 100);
     }
 
     ss::future<> destroy_groups() {
@@ -54,6 +55,7 @@ public:
         co_await destroy_scheduling_group(_self_test);
         co_await destroy_scheduling_group(_fetch);
         co_await destroy_scheduling_group(_transforms);
+        co_await destroy_scheduling_group(_datalake);
     }
 
     ss::scheduling_group admin_sg() { return _admin; }
@@ -72,6 +74,7 @@ public:
     ss::scheduling_group node_status() { return _node_status; }
     ss::scheduling_group self_test_sg() { return _self_test; }
     ss::scheduling_group transforms_sg() { return _transforms; }
+    ss::scheduling_group datalake_sg() { return _datalake; }
     /**
      * @brief Scheduling group for fetch requests.
      *
@@ -98,7 +101,8 @@ public:
           std::cref(_node_status),
           std::cref(_self_test),
           std::cref(_fetch),
-          std::cref(_transforms)};
+          std::cref(_transforms),
+          std::cref(_datalake)};
     }
 
 private:
@@ -116,4 +120,5 @@ private:
     ss::scheduling_group _self_test;
     ss::scheduling_group _fetch;
     ss::scheduling_group _transforms;
+    ss::scheduling_group _datalake;
 };
