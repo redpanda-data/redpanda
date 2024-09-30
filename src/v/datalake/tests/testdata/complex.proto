@@ -25,3 +25,13 @@ message Metadata {
     map<string, Topic> topics = 1;
     repeated int64 nodes = 2;
 }
+
+message TopLevel {
+    message NestedLevelOne {
+        message NestedLevelTwo {
+            string field = 1;
+        }
+        NestedLevelTwo nested_level_two = 1;
+    }
+    NestedLevelOne nested_level_one = 1;
+}
