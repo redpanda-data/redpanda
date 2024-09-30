@@ -495,9 +495,16 @@ using replication_factor_validator = config_validator_list<
   replication_factor_must_be_odd,
   replication_factor_must_be_greater_or_equal_to_minimum>;
 
-template<typename T, typename Validator = noop_validator<T>>
-requires requires(const T& value, const ss::sstring& str, Validator validator) {
-    { boost::lexical_cast<T>(str) } -> std::convertible_to<T>;
+template<
+  typename T,
+  typename Validator = noop_validator<T>,
+  typename ParseFunc = decltype(boost::lexical_cast<T, ss::sstring>)>
+requires requires(
+  const T& value,
+  const ss::sstring& str,
+  Validator validator,
+  ParseFunc parse) {
+    { parse(str) } -> std::convertible_to<T>;
     {
         validator(str, value)
     } -> std::convertible_to<std::optional<ss::sstring>>;
@@ -506,7 +513,8 @@ void parse_and_set_optional(
   cluster::property_update<std::optional<T>>& property,
   const std::optional<ss::sstring>& value,
   config_resource_operation op,
-  Validator validator = noop_validator<T>{}) {
+  Validator validator = noop_validator<T>{},
+  ParseFunc parse = boost::lexical_cast<T, ss::sstring>) {
     // remove property value
     if (op == config_resource_operation::remove) {
         property.op = cluster::incremental_update_operation::remove;
@@ -516,7 +524,7 @@ void parse_and_set_optional(
     if (op == config_resource_operation::set && value) {
         property.op = cluster::incremental_update_operation::set;
         try {
-            auto v = boost::lexical_cast<T>(*value);
+            auto v = parse(*value);
             auto v_error = validator(*value, v);
             if (v_error) {
                 throw validation_error(*v_error);

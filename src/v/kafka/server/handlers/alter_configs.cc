@@ -77,7 +77,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 27,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 28,
       "If you added a property, please decide on it's default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -285,6 +285,15 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   kafka::config_resource_operation::set,
                   storage::ntp_config::default_iceberg_enabled,
                   iceberg_config_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_leaders_preference) {
+                parse_and_set_optional(
+                  update.properties.leaders_preference,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  noop_validator<config::leaders_preference>{},
+                  config::leaders_preference::parse);
                 continue;
             }
 

@@ -348,7 +348,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {}, iceberg_enabled: {}",
+      "flush_bytes: {}, iceberg_enabled: {}, leaders_preference: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -375,7 +375,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.write_caching,
       i.flush_ms,
       i.flush_bytes,
-      i.iceberg_enabled);
+      i.iceberg_enabled,
+      i.leaders_preference);
     return o;
 }
 

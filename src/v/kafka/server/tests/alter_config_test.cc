@@ -396,7 +396,9 @@ FIXTURE_TEST(
       "write.caching",
       "flush.ms",
       "flush.bytes",
-      "iceberg.enabled"};
+      "iceberg.enabled",
+      "redpanda.leaders.preference",
+    };
 
     // All properties_request
     auto all_describe_resp = describe_configs(test_tp);

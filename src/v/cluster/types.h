@@ -629,6 +629,8 @@ struct incremental_topic_updates
     property_update<bool> iceberg_enabled{
       storage::ntp_config::default_iceberg_enabled,
       incremental_update_operation::none};
+    property_update<std::optional<config::leaders_preference>>
+      leaders_preference;
 
     auto serde_fields() {
         return std::tie(
@@ -658,7 +660,8 @@ struct incremental_topic_updates
           write_caching,
           flush_ms,
           flush_bytes,
-          iceberg_enabled);
+          iceberg_enabled,
+          leaders_preference);
     }
 
     friend std::ostream&

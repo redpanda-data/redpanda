@@ -299,7 +299,11 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 'flush_bytes': rdr.read_optional(Reader.read_int64)
             }
         if version >= 7:
-            incr_obj |= {'iceberg_enabled': rdr.read_bool()}
+            incr_obj |= {
+                'iceberg_enabled': rdr.read_bool(),
+                'leaders_preference':
+                rdr.read_optional(read_leaders_preference),
+            }
 
         return incr_obj
 
