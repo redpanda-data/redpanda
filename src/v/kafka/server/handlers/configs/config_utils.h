@@ -34,6 +34,7 @@
 
 #include <absl/container/node_hash_set.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace kafka {
@@ -635,10 +636,18 @@ inline void parse_and_set_bool(
 
     if (op == config_resource_operation::set && value) {
         try {
-            property.value = string_switch<bool>(*value)
+            // Ignore case.
+            auto str_value = std::move(*value);
+            std::transform(
+              str_value.begin(),
+              str_value.end(),
+              str_value.begin(),
+              [](const auto& c) { return std::tolower(c); });
+
+            property.value = string_switch<bool>(str_value)
                                .match("true", true)
                                .match("false", false);
-            auto v_error = validator(tn, *value, property.value);
+            auto v_error = validator(tn, str_value, property.value);
             if (v_error) {
                 throw validation_error{*v_error};
             }

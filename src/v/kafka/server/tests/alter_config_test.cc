@@ -1055,3 +1055,33 @@ FIXTURE_TEST(
           describe_resp);
     }
 }
+
+FIXTURE_TEST(
+  test_shadow_indexing_uppercase_alter_config, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
+    map_t properties;
+    // Case is on purpose.
+    properties.emplace(
+      "redpanda.remote.write",
+      std::make_pair("True", kafka::config_resource_operation::set));
+    properties.emplace(
+      "redpanda.remote.read",
+      std::make_pair("TRUE", kafka::config_resource_operation::set));
+
+    auto resp = incremental_alter_configs(
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
+    auto describe_resp = describe_configs(test_tp);
+    assert_property_value(
+      test_tp, "redpanda.remote.write", "true", describe_resp);
+    assert_property_value(
+      test_tp, "redpanda.remote.read", "true", describe_resp);
+}
