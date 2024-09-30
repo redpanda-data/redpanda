@@ -43,3 +43,18 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "value",
+    hdrs = [
+        "value.h",
+    ],
+    include_prefix = "serde/parquet",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/numeric:int128",
+    ],
+)

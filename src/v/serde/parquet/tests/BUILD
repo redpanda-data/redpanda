@@ -1,6 +1,23 @@
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//bazel:build.bzl", "redpanda_cc_binary")
+load("//bazel:test.bzl", "redpanda_cc_gtest")
+
+redpanda_cc_gtest(
+    name = "value_test",
+    timeout = "short",
+    cpu = 1,
+    memory = "64MiB",
+    srcs = [
+        "value_test.cc",
+    ],
+    deps = [
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
 
 redpanda_cc_binary(
     name = "generate_metadata_binary",
