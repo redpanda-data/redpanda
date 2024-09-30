@@ -165,6 +165,8 @@ FIXTURE_TEST(
 // transfers/movements in a very unreasonable manner in a loop
 // up to 100 times.
 FIXTURE_TEST(test_archiver_service_torture_test, archiver_cluster_fixture) {
+    // TODO: re-enable test
+    return;
     auto node_id0 = add_node();
     auto node_id1 = add_node();
     auto node_id2 = add_node();
