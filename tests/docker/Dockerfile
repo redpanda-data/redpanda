@@ -236,6 +236,12 @@ RUN /ocsf-server && rm /ocsf-server
 
 #################################
 
+FROM base AS polaris
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/polaris /
+RUN /polaris && rm /polaris
+
+#################################
+
 FROM librdkafka AS final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
@@ -325,6 +331,7 @@ COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
 COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
 COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
 COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
+COPY --from=polaris /opt/polaris/ /opt/polaris/
 COPY --from=flink /opt/flink/ /opt/flink/
 
 RUN ldconfig

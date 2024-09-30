@@ -4,6 +4,7 @@ apt update
 apt install -y \
   build-essential \
   openjdk-17-jdk \
+  openjdk-21-jdk \
   git \
   maven \
   cmake \
@@ -14,3 +15,18 @@ SCRIPTPATH="$(
   pwd -P
 )"
 $SCRIPTPATH/protobuf
+
+update-java-alternatives -s java-1.17.0-openjdk-amd64
+mkdir /opt/java
+
+cat <<EOF >/opt/java/java-21
+JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"
+/usr/lib/jvm/java-21-openjdk-amd64/bin/java "\$@"
+EOF
+chmod +x /opt/java/java-21
+
+cat <<EOF >/opt/java/java-17
+JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+/usr/lib/jvm/java-17-openjdk-amd64/bin/java "\$@"
+EOF
+chmod +x /opt/java/java-17
