@@ -100,6 +100,10 @@ private:
     /// the total size of all returned write requests by 'max_bytes'.
     size_limited_write_req_list get_write_requests(size_t max_bytes);
 
+    /// Find all timed out write requests and remove them from the list
+    /// atomically.
+    void remove_timed_out_write_requests();
+
     /// Wait until upload interval elapses or until
     /// enough bytes are accumulated
     ss::future<> wait_for_next_upload();

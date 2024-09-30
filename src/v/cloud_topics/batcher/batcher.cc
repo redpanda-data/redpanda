@@ -85,6 +85,22 @@ batcher<Clock>::get_write_requests(size_t max_bytes) {
 }
 
 template<class Clock>
+void batcher<Clock>::remove_timed_out_write_requests() {
+    chunked_vector<ss::weak_ptr<details::write_request<Clock>>> expired;
+    for (auto& wr : _pending) {
+        if (wr.has_expired()) {
+            expired.push_back(wr.weak_from_this());
+        }
+    }
+    for (auto& wp : expired) {
+        if (wp != nullptr) {
+            wp->_hook.unlink();
+            wp->set_value(errc::timeout);
+        }
+    }
+}
+
+template<class Clock>
 ss::future<result<size_t>>
 batcher<Clock>::upload_object(object_id id, iobuf payload) {
     auto content_length = payload.size_bytes();
@@ -167,6 +183,30 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
     try {
         while (!_as.abort_requested()) {
             co_await wait_for_next_upload();
+
+            // NOTE(Evgeny): the main workflow looks like this:
+            // - remove expired write requests
+            // - collect write requests which can be aggregated/uploaded as L0
+            //   object
+            // - create 'aggregator' and fill it with write requests (the
+            //   requests which are added to the aggregator shouldn't be removed
+            //   from _pending list)
+            // - the 'aggregator' is used to generate L0 object and upload it
+            // - the 'aggregator' is used to acknowledge (either success or
+            //   failure) all aggregated write requests
+            //
+            // The invariants here are:
+            // 1. expired write requests shouldn't be added to the 'aggregator'
+            // 2. if the request is added to the 'aggregator' its promise
+            //    shouldn't be set
+            //
+            // The first invariant is enforced by calling
+            // 'remote_timed_out_write_requests' in the same time slice as
+            // collecting the write requests. The second invariant is enforced
+            // by the strict order in which the ack() method is called
+            // explicitly after the operation is either committed or failed.
+
+            remove_timed_out_write_requests();
 
             auto list = get_write_requests(
               10_MiB); // TODO: use configuration parameter
