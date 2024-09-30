@@ -13,7 +13,7 @@ Parquet metadata is serialized using [Apache Thrift's compact wire format][thrif
 We use metadata that is the logical representation of what our application needs, then we write out
 the wire format with all the deprecated and legacy types to be compatible with legacy query systems.
 
-The phyiscal format of serialized parquet metadata is documented [here][parquet-thrift].
+The physical format of serialized parquet metadata is documented [here][parquet-thrift].
 
 
 [parquet-thrift]: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift
