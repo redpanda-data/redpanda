@@ -125,50 +125,72 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     def test_leader_epoch(self):
+        MAX_ATTEMPTS = 10
+
         # We produce in 2 rounds. First round is to ensure that we have a
         # leader and to allow us to get the epoch. Second round is to produce
         # more messages and observe data loss.
         # We need to do this because metadata request might cause a flush.
         num_msg_per_round = 5000
+        expected_hwm = 0
 
-        # Produce a message to ensure that we have a leader and to get the
-        # initial leader epoch.
-        KgoVerifierProducer.oneshot(self.test_context, self.redpanda,
-                                    self.topic_name, self.MSG_SIZE, 1)
-        initial_leader_epoch = next(self.rpk.describe_topic(
-            self.topic)).leader_epoch
+        for attempt_ix in range(MAX_ATTEMPTS):
 
-        # The describe_topic call might cause a flush, so we need to produce
-        # more messages to observe data loss.
-        KgoVerifierProducer.oneshot(self.test_context, self.redpanda,
-                                    self.topic_name, self.MSG_SIZE,
-                                    num_msg_per_round - 1)
+            # Produce a message to ensure that we have a leader and to get the
+            # initial leader epoch.
+            KgoVerifierProducer.oneshot(self.test_context, self.redpanda,
+                                        self.topic_name, self.MSG_SIZE, 1)
+            initial_leader_epoch = next(self.rpk.describe_topic(
+                self.topic)).leader_epoch
 
-        self._crash_and_restart_all()
-        self._wait_for_leader()
-        hwm = next(self.rpk.describe_topic(self.topic)).high_watermark
-        lost = num_msg_per_round - hwm
-        assert lost > 0, "This test must observe data loss" \
-            " after restart to be able to validate leader epoch handling."
-        self.logger.info(
-            f"High watermark after restart: {hwm}. Lost messages: {lost}.")
+            # The describe_topic call might cause a flush, so we need to produce
+            # more messages to observe data loss.
+            KgoVerifierProducer.oneshot(self.test_context, self.redpanda,
+                                        self.topic_name, self.MSG_SIZE,
+                                        num_msg_per_round - 1)
 
-        # Produce more messages. We expect these to be produced at a
-        # higher epoch than before restart.
-        for i in range(10):
-            self.rpk.produce(self.topic_name, "", f"foo {i}")
+            self._crash_and_restart_all()
+            self._wait_for_leader()
+            hwm = next(self.rpk.describe_topic(self.topic)).high_watermark
+            expected_hwm += num_msg_per_round
+            lost = expected_hwm - hwm
 
-        # Fetch from HWM + 1 but with previous leader epoch. This fetch
-        # request should get fenced and return an error.
-        test_client = KafkaTestAdminClient(self.redpanda)
+            if lost == 0:
+                # In debug builds futures reordering causes out-of-order message
+                # delivery which triggers raft recovery. Raft recovery fsync
+                # writes to disk which prevents data loss.
+                # Continue trying until we hit the data loss scenario.
+                self.logger.info(
+                    f"No data loss observed. Retrying {attempt_ix=}.")
+                continue
 
-        response = test_client.fetch(TopicPartition(self.topic_name, 0),
-                                     current_leader_epoch=initial_leader_epoch,
-                                     fetch_offset=hwm + 1)
-        partition_response = response.topics[0][1][0]
-        error_code = partition_response[1]
-        assert error_code == FencedLeaderEpoch.errno, \
-            f"Expected fenced leader epoch error in fetch but got {partition_response}"
+            self.logger.info(
+                f"High watermark after restart: {hwm}. Lost messages: {lost}.")
+
+            # Produce more messages. We expect these to be produced at a
+            # higher epoch than before restart.
+            for i in range(10):
+                self.rpk.produce(self.topic_name, "", f"foo {i}")
+
+            # Fetch from HWM + 1 but with previous leader epoch. This fetch
+            # request should get fenced and return an error.
+            test_client = KafkaTestAdminClient(self.redpanda)
+
+            response = test_client.fetch(
+                TopicPartition(self.topic_name, 0),
+                current_leader_epoch=initial_leader_epoch,
+                fetch_offset=hwm + 1)
+            partition_response = response.topics[0][1][0]
+            error_code = partition_response[1]
+            assert error_code == FencedLeaderEpoch.errno, \
+                f"Expected fenced leader epoch error in fetch but got {partition_response}"
+
+            # Success.
+            return
+
+        assert False, "Failed to observe data loss after multiple attempts. " \
+            "This test must observe data loss after restart to be able to "   \
+            "validate leader epoch handling."
 
     @cluster(num_nodes=4)
     def test_unavoidable_data_loss(self):
