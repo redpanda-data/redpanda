@@ -197,7 +197,8 @@ public:
       , _cerr(
           po.has_value() ? std::move(po.value().cerr)
                          : chunked_vector<ss::sstring>{})
-      , _created_time(md.get_created_at()) {}
+      , _created_time(md.get_created_at())
+      , _finished_time(md.get_finished_at()) {}
 
     debug_bundle_process() = delete;
     debug_bundle_process(debug_bundle_process&&) = default;
@@ -716,6 +717,7 @@ ss::future<> service::set_metadata(job_id_t job_id) {
 
     metadata md(
       _rpk_process->created_time(),
+      _rpk_process->finished_time(),
       job_id,
       debug_bundle_file,
       process_output_file,

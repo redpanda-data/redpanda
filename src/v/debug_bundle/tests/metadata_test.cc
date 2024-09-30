@@ -22,7 +22,9 @@
 namespace db = debug_bundle;
 
 TEST(metadata_test, test_serialize_deserialize) {
+    using namespace std::chrono_literals;
     auto test_time = db::clock::now();
+    auto stop_time = test_time + 1s;
     db::job_id_t job_id{uuid_t::create()};
     std::filesystem::path path{"/tmp/debug.zip"};
     std::filesystem::path process_output_path{"/tmp/debug.out"};
@@ -31,7 +33,13 @@ TEST(metadata_test, test_serialize_deserialize) {
       = ss::experimental::process::wait_exited{1};
 
     db::metadata m{
-      test_time, job_id, path, process_output_path, test_bytes, status};
+      test_time,
+      stop_time,
+      job_id,
+      path,
+      process_output_path,
+      test_bytes,
+      status};
 
     iobuf buf;
     serde::write(buf, std::move(m));
@@ -46,6 +54,7 @@ TEST(metadata_test, test_serialize_deserialize) {
         test_time.time_since_epoch())
         .count());
     EXPECT_EQ(m2.get_created_at(), test_time);
+    EXPECT_EQ(m2.get_finished_at(), stop_time);
     EXPECT_EQ(m2.job_id, job_id);
     EXPECT_EQ(m2.debug_bundle_file_path, path);
     EXPECT_EQ(m2.process_output_file_path, process_output_path);
