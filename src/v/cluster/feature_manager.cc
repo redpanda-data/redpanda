@@ -309,17 +309,38 @@ void feature_manager::verify_enterprise_license() {
     }
 
     const auto& license = _feature_table.local().get_license();
-    auto license_missing_or_expired = !license || license->is_expired();
+    std::optional<security::license> fallback_license = std::nullopt;
+    auto fallback_license_str = std::getenv(
+      "REDPANDA_FALLBACK_ENTERPRISE_LICENSE");
+    if (fallback_license_str != nullptr) {
+        try {
+            fallback_license.emplace(
+              security::make_license(fallback_license_str));
+        } catch (const security::license_exception& e) {
+            // Log the error and continue without a fallback license
+            vlog(
+              clusterlog.warn,
+              "Failed to parse fallback license: {}",
+              e.what());
+        }
+    }
+
+    auto invalid = [](const std::optional<security::license>& license) {
+        return !license || license->is_expired();
+    };
+    auto license_missing_or_expired = invalid(license)
+                                      && invalid(fallback_license);
     auto enterprise_features = report_enterprise_features();
 
     vlog(
       clusterlog.info,
       "Verifying enterprise license: active_version={}, latest_version={}, "
-      "enterprise_features=[{}], license_missing_or_expired={}",
+      "enterprise_features=[{}], license_missing_or_expired={}{}",
       _feature_table.local().get_active_version(),
       _feature_table.local().get_latest_logical_version(),
       enterprise_features.enabled(),
-      license_missing_or_expired);
+      license_missing_or_expired,
+      fallback_license ? " (detected fallback license)" : "");
 
     if (enterprise_features.any() && license_missing_or_expired) {
         throw std::runtime_error{fmt::format(
