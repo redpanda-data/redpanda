@@ -127,6 +127,7 @@ struct debug_bundle_status_data {
     debug_bundle_status status;
     clock::time_point created_timestamp;
     ss::sstring file_name;
+    std::optional<size_t> file_size;
     chunked_vector<ss::sstring> cout;
     chunked_vector<ss::sstring> cerr;
 };

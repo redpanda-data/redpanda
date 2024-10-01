@@ -314,11 +314,28 @@ service::rpk_debug_bundle_status() {
       _rpk_process,
       "_rpk_process should be populated if the process has been executed");
 
+    auto& output_file = _rpk_process->_output_file_path.native();
+
+    std::optional<size_t> file_size;
+    if (status.value() == debug_bundle_status::success) {
+        try {
+            file_size.emplace(co_await ss::file_size(output_file));
+        } catch (const std::exception& e) {
+            co_return error_info(
+              error_code::internal_error,
+              fmt::format(
+                "Failed to get file size for debug bundle file {}: {}",
+                output_file,
+                e.what()));
+        }
+    }
+
     co_return debug_bundle_status_data{
       .job_id = _rpk_process->_job_id,
       .status = status.value(),
       .created_timestamp = _rpk_process->_created_time,
       .file_name = _rpk_process->_output_file_path.filename().native(),
+      .file_size = file_size,
       .cout = _rpk_process->_cout.copy(),
       .cerr = _rpk_process->_cerr.copy()};
 }
