@@ -52,18 +52,22 @@ BOOST_AUTO_TEST_CASE(greedy_movement) {
     // 2 cores x node
     // 10 partitions per shard
     // r=3 (3 replicas)
+
     auto index = leader_balancer_test_utils::make_cluster_index(10, 2, 10, 3);
 
-    auto greed = cluster::greedy_balanced_shards(index, {});
+    auto greed = cluster::greedy_balanced_shards(
+      leader_balancer_test_utils::copy_cluster_index(index), {});
     BOOST_REQUIRE_EQUAL(greed.error(), 0);
 
     // new groups on shard {2, 0}
     auto shard20 = model::broker_shard{model::node_id{2}, 0};
+
     index[shard20][raft::group_id(20)] = index[shard20][raft::group_id(3)];
     index[shard20][raft::group_id(21)] = index[shard20][raft::group_id(3)];
     index[shard20][raft::group_id(22)] = index[shard20][raft::group_id(3)];
 
-    greed = cluster::greedy_balanced_shards(index, {});
+    greed = cluster::greedy_balanced_shards(
+      leader_balancer_test_utils::copy_cluster_index(index), {});
     BOOST_REQUIRE_GT(greed.error(), 0);
 
     // movement should be _from_ the overloaded shard
@@ -146,7 +150,9 @@ static auto from_spec(
       std::inserter(muted_bs, muted_bs.begin()),
       [](auto id) { return model::node_id{id}; });
 
-    return std::make_tuple(index, gbs{index, muted_bs});
+    auto index_cp = leader_balancer_test_utils::copy_cluster_index(index);
+    return std::make_tuple(
+      std::move(index_cp), gbs{std::move(index), muted_bs});
 };
 
 /**

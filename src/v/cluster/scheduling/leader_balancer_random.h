@@ -104,9 +104,10 @@ public:
     random_hill_climbing_strategy(
       index_type index, group_id_to_topic_revision_t g_to_ntp, muted_index mi)
       : _mi(std::make_unique<muted_index>(std::move(mi)))
-      , _reassignments(index)
-      , _etdc(std::move(g_to_ntp), shard_index(index), *_mi)
-      , _eslc(shard_index(std::move(index)), *_mi) {}
+      , _si(std::make_unique<shard_index>(std::move(index)))
+      , _reassignments(_si->shards())
+      , _etdc(std::move(g_to_ntp), *_si, *_mi)
+      , _eslc(*_si, *_mi) {}
 
     double error() const override { return _eslc.error() + _etdc.error(); }
 
@@ -147,6 +148,7 @@ public:
         _etdc.update_index(reassignment);
         _eslc.update_index(reassignment);
         _mi->update_index(reassignment);
+        _si->update_index(reassignment);
         _reassignments.update_index(reassignment);
     }
 
@@ -159,6 +161,7 @@ private:
     static constexpr double error_jitter = 0.000001;
 
     std::unique_ptr<muted_index> _mi;
+    std::unique_ptr<shard_index> _si;
     random_reassignments _reassignments;
 
     even_topic_distributon_constraint _etdc;
