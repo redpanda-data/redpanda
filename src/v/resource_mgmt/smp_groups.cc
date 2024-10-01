@@ -24,6 +24,8 @@ ss::future<> smp_groups::create_groups(config cfg) {
       cfg.proxy_group_max_non_local_requests);
     _transform = co_await create_service_group(
       cfg.transform_group_max_non_local_requests);
+    _datalake = co_await create_service_group(
+      cfg.datalake_group_max_non_local_requests);
 }
 
 ss::future<> smp_groups::destroy_groups() {
@@ -32,6 +34,7 @@ ss::future<> smp_groups::destroy_groups() {
     co_await destroy_smp_service_group(*_cluster);
     co_await destroy_smp_service_group(*_proxy);
     co_await destroy_smp_service_group(*_transform);
+    co_await destroy_smp_service_group(*_datalake);
 }
 
 uint32_t

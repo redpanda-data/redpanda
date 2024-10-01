@@ -85,6 +85,10 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/coordinator/frontend.h"
+#include "datalake/coordinator/service.h"
+#include "datalake/coordinator/state_machine.h"
+#include "datalake/datalake_manager.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
@@ -1456,6 +1460,33 @@ void application::wire_up_runtime_services(
           memory_groups().data_transforms_max_memory())
           .get();
     }
+
+    syschecks::systemd_message("Starting datalake services").get();
+    construct_service(
+      _datalake_coordinator_fe,
+      node_id,
+      &raft_group_manager,
+      &partition_manager,
+      &controller->get_topics_frontend(),
+      &metadata_cache,
+      &controller->get_partition_leaders(),
+      &controller->get_shard_table())
+      .get();
+
+    construct_service(
+      _datalake_manager,
+      node_id,
+      &raft_group_manager,
+      &partition_manager,
+      &controller->get_topics_state(),
+      &controller->get_topics_frontend(),
+      &controller->get_partition_leaders(),
+      &controller->get_shard_table(),
+      &_datalake_coordinator_fe,
+      &_as,
+      sched_groups.datalake_sg(),
+      memory_groups().datalake_max_memory())
+      .get();
 
     construct_single_service(_monitor_unsafe, std::ref(feature_table));
 
@@ -2915,6 +2946,7 @@ void application::start_runtime_services(
           pm.register_factory<cluster::partition_properties_stm_factory>(
             storage.local().kvs(),
             config::shard_local_cfg().rm_sync_timeout_ms.bind());
+          pm.register_factory<datalake::coordinator::stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
@@ -3099,6 +3131,12 @@ void application::start_runtime_services(
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_data_migration_frontend()),
               std::ref(controller->get_data_migration_irpc_frontend())));
+
+          runtime_services.push_back(
+            std::make_unique<datalake::coordinator::rpc::service>(
+              sched_groups.datalake_sg(),
+              smp_service_groups.datalake_sg(),
+              &_datalake_coordinator_fe));
 
           s.add_services(std::move(runtime_services));
 

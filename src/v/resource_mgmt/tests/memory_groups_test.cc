@@ -16,20 +16,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-TEST(MemoryGroups, HasCompatibility) {
-    class system_memory_groups groups(
-      2_GiB, /*compaction_memory_reservation=*/{}, /*wasm_enabled=*/false);
-    EXPECT_THAT(groups.chunk_cache_min_memory(), 2_GiB * .1);
-    EXPECT_THAT(groups.tiered_storage_max_memory(), 2_GiB * .1);
-    EXPECT_THAT(groups.recovery_max_memory(), 2_GiB * .1);
-    // These round differently than the original calculation.
-    EXPECT_THAT(groups.chunk_cache_max_memory(), (2_GiB * .3) - 2);
-    EXPECT_THAT(groups.kafka_total_memory(), (2_GiB * .3) - 2);
-    EXPECT_THAT(groups.rpc_total_memory(), (2_GiB * .2) - 1);
-    EXPECT_THAT(groups.data_transforms_max_memory(), 0);
-
-    EXPECT_EQ(0, groups.compaction_reserved_memory());
-}
+static constexpr size_t total_shares_without_transforms = 11;
+static constexpr size_t total_shares_with_transforms = 12;
 
 // It's not really useful to know the exact byte values for each of these
 // numbers so we just make sure we're within a MB
@@ -41,23 +29,57 @@ MATCHER_P(IsApprox, n, "") {
     return arg >= low && arg <= high;
 }
 
+TEST(MemoryGroups, HasCompatibility) {
+    class system_memory_groups groups(
+      2_GiB, /*compaction_memory_reservation=*/{}, /*wasm_enabled=*/false);
+    auto shares = total_shares_without_transforms;
+    EXPECT_THAT(
+      groups.chunk_cache_min_memory(), IsApprox(2_GiB * 1.0 / shares));
+    EXPECT_THAT(
+      groups.tiered_storage_max_memory(), IsApprox(2_GiB * 1.0 / shares));
+    EXPECT_THAT(groups.recovery_max_memory(), IsApprox(2_GiB * 1.0 / shares));
+    // These round differently than the original calculation.
+    EXPECT_THAT(
+      groups.chunk_cache_max_memory(), IsApprox(2_GiB * 3.0 / shares));
+    EXPECT_THAT(groups.kafka_total_memory(), IsApprox(2_GiB * 3.0 / shares));
+    EXPECT_THAT(groups.rpc_total_memory(), IsApprox(2_GiB * 2.0 / shares));
+    EXPECT_THAT(groups.datalake_max_memory(), IsApprox(2_GiB * 1.0 / shares));
+    EXPECT_THAT(groups.data_transforms_max_memory(), 0);
+
+    EXPECT_EQ(0, groups.compaction_reserved_memory());
+}
+
 TEST(MemoryGroups, DividesSharesWithWasm) {
     constexpr size_t user_wasm_reservation = 20_MiB;
+    auto total_memory = 2_GiB - user_wasm_reservation;
     class system_memory_groups groups(
-      2_GiB - user_wasm_reservation,
+      total_memory,
       /*compaction_memory_reservation=*/{},
       /*wasm_enabled=*/true);
-    EXPECT_THAT(groups.chunk_cache_min_memory(), IsApprox(184_MiB));
-    EXPECT_THAT(groups.chunk_cache_max_memory(), IsApprox(553_MiB));
-    EXPECT_THAT(groups.tiered_storage_max_memory(), IsApprox(184_MiB));
-    EXPECT_THAT(groups.recovery_max_memory(), IsApprox(184_MiB));
-    EXPECT_THAT(groups.kafka_total_memory(), IsApprox(553_MiB));
-    EXPECT_THAT(groups.rpc_total_memory(), IsApprox(368_MiB));
-    EXPECT_THAT(groups.data_transforms_max_memory(), IsApprox(184_MiB));
-    EXPECT_LT(
+    auto shares = total_shares_with_transforms;
+    EXPECT_THAT(
+      groups.chunk_cache_min_memory(), IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.chunk_cache_max_memory(), IsApprox(total_memory * 3.0 / shares));
+    EXPECT_THAT(
+      groups.tiered_storage_max_memory(),
+      IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.recovery_max_memory(), IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.kafka_total_memory(), IsApprox(total_memory * 3.0 / shares));
+    EXPECT_THAT(
+      groups.rpc_total_memory(), IsApprox(total_memory * 2.0 / shares));
+    EXPECT_THAT(
+      groups.data_transforms_max_memory(),
+      IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.datalake_max_memory(), IsApprox(total_memory * 1.0 / shares));
+    EXPECT_LE(
       groups.data_transforms_max_memory() + groups.chunk_cache_max_memory()
         + groups.kafka_total_memory() + groups.recovery_max_memory()
-        + groups.rpc_total_memory() + groups.tiered_storage_max_memory(),
+        + groups.rpc_total_memory() + groups.tiered_storage_max_memory()
+        + groups.datalake_max_memory(),
       2_GiB - user_wasm_reservation);
 
     EXPECT_EQ(0, groups.compaction_reserved_memory());
@@ -70,17 +92,31 @@ TEST(MemoryGroups, DividesSharesWithCompaction) {
       /*compaction_memory_reservation=*/
       {.max_bytes = compaction_reserved_memory, .max_limit_pct = 100.0},
       /*wasm_enabled=*/true);
-    EXPECT_THAT(groups.chunk_cache_min_memory(), IsApprox(184_MiB));
-    EXPECT_THAT(groups.chunk_cache_max_memory(), IsApprox(553_MiB));
-    EXPECT_THAT(groups.tiered_storage_max_memory(), IsApprox(184_MiB));
-    EXPECT_THAT(groups.recovery_max_memory(), IsApprox(184_MiB));
-    EXPECT_THAT(groups.kafka_total_memory(), IsApprox(553_MiB));
-    EXPECT_THAT(groups.rpc_total_memory(), IsApprox(368_MiB));
-    EXPECT_THAT(groups.data_transforms_max_memory(), IsApprox(184_MiB));
-    EXPECT_LT(
+    auto total_memory = 2_GiB - compaction_reserved_memory;
+    auto shares = total_shares_with_transforms;
+    EXPECT_THAT(
+      groups.chunk_cache_min_memory(), IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.chunk_cache_max_memory(), IsApprox(total_memory * 3.0 / shares));
+    EXPECT_THAT(
+      groups.tiered_storage_max_memory(),
+      IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.recovery_max_memory(), IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.kafka_total_memory(), IsApprox(total_memory * 3.0 / shares));
+    EXPECT_THAT(
+      groups.rpc_total_memory(), IsApprox(total_memory * 2.0 / shares));
+    EXPECT_THAT(
+      groups.data_transforms_max_memory(),
+      IsApprox(total_memory * 1.0 / shares));
+    EXPECT_THAT(
+      groups.datalake_max_memory(), IsApprox(total_memory * 1.0 / shares));
+    EXPECT_LE(
       groups.data_transforms_max_memory() + groups.chunk_cache_max_memory()
         + groups.kafka_total_memory() + groups.recovery_max_memory()
-        + groups.rpc_total_memory() + groups.tiered_storage_max_memory(),
+        + groups.rpc_total_memory() + groups.tiered_storage_max_memory()
+        + groups.datalake_max_memory(),
       2_GiB - compaction_reserved_memory);
 
     EXPECT_EQ(compaction_reserved_memory, groups.compaction_reserved_memory());

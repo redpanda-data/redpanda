@@ -12,6 +12,16 @@
 #include <stdexcept>
 namespace datalake {
 
+enum class coordinator_errc : int16_t {
+    ok,
+    coordinator_topic_not_exists,
+    not_leader,
+    timeout,
+    fenced,
+    stale,
+    concurrent_requests,
+};
+
 // TODO: Make an std::error_category instance for this
 enum class arrow_converter_status {
     ok,

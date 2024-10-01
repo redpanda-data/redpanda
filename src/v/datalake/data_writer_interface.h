@@ -10,6 +10,7 @@
 #include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
+#include "serde/envelope.h"
 
 #include <cstddef>
 #include <memory>
@@ -17,8 +18,14 @@
 #pragma once
 
 namespace datalake {
-struct data_writer_result {
+struct data_writer_result
+  : serde::envelope<
+      data_writer_result,
+      serde::version<0>,
+      serde::compat_version<0>> {
     size_t row_count = 0;
+
+    auto serde_fields() { return std::tie(row_count); }
 };
 
 class data_writer {

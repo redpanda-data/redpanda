@@ -33,9 +33,11 @@ struct memory_shares {
     constexpr static size_t recovery = 1;
     constexpr static size_t tiered_storage = 1;
     constexpr static size_t data_transforms = 1;
+    constexpr static size_t datalake = 1;
 
     static size_t total_shares(bool with_wasm) {
-        size_t total = chunk_cache + kafka + rpc + recovery + tiered_storage;
+        size_t total = chunk_cache + kafka + rpc + recovery + tiered_storage
+                       + datalake;
         if (with_wasm) {
             total += data_transforms;
         }
@@ -89,6 +91,10 @@ size_t system_memory_groups::data_transforms_max_memory() const {
         return 0;
     }
     return subsystem_memory<memory_shares::data_transforms>();
+}
+
+size_t system_memory_groups::datalake_max_memory() const {
+    return subsystem_memory<memory_shares::datalake>();
 }
 
 template<size_t shares>

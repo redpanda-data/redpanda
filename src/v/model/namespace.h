@@ -80,6 +80,10 @@ inline const model::topic
 inline const model::topic_namespace transform_log_internal_nt(
   model::kafka_namespace, model::transform_log_internal_topic);
 
+inline const model::topic datalake_coordinator_topic("datalake_coordinator");
+inline const model::topic_namespace datalake_coordinator_nt(
+  model::kafka_internal_namespace, model::datalake_coordinator_topic);
+
 inline bool is_user_topic(topic_namespace_view tp_ns) {
     return tp_ns.ns == kafka_namespace
            && tp_ns.tp != kafka_consumer_offsets_topic

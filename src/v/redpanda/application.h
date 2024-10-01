@@ -28,6 +28,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/fwd.h"
 #include "debug_bundle/fwd.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -337,6 +338,9 @@ private:
 
     // Small helpers to execute one-time upgrade actions
     std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
+
+    ss::sharded<datalake::coordinator::frontend> _datalake_coordinator_fe;
+    ss::sharded<datalake::datalake_manager> _datalake_manager;
 
     // run these first on destruction
     deferred_actions _deferred;
