@@ -24,6 +24,7 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "redpanda/admin/debug_bundle.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
@@ -40,7 +41,6 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/http/exception.hh>
-#include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
 #include <seastar/http/request.hh>
@@ -739,6 +739,7 @@ private:
     ss::sharded<kafka::server>& _kafka_server;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<debug_bundle::service>& _debug_bundle_service;
+    ss::sharded<debug_bundle::file_handler> _debug_bundle_file_handler;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

@@ -23,6 +23,7 @@
 #include <rapidjson/error/en.h>
 
 #include <chrono>
+#include <optional>
 #include <type_traits>
 
 using namespace debug_bundle;
@@ -36,11 +37,13 @@ public:
 };
 
 using optional_int = std::optional<int>;
+using optional_str = std::optional<ss::sstring>;
 using named_int = named_type<int, struct test_named_tag>;
 
 using JsonTestTypes = ::testing::Types<
   int,
   optional_int,
+  optional_str,
   named_int,
   uint64_t,
   std::chrono::seconds,
@@ -66,6 +69,9 @@ TYPED_TEST(JsonTypeTest, BasicType) {
     } else if constexpr (std::is_same_v<TypeParam, optional_int>) {
         this->json_input = R"(42)";
         this->expected = optional_int{42};
+    } else if constexpr (std::is_same_v<TypeParam, optional_str>) {
+        this->json_input = R"(null)";
+        this->expected = std::nullopt;
     } else if constexpr (std::is_same_v<TypeParam, named_int>) {
         this->json_input = R"(42)";
         this->expected = named_int{42};
@@ -192,6 +198,9 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
     } else if constexpr (std::is_same_v<TypeParam, optional_int>) {
         this->json_input = R"("42")";
         this->expected = optional_int{42};
+    } else if constexpr (std::is_same_v<TypeParam, optional_str>) {
+        this->json_input = R"(42)";
+        this->expected = std::nullopt;
     } else if constexpr (std::is_same_v<TypeParam, named_int>) {
         this->json_input = R"("42")";
         this->expected = named_int{42};

@@ -177,6 +177,7 @@ redpanda_cc_library(
         "api-doc/transaction.json.hh",
         "api-doc/transform.json.hh",
         "api-doc/usage.json.hh",
+        "debug_bundle.h",
         "server.h",
         "util.h",
     ],

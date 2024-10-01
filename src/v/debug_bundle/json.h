@@ -44,6 +44,9 @@ debug_bundle::result<T> from_json(const json::Value& v) {
     };
 
     if constexpr (reflection::is_std_optional<T>) {
+        if (v.IsNull()) {
+            return std::nullopt;
+        }
         auto r = from_json<typename T::value_type>(v);
         if (r.has_value()) {
             return T{std::move(r).assume_value()};
