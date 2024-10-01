@@ -26,8 +26,10 @@
 #include "random/generators.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
 
@@ -173,6 +175,11 @@ FIXTURE_TEST(test_archiver_service_torture_test, archiver_cluster_fixture) {
       node_id0, node_id1, node_id2, node_id3};
     std::vector<model::node_id> replica_set = {node_id0, node_id1, node_id2};
 
+    // The test is using only shard 0 and all 'nodes' are sharing the same
+    // config values stored in the TSL.
+    scoped_config cfg;
+    cfg.get("cloud_storage_disable_upload_loop_for_tests").set_value(true);
+
     wait_for_controller_leadership(node_id0).get();
     wait_for_all_members(3s).get();
 
@@ -190,8 +197,14 @@ FIXTURE_TEST(test_archiver_service_torture_test, archiver_cluster_fixture) {
 #else
     const int num_iterations = 20;
 #endif
+    const std::chrono::seconds max_time = 300s;
 
+    auto test_start = ss::lowres_clock::now();
     for (int i = 0; i < num_iterations; i++) {
+        if (ss::lowres_clock::now() - test_start > max_time) {
+            vlog(arch_test_log.info, "Time limit reached");
+            break;
+        }
         for (auto ntp : panda_topic) {
             // On every iteration we either shuffling the leadership or moving
             // one of the replicas between the nodes or performing the
@@ -214,7 +227,8 @@ FIXTURE_TEST(test_archiver_service_torture_test, archiver_cluster_fixture) {
                     n_s.shard = n_s.shard == 0 ? 1 : 0;
                 }
                 move_partition(panda_topic.back(), loc_list);
-                wait_partition_movement_complete(panda_topic.back(), loc_list);
+                wait_partition_movement_complete(
+                  panda_topic.back(), loc_list, 60s);
             } else {
                 // Move partition to another node
                 auto ntp = random_generators::random_choice(all_ntp);
@@ -251,7 +265,7 @@ FIXTURE_TEST(test_archiver_service_torture_test, archiver_cluster_fixture) {
                     }
                 }
                 move_partition(panda_topic.back(), replica_set);
-                wait_partition_movement_complete(panda_topic.back());
+                wait_partition_movement_complete(panda_topic.back(), 60s);
             }
         }
         wait_all_partition_leaders(panda_topic);

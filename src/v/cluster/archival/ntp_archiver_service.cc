@@ -1014,6 +1014,19 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             _last_manifest_upload_time = ss::lowres_clock::now();
         }
 
+        const auto& upl_results = upload_list.value().results;
+        const auto all_failed = std::all_of(
+          upl_results.begin(),
+          upl_results.end(),
+          [](cloud_storage::upload_result r) {
+              return r != cloud_storage::upload_result::success;
+          });
+
+        if (all_failed) {
+            vlog(_rtclog.debug, "All uploads has failed");
+            continue;
+        }
+
         auto admit_result = co_await _ops->admit_uploads(
           _rtcnode, std::move(upload_list.value()));
         if (admit_result.has_error()) {

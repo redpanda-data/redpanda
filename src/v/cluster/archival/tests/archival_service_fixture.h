@@ -21,6 +21,7 @@
 #include "config/configuration.h"
 #include "config/property.h"
 #include "container/fragmented_vector.h"
+#include "errc.h"
 #include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -237,20 +238,33 @@ public:
     /// Move partition from source node to the target node
     // NOLINTNEXTLINE
     void move_partition(model::ntp ntp, std::vector<model::node_id> replicas) {
-        auto node = controller_leader();
-        BOOST_REQUIRE(node != nullptr);
-        auto errc = node->controller->get_topics_frontend()
-                      .local()
-                      .move_partition_replicas(
-                        std::move(ntp),
-                        std::move(replicas),
-                        cluster::reconfiguration_policy::min_local_retention,
-                        model::no_timeout)
-                      .get();
-        vlog(
-          arch_fixture_log.info,
-          "move_partition_replicas result {}",
-          errc.message());
+        static constexpr int num_retries = 4;
+        std::error_code errc;
+        for (int i = 0; i < num_retries; i++) {
+            auto node = controller_leader();
+            BOOST_REQUIRE(node != nullptr);
+            errc = node->controller->get_topics_frontend()
+                     .local()
+                     .move_partition_replicas(
+                       ntp,
+                       replicas,
+                       cluster::reconfiguration_policy::min_local_retention,
+                       model::no_timeout)
+                     .get();
+            vlog(
+              arch_fixture_log.info,
+              "move_partition_replicas result {}",
+              errc.message());
+
+            if (errc == raft::errc::not_leader) {
+                vlog(
+                  arch_fixture_log.info,
+                  "move_partition_replicas controller leadership has moved, "
+                  "retrying");
+                continue;
+            }
+            break;
+        }
         BOOST_REQUIRE(errc == cluster::errc::success);
     }
 
@@ -258,21 +272,34 @@ public:
     // NOLINTNEXTLINE
     void
     move_partition(model::ntp ntp, std::vector<model::broker_shard> replicas) {
-        auto node = controller_leader();
-        BOOST_REQUIRE(node != nullptr);
-        auto errc = node->controller->get_topics_frontend()
-                      .local()
-                      .move_partition_replicas(
-                        std::move(ntp),
-                        std::move(replicas),
-                        cluster::reconfiguration_policy::min_local_retention,
-                        model::no_timeout)
-                      .get();
-        vlog(
-          arch_fixture_log.info,
-          "move_partition_replicas (x-shard) result {}",
-          errc.message());
-        BOOST_REQUIRE_EQUAL(errc, cluster::errc::success);
+        static constexpr int num_retries = 4;
+        std::error_code errc;
+        for (int i = 0; i < num_retries; i++) {
+            auto node = controller_leader();
+            BOOST_REQUIRE(node != nullptr);
+            errc = node->controller->get_topics_frontend()
+                     .local()
+                     .move_partition_replicas(
+                       ntp,
+                       replicas,
+                       cluster::reconfiguration_policy::min_local_retention,
+                       model::no_timeout)
+                     .get();
+            vlog(
+              arch_fixture_log.info,
+              "move_partition_replicas (x-shard) result {}",
+              errc.message());
+
+            if (errc == raft::errc::not_leader) {
+                vlog(
+                  arch_fixture_log.info,
+                  "move_partition_replicas (x-shard) controller leadership has "
+                  "moved, retrying");
+                continue;
+            }
+            break;
+        }
+        BOOST_REQUIRE(errc == cluster::errc::success);
     }
 
     /// Return list of nodes that have a replica of the partition
