@@ -16,11 +16,12 @@
 #include "container/fragmented_vector.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
+#include "storage/fwd.h"
 #include "utils/mutex.h"
-#include "utils/uuid.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/process.hh>
 
 namespace debug_bundle {
 
@@ -36,12 +37,13 @@ public:
     static constexpr ss::shard_id service_shard = 0;
     /// Name of the debug bundle directory
     static constexpr std::string_view debug_bundle_dir_name = "debug-bundle";
+    /// Key used to store metadata in the kvstore
+    static constexpr std::string_view debug_bundle_metadata_key
+      = "debug_bundle_metadata";
     /**
      * @brief Construct a new debug bundle service object
-     *
-     * @param data_dir Path to the Redpanda data directory
      */
-    explicit service(const std::filesystem::path& data_dir);
+    explicit service(storage::kvstore* kvstore);
 
     /// Destructor
     ~service() noexcept;
@@ -118,17 +120,39 @@ public:
      */
     ss::future<result<void>> delete_rpk_debug_bundle(job_id_t job_id);
 
+    /// Returns the current debug bundle directory
+    const std::filesystem::path& get_debug_bundle_output_directory() const {
+        return _debug_bundle_dir;
+    }
+
 private:
     /**
      * @brief Constructs the arguments for the rpk debug bundle command
      *
-     * @param job_id Job ID
+     * @param debug_bundle_file_path Path to where to output the debug bundle
      * @param params parameters
      * @return std::vector<ss::sstring> The list of strings to pass to
      * external_process
      */
-    result<std::vector<ss::sstring>>
-    build_rpk_arguments(job_id_t job_id, debug_bundle_parameters params);
+    result<std::vector<ss::sstring>> build_rpk_arguments(
+      std::string_view debug_bundle_file_path, debug_bundle_parameters params);
+
+    /**
+     * @brief Cleans up files from previous debug bundle run
+     */
+    ss::future<> cleanup_previous_run() const;
+
+    /**
+     * @brief Removes debug bundle entry from kvstore
+     */
+    ss::future<> remove_kvstore_entry() const;
+
+    /**
+     * @brief Set the metadata object within the kvstore
+     *
+     * @param job_id The job id
+     */
+    ss::future<> set_metadata(job_id_t job_id);
 
     /**
      * @brief Returns the status of the running process
@@ -143,14 +167,35 @@ private:
      */
     bool is_running() const;
 
+    /**
+     * @brief Handles the result after waiting on the rpk debug bundle process
+     *
+     * @param job_id The associated job ID
+     */
+    ss::future<> handle_wait_result(job_id_t job_id);
+
+    /**
+     * @brief Attempts to reload a previous run
+     *
+     * If a previous run exists in the kvstore upon service start, will attempt
+     * to reload the metadata and make that debug bundle available to the user
+     *
+     */
+    ss::future<> maybe_reload_previous_run();
+
 private:
     /// Handler used to emplace stdout/stderr into a buffer
     struct output_handler;
+    /// KV store used to store metadata
+    storage::kvstore* _kvstore;
     /// Structure used to hold information about the running rpk debug bundle
     /// process
     class debug_bundle_process;
     /// Path to the debug bundle directory
     std::filesystem::path _debug_bundle_dir;
+    /// Binding to debug bundle storage directory config
+    config::binding<std::optional<std::filesystem::path>>
+      _debug_bundle_storage_dir_binding;
     /// Binding called when the rpk path config changes
     config::binding<std::filesystem::path> _rpk_path_binding;
     /// External process

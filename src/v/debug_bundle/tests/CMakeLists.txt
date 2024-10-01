@@ -4,10 +4,13 @@ rp_test(
     BINARY_NAME gtest_debug_bundle
     SOURCES
       json_test.cc
+      metadata_test.cc
       types_test.cc
     LIBRARIES
       v::debug_bundle
+      v::features
       v::gtest_main
+      v::storage
     LABELS debug_bundle
     ARGS "-- -c 1"
 )
@@ -22,7 +25,9 @@ rp_test(
     debug_bundle_service_test.cc
   LIBRARIES
     v::debug_bundle
+    v::features
     v::gtest_main
+    v::storage
   LABELS debug_bundle
   ARGS "-- -c 1"
   ENV "RPK_SHIM=${rpk_shim_path}"

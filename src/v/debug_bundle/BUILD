@@ -4,36 +4,76 @@ redpanda_cc_library(
     name = "debug_bundle",
     srcs = [
         "debug_bundle_service.cc",
-        "error.cc",
-        "types.cc",
     ],
     hdrs = [
         "debug_bundle_service.h",
-        "error.h",
         "fwd.h",
-        "types.h",
     ],
     implementation_deps = [
+        ":metadata",
+        ":utils",
+        "//src/v/bytes:iostream",
+        "//src/v/crypto",
         "//src/v/ssx:future_util",
-        "//src/v/strings:string_switch",
         "//src/v/utils:external_process",
         "@boost//:algorithm",
+        "@re2",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":error",
+        ":types",
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/container:fragmented_vector",
+        "//src/v/storage",
+        "//src/v/utils:mutex",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "error",
+    srcs = [
+        "error.cc",
+    ],
+    hdrs = [
+        "error.h",
     ],
     include_prefix = "debug_bundle",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/config",
+    ],
+)
+
+redpanda_cc_library(
+    name = "types",
+    srcs = [
+        "types.cc",
+    ],
+    hdrs = [
+        "types.h",
+    ],
+    implementation_deps = [
+        ":error",
+        "//src/v/strings:string_switch",
+        "@re2",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/security",
-        "//src/v/utils:mutex",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/strings",
         "@fmt",
-        "@re2",
         "@seastar",
     ],
 )
@@ -50,5 +90,50 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/json",
         "//src/v/reflection:type_traits",
+    ],
+)
+
+redpanda_cc_library(
+    name = "metadata",
+    hdrs = [
+        "metadata.h",
+    ],
+    implementation_deps = [
+        "//src/v/serde:vector",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
+    deps = [
+        ":types",
+        "//src/v/bytes",
+        "//src/v/container:fragmented_vector",
+        "//src/v/serde",
+        "//src/v/serde:bytes",
+        "//src/v/serde:named_type",
+        "//src/v/serde:uuid",
+        "//src/v/serde:variant",
+        "//src/v/utils:uuid",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "utils",
+    srcs = [
+        "utils.cc",
+    ],
+    hdrs = [
+        "utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/crypto",
+        "//src/v/ssx:future_util",
+        "@seastar",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
+    deps = [
+        "//src/v/bytes",
     ],
 )

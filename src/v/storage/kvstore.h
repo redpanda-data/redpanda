@@ -102,6 +102,7 @@ public:
         usage = 5,
         stms = 6,
         shard_placement = 7,
+        debug_bundle = 8,
         /* your sub-system here */
     };
 

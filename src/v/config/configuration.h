@@ -662,6 +662,7 @@ struct configuration final : public config_store {
     property<bool> cpu_profiler_enabled;
     bounded_property<std::chrono::milliseconds> cpu_profiler_sample_period_ms;
     property<std::filesystem::path> rpk_path;
+    property<std::optional<std::filesystem::path>> debug_bundle_storage_dir;
 
     // oidc authentication
     property<ss::sstring> oidc_discovery_url;

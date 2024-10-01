@@ -3273,6 +3273,15 @@ configuration::configuration()
       "Path to RPK binary",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       "/usr/bin/rpk")
+  , debug_bundle_storage_dir(
+      *this,
+      "debug_bundle_storage_dir",
+      "Path to the debug bundle storage directory. Note: Changing this path "
+      "does not clean up existing debug bundles. If not set, the debug bundle "
+      "is stored in the Redpanda data directory specified in the redpanda.yaml "
+      "broker configuration file.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
   , oidc_discovery_url(
       *this,
       "oidc_discovery_url",

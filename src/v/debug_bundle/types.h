@@ -130,6 +130,10 @@ struct debug_bundle_status_data {
     std::optional<size_t> file_size;
     chunked_vector<ss::sstring> cout;
     chunked_vector<ss::sstring> cerr;
+
+    friend bool operator==(
+      const debug_bundle_status_data& lhs, const debug_bundle_status_data& rhs)
+      = default;
 };
 } // namespace debug_bundle
 
