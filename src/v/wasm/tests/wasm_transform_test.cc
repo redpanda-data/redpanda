@@ -32,14 +32,14 @@
 using namespace std::chrono_literals;
 
 TEST_F(WasmTestFixture, IdentityFunction) {
-    load_wasm("identity.wasm");
+    load_wasm("identity");
     auto batch = make_tiny_batch();
     auto transformed = transform(batch);
     ASSERT_EQ(transformed.copy_records(), batch.copy_records());
 }
 
 TEST_F(WasmTestFixture, CanRestartEngine) {
-    load_wasm("identity.wasm");
+    load_wasm("identity");
     engine()->stop().get();
     // It still works after being restarted
     engine()->start().get();
@@ -49,16 +49,16 @@ TEST_F(WasmTestFixture, CanRestartEngine) {
 }
 
 TEST_F(WasmTestFixture, HandlesSetupPanic) {
-    EXPECT_THROW(load_wasm("setup-panic.wasm"), wasm::wasm_exception);
+    EXPECT_THROW(load_wasm("setup-panic"), wasm::wasm_exception);
 }
 
 TEST_F(WasmTestFixture, HandlesTransformPanic) {
-    load_wasm("transform-panic.wasm");
+    load_wasm("transform-panic");
     EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
 }
 
 TEST_F(WasmTestFixture, HandlesTransformErrors) {
-    load_wasm("transform-error.wasm");
+    load_wasm("transform-error");
     EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
     engine()->stop().get();
     engine()->start().get();
@@ -89,7 +89,7 @@ std::string generate_example_avro_record(
 
 TEST_F(WasmTestFixture, SchemaRegistry) {
     // Test an example schema registry encoded avro value -> JSON transform
-    load_wasm("schema-registry.wasm");
+    load_wasm("schema-registry");
     const auto& schemas = registered_schemas();
     ASSERT_EQ(schemas.size(), 1);
     ASSERT_EQ(schemas[0].id, 1);
@@ -108,13 +108,13 @@ TEST_F(WasmTestFixture, SchemaRegistry) {
 }
 
 TEST_F(WasmTestFixture, MemoryIsLimited) {
-    load_wasm("dynamic.wasm");
+    load_wasm("dynamic");
     EXPECT_NO_THROW(execute_command("allocate", 5_KiB));
     EXPECT_THROW(execute_command("allocate", MAX_MEMORY), wasm::wasm_exception);
 }
 
 TEST_F(WasmTestFixture, CpuIsLimited) {
-    load_wasm("dynamic.wasm");
+    load_wasm("dynamic");
     // In reality, we don't want this to be over a few milliseconds, but in an
     // effort to prevent test flakiness on hosts with lots of concurrent tests
     // on shared vCPUs, we make this much higher.
@@ -129,7 +129,7 @@ TEST_F(WasmTestFixture, CpuIsLimited) {
 using ::testing::ElementsAre;
 
 TEST_F(WasmTestFixture, LogsAreEmitted) {
-    load_wasm("dynamic.wasm");
+    load_wasm("dynamic");
     ss::sstring msg = "foobar";
     auto value = execute_command("print", msg);
     auto bytes = iobuf_to_bytes(value);
@@ -145,7 +145,7 @@ TEST_F(WasmTestFixture, WorksWithCpuProfiler) {
       = ss::engine().get_cpu_profiler_period();
     ss::engine().set_cpu_profiler_enabled(true);
     ss::engine().set_cpu_profiler_period(100us);
-    load_wasm("dynamic.wasm");
+    load_wasm("dynamic");
     EXPECT_THROW(execute_command("loop", 0), wasm::wasm_exception);
     ss::engine().set_cpu_profiler_enabled(original_enabled);
     ss::engine().set_cpu_profiler_period(original_period);

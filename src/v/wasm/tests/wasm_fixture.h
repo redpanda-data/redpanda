@@ -30,14 +30,14 @@ class fake_schema_registry;
 class WasmTestFixture : public ::testing::Test {
 public:
     static constexpr model::timestamp NOW = model::timestamp(1687201340524ULL);
-    static constexpr size_t MAX_MEMORY = 2_MiB;
+    static constexpr size_t MAX_MEMORY = 32_MiB;
 
     static void SetUpTestSuite();
 
     void SetUp() override;
     void TearDown() override;
 
-    void load_wasm(const std::string& path);
+    void load_wasm(std::string file);
     model::record_batch make_tiny_batch();
     model::record_batch make_tiny_batch(iobuf record_value);
     model::record_batch transform(const model::record_batch&);

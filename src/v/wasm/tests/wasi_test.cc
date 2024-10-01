@@ -16,7 +16,7 @@
 #include <absl/container/flat_hash_set.h>
 
 TEST_F(WasmTestFixture, Wasi) {
-    load_wasm("wasi.wasm");
+    load_wasm("wasi");
     auto batch = make_tiny_batch();
     auto result = transform(batch);
     const auto& result_records = result.copy_records();
