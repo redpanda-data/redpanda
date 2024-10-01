@@ -242,8 +242,7 @@ ss::future<> backend::work_once() {
                   vlog(
                     dm_log.info,
                     "as part of migration {}, topic work for moving nt {} to "
-                    "state "
-                    "{} returned {}, retrying",
+                    "state {} returned {}, retrying",
                     result.migration,
                     result.nt,
                     result.sought_state,
