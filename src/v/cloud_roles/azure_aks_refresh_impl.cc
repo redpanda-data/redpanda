@@ -10,6 +10,7 @@
 
 #include "azure_aks_refresh_impl.h"
 
+#include "http/utils.h"
 #include "json/schema.h"
 #include "request_response_helpers.h"
 #include "thirdparty/ada/ada.h"
@@ -136,7 +137,8 @@ ss::future<api_response> azure_aks_refresh_impl::fetch_credentials() {
       "type%3Ajwt-bearer"
       "&client_assertion={}"
       "&grant_type=client_credentials",
-      uri_encode("https://storage.azure.com/.default", true),
+      http::uri_encode(
+        "https://storage.azure.com/.default", http::uri_encode_slash::yes),
       client_id_,
       jwt_token);
 

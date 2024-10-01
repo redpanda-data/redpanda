@@ -3,6 +3,22 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//visibility:public"])
 
 redpanda_cc_library(
+    name = "utils",
+    srcs = [
+        "utils.cc",
+    ],
+    hdrs = [
+        "utils.h",
+    ],
+    include_prefix = "http",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "http",
     srcs = [
         "chunk_encoding.cc",
