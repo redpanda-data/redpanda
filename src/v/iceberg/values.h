@@ -108,6 +108,8 @@ using value = std::variant<
   std::unique_ptr<map_value>>;
 
 struct struct_value {
+    // The order of these fields must align with the corresponding struct type
+    // as defined in the schema, see `iceberg::struct_type`.
     chunked_vector<std::optional<value>> fields;
 };
 bool operator==(const struct_value&, const struct_value&);
