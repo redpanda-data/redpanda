@@ -146,6 +146,8 @@ private:
 
     bool leadership_pinning_enabled() const;
 
+    /// Config binding fields
+
     // On/off switch: when off, leader balancer tick will run
     // but do nothing
     config::binding<bool> _enabled;
@@ -197,20 +199,8 @@ private:
 
     std::chrono::milliseconds _metadata_dissemination_interval;
 
-    struct last_known_leader {
-        model::broker_shard shard;
-        clock_type::time_point expires;
-    };
-    absl::btree_map<raft::group_id, last_known_leader> _last_leader;
+    /// Service dependencies
 
-    leader_balancer_probe _probe;
-    bool _need_controller_refresh{true};
-    bool _throttled{false};
-    absl::btree_map<raft::group_id, clock_type::time_point> _muted;
-    cluster::notification_id_type _leader_notify_handle;
-    std::optional<cluster::notification_id_type>
-      _leadership_change_notify_handle;
-    cluster::notification_id_type _maintenance_state_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
     members_table& _members;
@@ -221,8 +211,28 @@ private:
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<ss::abort_source>& _as;
     consensus_ptr _raft0;
+
+    /// Notifications
+
+    cluster::notification_id_type _leader_notify_handle;
+    std::optional<cluster::notification_id_type>
+      _leadership_change_notify_handle;
+    cluster::notification_id_type _maintenance_state_notify_handle;
+
     ss::gate _gate;
     ss::timer<clock_type> _timer;
+
+    /// Internal state
+
+    struct last_known_leader {
+        model::broker_shard shard;
+        clock_type::time_point expires;
+    };
+    absl::btree_map<raft::group_id, last_known_leader> _last_leader;
+
+    bool _need_controller_refresh{true};
+    bool _throttled{false};
+    absl::btree_map<raft::group_id, clock_type::time_point> _muted;
 
     struct in_flight_reassignment {
         reassignment value;
@@ -230,6 +240,8 @@ private:
     };
     absl::flat_hash_map<raft::group_id, in_flight_reassignment>
       _in_flight_changes;
+
+    leader_balancer_probe _probe;
 };
 
 } // namespace cluster
