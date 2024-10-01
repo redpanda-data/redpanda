@@ -55,7 +55,7 @@ struct transform_config {
 
 ss::sstring make_string(size_t size) {
     ss::sstring str;
-    for (int i = 0; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i) {
         str.append("a", 1);
     }
     return str;
@@ -63,7 +63,7 @@ ss::sstring make_string(size_t size) {
 
 absl::flat_hash_map<ss::sstring, ss::sstring> make_env_map(size_t size) {
     absl::flat_hash_map<ss::sstring, ss::sstring> env;
-    for (int i = 0; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i) {
         env.insert({ss::format("var_{}", i), "bar"});
     }
     return env;

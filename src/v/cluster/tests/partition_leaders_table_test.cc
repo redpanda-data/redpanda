@@ -10,12 +10,12 @@
  */
 
 #include "cluster/commands.h"
+#include "cluster/data_migrated_resources.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/producer_state.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
-#include "data_migrated_resources.h"
 #include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -53,10 +53,10 @@ struct test_fixture : public seastar_test {
     ss::future<size_t> count_leaderless_partitions() {
         size_t leaderless_cnt = 0;
         co_await leaders.for_each_leader([&leaderless_cnt](
-                                           model::topic_namespace_view tp_ns,
-                                           model::partition_id pid,
+                                           model::topic_namespace_view,
+                                           model::partition_id,
                                            std::optional<model::node_id> leader,
-                                           model::term_id term) {
+                                           model::term_id) {
             if (!leader) {
                 leaderless_cnt++;
             }

@@ -11,6 +11,17 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "leader_balancer_test_utils",
+    hdrs = [
+        "leader_balancer_constraints_utils.h",
+        "leader_balancer_test_utils.h",
+    ],
+    include_prefix = "cluster/tests",
+    deps = [
+    ],
+)
+
+redpanda_test_cc_library(
     name = "topic_table_fixture",
     hdrs = [
         "topic_table_fixture.h",
@@ -78,5 +89,159 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "leader_balancer_test",
+    timeout = "short",
+    srcs = [
+        "leader_balancer_test.cc",
+    ],
+    deps = [
+        ":leader_balancer_test_utils",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "leader_balancer_constraints_test",
+    timeout = "short",
+    srcs = [
+        "leader_balancer_constraints_test.cc",
+    ],
+    deps = [
+        ":leader_balancer_test_utils",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "metrics_reporter_test",
+    timeout = "short",
+    srcs = [
+        "metrics_reporter_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "plugin_table_test",
+    timeout = "short",
+    srcs = [
+        "plugin_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "plugin_frontend_validation_test",
+    timeout = "short",
+    srcs = [
+        "plugin_frontend_validation_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:range",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "namespaced_cache_test",
+    timeout = "short",
+    srcs = [
+        "namespaced_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:intrusive",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "cluster_recovery_table_test",
+    timeout = "short",
+    srcs = [
+        "cluster_recovery_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partition_leaders_table_test",
+    timeout = "short",
+    srcs = [
+        "partition_leaders_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft:fundamental",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "shard_placement_table_test",
+    timeout = "moderate",
+    srcs = [
+        "shard_placement_table_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/features",
+        "//src/v/ssx:event",
+        "//src/v/storage",
+        "//src/v/storage:resources",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "//src/v/utils:prefix_logger",
+        "@seastar",
     ],
 )
