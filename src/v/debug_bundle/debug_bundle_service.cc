@@ -416,13 +416,11 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
     ssx::spawn_with_gate(_gate, [this, job_id]() {
         return _rpk_process->wait()
           .then([this, job_id](auto) {
-              auto hold = _gate.hold();
-              return _process_control_mutex.get_units()
-                .then([this, job_id](auto units) {
+              return _process_control_mutex.get_units().then(
+                [this, job_id](auto units) {
                     return handle_wait_result(job_id).finally(
                       [units = std::move(units)] {});
-                })
-                .finally([hold = std::move(hold)] {});
+                });
           })
           .handle_exception([](const std::exception_ptr& e) {
               lg.error("wait() failed while running rpk debug bundle: {}", e);
