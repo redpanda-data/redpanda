@@ -185,11 +185,21 @@ ss::future<> backend::stop() {
 }
 
 ss::future<> backend::loop_once() {
-    co_await _sem.wait(_as);
-    _sem.consume(_sem.available_units());
-    {
-        auto units = co_await _mutex.get_units(_as);
-        co_await work_once();
+    try {
+        co_await _sem.wait(_as);
+        _sem.consume(_sem.available_units());
+        {
+            auto units = co_await _mutex.get_units(_as);
+            co_await work_once();
+        }
+    } catch (...) {
+        const auto& e = std::current_exception();
+        vlogl(
+          dm_log,
+          ssx::is_shutdown_exception(e) ? ss::log_level::trace
+                                        : ss::log_level::warn,
+          "Exception in migration backend main loop: {}",
+          e);
     }
 }
 
