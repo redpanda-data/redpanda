@@ -253,7 +253,10 @@ class FullDiskReclaimTest(RedpandaTest):
     """
     Test that full disk alert triggers eager gc to reclaim space
     """
-    topics = (TopicSpec(partition_count=10,
+    partition_count = 10
+    log_segment_size = 1048576
+
+    topics = (TopicSpec(partition_count=partition_count,
                         retention_bytes=1,
                         retention_ms=1,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
@@ -261,7 +264,8 @@ class FullDiskReclaimTest(RedpandaTest):
     def __init__(self, test_ctx):
         extra_rp_conf = dict(
             log_compaction_interval_ms=24 * 60 * 60 * 1000,
-            log_segment_size=1048576,
+            log_segment_size=self.log_segment_size,
+            log_segment_size_jitter_percent=0,
         )
         super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
 
@@ -281,18 +285,23 @@ class FullDiskReclaimTest(RedpandaTest):
         nbytes = lambda mb: mb * 2**20
         node = self.redpanda.nodes[0]
 
+        produce_size = 3 * self.partition_count * self.log_segment_size
+        expected_size_after_gc = self.partition_count * self.log_segment_size + nbytes(
+            1)
+        assert expected_size_after_gc < produce_size
+
         def observed_data_size(pred):
             observed = self.redpanda.data_stat(node)
             observed_total = sum(s for path, s in observed
                                  if path.parts[0] == 'kafka')
             return pred(observed_total)
 
-        # write around 30 megabytes into the topic
-        produce_total_bytes(self.redpanda, self.topic, nbytes(100))
+        # write into the topic
+        produce_total_bytes(self.redpanda, self.topic, produce_size)
 
         # wait until all that data shows up. add some fuzz factor to avoid
         # timeouts due to placement skew or other such issues.
-        wait_until(lambda: observed_data_size(lambda s: s > nbytes(25)),
+        wait_until(lambda: observed_data_size(lambda s: s >= produce_size),
                    timeout_sec=30,
                    backoff_sec=2)
 
@@ -302,7 +311,7 @@ class FullDiskReclaimTest(RedpandaTest):
 
         # wait until all that data shows up. add some fuzz factor to avoid
         # timeouts due to placement skew or other such issues.
-        wait_until(lambda: observed_data_size(lambda s: s > nbytes(25)),
+        wait_until(lambda: observed_data_size(lambda s: s >= produce_size),
                    timeout_sec=30,
                    backoff_sec=2)
 
@@ -312,10 +321,15 @@ class FullDiskReclaimTest(RedpandaTest):
         full_disk = FullDiskHelper(self.logger, self.redpanda)
         full_disk.trigger_low_space(node=node)
 
-        # now wait until the data drops below 1 mb
-        wait_until(lambda: observed_data_size(lambda s: s < nbytes(1)),
-                   timeout_sec=10,
-                   backoff_sec=2)
+        # now wait until the data drops
+        # the expected size is at most one segment for each partition and a
+        # bit extra for stm snapshots. although we expect the subsystem to
+        # reclaim all segments there are other internal systems
+        # (e.g.leadership balancer) which can trigger writes to the partitions.
+        wait_until(
+            lambda: observed_data_size(lambda s: s < expected_size_after_gc),
+            timeout_sec=10,
+            backoff_sec=2)
 
 
 class LocalDiskReportTimeTest(RedpandaTest):
