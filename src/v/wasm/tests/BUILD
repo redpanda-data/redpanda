@@ -99,7 +99,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "wasm_transform_test",
-    timeout = "long",
+    timeout = "moderate",
     srcs = [
         "wasm_transform_test.cc",
     ],
@@ -107,15 +107,67 @@ redpanda_cc_gtest(
     data = [
         "//src/transform-sdk/go/transform/internal/testdata/dynamic",
         "//src/transform-sdk/go/transform/internal/testdata/identity",
-        "//src/transform-sdk/go/transform/internal/testdata/schema-registry",
-        "//src/transform-sdk/go/transform/internal/testdata/setup-panic",
-        "//src/transform-sdk/go/transform/internal/testdata/transform-panic",
-        "//src/transform-sdk/go/transform/internal/testdata/transform-error",
     ],
     env = {
         "IDENTITY_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/identity)",
-        "SCHEMA-REGISTRY_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/schema-registry)",
         "DYNAMIC_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/dynamic)",
+    },
+    memory = "128MiB",
+    deps = [
+        ":wasm_fixture",
+        "//src/v/base",
+        "//src/v/test_utils:gtest",
+        "//src/v/wasm:api",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "wasm_sr_test",
+    timeout = "moderate",
+    srcs = [
+        "wasm_sr_test.cc",
+    ],
+    cpu = 1,
+    data = [
+        "//src/transform-sdk/go/transform/internal/testdata/schema-registry",
+    ],
+    env = {
+        "SCHEMA-REGISTRY_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/schema-registry)",
+    },
+    memory = "128MiB",
+    deps = [
+        ":wasm_fixture",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:streambuf",
+        "//src/v/model",
+        "//src/v/pandaproxy",
+        "//src/v/test_utils:gtest",
+        "//src/v/wasm:api",
+        "@avro",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "wasm_lifecycle_test",
+    timeout = "moderate",
+    srcs = [
+        "wasm_lifecycle_test.cc",
+    ],
+    cpu = 1,
+    data = [
+        "//src/transform-sdk/go/transform/internal/testdata/identity",
+        "//src/transform-sdk/go/transform/internal/testdata/setup-panic",
+        "//src/transform-sdk/go/transform/internal/testdata/transform-error",
+        "//src/transform-sdk/go/transform/internal/testdata/transform-panic",
+    ],
+    env = {
+        "IDENTITY_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/identity)",
         "SETUP-PANIC_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/setup-panic)",
         "TRANSFORM-PANIC_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/transform-panic)",
         "TRANSFORM-ERROR_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/transform-error)",
@@ -124,16 +176,33 @@ redpanda_cc_gtest(
     deps = [
         ":wasm_fixture",
         "//src/v/base",
-        "//src/v/bytes",
-        "//src/v/bytes:iobuf",
-        "//src/v/bytes:iobuf_parser",
-        "//src/v/bytes:streambuf",
-        "//src/v/model",
         "//src/v/pandaproxy",
         "//src/v/test_utils:gtest",
         "//src/v/wasm:api",
-        "@abseil-cpp//absl/strings",
-        "@avro",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "wasm_resources_test",
+    timeout = "moderate",
+    srcs = [
+        "wasm_resources_test.cc",
+    ],
+    cpu = 1,
+    data = [
+        "//src/transform-sdk/go/transform/internal/testdata/dynamic",
+    ],
+    env = {
+        "DYNAMIC_WASM_BINARY": "$(rootpath //src/transform-sdk/go/transform/internal/testdata/dynamic)",
+    },
+    memory = "128MiB",
+    deps = [
+        ":wasm_fixture",
+        "//src/v/base",
+        "//src/v/test_utils:gtest",
+        "//src/v/wasm:api",
         "@googletest//:gtest",
         "@seastar",
     ],
