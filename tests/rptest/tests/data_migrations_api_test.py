@@ -245,6 +245,15 @@ class DataMigrationsApiTest(RedpandaTest):
             pass
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_listing_inexistent_migration(self):
+        try:
+            self.get_migration(42)
+        except Exception as e:
+            # check 404
+            self.logger.info("f{e}")
+            raise
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_with_topic_no_remote_writes(self):
         self.redpanda.set_cluster_config(
             {"cloud_storage_enable_remote_write": False}, expect_restart=True)
