@@ -958,8 +958,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         ])
 
         self.logger.info('patching deployment to allow downscaling')
-        deployment_args = deployment_args.decode().replace(
-            '--allow-downscaling=false', '--allow-downscaling=true', 1)
+        if isinstance(deployment_args, bytes):
+            deployment_args = deployment_args.decode()
+        deployment_args = deployment_args.replace('--allow-downscaling=false',
+                                                  '--allow-downscaling=true',
+                                                  1)
         patch = [{
             'op': 'replace',
             'path': '/spec/template/spec/containers/0/args',
