@@ -104,7 +104,7 @@ private:
 /// failed, reasons could be:
 /// 1. Malformed license
 /// 2. Invalid license
-license make_license(const ss::sstring& raw_license);
+license make_license(std::string_view raw_license);
 
 } // namespace security
 
