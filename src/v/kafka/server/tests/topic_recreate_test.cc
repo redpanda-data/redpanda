@@ -202,24 +202,21 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
     wait_for_controller_leadership().get();
     wait_until_topic_status(test_tp, kafka::error_code::none).get();
 
-    return tests::cooperative_spin_wait_with_timeout(
-             5s,
-             [test_tp, this] {
-                 return get_topic_metadata(test_tp).then(
-                   [](kafka::metadata_response md) {
-                       auto& partitions = md.data.topics.begin()->partitions;
-                       if (partitions.size() != 3) {
-                           return false;
-                       }
-                       return std::all_of(
-                         partitions.begin(),
-                         partitions.end(),
-                         [](kafka::metadata_response::partition& p) {
-                             return p.leader_id == model::node_id{1};
-                         });
-                   });
-             })
-      .get0();
+    tests::cooperative_spin_wait_with_timeout(5s, [test_tp, this] {
+        return get_topic_metadata(test_tp).then(
+          [](kafka::metadata_response md) {
+              auto& partitions = md.data.topics.begin()->partitions;
+              if (partitions.size() != 3) {
+                  return false;
+              }
+              return std::all_of(
+                partitions.begin(),
+                partitions.end(),
+                [](kafka::metadata_response::partition& p) {
+                    return p.leader_id == model::node_id{1};
+                });
+          });
+    }).get();
 }
 
 FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
