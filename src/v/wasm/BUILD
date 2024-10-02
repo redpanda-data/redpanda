@@ -62,22 +62,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "schema_registry",
-    srcs = [
-        "schema_registry.cc",
-    ],
-    hdrs = [
-        "schema_registry.h",
-    ],
-    include_prefix = "wasm",
-    deps = [
-        "//src/v/base",
-        "//src/v/pandaproxy",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
     name = "schema_registry_module",
     srcs = [
         "schema_registry_module.cc",
@@ -92,9 +76,9 @@ redpanda_cc_library(
     include_prefix = "wasm",
     deps = [
         ":ffi",
-        ":schema_registry",
         "//src/v/base",
         "//src/v/pandaproxy",
+        "//src/v/schema:registry",
         "@seastar",
     ],
 )
@@ -226,7 +210,6 @@ redpanda_cc_library(
         ":engine_probe",
         ":ffi",
         ":logger",
-        ":schema_registry",
         ":schema_registry_module",
         ":transform_module",
         ":transform_probe",
@@ -236,6 +219,7 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/pandaproxy",
         "//src/v/reflection:type_traits",
+        "//src/v/schema:registry",
         "//src/v/ssx:thread_worker",
         "//src/v/storage:parser_utils",
         "//src/v/utils:human",
@@ -292,8 +276,8 @@ redpanda_cc_library(
         "impl.h",
     ],
     implementation_deps = [
-        ":schema_registry",
         ":wasmtime",
+        "//src/v/schema:registry",
     ],
     include_prefix = "wasm",
     visibility = ["//visibility:public"],

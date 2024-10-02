@@ -35,6 +35,7 @@ reflection             | C++ static reflection and type traversal utils |
 resource_mgmt          | CPU, Disk and IO management |
 rp_util                | CLI utility for Redpanda |
 rpc                    | Remote procedure call protocol for internal cluster communication |
+schema                 | High-level interface for interacting with schemas and the schema registry |
 security               | Authentication and authorization in Redpanda |
 serde                  | Serialization framework |
 ssx                    | Custom extensions for seastar |
