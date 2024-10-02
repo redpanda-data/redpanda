@@ -871,7 +871,7 @@ private:
 
     void abort_old_txes();
     ss::future<> do_abort_old_txes();
-    ss::future<> try_abort_old_tx(model::producer_identity);
+    ss::future<cluster::tx::errc> try_abort_old_tx(model::producer_identity);
     ss::future<cluster::tx::errc> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
     void maybe_rearm_timer();

@@ -3131,23 +3131,40 @@ ss::future<> group::do_abort_old_txes() {
 
         expired.insert(model::producer_identity{pid, producer.epoch});
     }
-
+    bool has_error = false;
     for (auto pid : expired) {
-        co_await try_abort_old_tx(pid);
+        auto ec = co_await try_abort_old_tx(pid);
+        if (ec != cluster::tx::errc::none) {
+            has_error = true;
+        }
     }
 
-    maybe_rearm_timer();
+    if (!has_error) {
+        // if no error was triggered during abort of transaction we may try to
+        // schedule a next expiration earlier if there are transactions pending
+        // to be expired
+        maybe_rearm_timer();
+    }
 }
 
-ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
-    return get_tx_lock(pid.get_id())->with([this, pid]() {
-        vlog(
-          _ctx_txlog.info,
-          "attempting expiration of producer: {} transaction",
-          pid);
+ss::future<cluster::tx::errc>
+group::try_abort_old_tx(model::producer_identity pid) {
+    auto lock = get_tx_lock(pid.get_id());
+    auto u = co_await lock->get_units();
+    vlog(
+      _ctx_txlog.info,
+      "attempting expiration of producer: {} transaction",
+      pid);
 
-        return do_try_abort_old_tx(pid).discard_result();
-    });
+    auto result = co_await do_try_abort_old_tx(pid);
+    vlogl(
+      _ctx_txlog,
+      result == cluster::tx::errc::none ? ss::log_level::trace
+                                        : ss::log_level::warn,
+      "producer {} transaction expiration result: {}",
+      pid,
+      result);
+    co_return result;
 }
 
 ss::future<cluster::tx::errc>
