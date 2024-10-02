@@ -21,6 +21,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/timed_out_error.hh>
 
