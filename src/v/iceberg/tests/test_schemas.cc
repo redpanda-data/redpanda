@@ -59,8 +59,26 @@ field_type test_nested_schema_type() {
       nested_field::create(17, "age", field_required::yes, int_type{}));
     nested_struct.fields.emplace_back(nested_field::create(
       15, "person", field_required::no, std::move(person_struct)));
+
     field_type nested_type = std::move(nested_struct);
     return nested_type;
+}
+
+field_type test_nested_schema_type_avro() {
+    auto t = test_nested_schema_type();
+    auto s_type = std::get<struct_type>(std::move(t));
+    s_type.fields.emplace_back(nested_field::create(
+      18,
+      "some_decimal",
+      field_required::no,
+      decimal_type{.precision = 10, .scale = 2}));
+
+    s_type.fields.emplace_back(nested_field::create(
+      19, "the_fixed_64_bytes", field_required::no, fixed_type{.length = 64}));
+
+    s_type.fields.emplace_back(
+      nested_field::create(20, "an_uuid", field_required::no, uuid_type{}));
+    return s_type;
 }
 
 // Schema taken from

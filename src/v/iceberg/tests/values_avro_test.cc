@@ -18,7 +18,7 @@
 using namespace iceberg;
 
 TEST(ValuesAvroTest, TestZeroVals) {
-    auto schema_field_type = test_nested_schema_type();
+    auto schema_field_type = test_nested_schema_type_avro();
     auto schema = struct_type_to_avro(
       std::get<struct_type>(schema_field_type), "nested");
     auto zero_val = tests::make_value({}, schema_field_type);
@@ -34,7 +34,7 @@ TEST(ValuesAvroTest, TestZeroVals) {
 
 TEST(ValuesAvroTest, TestRandomVals) {
     constexpr int num_iterations = 10;
-    auto schema_field_type = test_nested_schema_type();
+    auto schema_field_type = test_nested_schema_type_avro();
     auto schema = struct_type_to_avro(
       std::get<struct_type>(schema_field_type), "nested");
 
