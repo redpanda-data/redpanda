@@ -55,8 +55,11 @@ struct generating_primitive_value_visitor {
           spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
     value operator()(const decimal_type&) {
+        if (spec_.forced_num_val) {
+            return decimal_value{absl::MakeInt128(0, generate_numeric_val())};
+        }
         return decimal_value{
-          spec_.forced_num_val.value_or(generate_numeric_val())};
+          absl::MakeInt128(generate_numeric_val(), generate_numeric_val())};
     }
     value operator()(const date_type&) {
         return date_value{static_cast<int>(
