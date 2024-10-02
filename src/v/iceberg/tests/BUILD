@@ -15,6 +15,17 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "test_table_metadata",
+    srcs = [
+        "test_table_metadata.cc",
+    ],
+    hdrs = [
+        "test_table_metadata.h",
+    ],
+    include_prefix = "iceberg/tests",
+)
+
+redpanda_test_cc_library(
     name = "value_generator",
     srcs = [
         "value_generator.cc",
@@ -327,6 +338,7 @@ redpanda_cc_gtest(
         "table_metadata_json_test.cc",
     ],
     deps = [
+        ":test_table_metadata",
         "//src/v/iceberg:json_writer",
         "//src/v/iceberg:table_metadata",
         "//src/v/iceberg:table_metadata_json",

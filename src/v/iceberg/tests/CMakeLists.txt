@@ -36,6 +36,7 @@ rp_test(
     table_metadata_json_test.cc
     table_update_applier_test.cc
     test_schemas.cc
+    test_table_metadata.cc
     transform_json_test.cc
     transform_utils_test.cc
     update_schema_action_test.cc
