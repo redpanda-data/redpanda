@@ -155,7 +155,8 @@ ss::future<> backend::start() {
             co_await handle_migration_update(id);
         }
 
-        ssx::repeat_until_gate_closed(_gate, [this]() { return loop_once(); });
+        ssx::repeat_until_gate_closed_or_aborted(
+          _gate, _as, [this]() { return loop_once(); });
 
         vlog(dm_log.info, "backend started");
     } else {
@@ -184,11 +185,21 @@ ss::future<> backend::stop() {
 }
 
 ss::future<> backend::loop_once() {
-    co_await _sem.wait(_as);
-    _sem.consume(_sem.available_units());
-    {
-        auto units = co_await _mutex.get_units(_as);
-        co_await work_once();
+    try {
+        co_await _sem.wait(_as);
+        _sem.consume(_sem.available_units());
+        {
+            auto units = co_await _mutex.get_units(_as);
+            co_await work_once();
+        }
+    } catch (...) {
+        const auto& e = std::current_exception();
+        vlogl(
+          dm_log,
+          ssx::is_shutdown_exception(e) ? ss::log_level::trace
+                                        : ss::log_level::warn,
+          "Exception in migration backend main loop: {}",
+          e);
     }
 }
 
@@ -231,8 +242,7 @@ ss::future<> backend::work_once() {
                   vlog(
                     dm_log.info,
                     "as part of migration {}, topic work for moving nt {} to "
-                    "state "
-                    "{} returned {}, retrying",
+                    "state {} returned {}, retrying",
                     result.migration,
                     result.nt,
                     result.sought_state,
