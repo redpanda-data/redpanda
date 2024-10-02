@@ -33,11 +33,11 @@ public:
     virtual ~data_writer() = default;
 
     // TODO: error type?
-    virtual bool add_data_struct(
+    virtual ss::future<bool> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual data_writer_result finish() = 0;
+    virtual ss::future<data_writer_result> finish() = 0;
 };
 
 class data_writer_factory {

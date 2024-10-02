@@ -10,6 +10,7 @@
 #include "datalake/record_multiplexer.h"
 
 #include "datalake/data_writer_interface.h"
+#include "datalake/schemaless_translator.h"
 #include "iceberg/values.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
@@ -25,31 +26,29 @@ record_multiplexer::operator()(model::record_batch batch) {
     if (batch.compressed()) {
         batch = co_await storage::internal::decompress_batch(std::move(batch));
     }
-    batch.for_each_record([&batch, this](model::record&& record) {
-        iobuf key = record.release_key();
-        iobuf val = record.release_value();
-        // *1000: Redpanda timestamps are milliseconds. Iceberg uses
-        // microseconds.
-        int64_t timestamp = (batch.header().first_timestamp.value()
-                             + record.timestamp_delta())
-                            * 1000;
-        int64_t offset = static_cast<int64_t>(batch.base_offset())
-                         + record.offset_delta();
-        int64_t estimated_size = key.size_bytes() + val.size_bytes() + 16;
+    auto first_timestamp = batch.header().first_timestamp.value();
+    auto base_offset = static_cast<int64_t>(batch.base_offset());
+    co_await batch.for_each_record_async(
+      [first_timestamp, base_offset, this](
+        model::record record) -> ss::future<> {
+          iobuf key = record.release_key();
+          iobuf val = record.release_value();
+          // *1000: Redpanda timestamps are milliseconds. Iceberg uses
+          // microseconds.
+          int64_t timestamp = (first_timestamp + record.timestamp_delta())
+                              * 1000;
+          int64_t offset = static_cast<int64_t>(base_offset)
+                           + record.offset_delta();
+          int64_t estimated_size = key.size_bytes() + val.size_bytes() + 16;
 
-        // Translate the record
-        auto& translator = get_translator();
-        iceberg::struct_value data = std::visit(
-          [&key, &val, timestamp, offset](schemaless_translator& tr) {
-              return tr.translate_event(
-                std::move(key), std::move(val), timestamp, offset);
-          },
-          translator);
-
-        // Send it to the writer
-        auto& writer = get_writer();
-        writer.add_data_struct(std::move(data), estimated_size);
-    });
+          // Translate the record
+          auto& translator = get_translator();
+          iceberg::struct_value data = translator.translate_event(
+            std::move(key), std::move(val), timestamp, offset);
+          // Send it to the writer
+          auto& writer = get_writer();
+          co_await writer.add_data_struct(std::move(data), estimated_size);
+      });
     co_return ss::stop_iteration::no;
 }
 
@@ -58,7 +57,7 @@ record_multiplexer::end_of_stream() {
     // TODO: once we have multiple _writers this should be a loop
     if (_writer) {
         chunked_vector<data_writer_result> ret;
-        data_writer_result res = _writer->finish();
+        data_writer_result res = co_await _writer->finish();
         ret.push_back(res);
         co_return ret;
     } else {
@@ -66,15 +65,14 @@ record_multiplexer::end_of_stream() {
     }
 }
 
-record_multiplexer::translator& record_multiplexer::get_translator() {
+schemaless_translator& record_multiplexer::get_translator() {
     return _translator;
 }
 
 data_writer& record_multiplexer::get_writer() {
     if (!_writer) {
-        auto schema = std::visit(
-          [](schemaless_translator& tr) { return tr.get_schema(); },
-          _translator);
+        auto& translator = get_translator();
+        auto schema = translator.get_schema();
         _writer = _writer_factory->create_writer(std::move(schema));
     }
     return *_writer;

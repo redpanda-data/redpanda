@@ -13,6 +13,7 @@
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <cstdint>
@@ -25,13 +26,15 @@ public:
       : _schema(std::move(schema))
       , _result{} {}
 
-    bool add_data_struct(
+    ss::future<bool> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) override {
         _result.row_count++;
-        return false;
+        return ss::make_ready_future<bool>(false);
     }
 
-    data_writer_result finish() override { return _result; }
+    ss::future<data_writer_result> finish() override {
+        return ss::make_ready_future<data_writer_result>(_result);
+    }
 
 private:
     iceberg::struct_type _schema;

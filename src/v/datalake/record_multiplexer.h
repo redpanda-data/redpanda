@@ -43,13 +43,11 @@ public:
     ss::future<chunked_vector<data_writer_result>> end_of_stream();
 
 private:
-    using translator = std::variant<schemaless_translator>;
-
-    translator& get_translator();
+    schemaless_translator& get_translator();
     data_writer& get_writer();
 
     // TODO: in a future PR this will be a map of translators keyed by schema_id
-    translator _translator;
+    schemaless_translator _translator;
     std::unique_ptr<data_writer_factory> _writer_factory;
 
     // TODO: similarly this will be a map keyed by schema_id
