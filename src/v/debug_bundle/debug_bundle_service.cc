@@ -287,6 +287,8 @@ service::service(storage::kvstore* kvstore)
   , _debug_bundle_storage_dir_binding(
       config::shard_local_cfg().debug_bundle_storage_dir.bind())
   , _rpk_path_binding(config::shard_local_cfg().rpk_path.bind())
+  , _debug_bundle_cleanup_binding(
+      config::shard_local_cfg().debug_bundle_auto_removal_seconds.bind())
   , _process_control_mutex("debug_bundle_service::process_control") {
     _debug_bundle_storage_dir_binding.watch([this] {
         _debug_bundle_dir = form_debug_bundle_storage_directory();
@@ -837,10 +839,28 @@ ss::future<> service::maybe_reload_previous_run() {
         }
     };
 
+    const auto has_timed_out = [this, &md] {
+        if (_debug_bundle_cleanup_binding().has_value()) {
+            auto cleanup_seconds = _debug_bundle_cleanup_binding().value();
+            auto elapsed = clock::now() - md.get_finished_at();
+            return elapsed > cleanup_seconds;
+        }
+        return false;
+    }();
+
+    if (has_timed_out) {
+        vlog(
+          lg.info,
+          "Previous run for job {} has timed out, will not reload its metadata",
+          md.job_id);
+        co_await cleanup_files(md);
+        co_return co_await remove_kvstore_entry();
+    }
+
     if (
       run_was_successful && !co_await ss::file_exists(debug_bundle_file_path)) {
         vlog(
-          lg.debug,
+          lg.info,
           "Debug bundle file {} does not exist, cannot reload metadata",
           debug_bundle_file_path);
         co_await cleanup_files(md);
@@ -852,7 +872,7 @@ ss::future<> service::maybe_reload_previous_run() {
       && !co_await validate_sha256_checksum(
         debug_bundle_file_path, md.sha256_checksum)) {
         vlog(
-          lg.debug,
+          lg.info,
           "Debug bundle file {} checksum mismatch",
           debug_bundle_file_path);
         co_await cleanup_files(md);

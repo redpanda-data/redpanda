@@ -20,6 +20,7 @@
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/util/process.hh>
 
 namespace debug_bundle {
@@ -198,6 +199,9 @@ private:
       _debug_bundle_storage_dir_binding;
     /// Binding called when the rpk path config changes
     config::binding<std::filesystem::path> _rpk_path_binding;
+    /// Binding called when the debug bundle cleanup configuration has changed
+    config::binding<std::optional<std::chrono::seconds>>
+      _debug_bundle_cleanup_binding;
     /// External process
     std::unique_ptr<debug_bundle_process> _rpk_process;
     /// Metrics probe

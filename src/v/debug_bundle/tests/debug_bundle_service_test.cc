@@ -929,3 +929,38 @@ TEST_F_CORO(debug_bundle_service_started_fixture, restart_garbage_out_file) {
     EXPECT_TRUE(status_restart.assume_value().cout.empty());
     EXPECT_TRUE(status_restart.assume_value().cerr.empty());
 }
+
+TEST_F_CORO(debug_bundle_service_started_fixture, test_timeout_during_restart) {
+    using namespace std::chrono_literals;
+    const auto ttl = 2s;
+    config::shard_local_cfg().debug_bundle_auto_removal_seconds.set_value(
+      ttl.count());
+
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    co_await run_bundle(job_id);
+
+    ASSERT_NO_THROW_CORO(co_await wait_for_kvstore_to_populate(_kvstore.get()));
+    ASSERT_NO_THROW_CORO(co_await _service.stop());
+
+    co_await ss::sleep(ttl + 1s);
+    ASSERT_NO_THROW_CORO(co_await _service.start(_kvstore.get()));
+    ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
+      [](debug_bundle::service& s) { return s.start(); }));
+
+    std::filesystem::path job_file
+      = _data_dir
+        / fmt::format(
+          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job_id);
+    EXPECT_FALSE(co_await ss::file_exists(job_file.native()));
+
+    std::filesystem::path process_output_file
+      = _data_dir / debug_bundle::service::debug_bundle_dir_name
+        / fmt::format("{}.out", job_id);
+    EXPECT_FALSE(co_await ss::file_exists(process_output_file.native()));
+    EXPECT_FALSE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+}
