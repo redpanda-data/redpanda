@@ -3365,12 +3365,12 @@ configuration::configuration()
   , iceberg_enabled(
       *this,
       "iceberg_enabled",
-      "When set to true, enables the feature that translates topic data to "
-      "iceberg tables. This configuration only enables the feature at the "
-      "cluster level and requires individual topics to explicitly opt in by "
-      "setting the iceberg.enabled property to true. When the configuration "
-      "is set to false, disables the feature at the cluster level effectively "
-      "turning it off for all topics.",
+      "Enables the feature that translates topic data to Iceberg tables. When "
+      "set to true, this enables the feature at the cluster level and requires "
+      "individual topics to explicitly opt in by setting the iceberg.enabled "
+      "topic-level property to true. When set to false, this disables the "
+      "feature at the cluster level, effectively turning it off for all "
+      "topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
   , development_enable_cloud_topics(
