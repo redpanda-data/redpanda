@@ -13,5 +13,5 @@ go_binary(
     embed = [":transform-panic_lib"],
     goarch = "wasm",
     goos = "wasip1",
-    visibility = ["//src/transform-sdk/go/transform:__subpackages__"],
+    visibility = ["//src/v/wasm/tests:__pkg__"],
 )

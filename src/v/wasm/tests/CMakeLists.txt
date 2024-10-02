@@ -22,6 +22,9 @@ rp_test(
   SOURCES
     wasm_transform_test.cc
     wasi_test.cc
+    wasm_sr_test.cc
+    wasm_lifecycle_test.cc
+    wasm_resources_test.cc
   LIBRARIES 
     v::gtest_main
     v::wasm_test_fixture

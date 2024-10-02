@@ -17,5 +17,5 @@ go_binary(
     embed = [":schema-registry_lib"],
     goarch = "wasm",
     goos = "wasip1",
-    visibility = ["//src/transform-sdk/go/transform:__subpackages__"],
+    visibility = ["//src/v/wasm/tests:__pkg__"],
 )

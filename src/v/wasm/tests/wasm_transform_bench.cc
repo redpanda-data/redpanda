@@ -28,6 +28,8 @@
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/util/file.hh>
 
+#include <absl/strings/ascii.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <memory>
@@ -38,14 +40,14 @@ using namespace std::chrono_literals;
 template<size_t BatchSize, size_t RecordSize>
 class WasmBenchTest {
 public:
-    WasmBenchTest() { load("identity.wasm").get(); }
+    WasmBenchTest() { load("identity").get(); }
     WasmBenchTest(const WasmBenchTest&) = delete;
     WasmBenchTest(WasmBenchTest&&) = delete;
     WasmBenchTest& operator=(const WasmBenchTest&) = delete;
     WasmBenchTest& operator=(WasmBenchTest&&) = delete;
     ~WasmBenchTest() { cleanup().get(); }
 
-    ss::future<> load(std::string_view filename) {
+    ss::future<> load(std::string_view file) {
         if (_engine) {
             co_await _engine->stop();
         }
@@ -54,8 +56,8 @@ public:
             _runtime = wasm::wasmtime::create_runtime(nullptr);
             constexpr wasm::runtime::config wasm_runtime_config {
                 .heap_memory = {
-                  .per_core_pool_size_bytes = 20_MiB,
-                  .per_engine_memory_limit = 20_MiB,
+                  .per_core_pool_size_bytes = 64_MiB,
+                  .per_engine_memory_limit = 64_MiB,
                 },
                 .stack_memory = {
                   .debug_host_stack_usage = false,
@@ -75,8 +77,14 @@ public:
         };
         auto wasm_binary = model::wasm_binary_iobuf(std::make_unique<iobuf>());
         {
-            auto data = co_await ss::util::read_entire_file_contiguous(
-              filename);
+            auto path = fmt::format("{}.wasm", file);
+            if (!(co_await ss::file_exists(path))) {
+                auto bazel_env_var = fmt::format(
+                  "{}_WASM_BINARY", absl::AsciiStrToUpper(file));
+                path = std::getenv(bazel_env_var.c_str());
+                vassert(!path.empty(), "expected {} to exist", bazel_env_var);
+            }
+            auto data = co_await ss::util::read_entire_file_contiguous(path);
             wasm_binary()->append(data.data(), data.size());
         }
         auto factory = co_await _runtime->make_factory(

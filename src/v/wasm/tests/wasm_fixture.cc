@@ -30,6 +30,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/file.hh>
 
+#include <absl/strings/ascii.h>
 #include <fmt/chrono.h>
 
 #include <chrono>
@@ -143,7 +144,7 @@ void WasmTestFixture::SetUp() {
     // Support creating up to 4 instances in a test
     constexpr wasm::runtime::config wasm_runtime_config {
         .heap_memory = {
-          .per_core_pool_size_bytes = MAX_MEMORY * 4,
+          .per_core_pool_size_bytes = MAX_MEMORY,
           .per_engine_memory_limit = MAX_MEMORY,
         },
         .stack_memory = {
@@ -183,8 +184,16 @@ void WasmTestFixture::TearDown() {
     _probe = nullptr;
 }
 
-void WasmTestFixture::load_wasm(const std::string& path) {
-    auto wasm_file = ss::util::read_entire_file(path).get0();
+void WasmTestFixture::load_wasm(std::string file) {
+    std::string path = fmt::format("{}.wasm", file);
+    if (!ss::file_exists(path).get()) {
+        auto bazel_env_var = fmt::format(
+          "{}_WASM_BINARY", absl::AsciiStrToUpper(file));
+        const char* path_envvar = std::getenv(bazel_env_var.c_str());
+        vassert(path_envvar != nullptr, "expected {} to exist", bazel_env_var);
+        path = path_envvar;
+    }
+    auto wasm_file = ss::util::read_entire_file(path).get();
     auto buf = model::wasm_binary_iobuf(std::make_unique<iobuf>());
     for (auto& chunk : wasm_file) {
         buf()->append(std::move(chunk));
