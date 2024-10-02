@@ -81,7 +81,8 @@ requires requires(Func f, Iterator i) {
     seastar::futurize_invoke(f, *i).get();
 }
 inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
-    using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
+    using result_type = std::remove_reference_t<
+      decltype(seastar::futurize_invoke(func, *begin).get())>;
     return detail::async_transform<result_type>(
       std::move(begin),
       std::move(end),
@@ -149,7 +150,8 @@ requires requires(Func f, Iterator i) {
     seastar::futurize_invoke(f, *i).get().end();
 }
 inline auto async_flat_transform(Iterator begin, Iterator end, Func&& func) {
-    using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
+    using result_type = std::remove_reference_t<
+      decltype(seastar::futurize_invoke(func, *begin).get())>;
     using value_type = typename result_type::value_type;
     return detail::async_transform<value_type>(
       std::move(begin),
