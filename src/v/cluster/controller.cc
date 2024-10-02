@@ -166,7 +166,11 @@ ss::future<> controller::wire_up() {
       .then([this] {
           _data_migration_table
             = std::make_unique<data_migrations::migrations_table>(
-              _data_migrated_resources, std::ref(_tp_state));
+              _data_migrated_resources,
+              std::ref(_tp_state),
+              config::shard_local_cfg().cloud_storage_enabled()
+                && config::shard_local_cfg()
+                     .cloud_storage_disable_archiver_manager());
       })
       .then([this] {
           return _authorizer.start(

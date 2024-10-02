@@ -117,6 +117,22 @@ class DataMigrationsApiTest(RedpandaTest):
         migrations = self.admin.list_data_migrations(node).json()
         return {migration["id"]: migration for migration in migrations}
 
+    def get_migration(self, id, node=None):
+        try:
+            return self.admin.get_data_migration(id, node).json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return None
+            else:
+                raise
+
+    def assure_not_deletable(self, id, node=None):
+        try:
+            self.admin.delete_data_migration(id, node)
+            assert False
+        except:
+            pass
+
     def on_all_live_nodes(self, migration_id, predicate):
         success_cnt = 0
         exception_cnt = 0
@@ -124,8 +140,10 @@ class DataMigrationsApiTest(RedpandaTest):
             try:
                 map = self.get_migrations_map(n)
                 self.logger.debug(f"migrations on node {n.name}: {map}")
-                if predicate(map[migration_id] if migration_id in
-                             map else None):
+                list_item = map[migration_id] if migration_id in map else None
+                individual = self.get_migration(migration_id, n)
+
+                if predicate(list_item) and predicate(individual):
                     success_cnt += 1
                 else:
                     return False
@@ -146,6 +164,9 @@ class DataMigrationsApiTest(RedpandaTest):
             err_msg=
             f"Failed waiting for migration {id} to reach one of {states} states"
         )
+        if all(state not in ('planned', 'finished', 'cancelled')
+               for state in states):
+            self.assure_not_deletable(id)
 
     def wait_migration_appear(self, migration_id):
         def migration_is_present(id: int):
@@ -170,8 +191,11 @@ class DataMigrationsApiTest(RedpandaTest):
     def wait_partitions_appear(self, topics: list[TopicSpec]):
         # we may be unlucky to query a slow node
         def topic_has_all_partitions(t: TopicSpec):
-            return t.partition_count == \
-                    len(self.client().describe_topic(t.name).partitions)
+            exp_part_cnt = len(self.client().describe_topic(t.name).partitions)
+            self.logger.debug(
+                f"topic {t.name} has {t.partition_count} partitions out of {exp_part_cnt} expected"
+            )
+            return t.partition_count == exp_part_cnt
 
         wait_until(lambda: all(topic_has_all_partitions(t) for t in topics),
                    timeout_sec=90,
@@ -210,6 +234,62 @@ class DataMigrationsApiTest(RedpandaTest):
 
         self.wait_migration_appear(migration_id)
         return migration_id
+
+    def assure_not_migratable(self, topic: TopicSpec):
+        out_migration = OutboundDataMigration(
+            [make_namespaced_topic(topic.name)], consumer_groups=[])
+        try:
+            self.create_and_wait(out_migration)
+            assert False
+        except requests.exceptions.HTTPError as e:
+            pass
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_listing_inexistent_migration(self):
+        try:
+            self.get_migration(42)
+        except Exception as e:
+            # check 404
+            self.logger.info("f{e}")
+            raise
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_creating_with_topic_no_remote_writes(self):
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enable_remote_write": False}, expect_restart=True)
+        topic = TopicSpec(partition_count=3)
+        self.client().create_topic(topic)
+        self.wait_partitions_appear([topic])
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enable_remote_write": True}, expect_restart=True)
+        self.assure_not_migratable(topic)
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
+            r'/v1/migrations.*Requested feature is disabled',  # cloud storage disabled
+        ])
+    def test_creating_when_cluster_misconfigured1(self):
+        self.creating_when_cluster_misconfigured("cloud_storage_enabled")
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
+            r'/v1/migrations.*Requested feature is disabled',  # cloud storage disabled
+            'archival'  # a variety of archival errors is observed
+        ])
+    def test_creating_when_cluster_misconfigured2(self):
+        self.creating_when_cluster_misconfigured("cloud_storage_enabled")
+
+    def creating_when_cluster_misconfigured(self, param_to_disable):
+        self.redpanda.set_cluster_config({param_to_disable: False},
+                                         expect_restart=True)
+        topic = TopicSpec(partition_count=3)
+        self.client().create_topic(topic)
+        self.assure_not_migratable(topic)
+        # for scrubbing to complete
+        self.redpanda.set_cluster_config({param_to_disable: True},
+                                         expect_restart=True)
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
@@ -310,7 +390,7 @@ class DataMigrationsApiTest(RedpandaTest):
         self.redpanda.si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "missing_segments"})
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_higher_level_migration_api(self):
         topics = [TopicSpec(partition_count=3) for i in range(5)]
 

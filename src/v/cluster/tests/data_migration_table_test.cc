@@ -11,6 +11,7 @@
 #include "cluster/data_migration_table.h"
 #include "cluster/data_migration_types.h"
 #include "commands.h"
+#include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "data_migrated_resources.h"
 #include "data_migration_types.h"
@@ -83,11 +84,15 @@ create_groups(std::vector<std::string_view> strings) {
 
 struct data_migration_table_fixture : public seastar_test {
     ss::future<> SetUpAsync() override {
+        // for all new topics to be created with it
+        config::shard_local_cfg().cloud_storage_enable_remote_write.set_value(
+          true);
+
         co_await resources.start();
         co_await topics.start(ss::sharded_parameter(
           [this] { return std::ref(resources.local()); }));
         table = std::make_unique<cluster::data_migrations::migrations_table>(
-          resources, topics);
+          resources, topics, true);
         table->register_notification([this](cluster::data_migrations::id id) {
             notifications.push_back(id);
         });
@@ -110,6 +115,7 @@ struct data_migration_table_fixture : public seastar_test {
             auto p_cnt = random_generators::get_int(1, 64);
 
             topic_configuration cfg(tp_ns.ns, tp_ns.tp, p_cnt, 3);
+            cfg.properties.shadow_indexing = model::shadow_indexing_mode::full;
             ss::chunked_fifo<partition_assignment> assignments;
             for (auto i = 0; i < p_cnt; ++i) {
                 assignments.push_back(

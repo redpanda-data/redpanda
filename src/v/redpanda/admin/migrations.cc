@@ -289,6 +289,13 @@ void admin_server::register_data_migration_routes() {
           return list_data_migrations(std::move(req), std::move(reply));
       });
     register_route_raw_async<superuser>(
+      ss::httpd::migration_json::get_migration,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> reply) {
+          return get_data_migration(std::move(req), std::move(reply));
+      });
+    register_route_raw_async<superuser>(
       ss::httpd::migration_json::add_migration,
       [this](
         std::unique_ptr<ss::http::request> req,
@@ -323,6 +330,24 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::list_data_migrations(
     writer.EndArray();
     reply->set_status(ss::http::reply::status_type::ok, buf.GetString());
 
+    co_return std::move(reply);
+}
+
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_data_migration(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> reply) {
+    auto id = parse_data_migration_id(*req);
+    auto& frontend = _controller->get_data_migration_frontend();
+    auto maybe_migration = co_await frontend.local().get_migration(id);
+    if (maybe_migration.has_value()) [[likely]] {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> writer(buf);
+        write_migration_as_json(maybe_migration.assume_value(), writer);
+        reply->set_status(ss::http::reply::status_type::ok, buf.GetString());
+    } else {
+        co_await throw_on_error(
+          *req, maybe_migration.error(), model::controller_ntp);
+    }
     co_return std::move(reply);
 }
 

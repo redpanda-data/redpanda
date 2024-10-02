@@ -1099,6 +1099,15 @@ ss::future<> admin_server::throw_on_error(
               config::shard_local_cfg()
                 .data_transforms_per_core_memory_reservation.name()));
         }
+        case cluster::errc::invalid_data_migration_state:
+        case cluster::errc::data_migration_already_exists:
+        case cluster::errc::data_migration_invalid_resources:
+            throw ss::httpd::bad_request_exception(
+              fmt::format("{}", ec.message()));
+        case cluster::errc::data_migration_not_exists:
+            throw ss::httpd::base_exception(
+              fmt::format("Data migration does not exist: {}", ec.message()),
+              ss::http::reply::status_type::not_found);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));

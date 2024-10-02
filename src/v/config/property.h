@@ -87,7 +87,7 @@ public:
       , _validator(std::move(validator)) {}
 
     /**
-     * Properties aren't moved in normal used on the per-shard
+     * Properties aren't moved in normal use on the per-shard
      * cluster configuration objects.  This method exists for
      * use in unit tests of things like kafka client that carry
      * around a config_store as a member.

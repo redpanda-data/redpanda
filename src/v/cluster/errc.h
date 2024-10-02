@@ -274,7 +274,7 @@ struct errc_category final : public std::error_category {
         case errc::invalid_data_migration_state:
             return "Invalid data migration state transition requested";
         case errc::data_migration_not_exists:
-            return "Requested data migration does not exists";
+            return "Requested data migration does not exist";
         case errc::data_migration_already_exists:
             return "Data migration with requested id already exists";
         case errc::data_migration_invalid_resources:
