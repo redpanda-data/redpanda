@@ -31,7 +31,7 @@ class RpkGenerateTest(RedpandaTest):
         # dashboard is the dictionary of the current dashboards and their title.
         dashboards = {
             "operations": "Redpanda Ops Dashboard",
-            "consumer-metrics": "Kafka Consumer",
+            "consumer-metrics": "Kafka Java Consumer",
             "consumer-offsets": "Kafka Consumer Offsets",
             "topic-metrics": "Kafka Topic Metrics"
         }
