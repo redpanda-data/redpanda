@@ -134,7 +134,7 @@ namespace json {
 namespace {
 class rjson_visitor {
 public:
-    explicit rjson_visitor(json::Writer<json::StringBuffer>& w)
+    explicit rjson_visitor(iceberg::json_writer& w)
       : w(w) {}
     void operator()(const iceberg::boolean_type&) { w.String("boolean"); }
     void operator()(const iceberg::int_type&) { w.String("int"); }
@@ -163,12 +163,11 @@ public:
     void operator()(const iceberg::map_type& t) { rjson_serialize(w, t); }
 
 private:
-    json::Writer<json::StringBuffer>& w;
+    iceberg::json_writer& w;
 };
 } // anonymous namespace
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::nested_field& f) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::nested_field& f) {
     w.StartObject();
     w.Key("id");
     w.Int(f.id());
@@ -182,12 +181,11 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::primitive_type& t) {
+  iceberg::json_writer& w, const iceberg::primitive_type& t) {
     std::visit(rjson_visitor{w}, t);
 }
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::struct_type& t) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::struct_type& t) {
     w.StartObject();
     w.Key("type");
     w.String("struct");
@@ -200,8 +198,7 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::list_type& t) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::list_type& t) {
     w.StartObject();
     w.Key("type");
     w.String("list");
@@ -214,8 +211,7 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::map_type& t) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::map_type& t) {
     w.StartObject();
     w.Key("type");
     w.String("map");
@@ -232,8 +228,7 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::field_type& t) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::field_type& t) {
     std::visit(rjson_visitor{w}, t);
 }
 

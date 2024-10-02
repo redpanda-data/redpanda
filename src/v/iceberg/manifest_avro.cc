@@ -35,15 +35,9 @@
 namespace iceberg {
 
 namespace {
-ss::sstring schema_to_json_str(const schema& s) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, s);
-    return buf.GetString();
-}
-schema schema_from_str(const std::string& s) {
+schema schema_from_str(std::string_view s) {
     json::Document parsed_schema;
-    parsed_schema.Parse(s);
+    parsed_schema.Parse(s.data(), s.size());
     return parse_schema(parsed_schema);
 }
 
@@ -96,20 +90,13 @@ partition_spec partition_spec_from_str(const partition_spec_strs& strs) {
     }
     return parsed_spec;
 }
-ss::sstring partition_spec_to_str(const partition_spec& spec) {
-    json::StringBuffer spec_buf;
-    json::Writer<json::StringBuffer> w_spec(spec_buf);
-    rjson_serialize(w_spec, spec);
-    return spec_buf.GetString();
-}
 
 std::map<std::string, std::string>
 metadata_to_map(const manifest_metadata& meta) {
-    auto partition_spec_strs = partition_spec_to_str(meta.partition_spec);
     return {
-      {"schema", schema_to_json_str(meta.schema)},
+      {"schema", to_json_str(meta.schema)},
       {"content", std::string{content_type_to_str(meta.manifest_content_type)}},
-      {"partition-spec", partition_spec_to_str(meta.partition_spec)},
+      {"partition-spec", to_json_str(meta.partition_spec)},
       {"partition-spec-id", fmt::to_string(meta.partition_spec.spec_id())},
       {"format-version", std::string{format_to_str(meta.format_version)}}};
 }

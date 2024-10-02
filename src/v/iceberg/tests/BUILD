@@ -15,6 +15,17 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "test_table_metadata",
+    srcs = [
+        "test_table_metadata.cc",
+    ],
+    hdrs = [
+        "test_table_metadata.h",
+    ],
+    include_prefix = "iceberg/tests",
+)
+
+redpanda_test_cc_library(
     name = "value_generator",
     srcs = [
         "value_generator.cc",
@@ -55,6 +66,7 @@ redpanda_cc_gtest(
         ":test_schemas",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:datatypes_json",
+        "//src/v/iceberg:json_writer",
         "//src/v/json",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
@@ -183,6 +195,7 @@ redpanda_cc_gtest(
         "partition_json_test.cc",
     ],
     deps = [
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:partition",
         "//src/v/iceberg:partition_json",
         "//src/v/test_utils:gtest",
@@ -264,6 +277,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":test_schemas",
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:schema",
         "//src/v/iceberg:schema_json",
         "//src/v/json",
@@ -293,6 +307,7 @@ redpanda_cc_gtest(
         "snapshot_json_test.cc",
     ],
     deps = [
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:snapshot",
         "//src/v/iceberg:snapshot_json",
         "//src/v/json",
@@ -317,12 +332,37 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "table_io_test",
+    timeout = "short",
+    srcs = [
+        "table_io_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_table_metadata",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:table_io",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "table_metadata_json_test",
     timeout = "short",
     srcs = [
         "table_metadata_json_test.cc",
     ],
     deps = [
+        ":test_table_metadata",
+        "//src/v/iceberg:json_writer",
         "//src/v/iceberg:table_metadata",
         "//src/v/iceberg:table_metadata_json",
         "//src/v/test_utils:gtest",

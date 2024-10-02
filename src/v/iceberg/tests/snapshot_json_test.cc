@@ -7,29 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "iceberg/json_writer.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/snapshot_json.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
 
 #include <gtest/gtest.h>
 
 using namespace iceberg;
-
-namespace {
-ss::sstring snapshot_to_json_str(const snapshot& s) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, s);
-    return buf.GetString();
-}
-ss::sstring snapshot_ref_to_json_str(const snapshot_reference& s) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, s);
-    return buf.GetString();
-}
-} // namespace
 
 TEST(SnapshotJsonSerde, TestSnapshot) {
     const auto test_snapshot_str = R"(
@@ -61,7 +46,7 @@ TEST(SnapshotJsonSerde, TestSnapshot) {
     ASSERT_TRUE(snap.schema_id.has_value());
     ASSERT_EQ(0, snap.schema_id.value());
 
-    const auto parsed_orig_as_str = snapshot_to_json_str(snap);
+    const auto parsed_orig_as_str = iceberg::to_json_str(snap);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip_snap = parse_snapshot(parsed_roundtrip_json);
@@ -95,7 +80,7 @@ TEST(SnapshotJsonSerde, TestSnapshotMissingOptionals) {
     ASSERT_STREQ("s3://b/wh/.../s1.avro", snap.manifest_list_path.c_str());
     ASSERT_FALSE(snap.schema_id.has_value());
 
-    const auto parsed_orig_as_str = snapshot_to_json_str(snap);
+    const auto parsed_orig_as_str = iceberg::to_json_str(snap);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip_snap = parse_snapshot(parsed_roundtrip_json);
@@ -123,7 +108,7 @@ TEST(SnapshotJsonSerde, TestSnapshotReferences) {
     ASSERT_TRUE(ref.min_snapshots_to_keep.has_value());
     ASSERT_EQ(ref.min_snapshots_to_keep.value(), 12345);
 
-    const auto parsed_orig_as_str = snapshot_ref_to_json_str(ref);
+    const auto parsed_orig_as_str = iceberg::to_json_str(ref);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip_ref = parse_snapshot_ref(parsed_roundtrip_json);
@@ -145,7 +130,7 @@ TEST(SnapshotJsonSerde, TestSnapshotReferencesMissingOptionals) {
     ASSERT_FALSE(ref.max_ref_age_ms.has_value());
     ASSERT_FALSE(ref.min_snapshots_to_keep.has_value());
 
-    const auto parsed_orig_as_str = snapshot_ref_to_json_str(ref);
+    const auto parsed_orig_as_str = iceberg::to_json_str(ref);
     json::Document parsed_roundtrip_json;
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     const auto roundtrip_ref = parse_snapshot_ref(parsed_roundtrip_json);

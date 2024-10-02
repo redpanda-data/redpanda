@@ -64,6 +64,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "json_writer",
+    hdrs = [
+        "json_writer.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/json",
+        "//src/v/strings:utf8",
+    ],
+)
+
+redpanda_cc_library(
     name = "datatypes",
     srcs = [
         "datatypes.cc",
@@ -93,6 +105,7 @@ redpanda_cc_library(
     deps = [
         ":datatypes",
         ":json_utils",
+        ":json_writer",
         "//src/v/json",
         "//src/v/strings:string_switch",
     ],
@@ -227,18 +240,17 @@ redpanda_cc_library(
         ":manifest_avro",
         ":manifest_list_avro",
         "//src/v/bytes:iobuf",
-        "//src/v/cloud_storage_clients",
         "//src/v/ssx:future_util",
-        "//src/v/utils:retry_chain_node",
     ],
     include_prefix = "iceberg",
     deps = [
         ":manifest",
         ":manifest_list",
+        ":metadata_io",
         ":partition_key_type",
         "//src/v/base",
         "//src/v/cloud_io:remote",
-        "//src/v/model",
+        "//src/v/cloud_storage_clients",
         "//src/v/utils:named_type",
         "@seastar",
     ],
@@ -311,6 +323,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "metadata_io",
+    hdrs = [
+        "metadata_io.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:retry_chain_node",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition",
     hdrs = [
         "partition.h",
@@ -335,6 +365,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":json_utils",
+        ":json_writer",
         ":transform_json",
         "//src/v/strings:string_switch",
     ],
@@ -458,6 +489,7 @@ redpanda_cc_library(
         ":datatypes",
         ":datatypes_json",
         ":json_utils",
+        ":json_writer",
         ":schema",
         "//src/v/json",
     ],
@@ -487,6 +519,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":json_utils",
+        ":json_writer",
         "//src/v/model",
         "//src/v/strings:string_switch",
         "@abseil-cpp//absl/container:btree",
@@ -495,6 +528,31 @@ redpanda_cc_library(
     deps = [
         ":snapshot",
         "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_io",
+    srcs = [
+        "table_io.cc",
+    ],
+    hdrs = [
+        "table_io.h",
+    ],
+    implementation_deps = [
+        ":table_metadata_json",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/json",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":metadata_io",
+        ":table_metadata",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/utils:named_type",
+        "@seastar",
     ],
 )
 
@@ -536,6 +594,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
+        ":json_writer",
         ":table_metadata",
         "//src/v/json",
     ],

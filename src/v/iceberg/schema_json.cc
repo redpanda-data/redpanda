@@ -54,8 +54,7 @@ schema parse_schema(const json::Value& v) {
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::schema& s) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::schema& s) {
     w.StartObject();
     w.Key("type");
     w.String("struct");

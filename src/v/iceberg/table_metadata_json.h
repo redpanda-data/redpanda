@@ -8,11 +8,9 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "iceberg/json_writer.h"
 #include "iceberg/table_metadata.h"
-#include "json/_include_first.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
 
 namespace iceberg {
 
@@ -24,11 +22,8 @@ table_metadata parse_table_meta(const json::Value&);
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::sort_field& m);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::sort_order& m);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::table_metadata& m);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::sort_field& m);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::sort_order& m);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::table_metadata& m);
 
 } // namespace json

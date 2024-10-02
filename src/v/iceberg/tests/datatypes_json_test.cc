@@ -11,31 +11,22 @@
 #include "iceberg/datatypes_json.h"
 #include "iceberg/tests/test_schemas.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
 
 #include <gtest/gtest.h>
 
 using namespace iceberg;
 
-namespace {
-ss::sstring type_to_json_str(const field_type& t) {
-    json::StringBuffer buf;
-    json::Writer<json::StringBuffer> w(buf);
-    rjson_serialize(w, t);
-    return buf.GetString();
-}
-} // namespace
-
 // Round trip test for the struct type of a schema taken from
 // https://github.com/apache/iceberg-go/blob/704a6e78c13ea63f1ff4bb387f7d4b365b5f0f82/schema_test.go#L644
 TEST(DataTypeJsonSerde, TestFieldType) {
     field_type expected_type = test_nested_schema_type();
-    const ss::sstring expected_type_str = type_to_json_str(expected_type);
+    const ss::sstring expected_type_str = iceberg::to_json_str(expected_type);
 
     json::Document parsed_orig_json;
     parsed_orig_json.Parse(test_nested_schema_json_str);
     auto parsed_orig_type = parse_type(parsed_orig_json);
-    const ss::sstring parsed_orig_as_str = type_to_json_str(parsed_orig_type);
+    const ss::sstring parsed_orig_as_str = iceberg::to_json_str(
+      parsed_orig_type);
     ASSERT_EQ(expected_type, parsed_orig_type)
       << fmt::format("{}\nvs\n{}", expected_type_str, parsed_orig_as_str);
 
@@ -43,7 +34,7 @@ TEST(DataTypeJsonSerde, TestFieldType) {
     parsed_roundtrip_json.Parse(parsed_orig_as_str);
     auto parsed_roundtrip_type_moved = parse_type(parsed_roundtrip_json);
     auto parsed_roundtrip_type = std::move(parsed_roundtrip_type_moved);
-    const ss::sstring parsed_roundtrip_as_str = type_to_json_str(
+    const ss::sstring parsed_roundtrip_as_str = iceberg::to_json_str(
       parsed_roundtrip_type);
     // NOLINTNEXTLINE(bugprone-use-after-move)
     ASSERT_NE(parsed_roundtrip_type_moved, parsed_roundtrip_type);

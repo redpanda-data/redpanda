@@ -8,11 +8,9 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "iceberg/json_writer.h"
 #include "iceberg/partition.h"
-#include "json/_include_first.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
 
 namespace iceberg {
 
@@ -24,8 +22,7 @@ partition_spec parse_partition_spec(const json::Value&);
 namespace json {
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::partition_field& m);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::partition_spec& m);
+  iceberg::json_writer& w, const iceberg::partition_field& m);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::partition_spec& m);
 
 } // namespace json

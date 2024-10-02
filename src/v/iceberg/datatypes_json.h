@@ -9,10 +9,8 @@
 #pragma once
 
 #include "iceberg/datatypes.h"
-#include "json/_include_first.h"
+#include "iceberg/json_writer.h"
 #include "json/document.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
 
 namespace iceberg {
 
@@ -26,17 +24,11 @@ nested_field_ptr parse_field(const json::Value&);
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::nested_field& f);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::primitive_type& t);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::struct_type& t);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::list_type& t);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::map_type& t);
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::field_type& t);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::nested_field& f);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::primitive_type& t);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::struct_type& t);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::list_type& t);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::map_type& t);
+void rjson_serialize(iceberg::json_writer& w, const iceberg::field_type& t);
 
 } // namespace json

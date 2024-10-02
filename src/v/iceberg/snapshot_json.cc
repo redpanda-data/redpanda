@@ -34,7 +34,7 @@ constexpr std::string_view operation_to_str(snapshot_operation o) {
     }
 }
 
-snapshot_operation operation_from_str(const ss::sstring& operation_str) {
+snapshot_operation operation_from_str(std::string_view operation_str) {
     using enum snapshot_operation;
     return string_switch<snapshot_operation>(operation_str)
       .match(operation_to_str(append), append)
@@ -53,7 +53,7 @@ constexpr std::string_view ref_type_to_str(snapshot_ref_type t) {
     }
 }
 
-snapshot_ref_type ref_type_from_str(const ss::sstring& ref_type_str) {
+snapshot_ref_type ref_type_from_str(std::string_view ref_type_str) {
     using enum snapshot_ref_type;
     return string_switch<snapshot_ref_type>(ref_type_str)
       .match(ref_type_to_str(tag), tag)
@@ -141,8 +141,7 @@ snapshot_reference parse_snapshot_ref(const json::Value& v) {
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot& s) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s) {
     w.StartObject();
     w.Key("snapshot-id");
     w.Int64(s.id());
@@ -174,7 +173,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::snapshot_reference& s) {
+  iceberg::json_writer& w, const iceberg::snapshot_reference& s) {
     w.StartObject();
     w.Key("snapshot-id");
     w.Int64(s.snapshot_id());

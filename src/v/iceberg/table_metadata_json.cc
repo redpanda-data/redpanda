@@ -205,8 +205,7 @@ table_metadata parse_table_meta(const json::Value& v) {
 
 namespace json {
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::sort_field& f) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::sort_field& f) {
     w.StartObject();
     w.Key("transform");
     w.String(iceberg::transform_to_str(f.transform));
@@ -223,8 +222,7 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::sort_order& m) {
+void rjson_serialize(iceberg::json_writer& w, const iceberg::sort_order& m) {
     w.StartObject();
     w.Key("order-id");
     w.Int(m.order_id());
@@ -238,7 +236,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const iceberg::table_metadata& m) {
+  iceberg::json_writer& w, const iceberg::table_metadata& m) {
     w.StartObject();
     w.Key("format-version");
     w.Int(iceberg::format_version_to_int(m.format_version));
