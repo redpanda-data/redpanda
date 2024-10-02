@@ -11,7 +11,6 @@
 
 #include "types.h"
 
-#include "debug_bundle/error.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "strings/string_switch.h"

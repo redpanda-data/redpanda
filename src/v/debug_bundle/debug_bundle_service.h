@@ -13,7 +13,6 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
-#include "container/fragmented_vector.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
 #include "storage/fwd.h"

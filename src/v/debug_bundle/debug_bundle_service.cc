@@ -15,8 +15,6 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/fragmented_vector.h"
-#include "crypto/crypto.h"
-#include "crypto/types.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/metadata.h"
 #include "debug_bundle/probe.h"
