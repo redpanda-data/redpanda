@@ -879,18 +879,16 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             self.logger.warn('need more than 3 nodes to run test')
             return
 
-        self.logger.info('verify operator-v2 is not activated')
-        if self.redpanda.is_operator_v2_cluster():
-            self.logger.warn('cannot run test with operator-v2')
-            return
-
+        self.logger.debug('creating default topics')
         # create default topics
         self._create_default_topics()
 
+        self.logger.debug('adjusting topic segment properties')
         self.adjust_topic_segment_properties(
             segment_bytes=self.min_segment_size,
             retention_local_bytes=2 * self.min_segment_size)
 
+        self.logger.debug('loading many segments')
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
 
@@ -908,10 +906,13 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             custom_node=[self.preallocated_nodes[0]])
 
         try:
+            self.logger.debug('starting producer')
             producer.start()
+            self.logger.debug('waiting for traffic…')
             self._wait_for_traffic(producer,
                                    initial_workload.msg_count,
                                    timeout=initial_workload.timeout_seconds)
+            self.logger.debug('staging decomm/add')
             self.stage_decommission_and_add()
 
         finally:
@@ -921,6 +922,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     def stage_decommission_and_add(self):
+        # FIX opv2
         def cluster_ready_replicas(cluster_name):
             # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
             return int(
@@ -929,6 +931,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                     "-o=jsonpath='{.status.readyReplicas}'"
                 ]))
 
+        # FIX opv2
         def deployment_ready_replicas():
             # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.status.readyReplicas}'
             return int(
@@ -950,6 +953,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             ['sudo', 'systemctl', 'disable', '--now'] + agent_services)
 
         self.logger.info('getting list of args from deployment')
+        # FIX opv2
         # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.spec.template.spec.containers[0].args}'
         deployment_args = self.redpanda.kubectl.cmd([
             'get', 'deployment', 'redpanda-controller-manager',
