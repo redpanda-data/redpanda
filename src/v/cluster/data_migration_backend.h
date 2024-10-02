@@ -204,6 +204,13 @@ private:
 
     // call only with _mutex lock grabbed
     ss::future<> reconcile_topic(
+      const id migration_id,
+      size_t idx_in_migration,
+      const model::topic_namespace& nt,
+      migration_reconciliation_state& mrstate);
+
+    // call only with _mutex lock grabbed
+    ss::future<> reconcile_existing_topic(
       const model::topic_namespace& nt,
       topic_reconciliation_state& tstate,
       id migration,
