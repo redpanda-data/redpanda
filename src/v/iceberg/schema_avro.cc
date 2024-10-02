@@ -102,8 +102,9 @@ struct avro_primitive_type_visitor {
     }
     avro::Schema operator()(const string_type&) { return avro::StringSchema(); }
     avro::Schema operator()(const uuid_type&) {
-        static constexpr auto uuid_size_bytes = 16;
-        auto ret = avro::FixedSchema(uuid_size_bytes, "");
+        // Out of the two string and fixed, we choose to encode UUIDs as string
+        // values as this is the only way it is supported in Avro C++ library
+        auto ret = avro::StringSchema();
         ret.root()->setLogicalType(avro::LogicalType(avro::LogicalType::UUID));
         return ret;
     }
@@ -239,6 +240,9 @@ field_type type_from_avro(const avro::NodePtr& n) {
     const auto& type = n->type();
     switch (type) {
     case avro::AVRO_STRING:
+        if (n->logicalType().type() == avro::LogicalType::UUID) {
+            return uuid_type{};
+        }
         return string_type{};
     case avro::AVRO_BYTES:
         return binary_type{};
@@ -326,6 +330,9 @@ field_type type_from_avro(const avro::NodePtr& n) {
               .precision = static_cast<uint32_t>(logical_type.precision()),
               .scale = static_cast<uint32_t>(logical_type.scale()),
             };
+        } else if (logical_type.type() == avro::LogicalType::UUID) {
+            // UUID can be either a string or a fixed type
+            return uuid_type{};
         }
         return fixed_type{n->fixedSize()};
     }
