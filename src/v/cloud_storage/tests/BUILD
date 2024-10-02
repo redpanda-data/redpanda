@@ -1,4 +1,9 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load(
+    "//bazel:test.bzl",
+    "redpanda_cc_btest",
+    "redpanda_cc_gtest",
+    "redpanda_test_cc_library",
+)
 
 redpanda_test_cc_library(
     name = "s3_imposter_gtest",
@@ -192,5 +197,22 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "remote_path_provider_test",
+    timeout = "short",
+    srcs = [
+        "remote_path_provider_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_storage",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
     ],
 )
