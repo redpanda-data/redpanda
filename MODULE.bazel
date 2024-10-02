@@ -264,3 +264,13 @@ crate.annotation(
     extra_aliased_targets = {"wasmtime_c": "wasmtime_c"},
     gen_build_script = "off",
 )
+
+# ====================================
+# clang-tidy
+# ====================================
+bazel_dep(name = "bazel_clang_tidy", dev_dependency = True)
+git_override(
+    module_name = "bazel_clang_tidy",
+    commit = "e85311053ec3c32ff418b433af4469b9c77e6b16",
+    remote = "https://github.com/erenon/bazel_clang_tidy.git",
+)

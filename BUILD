@@ -17,3 +17,9 @@ gazelle_test(
     size = "small",
     workspace = "//:BUILD",
 )
+
+filegroup(
+    name = "clang_tidy_config",
+    srcs = [".clang-tidy"],
+    visibility = ["//visibility:public"],
+)
