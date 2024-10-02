@@ -23,7 +23,7 @@ template<typename T>
 static void set_configuration(ss::sstring p_name, T v) {
     ss::smp::invoke_on_all([p_name, v = std::move(v)] {
         config::shard_local_cfg().get(p_name).set_value(v);
-    }).get0();
+    }).get();
 }
 
 FIXTURE_TEST(key_space, kvstore_test_fixture) {
@@ -120,12 +120,12 @@ FIXTURE_TEST(kvstore_empty, kvstore_test_fixture) {
         batch.push_back(kvs->put(
           storage::kvstore::key_space::testing, key, std::move(value)));
         if (batch.size() > 10) {
-            ss::when_all(batch.begin(), batch.end()).get0();
+            ss::when_all(batch.begin(), batch.end()).get();
             batch.clear();
         }
     }
     if (!batch.empty()) {
-        ss::when_all(batch.begin(), batch.end()).get0();
+        ss::when_all(batch.begin(), batch.end()).get();
         batch.clear();
     }
 

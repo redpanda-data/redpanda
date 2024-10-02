@@ -41,7 +41,7 @@ void write_batches(ss::lw_shared_ptr<segment> seg) {
                      .get();
     for (auto& b : batches) {
         b.header().header_crc = model::internal_header_only_crc(b.header());
-        (void)seg->append(std::move(b)).get0();
+        (void)seg->append(std::move(b)).get();
     }
     seg->flush().get();
 }
@@ -103,7 +103,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                   default_segment_readahead_size,
                   default_segment_readahead_count,
                   0)
-                 .get0();
+                 .get();
     seg->close().get();
 
     // auto ntp2 = empty
@@ -116,7 +116,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    default_segment_readahead_size,
                    default_segment_readahead_count,
                    1_MiB)
-                  .get0();
+                  .get();
     write_batches(seg3);
     seg3->close().get();
 
@@ -128,7 +128,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    default_segment_readahead_size,
                    default_segment_readahead_count,
                    1_MiB)
-                  .get0();
+                  .get();
     write_garbage(seg4->appender());
     seg4->close().get();
 
@@ -141,9 +141,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     BOOST_CHECK_EQUAL(m.get(ntps[1].ntp())->segment_count(), 0);
     BOOST_CHECK_EQUAL(m.get(ntps[2].ntp())->segment_count(), 1);
     BOOST_CHECK_EQUAL(m.get(ntps[3].ntp())->segment_count(), 0);
-    BOOST_CHECK(!file_exists(seg->reader().filename()).get0());
-    BOOST_CHECK(file_exists(seg3->reader().filename()).get0());
-    BOOST_CHECK(!file_exists(seg4->reader().filename()).get0());
+    BOOST_CHECK(!file_exists(seg->reader().filename()).get());
+    BOOST_CHECK(file_exists(seg3->reader().filename()).get());
+    BOOST_CHECK(!file_exists(seg4->reader().filename()).get());
     BOOST_CHECK(
-      file_exists(seg4->reader().filename() + ".cannotrecover").get0());
+      file_exists(seg4->reader().filename() + ".cannotrecover").get());
 }

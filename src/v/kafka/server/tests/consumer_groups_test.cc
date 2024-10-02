@@ -50,7 +50,7 @@ join_group_request make_join_group_request(
 struct consumer_offsets_fixture : public redpanda_thread_fixture {
     void
     wait_for_consumer_offsets_topic(const kafka::group_instance_id& group) {
-        auto client = make_kafka_client().get0();
+        auto client = make_kafka_client().get();
 
         client.connect().get();
         kafka::find_coordinator_request req(group);
@@ -81,7 +81,7 @@ struct consumer_offsets_fixture : public redpanda_thread_fixture {
 FIXTURE_TEST(join_empty_group_static_member, consumer_offsets_fixture) {
     kafka::group_instance_id gr("instance-1");
     wait_for_consumer_offsets_topic(gr);
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     auto deferred = ss::defer([&client] {
         client.stop().then([&client] { client.shutdown(); }).get();
     });
@@ -111,7 +111,7 @@ FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
       .get();
     kafka::group_instance_id gr("instance-1");
     wait_for_consumer_offsets_topic(gr);
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     auto deferred = ss::defer([&client] {
         client.stop().then([&client] { client.shutdown(); }).get();
     });
@@ -150,7 +150,7 @@ FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
     kafka::group_instance_id gr("instance-1");
     wait_for_consumer_offsets_topic(gr);
     // load some data into the topic via offset_commit requests.
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     auto deferred = ss::defer([&client] {
         client.stop().then([&client] { client.shutdown(); }).get();
     });

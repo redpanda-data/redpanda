@@ -40,7 +40,7 @@ SEASTAR_THREAD_TEST_CASE(netbuf_pod) {
     // forces the computation of the header
     auto bufs = std::move(n).as_scattered().get().release().release();
     auto in = make_iobuf_input_stream(iobuf(std::move(bufs)));
-    const pod dst = rpc::parse_framed<pod>(in).get0();
+    const pod dst = rpc::parse_framed<pod>(in).get();
     BOOST_REQUIRE_EQUAL(src.x, dst.x);
     BOOST_REQUIRE_EQUAL(src.y, dst.y);
     BOOST_REQUIRE_EQUAL(src.z, dst.z);

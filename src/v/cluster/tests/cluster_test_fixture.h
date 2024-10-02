@@ -39,14 +39,14 @@ void wait_for(model::timeout_clock::duration timeout, Pred&& p) {
       do_until(
         [p = std::forward<Pred>(p)] { return p(); },
         [] { return ss::sleep(std::chrono::milliseconds(400)); }))
-      .get0();
+      .get();
 }
 
 template<typename T>
 void set_configuration(ss::sstring p_name, T v) {
     ss::smp::invoke_on_all([p_name, v = std::move(v)] {
         config::shard_local_cfg().get(p_name).set_value(v);
-    }).get0();
+    }).get();
 }
 
 class cluster_test_fixture {
@@ -233,7 +233,7 @@ public:
      */
     scheduling_groups create_scheduling_groups() {
         scheduling_groups groups;
-        groups.create_groups().get0();
+        groups.create_groups().get();
         return groups;
     }
 
@@ -247,9 +247,9 @@ public:
             return std::any_of(
               _instances.begin(), _instances.end(), [](auto& it) {
                   return it.second->app.controller->linearizable_barrier()
-                    .get0();
+                    .get();
               });
-        }).get0();
+        }).get();
         auto leader_it = std::find_if(
           _instances.begin(), _instances.end(), [](auto& it) {
               return it.second->app.controller->is_raft0_leader();
@@ -263,7 +263,7 @@ public:
                          .create_topics(
                            cluster::without_custom_assignments(std::move(cfgs)),
                            model::no_timeout)
-                         .get0();
+                         .get();
         BOOST_REQUIRE_EQUAL(results.size(), 1);
         auto& result = results.at(0);
         BOOST_REQUIRE_EQUAL(result.ec, cluster::errc::success);
@@ -278,7 +278,7 @@ public:
                      [&](const cluster::assignments_set::value_type& p) {
                          return leaders.get_leader(tp_ns, p.second.id);
                      });
-        }).get0();
+        }).get();
     }
 
     std::tuple<redpanda_thread_fixture*, ss::lw_shared_ptr<cluster::partition>>

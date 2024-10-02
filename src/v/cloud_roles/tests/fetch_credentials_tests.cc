@@ -272,9 +272,9 @@ FIXTURE_TEST(test_sts_credentials, fixture) {
     auto token_f = ss::open_file_dma(
                      "test_sts_creds_f",
                      ss::open_flags::create | ss::open_flags::rw)
-                     .get0();
+                     .get();
     ss::sstring token{"token"};
-    token_f.dma_write(0, token.data(), token.size()).get0();
+    token_f.dma_write(0, token.data(), token.size()).get();
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::sts,
@@ -290,8 +290,8 @@ FIXTURE_TEST(test_sts_credentials, fixture) {
         return c.has_value();
     }).get();
 
-    token_f.close().get0();
-    ss::remove_file("test_sts_creds_f").get0();
+    token_f.close().get();
+    ss::remove_file("test_sts_creds_f").get();
 
     auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
     BOOST_REQUIRE_EQUAL("sts-key", aws_creds.access_key_id());
@@ -338,9 +338,9 @@ FIXTURE_TEST(test_short_lived_sts_credentials, fixture) {
     auto token_f = ss::open_file_dma(
                      "test_short_sts_f",
                      ss::open_flags::create | ss::open_flags::rw)
-                     .get0();
+                     .get();
     ss::sstring token{"token"};
-    token_f.dma_write(0, token.data(), token.size()).get0();
+    token_f.dma_write(0, token.data(), token.size()).get();
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::sts,
@@ -356,8 +356,8 @@ FIXTURE_TEST(test_short_lived_sts_credentials, fixture) {
         return *count >= 2;
     }).get();
 
-    token_f.close().get0();
-    ss::remove_file("test_short_sts_f").get0();
+    token_f.close().get();
+    ss::remove_file("test_short_sts_f").get();
     auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
     BOOST_REQUIRE_EQUAL("sts-key", aws_creds.access_key_id());
     BOOST_REQUIRE_EQUAL("sts-secret", aws_creds.secret_access_key());

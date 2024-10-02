@@ -179,7 +179,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
             }(),
             .disable_tls = m.contains("disable-tls") > 0,
           })
-          .get0();
+          .get();
     if (m.contains("hns-enabled")) {
         client_cfg.is_hns_enabled = true;
     }
@@ -212,8 +212,8 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
 // TODO(vlad): factor this out
 static std::pair<ss::input_stream<char>, uint64_t>
 get_input_file_as_stream(const std::filesystem::path& path) {
-    auto file = ss::open_file_dma(path.native(), ss::open_flags::ro).get0();
-    auto size = file.size().get0();
+    auto file = ss::open_file_dma(path.native(), ss::open_flags::ro).get();
+    auto size = file.size().get();
     return std::make_pair(ss::make_file_input_stream(std::move(file), 0), size);
 }
 
@@ -241,8 +241,8 @@ static ss::output_stream<char>
 get_output_file_as_stream(const std::filesystem::path& path) {
     auto file = ss::open_file_dma(
                   path.native(), ss::open_flags::rw | ss::open_flags::create)
-                  .get0();
-    return ss::make_file_output_stream(std::move(file)).get0();
+                  .get();
+    return ss::make_file_output_stream(std::move(file)).get();
 }
 
 int main(int args, char** argv, char** env) {
@@ -327,7 +327,7 @@ int main(int args, char** argv, char** env) {
                                                 lcfg.container,
                                                 lcfg.blobs.front(),
                                                 http::default_connect_timeout)
-                                              .get0();
+                                              .get();
                         if (result) {
                             auto resp = result.value()->as_input_stream();
                             vlog(test_log.info, "response: OK");
@@ -354,7 +354,7 @@ int main(int args, char** argv, char** env) {
                                                 payload_size,
                                                 std::move(payload),
                                                 http::default_connect_timeout)
-                                              .get0();
+                                              .get();
                         if (!result) {
                             vlog(
                               test_log.error,

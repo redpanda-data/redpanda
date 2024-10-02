@@ -1982,7 +1982,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // iobuf -> append_entries_request
         iobuf_parser serde_in(std::move(serde_out));
         auto from_serde
-          = serde::read_async<raft::append_entries_request>(serde_in).get0();
+          = serde::read_async<raft::append_entries_request>(serde_in).get();
 
         BOOST_REQUIRE(from_serde.source_node() == node_id);
         BOOST_REQUIRE(from_serde.target_node() == target_node_id);
@@ -1992,7 +1992,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto batches_from_serde = model::consume_reader_to_memory(
                                     std::move(from_serde).release_batches(),
                                     model::no_timeout)
-                                    .get0();
+                                    .get();
         BOOST_REQUIRE(gold.size() > 0);
         BOOST_REQUIRE(batches_from_serde.size() == gold.size());
         for (size_t i = 0; i < gold.size(); i++) {

@@ -21,7 +21,7 @@
 FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
-    auto res = replicate_random_batches(gr, 1).get0();
+    auto res = replicate_random_batches(gr, 1).get();
     BOOST_REQUIRE(res);
     auto new_node = gr.create_new_node(model::node_id(2));
     res = retry_with_leader(gr, 5, 1s, [new_node](raft_node& leader) {
@@ -30,7 +30,7 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
                   raft::vnode(new_node.id(), model::revision_id(0)),
                   model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
-          }).get0();
+          }).get();
 
     validate_logs_replication(gr);
     auto& leader = gr.get_member(gr.get_leader_id().value());
@@ -75,13 +75,13 @@ void verify_removed_node_is_behind(
 
             return true;
         });
-    }).get0();
+    }).get();
 }
 
 FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
-    auto res = replicate_random_batches(gr, 2).get0();
+    auto res = replicate_random_batches(gr, 2).get();
     BOOST_REQUIRE(res);
     auto& members = gr.get_members();
     auto non_leader_id = std::find_if(
@@ -97,7 +97,7 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
                   raft::vnode(non_leader_id, model::revision_id{0}),
                   model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
-          }).get0();
+          }).get();
     BOOST_REQUIRE(res);
 
     tests::cooperative_spin_wait_with_timeout(5s, [&gr] {
@@ -107,9 +107,9 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
         }
         auto& leader = gr.get_member(*leader_id);
         return leader.consensus->config().all_nodes().size() == 2;
-    }).get0();
+    }).get();
 
-    auto write_ok = replicate_random_batches(gr, 2).get0();
+    auto write_ok = replicate_random_batches(gr, 2).get();
     BOOST_REQUIRE(write_ok);
     auto removed_offset
       = gr.get_member(non_leader_id).consensus->last_visible_index();
@@ -124,7 +124,7 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
 FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
-    auto res = replicate_random_batches(gr, 2).get0();
+    auto res = replicate_random_batches(gr, 2).get();
     auto old_leader_id = wait_for_group_leader(gr);
     res = retry_with_leader(gr, 5, 1s, [old_leader_id](raft_node& leader) {
               return leader.consensus
@@ -132,7 +132,7 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
                   raft::vnode(old_leader_id, model::revision_id{0}),
                   model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
-          }).get0();
+          }).get();
 
     tests::cooperative_spin_wait_with_timeout(5s, [&gr, old_leader_id] {
         auto leader_id = gr.get_leader_id();
@@ -142,10 +142,10 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
         auto& leader = gr.get_member(*leader_id);
         return leader.consensus->config().all_nodes().size() == 2
                && leader_id != old_leader_id;
-    }).get0();
+    }).get();
 
     BOOST_REQUIRE_NE(gr.get_leader_id(), old_leader_id);
-    res = replicate_random_batches(gr, 2).get0();
+    res = replicate_random_batches(gr, 2).get();
     BOOST_REQUIRE(res);
     auto removed_offset
       = gr.get_member(old_leader_id).consensus->last_visible_index();
@@ -160,7 +160,7 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     info("replicating some batches");
-    auto res = replicate_random_batches(gr, 5).get0();
+    auto res = replicate_random_batches(gr, 5).get();
     // wait for all group members to have the same log
     wait_for(
       10s,
@@ -182,7 +182,7 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
                            || ec
                                 == raft::errc::configuration_change_in_progress;
                 });
-          }).get0();
+          }).get();
     // if we failed to update configuration do nothing
     if (!res) {
         return;
@@ -330,7 +330,7 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     info("replicating some batches");
-    auto res = replicate_random_batches(gr, 5).get0();
+    auto res = replicate_random_batches(gr, 5).get();
     // all nodes are replaced with new node
     gr.create_new_node(model::node_id(5));
     std::vector<raft::vnode> new_members;
@@ -346,7 +346,7 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
                            || ec
                                 == raft::errc::configuration_change_in_progress;
                 });
-          }).get0();
+          }).get();
 
     BOOST_REQUIRE(res);
 
@@ -357,7 +357,7 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
                     info("configuration revert result: {}", ec.message());
                     return !ec;
                 });
-          }).get0();
+          }).get();
 
     wait_for(
       5s,

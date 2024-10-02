@@ -35,7 +35,7 @@ inline void wait_for_metadata(
           [&topic_table](const cluster::topic_result& r) {
               return topic_table.get_topic_metadata(r.tp_ns);
           });
-    }).get0();
+    }).get();
 }
 
 inline bool

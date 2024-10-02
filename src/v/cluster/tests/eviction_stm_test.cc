@@ -66,9 +66,9 @@ FIXTURE_TEST(test_eviction_stm_deadlock, raft_test_fixture) {
     auto impl = leader_raft->log();
     std::vector<storage::offset_stats> offsets;
     for (auto i = 0; i < 5; ++i) {
-        replicate_random_batches(gr, 20).get0();
+        replicate_random_batches(gr, 20).get();
         offsets.push_back(impl->offsets());
-        impl->force_roll(ss::default_priority_class()).get0();
+        impl->force_roll(ss::default_priority_class()).get();
     }
 
     /// Create an instance of the log eviction stm, however using the subclass

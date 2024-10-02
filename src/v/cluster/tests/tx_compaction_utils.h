@@ -219,8 +219,8 @@ public:
         execute(std::move(ops), log).get();
 
         //---- Step 3: Force a roll and compact the log.
-        log->flush().get0();
-        log->force_roll(ss::default_priority_class()).get0();
+        log->flush().get();
+        log->force_roll(ss::default_priority_class()).get();
         if (!s._compact) {
             return;
         }

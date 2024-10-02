@@ -179,17 +179,17 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
  * batches.
  */
 FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
-    wait_for_controller_leadership().get0();
+    wait_for_controller_leadership().get();
     start();
     auto offset_1 = produce([this](size_t cnt) {
                         return small_batches(cnt);
-                    }).get0();
-    auto resp_1 = fetch_next().get0();
+                    }).get();
+    auto resp_1 = fetch_next().get();
 
     auto offset_2 = produce([this](size_t cnt) {
                         return small_batches(cnt);
-                    }).get0();
-    auto resp_2 = fetch_next().get0();
+                    }).get();
+    auto resp_2 = fetch_next().get();
 
     BOOST_REQUIRE_EQUAL(resp_1.data.topics.empty(), false);
     BOOST_REQUIRE_EQUAL(resp_2.data.topics.empty(), false);
@@ -356,7 +356,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
     void config_set(const std::string_view name, const std::any value) {
         ss::smp::invoke_on_all([&] {
             config::shard_local_cfg().get(name).set_value(value);
-        }).get0();
+        }).get();
     }
 
     void config_set_window_width(const ch::milliseconds window_width) {
@@ -365,7 +365,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
             config::shard_local_cfg()
               .get("kafka_quota_balancer_window_ms")
               .set_value(window_width);
-        }).get0();
+        }).get();
     }
 
     void config_set_balancer_period(const ch::milliseconds balancer_period) {
@@ -374,7 +374,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
             config::shard_local_cfg()
               .get("kafka_quota_balancer_node_period_ms")
               .set_value(balancer_period);
-        }).get0();
+        }).get();
     }
 
     void config_set_rate_minimum(const int64_t rate_minimum) {
@@ -383,7 +383,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
             config::shard_local_cfg()
               .get("kafka_quota_balancer_min_shard_throughput_bps")
               .set_value(rate_minimum);
-        }).get0();
+        }).get();
     }
 
     int warmup_cycles(const size_t rate_limit, const size_t packet_size) const {
@@ -431,7 +431,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
                                .then([](const kafka::produce_response& r) {
                                    return r.data.throttle_time_ms;
                                })
-                               .get0();
+                               .get();
             kafka_in_data_len += batch_size;
         }
         const auto stop = ch::steady_clock::now();
@@ -479,7 +479,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
                     << kafka_out_data_len
                     << ", kafka_data_cap: " << kafka_data_cap);
             }
-            const auto fetch_resp = fetch_next().get0();
+            const auto fetch_resp = fetch_next().get();
             BOOST_REQUIRE_EQUAL(fetch_resp.data.topics.size(), 1);
             BOOST_REQUIRE_EQUAL(fetch_resp.data.topics[0].partitions.size(), 1);
             BOOST_TEST_REQUIRE(
@@ -836,7 +836,7 @@ FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
         std::function<kafka::snc_quota_manager::quota_t(
           const kafka::snc_quota_manager&)> mapper,
         const char* const direction) {
-          const auto quotas = app.snc_quota_mgr.map(std::move(mapper)).get0();
+          const auto quotas = app.snc_quota_mgr.map(std::move(mapper)).get();
           info("quotas_{}: {}", direction, quotas);
           const auto quotas_minmax = std::minmax_element(
             quotas.cbegin(), quotas.cend());
@@ -885,14 +885,14 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
             },
             0,
             [](uint32_t lhs, uint32_t rhs) { return lhs + rhs; })
-          .get0();
+          .get();
     };
 
     auto set_balancer_period = [](const ch::milliseconds d) {
         ss::smp::invoke_on_all([&] {
             auto& config = config::shard_local_cfg();
             config.get("kafka_quota_balancer_node_period_ms").set_value(d);
-        }).get0();
+        }).get();
     };
 
     wait_for_controller_leadership().get();
@@ -903,7 +903,7 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
 
         set_balancer_period(25ms);
         int br_last = get_balancer_runs();
-        ss::sleep(100ms).get0();
+        ss::sleep(100ms).get();
         int br = get_balancer_runs();
         BOOST_TEST_WARN(
           abs(br - br_last - 4) <= 1,
@@ -912,7 +912,7 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
 
         set_balancer_period(0ms);
         br_last = get_balancer_runs();
-        ss::sleep(100ms).get0();
+        ss::sleep(100ms).get();
         br = get_balancer_runs();
         BOOST_TEST_WARN(
           abs(br - br_last - 0) <= 1,
@@ -922,7 +922,7 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
 
         set_balancer_period(15ms);
         br_last = get_balancer_runs();
-        ss::sleep(100ms).get0();
+        ss::sleep(100ms).get();
         br = get_balancer_runs();
         BOOST_TEST_WARN(
           abs(br - br_last - 7) <= 1,
@@ -956,7 +956,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
                 raft->step_down("force_step_down").get();
                 tests::cooperative_spin_wait_with_timeout(10s, [raft] {
                     return raft->is_leader();
-                }).get0();
+                }).get();
             })
           .get();
         app.partition_manager
@@ -966,7 +966,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
                 auto partition = mgr.get(ntp);
                 produce([this](size_t cnt) {
                     return small_batches(cnt);
-                }).get0();
+                }).get();
             })
           .get();
     }
@@ -1006,7 +1006,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
       {},
     };
     req.data.topics.emplace_back(std::move(t));
-    auto resp = client.dispatch(std::move(req), kafka::api_version(2)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(2)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
     BOOST_REQUIRE_EQUAL(1, resp.data.topics.size());
     const auto& topic_resp = resp.data.topics[0];
@@ -1031,7 +1031,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
 }
 
 FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
-    wait_for_controller_leadership().get0();
+    wait_for_controller_leadership().get();
     start();
     const model::partition_id pid(0);
     const model::ntp ntp(test_tp_ns.ns, test_tp_ns.tp, pid);
@@ -1167,7 +1167,7 @@ FIXTURE_TEST(test_produce_bad_timestamps, prod_consume_fixture) {
      * incremented.
      */
 
-    wait_for_controller_leadership().get0();
+    wait_for_controller_leadership().get();
     start();
     auto ntp = model::ntp(test_tp_ns.ns, test_tp_ns.tp, model::partition_id(0));
 

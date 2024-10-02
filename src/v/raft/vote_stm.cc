@@ -87,7 +87,7 @@ ss::future<> vote_stm::dispatch_one(vnode n) {
           [this, n](ss::future<result<vote_reply>> f) {
               auto voter_reply = _replies.find(n);
               try {
-                  auto r = f.get0();
+                  auto r = f.get();
                   if (r.has_value()) {
                       vlog(
                         _ctxlog.info,

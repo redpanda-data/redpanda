@@ -176,7 +176,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     });
 
     retry_chain_node fib(never_abort);
-    auto res = upload_next_with_retries(archiver).get0();
+    auto res = upload_next_with_retries(archiver).get();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -309,7 +309,7 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
     });
 
     retry_chain_node fib(never_abort);
-    auto res = upload_next_with_retries(archiver).get0();
+    auto res = upload_next_with_retries(archiver).get();
 
     auto&& [non_compacted_result, compacted_result] = res;
 
@@ -404,7 +404,7 @@ FIXTURE_TEST(
     });
 
     retry_chain_node fib(never_abort);
-    auto res = archiver.upload_next_candidates().get0();
+    auto res = archiver.upload_next_candidates().get();
 
     auto&& [non_compacted_result, compacted_result] = res;
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
@@ -488,7 +488,7 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     });
 
     retry_chain_node fib(never_abort);
-    auto res = upload_next_with_retries(archiver).get0();
+    auto res = upload_next_with_retries(archiver).get();
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
 
@@ -612,7 +612,7 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
 
     // Wait for uploads to complete
     retry_chain_node fib(never_abort);
-    auto res = upload_next_with_retries(archiver).get0();
+    auto res = upload_next_with_retries(archiver).get();
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
 
@@ -786,7 +786,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       amv);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    auto res = upload_next_with_retries(archiver).get0();
+    auto res = upload_next_with_retries(archiver).get();
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
 
@@ -944,7 +944,7 @@ FIXTURE_TEST(
         std::nullopt,
         ss::default_priority_class(),
         as))
-      .get0();
+      .get();
 
     auto seg = log->segments().begin();
 
@@ -1195,7 +1195,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     retry_chain_node fib(never_abort);
 
-    auto res = upload_next_with_retries(archiver).get0();
+    auto res = upload_next_with_retries(archiver).get();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -1422,7 +1422,7 @@ static void test_partial_upload_impl(
 
     retry_chain_node fib(never_abort);
     test.listen();
-    auto res = test.upload_next_with_retries(archiver, lso).get0();
+    auto res = test.upload_next_with_retries(archiver, lso).get();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -1462,7 +1462,7 @@ static void test_partial_upload_impl(
     }
 
     lso = last_upl2 + model::offset(1);
-    res = test.upload_next_with_retries(archiver, lso).get0();
+    res = test.upload_next_with_retries(archiver, lso).get();
 
     non_compacted_result = res.non_compacted_upload_result;
     compacted_result = res.compacted_upload_result;

@@ -68,7 +68,7 @@ ss::future<result<T, EC>> result_with_timeout(
     static_assert(!is_already_result, "nested result<T> not yet supported");
     using ret_t = result<T, EC>;
     if (f.available()) {
-        return ss::make_ready_future<ret_t>(f.get0());
+        return ss::make_ready_future<ret_t>(f.get());
     }
     auto pr = std::make_unique<ss::promise<ret_t>>();
     auto result = pr->get_future();
@@ -78,7 +78,7 @@ ss::future<result<T, EC>> result_with_timeout(
       [pr = std::move(pr), timer = std::move(timer), error](auto&& f) mutable {
           if (timer.cancel()) {
               try {
-                  pr->set_value(f.get0());
+                  pr->set_value(f.get());
               } catch (...) {
                   pr->set_exception(std::current_exception());
               }

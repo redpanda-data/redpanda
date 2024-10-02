@@ -19,13 +19,13 @@ FIXTURE_TEST(test_single_node_decomissioning, rebalancing_tests_fixture) {
                  ->controller->get_members_frontend()
                  .local()
                  .decommission_node(model::node_id(0))
-                 .get0();
+                 .get();
     // we expect that decommissioning will be in progress since we haven't
     // yet added any new nodes
     BOOST_REQUIRE(!res);
 
     add_node(10);
-    wait_for_node_decommissioned(0).get0();
+    wait_for_node_decommissioned(0).get();
 }
 
 // TODO: enable when after we investigate issues on aarch_64
@@ -42,19 +42,19 @@ FIXTURE_TEST(test_two_nodes_decomissioning, rebalancing_tests_fixture) {
                    ->controller->get_members_frontend()
                    .local()
                    .decommission_node(model::node_id(0))
-                   .get0();
+                   .get();
     BOOST_REQUIRE(!res_1);
     info("decommissioning node - 1");
     auto res_2 = (*get_leader_node_application())
                    ->controller->get_members_frontend()
                    .local()
                    .decommission_node(model::node_id(1))
-                   .get0();
+                   .get();
     BOOST_REQUIRE(!res_2);
 
     add_node(10);
     add_node(11);
-    wait_for_node_decommissioned(0).get0();
-    wait_for_node_decommissioned(1).get0();
+    wait_for_node_decommissioned(0).get();
+    wait_for_node_decommissioned(1).get();
 }
 #endif

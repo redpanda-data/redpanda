@@ -207,7 +207,7 @@ private:
 /**
  * Use the snapshot manager to open a new snapshot:
  *
- *    snapshot_writer writer = manager.start_snapshot().get0();
+ *    snapshot_writer writer = manager.start_snapshot().get();
  *
  * Initialize the snapshot with metadata:
  *

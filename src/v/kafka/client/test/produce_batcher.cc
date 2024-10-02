@@ -91,7 +91,7 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_single) {
     BOOST_REQUIRE(ctx.consume().get() == 2);
     BOOST_REQUIRE(ctx.handle_response() == 2);
 
-    auto offsets = ctx.get_response_offsets().get0();
+    auto offsets = ctx.get_response_offsets().get();
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
     BOOST_REQUIRE(ctx.consume().get() == 0);
@@ -110,7 +110,7 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_seq) {
     BOOST_REQUIRE(ctx.consume().get() == 4);
     BOOST_REQUIRE(ctx.handle_response() == 4);
 
-    auto offsets = ctx.get_response_offsets().get0();
+    auto offsets = ctx.get_response_offsets().get();
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
     BOOST_REQUIRE(ctx.consume().get() == 0);
@@ -130,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_overlapped) {
     BOOST_REQUIRE(ctx.handle_response() == 4);
     BOOST_REQUIRE(ctx.handle_response() == 4);
 
-    auto offsets = ctx.get_response_offsets().get0();
+    auto offsets = ctx.get_response_offsets().get();
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
     BOOST_REQUIRE(ctx.consume().get() == 0);
@@ -151,7 +151,7 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_error) {
     BOOST_REQUIRE(
       ctx.handle_response(kafka::error_code::not_leader_for_partition) == 4);
 
-    auto responses = ctx.get_responses().get0();
+    auto responses = ctx.get_responses().get();
     BOOST_REQUIRE(responses.size() == 4);
     // successes
     BOOST_REQUIRE(responses[0].base_offset == model::offset(42));

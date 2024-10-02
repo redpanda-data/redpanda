@@ -241,7 +241,7 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
     }
 
     fetch_bench_fixture() {
-        wait_for_controller_leadership().get0();
+        wait_for_controller_leadership().get();
 
         // Disable as many background processes as possible to reduce noise.
         test_local_cfg.get("log_disable_housekeeping_for_tests")

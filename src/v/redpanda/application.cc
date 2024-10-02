@@ -604,7 +604,7 @@ void application::initialize(
           compression::lz4_decompression_buffers::bufsize,
           compression::lz4_decompression_buffers::min_threshold,
           config::shard_local_cfg().lz4_decompress_reusable_buffers_disabled());
-    }).get0();
+    }).get();
 
     if (config::shard_local_cfg().enable_pid_file()) {
         // check that the data directory exists now, because we are about to
@@ -816,7 +816,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
     // Retain the original bytes loaded so that we can hexdump them later
     // if YAML Parse fails.
     // Related: https://github.com/redpanda-data/redpanda/issues/3798
-    auto yaml_raw_bytes = read_fully_tmpbuf(cfg_path).get0();
+    auto yaml_raw_bytes = read_fully_tmpbuf(cfg_path).get();
     auto yaml_raw_str = ss::to_sstring(yaml_raw_bytes.clone());
     YAML::Node config;
     try {
@@ -852,7 +852,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
     ss::smp::invoke_on_all([&config, cfg_path] {
         config::node().load(cfg_path, config);
-    }).get0();
+    }).get();
 
     auto node_config_errors = config::node().load(config);
     for (const auto& i : node_config_errors) {
@@ -891,7 +891,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
     // This includes loading from local bootstrap file or legacy
     // config file on first-start or upgrade cases.
-    _config_preload = cluster::config_manager::preload(config).get0();
+    _config_preload = cluster::config_manager::preload(config).get();
 
     vlog(_log.info, "Cluster configuration properties:");
     vlog(_log.info, "(use `rpk cluster config edit` to change)");
@@ -1058,7 +1058,7 @@ void application::check_for_crash_loop() {
 
     // Compute the checksum of the current node configuration.
     auto current_config
-      = read_fully_to_string(config::node().get_cfg_file_path()).get0();
+      = read_fully_to_string(config::node().get_cfg_file_path()).get();
     auto checksum = xxhash_64(current_config.c_str(), current_config.length());
 
     if (maybe_crash_md) {
@@ -1736,7 +1736,7 @@ void application::wire_up_redpanda_services(
       std::ref(shadow_index_cache),
       std::ref(node_status_table),
       std::ref(metadata_cache));
-    controller->wire_up().get0();
+    controller->wire_up().get();
 
     if (config::node().recovery_mode_enabled()) {
         construct_single_service(
@@ -2498,7 +2498,7 @@ void application::wire_up_bootstrap_services() {
       .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
               auto rpc_server_addr
-                = net::resolve_dns(config::node().rpc_server()).get0();
+                = net::resolve_dns(config::node().rpc_server()).get();
               // Use port based load_balancing_algorithm to make connection
               // shard assignment deterministic.
               c.load_balancing_algo
@@ -2542,8 +2542,8 @@ void application::start_bootstrap_services() {
     syschecks::systemd_message("Starting storage services").get();
 
     // single instance
-    storage_node.invoke_on_all(&storage::node::start).get0();
-    local_monitor.invoke_on_all(&cluster::node::local_monitor::start).get0();
+    storage_node.invoke_on_all(&storage::node::start).get();
+    local_monitor.invoke_on_all(&cluster::node::local_monitor::start).get();
 
     storage.invoke_on_all(&storage::api::start).get();
 
@@ -2609,7 +2609,7 @@ void application::start_bootstrap_services() {
               // their cluster can easily stop it and run an older version,
               // before we've committed any version info to disk.
           })
-          .get0();
+          .get();
     }
 
     auto configured_node_id = config::node().node_id();
@@ -2633,7 +2633,7 @@ void application::start_bootstrap_services() {
         ss::smp::invoke_on_all([stored_node_id] {
             config::node().node_id.set_value(
               std::make_optional(stored_node_id));
-        }).get0();
+        }).get();
     }
 
     // Load the local node UUID, or create one if none exists.
@@ -2998,7 +2998,7 @@ void application::start_runtime_services(
         producer_id_recovery_manager,
         std::move(offsets_recovery_requestor),
         redpanda_start_time)
-      .get0();
+      .get();
 
     if (archiver_manager.local_is_initialized()) {
         archiver_manager.invoke_on_all(&archival::archiver_manager::start)
@@ -3173,7 +3173,7 @@ void application::start_runtime_services(
     _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();
 
     if (!config::node().admin().empty()) {
-        _admin.invoke_on_all(&admin_server::start).get0();
+        _admin.invoke_on_all(&admin_server::start).get();
     }
 
     _compaction_controller.invoke_on_all(&storage::compaction_controller::start)

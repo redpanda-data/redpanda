@@ -35,7 +35,7 @@ FIXTURE_TEST(
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -57,7 +57,7 @@ FIXTURE_TEST(
                   bid1,
                   std::move(rdr1),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
+                .get();
     BOOST_REQUIRE((bool)r1);
 
     auto rdr2 = random_batch_reader(model::test::record_batch_spec{
@@ -77,7 +77,7 @@ FIXTURE_TEST(
                   bid2,
                   std::move(rdr2),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
+                .get();
     BOOST_REQUIRE((bool)r2);
 }
 
@@ -87,7 +87,7 @@ FIXTURE_TEST(
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -110,7 +110,7 @@ FIXTURE_TEST(
                   bid1,
                   std::move(rdr1),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
+                .get();
     BOOST_REQUIRE((bool)r1);
 
     auto rdr2 = random_batch_reader(model::test::record_batch_spec{
@@ -130,7 +130,7 @@ FIXTURE_TEST(
                   bid2,
                   std::move(rdr2),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
+                .get();
     BOOST_REQUIRE((bool)r2);
 
     BOOST_REQUIRE(r1.value().last_offset < r2.value().last_offset);
@@ -141,7 +141,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -169,7 +169,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
                       std::move(rdr),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
-                    .get0();
+                    .get();
         BOOST_REQUIRE((bool)r1);
         offsets.push_back(r1.value().last_offset);
     }
@@ -196,7 +196,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
                       std::move(rdr),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
-                    .get0();
+                    .get();
         BOOST_REQUIRE((bool)r1);
         BOOST_REQUIRE(r1.value().last_offset == offsets[i]);
     }
@@ -207,7 +207,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -233,9 +233,9 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
                       std::move(rdr),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
-                    .get0();
+                    .get();
         BOOST_REQUIRE((bool)r1);
-        wait_for_kafka_offset_apply(r1.value().last_offset).get0();
+        wait_for_kafka_offset_apply(r1.value().last_offset).get();
     }
 
     {
@@ -257,7 +257,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
                       std::move(rdr),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
-                    .get0();
+                    .get();
         BOOST_REQUIRE(
           r1
           == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
@@ -269,7 +269,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -292,7 +292,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
                   bid1,
                   std::move(rdr1),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
+                .get();
     BOOST_REQUIRE((bool)r1);
 
     auto rdr2 = random_batch_reader(model::test::record_batch_spec{
@@ -312,7 +312,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
                   bid2,
                   std::move(rdr2),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
+                .get();
     BOOST_REQUIRE(
       r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
@@ -322,7 +322,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();

@@ -608,7 +608,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
               }
               return ss::make_exception_future<append_result>(append_err);
           }
-          auto ret = append_fut.get0();
+          auto ret = append_fut.get();
           auto index_err = std::move(index_fut).get_exception();
           vlog(
             stlog.error,
@@ -748,7 +748,7 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
     return f(s).then_wrapped([s](
                                ss::future<ss::lw_shared_ptr<segment>> new_seg) {
         try {
-            auto ptr = new_seg.get0();
+            auto ptr = new_seg.get();
             return ss::make_ready_future<ss::lw_shared_ptr<segment>>(ptr);
         } catch (...) {
             return s->close()

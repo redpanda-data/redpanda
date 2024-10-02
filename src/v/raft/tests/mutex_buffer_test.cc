@@ -32,8 +32,8 @@ FIXTURE_TEST(test_single_request_dispatch, fixture) {
     buf.start(&fixture::add_postfix);
 
     auto f = buf.enqueue(request{"test"});
-    BOOST_REQUIRE_EQUAL(f.get0().content, "test-response");
-    buf.stop().get0();
+    BOOST_REQUIRE_EQUAL(f.get().content, "test-response");
+    buf.stop().get();
 }
 
 FIXTURE_TEST(test_requests_buffering, fixture) {
@@ -42,7 +42,7 @@ FIXTURE_TEST(test_requests_buffering, fixture) {
     std::vector<ss::future<response>> enqueued;
     enqueued.reserve(5);
     {
-        auto u = lock.get_units().get0();
+        auto u = lock.get_units().get();
         for (auto i = 0; i < 5; ++i) {
             enqueued.push_back(
               buf.enqueue(request{ssx::sformat("test-{}", i)}));
@@ -53,19 +53,19 @@ FIXTURE_TEST(test_requests_buffering, fixture) {
     auto i = 0;
     for (auto& f : enqueued) {
         BOOST_REQUIRE_EQUAL(
-          f.get0().content, ssx::sformat("test-{}-response", i));
+          f.get().content, ssx::sformat("test-{}-response", i));
         i++;
     }
 
-    buf.stop().get0();
+    buf.stop().get();
 }
 
 FIXTURE_TEST(after_close_buffer_should_stop_accepting_requests, fixture) {
     // stop buffer first
-    buf.stop().get0();
+    buf.stop().get();
 
     BOOST_REQUIRE_THROW(
-      buf.enqueue(request{"should-fail"}).get0(), ss::gate_closed_exception);
+      buf.enqueue(request{"should-fail"}).get(), ss::gate_closed_exception);
 }
 
 FIXTURE_TEST(should_propagate_exception, fixture) {
@@ -83,7 +83,7 @@ FIXTURE_TEST(should_propagate_exception, fixture) {
     std::vector<ss::future<response>> enqueued;
     enqueued.reserve(5);
     {
-        auto u = lock.get_units().get0();
+        auto u = lock.get_units().get();
 
         for (auto i = 0; i < 5; ++i) {
             enqueued.push_back(
@@ -102,5 +102,5 @@ FIXTURE_TEST(should_propagate_exception, fixture) {
         }
     }
 
-    buf.stop().get0();
+    buf.stop().get();
 }

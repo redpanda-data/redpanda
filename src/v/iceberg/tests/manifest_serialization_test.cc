@@ -323,7 +323,7 @@ TEST(ManifestSerializationTest, TestSerializeManifestData) {
         manifest_path = "nested_manifest.avro";
     }
     auto orig_buf = iobuf{
-      ss::util::read_entire_file(manifest_path.value()).get0()};
+      ss::util::read_entire_file(manifest_path.value()).get()};
     auto m = parse_manifest({struct_type{}}, orig_buf.copy());
     ASSERT_EQ(100, m.entries.size());
     ASSERT_EQ(m.metadata.manifest_content_type, manifest_content_type::data);

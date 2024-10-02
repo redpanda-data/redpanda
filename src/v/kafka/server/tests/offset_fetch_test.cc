@@ -18,13 +18,13 @@
 #include <limits>
 
 FIXTURE_TEST(offset_fetch, redpanda_thread_fixture) {
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     kafka::offset_fetch_request req;
     req.data.group_id = kafka::group_id("g");
 
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
+    auto resp = client.dispatch(req, kafka::api_version(2)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_TEST(resp.data.error_code == kafka::error_code::not_coordinator);

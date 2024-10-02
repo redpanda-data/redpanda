@@ -86,13 +86,13 @@ FIXTURE_TEST(test_conflicts, topic_table_fixture) {
                      cluster::delete_topic_cmd(
                        make_tp_ns("not_exists"), make_tp_ns("not_exists")),
                      model::offset(0))
-                   .get0();
+                   .get();
     BOOST_REQUIRE_EQUAL(res_1, cluster::errc::topic_not_exists);
 
     auto res_2 = table.local()
                    .apply(
                      make_create_topic_cmd("test_tp_1", 2, 3), model::offset(0))
-                   .get0();
+                   .get();
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
     BOOST_REQUIRE_EQUAL(deltas.size(), 0);
 }

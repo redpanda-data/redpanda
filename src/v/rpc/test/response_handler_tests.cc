@@ -51,7 +51,7 @@ FIXTURE_TEST(fail_with_timeout, test_fixture) {
     ss::sleep(1s).get();
 
     BOOST_REQUIRE_EQUAL(
-      rh.get_future().get0().error(), rpc::errc::client_request_timeout);
+      rh.get_future().get().error(), rpc::errc::client_request_timeout);
     BOOST_REQUIRE_EQUAL(triggered, true);
 };
 
@@ -59,7 +59,7 @@ FIXTURE_TEST(fail_other_error_with_timeout, test_fixture) {
     auto rh = create_handler(100s);
 
     rh.set_exception(std::runtime_error("test"));
-    BOOST_REQUIRE_THROW(auto res = rh.get_future().get0(), std::runtime_error);
+    BOOST_REQUIRE_THROW(auto res = rh.get_future().get(), std::runtime_error);
     BOOST_REQUIRE_EQUAL(triggered, false);
 };
 
@@ -67,7 +67,7 @@ FIXTURE_TEST(success_case_with_timout, test_fixture) {
     auto rh = create_handler(100s);
     rh.set_value(std::make_unique<test_str_ctx>());
 
-    auto v = rh.get_future().get0();
+    auto v = rh.get_future().get();
 
     BOOST_REQUIRE_EQUAL(triggered, false);
 };
