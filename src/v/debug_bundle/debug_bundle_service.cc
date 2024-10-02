@@ -540,6 +540,8 @@ service::rpk_debug_bundle_path(job_id_t job_id) {
         break;
     case debug_bundle_status::error:
         co_return error_info(error_code::process_failed);
+    case debug_bundle_status::expired:
+        co_return error_info(error_code::debug_bundle_expired);
     }
     if (job_id != _rpk_process->job_id()) {
         co_return error_info(error_code::job_id_not_recognized);
@@ -570,6 +572,7 @@ ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
         co_return error_info(error_code::debug_bundle_process_running);
     case debug_bundle_status::success:
     case debug_bundle_status::error:
+    case debug_bundle_status::expired:
         // Attempt the removal of the file even if the process errored out just
         // in case the file was created
         break;

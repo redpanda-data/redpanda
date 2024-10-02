@@ -29,6 +29,7 @@ enum class error_code : int {
     job_id_not_recognized,
     debug_bundle_process_never_started,
     rpk_binary_not_present,
+    debug_bundle_expired,
 };
 
 std::error_code make_error_code(error_code e) noexcept;

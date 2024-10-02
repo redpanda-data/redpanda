@@ -109,7 +109,7 @@ struct debug_bundle_parameters {
 };
 
 /// The state of the debug bundle process
-enum class debug_bundle_status { running, success, error };
+enum class debug_bundle_status { running, success, error, expired };
 
 constexpr std::string_view to_string_view(debug_bundle_status s) {
     switch (s) {
@@ -119,6 +119,8 @@ constexpr std::string_view to_string_view(debug_bundle_status s) {
         return "success";
     case debug_bundle_status::error:
         return "error";
+    case debug_bundle_status::expired:
+        return "expired";
     }
 }
 
