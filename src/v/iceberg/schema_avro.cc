@@ -69,9 +69,12 @@ struct avro_primitive_type_visitor {
     avro::Schema operator()(const decimal_type& type) {
         auto bytes_for_p = static_cast<int>(
           std::ceil((type.precision * std::log2(10) + 1) / 8));
-        auto ret = avro::FixedSchema(bytes_for_p, "");
-        ret.root()->setLogicalType(
-          avro::LogicalType(avro::LogicalType::DECIMAL));
+        auto ret = avro::FixedSchema(bytes_for_p, "decimal");
+        avro::LogicalType l_type(avro::LogicalType::DECIMAL);
+        l_type.setPrecision(type.precision);
+        l_type.setScale(type.scale);
+        ret.root()->setLogicalType(l_type);
+
         return ret;
     }
     avro::Schema operator()(const date_type&) {
@@ -105,7 +108,8 @@ struct avro_primitive_type_visitor {
         return ret;
     }
     avro::Schema operator()(const fixed_type& type) {
-        auto ret = avro::FixedSchema(static_cast<int>(type.length), "");
+        auto ret = avro::FixedSchema(
+          static_cast<int>(type.length), "fixed_bytes");
         return ret;
     }
     avro::Schema operator()(const binary_type&) { return avro::BytesSchema(); }
@@ -313,8 +317,18 @@ field_type type_from_avro(const avro::NodePtr& n) {
     case avro::AVRO_UNION:
         // NOTE: should be handled by maybe_optional_from_avro().
         throw std::invalid_argument("Avro union type not supported");
-    case avro::AVRO_FIXED:
+    case avro::AVRO_FIXED: {
+        auto logical_type = n->logicalType();
+        if (logical_type.type() == avro::LogicalType::DECIMAL) {
+            // casting to uint32_t should be safe, the only reason the values
+            // are signed is that unsigned counterparts are missing in java.
+            return decimal_type{
+              .precision = static_cast<uint32_t>(logical_type.precision()),
+              .scale = static_cast<uint32_t>(logical_type.scale()),
+            };
+        }
         return fixed_type{n->fixedSize()};
+    }
     case avro::AVRO_SYMBOLIC:
         throw std::invalid_argument("Avro symbolic type not supported");
     case avro::AVRO_UNKNOWN:
