@@ -100,7 +100,8 @@ struct generating_primitive_value_visitor {
         }
         switch (spec_.pattern) {
         case value_pattern::zeros:
-            return fixed_value{iobuf{}};
+            return fixed_value{
+              bytes_to_iobuf(bytes::from_string(std::string(t.length, 0)))};
         case value_pattern::random:
             return fixed_value{random_generators::make_iobuf(t.length)};
         }
