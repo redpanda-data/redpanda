@@ -146,8 +146,9 @@ struct primitive_value_avro_visitor {
         it.consume_to(fixed.val.size_bytes(), bytes.data());
         return {avro_schema_, avro::GenericFixed(avro_schema_, bytes)};
     }
-    avro::GenericDatum operator()(const uuid_value&) {
-        throw std::invalid_argument("XXX uuid not implemented");
+    avro::GenericDatum operator()(const uuid_value& uuid) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_STRING);
+        return {avro_schema_, fmt::to_string(uuid.val)};
     }
 };
 
@@ -334,7 +335,20 @@ struct primitive_value_parsing_visitor {
         return fixed_value{.val = std::move(b)};
     }
     value operator()(const uuid_type&) {
-        throw std::invalid_argument("XXX uuid not implemented");
+        // in Avro UUID can be either fixed or string type
+        if (data_.type() == avro::AVRO_FIXED) {
+            maybe_throw_wrong_logical_type(
+              data_.logicalType(), avro::LogicalType(avro::LogicalType::UUID));
+            const auto& v = data_.value<avro::GenericFixed>().value();
+            return uuid_value{.val = uuid_t(v)};
+        }
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_STRING);
+        maybe_throw_wrong_logical_type(
+          data_.logicalType(), avro::LogicalType(avro::LogicalType::UUID));
+        const auto& v = data_.value<std::string>();
+
+        auto uuid = uuid_t::from_string(v);
+        return uuid_value{uuid};
     }
     value operator()(const binary_type&) {
         maybe_throw_wrong_type(data_.type(), avro::AVRO_BYTES);
