@@ -1137,6 +1137,28 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     co_return std::move(result);
 }
 
+ss::future<std::optional<cloud_io::cache_item_str>> cache::get(
+  std::filesystem::path key,
+  ss::io_priority_class io_priority,
+  size_t read_buffer_size,
+  unsigned int read_ahead) {
+    auto get_res = co_await get(key);
+    if (!get_res.has_value()) {
+        co_return std::nullopt;
+    }
+
+    ss::file_input_stream_options options{};
+    options.buffer_size = read_buffer_size;
+    options.read_ahead = read_ahead;
+    options.io_priority_class = io_priority;
+    auto stream = ss::make_file_input_stream(
+      std::move(get_res->body), 0, std::move(options));
+    co_return cloud_io::cache_item_str{
+      .body = std::move(stream),
+      .size = get_res->size,
+    };
+}
+
 ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     auto guard = _gate.hold();
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
@@ -1888,27 +1910,6 @@ void cache::notify_disk_status(
             return container().invoke_on_all(
               [block_puts](cache& c) { c.set_block_puts(block_puts); });
         });
-    }
-}
-
-void space_reservation_guard::wrote_data(
-  uint64_t written_bytes, size_t written_objects) {
-    // Release the reservation, and update usage stats for how much we actually
-    // wrote.
-    _cache.reserve_space_release(
-      _bytes, _objects, written_bytes, written_objects);
-
-    // This reservation is now used up.
-    _bytes = 0;
-    _objects = 0;
-}
-
-space_reservation_guard::~space_reservation_guard() {
-    if (_bytes || _objects) {
-        // This is the case of a failed write, where wrote_data was never
-        // called: release the reservation and do not acquire any space
-        // usage for the written data (there should be none).
-        _cache.reserve_space_release(_bytes, _objects, 0, 0);
     }
 }
 

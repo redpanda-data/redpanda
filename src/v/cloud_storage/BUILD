@@ -125,6 +125,7 @@ redpanda_cc_library(
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_io:auth_refresh_bg_op",
+        "//src/v/cloud_io:basic_cache_service_api",
         "//src/v/cloud_io:io_resources",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_io:remote",
