@@ -46,17 +46,42 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+set(PROTO_FILES
+  testdata/person.proto
+  testdata/complex.proto
+  testdata/iceberg_ready_test_messages_edition2023.proto
+  testdata/not_supported.proto
+  testdata/proto2.proto
+)
+
+set(PROTOBUF_GENERATE_CPP_APPEND_PATH OFF)
+protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
+
+
+v_cc_library(
+  NAME datalake_test_proto_cc_files
+  SRCS ${PROTO_SRCS}
+  DEPS protobuf::libprotobuf
+)
+
 rp_test(
   UNIT_TEST
   GTEST
   USE_CWD
-  BINARY_NAME schema_protobuf
-  SOURCES schema_protobuf_test.cc
+  BINARY_NAME datalake_protobuf
+  SOURCES 
+    datalake_protobuf_tests.cc
   LIBRARIES
     v::gtest_main
     v::datalake
     v::iceberg_test_utils
+    v::datalake_test_proto_cc_files
   INPUT_FILES
     "${testdata_dir}/iceberg_ready_test_messages_edition2023.proto"
   ARGS "-- -c 1"
 )
+
+target_include_directories(v_datalake_test_proto_cc_files
+  PUBLIC ${CMAKE_CURRENT_BINARY_DIR}
+)
+

@@ -9,7 +9,23 @@ redpanda_cc_library(
     ],
     include_prefix = "datalake",
     deps = [
+        "//src/v/iceberg:values",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "protobuf_utils",
+    srcs = [
+        "protobuf_utils.cc",
+    ],
+    hdrs = [
+        "protobuf_utils.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "@protobuf",
     ],
 )
 
@@ -25,6 +41,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":conversion_outcome",
+        ":protobuf_utils",
         "//src/v/iceberg:datatypes",
         "@fmt",
         "@protobuf",
@@ -96,6 +113,30 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/ssx:semaphore",
         "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "values_protobuf",
+    srcs = [
+        "values_protobuf.cc",
+    ],
+    hdrs = [
+        "values_protobuf.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":conversion_outcome",
+        ":protobuf_utils",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:values",
+        "//src/v/serde/protobuf",
+        "//src/v/ssx:future_util",
+        "@fmt",
+        "@protobuf",
         "@seastar",
     ],
 )

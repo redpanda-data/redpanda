@@ -10,6 +10,7 @@
 #include "datalake/schema_protobuf.h"
 
 #include "datalake/conversion_outcome.h"
+#include "datalake/protobuf_utils.h"
 #include "iceberg/datatypes.h"
 
 #include <seastar/core/sstring.hh>
@@ -17,12 +18,8 @@
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
 
-#include <deque>
-
 namespace datalake {
-
 namespace {
-
 namespace pb = google::protobuf;
 
 /**
@@ -30,26 +27,19 @@ namespace pb = google::protobuf;
  */
 using field_outcome = conversion_outcome<iceberg::nested_field_ptr>;
 using struct_outcome = conversion_outcome<iceberg::struct_type>;
-using type_stack = std::deque<const pb::Descriptor*>;
+
 static constexpr int max_recursion_depth = 100;
 
-field_outcome
-from_protobuf(const pb::FieldDescriptor& fd, bool is_repeated, type_stack&);
+field_outcome from_protobuf(
+  const pb::FieldDescriptor& fd, bool is_repeated, proto_descriptors_stack&);
 
 field_outcome success(const pb::FieldDescriptor& fd, iceberg::field_type ft) {
     return iceberg::nested_field::create(
       fd.number(), fd.name(), iceberg::field_required::no, std::move(ft));
 }
 
-bool is_recursive_type(const pb::Descriptor& msg, type_stack& stack) {
-    return std::any_of(
-      stack.begin(), stack.end(), [&](const pb::Descriptor* d) {
-          return d->full_name() == msg.full_name();
-      });
-}
-
-struct_outcome
-struct_from_protobuf(const pb::Descriptor& msg, type_stack& stack) {
+struct_outcome struct_from_protobuf(
+  const pb::Descriptor& msg, proto_descriptors_stack& stack) {
     if (is_recursive_type(msg, stack)) {
         return schema_conversion_exception(fmt::format(
           "Protocol buffer field {} not supported", msg.DebugString()));
@@ -73,7 +63,9 @@ struct_from_protobuf(const pb::Descriptor& msg, type_stack& stack) {
 }
 
 field_outcome from_protobuf(
-  const pb::FieldDescriptor& fd, bool is_repeated, type_stack& stack) {
+  const pb::FieldDescriptor& fd,
+  bool is_repeated,
+  proto_descriptors_stack& stack) {
     if (fd.is_map()) {
         auto mt = fd.message_type();
         auto key_field = mt->map_key();
@@ -178,7 +170,7 @@ field_outcome from_protobuf(
 
 conversion_outcome<iceberg::struct_type>
 type_to_iceberg(const pb::Descriptor& descriptor) {
-    type_stack stack;
+    proto_descriptors_stack stack;
     return struct_from_protobuf(descriptor, stack);
 }
 

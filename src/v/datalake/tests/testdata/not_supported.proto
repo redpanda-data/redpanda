@@ -1,0 +1,24 @@
+syntax = "proto3";
+message StructWithUnsignedInt {
+    int64 valid = 1;
+    uint64 invalid = 2;
+}
+
+message StructWithUnsignedFixed {
+    int64 valid = 1;
+    fixed64 invalid = 2;
+}
+
+message RecursiveMessage {
+    int32 field = 1;
+    RecursiveMessage recursive = 2;
+}
+
+message RecursiveMessageNested {
+    message Nested {
+        repeated RecursiveMessageNested foo = 1;
+    }
+
+    int32 field = 1;
+    Nested corecursive = 2;
+}

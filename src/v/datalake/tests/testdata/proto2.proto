@@ -1,0 +1,24 @@
+syntax = "proto2";
+
+package proto2;
+
+message MessageWithOptionalFields {
+    message Nested {
+        optional int32 field = 1;
+    }
+
+    required string required_string = 1;
+    optional string string_with_default = 2 [default = "redpanda"];
+    optional int32 optional_int = 3;
+    required int32 required_int = 4;
+    optional Nested optional_nested = 5;
+    map<int32, int64> map = 6;
+    repeated int32 list = 7;
+
+    oneof oneof_field {
+        uint32 oneof_uint32 = 11;
+        string oneof_string = 12;
+        bytes oneof_bytes = 13;
+        bool oneof_bool = 14;
+    }
+}

@@ -13,6 +13,8 @@ v_cc_library(
     record_multiplexer.cc
     schemaless_translator.cc
     schema_protobuf.cc
+    protobuf_utils.cc
+    values_protobuf.cc
   DEPS
     v::datalake_coordinator
     v::storage
@@ -21,6 +23,7 @@ v_cc_library(
     Parquet::parquet_shared
     protobuf::libprotobuf
     v::iceberg
+    v::serde_protobuf
 )
 
 add_subdirectory(tests)
