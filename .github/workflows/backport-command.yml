@@ -117,7 +117,7 @@ jobs:
           GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
         id: backport_commits
         run: |
-          backport_commits=$(gh api "repos/$TARGET_FULL_REPO/pulls/$BACKPORT_PR_NUMBER/commits" --paginate --jq '.[].sha[0:10]')
+          backport_commits=$(gh api "repos/$TARGET_FULL_REPO/pulls/$BACKPORT_PR_NUMBER/commits" --paginate --jq '[.[].sha[0:10]]|join(" ")')
           echo "backport_commits=$backport_commits" >> $GITHUB_OUTPUT
       - uses: actions/checkout@v4
         if: needs.backport-type.outputs.commented_on == 'pr'
