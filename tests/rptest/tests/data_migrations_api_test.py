@@ -238,10 +238,17 @@ class DataMigrationsApiTest(RedpandaTest):
             )
             return t.partition_count == exp_part_cnt
 
+        def err_msg():
+            msg = "Failed waiting for partitions to appear:\n"
+            for t in topics:
+                msg += f"   {t.name} expected {t.partition_count} partitions, "
+                msg += f"got {len(self.client().describe_topic(t.name).partitions)} partitions\n"
+            return msg
+
         wait_until(lambda: all(topic_has_all_partitions(t) for t in topics),
                    timeout_sec=90,
                    backoff_sec=1,
-                   err_msg=f"Failed waiting for partitions to appear")
+                   err_msg=err_msg)
 
     def wait_partitions_disappear(self, topics: list[TopicSpec]):
         # we may be unlucky to query a slow node
