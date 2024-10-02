@@ -107,7 +107,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_dir) {
     auto dir = std::filesystem::path(
       "test.dir_" + random_generators::gen_alphanum_string(4));
     ss::recursive_touch_directory(dir.string()).get();
-    BOOST_REQUIRE(directory_walker::empty(dir).get0());
+    BOOST_REQUIRE(directory_walker::empty(dir).get());
     ss::recursive_touch_directory((dir / "xxx").string()).get();
-    BOOST_REQUIRE(!directory_walker::empty(dir).get0());
+    BOOST_REQUIRE(!directory_walker::empty(dir).get());
 }

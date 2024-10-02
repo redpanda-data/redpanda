@@ -100,7 +100,7 @@ FIXTURE_TEST(test_role_management, cluster_test_fixture) {
         cluster::errc result{cluster::errc::success};
         while (!success) {
             auto ec
-              = fn(app_0->controller->get_security_frontend().local()).get0();
+              = fn(app_0->controller->get_security_frontend().local()).get();
             success = break_codes.contains(ec);
             result = static_cast<cluster::errc>(ec.value());
         }
@@ -199,7 +199,7 @@ FIXTURE_TEST(test_role_management, cluster_test_fixture) {
                     .feature_name = ss::sstring("role_based_access_control"),
                     .action
                     = cluster::feature_update_action::action_t::deactivate})
-                  .get0();
+                  .get();
             success = ec == cluster::errc::success;
         }
     }

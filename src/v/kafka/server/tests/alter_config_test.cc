@@ -262,9 +262,9 @@ FIXTURE_TEST(
 
     kafka::metadata_request req;
     req.data.topics = std::nullopt;
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
-    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
     auto broker_id = std::to_string(resp.data.brokers[0].node_id());
 

@@ -78,7 +78,7 @@ template<typename Iterator, typename Func>
 requires requires(Func f, Iterator i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *i).get0();
+    seastar::futurize_invoke(f, *i).get();
 }
 inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
     using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
@@ -115,7 +115,7 @@ requires requires(Func f, Rng r) {
     r.begin();
     r.end();
     { r.begin() != r.begin() } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *r.begin()).get0();
+    seastar::futurize_invoke(f, *r.begin()).get();
 }
 inline auto async_transform(Rng& rng, Func&& func) {
     return async_transform(rng.begin(), rng.end(), std::forward<Func>(func));
@@ -145,8 +145,8 @@ template<typename Iterator, typename Func>
 requires requires(Func f, Iterator i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *i).get0().begin();
-    seastar::futurize_invoke(f, *i).get0().end();
+    seastar::futurize_invoke(f, *i).get().begin();
+    seastar::futurize_invoke(f, *i).get().end();
 }
 inline auto async_flat_transform(Iterator begin, Iterator end, Func&& func) {
     using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
@@ -171,7 +171,7 @@ requires requires(Func f, Rng r) {
     r.begin();
     r.end();
     { r.begin() != r.begin() } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *r.begin()).get0();
+    seastar::futurize_invoke(f, *r.begin()).get();
 }
 inline auto async_flat_transform(Rng& rng, Func&& func) {
     return async_flat_transform(
@@ -384,7 +384,7 @@ template<typename Iter, typename UnaryAsyncPredicate>
 requires requires(UnaryAsyncPredicate f, Iter i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *i).get0();
+    seastar::futurize_invoke(f, *i).get();
 }
 seastar::future<Iter> partition(Iter begin, Iter end, UnaryAsyncPredicate p) {
     auto itr = begin;

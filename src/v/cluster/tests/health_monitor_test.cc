@@ -133,17 +133,17 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
                  .local()
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
-                 .get0();
+                 .get();
     auto r_2 = n2->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
-                 .get0();
+                 .get();
     auto r_3 = n3->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
-                 .get0();
+                 .get();
 
     BOOST_TEST_REQUIRE(r_1.has_value());
     BOOST_TEST_REQUIRE(r_2.has_value());

@@ -274,7 +274,7 @@ public:
         ss::smp::invoke_on_all([] {
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
-        }).get0();
+        }).get();
         app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
         app.wire_up_and_start(*app_signal, true);
@@ -432,7 +432,7 @@ public:
               .set_value(data_transforms_enabled);
             config.get("cloud_storage_disable_archiver_manager")
               .set_value(legacy_upload_mode_enabled);
-        }).get0();
+        }).get();
     }
 
     YAML::Node proxy_config(uint16_t proxy_port = 8082) {

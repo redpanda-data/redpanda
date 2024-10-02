@@ -46,7 +46,7 @@ public:
         ss::smp::invoke_on_all([] {
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
-        }).get0();
+        }).get();
         app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
         app.wire_up_and_start(*app_signal, test_mode);

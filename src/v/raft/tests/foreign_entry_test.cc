@@ -70,7 +70,7 @@ struct foreign_entry_fixture {
         _storage.start().get();
         (void)_storage.log_mgr()
           .manage(storage::ntp_config(_ntp, "test.dir"))
-          .get0();
+          .get();
     }
 
     std::vector<storage::append_result> write_n(const std::size_t n) {
@@ -82,11 +82,11 @@ struct foreign_entry_fixture {
         res.push_back(
           gen_data_record_batch_reader(n)
             .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
-            .get0());
+            .get());
         res.push_back(
           gen_config_record_batch_reader(n)
             .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
-            .get0());
+            .get());
         get_log()->flush().get();
         return res;
     }
@@ -172,7 +172,7 @@ FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
     std::vector<model::record_batch_reader> copies =
       // clang-format off
       raft::details::foreign_share_n(gen_config_record_batch_reader(3),
-        ss::smp::count).get0();
+        ss::smp::count).get();
     // clang-format on
 
     BOOST_REQUIRE_EQUAL(copies.size(), ss::smp::count);
@@ -183,7 +183,7 @@ FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
           ss::smp::submit_to(shard, [e = std::move(copies[shard])]() mutable {
               info("extracting configuration");
               return extract_configuration(std::move(e));
-          }).get0();
+          }).get();
 
         for (auto& rni : cfg.current_config().voters) {
             BOOST_REQUIRE(
@@ -199,20 +199,20 @@ FIXTURE_TEST(sharing_correcteness_test, foreign_entry_fixture) {
     auto batches
       = model::test::make_random_batches(model::offset(0), 50, true).get();
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    auto refs = raft::details::share_n(std::move(rdr), 2).get0();
+    auto refs = raft::details::share_n(std::move(rdr), 2).get();
     auto shared = raft::details::foreign_share_n(
                     std::move(refs.back()), ss::smp::count)
-                    .get0();
+                    .get();
     refs.pop_back();
     auto reference_batches = model::consume_reader_to_memory(
                                std::move(refs.back()), model::no_timeout)
-                               .get0();
+                               .get();
 
     BOOST_REQUIRE_EQUAL(shared.size(), ss::smp::count);
     for (auto& copy : shared) {
         auto shared = model::consume_reader_to_memory(
                         std::move(copy), model::no_timeout)
-                        .get0();
+                        .get();
         for (int i = 0; i < reference_batches.size(); ++i) {
             BOOST_REQUIRE_EQUAL(shared[i], reference_batches[i]);
         }
@@ -225,7 +225,7 @@ FIXTURE_TEST(copy_lots_of_readers, foreign_entry_fixture) {
         auto rdr = gen_config_record_batch_reader(1);
         share_copies = raft::details::foreign_share_n(
                          std::move(rdr), ss::smp::count)
-                         .get0();
+                         .get();
     }
     BOOST_REQUIRE_EQUAL(share_copies.size(), ss::smp::count);
 
@@ -239,7 +239,7 @@ FIXTURE_TEST(copy_lots_of_readers, foreign_entry_fixture) {
                                return extract_configuration(std::move(es));
                            });
                      })
-                     .get0();
+                     .get();
 
         cfg.for_each_voter([](const raft::vnode& rni) {
             BOOST_REQUIRE(

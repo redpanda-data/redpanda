@@ -83,7 +83,7 @@ bool ser_deser_verify_hash(T&& type) {
 
     // Deserialize
     iobuf_parser in(std::move(out));
-    auto result = reflection::async_adl<T>{}.from(in).get0();
+    auto result = reflection::async_adl<T>{}.from(in).get();
 
     // Reserialize
     iobuf second_out;
@@ -100,7 +100,7 @@ bool ser_deser_verify(T type) {
 
     // Deserialize
     iobuf_parser in(std::move(out));
-    auto result = reflection::async_adl<T>{}.from(in).get0();
+    auto result = reflection::async_adl<T>{}.from(in).get();
     return result == type;
 }
 

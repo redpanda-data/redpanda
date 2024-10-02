@@ -89,20 +89,20 @@ FIXTURE_TEST(test_audit_init_phase, kafka_client_fixture) {
     set_auditing_config_options(event_size).get();
     enable_sasl_and_restart("username");
 
-    wait_for_controller_leadership().get0();
+    wait_for_controller_leadership().get();
     auto& audit_mgr = app.audit_mgr;
 
     /// with auditing disabled, calls to enqueue should be no-ops
-    const auto n_events = pending_audit_events(audit_mgr.local()).get0();
+    const auto n_events = pending_audit_events(audit_mgr.local()).get();
     audit_mgr
       .invoke_on_all([](sa::audit_log_manager& m) {
           for (auto i = 0; i < 20; ++i) {
               BOOST_ASSERT(m.enqueue_authn_event(make_random_authn_options()));
           }
       })
-      .get0();
+      .get();
 
-    BOOST_CHECK_EQUAL(pending_audit_events(audit_mgr.local()).get0(), n_events);
+    BOOST_CHECK_EQUAL(pending_audit_events(audit_mgr.local()).get(), n_events);
 
     /// with auditing enabled, the system should block when the threshold of
     /// audit_queue_max_buffer_size_per_shard has been reached
@@ -182,11 +182,11 @@ FIXTURE_TEST(test_audit_init_phase, kafka_client_fixture) {
                               },
                               true,
                               std::logical_and<>())
-                            .get0();
+                            .get();
 
     BOOST_CHECK(enqueued);
     BOOST_CHECK_EQUAL(
-      pending_audit_events(audit_mgr.local()).get0(), number_events);
+      pending_audit_events(audit_mgr.local()).get(), number_events);
 
     /// Verify that eventually, all messages are drained
     ss::smp::invoke_on_all([] {

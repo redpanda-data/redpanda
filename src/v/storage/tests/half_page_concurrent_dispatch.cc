@@ -47,7 +47,7 @@ FIXTURE_TEST(half_next_page, fixture) {
     info("Segment: {}", seg);
     seg.flush().get();
     b | add_random_batch(1, 1, maybe_compress_batches::yes);
-    auto recs = b.consume().get0();
+    auto recs = b.consume().get();
     BOOST_REQUIRE_EQUAL(recs.size(), 2);
     for (auto& rec : recs) {
         BOOST_REQUIRE_EQUAL(rec.header().crc, model::crc_record_batch(rec));

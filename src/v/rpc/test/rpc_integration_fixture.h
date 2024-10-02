@@ -29,11 +29,11 @@ class rpc_base_integration_fixture {
 public:
     explicit rpc_base_integration_fixture(uint16_t port)
       : _listen_address("127.0.0.1", port)
-      , _ssg(ss::create_smp_service_group({5000}).get0())
+      , _ssg(ss::create_smp_service_group({5000}).get())
       , _sg(ss::default_scheduling_group()) {}
 
     virtual ~rpc_base_integration_fixture() {
-        destroy_smp_service_group(_ssg).get0();
+        destroy_smp_service_group(_ssg).get();
     }
 
     virtual void start_server() = 0;
@@ -51,7 +51,7 @@ public:
           .server_addr = _listen_address,
           .credentials
           = credentials
-              ? credentials->build_reloadable_certificate_credentials().get0()
+              ? credentials->build_reloadable_certificate_credentials().get()
               : nullptr};
     }
 
@@ -93,7 +93,7 @@ public:
           resolved,
           credentials
             ? credentials->build_reloadable_server_credentials(std::move(cb))
-                .get0()
+                .get()
             : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
@@ -154,7 +154,7 @@ public:
           resolved,
           credentials
             ? credentials->build_reloadable_server_credentials(std::move(cb))
-                .get0()
+                .get()
             : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
@@ -174,7 +174,7 @@ private:
                                        },
                                        true,
                                        std::logical_and<>())
-                                       .get0();
+                                       .get();
         if (!all_initialized) {
             throw std::runtime_error("Configure server first!!!");
         }

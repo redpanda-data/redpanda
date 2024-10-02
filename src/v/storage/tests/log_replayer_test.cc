@@ -49,11 +49,11 @@ public:
 
         auto fd = ss::open_file_dma(
                     base_name, ss::open_flags::create | ss::open_flags::rw)
-                    .get0();
+                    .get();
         auto fidx = ss::open_file_dma(
                       base_name + ".index",
                       ss::open_flags::create | ss::open_flags::rw)
-                      .get0();
+                      .get();
         fd = ss::file(ss::make_shared(file_io_sanitizer(
           std::move(fd),
           std::filesystem::path{base_name},
@@ -99,12 +99,12 @@ public:
     void do_write_garbage(ss::sstring name) {
         auto fd = ss::open_file_dma(
                     name, ss::open_flags::create | ss::open_flags::rw)
-                    .get0();
+                    .get();
         fd = ss::file(ss::make_shared(file_io_sanitizer(
           std::move(fd),
           std::filesystem::path{name},
           ntp_sanitizer_config{.sanitize_only = true})));
-        auto out = ss::make_file_output_stream(std::move(fd)).get0();
+        auto out = ss::make_file_output_stream(std::move(fd)).get();
         const auto b = random_generators::gen_alphanum_string(100);
         out.write(b.data(), b.size()).get();
         out.flush().get();

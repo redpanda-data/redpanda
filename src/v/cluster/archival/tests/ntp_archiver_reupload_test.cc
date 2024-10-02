@@ -127,7 +127,7 @@ struct reupload_fixture : public archiver_fixture {
                            128_KiB,
                            10,
                            1_MiB)
-                         .get0();
+                         .get();
         write_random_batches(segment, seg.num_records.value(), 2);
         disk_log_impl()->segments().add(segment);
     }

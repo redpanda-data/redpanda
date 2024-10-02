@@ -421,12 +421,12 @@ SEASTAR_TEST_CASE(test_get_object_success) {
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("test"),
                                 100ms)
-                              .get0();
+                              .get();
 
         BOOST_REQUIRE(result);
 
         auto input_stream = result.value()->as_input_stream();
-        ss::copy(input_stream, payload_stream).get0();
+        ss::copy(input_stream, payload_stream).get();
         iobuf_parser p(std::move(payload));
         auto actual_payload = p.read_string(p.bytes_left());
         BOOST_REQUIRE_EQUAL(actual_payload, expected_payload);
@@ -444,7 +444,7 @@ SEASTAR_TEST_CASE(test_get_object_failure) {
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("test-error"),
                                 100ms)
-                              .get0();
+                              .get();
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
           result.error(), cloud_storage_clients::error_outcome::retry);
@@ -462,7 +462,7 @@ SEASTAR_TEST_CASE(test_delete_object_success) {
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("test"),
                                 100ms)
-                              .get0();
+                              .get();
 
         BOOST_REQUIRE(result);
         server->stop().get();
@@ -480,7 +480,7 @@ SEASTAR_TEST_CASE(test_delete_object_failure) {
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("test-error"),
                                 100ms)
-                              .get0();
+                              .get();
 
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
@@ -506,7 +506,7 @@ SEASTAR_TEST_CASE(test_delete_object_not_found) {
                 cloud_storage_clients::bucket_name("test-bucket"),
                 cloud_storage_clients::object_key("test-key-not-found"),
                 100ms)
-              .get0();
+              .get();
 
         BOOST_REQUIRE(result);
         server->stop().get();
@@ -524,7 +524,7 @@ SEASTAR_TEST_CASE(test_delete_bucket_not_found) {
                 cloud_storage_clients::bucket_name("test-bucket"),
                 cloud_storage_clients::object_key("test-bucket-not-found"),
                 100ms)
-              .get0();
+              .get();
 
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE(
@@ -543,7 +543,7 @@ SEASTAR_TEST_CASE(test_unexpected_error_message) {
                 cloud_storage_clients::bucket_name("test-bucket"),
                 cloud_storage_clients::object_key("test-unexpected"),
                 100ms)
-              .get0();
+              .get();
         BOOST_REQUIRE(!result);
         server->stop().get();
     });
@@ -568,7 +568,7 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
                                 cloud_storage_clients::bucket_name(
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("test"))
-                              .get0();
+                              .get();
 
         BOOST_REQUIRE(result);
         const auto& lst = result.value();
@@ -615,7 +615,7 @@ SEASTAR_TEST_CASE(test_list_objects_with_filter) {
                 http::default_connect_timeout,
                 std::nullopt,
                 [](const auto& item) { return item.key == "test-key2"; })
-              .get0();
+              .get();
 
         BOOST_REQUIRE(result);
         const auto& lst = result.value();
@@ -645,7 +645,7 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
                                 cloud_storage_clients::bucket_name(
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("test-error"))
-                              .get0();
+                              .get();
 
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
@@ -666,7 +666,7 @@ SEASTAR_TEST_CASE(test_list_objects_with_continuation) {
                                 {},
                                 {},
                                 "ctok")
-                              .get0();
+                              .get();
         BOOST_REQUIRE(result);
         server->stop().get();
     });
@@ -683,7 +683,7 @@ SEASTAR_TEST_CASE(test_delete_objects_success) {
                            cloud_storage_clients::object_key{"key2"},
                            cloud_storage_clients::object_key{"key3"}},
                           http::default_connect_timeout)
-                        .get0();
+                        .get();
         BOOST_REQUIRE(result);
         BOOST_REQUIRE(result.value().undeleted_keys.empty());
         server->stop().get();
@@ -704,7 +704,7 @@ SEASTAR_TEST_CASE(test_delete_objects_errors) {
                           cloud_storage_clients::bucket_name{"okerror"},
                           {keys.begin(), keys.end()},
                           http::default_connect_timeout)
-                        .get0();
+                        .get();
         auto u_keys = std::vector<cloud_storage_clients::object_key>{};
         BOOST_REQUIRE(result);
         std::transform(
@@ -784,7 +784,7 @@ ss::future<> do_test_no_such_configuration(bool acceptable) {
                                 cloud_storage_clients::object_key("no-config"),
                                 100ms,
                                 acceptable)
-                              .get0();
+                              .get();
         // acceptable only affects the log level, the end response is always 404
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
@@ -826,7 +826,7 @@ public:
 
         server->start().get();
         server->set_routes(set_routes).get();
-        auto resolved = net::resolve_dns(s3_conf.server_addr).get0();
+        auto resolved = net::resolve_dns(s3_conf.server_addr).get();
         server->listen(resolved).get();
     }
 
@@ -872,7 +872,7 @@ FIXTURE_TEST(test_client_pool_wait_strategy, client_pool_fixture) {
               });
         fut.emplace_back(std::move(f));
     }
-    ss::when_all_succeed(fut.begin(), fut.end()).get0();
+    ss::when_all_succeed(fut.begin(), fut.end()).get();
     BOOST_REQUIRE(pool.local().size() == 2);
 }
 
@@ -917,7 +917,7 @@ FIXTURE_TEST(test_client_pool_reconnect, client_pool_fixture) {
                      });
         fut.emplace_back(std::move(f));
     }
-    auto result = ss::when_all_succeed(fut.begin(), fut.end()).get0();
+    auto result = ss::when_all_succeed(fut.begin(), fut.end()).get();
     auto count = std::count(result.begin(), result.end(), true);
     BOOST_REQUIRE(count == 20);
 }

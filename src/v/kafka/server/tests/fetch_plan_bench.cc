@@ -67,7 +67,7 @@ struct fetch_plan_fixture : redpanda_thread_fixture {
     fetch_plan_fixture() {
         BOOST_TEST_CHECKPOINT("before leadership");
 
-        wait_for_controller_leadership().get0();
+        wait_for_controller_leadership().get();
 
         BOOST_TEST_CHECKPOINT("HERE");
 

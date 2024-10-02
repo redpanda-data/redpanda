@@ -38,7 +38,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
       200_MiB,
       ss::default_priority_class(),
       storage::with_cache::yes));
-    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
+    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get(); });
 
     // Test parameters
     const size_t ntp_count = 4;
@@ -63,7 +63,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
             cfg = storage::ntp_config(
               ntp, mngr.config().base_dir, std::move(overrides));
         }
-        auto log = mngr.manage(std::move(cfg)).get0();
+        auto log = mngr.manage(std::move(cfg)).get();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }
@@ -75,7 +75,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
               vassert(false, "Error:{} fuzzing log: {}", e, w->log());
           });
       })
-      .get0();
+      .get();
 }
 FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     // BLOCK on logging so that we can make sense of the logs
@@ -85,7 +85,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
       200_MiB,
       ss::default_priority_class(),
       storage::with_cache::yes));
-    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
+    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get(); });
 
     // Test parameters
     const size_t ntp_count = 10;
@@ -105,7 +105,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     for (const auto& ntp : ntps_to_fuzz) {
         auto directory = ssx::sformat(
           "{}/{}", mngr.config().base_dir, ntp.path());
-        auto log = mngr.manage(storage::ntp_config(ntp, directory)).get0();
+        auto log = mngr.manage(storage::ntp_config(ntp, directory)).get();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }
@@ -118,7 +118,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
               vassert(false, "Error:{} fuzzing log: {}", e, w->log());
           });
       })
-      .get0();
+      .get();
 
     std::vector<size_t> random_ntp_removal_sequence;
     std::generate_n(

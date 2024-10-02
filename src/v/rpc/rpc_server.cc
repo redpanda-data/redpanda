@@ -205,7 +205,7 @@ ss::future<> rpc_server::dispatch_method_once(
                     bool error = true;
                     netbuf reply_buf;
                     try {
-                        reply_buf = fut.get0();
+                        reply_buf = fut.get();
                         reply_buf.set_status(rpc::status::success);
                         error = false;
                     } catch (const rpc_internal_body_parsing_exception& e) {

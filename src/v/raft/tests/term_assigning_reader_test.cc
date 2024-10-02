@@ -27,7 +27,7 @@ SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term) {
         std::move(src_reader), term);
     auto batches_with_term = model::consume_reader_to_memory(
                                std::move(assigning_reader), model::no_timeout)
-                               .get0();
+                               .get();
 
     BOOST_REQUIRE_EQUAL(batches_with_term.size(), 10);
     for (auto& b : batches_with_term) {
@@ -46,7 +46,7 @@ SEASTAR_THREAD_TEST_CASE(test_assigning_batch_term_release) {
         std::move(src_reader), term);
     auto batches_with_term = model::consume_reader_to_memory(
                                std::move(assigning_reader), model::no_timeout)
-                               .get0();
+                               .get();
 
     BOOST_REQUIRE_EQUAL(batches_with_term.size(), 10);
     for (auto& b : batches_with_term) {

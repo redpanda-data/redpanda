@@ -72,7 +72,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     }
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    auto readers = raft::details::share_n(std::move(rdr), 2).get0();
+    auto readers = raft::details::share_n(std::move(rdr), 2).get();
     auto meta = raft::protocol_metadata{
       .group = raft::group_id(1),
       .commit_index = model::offset(100),
@@ -110,11 +110,11 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
-                            .get0();
+                            .get();
     std::move(d)
       .release_batches()
       .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
-      .get0();
+      .get();
 }
 
 model::broker create_test_broker() {
@@ -567,7 +567,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
     // share readers to have a copy of data to compare
-    auto readers = raft::details::share_n(std::move(rdr), 2).get0();
+    auto readers = raft::details::share_n(std::move(rdr), 2).get();
 
     auto meta = raft::protocol_metadata{
       .group = raft::group_id(1),
@@ -614,9 +614,9 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
-                            .get0();
+                            .get();
     std::move(decoded_req)
       .release_batches()
       .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
-      .get0();
+      .get();
 }

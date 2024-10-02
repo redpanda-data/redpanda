@@ -47,7 +47,7 @@ void request::set_error(request_result_t::error_type error) {
         return;
     }
     vassert(
-      _result.available() && result().get0().has_error(),
+      _result.available() && result().get().has_error(),
       "Invalid result state, expected to be available and errored out: {}",
       *this);
 }
@@ -64,8 +64,8 @@ bool request::operator==(const request& other) const {
         compare = compare && _result.failed() == other._result.failed();
         if (compare && !_result.failed()) {
             // both requests succeeded. compare results.
-            auto res = _result.get_shared_future().get0();
-            auto res_other = other._result.get_shared_future().get0();
+            auto res = _result.get_shared_future().get();
+            auto res_other = other._result.get_shared_future().get();
             compare = compare && res.has_error() == res_other.has_error();
             if (compare) {
                 if (res.has_error()) {

@@ -55,9 +55,9 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
 
     BOOST_REQUIRE_EQUAL(consumed_batches.size(), 1);
     BOOST_REQUIRE_EQUAL(consumed_batches[0].record_count(), 3);
-    auto c_res0 = c_res0_fut.get0();
+    auto c_res0 = c_res0_fut.get();
     BOOST_REQUIRE_EQUAL(c_res0.base_offset, model::offset{0});
-    auto c_res1 = c_res1_fut.get0();
+    auto c_res1 = c_res1_fut.get();
     BOOST_REQUIRE_EQUAL(c_res1.base_offset, model::offset{2});
 
     auto c_res2_fut = producer.produce(make_batch(model::offset(3), 3));
@@ -71,7 +71,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
 
     BOOST_REQUIRE_EQUAL(consumed_batches.size(), 2);
     BOOST_REQUIRE_EQUAL(consumed_batches[1].record_count(), 3);
-    auto c_res2 = c_res2_fut.get0();
+    auto c_res2 = c_res2_fut.get();
     BOOST_REQUIRE_EQUAL(c_res2.base_offset, model::offset{3});
     producer.stop().get();
 }

@@ -626,7 +626,7 @@ SEASTAR_THREAD_TEST_CASE(test_iobuf_input_stream_from_trimmed_iobuf) {
     buf.prepend(ss::temporary_buffer<char>(100));
     buf.trim_front(10);
     auto stream = make_iobuf_input_stream(std::move(buf));
-    auto res = stream.read().get0();
+    auto res = stream.read().get();
     BOOST_TEST(res.size() == 90);
 }
 

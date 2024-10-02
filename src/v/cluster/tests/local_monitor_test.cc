@@ -67,7 +67,7 @@ local_monitor_fixture::local_monitor_fixture() {
     }
 
     _storage_node_api.start_single(_test_path.string(), _test_path.string())
-      .get0();
+      .get();
 
     _local_monitor
       .start(
@@ -92,7 +92,7 @@ local_monitor_fixture::~local_monitor_fixture() {
     if (err) {
         clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
-    _storage_node_api.stop().get0();
+    _storage_node_api.stop().get();
     _local_monitor.stop().get();
     _feature_table.stop().get();
 }

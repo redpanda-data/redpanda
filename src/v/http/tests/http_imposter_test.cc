@@ -40,10 +40,10 @@ FIXTURE_TEST(test_get, fixture) {
     auto client = http::client{
       {.server_addr = {httpd_host_name.data(), httpd_port_number()}}};
 
-    auto response = client.request(std::move(header)).get0();
+    auto response = client.request(std::move(header)).get();
     iobuf response_data;
     while (!response->is_done()) {
-        response_data.append(response->recv_some().get0());
+        response_data.append(response->recv_some().get());
     }
 
     auto headers = response->get_headers();
@@ -72,10 +72,10 @@ FIXTURE_TEST(test_post, fixture) {
     header.insert(
       bh::field::host, {httpd_host_name.data(), httpd_host_name.size()});
 
-    auto response = client.request(std::move(header)).get0();
+    auto response = client.request(std::move(header)).get();
     iobuf response_data;
     while (!response->is_done()) {
-        response_data.append(response->recv_some().get0());
+        response_data.append(response->recv_some().get());
     }
 
     auto headers = response->get_headers();
@@ -106,10 +106,10 @@ FIXTURE_TEST(test_forbidden, fixture) {
         header.insert(
           bh::field::host, {httpd_host_name.data(), httpd_host_name.size()});
 
-        auto response = client.request(std::move(header)).get0();
+        auto response = client.request(std::move(header)).get();
         iobuf response_data;
         while (!response->is_done()) {
-            response_data.append(response->recv_some().get0());
+            response_data.append(response->recv_some().get());
         }
 
         BOOST_REQUIRE_EQUAL(
@@ -123,10 +123,10 @@ FIXTURE_TEST(test_forbidden, fixture) {
         header.insert(
           bh::field::host, {httpd_host_name.data(), httpd_host_name.size()});
 
-        auto response = client.request(std::move(header)).get0();
+        auto response = client.request(std::move(header)).get();
         iobuf response_data;
         while (!response->is_done()) {
-            response_data.append(response->recv_some().get0());
+            response_data.append(response->recv_some().get());
         }
 
         BOOST_REQUIRE_EQUAL(

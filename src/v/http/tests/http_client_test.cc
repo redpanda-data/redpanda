@@ -164,12 +164,12 @@ void test_http_request(
     // Send request
     auto [server, client] = started_client_and_server(conf);
     auto resp_stream
-      = client->request(std::move(header), std::move(body)).get0();
+      = client->request(std::move(header), std::move(body)).get();
 
     // Receive response
     iobuf response_body;
     while (!resp_stream->is_done()) {
-        iobuf res = resp_stream->recv_some().get0();
+        iobuf res = resp_stream->recv_some().get();
         response_body.append(std::move(res));
     }
 
@@ -192,7 +192,7 @@ void test_http_request(
     // Receive response
     iobuf response_body;
     while (!resp_stream->is_done()) {
-        iobuf res = resp_stream->recv_some().get0();
+        iobuf res = resp_stream->recv_some().get();
         response_body.append(std::move(res));
     }
     // Check response
@@ -241,9 +241,9 @@ void test_http_streaming_request(
         iobuf body;
         body.append(request_data->data(), request_data->size());
         auto body_stream = make_iobuf_input_stream(std::move(body));
-        response = client->request(std::move(header), body_stream).get0();
+        response = client->request(std::move(header), body_stream).get();
     } else {
-        response = client->request(std::move(header)).get0();
+        response = client->request(std::move(header)).get();
     }
 
     // Receive response
@@ -253,14 +253,14 @@ void test_http_streaming_request(
         stream.skip(skip).get();
     }
     while (!stream.eof()) {
-        auto buf = stream.read().get0();
+        auto buf = stream.read().get();
         response_body.append(std::move(buf));
     }
 
     // Check response
     check_reply(response->get_headers(), std::move(response_body));
 
-    server->stop().get0();
+    server->stop().get();
 }
 
 /// Check GET streaming request and skip method of the response data source
@@ -435,7 +435,7 @@ public:
         _server_socket = ss::engine().listen(server_addr, lo);
         (void)ss::with_gate(_gate, [this] {
             return ss::async([this] {
-                auto [connection, remoteaddr] = _server_socket.accept().get0();
+                auto [connection, remoteaddr] = _server_socket.accept().get();
                 _socket = std::move(connection);
                 _fin = _socket.input();
                 _fout = _socket.output();
@@ -463,7 +463,7 @@ private:
         int it = 0;
         const int max_iter = 1000;
         while (it++ < max_iter) {
-            auto tmpbuf = _fin.read().get0();
+            auto tmpbuf = _fin.read().get();
             buffer.append(std::move(tmpbuf));
             if (buffer.size_bytes() > _expected_data.size()) {
                 iobuf_parser parser(buffer.copy());
@@ -544,8 +544,7 @@ void test_impostor_request(
     iobuf response_body;
     try {
         // Send request
-        resp_stream
-          = client->request(std::move(header), std::move(body)).get0();
+        resp_stream = client->request(std::move(header), std::move(body)).get();
 
         // Receive response
         if (prefetch_header) {
@@ -553,7 +552,7 @@ void test_impostor_request(
             BOOST_REQUIRE(resp_stream->is_header_done());
         }
         while (!resp_stream->is_done()) {
-            iobuf res = resp_stream->recv_some().get0();
+            iobuf res = resp_stream->recv_some().get();
             response_body.append(std::move(res));
         }
     } catch (...) {

@@ -39,7 +39,7 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
                  && get_local_cache(node_1).node_count() == 3
                  && get_local_cache(node_2).node_count() == 3;
       })
-      .get0();
+      .get();
 
     remove_node_application(node_2);
     // Change RPC port from 11000 to 13000
@@ -66,7 +66,7 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
           return meta.value().broker.rpc_address()
                  == net::unresolved_address("127.0.0.1", 13002);
       })
-      .get0();
+      .get();
 }
 
 FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
@@ -89,5 +89,5 @@ FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
 
         return meta->broker.kafka_advertised_listeners()[0].address
                == net::unresolved_address("127.0.0.1", 15000);
-    }).get0();
+    }).get();
 }

@@ -99,7 +99,7 @@ ss::file open_file(std::string_view filename) {
              filename,
              ss::open_flags::create | ss::open_flags::rw
                | ss::open_flags::truncate)
-      .get0();
+      .get();
 }
 
 segment_appender
@@ -153,7 +153,7 @@ static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
         appender.flush().get();
 
         auto in = make_file_input_stream(f, 0);
-        iobuf result = read_iobuf_exactly(in, expected.size_bytes()).get0();
+        iobuf result = read_iobuf_exactly(in, expected.size_bytes()).get();
         BOOST_REQUIRE_EQUAL(result.size_bytes(), expected.size_bytes());
         BOOST_REQUIRE_EQUAL(result, expected);
         in.close().get();
@@ -190,7 +190,7 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
         BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
         BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
         auto in = make_file_input_stream(f, acc);
-        iobuf result = read_iobuf_exactly(in, step).get0();
+        iobuf result = read_iobuf_exactly(in, step).get();
         fmt::print(
           "==> i:{}, step:{}, acc:{}, og.size:{}, expected.size{}\n",
           i,
@@ -262,7 +262,7 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
         BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
         auto in = make_file_input_stream(f, i * one_meg);
-        iobuf result = read_iobuf_exactly(in, one_meg).get0();
+        iobuf result = read_iobuf_exactly(in, one_meg).get();
         BOOST_CHECK_EQUAL(original, result);
         in.close().get();
     }
@@ -302,7 +302,7 @@ static void run_test_can_append_10MB_sequential_write_sequential_read(
     appender.flush().get();
     for (size_t i = 0; i < 10; ++i) {
         auto in = make_file_input_stream(f, i * one_meg);
-        iobuf result = read_iobuf_exactly(in, one_meg).get0();
+        iobuf result = read_iobuf_exactly(in, one_meg).get();
         iobuf tmp_o = original.share(i * one_meg, one_meg);
         // read_iobuf_exactly can return a short read, but we do not expect that
         // here.
@@ -543,7 +543,7 @@ static void run_test_can_append_little_data(size_t fallocate_size) {
         appender.append(&c, 1).get();
         appender.flush().get();
         auto in = make_file_input_stream(f, i);
-        auto result = in.read_exactly(1).get0();
+        auto result = in.read_exactly(1).get();
         if (c != result[0]) {
             std::vector<char> tmp;
             tmp.reserve(7);
@@ -599,7 +599,7 @@ static void run_test_fallocate_size(size_t fallocate_size) {
         BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
         auto in = make_file_input_stream(f, i * one_meg);
-        iobuf result = read_iobuf_exactly(in, one_meg).get0();
+        iobuf result = read_iobuf_exactly(in, one_meg).get();
         BOOST_CHECK_EQUAL(original, result);
         in.close().get();
     }

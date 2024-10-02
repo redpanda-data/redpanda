@@ -47,7 +47,7 @@ FIXTURE_TEST(test_creating_same_topic_twice, cluster_test_fixture) {
         return get_local_cache(model::node_id{0}).node_count() == 3
                && get_local_cache(model::node_id{1}).node_count() == 3
                && get_local_cache(model::node_id{2}).node_count() == 3;
-    }).get0();
+    }).get();
 
     std::vector<ss::future<std::vector<cluster::topic_result>>> futures;
 

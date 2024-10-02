@@ -24,7 +24,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     batch_spec.records = record_count;
     batch_spec.count = batch_count;
     ss::circular_buffer<model::record_batch> batches
-      = model::test::make_random_batches(batch_spec).get0();
+      = model::test::make_random_batches(batch_spec).get();
 
     auto reader = model::make_generating_record_batch_reader(
       [batches = std::move(batches)]() mutable {
@@ -33,7 +33,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       });
 
     auto result
-      = reader.consume(std::move(multiplexer), model::no_timeout).get0();
+      = reader.consume(std::move(multiplexer), model::no_timeout).get();
 
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].row_count, record_count * batch_count);
