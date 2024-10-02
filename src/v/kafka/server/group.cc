@@ -3054,6 +3054,10 @@ void group::maybe_rearm_timer() {
     if (earliest_deadline) {
         auto deadline = std::min(
           earliest_deadline.value(), clock_type::now() + _abort_interval_ms);
+        // never arm the next timer to be earlier than 500ms from now to prevent
+        // busy looping
+        deadline = std::max(
+          clock_type::now() + _abort_interval_ms / 10, deadline);
         try_arm(deadline);
     }
 }
