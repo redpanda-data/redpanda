@@ -3430,11 +3430,11 @@ class RedpandaService(RedpandaServiceBase):
         until a particular feature's active status updates (e.g. if it does migrations)
         """
         if nodes is None:
-            nodes = self.nodes
+            nodes = self.started_nodes()
 
         def is_awaited_state():
             for n in nodes:
-                state = self.get_feature_state(feature_name)
+                state = self.get_feature_state(feature_name, node=n)
                 if state != await_state:
                     self.logger.info(
                         f"Feature {feature_name} not yet {await_state} on {n.name} (state {state})"
