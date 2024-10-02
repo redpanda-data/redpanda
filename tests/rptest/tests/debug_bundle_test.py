@@ -26,6 +26,7 @@ log_config = LoggingConfig('info',
 
 
 class DebugBundleTest(RedpandaTest):
+    debug_bundle_dir_config = "debug_bundle_storage_dir"
     """
     Smoke test for debug bundle admin API
     """
@@ -106,13 +107,16 @@ class DebugBundleTest(RedpandaTest):
         res = admin.get_debug_bundle_file(filename=filename, node=node)
         assert res.status_code == requests.codes.ok, res.json()
         assert res.headers['Content-Type'] == 'application/zip', res.json()
+        data_dir = None
         try:
-            data_dir = admin.get_cluster_config(node=node,
-                                                key="debug_bundle_storage_dir")
+            data_dir = admin.get_cluster_config(
+                node=node,
+                key=self.debug_bundle_dir_config)[self.debug_bundle_dir_config]
         except requests.HTTPError as e:
-            data_dir = admin.get_node_config(
-                node=node
-            )['data_directory']['data_directory'] + "/debug-bundle"
+            pass
+
+        data_dir = data_dir or admin.get_node_config(
+            node=node)['data_directory']['data_directory'] + "/debug-bundle"
 
         file = f"{data_dir}/{filename}"
         assert self._get_sha256sum(node, file) == hashlib.sha256(
