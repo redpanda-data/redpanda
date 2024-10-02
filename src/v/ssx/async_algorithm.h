@@ -106,7 +106,9 @@ template<std::random_access_iterator I, typename Fn>
 iter_size<I> for_each_limit(const I begin, const I end, ssize_t limit, Fn f) {
     auto chunk_size = std::min(limit, end - begin);
     I chunk_end = begin + chunk_size;
-    std::for_each(begin, chunk_end, std::move(f));
+    for (I i = begin; i != chunk_end; ++i) {
+        f(*i);
+    }
     return {chunk_end, chunk_size};
 }
 
