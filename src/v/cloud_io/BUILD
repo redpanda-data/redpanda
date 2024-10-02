@@ -128,3 +128,19 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "basic_cache_service_api",
+    srcs = [
+        "basic_cache_service_api.cc",
+    ],
+    hdrs = [
+        "basic_cache_service_api.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
