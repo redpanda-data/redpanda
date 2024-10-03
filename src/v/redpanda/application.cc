@@ -1984,6 +1984,7 @@ void application::wire_up_redpanda_services(
         // Construct datalake subsystems, now that dependencies are
         // already constructed.
         syschecks::systemd_message("Starting datalake services").get();
+        syschecks::systemd_message("Starting datalake services").get();
         construct_service(
           _datalake_coordinator_mgr,
           node_id,
@@ -1991,6 +1992,9 @@ void application::wire_up_redpanda_services(
           std::ref(partition_manager),
           std::ref(cloud_io),
           cloud_configs.local().bucket_name)
+          .get();;
+        _datalake_coordinator_mgr
+          .invoke_on_all(&datalake::coordinator::coordinator_manager::start)
           .get();
         construct_service(
           _datalake_coordinator_fe,
@@ -2001,7 +2005,8 @@ void application::wire_up_redpanda_services(
           &controller->get_topics_frontend(),
           &metadata_cache,
           &controller->get_partition_leaders(),
-          &controller->get_shard_table())
+          &controller->get_shard_table(),
+          &_connection_cache)
           .get();
 
         construct_service(
@@ -2013,6 +2018,7 @@ void application::wire_up_redpanda_services(
           &controller->get_topics_frontend(),
           &controller->get_partition_leaders(),
           &controller->get_shard_table(),
+          &feature_table,
           &_datalake_coordinator_fe,
           &_as,
           sched_groups.datalake_sg(),
