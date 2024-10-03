@@ -86,6 +86,7 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/coordinator_manager.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/service.h"
@@ -1981,10 +1982,8 @@ void application::wire_up_redpanda_services(
           "cloud topics currently requires archival storage to be enabled");
         construct_service(_reconciler, &partition_manager, &cloud_io).get();
     }
+
     if (datalake_enabled()) {
-        // Construct datalake subsystems, now that dependencies are
-        // already constructed.
-        syschecks::systemd_message("Starting datalake services").get();
         syschecks::systemd_message("Starting datalake services").get();
         construct_service(
           _datalake_coordinator_mgr,
@@ -1993,7 +1992,8 @@ void application::wire_up_redpanda_services(
           std::ref(partition_manager),
           std::ref(cloud_io),
           cloud_configs.local().bucket_name)
-          .get();;
+          .get();
+        ;
         _datalake_coordinator_mgr
           .invoke_on_all(&datalake::coordinator::coordinator_manager::start)
           .get();
@@ -2021,9 +2021,13 @@ void application::wire_up_redpanda_services(
           &controller->get_shard_table(),
           &feature_table,
           &_datalake_coordinator_fe,
+          &cloud_io,
           &_as,
+          cloud_configs.local().bucket_name,
           sched_groups.datalake_sg(),
           memory_groups().datalake_max_memory())
+          .get();
+        _datalake_manager.invoke_on_all(&datalake::datalake_manager::start)
           .get();
     }
 
