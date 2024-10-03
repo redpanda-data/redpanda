@@ -27,6 +27,7 @@ datalake_manager::datalake_manager(
   ss::sharded<cluster::topics_frontend>* topics_frontend,
   ss::sharded<cluster::partition_leaders_table>* leaders,
   ss::sharded<cluster::shard_table>* shards,
+  ss::sharded<features::feature_table>* features,
   ss::sharded<coordinator::frontend>* frontend,
   ss::sharded<ss::abort_source>* as,
   ss::scheduling_group sg,
@@ -38,6 +39,7 @@ datalake_manager::datalake_manager(
   , _topics_frontend(topics_frontend)
   , _leaders(leaders)
   , _shards(shards)
+  , _features(features)
   , _coordinator_frontend(frontend)
   , _as(as)
   , _sg(sg) {}

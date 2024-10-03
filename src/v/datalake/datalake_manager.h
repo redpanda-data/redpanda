@@ -14,6 +14,7 @@
 #include "base/units.h"
 #include "cluster/fwd.h"
 #include "datalake/fwd.h"
+#include "features/fwd.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "ssx/semaphore.h"
@@ -39,6 +40,7 @@ public:
       ss::sharded<cluster::topics_frontend>*,
       ss::sharded<cluster::partition_leaders_table>*,
       ss::sharded<cluster::shard_table>*,
+      ss::sharded<features::feature_table>*,
       ss::sharded<coordinator::frontend>*,
       ss::sharded<ss::abort_source>*,
       ss::scheduling_group sg,
@@ -55,6 +57,7 @@ private:
     ss::sharded<cluster::topics_frontend>* _topics_frontend;
     ss::sharded<cluster::partition_leaders_table>* _leaders;
     ss::sharded<cluster::shard_table>* _shards;
+    ss::sharded<features::feature_table>* _features;
     ss::sharded<coordinator::frontend>* _coordinator_frontend;
     ss::sharded<ss::abort_source>* _as;
     ss::scheduling_group _sg;

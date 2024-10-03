@@ -110,6 +110,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/datalake/coordinator:frontend",
+        "//src/v/features",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/serde",
