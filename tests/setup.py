@@ -13,7 +13,7 @@ setup(
     package_data={'': ['*.md']},
     include_package_data=True,
     install_requires=[
-        'ducktape@git+https://github.com/redpanda-data/ducktape.git@7772220005a27957d3a796de0e19d3c51eb61f6a',
+        'ducktape@git+https://github.com/redpanda-data/ducktape.git@482b3f6ee066052871e3991eab1fa48a3cd241d4',
         'prometheus-client==0.9.0', 'kafka-python==2.0.2', 'crc32c==2.2',
         'confluent-kafka==2.2.0', 'zstandard==0.15.2', 'xxhash==2.0.2',
         'protobuf==4.21.8', 'fastavro==1.4.9', 'falcon==3.1.3',
@@ -26,7 +26,8 @@ setup(
         'google-cloud-storage==2.11.0', 'proto-plus==1.22.3', 'rsa==4.9',
         'python-keycloak@git+https://github.com/redpanda-data/python-keycloak.git@10b822cb0320c54dbf5bf4fd00435afb1487415d',
         'z3-solver==4.12.2', 'hypothesis==6.82', 'jsonschema==4.10.0',
-        'polaris.management@git+https://github.com/apache/polaris.git@1a6b3eb3963355f78c5ca916cc1d66ecd1493092#&subdirectory=regtests/client/python'
+        'polaris.management@git+https://github.com/apache/polaris.git@1a6b3eb3963355f78c5ca916cc1d66ecd1493092#&subdirectory=regtests/client/python',
+        "pyiceberg==0.7.1", "pyparsing>=3.1.0"
     ],
     scripts=[],
 )
