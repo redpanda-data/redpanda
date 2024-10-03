@@ -41,7 +41,8 @@ public:
       ss::sharded<cluster::topics_frontend>*,
       ss::sharded<cluster::metadata_cache>*,
       ss::sharded<cluster::partition_leaders_table>*,
-      ss::sharded<cluster::shard_table>*);
+      ss::sharded<cluster::shard_table>*,
+      ss::sharded<::rpc::connection_cache>*);
 
     ss::future<> stop();
 
