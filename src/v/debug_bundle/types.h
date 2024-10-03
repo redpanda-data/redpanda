@@ -19,6 +19,7 @@
 #include "utils/uuid.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/btree_set.h>
@@ -30,6 +31,8 @@
 #include <optional>
 #include <variant>
 namespace debug_bundle {
+
+static constexpr ss::shard_id service_shard = 0;
 
 using job_id_t = named_type<uuid_t, struct uuid_t_tag>;
 

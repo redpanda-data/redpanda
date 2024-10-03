@@ -19,6 +19,7 @@
 #include "crypto/types.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/metadata.h"
+#include "debug_bundle/probe.h"
 #include "debug_bundle/types.h"
 #include "debug_bundle/utils.h"
 #include "ssx/future-util.h"
@@ -197,7 +198,8 @@ public:
       , _cerr(
           po.has_value() ? std::move(po.value().cerr)
                          : chunked_vector<ss::sstring>{})
-      , _created_time(md.get_created_at()) {}
+      , _created_time(md.get_created_at())
+      , _finished_time(md.get_finished_at()) {}
 
     debug_bundle_process() = delete;
     debug_bundle_process(debug_bundle_process&&) = default;
@@ -225,6 +227,8 @@ public:
         vassert(
           _rpk_process != nullptr,
           "RPK process should be created if calling wait()");
+        auto set_finish_time = ss::defer(
+          [this] { _finished_time = clock::now(); });
         try {
             co_return _wait_result.emplace(co_await _rpk_process->wait());
         } catch (const std::exception& e) {
@@ -261,6 +265,7 @@ public:
     const chunked_vector<ss::sstring>& cout() const { return _cout; }
     const chunked_vector<ss::sstring>& cerr() const { return _cerr; }
     clock::time_point created_time() const { return _created_time; }
+    clock::time_point finished_time() const { return _finished_time; }
     ss::experimental::process::wait_status get_wait_result() const {
         vassert(_wait_result.has_value(), "wait_result must have been set");
         return _wait_result.value();
@@ -275,6 +280,7 @@ private:
     chunked_vector<ss::sstring> _cout;
     chunked_vector<ss::sstring> _cerr;
     clock::time_point _created_time;
+    clock::time_point _finished_time;
 };
 
 service::service(storage::kvstore* kvstore)
@@ -304,6 +310,9 @@ ss::future<> service::start() {
           _rpk_path_binding().native());
     }
 
+    _probe = std::make_unique<probe>();
+    _probe->setup_metrics();
+
     co_await maybe_reload_previous_run();
 
     lg.debug("Service started");
@@ -326,6 +335,7 @@ ss::future<> service::stop() {
     }
     co_await _gate.close();
     _rpk_process.reset(nullptr);
+    _probe.reset(nullptr);
 }
 
 ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
@@ -416,13 +426,11 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
     ssx::spawn_with_gate(_gate, [this, job_id]() {
         return _rpk_process->wait()
           .then([this, job_id](auto) {
-              auto hold = _gate.hold();
-              return _process_control_mutex.get_units()
-                .then([this, job_id](auto units) {
+              return _process_control_mutex.get_units().then(
+                [this, job_id](auto units) {
                     return handle_wait_result(job_id).finally(
                       [units = std::move(units)] {});
-                })
-                .finally([hold = std::move(hold)] {});
+                });
           })
           .handle_exception([](const std::exception_ptr& e) {
               lg.error("wait() failed while running rpk debug bundle: {}", e);
@@ -710,10 +718,14 @@ ss::future<> service::set_metadata(job_id_t job_id) {
         }
         sha256_checksum = co_await calculate_sha256_sum(
           debug_bundle_file.native());
+        _probe->successful_bundle_generation(_rpk_process->finished_time());
+    } else {
+        _probe->failed_bundle_generation(_rpk_process->finished_time());
     }
 
     metadata md(
       _rpk_process->created_time(),
+      _rpk_process->finished_time(),
       job_id,
       debug_bundle_file,
       process_output_file,
@@ -885,6 +897,12 @@ ss::future<> service::maybe_reload_previous_run() {
 
     _rpk_process = std::make_unique<debug_bundle_process>(
       std::move(md), std::move(po));
+
+    if (run_was_successful) {
+        _probe->successful_bundle_generation(_rpk_process->finished_time());
+    } else {
+        _probe->failed_bundle_generation(_rpk_process->finished_time());
+    }
 }
 
 } // namespace debug_bundle

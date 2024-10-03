@@ -345,14 +345,14 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_invalid_k8s_name) {
 
 TEST_F_CORO(debug_bundle_service_started_fixture, try_running_multiple) {
     auto res = co_await _service.invoke_on(
-      debug_bundle::service::service_shard, [](debug_bundle::service& s) {
+      debug_bundle::service_shard, [](debug_bundle::service& s) {
           return s.initiate_rpk_debug_bundle_collection(
             debug_bundle::job_id_t(uuid_t::create()), {});
       });
     ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
 
     auto res2 = co_await _service.invoke_on(
-      (debug_bundle::service::service_shard + 1) % ss::smp::count,
+      (debug_bundle::service_shard + 1) % ss::smp::count,
       [](debug_bundle::service& s) {
           return s.initiate_rpk_debug_bundle_collection(
             debug_bundle::job_id_t(uuid_t::create()), {});

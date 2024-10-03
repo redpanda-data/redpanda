@@ -77,6 +77,7 @@ struct metadata
   : serde::envelope<metadata, serde::version<0>, serde::compat_version<0>> {
     using time_resolution = clock::duration;
     time_resolution::rep created_at{};
+    time_resolution::rep finished_at{};
     job_id_t job_id;
     ss::sstring debug_bundle_file_path;
     ss::sstring process_output_file_path;
@@ -92,14 +93,14 @@ struct metadata
 
     explicit metadata(
       clock::time_point created_at,
+      clock::time_point finished_at,
       job_id_t job_id,
       const std::filesystem::path& debug_bundle_file_path,
       const std::filesystem::path& process_output_file_path,
       bytes sha256_checksum,
       ss::experimental::process::wait_status process_result)
-      : created_at(std::chrono::duration_cast<time_resolution>(
-                     created_at.time_since_epoch())
-                     .count())
+      : created_at(created_at.time_since_epoch() / time_resolution{1})
+      , finished_at(finished_at.time_since_epoch() / time_resolution{1})
       , job_id(job_id)
       , debug_bundle_file_path(debug_bundle_file_path.native())
       , process_output_file_path(process_output_file_path.native())
@@ -124,6 +125,7 @@ struct metadata
     auto serde_fields() {
         return std::tie(
           created_at,
+          finished_at,
           job_id,
           debug_bundle_file_path,
           process_output_file_path,
@@ -133,6 +135,10 @@ struct metadata
 
     clock::time_point get_created_at() const {
         return clock::time_point(time_resolution(created_at));
+    }
+
+    clock::time_point get_finished_at() const {
+        return clock::time_point(time_resolution(finished_at));
     }
 
     ss::experimental::process::wait_status get_wait_status() const {

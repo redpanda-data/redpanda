@@ -11,6 +11,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":metadata",
+        ":probe",
         ":utils",
         "//src/v/bytes:iostream",
         "//src/v/crypto",
@@ -135,5 +136,25 @@ redpanda_cc_library(
     visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
     deps = [
         "//src/v/bytes",
+    ],
+)
+
+redpanda_cc_library(
+    name = "probe",
+    srcs = [
+        "probe.cc",
+    ],
+    hdrs = [
+        "probe.h",
+    ],
+    implementation_deps = [
+        "//src/v/config",
+        "@seastar",
+    ],
+    include_prefix = "debug_bundle",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":types",
+        "//src/v/metrics",
     ],
 )

@@ -25,6 +25,9 @@
 
 namespace debug_bundle {
 
+/// Forward declare probe
+class probe;
+
 /**
  * @brief Service used to manage creation of debug bundles
  *
@@ -33,8 +36,6 @@ namespace debug_bundle {
  */
 class service final : public ss::peering_sharded_service<service> {
 public:
-    /// Default shard operations will be performed on
-    static constexpr ss::shard_id service_shard = 0;
     /// Name of the debug bundle directory
     static constexpr std::string_view debug_bundle_dir_name = "debug-bundle";
     /// Key used to store metadata in the kvstore
@@ -200,6 +201,8 @@ private:
     config::binding<std::filesystem::path> _rpk_path_binding;
     /// External process
     std::unique_ptr<debug_bundle_process> _rpk_process;
+    /// Metrics probe
+    std::unique_ptr<probe> _probe;
     /// Mutex to guard control over the rpk debug bundle process
     mutex _process_control_mutex;
     ss::gate _gate;
