@@ -122,6 +122,9 @@ DEFAULT_LOG_ALLOW_LIST = [
     # which is not present in typical CI runs, which results in the following
     # error message from the debug bundle service
     re.compile(r"Current specified RPK location"),
+
+    # This is a configuration parameter
+    re.compile(r".*redpanda\.raft_heartbeat_timeout_ms.*"),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
