@@ -11,9 +11,15 @@
 #pragma once
 
 namespace datalake {
+struct data_writer_result;
 namespace coordinator {
 class coordinator_manager;
 class frontend;
+struct translated_offset_range;
 }; // namespace coordinator
+namespace translation {
+class translation_stm;
+class partition_translator;
+}; // namespace translation
 class datalake_manager;
 } // namespace datalake

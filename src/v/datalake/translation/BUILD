@@ -31,3 +31,35 @@ redpanda_cc_library(
         "//src/v/serde",
     ],
 )
+
+redpanda_cc_library(
+    name = "partition_translator",
+    srcs = [
+        "partition_translator.cc",
+    ],
+    hdrs = [
+        "partition_translator.h",
+    ],
+    include_prefix = "datalake/translation",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model",
+        ":stm",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/datalake:logger",
+        "//src/v/datalake:types",
+        "//src/v/datalake:writer",
+        "//src/v/datalake/coordinator:frontend",
+        "//src/v/features",
+        "//src/v/kafka/server",
+        "//src/v/kafka/utils:txn_reader",
+        "//src/v/model",
+        "//src/v/random:time_jitter",
+        "//src/v/resource_mgmt:io_priority",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:prefix_logger",
+        "@seastar",
+    ],
+)
