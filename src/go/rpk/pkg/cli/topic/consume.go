@@ -44,10 +44,11 @@ type consumer struct {
 	group    string
 	balancer string
 
-	fetchMaxBytes int32
-	fetchMaxWait  time.Duration
-	readCommitted bool
-	printControl  bool
+	fetchMaxBytes          int32
+	fetchMaxWait           time.Duration
+	fetchMaxPartitionBytes int32
+	readCommitted          bool
+	printControl           bool
 
 	f        *kgo.RecordFormatter // if not json
 	num      int
@@ -160,6 +161,7 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "Maximum amount of bytes per fetch request per broker")
 	cmd.Flags().DurationVar(&c.fetchMaxWait, "fetch-max-wait", 5*time.Second, "Maximum amount of time to wait when fetching from a broker before the broker replies")
+	cmd.Flags().Int32Var(&c.fetchMaxPartitionBytes, "fetch-max-partition-bytes", 1<<20, "Maximum amount of bytes that will be consumed for a single partition per fetch request")
 	cmd.Flags().BoolVar(&c.readCommitted, "read-committed", false, "Opt in to reading only committed offsets")
 	cmd.Flags().BoolVar(&c.printControl, "print-control-records", false, "Opt in to printing control records")
 
@@ -810,6 +812,7 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 	opts = append(opts,
 		kgo.FetchMaxBytes(c.fetchMaxBytes),
 		kgo.FetchMaxWait(c.fetchMaxWait),
+		kgo.FetchMaxPartitionBytes(c.fetchMaxPartitionBytes),
 	)
 	if c.readCommitted {
 		opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadCommitted()))
