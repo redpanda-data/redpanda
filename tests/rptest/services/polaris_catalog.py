@@ -106,7 +106,7 @@ class PolarisCatalog(Service):
                    retry_on_exc=True)
 
         # setup urls and credentials
-        self.catalog_url = f"http://{node.account.hostname}:8181/api/catalog/v1"
+        self.catalog_url = f"http://{node.account.hostname}:8181/api/catalog"
         self.management_url = f'http://{node.account.hostname}:8181/api/management/v1'
         self._parse_credentials(node)
         self.logger.info(
@@ -116,7 +116,7 @@ class PolarisCatalog(Service):
     def _get_token(self) -> str:
         client = ApiClient(configuration=Configuration(host=self.catalog_url))
         response = client.call_api('POST',
-                                   f'{self.catalog_url}/oauth/tokens',
+                                   f'{self.catalog_url}/v1/oauth/tokens',
                                    header_params={
                                        'Content-Type':
                                        'application/x-www-form-urlencoded'
