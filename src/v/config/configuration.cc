@@ -385,7 +385,7 @@ configuration::configuration()
       *this,
       "raft_max_recovery_memory",
       "Maximum memory that can be used for reads in Raft recovery process by "
-      "default 15\% of total memory.",
+      "default 15% of total memory.",
       {.needs_restart = needs_restart::no,
        .example = "41943040",
        .visibility = visibility::tunable},
@@ -1299,7 +1299,7 @@ configuration::configuration()
       *this,
       "storage_max_concurrent_replay",
       "Maximum number of partitions' logs that will be replayed concurrently "
-      "at startup, or flushed concurrently on shutdown. asdasdasdasdas",
+      "at startup, or flushed concurrently on shutdown.",
       {.needs_restart = needs_restart::no,
        .example = "2048",
        .visibility = visibility::tunable},
@@ -1585,7 +1585,7 @@ configuration::configuration()
       *this,
       "compaction_ctrl_backlog_size",
       "Target backlog size for compaction controller. If not set the max "
-      "backlog size is configured to 80\% of total disk space available.",
+      "backlog size is configured to 80% of total disk space available.",
       {.visibility = visibility::tunable},
       std::nullopt)
   , members_backend_retry_ms(
@@ -2775,7 +2775,7 @@ configuration::configuration()
       "cloud_storage_cache_trim_threshold_percent_size",
       "Trim is triggered when the cache reaches this percent of the maximum "
       "cache size. If this is unset, the default behavior"
-      "is to start trim when the cache is about 100\% full.",
+      "is to start trim when the cache is about 100% full.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 1.0, .max = 100.0})
@@ -2784,7 +2784,7 @@ configuration::configuration()
       "cloud_storage_cache_trim_threshold_percent_objects",
       "Trim is triggered when the cache reaches this percent of the maximum "
       "object count. If this is unset, the default behavior"
-      "is to start trim when the cache is about 100\% full.",
+      "is to start trim when the cache is about 100% full.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 1.0, .max = 100.0})
