@@ -333,6 +333,7 @@ redpanda_cc_library(
     include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/strings:string_switch",
     ],
 )

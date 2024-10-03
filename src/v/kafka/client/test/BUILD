@@ -7,6 +7,7 @@ redpanda_test_cc_library(
     ],
     include_prefix = "kafka/client/test",
     deps = [
+        "//src/v/reflection:adl",
     ],
 )
 

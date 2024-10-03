@@ -95,6 +95,9 @@ redpanda_cc_library(
         "inet_address_wrapper.h",
     ],
     include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+    ],
 )
 
 redpanda_cc_library(

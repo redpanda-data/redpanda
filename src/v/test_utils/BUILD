@@ -38,6 +38,7 @@ redpanda_test_cc_library(
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "@seastar//:testing",
     ],
 )

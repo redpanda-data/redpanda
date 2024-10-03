@@ -6,6 +6,9 @@ redpanda_test_cc_library(
         "randoms.h",
     ],
     include_prefix = "security/tests",
+    deps = [
+        "//src/v/bytes:random",
+    ],
 )
 
 redpanda_cc_btest(

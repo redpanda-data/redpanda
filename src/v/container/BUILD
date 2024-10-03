@@ -45,6 +45,9 @@ redpanda_cc_library(
     ],
     include_prefix = "container",
     visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/container:btree",
+    ],
 )
 
 redpanda_cc_library(
