@@ -25,6 +25,7 @@
 #include "utils/external_process.h"
 
 #include <seastar/core/fstream.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/sstring.hh>
@@ -236,6 +237,9 @@ public:
     }
 
     debug_bundle_status process_status() const {
+        if (_expired) {
+            return debug_bundle_status::expired;
+        }
         if (_wait_result.has_value()) {
             return ss::visit(
               _wait_result.value(),
@@ -269,6 +273,9 @@ public:
         return _wait_result.value();
     }
 
+    void set_expired() { _expired = true; }
+    bool is_expired() const { return _expired; }
+
 private:
     job_id_t _job_id;
     std::unique_ptr<external_process::external_process> _rpk_process;
@@ -279,6 +286,7 @@ private:
     chunked_vector<ss::sstring> _cerr;
     clock::time_point _created_time;
     clock::time_point _finished_time;
+    bool _expired{false};
 };
 
 service::service(storage::kvstore* kvstore)
@@ -315,11 +323,25 @@ ss::future<> service::start() {
 
     co_await maybe_reload_previous_run();
 
+    _cleanup_timer.set_callback(
+      [this] { ssx::spawn_with_gate(_gate, [this] { return tick(); }); });
+
+    _debug_bundle_cleanup_binding.watch([this] {
+        vlog(
+          lg.debug,
+          "debug bundle cleanup timer changed to {}",
+          _debug_bundle_cleanup_binding());
+        maybe_rearm_timer();
+    });
+
+    maybe_rearm_timer();
+
     lg.debug("Service started");
 }
 
 ss::future<> service::stop() {
     lg.debug("Service stopping");
+    _cleanup_timer.cancel();
     if (ss::this_shard_id() == service_shard) {
         auto units = co_await _process_control_mutex.get_units();
         if (is_running()) {
@@ -808,12 +830,13 @@ ss::future<> service::handle_wait_result(job_id_t job_id) {
         co_return;
     }
     try {
-        co_return co_await set_metadata(job_id);
+        co_await set_metadata(job_id);
     } catch (const std::exception& e) {
         vlog(
           lg.warn, "Failed to set metadata for job {}: {}", job_id, e.what());
-        co_return;
     }
+
+    maybe_rearm_timer();
 }
 ss::future<> service::maybe_reload_previous_run() {
     auto md_buf = _kvstore->get(
@@ -924,6 +947,71 @@ ss::future<> service::maybe_reload_previous_run() {
     } else {
         _probe->failed_bundle_generation(_rpk_process->finished_time());
     }
+}
+
+ss::future<> service::tick() {
+    auto units = co_await _process_control_mutex.get_units();
+    if (
+      !_debug_bundle_cleanup_binding().has_value() || _rpk_process == nullptr
+      || _rpk_process->process_status() != debug_bundle_status::success) {
+        co_return;
+    }
+
+    auto cleanup_seconds = _debug_bundle_cleanup_binding().value();
+    auto cleanup_timepoint = _rpk_process->finished_time() + cleanup_seconds;
+
+    if (cleanup_timepoint <= clock::now()) {
+        vlog(
+          lg.info,
+          "Cleaning up debug bundle for job {}",
+          _rpk_process->job_id());
+        try {
+            co_await cleanup_previous_run();
+        } catch (const std::exception& e) {
+            vlog(
+              lg.warn,
+              "Failed to clean up previous run for job {}: {}",
+              _rpk_process->job_id(),
+              e.what());
+        }
+        _rpk_process->set_expired();
+    }
+}
+
+void service::maybe_rearm_timer() {
+    // If the timer is not set or if there is no debug bundle to clean up,
+    // cancel the timer
+    if (
+      !_debug_bundle_cleanup_binding().has_value() || _rpk_process == nullptr
+      || _rpk_process->process_status() != debug_bundle_status::success) {
+        _cleanup_timer.cancel();
+        return;
+    }
+
+    auto cleanup_seconds = _debug_bundle_cleanup_binding().value();
+
+    // The point in time that the cleanup should occur
+    auto cleanup_timepoint = _rpk_process->finished_time() + cleanup_seconds;
+
+    // If the cleanup timepoint is in the past, then we should clean up now
+    if (cleanup_timepoint <= clock::now()) {
+        vlog(
+          lg.info,
+          "Debug bundle has already expired, firing clean up fiber now");
+        ssx::spawn_with_gate(_gate, [this] { return tick(); });
+        return;
+    }
+
+    auto lowres_point = ss::lowres_clock::now()
+                        + (cleanup_timepoint - clock::now());
+
+    vlog(
+      lg.debug,
+      "Rearming cleanup timer for {}, which is in {} seconds",
+      lowres_point.time_since_epoch(),
+      (lowres_point - ss::lowres_clock::now()) / 1s);
+
+    _cleanup_timer.rearm(lowres_point);
 }
 
 } // namespace debug_bundle

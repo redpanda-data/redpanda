@@ -184,6 +184,23 @@ private:
      */
     ss::future<> maybe_reload_previous_run();
 
+    /**
+     * @brief Called when the timer expires
+     *
+     * Will check to see if the debug bundle has expired and remove it
+     */
+    ss::future<> tick();
+
+    /**
+     * @brief Called whenever the debug_bundle_auto_removal_seconds value has
+     * been modified
+     *
+     * This function will cancel the timer if the value is std::nullopt,
+     * otherwise will re-calculate the timer's expiration based on if a debug
+     * bundle has been generated
+     */
+    void maybe_rearm_timer();
+
 private:
     /// Handler used to emplace stdout/stderr into a buffer
     struct output_handler;
@@ -206,6 +223,8 @@ private:
     std::unique_ptr<debug_bundle_process> _rpk_process;
     /// Metrics probe
     std::unique_ptr<probe> _probe;
+    /// Timer used to clean up previous runs of the debug bundle
+    ss::timer<ss::lowres_clock> _cleanup_timer;
     /// Mutex to guard control over the rpk debug bundle process
     mutex _process_control_mutex;
     ss::gate _gate;
