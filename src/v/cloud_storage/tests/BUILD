@@ -216,3 +216,25 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "topic_mount_handler_test",
+    timeout = "short",
+    srcs = [
+        "topic_mount_handler_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":s3_imposter_gtest",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage_clients",
+        "//src/v/cluster:topic_configuration",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
