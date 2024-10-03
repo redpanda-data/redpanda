@@ -51,3 +51,40 @@ TEST(ValuesAvroTest, TestRandomVals) {
         ASSERT_EQ(roundtrip_val.value(), rand_val);
     }
 }
+
+TEST(ValuesAvroTest, TestDecimal) {
+    struct_type st;
+    st.fields.push_back(nested_field::create(
+      0,
+      "decimal_val",
+      field_required::yes,
+      decimal_type{.precision = 10, .scale = 2}));
+
+    field_type schema_field{std::move(st)};
+
+    auto schema = struct_type_to_avro(
+      std::get<struct_type>(schema_field), "st_with_decimal");
+
+    auto make_struct = [](absl::int128 value) {
+        struct_value ret;
+        ret.fields.push_back(decimal_value{.val = value});
+        return ret;
+    };
+
+    for (auto& v : {
+           make_struct(std::numeric_limits<absl::int128>::max()),
+           make_struct(std::numeric_limits<absl::int128>::max()),
+           make_struct(0),
+           make_struct(-1),
+           make_struct(1),
+         }) {
+        auto datum = struct_to_avro(v, schema.root());
+        auto roundtrip_val = val_from_avro(
+          datum, schema_field, field_required::yes);
+
+        ASSERT_TRUE(roundtrip_val.has_value());
+        auto roundtrip_struct = std::get<std::unique_ptr<struct_value>>(
+          std::move(*roundtrip_val));
+        ASSERT_EQ(*roundtrip_struct, v);
+    }
+}
