@@ -271,7 +271,7 @@ metrics_reporter::build_metrics_snapshot() {
     }
 
     snapshot.has_valid_license = license.has_value()
-                                 && license.value().is_expired();
+                                 && !license.value().is_expired();
     snapshot.has_enterprise_features = feature_report.any();
 
     co_return snapshot;

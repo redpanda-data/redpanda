@@ -41,6 +41,9 @@ class MetricsReporterServer:
             "metrics_reporter_url": f"{self.http.url}/metrics",
         }
 
+    def clear_requests(self):
+        self.http.requests.clear()
+
     def requests(self):
         return self.http.requests
 
@@ -63,7 +66,7 @@ class MetricsReporterTest(RedpandaTest):
         self.redpanda.set_environment({"REDPANDA_ENVIRONMENT": "test"})
 
     def setUp(self):
-        # Start HTTP server before redpanda
+        # Start HTTP server before redpanda to avoid connection errors
         self.metrics.start()
         self.redpanda.start()
 
@@ -82,6 +85,9 @@ class MetricsReporterTest(RedpandaTest):
 
         assert admin.put_license(
             license).status_code == 200, "PUT License failed"
+
+        # blow away the metrics state so we can test the has_license flag later
+        self.metrics.clear_requests()
 
         total_topics = 5
         total_partitions = 0
@@ -141,7 +147,7 @@ class MetricsReporterTest(RedpandaTest):
         assert last['active_logical_version'] == features['cluster_version']
         assert last['original_logical_version'] == features[
             'original_cluster_version']
-        assert last['has_valid_license'] == False
+        assert last['has_valid_license']
         assert last['has_enterprise_features'] == False
         nodes_meta = last['nodes']
 
