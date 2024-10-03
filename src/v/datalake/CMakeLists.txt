@@ -3,6 +3,7 @@ find_package(Parquet REQUIRED)
 find_package(Protobuf REQUIRED)
 
 add_subdirectory(coordinator)
+add_subdirectory(translation)
 
 v_cc_library(
   NAME datalake_common
@@ -28,6 +29,7 @@ v_cc_library(
   DEPS
     v::datalake_common
     v::datalake_coordinator
+    v::datalake_translation
     v::storage
     Seastar::seastar
     Arrow::arrow_shared
