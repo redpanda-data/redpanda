@@ -396,7 +396,7 @@ FIXTURE_TEST(
       "write.caching",
       "flush.ms",
       "flush.bytes",
-      "iceberg.enabled",
+      "redpanda.iceberg.enabled",
       "redpanda.leaders.preference",
     };
 
@@ -580,7 +580,7 @@ FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
       {"write.caching", "disabled"},
       {"write.caching", "gnihcac.etirw"},
       {"flush.ms", "0"},
-      {"iceberg.enabled", "captain_jack_sparrow"}};
+      {"redpanda.iceberg.enabled", "captain_jack_sparrow"}};
 
     for (auto& property : properties_to_check) {
         vlog(
@@ -678,7 +678,7 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
       "flush.bytes",
       std::make_pair("5678", kafka::config_resource_operation::set));
     properties.emplace(
-      "iceberg.enabled",
+      "redpanda.iceberg.enabled",
       std::make_pair("true", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
@@ -695,7 +695,8 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", describe_resp);
-    assert_property_value(test_tp, "iceberg.enabled", "true", describe_resp);
+    assert_property_value(
+      test_tp, "redpanda.iceberg.enabled", "true", describe_resp);
 
     /**
      * Set only few properties, only they should be updated
@@ -723,7 +724,8 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "false", new_describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", new_describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", new_describe_resp);
-    assert_property_value(test_tp, "iceberg.enabled", "true", describe_resp);
+    assert_property_value(
+      test_tp, "redpanda.iceberg.enabled", "true", describe_resp);
 }
 
 FIXTURE_TEST(
@@ -770,7 +772,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       "flush.bytes",
       std::make_pair("8888", kafka::config_resource_operation::set));
     properties.emplace(
-      "iceberg.enabled",
+      "redpanda.iceberg.enabled",
       std::make_pair("true", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
@@ -787,7 +789,8 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "9999", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "8888", describe_resp);
-    assert_property_value(test_tp, "iceberg.enabled", "true", describe_resp);
+    assert_property_value(
+      test_tp, "redpanda.iceberg.enabled", "true", describe_resp);
 
     /**
      * Remove custom properties
@@ -809,7 +812,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       "flush.bytes",
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
     new_properties.emplace(
-      "iceberg.enabled",
+      "redpanda.iceberg.enabled",
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
 
     resp = incremental_alter_configs(
@@ -849,7 +852,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
           .value()),
       new_describe_resp);
     assert_property_value(
-      test_tp, "iceberg.enabled", "false", new_describe_resp);
+      test_tp, "redpanda.iceberg.enabled", "false", new_describe_resp);
 }
 
 FIXTURE_TEST(test_alter_config_internal_topic, alter_config_test_fixture) {
@@ -865,7 +868,7 @@ FIXTURE_TEST(test_alter_config_internal_topic, alter_config_test_fixture) {
     config.get("kafka_nodelete_topics").set_value(std::vector<ss::sstring>{});
 
     absl::flat_hash_map<ss::sstring, ss::sstring> properties;
-    properties.emplace("iceberg.enabled", "true");
+    properties.emplace("redpanda.iceberg.enabled", "true");
 
     auto resp = alter_configs(make_alter_topic_config_resource_cv(
       model::kafka_consumer_offsets_topic, properties));
@@ -878,7 +881,7 @@ FIXTURE_TEST(test_alter_config_internal_topic, alter_config_test_fixture) {
       std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
       incr_properties;
     incr_properties.emplace(
-      "iceberg.enabled",
+      "redpanda.iceberg.enabled",
       std::make_pair("true", kafka::config_resource_operation::set));
     auto incr_resp = incremental_alter_configs(
       make_incremental_alter_topic_config_resource_cv(
