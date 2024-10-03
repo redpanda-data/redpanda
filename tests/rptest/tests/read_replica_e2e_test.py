@@ -16,7 +16,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.util import expect_exception
 
-from ducktape.mark import matrix, ok_to_fail_fips
+from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import CloudStorageType, CloudStorageTypeAndUrlStyle, MetricsEndpoint, RedpandaService, get_cloud_storage_type, get_cloud_storage_url_style, get_cloud_storage_type_and_url_style, make_redpanda_service
@@ -26,6 +26,7 @@ from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.util import (wait_until, wait_until_result)
+from rptest.utils.mode_checks import skip_fips_mode
 
 
 class BucketUsage(NamedTuple):
@@ -408,7 +409,7 @@ class TestReadReplicaService(EndToEndTest):
             assert len(objects_after) >= len(objects_before)
 
     # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[10],
@@ -486,7 +487,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         self.second_cluster = None
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))

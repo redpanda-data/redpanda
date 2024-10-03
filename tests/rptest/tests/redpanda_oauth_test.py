@@ -10,7 +10,7 @@
 import threading
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize, ok_to_fail_fips
+from ducktape.mark import parametrize
 
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -21,6 +21,7 @@ from rptest.services.cluster import cluster
 from rptest.services.tls import TLSCertManager
 from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
 from rptest.util import expect_exception
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.tests.tls_metrics_test import FaketimeTLSProvider
 
 import requests
@@ -621,7 +622,7 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
         )
 
     @cluster(num_nodes=3)
-    @ok_to_fail_fips  # See NOTE below
+    @skip_fips_mode  # See NOTE below
     @parametrize(authn_config={"sasl_mechanisms": ["OAUTHBEARER", "SCRAM"]})
     @parametrize(authn_config={"http_authentication": ["OIDC", "BASIC"]})
     def test_license_nag(self, authn_config):

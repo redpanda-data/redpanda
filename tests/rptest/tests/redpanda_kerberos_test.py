@@ -14,7 +14,7 @@ import time
 from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccountSSHConfig
 from ducktape.cluster.windows_remoteaccount import WindowsRemoteAccount
 from ducktape.errors import TimeoutError
-from ducktape.mark import env, ok_to_fail, ok_to_fail_fips, parametrize
+from ducktape.mark import env, ok_to_fail, parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
@@ -23,6 +23,7 @@ from rptest.services.cluster import cluster
 from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError, KRB5_CONF_PATH, render_krb5_config, ActiveDirectoryKdc
 from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
 from rptest.tests.sasl_reauth_test import get_sasl_metrics, REAUTH_METRIC, EXPIRATION_METRIC
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpenv import IsCIOrNotEmpty
 
 LOG_CONFIG = LoggingConfig('info',
@@ -179,7 +180,7 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
         )
 
     @cluster(num_nodes=3)
-    @ok_to_fail_fips  # See NOTE below
+    @skip_fips_mode  # See NOTE below
     def test_license_nag(self):
         wait_until(self._license_nag_is_set,
                    timeout_sec=30,
