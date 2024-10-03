@@ -3,6 +3,7 @@ find_package(Parquet REQUIRED)
 find_package(Protobuf REQUIRED)
 
 add_subdirectory(coordinator)
+add_subdirectory(translation)
 
 v_cc_library(
   NAME datalake_common

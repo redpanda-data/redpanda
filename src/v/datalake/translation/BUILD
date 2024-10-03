@@ -12,3 +12,22 @@ redpanda_cc_library(
         "//src/v/serde",
     ],
 )
+
+redpanda_cc_library(
+    name = "stm",
+    srcs = [
+        "state_machine.cc",
+    ],
+    hdrs = [
+        "state_machine.h",
+    ],
+    include_prefix = "datalake/translation",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model",
+        "//src/v/cluster",
+        "//src/v/datalake:logger",
+        "//src/v/raft",
+        "//src/v/serde",
+    ],
+)

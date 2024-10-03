@@ -8,6 +8,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#pragma once
+
 #include "bytes/iostream.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -18,11 +20,11 @@
 #include "raft/group_configuration.h"
 #include "raft/state_machine_manager.h"
 #include "raft/tests/raft_fixture.h"
+#include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "serde/envelope.h"
-#include "serde/serde.h"
 #include "storage/record_batch_builder.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
@@ -192,7 +194,7 @@ struct state_machine_fixture : raft_fixture {
             const auto batch_sz = random_generators::get_int<size_t>(
               1, max_batch_size);
             std::vector<std::pair<ss::sstring, std::optional<ss::sstring>>> ops;
-            for (auto n = 0; n < batch_sz; ++n) {
+            for (size_t n = 0; n < batch_sz; ++n) {
                 auto k = random_generators::gen_alphanum_string(10);
                 auto v = random_generators::gen_alphanum_string(10);
 

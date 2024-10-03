@@ -44,6 +44,7 @@ redpanda_test_cc_library(
         "raft_fixture_retry_policy.h",
     ],
     include_prefix = "raft/tests",
+    visibility = ["//visibility:public"],
     deps = [
         ":raft_fixture",
         "//src/v/raft",
@@ -69,6 +70,34 @@ redpanda_test_cc_library(
         "//src/v/storage",
         "//src/v/test_utils:gtest",
         "//src/v/utils:unresolved_address",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "stm_raft_fixture",
+    hdrs = [
+        "raft_group_fixture.h",
+        "stm_test_fixture.h",
+    ],
+    include_prefix = "raft/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":raft_fixiture_retry_policy",
+        ":raft_fixture",
+        "//src/v/base",
+        "//src/v/bytes:random",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/raft",
+        "//src/v/random:generators",
+        "//src/v/rpc",
+        "//src/v/serde",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "//src/v/test_utils:seastar_boost",
         "@seastar",
     ],
 )

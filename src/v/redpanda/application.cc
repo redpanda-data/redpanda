@@ -92,6 +92,7 @@
 #include "datalake/coordinator/service.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/datalake_manager.h"
+#include "datalake/translation/state_machine.h"
 #endif
 #include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
@@ -2930,6 +2931,7 @@ void application::start_runtime_services(
             config::shard_local_cfg().rm_sync_timeout_ms.bind());
 #ifndef BAZEL_DISABLE_DATALAKE_FEATURE
           pm.register_factory<datalake::coordinator::stm_factory>();
+          pm.register_factory<datalake::translation::stm_factory>();
 #endif
       })
       .get();
