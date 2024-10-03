@@ -10,12 +10,12 @@
 #include "datalake/batching_parquet_writer.h"
 #include "datalake/tests/test_data.h"
 #include "iceberg/tests/value_generator.h"
+#include "test_utils/tmp_dir.h"
 
 #include <arrow/io/file.h>
 #include <arrow/table.h>
 #include <gtest/gtest.h>
 #include <parquet/arrow/reader.h>
-#include "test_utils/tmp_dir.h"
 
 TEST(BatchingParquetWriterTest, WritesParquetFiles) {
     temporary_dir tmp_dir("batching_parquet_writer");
