@@ -31,7 +31,7 @@ TEST(ParquetWriter, CreatesValidParquetData) {
     iobuf full_result;
 
     for (int i = 0; i < 5; i++) {
-        auto data = iceberg::tests::make_value(
+        auto data = iceberg::tests::make_struct_value(
           iceberg::tests::value_spec{
             .forced_fixed_val = iobuf::from("Hello world")},
           test_schema(iceberg::field_required::no));

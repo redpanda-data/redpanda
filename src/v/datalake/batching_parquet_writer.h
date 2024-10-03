@@ -35,7 +35,7 @@ namespace datalake {
 //    4. Writes them to the open file
 // 4. When finish() is called it flushes all remaining data and closes the
 // files.
-class batching_parquet_writer {
+class batching_parquet_writer : public data_writer {
 public:
     batching_parquet_writer(
       iceberg::struct_type schema,
@@ -44,10 +44,10 @@ public:
 
     ss::future<> initialize(std::filesystem::path output_file_path);
 
-    // TODO: error type?
-    ss::future<> add_data_struct(iceberg::value data, int64_t approx_size);
+    ss::future<data_writer_error>
+    add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
 
-    ss::future<data_writer_result> finish();
+    ss::future<data_writer_result> finish() override;
 
 private:
     ss::future<> write_row_group();

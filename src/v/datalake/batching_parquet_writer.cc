@@ -43,8 +43,8 @@ batching_parquet_writer::initialize(std::filesystem::path output_file_path) {
     _output_stream = co_await ss::make_file_output_stream(_output_file);
 }
 
-ss::future<void> batching_parquet_writer::add_data_struct(
-  iceberg::value data, int64_t approx_size) {
+ss::future<data_writer_error> batching_parquet_writer::add_data_struct(
+  iceberg::struct_value data, int64_t approx_size) {
     _iceberg_to_arrow.add_data(std::move(data));
     _row_count++;
     _byte_count += approx_size;
@@ -54,6 +54,7 @@ ss::future<void> batching_parquet_writer::add_data_struct(
       || _byte_count > _byte_count_threshold) {
         co_await write_row_group();
     }
+    co_return data_writer_error::ok;
 }
 
 ss::future<data_writer_result> batching_parquet_writer::finish() {

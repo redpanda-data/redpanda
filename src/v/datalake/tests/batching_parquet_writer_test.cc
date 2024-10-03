@@ -10,6 +10,7 @@
 #include "datalake/batching_parquet_writer.h"
 #include "datalake/tests/test_data.h"
 #include "iceberg/tests/value_generator.h"
+#include "iceberg/values.h"
 #include "test_utils/tmp_dir.h"
 
 #include <arrow/io/file.h>
@@ -28,7 +29,7 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
     writer.initialize(file_path).get0();
 
     for (int i = 0; i < num_rows; i++) {
-        auto data = iceberg::tests::make_value(
+        auto data = iceberg::tests::make_struct_value(
           iceberg::tests::value_spec{
             .forced_fixed_val = iobuf::from("Hello world")},
           test_schema(iceberg::field_required::no));

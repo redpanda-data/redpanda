@@ -29,7 +29,7 @@ public:
     ~arrow_translator();
 
     std::shared_ptr<arrow::Schema> build_arrow_schema();
-    void add_data(iceberg::value value);
+    void add_data(iceberg::struct_value value);
 
     // Returns an arrow:Array for all of the data that has been added since the
     // translator was created or the last take_chunk call. It then clears the
