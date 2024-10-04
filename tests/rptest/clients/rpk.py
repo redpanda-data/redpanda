@@ -1479,12 +1479,17 @@ class RpkTool:
         # Retry if NOT_COORDINATOR is observed when command exits 1
         return try_offset_delete(retries=5)
 
-    def generate_grafana(self, dashboard):
-
+    def generate_grafana(self, dashboard, datasource="", metrics_endpoint=""):
         cmd = [
             self._rpk_binary(), "generate", "grafana-dashboard", "--dashboard",
-            dashboard
+            dashboard, "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
         ]
+
+        if datasource != "":
+            cmd += ["--datasource", datasource]
+
+        if metrics_endpoint != "":
+            cmd += ["--metrics-endpoint", metrics_endpoint]
 
         return self._execute(cmd)
 
