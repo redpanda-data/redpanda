@@ -65,6 +65,11 @@ namespace iceberg {
 // list-objects to ensure atomicity.
 class filesystem_catalog : public catalog {
 public:
+    filesystem_catalog(filesystem_catalog&) = delete;
+    filesystem_catalog(filesystem_catalog&&) = delete;
+    filesystem_catalog& operator=(filesystem_catalog&) = delete;
+    filesystem_catalog& operator=(filesystem_catalog&&) = delete;
+
     explicit filesystem_catalog(
       cloud_io::remote& io,
       const cloud_storage_clients::bucket_name& bucket,
@@ -72,6 +77,8 @@ public:
       : io_(io)
       , table_io_(io, bucket)
       , base_location_(std::move(base_location)) {}
+
+    ~filesystem_catalog() override = default;
 
     ss::future<checked<table_metadata, errc>> create_table(
       const table_identifier& table_ident,

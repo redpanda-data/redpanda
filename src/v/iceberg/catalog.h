@@ -46,6 +46,7 @@ public:
         // E.g. a table is not found.
         not_found,
     };
+    virtual ~catalog() = default;
 
     // Creates a table with the given metadata.
     //
