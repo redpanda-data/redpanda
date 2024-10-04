@@ -499,7 +499,7 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
   // object checks: new properties need to be compatible with all old patternProperties
   {
     .reader_schema
-    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}, "^b": {"type": "string"}, "^b": {"type": "integer"}}})",
+    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}, "^b": {"type": "integer"}}})",
     .writer_schema
     = R"({"type": "object", "properties": {"bbbb": {"type": "string"}}})",
     .compat_result = {
