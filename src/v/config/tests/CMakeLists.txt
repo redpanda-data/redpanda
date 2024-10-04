@@ -11,7 +11,8 @@ set(srcs
     cloud_credentials_source_test.cc
     validator_tests.cc
     throughput_control_group_test.cc
-    node_override_test.cc)
+    node_override_test.cc
+    leaders_preference_test.cc)
 
 rp_test(
   UNIT_TEST
