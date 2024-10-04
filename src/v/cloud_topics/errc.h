@@ -16,8 +16,13 @@ namespace experimental::cloud_topics {
 enum class errc : int16_t {
     success,
     timeout,
-    upload_failure,
-    shutting_down,
+    upload_failure,     // Generic upload error
+    shutting_down,      // Umbrella shutdown error
+    cache_read_error,   // Failed to read data from cache
+    cache_write_error,  // Failed to write data to the cache
+    download_not_found, // 404 response during the download
+    download_failure,   // Generic download failure
+    slow_down,          // Cloud-storage throttling response
     unexpected_failure,
 };
 
@@ -34,6 +39,16 @@ struct errc_category final : public std::error_category {
             return "upload_failure";
         case errc::shutting_down:
             return "shutting_down";
+        case errc::cache_read_error:
+            return "cache_read_error";
+        case errc::cache_write_error:
+            return "cache_write_error";
+        case errc::download_not_found:
+            return "download_not_found";
+        case errc::download_failure:
+            return "download_failure";
+        case errc::slow_down:
+            return "slow_down";
         case errc::unexpected_failure:
             return "unexpected_failure";
         }
