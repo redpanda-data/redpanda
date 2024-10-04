@@ -23,12 +23,12 @@
 
 namespace cloud_roles {
 
-static constexpr auto retryable_system_error_codes = std::to_array(
+inline constexpr auto retryable_system_error_codes = std::to_array(
   {ECONNREFUSED, ENETUNREACH, ETIMEDOUT, ECONNRESET, EPIPE});
 
 bool is_retryable(const std::system_error& ec);
 
-static constexpr auto retryable_http_status = std::to_array({
+inline constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::request_timeout,
   boost::beast::http::status::gateway_timeout,
   boost::beast::http::status::bad_gateway,
@@ -143,6 +143,6 @@ using credentials_update_cb_t
 // Update this version to use a different storage API version, for example when
 // adding support to a new functionality released after the current version
 // 2023-01-03.
-constexpr auto azure_storage_api_version = "2023-01-03";
+inline constexpr auto azure_storage_api_version = "2023-01-03";
 
 } // namespace cloud_roles
