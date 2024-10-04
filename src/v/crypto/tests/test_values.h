@@ -16,7 +16,7 @@
 namespace test_values {
 
 // NOLINTBEGIN
-static constexpr std::string_view md5_test_val
+inline constexpr std::string_view md5_test_val
   = "The quick brown fox jumps over the lazy dog";
 
 const auto md5_expected_val = convert_from_hex(
