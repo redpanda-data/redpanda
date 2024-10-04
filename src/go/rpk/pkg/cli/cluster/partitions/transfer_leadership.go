@@ -63,7 +63,7 @@ brokers automatically.
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)
 
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			if len(topicArg) > 0 { // foo -p 0:1
