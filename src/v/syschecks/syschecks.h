@@ -28,7 +28,7 @@ namespace syschecks {
 
 extern ss::logger checklog;
 
-static inline void initialize_intrinsics() {
+inline void initialize_intrinsics() {
 #if !defined __aarch64__
     // https://gcc.gnu.org/onlinedocs/gcc/x86-Built-in-Functions.html#index-_005f_005fbuiltin_005fcpu_005finit-1
     //
@@ -40,7 +40,7 @@ static inline void initialize_intrinsics() {
     __builtin_cpu_init();
 #endif
 }
-static inline void cpu() {
+inline void cpu() {
 #if !defined __aarch64__
     // Do not use the macros __SSE4_2__ because we need to detect at runtime
     if (!__builtin_cpu_supports("sse4.2")) {
