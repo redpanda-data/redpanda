@@ -87,7 +87,7 @@ struct license_components {
     ss::sstring signature;
 };
 
-static license_components parse_license(const ss::sstring& license) {
+static license_components parse_license(std::string_view license) {
     static constexpr auto signature_delimiter = ".";
     const auto itr = license.find(signature_delimiter);
     if (itr == ss::sstring::npos) {
@@ -97,7 +97,7 @@ static license_components parse_license(const ss::sstring& license) {
     /// done so that it can have a utf-8 interpretation so the license file
     /// doesn't have to be in binary format
     return license_components{
-      .data = license.substr(0, itr),
+      .data = ss::sstring{license.substr(0, itr)},
       .signature = base64_to_string(
         license.substr(itr + strlen(signature_delimiter)))};
 }
@@ -151,7 +151,7 @@ static void parse_data_section(license& lc, const json::Document& doc) {
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
 }
 
-static ss::sstring calculate_sha256_checksum(const ss::sstring& raw_license) {
+static ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
     bytes checksum;
     hash_sha256 h;
     h.update(raw_license);
@@ -161,7 +161,7 @@ static ss::sstring calculate_sha256_checksum(const ss::sstring& raw_license) {
     return to_hex(checksum);
 }
 
-license make_license(const ss::sstring& raw_license) {
+license make_license(std::string_view raw_license) {
     try {
         license lc;
         auto components = parse_license(raw_license);

@@ -5337,11 +5337,7 @@ class RedpandaService(RedpandaServiceBase):
     def install_license(self):
         """Install a sample Enterprise License for testing Enterprise features during upgrades"""
         self.logger.debug("Installing an Enterprise License")
-        license = sample_license()
-        assert license, (
-            "No enterprise license found in the environment variable. "
-            "Please follow these instructions to get a sample license for local development: "
-            "https://redpandadata.atlassian.net/l/cp/4eeNEgZW")
+        license = sample_license(assert_exists=True)
         assert self._admin.put_license(license).status_code == 200, \
             "Configuring the Enterprise license failed (required for feature upgrades)"
 
