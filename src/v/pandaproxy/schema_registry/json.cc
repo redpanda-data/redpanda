@@ -645,6 +645,101 @@ json_type_list normalized_type(const json::Value& v) {
     return ret;
 }
 
+// builder for merged references. this will spilt out a json that is validated
+// by this schema.
+// {
+//   "oneOf": [
+//     {
+//       "$comment": "the referenced schema, if the base schema did not contain
+//       siblings to $ref"
+//     },
+//     {
+//       "type": "object",
+//       "properties": {
+//         "allOf": {
+//           "type": "array",
+//           "minItems": 2,
+//           "items": true,
+//           "$comment": "items are 1) the original schema without the $ref and
+//           2) the referenced schema. if the referenced schema contains a $ref,
+//           further referenced schemas are flattened"
+//         }
+//       }
+//     }
+//   ]
+// }
+// the caller is responsible to keep the root object alive, since the result may
+// reference strings in it
+json_const_object
+merge_references(std::span<json::Value::ConstObject> references_objects) {
+    if (references_objects.empty()) {
+        throw std::logic_error("merged_references called on empty sequence");
+    }
+
+    const auto ref_key = json::Value{"$ref"};
+
+    auto empty_refless = [&](const json::Value::ConstObject& obj) {
+        // empty_refless if empty once $ref is removed
+        return obj.ObjectEmpty()
+               || (obj.MemberCount() == 1 && obj.FindMember(ref_key) != obj.MemberEnd());
+    };
+
+    // list of objects once we remove the $ref-only schemas
+    auto non_empty_references = references_objects
+                                | std::views::filter([&](const auto& obj) {
+                                      return !empty_refless(obj);
+                                  });
+
+    auto non_empty_size = std::ranges::distance(non_empty_references);
+
+    if (non_empty_size == 0) {
+        // a degenerate case: all the objects are empty, once removed the
+        // references.
+        return get_true_schema();
+    }
+
+    if (non_empty_size == 1) {
+        // only one object is not empty, return it directly
+        // this is the case for objects with a single $ref without siblings
+        return non_empty_references.front();
+    }
+
+    // at least 2 non-empty objects, build the allOf array
+
+    auto to_document_without_ref = [&](const json::Value::ConstObject& obj) {
+        // copy obj to a new document without the $ref key
+        auto doc = json::Document{rapidjson::kObjectType};
+        auto& alloc = doc.GetAllocator();
+        for (auto& [k, v] : obj) {
+            if (k != ref_key) {
+                // copy the key-value pair, try to reference the strings from
+                // the original document if possible
+                doc.AddMember(
+                  json::Value(k, alloc, false),
+                  json::Value(v, alloc, false),
+                  alloc);
+            }
+        }
+        return doc;
+    };
+
+    // build the result document with the allof array
+    auto res = std::make_unique<json::Document>();
+    res->Parse(R"({"allOf": []})");
+    vassert(!res->HasParseError(), "malformed merged references template");
+
+    // append everything to the allof array
+    auto& res_alloc = res->GetAllocator();
+    auto& allof_array = res->FindMember("allOf")->value;
+    allof_array.Reserve(non_empty_size, res_alloc);
+    for (auto d : non_empty_references
+                    | std::views::transform(to_document_without_ref)) {
+        allof_array.PushBack(json::Value(d, res_alloc), res_alloc);
+    }
+
+    return res;
+}
+
 // helper to convert a boolean to a schema
 json::Value::ConstObject
 get_schema(const schema_context&, const json::Value& v) {
