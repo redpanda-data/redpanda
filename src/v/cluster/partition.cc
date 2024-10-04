@@ -32,6 +32,7 @@
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "storage/ntp_config.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -1578,26 +1579,54 @@ partition::force_abort_replica_set_update(model::revision_id rev) {
 }
 consensus_ptr partition::raft() const { return _raft; }
 
-ss::future<std::error_code> partition::disable_writes() {
+ss::future<std::error_code> partition::set_writes_disabled(
+  partition_properties_stm::writes_disabled disable,
+  model::timeout_clock::time_point deadline) {
+    ssx::rwlock::holder holder;
+    auto lock_deadline = ss::semaphore::clock::now()
+                         + ss::semaphore::clock::duration(
+                           deadline - model::timeout_clock::now());
+    try {
+        holder = co_await _produce_lock.hold_write_lock(lock_deadline);
+    } catch (ss::semaphore_timed_out&) {
+        co_return errc::timeout;
+    }
     if (!_feature_table.local().is_active(
           features::feature::partition_properties_stm)) {
-        return ssx::now<std::error_code>(errc::feature_disabled);
+        co_return errc::feature_disabled;
     }
     if (_partition_properties_stm == nullptr) {
-        return ssx::now<std::error_code>(errc::invalid_partition_operation);
+        co_return errc::invalid_partition_operation;
     }
-    return _partition_properties_stm->disable_writes();
+    if (disable && _rm_stm) {
+        auto res = co_await _rm_stm->abort_all_txes();
+        if (res != tx::errc::none) {
+            co_return res;
+        }
+    }
+    auto method = disable ? &partition_properties_stm::disable_writes
+                          : &partition_properties_stm::enable_writes;
+    co_return co_await (*_partition_properties_stm.*method)();
 }
 
-ss::future<std::error_code> partition::enable_writes() {
-    if (!_feature_table.local().is_active(
-          features::feature::partition_properties_stm)) {
-        return ssx::now<std::error_code>(errc::feature_disabled);
+ss::future<result<ssx::rwlock_unit>> partition::hold_writes_enabled() {
+    auto maybe_units = _produce_lock.attempt_read_lock();
+    if (!maybe_units) {
+        co_return errc::resource_is_being_migrated;
     }
-    if (_partition_properties_stm == nullptr) {
-        return ssx::now<std::error_code>(errc::invalid_partition_operation);
+
+    auto are_disabled
+      = _partition_properties_stm
+          ? co_await _partition_properties_stm->sync_writes_disabled()
+          : partition_properties_stm::writes_disabled::no;
+    if (!are_disabled.has_value()) {
+        co_return are_disabled.error();
     }
-    return _partition_properties_stm->enable_writes();
+    if (are_disabled.value()) {
+        co_return errc::resource_is_being_migrated;
+    }
+
+    co_return *std::move(maybe_units);
 }
 
 } // namespace cluster
