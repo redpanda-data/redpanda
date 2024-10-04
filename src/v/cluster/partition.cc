@@ -338,7 +338,13 @@ ss::future<storage::translating_reader> partition::make_cloud_reader(
 ss::future<result<kafka_result>> partition::replicate(
   model::record_batch_reader&& r, raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
-    auto res = co_await _raft->replicate(std::move(r), opts);
+    auto reader = std::move(r);
+
+    auto maybe_units = co_await hold_writes_enabled();
+    if (!maybe_units) {
+        co_return ret_t(maybe_units.error());
+    }
+    auto res = co_await _raft->replicate(std::move(reader), opts);
     if (!res) {
         co_return ret_t(res.error());
     }
@@ -357,11 +363,43 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     return _rm_stm;
 }
 
+namespace {
+template<class Units, class StagesFutureFunc>
+ss::future<result<kafka_result>> stages_with_units_helper(
+  ss::future<result<Units>> maybe_units_f,
+  ss::promise<> enqueued_promise,
+  StagesFutureFunc stages_future_func) {
+    auto maybe_units = co_await std::move(maybe_units_f);
+    if (!maybe_units.has_value()) {
+        enqueued_promise.set_value();
+        co_return maybe_units.error();
+    }
+    kafka_stages orig_stages = stages_future_func();
+    co_await std::move(orig_stages.request_enqueued);
+    enqueued_promise.set_value();
+    co_return co_await std::move(orig_stages.replicate_finished);
+}
+
+template<class Units, class StagesFutureFunc>
+kafka_stages stages_with_units(
+  ss::future<result<Units>> maybe_units_f,
+  StagesFutureFunc stages_future_func) {
+    ss::promise<> enqueued_promise;
+    auto enqueued_f = enqueued_promise.get_future();
+    auto replicated_f = stages_with_units_helper(
+      std::move(maybe_units_f),
+      std::move(enqueued_promise),
+      std::move(stages_future_func));
+    return {std::move(enqueued_f), std::move(replicated_f)};
+}
+} // namespace
+
 kafka_stages partition::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
+
     if (bid.is_transactional) {
         if (!_rm_stm) {
             vlog(
@@ -382,22 +420,29 @@ kafka_stages partition::replicate_in_stages(
         }
     }
 
-    if (_rm_stm) {
-        return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
-    }
-
-    auto res = _raft->replicate_in_stages(std::move(r), opts);
-    auto replicate_finished = res.replicate_finished.then(
-      [this](result<raft::replicate_result> r) {
-          if (!r) {
-              return ret_t(r.error());
+    return stages_with_units(
+      hold_writes_enabled(),
+      [this,
+       bid = std::move(bid),
+       r = std::move(r),
+       opts = std::move(opts)]() mutable {
+          if (_rm_stm) {
+              return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
           }
-          auto old_offset = r.value().last_offset;
-          auto new_offset = kafka::offset(log()->from_log_offset(old_offset)());
-          return ret_t(kafka_result{new_offset});
+          auto res = _raft->replicate_in_stages(std::move(r), opts);
+          auto replicate_finished = res.replicate_finished.then(
+            [this](result<raft::replicate_result> r) {
+                if (!r) {
+                    return ret_t(r.error());
+                }
+                auto old_offset = r.value().last_offset;
+                auto new_offset = kafka::offset(
+                  log()->from_log_offset(old_offset)());
+                return ret_t(kafka_result{new_offset});
+            });
+          return kafka_stages(
+            std::move(res.request_enqueued), std::move(replicate_finished));
       });
-    return kafka_stages(
-      std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
 raft::group_id partition::group() const { return _raft->group(); }
