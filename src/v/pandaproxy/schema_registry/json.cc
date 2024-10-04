@@ -137,6 +137,37 @@ struct document_context {
 // incompatibilities don't matter, only whether they are compatible or not
 static const std::filesystem::path ignored_path = "";
 
+// helper struct to hold a json::Document or a json::Value::ConstObject, used in
+// ref_resolution to either hold an existing json::Value from the root object or
+// a synthesized one, when a $ref has siblings
+struct json_const_object {
+    std::variant<json::Value::ConstObject, std::unique_ptr<json::Document>>
+      storage;
+    json_const_object(const json::Value::ConstObject& co) noexcept
+      : storage(co) {}
+    json_const_object(std::unique_ptr<json::Document>&& d) noexcept
+      : storage(std::move(d)) {}
+
+    operator const json::Value&() const {
+        return std::visit(
+          ss::make_visitor(
+            [](const json::Value::ConstObject& co) -> const json::Value& {
+                return co;
+            },
+            [](const std::unique_ptr<json::Document>& d) -> const json::Value& {
+                return d->GetObject();
+            }),
+          storage);
+    }
+
+    const json::Value& operator*() const {
+        return static_cast<const json::Value&>(*this);
+    }
+    const json::Value* operator->() const {
+        return &static_cast<const json::Value&>(*this);
+    }
+};
+
 } // namespace
 
 struct json_schema_definition::impl {
