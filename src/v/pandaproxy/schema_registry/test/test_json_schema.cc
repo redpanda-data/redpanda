@@ -154,6 +154,51 @@ static const auto error_test_cases = std::to_array({
     pps::error_info{
       pps::error_code::schema_invalid,
       R"(Invalid json schema: '{"type":"object","dependencies":{"$ref":"#/$defs/deps"}}'. Error: '/dependencies: Additional property '$ref' found but was invalid.')"}},
+  // invalid bundled schemas
+  error_test_case{
+    R"(
+{
+  "$comment": "the root schema is valid but the bundled schema is not",
+  "$defs": {
+      "$comment": "dialect is draft-04, but id key is '$id'",
+      "$id": "https://example.com/mismatch_id",
+      "$schema": "http://json-schema.org/draft-04/schema#"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema with mismatched dialect "
+      "'http://json-schema.org/draft-04/schema#' for id key"}},
+  error_test_case{
+    R"(
+{
+  "$comment": "the root schema is valid but the bundled schema is not",
+  "$defs": {
+      "$comment": "dialect is unkown",
+      "$id": "https://example.com/mismatch_id",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema without a known dialect: "
+      "'http://json-schema.org/draft-3000/schema#'"}},
+  error_test_case{
+    R"(
+{
+  "$comment": "the root schema is valid but the bundled schema is not",
+  "$defs": {
+      "$comment": "schema is invalid",
+      "$id": "https://example.com/mismatch_id",
+      "type": "potato"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$id":"https://example.com/mismatch_id","type":"potato"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {

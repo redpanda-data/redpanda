@@ -388,7 +388,7 @@ try_validate_json_schema(const jsoncons::ojson& schema) {
 }
 
 // forward declaration
-id_to_schema_pointer collect_bundled_schema_and_fix_refs(
+result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
   jsoncons::ojson& doc, json_schema_dialect dialect);
 
 result<document_context> parse_json(iobuf buf) {
@@ -450,8 +450,11 @@ result<document_context> parse_json(iobuf buf) {
     auto dialect = validation_res.assume_value();
 
     // this function will resolve al local ref against their respective baseuri.
-    auto bundles_schemas_map = collect_bundled_schema_and_fix_refs(
+    auto bundled_schemas_map = collect_bundled_schema_and_fix_refs(
       schema, dialect);
+    if (bundled_schemas_map.has_error()) {
+        return bundled_schemas_map.as_failure();
+    }
 
     // to use rapidjson we need to serialized schema again
     // We take a copy of the jsoncons schema here because it has the fixed-up
@@ -474,7 +477,9 @@ result<document_context> parse_json(iobuf buf) {
     }
 
     return {
-      std::move(rapidjson_schema), dialect, std::move(bundles_schemas_map)};
+      std::move(rapidjson_schema),
+      dialect,
+      std::move(bundled_schemas_map).assume_value()};
 }
 
 /// is_superset section
@@ -2251,7 +2256,9 @@ void collect_bundled_schemas_and_fix_refs(
         if (maybe_new_dialect.has_value() == false) {
             // stop scanning this tree, we might be in a bundled schema but we
             // don't know the dialect.
-            return;
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema without a known dialect: '{}'",
+              this_obj["$schema"].as_string_view())));
         }
 
         // we are in a bundled schema and we know the dialect to use, now we
@@ -2271,14 +2278,19 @@ void collect_bundled_schemas_and_fix_refs(
         if (id_it == this_obj.object_range().end()) {
             // stop scanning this branch, the keyword for base uri does not
             // agree with schema dialect.
-            return;
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema with mismatched dialect '{}' for id key",
+              to_uri(maybe_new_dialect.value()))));
         }
 
         // run validation since we are not a guaranteed to be in proper schema
-        if (validate_json_schema(maybe_new_dialect.value(), this_obj)
-              .has_error()) {
+        if (auto validation = validate_json_schema(
+              maybe_new_dialect.value(), this_obj);
+            validation.has_error()) {
             // stop exploring this branch, the schema is invalid
-            return;
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema is invalid. {}",
+              validation.assume_error().message())));
         }
 
         // base uri keyword agrees with the dialect, it's a validated schema, we
@@ -2321,7 +2333,7 @@ void collect_bundled_schemas_and_fix_refs(
     }
 }
 
-id_to_schema_pointer collect_bundled_schema_and_fix_refs(
+result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
   jsoncons::ojson& doc, json_schema_dialect dialect) {
     // entry point to collect all bundled schemas
     // fetch the root id, if it exists
@@ -2347,8 +2359,17 @@ id_to_schema_pointer collect_bundled_schema_and_fix_refs(
       {root_id, std::pair{json::Pointer{}, dialect}}};
 
     if (doc.is_object()) {
-        collect_bundled_schemas_and_fix_refs(
-          bundled_schemas, jsoncons::uri{}, {}, doc, dialect);
+        // note: current implementation is overly strict and reject any bundled
+        // schema that is deemed invalid. this could be relaxed if the invalid
+        // schema is not actually accessed by a $ref, but it requires to scan
+        // the document in two passes.
+        try {
+            collect_bundled_schemas_and_fix_refs(
+              bundled_schemas, jsoncons::uri{}, {}, doc, dialect);
+        } catch (const exception& e) {
+            return error_info(
+              static_cast<error_code>(e.code().value()), e.message());
+        }
     }
 
     return bundled_schemas;
