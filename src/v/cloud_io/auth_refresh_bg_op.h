@@ -20,7 +20,7 @@
 
 namespace cloud_io {
 
-static constexpr ss::shard_id auth_refresh_shard_id = 0;
+inline constexpr ss::shard_id auth_refresh_shard_id = 0;
 
 /// Helper class to start the background operations to periodically refresh
 /// authentication. Selects the implementation for fetch based on the
