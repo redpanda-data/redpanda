@@ -269,6 +269,12 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
               interval_override);
         }
     }
+    try {
+        co_await ss::sleep_abortable(license_check_retry, _as.local());
+    } catch (const ss::sleep_aborted&) {
+        // Shutting down - next iteration will drop out
+        co_return;
+    }
     if (_feature_table.local().is_active(features::feature::license)) {
         auto enterprise_features = report_enterprise_features();
         if (enterprise_features.any()) {
@@ -285,11 +291,6 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                   enterprise_features.enabled());
             }
         }
-    }
-    try {
-        co_await ss::sleep_abortable(license_check_retry, _as.local());
-    } catch (const ss::sleep_aborted&) {
-        // Shutting down - next iteration will drop out
     }
 }
 
