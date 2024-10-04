@@ -55,8 +55,11 @@ struct generating_primitive_value_visitor {
           spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
     value operator()(const decimal_type&) {
+        if (spec_.forced_num_val) {
+            return decimal_value{absl::MakeInt128(0, generate_numeric_val())};
+        }
         return decimal_value{
-          spec_.forced_num_val.value_or(generate_numeric_val())};
+          absl::MakeInt128(generate_numeric_val(), generate_numeric_val())};
     }
     value operator()(const date_type&) {
         return date_value{static_cast<int>(
@@ -97,7 +100,8 @@ struct generating_primitive_value_visitor {
         }
         switch (spec_.pattern) {
         case value_pattern::zeros:
-            return fixed_value{iobuf{}};
+            return fixed_value{
+              bytes_to_iobuf(bytes::from_string(std::string(t.length, 0)))};
         case value_pattern::random:
             return fixed_value{random_generators::make_iobuf(t.length)};
         }

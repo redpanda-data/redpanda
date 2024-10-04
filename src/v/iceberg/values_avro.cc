@@ -39,6 +39,23 @@ void maybe_throw_wrong_type(
     }
 }
 
+void maybe_throw_wrong_logical_type(
+  const avro::LogicalType& expected, const avro::LogicalType& actual) {
+    if (
+      expected.type() != actual.type() || expected.scale() != actual.scale()
+      || expected.precision() != actual.precision()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected (type: {}, precision: {}, scale: {}) logical_type but got: "
+          "(type: {}, precision: {}, scale: {})",
+          expected.type(),
+          expected.precision(),
+          expected.scale(),
+          actual.type(),
+          actual.precision(),
+          actual.scale()));
+    }
+}
+
 // Throws an exception if the given schema isn't valid for the given type.
 void maybe_throw_invalid_schema(
   const avro::NodePtr& actual_schema, const avro::Type& expected_type) {
@@ -50,9 +67,7 @@ void maybe_throw_invalid_schema(
     const auto& actual_type = actual_schema->type();
     maybe_throw_wrong_type(expected_type, actual_type);
 }
-// XXX: need to figure out how to correctly instantiate avro::GenericFixed to
-// support the unimplemented fields. Or move to an impl that uses iobufs. Throw
-// for now.
+
 struct primitive_value_avro_visitor {
     explicit primitive_value_avro_visitor(const avro::NodePtr& avro_schema)
       : avro_schema_(avro_schema) {}
@@ -113,14 +128,27 @@ struct primitive_value_avro_visitor {
         }
         return {data};
     }
-    avro::GenericDatum operator()(const decimal_value&) {
-        throw std::invalid_argument("XXX decimal not implemented");
+    avro::GenericDatum operator()(const decimal_value& v) {
+        std::vector<uint8_t> bytes(16);
+        auto low = absl::Int128Low64(v.val);
+        auto high = absl::Int128High64(v.val);
+        // Store in big-endian order (most significant byte at index 0)
+        for (size_t i = 0; i < 8; ++i) {
+            bytes[i + 8] = static_cast<uint8_t>(low >> ((7 - i) * 8));
+            bytes[i] = static_cast<uint8_t>(high >> ((7 - i) * 8));
+        }
+
+        return {avro_schema_, avro::GenericFixed(avro_schema_, bytes)};
     }
-    avro::GenericDatum operator()(const fixed_value&) {
-        throw std::invalid_argument("XXX fixed not implemented");
+    avro::GenericDatum operator()(const fixed_value& fixed) {
+        std::vector<uint8_t> bytes(fixed.val.size_bytes());
+        iobuf::iterator_consumer it(fixed.val.cbegin(), fixed.val.cend());
+        it.consume_to(fixed.val.size_bytes(), bytes.data());
+        return {avro_schema_, avro::GenericFixed(avro_schema_, bytes)};
     }
-    avro::GenericDatum operator()(const uuid_value&) {
-        throw std::invalid_argument("XXX uuid not implemented");
+    avro::GenericDatum operator()(const uuid_value& uuid) {
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_STRING);
+        return {avro_schema_, fmt::to_string(uuid.val)};
     }
 };
 
@@ -289,11 +317,38 @@ struct primitive_value_parsing_visitor {
         maybe_throw_wrong_type(data_.type(), avro::AVRO_STRING);
         return string_value{iobuf::from(data_.value<std::string>())};
     }
-    value operator()(const fixed_type&) {
-        throw std::invalid_argument("XXX fixed not implemented");
+    value operator()(const fixed_type& schema_type) {
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_FIXED);
+        auto lt = avro::LogicalType(avro::LogicalType::NONE);
+        maybe_throw_wrong_logical_type(data_.logicalType(), lt);
+
+        const auto& v = data_.value<avro::GenericFixed>().value();
+        if (v.size() != schema_type.length) {
+            throw std::invalid_argument(fmt::format(
+              "Fixed type length mismatch, schema length: {}, current value "
+              "length: {}",
+              schema_type.length,
+              v.size()));
+        }
+        iobuf b;
+        b.append(v.data(), v.size());
+        return fixed_value{.val = std::move(b)};
     }
     value operator()(const uuid_type&) {
-        throw std::invalid_argument("XXX uuid not implemented");
+        // in Avro UUID can be either fixed or string type
+        if (data_.type() == avro::AVRO_FIXED) {
+            maybe_throw_wrong_logical_type(
+              data_.logicalType(), avro::LogicalType(avro::LogicalType::UUID));
+            const auto& v = data_.value<avro::GenericFixed>().value();
+            return uuid_value{.val = uuid_t(v)};
+        }
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_STRING);
+        maybe_throw_wrong_logical_type(
+          data_.logicalType(), avro::LogicalType(avro::LogicalType::UUID));
+        const auto& v = data_.value<std::string>();
+
+        auto uuid = uuid_t::from_string(v);
+        return uuid_value{uuid};
     }
     value operator()(const binary_type&) {
         maybe_throw_wrong_type(data_.type(), avro::AVRO_BYTES);
@@ -302,8 +357,29 @@ struct primitive_value_parsing_visitor {
         b.append(v.data(), v.size());
         return binary_value{std::move(b)};
     }
-    value operator()(const decimal_type&) {
-        throw std::invalid_argument("XXX decimal not implemented");
+    value operator()(const decimal_type& dt) {
+        maybe_throw_wrong_type(data_.type(), avro::AVRO_FIXED);
+        auto lt = avro::LogicalType(avro::LogicalType::DECIMAL);
+        lt.setPrecision(dt.precision);
+        lt.setScale(dt.scale);
+        maybe_throw_wrong_logical_type(data_.logicalType(), lt);
+        const auto& v = data_.value<avro::GenericFixed>().value();
+        if (v.size() > 16) {
+            throw std::invalid_argument(fmt::format(
+              "decimals with more than 16 bytes are not supported, current "
+              "value size: {}",
+              v.size()));
+        }
+        int64_t high_half{0};
+        uint64_t low_half{0};
+        for (size_t i = 0; i < std::min<size_t>(v.size(), 8); ++i) {
+            high_half |= int64_t(v[i]) << (7 - i) * 8;
+        };
+        for (size_t i = 8; i < std::min<size_t>(v.size(), 16); ++i) {
+            low_half |= uint64_t(v[i]) << (15 - i) * 8;
+        };
+
+        return decimal_value{.val = absl::MakeInt128(high_half, low_half)};
     }
 };
 
