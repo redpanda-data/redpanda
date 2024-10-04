@@ -486,7 +486,7 @@ result<document_context> parse_json(iobuf buf) {
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  const context& ctx,
+  context ctx,
   const json::Value& older,
   const json::Value& newer,
   std::filesystem::path p);
@@ -740,11 +740,113 @@ merge_references(std::span<json::Value::ConstObject> references_objects) {
     return res;
 }
 
-// helper to convert a boolean to a schema
-json::Value::ConstObject
-get_schema(const schema_context&, const json::Value& v) {
+// helper to parse a json pointer with rapidjson. throws if there is an error
+// parsing it
+json::Pointer to_json_pointer(std::string_view sv) {
+    auto candidate = json::Pointer{sv.data(), sv.size()};
+    if (auto ec = candidate.GetParseErrorCode();
+        ec != rapidjson::kPointerParseErrorNone) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "invalid fragment '{}' error {} at {}",
+            sv,
+            ec,
+            candidate.GetParseErrorOffset())});
+    }
+
+    return candidate;
+}
+
+// helper to resolve a pointer in a json object. throws if the object can't be
+// retrieved
+const json::Value&
+resolve_pointer(const json::Pointer& p, const json::Value& root) {
+    auto unresolved_token = size_t{0};
+    auto* value = p.Get(root, &unresolved_token);
+    if (value == nullptr) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "object not found for pointer '{}' unresolved token at index "
+            "{}",
+            pjp{p},
+            unresolved_token)});
+    }
+
+    return *value;
+}
+
+// iteratively resolve a reference, following the $ref field until the end or
+// the max_allowed_depth is reached. throws if the max depth is reached or if
+// the reference can't be resolved
+json_const_object
+resolve_reference(schema_context& ctx, const json::Value& candidate) {
+    auto ref_it = candidate.FindMember("$ref");
+    if (ref_it == candidate.MemberEnd()) { // not a reference, no-op
+        return candidate.GetObject();
+    }
+
+    auto get_uri_fragment = [](std::string uri_s) {
+        // split into host and fragment
+        auto uri = jsoncons::uri{uri_s};
+        return std::pair{to_json_id_uri(uri), to_json_pointer(uri.fragment())};
+    };
+
+    auto [id_uri, fragment_p] = get_uri_fragment(ref_it->value.GetString());
+
+    // store the reference chains here, to merge them later, start with base
+    auto references_objects = absl::InlinedVector<json::Value::ConstObject, 4>{
+      candidate.GetObject()};
+
+    // resolve the reference:
+    while (ctx.consume_ref_units() > 0) {
+        // try to find the bundled schema, get a pointer to it
+        auto* lookup_p = ctx.find_bundled(id_uri);
+        if (lookup_p == nullptr) {
+            // TODO use a better error code
+            throw as_exception(error_info{
+              error_code::schema_invalid,
+              fmt::format("schema pointer not found for uri '{}'", id_uri)});
+        }
+        const auto& [schema_pointer, dialect] = *lookup_p;
+
+        // step 1: get the schema object
+        const auto& schema = resolve_pointer(schema_pointer, ctx.doc());
+        // step 2: get the referenced object inside the schema
+        const auto& referenced_obj = resolve_pointer(fragment_p, schema);
+        // step 2.5: store referenced_obj for merging later
+        references_objects.push_back(referenced_obj.GetObject());
+
+        // step 3: check if the referenced object has a $ref field, and if so
+        // resolve it
+        if (auto next_ref_it = referenced_obj.FindMember("$ref");
+            next_ref_it != referenced_obj.MemberEnd()) {
+            std::tie(id_uri, fragment_p) = get_uri_fragment(
+              next_ref_it->value.GetString());
+        } else {
+            // if this is the final target, return it.
+
+            // require that we are using the same dialect as the root object.
+            // this requirement could be relaxed but it requires to keep track
+            // of the dialect for each json::Value
+            if (dialect != ctx.dialect()) {
+                throw as_exception(error_info{
+                  error_code::schema_invalid,
+                  fmt::format("schema dialect mismatch for uri '{}'", id_uri)});
+            }
+
+            return merge_references(references_objects);
+        }
+    }
+    throw std::runtime_error(fmt::format(
+      "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p}));
+}
+
+// helper to convert a boolean to a schema, and to traverse $refs
+json_const_object get_schema(schema_context& ctx, const json::Value& v) {
     if (v.IsObject()) {
-        return v.GetObject();
+        return resolve_reference(ctx, v.GetObject());
     }
 
     if (v.IsBool()) {
@@ -1988,7 +2090,7 @@ using namespace is_superset_impl;
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  const context& ctx,
+  context ctx,
   const json::Value& older_schema,
   const json::Value& newer_schema,
   std::filesystem::path p) {
@@ -2073,25 +2175,6 @@ json_compatibility_result is_superset(
     res.merge(is_enum_superset(older, newer, p));
     res.merge(is_not_combinator_superset(ctx, older, newer, p));
     res.merge(is_positive_combinator_superset(ctx, older, newer, p));
-
-    for (auto not_yet_handled_keyword : {
-           // draft 6 unhandled keywords:
-           "$ref",
-         }) {
-        if (
-          newer.HasMember(not_yet_handled_keyword)
-          || older.HasMember(not_yet_handled_keyword)) {
-            // these keyword are not yet handled, their presence might change
-            // the result of this function
-            throw as_exception(invalid_schema(fmt::format(
-              "{} not fully implemented yet. unsupported keyword: {}, input: "
-              "older: '{}', newer: '{}'",
-              __FUNCTION__,
-              not_yet_handled_keyword,
-              pj{older},
-              pj{newer})));
-        }
-    }
 
     // no rule in newer is less strict than older, older is superset of newer
     return res;
