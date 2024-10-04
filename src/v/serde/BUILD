@@ -113,8 +113,8 @@ redpanda_cc_library(
     include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
-        ":serde",
         ":map",
+        ":serde",
     ],
 )
 

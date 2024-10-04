@@ -43,8 +43,8 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
-        "//src/v/container:fragmented_vector",
         "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
         "@avro",
     ],
 )
