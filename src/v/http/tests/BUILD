@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "utils",
@@ -78,5 +78,47 @@ redpanda_cc_btest(
         "//src/v/http",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "uri_encoding_test",
+    timeout = "short",
+    srcs = [
+        "uri_encoding_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/http:utils",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "request_builder_test",
+    timeout = "short",
+    srcs = [
+        "request_builder_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/http:request_builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "rest_entity_test",
+    timeout = "short",
+    srcs = [
+        "rest_entity_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/http:rest_entity",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )

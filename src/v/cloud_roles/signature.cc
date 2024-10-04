@@ -15,6 +15,7 @@
 #include "cloud_roles/logger.h"
 #include "config/base_property.h"
 #include "hashing/secure.h"
+#include "http/utils.h"
 #include "request_response_helpers.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
@@ -168,9 +169,11 @@ static result<target_parts> split_target(ss::sstring target) {
     auto pos = target.find('?');
     if (pos == ss::sstring::npos) {
         return target_parts{
-          .canonical_uri = uri_encode(target, false), .query_params = {}};
+          .canonical_uri = http::uri_encode(target, http::uri_encode_slash::no),
+          .query_params = {}};
     } else {
-        auto canonical_uri = uri_encode(target.substr(0, pos), false);
+        auto canonical_uri = http::uri_encode(
+          target.substr(0, pos), http::uri_encode_slash::no);
         if (pos == target.size() - 1) {
             return target_parts{
               .canonical_uri = canonical_uri, .query_params = {}};
@@ -228,7 +231,9 @@ static ss::sstring get_canonical_query_string(
             result.append("&", 1);
         }
         result += ssx::sformat(
-          "{}={}", uri_encode(pname, true), uri_encode(pvalue, true));
+          "{}={}",
+          http::uri_encode(pname, http::uri_encode_slash::yes),
+          http::uri_encode(pvalue, http::uri_encode_slash::yes));
     }
     return result;
 }

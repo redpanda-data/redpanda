@@ -23,3 +23,26 @@ rp_test(
   LABELS http_imposter
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_uri_encoding
+  SOURCES
+  uri_encoding_test.cc
+  LIBRARIES v::gtest_main v::http
+  LABELS http_utils
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_request_builder
+  SOURCES
+  request_builder_test.cc
+  rest_entity_test.cc
+  LIBRARIES v::gtest_main v::http
+  LABELS http
+  ARGS "-- -c 1"
+)
