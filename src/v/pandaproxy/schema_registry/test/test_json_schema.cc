@@ -114,6 +114,44 @@ static const auto error_test_cases = std::to_array({
     pps::error_info{
       pps::error_code::schema_invalid,
       R"(Invalid json schema: '{"$schema":"http://json-schema.org/draft-06/schema#","type":"number","minimum":0,"exclusiveMinimum":false}'. Error: '/exclusiveMinimum: Expected number, found boolean')"}},
+  // properties, patternProperties, dependencies, can't be
+  // refs (they need to contain key:values)
+  error_test_case{
+    R"(
+{
+  "type": "object",
+  "properties": {
+    "$ref": "#/$defs/props"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"type":"object","properties":{"$ref":"#/$defs/props"}}'. Error: ': Must be valid against all schemas, but found unmatched schemas')"}},
+  error_test_case{
+    R"(
+{
+  "type": "object",
+  "patternProperties": {
+    "$ref": "#/$defs/patprops"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"type":"object","patternProperties":{"$ref":"#/$defs/patprops"}}'. Error: ': Must be valid against all schemas, but found unmatched schemas')"}},
+  error_test_case{
+    R"(
+{
+  "type": "object",
+  "dependencies": {
+    "$ref": "#/$defs/deps"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"type":"object","dependencies":{"$ref":"#/$defs/deps"}}'. Error: '/dependencies: Additional property '$ref' found but was invalid.')"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {

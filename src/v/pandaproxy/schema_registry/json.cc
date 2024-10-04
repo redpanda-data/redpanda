@@ -600,15 +600,27 @@ get_schema(const schema_context&, const json::Value& v) {
 
 // helper to retrieve the object value for a key, or an empty object if the key
 // is not present
-json::Value::ConstObject get_object_or_empty(
-  const schema_context& ctx, const json::Value& v, std::string_view key) {
+json::Value::ConstObject
+get_object_or_empty(const json::Value& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
-    if (it != v.MemberEnd()) {
-        return get_schema(ctx, it->value);
+    if (it == v.MemberEnd()) {
+        return get_true_schema();
     }
 
-    return get_true_schema();
+    if (it->value.IsObject()) {
+        return it->value.GetObject();
+    }
+
+    if (it->value.IsBool()) {
+        // in >= draft6 "true/false" is a valid schema and means
+        // {}/{"not":{}}
+        return it->value.GetBool() ? get_true_schema() : get_false_schema();
+    }
+    throw as_exception(error_info{
+      error_code::schema_invalid,
+      fmt::format(
+        "Invalid JSON Schema, should be object or boolean: '{}'", pj{v})});
 }
 
 // helper to retrieve the array value for a key, or an empty array if the key
@@ -1160,8 +1172,8 @@ json_compatibility_result is_array_superset(
         // "items"
         res.merge(is_superset(
           ctx,
-          get_object_or_empty(ctx.older, older, "items"),
-          get_object_or_empty(ctx.newer, newer, "items"),
+          get_object_or_empty(older, "items"),
+          get_object_or_empty(newer, "items"),
           p / "items"));
         return res;
     }
@@ -1199,9 +1211,9 @@ json_compatibility_result is_array_superset(
     // To be compatible, excess elements needs to be compatible with the other
     // "additionalItems" schema
     auto older_additional_schema = get_object_or_empty(
-      ctx.older, older, get_additional_items_kw(ctx.older.dialect()));
+      older, get_additional_items_kw(ctx.older.dialect()));
     auto newer_additional_schema = get_object_or_empty(
-      ctx.newer, newer, get_additional_items_kw(ctx.newer.dialect()));
+      newer, get_additional_items_kw(ctx.newer.dialect()));
 
     // newer_has_more: true if newer has excess elements, false if older has
     // excess elements
@@ -1246,20 +1258,20 @@ json_compatibility_result is_object_properties_superset(
     // or
     //    it has to be compatible with older["additionalProperties"]
 
-    auto newer_properties = get_object_or_empty(ctx.newer, newer, "properties");
+    auto newer_properties = get_object_or_empty(newer, "properties");
     if (newer_properties.ObjectEmpty()) {
         // no "properties" in newer, all good
         return res;
     }
 
     // older["properties"] is a map of <prop, schema>
-    auto older_properties = get_object_or_empty(ctx.older, older, "properties");
+    auto older_properties = get_object_or_empty(older, "properties");
     // older["patternProperties"] is a map of <pattern, schema>
     auto older_pattern_properties = get_object_or_empty(
-      ctx.older, older, "patternProperties");
+      older, "patternProperties");
     // older["additionalProperties"] is a schema
     auto older_additional_properties = get_object_or_empty(
-      ctx.older, older, "additionalProperties");
+      older, "additionalProperties");
     // scan every prop in newer["properties"]
     for (const auto& [prop, schema] : newer_properties) {
         auto prop_path = [&p, &prop] {
@@ -1334,10 +1346,7 @@ json_compatibility_result is_object_properties_superset(
 }
 
 json_compatibility_result is_object_required_superset(
-  const context& ctx,
-  const json::Value& older,
-  const json::Value& newer,
-  std::filesystem::path p) {
+  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
     json_compatibility_result res;
     // to pass the check, a required property from newer has to be present in
     // older, or if new it needs to have a default value.
@@ -1350,8 +1359,8 @@ json_compatibility_result is_object_required_superset(
 
     auto older_req = get_array_or_empty(older, "required");
     auto newer_req = get_array_or_empty(newer, "required");
-    auto older_props = get_object_or_empty(ctx.older, older, "properties");
-    auto newer_props = get_object_or_empty(ctx.newer, newer, "properties");
+    auto older_props = get_object_or_empty(older, "properties");
+    auto newer_props = get_object_or_empty(newer, "properties");
 
     // TODO O(n^2) lookup that can be a set_intersection.
     auto older_req_in_both_properties
@@ -1368,7 +1377,7 @@ json_compatibility_result is_object_required_superset(
       older_req_in_both_properties, [&](const json::Value& o) {
           if (
             std::ranges::find(newer_req, o) == newer_req.End()
-            && !older_props[o].HasMember("default")) {
+            && !older_props.FindMember(o)->value.HasMember("default")) {
               res.emplace<json_incompatibility>(
                 p / "required" / as_string_view(o),
                 json_incompatibility_type::required_attribute_added);
@@ -1389,8 +1398,8 @@ json_compatibility_result is_object_dependencies_superset(
     // older string array needs to be a subset of newer string array.
     // older schema needs to be compatible with newer schema
 
-    auto older_p = get_object_or_empty(ctx.older, older, "dependencies");
-    auto newer_p = get_object_or_empty(ctx.newer, newer, "dependencies");
+    auto older_p = get_object_or_empty(older, "dependencies");
+    auto newer_p = get_object_or_empty(newer, "dependencies");
 
     // all dependencies in older need to carry over in newer, and need to be
     // compatible
@@ -1517,7 +1526,7 @@ json_compatibility_result is_object_superset(
     // is omitted
 
     // Check if required properties are compatible
-    res.merge(is_object_required_superset(ctx, older, newer, p));
+    res.merge(is_object_required_superset(older, newer, p));
 
     // Check if dependencies are compatible
     res.merge(is_object_dependencies_superset(ctx, older, newer, std::move(p)));
