@@ -252,6 +252,13 @@ class DescribeTopicsTest(RedpandaTest):
                 value="false",
                 doc_string=
                 "Iceberg format translation enabled on this topic if true."),
+            "redpanda.leaders.preference":
+            ConfigProperty(
+                config_type="STRING",
+                value="none",
+                doc_string=
+                "Preferred location (e.g. rack) for partition leaders of this topic."
+            ),
         }
 
         tp_spec = TopicSpec()

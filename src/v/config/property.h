@@ -662,6 +662,8 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, config::node_id_override>) {
         return "node_id_override";
+    } else if constexpr (std::is_same_v<type, config::leaders_preference>) {
+        return "leaders_preference";
     } else {
         static_assert(
           base::unsupported_type<T>::value, "Type name not defined");

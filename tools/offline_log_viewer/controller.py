@@ -29,6 +29,15 @@ def read_topic_namespace(rdr: Reader):
     return f"{namespace}/{topic}"
 
 
+def read_leaders_preference(rdr: Reader):
+    return rdr.read_envelope(
+        lambda r, ver: {
+            "type": r.read_serde_enum(),
+            "racks": r.read_optional(lambda r: r.read_vector(Reader.read_string
+                                                             )),
+        })
+
+
 def read_topic_properties_serde(rdr: Reader, version):
     topic_properties = {
         'compression': rdr.read_optional(Reader.read_serde_enum),
@@ -128,7 +137,10 @@ def read_topic_properties_serde(rdr: Reader, version):
             'topic_namespace_override': rdr.read_optional(read_topic_namespace)
         }
     if version >= 10:
-        topic_properties |= {'iceberg_enabled': rdr.read_bool()}
+        topic_properties |= {
+            'iceberg_enabled': rdr.read_bool(),
+            'leaders_preference': rdr.read_optional(read_leaders_preference),
+        }
 
     return topic_properties
 
@@ -287,7 +299,11 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 'flush_bytes': rdr.read_optional(Reader.read_int64)
             }
         if version >= 7:
-            incr_obj |= {'iceberg_enabled': rdr.read_bool()}
+            incr_obj |= {
+                'iceberg_enabled': rdr.read_bool(),
+                'leaders_preference':
+                rdr.read_optional(read_leaders_preference),
+            }
 
         return incr_obj
 

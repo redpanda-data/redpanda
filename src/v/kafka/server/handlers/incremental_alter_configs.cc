@@ -311,6 +311,15 @@ create_topic_properties_update(
                   iceberg_config_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_leaders_preference) {
+                parse_and_set_optional(
+                  update.properties.leaders_preference,
+                  cfg.value,
+                  op,
+                  noop_validator<config::leaders_preference>{},
+                  config::leaders_preference::parse);
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(

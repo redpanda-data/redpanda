@@ -102,7 +102,8 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, config::data_directory_path> ||
         std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
         std::is_same_v<T, model::vcluster_id> ||
-        std::is_same_v<T, model::write_caching_mode>;
+        std::is_same_v<T, model::write_caching_mode> ||
+        std::is_same_v<T, config::leaders_preference>;
 
     constexpr auto is_long_type = is_long<T> ||
         // Long type since seconds is atleast a 35-bit signed integral
@@ -915,6 +916,19 @@ config_response_container_t make_topic_configs(
         include_documentation,
         config::shard_local_cfg()
           .initial_retention_local_target_ms_default.desc()));
+
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      config::shard_local_cfg().default_leaders_preference.name(),
+      config::shard_local_cfg().default_leaders_preference(),
+      topic_property_leaders_preference,
+      topic_properties.leaders_preference,
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        "Preferred location (e.g. rack) for partition leaders of this topic."),
+      &describe_as_string<config::leaders_preference>);
 
     return result;
 }

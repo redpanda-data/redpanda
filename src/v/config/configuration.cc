@@ -2841,6 +2841,15 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       512,
       {.min = 1, .max = 2048})
+  , default_leaders_preference(
+      *this,
+      "default_leaders_preference",
+      "Default settings for preferred location of topic partition leaders. "
+      "It can be either \"none\" (no preference), "
+      "or \"racks:<rack1>,<rack2>,...\" (prefer brokers with rack id from the "
+      "list).",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      config::leaders_preference{})
   , core_balancing_on_core_count_change(
       *this,
       "core_balancing_on_core_count_change",

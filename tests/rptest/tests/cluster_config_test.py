@@ -643,6 +643,8 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 valid_value = not initial_config[name]
             elif p['type'] == "array" and p['items']['type'] == 'string':
                 valid_value = ["custard", "cream"]
+            elif p['type'] == "leaders_preference":
+                valid_value = "racks:rack1,rack2"
             else:
                 raise NotImplementedError(f"{p['type']} in {name}")
 

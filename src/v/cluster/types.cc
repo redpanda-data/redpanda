@@ -348,7 +348,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {}, iceberg_enabled: {}",
+      "flush_bytes: {}, iceberg_enabled: {}, leaders_preference: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -375,7 +375,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.write_caching,
       i.flush_ms,
       i.flush_bytes,
-      i.iceberg_enabled);
+      i.iceberg_enabled,
+      i.leaders_preference);
     return o;
 }
 
@@ -1149,6 +1150,8 @@ adl<cluster::create_partitions_configuration>::from(iobuf_parser& in) {
 
 void adl<cluster::incremental_topic_updates>::to(
   iobuf& out, cluster::incremental_topic_updates&& t) {
+    // NOTE: no need to serialize new fields with ADL, as this format is no
+    // longer used for new messages.
     reflection::serialize(
       out,
       cluster::incremental_topic_updates::version,
@@ -1177,8 +1180,7 @@ void adl<cluster::incremental_topic_updates>::to(
       t.initial_retention_local_target_ms,
       t.write_caching,
       t.flush_ms,
-      t.flush_bytes,
-      t.iceberg_enabled);
+      t.flush_bytes);
 }
 
 cluster::incremental_topic_updates
@@ -1311,13 +1313,6 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
                              .from(in);
         updates.flush_bytes
           = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
-    }
-
-    if (
-      version
-      <= cluster::incremental_topic_updates::version_with_iceberg_property) {
-        updates.iceberg_enabled = adl<cluster::property_update<bool>>{}.from(
-          in);
     }
 
     return updates;

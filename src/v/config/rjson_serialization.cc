@@ -261,4 +261,9 @@ void rjson_serialize(
     w.EndArray();
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::leaders_preference& lp) {
+    stringize(w, lp);
+}
+
 } // namespace json

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/leaders_preference.h"
 #include "config/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -652,6 +653,23 @@ struct convert<model::node_uuid> {
             rhs = out.value();
         }
         return out.has_value();
+    }
+};
+
+template<>
+struct convert<config::leaders_preference> {
+    using type = config::leaders_preference;
+
+    static Node encode(const type& rhs) { return Node(fmt::to_string(rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto node_str = node.as<std::string>();
+        try {
+            rhs = config::leaders_preference::parse(node_str);
+            return true;
+        } catch (const std::runtime_error&) {
+            return false;
+        }
     }
 };
 
