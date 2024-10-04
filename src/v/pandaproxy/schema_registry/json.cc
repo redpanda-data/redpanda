@@ -130,6 +130,7 @@ json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
 struct document_context {
     json::Document doc;
     json_schema_dialect dialect;
+    id_to_schema_pointer bundled_schemas;
 };
 
 // Passed into is_superset_* methods where the path and the generated verbose
@@ -343,6 +344,10 @@ try_validate_json_schema(const jsoncons::ojson& schema) {
     return first_error.value();
 }
 
+// forward declaration
+id_to_schema_pointer collect_bundled_schema_and_fix_refs(
+  jsoncons::ojson& doc, json_schema_dialect dialect);
+
 result<document_context> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
     iobuf_istream is{buf.share(0, buf.size_bytes())};
@@ -365,7 +370,7 @@ result<document_context> parse_json(iobuf buf) {
 
     // get the dialect, try to directly validate it against the appropriate
     // metaschema
-    auto dialect = std::optional<json_schema_dialect>{};
+    auto maybe_dialect = std::optional<json_schema_dialect>{};
 
     if (schema.is_object()) {
         // "true/false" are valid schemas so here we need to check that the
@@ -373,10 +378,11 @@ result<document_context> parse_json(iobuf buf) {
         if (auto it = schema.find("$schema");
             it != schema.object_range().end()) {
             if (it->value().is_string()) {
-                dialect = from_uri(it->value().as_string_view());
+                maybe_dialect = from_uri(it->value().as_string_view());
             }
 
-            if (it->value().is_string() == false || dialect == std::nullopt) {
+            if (
+              it->value().is_string() == false || !maybe_dialect.has_value()) {
                 // if present, "$schema" have to be a string, and it has to be
                 // one the implemented dialects. If not, return an error
                 return error_info{
@@ -391,14 +397,26 @@ result<document_context> parse_json(iobuf buf) {
     // We use jsoncons for validating the schema against the metaschema as
     // currently rapidjson doesn't support validating schemas newer than
     // draft 5.
-    auto validation_res = dialect.has_value()
-                            ? validate_json_schema(dialect.value(), schema)
+    auto validation_res = maybe_dialect.has_value()
+                            ? validate_json_schema(
+                                maybe_dialect.value(), schema)
                             : try_validate_json_schema(schema);
     if (validation_res.has_error()) {
         return validation_res.as_failure();
     }
+    auto dialect = validation_res.assume_value();
 
-    auto schema_stream = json::chunked_input_stream{std::move(buf)};
+    // this function will resolve al local ref against their respective baseuri.
+    auto bundles_schemas_map = collect_bundled_schema_and_fix_refs(
+      schema, dialect);
+
+    // to use rapidjson we need to serialized schema again
+    // We take a copy of the jsoncons schema here because it has the fixed-up
+    // references that we want to use for compatibility checks
+    auto iobuf_os = iobuf_ostream{};
+    schema.dump(iobuf_os.ostream());
+
+    auto schema_stream = json::chunked_input_stream{std::move(iobuf_os).buf()};
     auto rapidjson_schema = json::Document{};
     if (rapidjson_schema.ParseStream(schema_stream).HasParseError()) {
         // not a valid json document, return error
@@ -412,7 +430,8 @@ result<document_context> parse_json(iobuf buf) {
             rapidjson_schema.GetErrorOffset())};
     }
 
-    return {std::move(rapidjson_schema), validation_res.assume_value()};
+    return {
+      std::move(rapidjson_schema), dialect, std::move(bundles_schemas_map)};
 }
 
 /// is_superset section
@@ -1958,6 +1977,160 @@ void sort(json::Value& val) {
         });
     }
     }
+}
+
+void collect_bundled_schemas_and_fix_refs(
+  id_to_schema_pointer& bundled_schemas,
+  jsoncons::uri base_uri,
+  jsoncons::jsonpointer::json_pointer this_obj_ptr,
+  jsoncons::ojson& this_obj,
+  json_schema_dialect dialect) {
+    // scan the json schema object for bundled schema.
+    // A bundled schema is defined as a schema with `"$id" : a_base_uri`.
+    // all relative refs under this bundled schema will be relative
+    // to a_base_uri. if this_obj is a bundled schema, it might use a different
+    // dialect than the root schema, and the current implementation requires
+    // that the dialect is known. the jsonschema spec is not strict so we could
+    // receive some valid but nonsensical edge cases. these are not supported
+    // but do not generate errors here, since they are problematic only when a
+    // accessed by a $ref. so we don't register them in the base_uris_map, an
+    // will raise an error later if we try to access them.
+    // keyword | $schema  | is bundled schema
+    //   "$id" | missing  | if root is >=draft6
+    //   "$id" | >draft4  |       yes
+    //   "$id" |  draft4  |       no
+    //   "id"  | missing  | if root is draft4
+    //   "id"  | >draft4  |       no
+    //   "id"  |  draft4  |       yes
+
+    auto maybe_draft4_id_it = this_obj.find("id");
+    auto maybe_id_it = this_obj.find("$id");
+    if (
+      maybe_id_it != this_obj.object_range().end()
+      || maybe_draft4_id_it != this_obj.object_range().end()) {
+        // we are visiting a bundled schema. the dialect has to be known and has
+        // to match the keyword used.
+        // try to extract the dialect from the $schema keyword, or use the
+        // parent dialect. empty means that "$schema" is present but the dialect
+        // is not known, and we should stop scanning this branch.
+        auto maybe_new_dialect = [&]() -> std::optional<json_schema_dialect> {
+            auto dialect_it = this_obj.find("$schema");
+            if (dialect_it == this_obj.object_range().end()) {
+                // If no $schema is declared in an embedded schema, it defaults
+                // to using the dialect of the parent schema. from
+                // https://json-schema.org/understanding-json-schema/structuring#bundling
+                return dialect;
+            }
+
+            // we have a $schema keyword, use this dialect if we find out that
+            // this_obj is a bundled schema
+            return from_uri(dialect_it->value().as_string_view());
+        }();
+
+        if (maybe_new_dialect.has_value() == false) {
+            // stop scanning this tree, we might be in a bundled schema but we
+            // don't know the dialect.
+            return;
+        }
+
+        // we are in a bundled schema and we know the dialect to use, now we
+        // know which keyword to use to get the base_uri
+        auto id_it = [&] {
+            switch (maybe_new_dialect.value()) {
+            case json_schema_dialect::draft4:
+                return maybe_draft4_id_it;
+            case json_schema_dialect::draft6:
+            case json_schema_dialect::draft7:
+            case json_schema_dialect::draft201909:
+            case json_schema_dialect::draft202012:
+                return maybe_id_it;
+            }
+        }();
+
+        if (id_it == this_obj.object_range().end()) {
+            // stop scanning this branch, the keyword for base uri does not
+            // agree with schema dialect.
+            return;
+        }
+
+        // run validation since we are not a guaranteed to be in proper schema
+        if (validate_json_schema(maybe_new_dialect.value(), this_obj)
+              .has_error()) {
+            // stop exploring this branch, the schema is invalid
+            return;
+        }
+
+        // base uri keyword agrees with the dialect, it's a validated schema, we
+        // can register this as a bundled schema and continue scanning.
+        // (run resolve because it could be relative to the parent schema).
+        base_uri = jsoncons::uri{id_it->value().as_string()}.resolve(base_uri);
+        dialect = maybe_new_dialect.value();
+        bundled_schemas.insert_or_assign(
+          to_json_id_uri(base_uri),
+          std::pair{json::Pointer{this_obj_ptr.to_string()}, dialect});
+    }
+
+    if (auto ref_it = this_obj.find("$ref");
+        ref_it != this_obj.object_range().end()) {
+        // ensure refs are absolute uris
+        ref_it->value() = jsoncons::uri{ref_it->value().as_string()}
+                            .resolve(base_uri)
+                            .string();
+    }
+
+    // lambda to recursively scan the object for more bundled schemas and $refs
+    auto collect_and_fix = [&](const auto& key, auto& value) {
+        collect_bundled_schemas_and_fix_refs(
+          bundled_schemas, base_uri, this_obj_ptr / key, value, dialect);
+    };
+
+    // recursively scan the object for more bundled schemas and $refs
+    for (auto& e : this_obj.object_range()) {
+        const auto& key = e.key();
+        auto& value = e.value();
+        if (value.is_object()) {
+            collect_and_fix(key, value);
+        } else if (value.is_array()) {
+            for (auto i = 0u; i < value.size(); ++i) {
+                if (value[i].is_object()) {
+                    collect_and_fix(i, value[i]);
+                }
+            }
+        }
+    }
+}
+
+id_to_schema_pointer collect_bundled_schema_and_fix_refs(
+  jsoncons::ojson& doc, json_schema_dialect dialect) {
+    // entry point to collect all bundled schemas
+    // fetch the root id, if it exists
+    auto root_id = [&] {
+        if (!doc.is_object()) {
+            // might be the case for "true" or "false" schemas
+            return json_id_uri{""};
+        }
+
+        auto id_it = doc.find(
+          dialect == json_schema_dialect::draft4 ? "id" : "$id");
+        if (id_it == doc.object_range().end()) {
+            // no explicit id, use the empty string
+            return json_id_uri{""};
+        }
+
+        // $id is set in the schema, use it as the root id
+        return to_json_id_uri(jsoncons::uri{id_it->value().as_string()});
+    }();
+
+    // insert the root schema as a bundled schema
+    auto bundled_schemas = id_to_schema_pointer{
+      {root_id, std::pair{json::Pointer{}, dialect}}};
+
+    if (doc.is_object()) {
+        collect_bundled_schemas_and_fix_refs(
+          bundled_schemas, jsoncons::uri{}, {}, doc, dialect);
+    }
+
+    return bundled_schemas;
 }
 
 } // namespace
