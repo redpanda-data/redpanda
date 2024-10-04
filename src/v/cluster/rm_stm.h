@@ -326,7 +326,7 @@ private:
 
     void abort_old_txes();
     ss::future<std::chrono::milliseconds> do_abort_old_txes();
-    ss::future<> try_abort_old_tx(tx::producer_ptr);
+    ss::future<tx::errc> try_abort_old_tx(tx::producer_ptr);
     ss::future<tx::errc> do_try_abort_old_tx(tx::producer_ptr);
     void maybe_rearm_autoabort_timer(tx::time_point_type);
 

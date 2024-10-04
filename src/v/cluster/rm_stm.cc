@@ -1334,13 +1334,13 @@ ss::future<std::chrono::milliseconds> rm_stm::do_abort_old_txes() {
     const auto [expired, next_expiration_ms] = get_expired_producers();
     co_await ss::max_concurrent_for_each(
       expired, 5, [this](const tx::producer_ptr& producer) {
-          return try_abort_old_tx(producer);
+          return try_abort_old_tx(producer).discard_result();
       });
     co_return next_expiration_ms;
 }
 
-ss::future<> rm_stm::try_abort_old_tx(producer_ptr producer) {
-    co_await producer->run_with_lock(
+ss::future<tx::errc> rm_stm::try_abort_old_tx(producer_ptr producer) {
+    return producer->run_with_lock(
       [this, producer](ssx::semaphore_units units) {
           return do_try_abort_old_tx(producer).finally(
             [units = std::move(units)] {});
