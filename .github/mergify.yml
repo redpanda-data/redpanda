@@ -8,6 +8,12 @@ pull_request_rules:
         name: dev
         merge_bot_account: vbotbuildovich
         update_bot_account: vbotbuildovich
+  - name: backport to supported branch
+    conditions:
+      - base~=^v\d+\.\d+\.x$
+    actions:
+      backport:
+        title: "[{{ destination_branch }}] {{ title }}"
 queue_rules:
   - name: dev
     speculative_checks: 2
