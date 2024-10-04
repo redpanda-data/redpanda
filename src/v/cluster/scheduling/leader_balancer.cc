@@ -174,6 +174,23 @@ void leader_balancer::on_maintenance_change(
     }
 }
 
+void leader_balancer::handle_topic_deltas(
+  const chunked_vector<topic_table_topic_delta>& deltas) {
+    if (!can_schedule_sooner()) {
+        return;
+    }
+
+    for (const auto& d : deltas) {
+        if (d.type == topic_table_topic_delta_type::added) {
+            vlog(
+              clusterlog.trace, "topic {} added, scheduling balance", d.ns_tp);
+            // Don't schedule right away, allow partitions to elect leaders and
+            // propagate metadata.
+            schedule_sooner(leader_activation_delay);
+        }
+    }
+}
+
 void leader_balancer::check_register_leadership_change_notification() {
     if (!_leadership_change_notify_handle && _in_flight_changes.size() > 0) {
         _leadership_change_notify_handle
@@ -211,6 +228,10 @@ ss::future<> leader_balancer::start() {
       = _members.register_maintenance_state_change_notification(std::bind_front(
         std::mem_fn(&leader_balancer::on_maintenance_change), this));
 
+    _topic_deltas_handle = _topics.register_topic_delta_notification(
+      std::bind_front(
+        std::mem_fn(&leader_balancer::handle_topic_deltas), this));
+
     /*
      * register_leadership_notification above may run callbacks synchronously
      * during registration, so make sure the timer is unarmed before arming.
@@ -234,6 +255,7 @@ ss::future<> leader_balancer::stop() {
       _raft0->ntp(), _leader_notify_handle);
     _members.unregister_maintenance_state_change_notification(
       _maintenance_state_notify_handle);
+    _topics.unregister_topic_delta_notification(_topic_deltas_handle);
     _timer.cancel();
     return _gate.close();
 }

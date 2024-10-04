@@ -132,6 +132,8 @@ private:
 
     void on_maintenance_change(model::node_id, model::maintenance_state);
 
+    void handle_topic_deltas(const chunked_vector<topic_table_topic_delta>&);
+
     void check_register_leadership_change_notification();
     void check_unregister_leadership_change_notification();
 
@@ -219,6 +221,7 @@ private:
     std::optional<cluster::notification_id_type>
       _leadership_change_notify_handle;
     cluster::notification_id_type _maintenance_state_notify_handle;
+    cluster::notification_id_type _topic_deltas_handle;
 
     ss::gate _gate;
     ss::timer<clock_type> _timer;
