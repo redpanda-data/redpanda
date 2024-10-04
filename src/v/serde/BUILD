@@ -114,6 +114,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
+        ":map",
     ],
 )
 

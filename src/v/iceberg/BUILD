@@ -43,6 +43,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
+        "//src/v/container:fragmented_vector",
         "//src/v/bytes:iobuf",
         "@avro",
     ],
@@ -670,6 +671,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":datatypes",
+        ":manifest_entry",
         ":partition",
         ":schema",
         "//src/v/utils:uuid",

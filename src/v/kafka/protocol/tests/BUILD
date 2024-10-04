@@ -15,6 +15,7 @@ redpanda_cc_btest(
     env = {"GENERATOR_BIN": "$(rootpath //src/v/test_utils/go/kreq-gen:kafka_request_generator)"},
     deps = [
         "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:messages",
         "//src/v/test_utils:seastar_boost",
         "@boost//:process",
         "@boost//:test",

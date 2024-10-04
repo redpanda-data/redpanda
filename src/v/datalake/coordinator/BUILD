@@ -18,6 +18,7 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/serde:enum",
         "//src/v/datalake:types",
+        "//src/v/model",
         # todo: split writer further once it evolves
         "//src/v/datalake:writer",
     ],

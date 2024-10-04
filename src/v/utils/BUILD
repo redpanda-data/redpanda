@@ -569,6 +569,7 @@ redpanda_cc_library(
     include_prefix = "utils",
     deps = [
         ":named_type",
+        "//src/v/ssx:semaphore",
         "//src/v/base",
     ],
 )

@@ -8,6 +8,7 @@ redpanda_test_cc_library(
     include_prefix = "security/tests",
     deps = [
         "//src/v/bytes:random",
+        "//src/v/security",
     ],
 )
 

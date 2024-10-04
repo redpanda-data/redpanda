@@ -11,6 +11,7 @@
 
 #include "debug_bundle/utils.h"
 
+#include "base/seastarx.h"
 #include "base/units.h"
 #include "crypto/crypto.h"
 #include "crypto/types.h"

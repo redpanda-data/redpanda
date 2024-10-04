@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "ssx/semaphore.h"
 
 /**
