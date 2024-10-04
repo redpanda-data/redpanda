@@ -16,15 +16,12 @@
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
 #include "json/pointer.h"
-#include "json/schema.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "utils/absl_sstring_hash.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
