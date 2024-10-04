@@ -23,7 +23,7 @@ namespace raft {
 using clock_type = ss::lowres_clock;
 using duration_type = typename clock_type::duration;
 using timer_type = ss::timer<clock_type>;
-static constexpr clock_type::time_point no_timeout
+inline constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
