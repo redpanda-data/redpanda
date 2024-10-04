@@ -16,17 +16,17 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/reactor.hh>
+#include <seastar/core/signal.hh>
 
 class stop_signal {
 public:
     stop_signal() {
-        ss::engine().handle_signal(SIGINT, [this] { signaled(); });
-        ss::engine().handle_signal(SIGTERM, [this] { signaled(); });
+        ss::handle_signal(SIGINT, [this] { signaled(); });
+        ss::handle_signal(SIGTERM, [this] { signaled(); });
     }
     ~stop_signal() {
-        ss::engine().handle_signal(SIGINT, [] {});
-        ss::engine().handle_signal(SIGTERM, [] {});
+        ss::handle_signal(SIGINT, [] {});
+        ss::handle_signal(SIGTERM, [] {});
 
         // We should signal for unit tests, because some background tasks does
         // not finish without it
