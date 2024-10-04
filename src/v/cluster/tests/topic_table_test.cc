@@ -21,8 +21,8 @@
 using namespace std::chrono_literals;
 
 FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
-    std::vector<cluster::topic_table_delta> deltas;
-    table.local().register_delta_notification(
+    std::vector<cluster::topic_table_ntp_delta> deltas;
+    table.local().register_ntp_delta_notification(
       [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     create_topics();
@@ -47,8 +47,8 @@ FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
 FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
     create_topics();
 
-    std::vector<cluster::topic_table_delta> deltas;
-    table.local().register_delta_notification(
+    std::vector<cluster::topic_table_ntp_delta> deltas;
+    table.local().register_ntp_delta_notification(
       [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     BOOST_REQUIRE(!table.local()
@@ -77,8 +77,8 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
 FIXTURE_TEST(test_conflicts, topic_table_fixture) {
     create_topics();
 
-    std::vector<cluster::topic_table_delta> deltas;
-    table.local().register_delta_notification(
+    std::vector<cluster::topic_table_ntp_delta> deltas;
+    table.local().register_ntp_delta_notification(
       [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     auto res_1 = table.local()
@@ -119,8 +119,8 @@ FIXTURE_TEST(get_getting_config, topic_table_fixture) {
 FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
     create_topics();
 
-    std::vector<cluster::topic_table_delta> deltas;
-    table.local().register_delta_notification(
+    std::vector<cluster::topic_table_ntp_delta> deltas;
+    table.local().register_ntp_delta_notification(
       [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     cluster::create_partitions_configuration cfg(make_tp_ns("test_tp_2"), 3);

@@ -62,8 +62,6 @@ public:
     errc trigger_rebalance();
 
 private:
-    void process_delta(const topic_table::delta&);
-
     ss::future<> init_shard_placement(
       mutex::units& lock,
       const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,

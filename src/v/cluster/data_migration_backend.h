@@ -175,7 +175,7 @@ private:
 
     /* deferred event handlers */
     // call only with _mutex lock grabbed
-    ss::future<> process_delta(cluster::topic_table_delta&& delta);
+    ss::future<> process_delta(cluster::topic_table_ntp_delta&& delta);
 
     /* helpers */
     std::optional<backend::migration_reconciliation_states_t::iterator>
@@ -293,7 +293,7 @@ private:
           : sought_state(sought_state) {}
     };
     absl::flat_hash_map<id, advance_info> _advance_requests;
-    chunked_vector<topic_table_delta> _unprocessed_deltas;
+    chunked_vector<topic_table_ntp_delta> _unprocessed_deltas;
     chunked_hash_map<model::node_id, check_ntp_states_reply> _rpc_responses;
 
     /* Node-local data for partition-scoped work */

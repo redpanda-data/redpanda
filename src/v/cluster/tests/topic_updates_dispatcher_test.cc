@@ -141,8 +141,8 @@ FIXTURE_TEST(
   test_dispatching_conflicts, topic_table_updates_dispatcher_fixture) {
     create_topics();
 
-    std::vector<cluster::topic_table_delta> deltas;
-    table.local().register_delta_notification(
+    std::vector<cluster::topic_table_ntp_delta> deltas;
+    table.local().register_ntp_delta_notification(
       [&](const auto& d) { deltas.insert(deltas.end(), d.begin(), d.end()); });
 
     auto res_1 = table.local()

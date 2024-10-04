@@ -1231,32 +1231,33 @@ std::ostream& operator<<(std::ostream&, const partition_operation_type&);
 
 /// Notification of topic table state change related to a single ntp
 
-enum class topic_table_delta_type {
+enum class topic_table_ntp_delta_type {
     added,
     removed,
     replicas_updated,
     properties_updated,
     disabled_flag_updated,
 };
-std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
+std::ostream& operator<<(std::ostream&, const topic_table_ntp_delta_type&);
 
-struct topic_table_delta {
+struct topic_table_ntp_delta {
     model::ntp ntp;
     raft::group_id group;
     model::revision_id revision;
-    topic_table_delta_type type;
+    topic_table_ntp_delta_type type;
 
-    topic_table_delta(
+    topic_table_ntp_delta(
       model::ntp ntp,
       raft::group_id gr,
       model::revision_id rev,
-      topic_table_delta_type type)
+      topic_table_ntp_delta_type type)
       : ntp(std::move(ntp))
       , group(gr)
       , revision(rev)
       , type(type) {}
 
-    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_table_ntp_delta&);
 };
 
 struct create_acls_cmd_data
