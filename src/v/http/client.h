@@ -65,8 +65,33 @@ enum class content_type {
  */
 std::string_view content_type_string(content_type type);
 
+// A fully drained, collected response. The iobuf contains the data from the
+// response stream ref which has been read. Only suitable for short responses,
+// should be avoided when reading large objects like segments.
+struct collected_response {
+    boost::beast::http::status status;
+    iobuf body;
+};
+
+// Interface to allow testing the http client with mocks
+class abstract_client {
+public:
+    // Helper expected to fully drain the response stream and return it.
+    // Intended for use with small objects such as JSON/XML responses which can
+    // be easily held in memory
+    virtual ss::future<collected_response> request_and_collect_response(
+      boost::beast::http::request_header<>&& request,
+      std::optional<iobuf> payload = std::nullopt,
+      ss::lowres_clock::duration timeout = default_connect_timeout)
+      = 0;
+
+    virtual ~abstract_client() = default;
+};
+
 /// Http client
-class client : protected net::base_transport {
+class client
+  : protected net::base_transport
+  , public abstract_client {
 public:
     using request_header = boost::beast::http::request_header<>;
     using response_header = boost::beast::http::response_header<>;
@@ -211,6 +236,11 @@ public:
     ss::future<response_stream_ref> request(
       request_header&& header,
       ss::lowres_clock::duration timeout = default_connect_timeout);
+
+    ss::future<collected_response> request_and_collect_response(
+      request_header&& request,
+      std::optional<iobuf> payload = std::nullopt,
+      ss::lowres_clock::duration timeout = default_connect_timeout) final;
 
     /**
      * Dispatch a request with the provided headers and body.

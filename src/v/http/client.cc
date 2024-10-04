@@ -16,6 +16,7 @@
 #include "bytes/scattered_message.h"
 #include "config/base_property.h"
 #include "http/logger.h"
+#include "http/utils.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -637,6 +638,23 @@ ss::future<client::response_stream_ref> client::request(
 ss::future<client::response_stream_ref> client::request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
     return request(std::move(header), iobuf(), timeout);
+}
+
+ss::future<http::collected_response> client::request_and_collect_response(
+  request_header&& req,
+  std::optional<iobuf> payload,
+  ss::lowres_clock::duration timeout) {
+    response_stream_ref response;
+    if (payload.has_value()) {
+        response = co_await request(
+          std::move(req), std::move(payload.value()), timeout);
+    } else {
+        response = co_await request(std::move(req), timeout);
+    }
+
+    co_return collected_response{
+      .status = co_await http::status(response),
+      .body = co_await http::drain(response)};
 }
 
 ss::output_stream<char> client::request_stream::as_output_stream() {
