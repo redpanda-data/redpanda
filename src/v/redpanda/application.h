@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_topics/app.h"
+#include "cloud_topics/recovery/snapshot_manager.h"
 #include "cluster/archival/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
@@ -188,7 +189,10 @@ public:
     kafka::server_app _kafka_server;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
+
     ss::sharded<experimental::cloud_topics::reconciler::app> _reconciler;
+    ss::sharded<experimental::cloud_topics::recovery::snapshot_manager>
+      _ct_snapshot_manager;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;

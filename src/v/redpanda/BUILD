@@ -27,6 +27,8 @@ redpanda_cc_library(
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:app",
         "//src/v/cloud_topics/dl_stm:dl_stm_factory",
+        "//src/v/cloud_topics/reconciler",
+        "//src/v/cloud_topics/recovery:snapshot_manager",
         "//src/v/cluster",
         "//src/v/cluster:cloud_metadata_offsets_recovery_router",
         "//src/v/cluster:cloud_metadata_offsets_recovery_service",

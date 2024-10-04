@@ -21,3 +21,4 @@ v_cc_library(
 
 add_subdirectory(dl_stm)
 add_subdirectory(reconciler)
+add_subdirectory(recovery)

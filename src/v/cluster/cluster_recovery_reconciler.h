@@ -43,12 +43,13 @@ public:
         fragmented_vector<security::acl_binding> acls;
         fragmented_vector<topic_configuration> remote_topics;
         fragmented_vector<topic_configuration> local_topics;
+        fragmented_vector<topic_configuration> cloud_topics;
         // TODO: restore wasm plugins/transforms
 
         bool empty() const {
             return !license.has_value() && config.upsert.empty()
                    && users.empty() && acls.empty() && remote_topics.empty()
-                   && local_topics.empty();
+                   && cloud_topics.empty() && local_topics.empty();
         }
 
         // The set of recovery stages that should be walked through to

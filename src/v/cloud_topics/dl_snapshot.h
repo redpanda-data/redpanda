@@ -35,6 +35,8 @@ struct dl_snapshot_id
 struct dl_snapshot_payload
   : serde::
       envelope<dl_snapshot_id, serde::version<0>, serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(id, overlays); }
+
     /// Version for which the snapshot is created.
     dl_snapshot_id id;
 

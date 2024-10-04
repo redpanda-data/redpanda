@@ -41,6 +41,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
               !is_internal() || tp_ns.tp == model::tx_manager_topic),
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
+            .cloud_recovery_enabled = properties.cloud_topic_recovery.value_or(
+              false),
             .shadow_indexing_mode = properties.shadow_indexing,
             .read_replica = properties.read_replica,
             .retention_local_target_bytes

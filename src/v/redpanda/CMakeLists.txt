@@ -83,6 +83,8 @@ v_cc_library(
     v::wasm
     v::cloud_topics_app
     v::cloud_topics_dl_stm
+    v::cloud_topics_reconciler
+    v::cloud_topics_recovery
   )
 
 add_subdirectory(tests)
