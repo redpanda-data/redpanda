@@ -1,5 +1,5 @@
 import { onRecordWritten, OnRecordWrittenEvent, RecordWriter } from "@redpanda-data/transform-sdk"
-import { newClient, decodeSchemaID } from "@redpanda-data/transform-sdk-sr";
+import { newClient, decodeSchemaID, SchemaFormat } from "@redpanda-data/transform-sdk-sr";
 import { Type } from "avsc/lib/index.js"
 import { Buffer } from "buffer"
 
@@ -17,7 +17,7 @@ const subj_schema = sr_client.createSchema(
     "avro-value",
     {
         schema: JSON.stringify(schema),
-        format: 0,//SchemaFormat.Avro,
+        format: SchemaFormat.Avro,
         references: [],
     }
 );

@@ -488,7 +488,7 @@ private:
             return std::unexpected(qjs::exception::make(
               ctx, "malformed schema def: expected int for 'format'"));
         }
-        std::vector<redpanda::sr::reference> native_refs;
+        redpanda::sr::schema::reference_container native_refs;
         auto refs = val.get_property("references");
         if (!refs.is_null() && !refs.is_undefined()) {
             if (!refs.is_array()) {
@@ -536,10 +536,25 @@ private:
             }
         }
 
-        return redpanda::sr::schema{
-          std::string{raw_schema.string_data().view()},
-          static_cast<redpanda::sr::schema_format>(format.as_integer()),
-          std::move(native_refs)};
+        switch (auto fmt = format.as_integer()) {
+        case static_cast<int32_t>(redpanda::sr::schema_format::avro):
+            return redpanda::sr::schema::new_avro(
+              std::string{raw_schema.string_data().view()},
+              std::make_optional(std::move(native_refs)));
+        case static_cast<int32_t>(redpanda::sr::schema_format::protobuf):
+            return redpanda::sr::schema::new_protobuf(
+              std::string{raw_schema.string_data().view()},
+              std::make_optional(std::move(native_refs)));
+        case static_cast<int32_t>(redpanda::sr::schema_format::json):
+            return redpanda::sr::schema::new_json(
+              std::string{raw_schema.string_data().view()},
+              std::make_optional(std::move(native_refs)));
+        default:
+            return std::unexpected(qjs::exception::make(
+              ctx,
+              std::format(
+                "malformed schema def: 'format' out of range, got {}", fmt)));
+        }
     }
 
     static std::expected<qjs::value, qjs::exception> make_subject_schema(
@@ -792,6 +807,11 @@ std::expected<std::monostate, qjs::exception> initial_native_modules(
           }
           return encode_schema_id_impl(ctx, args[0], args[1]);
       });
+
+    qjs::object_builder schema_format;
+    schema_format.add_i32("Avro", 0).add_i32("Protobuf", 1).add_i32("JSON", 2);
+    sr_mod.add_object("SchemaFormat", std::move(schema_format));
+
     return runtime->add_module(std::move(mod))
       .and_then([runtime, &sr_mod](std::monostate) {
           return runtime->add_module(std::move(sr_mod));
