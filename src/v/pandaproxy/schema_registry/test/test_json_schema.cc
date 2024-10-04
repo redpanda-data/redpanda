@@ -23,6 +23,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/context.hpp>
 #include <fmt/core.h>
+#include <jsoncons/json.hpp>
+#include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
@@ -2294,5 +2296,137 @@ SEASTAR_THREAD_TEST_CASE(test_json_compat_messages) {
         BOOST_REQUIRE_MESSAGE(
           errs == expected,
           fmt::format("{} != {}", format_set(errs), format_set(expected)));
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
+    // test that look check that in the in-memory representation of a schema,
+    // the refs are absolute
+    using namespace jsoncons::literals;
+
+    // input schema with a mix of local, relative and absolute refs
+    auto input_schema = R"({
+  // root schema has no id
+  "properties": {
+    // local ref
+    "giga": {"$ref": "#/properties/mega"},
+    // absolute ref to bundled schema
+    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"}
+  },
+  "$defs": {
+    "bundled": {
+      // $id makes it a bundled schema
+      "$id": "https://example.com/schemas/customer",
+      "properties": {
+        // relative local ref to this bundled schema
+        "local": { "$ref": "#/$defs/name" },
+
+        // absolute ref to this bundled schema
+        "local_absolute": { "$ref": "https://example.com/schemas/customer#/$defs/name" },
+
+        // relative ref to another bundled schema, with uri relative to this bundled schema host
+        "another_schema": { "$ref": "/schemas/address" },
+
+        // absolute ref to another bundled schema, with fragment
+        "another_schemas_absolute": { "$ref": "https://example.com/schemas/address#/name" },
+
+        // relative version of the above
+        "another_schema_frag": { "$ref": "/schemas/address#/name" },
+
+        // recursive ref
+        "recursive": { "$ref": "#/properties/recursive" }
+      },
+      "$defs": {
+        "bundled": {
+          // this makes it a bundled schema (in a bundled schema)
+          "$id" : "https://example.com/schemas/boat",
+          "properties": {
+            // local to this bundled schema
+            "self": { "$ref": "#/$defs/name" }
+          },
+          "$defs": {
+            "bundled": {
+              // bundled schema with a relative id.
+              // NOTE: this will be resolved against example.com,
+              // but the value will not be rewritten in the in-memory schema
+              "$id": "/schemas/nanites"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+)"_json;
+
+    store_fixture f;
+    // get a schema definiton from the input schema, this will produce an
+    // in-memory where refs are resolved
+    auto json_schema_def
+      = pps::make_json_schema_definition(
+          f.store,
+          pps::make_canonical_json_schema(
+            f.store,
+            {pps::subject{"test"},
+             {fmt::format("{}", jsoncons::print(input_schema)),
+              pps::schema_type::json}})
+            .get())
+          .get();
+
+    // extract the in-memory schema to check te results
+    auto inmemory_buffer = iobuf_parser{json_schema_def.raw()};
+    auto processed_schema = jsoncons::json::parse(
+      inmemory_buffer.read_string(inmemory_buffer.bytes_left()));
+
+    // this is the expected in memory result
+    auto expected_schema = R"({
+  "properties": {
+    "giga": {"$ref": "#/properties/mega"},
+    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"}
+  },
+  "$defs": {
+    "bundled": {
+      "$id": "https://example.com/schemas/customer",
+      "properties": {
+        "local": { "$ref": "https://example.com/schemas/customer#/$defs/name" },
+        "local_absolute": { "$ref": "https://example.com/schemas/customer#/$defs/name" },
+        "another_schema": { "$ref": "https://example.com/schemas/address" },
+        "another_schemas_absolute": { "$ref": "https://example.com/schemas/address#/name" },
+        "another_schema_frag": { "$ref": "https://example.com/schemas/address#/name" },
+        "recursive": { "$ref": "https://example.com/schemas/customer#/properties/recursive" }
+      },
+      "$defs": {
+        "bundled": {
+          "$id" : "https://example.com/schemas/boat",
+          "properties": {
+            "self": { "$ref": "https://example.com/schemas/boat#/$defs/name" }
+          },
+          "$defs": {
+            "bundled": {
+              // NOTE: $id is not rewritten, unlike $ref
+              "$id": "/schemas/nanites"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+)"_json;
+
+    BOOST_TEST_CONTEXT(fmt::format(
+      "input_schema:\n{}\n\nexpected_schema:\n{}\n\nprocessed_schema:\n{}\n\n",
+      jsoncons::pretty_print(input_schema),
+      jsoncons::pretty_print(expected_schema),
+      jsoncons::pretty_print(processed_schema))) {
+        // check that the processed schema is the same as the expected schema,
+        // output the difference if not
+        auto jpatch = jsoncons::jsonpatch::from_diff(
+          expected_schema, processed_schema);
+        BOOST_CHECK_MESSAGE(
+          expected_schema == processed_schema,
+          fmt::format(
+            "differences expected_schema-processed_schema:\n{}\n",
+            jsoncons::pretty_print(jpatch)));
     }
 }
