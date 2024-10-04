@@ -25,6 +25,7 @@ enum class data_writer_error {
     parquet_conversion_error,
     file_io_error,
     no_data,
+    cloud_io_error,
 };
 
 struct data_writer_error_category : std::error_category {
@@ -40,6 +41,8 @@ struct data_writer_error_category : std::error_category {
             return "File IO Error";
         case data_writer_error::no_data:
             return "No data";
+        case data_writer_error::cloud_io_error:
+            return "Cloud IO error";
         }
     }
 

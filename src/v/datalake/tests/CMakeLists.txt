@@ -46,6 +46,21 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  USE_CWD
+  BINARY_NAME datalake_cloud_uploader
+  SOURCES cloud_uploader_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::cloud_io_utils
+    v::datalake
+    v::s3_imposter
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
 set(PROTO_FILES
   testdata/person.proto
   testdata/complex.proto

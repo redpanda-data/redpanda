@@ -10,6 +10,7 @@ v_cc_library(
     arrow_translator.cc
     datalake_manager.cc
     batching_parquet_writer.cc
+    cloud_uploader.cc
     parquet_writer.cc
     record_multiplexer.cc
     schema_registry.cc
@@ -18,6 +19,7 @@ v_cc_library(
     protobuf_utils.cc
     values_protobuf.cc
   DEPS
+    v::cloud_io
     v::datalake_coordinator
     v::storage
     Seastar::seastar
