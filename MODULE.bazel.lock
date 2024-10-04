@@ -17525,12 +17525,43 @@
     "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "y9h5L2NtWbogyWSOJgqnUaU50MTPWAW+waelXSirMVg=",
-        "usagesDigest": "rx6fzHx7r0EvnNXJQ3ZCLqEzXQj3VhGP7rK8iTnZ/RU=",
+        "usagesDigest": "otnZzy/tdlkror2DrmgP+0frvo+lLjFyiaXLR70GJD8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
-          "llvm_17_toolchain_llvm": {
+          "llvm_19_toolchain": {
+            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
+            "ruleClassName": "toolchain",
+            "attributes": {
+              "absolute_paths": false,
+              "archive_flags": {},
+              "compile_flags": {},
+              "coverage_compile_flags": {},
+              "coverage_link_flags": {},
+              "cxx_builtin_include_directories": {},
+              "cxx_flags": {},
+              "cxx_standard": {
+                "": "c++20"
+              },
+              "dbg_compile_flags": {},
+              "exec_arch": "",
+              "exec_os": "",
+              "link_flags": {},
+              "link_libs": {},
+              "llvm_versions": {
+                "": "19.1.1"
+              },
+              "opt_compile_flags": {},
+              "opt_link_flags": {},
+              "stdlib": {},
+              "target_settings": {},
+              "unfiltered_compile_flags": {},
+              "toolchain_roots": {},
+              "sysroot": {}
+            }
+          },
+          "llvm_19_toolchain_llvm": {
             "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
             "ruleClassName": "llvm",
             "attributes": {
@@ -17540,20 +17571,20 @@
               "exec_arch": "",
               "exec_os": "",
               "llvm_mirror": "",
-              "llvm_version": "17.0.6",
+              "llvm_version": "19.1.1",
               "llvm_versions": {},
               "netrc": "",
               "sha256": {
-                "linux-aarch64": "28edd46b9666d99c31aa255dfa5497dba95f095d731c6c398fb0e2c0402a958f",
-                "linux-x86_64": "d75de539f9791b35eb4b58bed6c7605a846857c1b203c160a6dad2d620f8b090"
+                "linux-aarch64": "c5cade3af930255296e097687ed9c86c660ca5b619a352a536353aaa5d4fde2e",
+                "linux-x86_64": "0617e50fdb484bcd2169b24acd90e9b9fec7e6730d187fe8d2acfe69d2d429c4"
               },
               "strip_prefix": {},
               "urls": {
                 "linux-aarch64": [
-                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-17.0.6-ubuntu-22.04-aarch64.tar.gz"
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-19.1.1-ubuntu-22.04-aarch64.tar.gz"
                 ],
                 "linux-x86_64": [
-                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-17.0.6-ubuntu-22.04-x86_64.tar.gz"
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-19.1.1-ubuntu-22.04-x86_64.tar.gz"
                 ]
               }
             }
@@ -17584,37 +17615,6 @@
                   "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18.1.8-ubuntu-22.04-x86_64.tar.gz"
                 ]
               }
-            }
-          },
-          "llvm_17_toolchain": {
-            "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
-            "ruleClassName": "toolchain",
-            "attributes": {
-              "absolute_paths": false,
-              "archive_flags": {},
-              "compile_flags": {},
-              "coverage_compile_flags": {},
-              "coverage_link_flags": {},
-              "cxx_builtin_include_directories": {},
-              "cxx_flags": {},
-              "cxx_standard": {
-                "": "c++20"
-              },
-              "dbg_compile_flags": {},
-              "exec_arch": "",
-              "exec_os": "",
-              "link_flags": {},
-              "link_libs": {},
-              "llvm_versions": {
-                "": "17.0.6"
-              },
-              "opt_compile_flags": {},
-              "opt_link_flags": {},
-              "stdlib": {},
-              "target_settings": {},
-              "unfiltered_compile_flags": {},
-              "toolchain_roots": {},
-              "sysroot": {}
             }
           },
           "llvm_18_toolchain": {
