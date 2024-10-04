@@ -238,7 +238,7 @@ private:
     }
 
     ss::future<result<ss::stop_iteration>>
-    reconcile_ntp_step(const model::ntp& ntp, ntp_reconciliation_state& rs) {
+    reconcile_ntp_step(const model::ntp& ntp, ntp_reconciliation_state&) {
         std::optional<shard_placement_table::placement_state> maybe_placement
           = _shard_placement.state_on_this_shard(ntp);
         if (!maybe_placement) {
