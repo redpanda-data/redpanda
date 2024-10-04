@@ -94,7 +94,7 @@ struct checksum_envelope {
 
 // Overhead of the envelope in bytes: a checksummed envelope is
 // a regular envelope plus 4 bytes of checksum.
-static constexpr std::size_t checksum_envelope_header_size
+inline constexpr std::size_t checksum_envelope_header_size
   = envelope_header_size + 4;
 
 template<typename T, typename Version = const serde::version_t&>
