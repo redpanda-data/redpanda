@@ -288,7 +288,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                   "license, see https://redpanda.com/license-request. For more "
                   "information, see "
                   "https://docs.redpanda.com/current/get-started/licenses.",
-                  enterprise_features.enabled());
+                  fmt::join(enterprise_features.enabled(), ", "));
             }
         }
     }
@@ -330,7 +330,7 @@ void feature_manager::verify_enterprise_license() {
           "rpk cluster license set). To request a license, see "
           "https://redpanda.com/license-request. For more information, see "
           "https://docs.redpanda.com/current/get-started/licenses.",
-          enterprise_features.enabled())};
+          fmt::join(enterprise_features.enabled(), ", "))};
     }
 
     _verified_enterprise_license.signal();
