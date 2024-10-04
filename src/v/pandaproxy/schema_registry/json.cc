@@ -241,9 +241,24 @@ public:
       : _schema{schema} {}
 
     json_schema_dialect dialect() const { return _schema.ctx.dialect; }
+    const json::Value& doc() const { return _schema.ctx.doc; }
+
+    const id_to_schema_pointer::mapped_type*
+    find_bundled(const json_id_uri id) const {
+        auto it = _schema.ctx.bundled_schemas.find(id);
+        if (it == _schema.ctx.bundled_schemas.end()) {
+            return nullptr;
+        }
+        return &(it->second);
+    }
+
+    int remaining_ref_units() const { return _ref_units; }
+    int consume_ref_units() { return --_ref_units; }
 
 private:
     const json_schema_definition::impl& _schema;
+    static constexpr int max_recursion_depth{5};
+    int _ref_units{max_recursion_depth};
 };
 
 struct context {
