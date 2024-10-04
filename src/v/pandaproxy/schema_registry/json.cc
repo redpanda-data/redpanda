@@ -251,25 +251,25 @@ struct context {
 };
 
 template<json_schema_dialect Dialect>
-const jsoncons::jsonschema::json_schema<jsoncons::json>& get_metaschema() {
+const jsoncons::jsonschema::json_schema<jsoncons::ojson>& get_metaschema() {
     static const auto meteschema_doc = [] {
         auto metaschema = [] {
             switch (Dialect) {
             case json_schema_dialect::draft4:
                 return jsoncons::jsonschema::draft4::schema_draft4<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft6:
                 return jsoncons::jsonschema::draft6::schema_draft6<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft7:
                 return jsoncons::jsonschema::draft7::schema_draft7<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft201909:
                 return jsoncons::jsonschema::draft201909::schema_draft201909<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft202012:
                 return jsoncons::jsonschema::draft202012::schema_draft202012<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             }
         }();
 
@@ -282,7 +282,7 @@ const jsoncons::jsonschema::json_schema<jsoncons::json>& get_metaschema() {
 }
 
 result<json_schema_dialect> validate_json_schema(
-  json_schema_dialect dialect, const jsoncons::json& schema) {
+  json_schema_dialect dialect, const jsoncons::ojson& schema) {
     // validation pre-step: get metaschema for json draft
     const auto& metaschema_doc = [=]() -> const auto& {
         using enum json_schema_dialect;
@@ -320,7 +320,7 @@ result<json_schema_dialect> validate_json_schema(
 }
 
 result<json_schema_dialect>
-try_validate_json_schema(const jsoncons::json& schema) {
+try_validate_json_schema(const jsoncons::ojson& schema) {
     using enum json_schema_dialect;
 
     // no explicit $schema: try to validate from newest to oldest draft
@@ -347,7 +347,7 @@ result<document_context> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
     iobuf_istream is{buf.share(0, buf.size_bytes())};
 
-    auto decoder = jsoncons::json_decoder<jsoncons::json>{};
+    auto decoder = jsoncons::json_decoder<jsoncons::ojson>{};
     auto reader = jsoncons::basic_json_reader(is.istream(), decoder);
     auto ec = std::error_code{};
     reader.read(ec);
