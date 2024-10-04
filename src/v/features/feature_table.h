@@ -217,7 +217,7 @@ struct feature_spec {
     prepare_policy prepare_rule;
 };
 
-constexpr static std::array feature_schema{
+inline constexpr std::array feature_schema{
   feature_spec{
     release_version::v22_2_1,
     "serde_raft_0",
