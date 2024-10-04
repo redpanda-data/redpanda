@@ -1511,6 +1511,25 @@ void rm_stm::maybe_rearm_autoabort_timer(time_point_type deadline) {
     }
 }
 
+ss::future<tx::errc> rm_stm::abort_all_txes() {
+    if (!co_await sync(_sync_timeout())) {
+        co_return cluster::errc::not_leader;
+    }
+
+    tx::errc last_err = tx::errc::none;
+
+    co_await ss::max_concurrent_for_each(
+      _active_tx_producers, 5, [this, &last_err](const auto& producer) {
+          return mark_expired(producer.id()).then([&last_err](tx::errc res) {
+              if (res != tx::errc::none) {
+                  last_err = res;
+              }
+          });
+      });
+
+    co_return last_err;
+}
+
 void rm_stm::apply_fence(model::producer_identity pid, model::record_batch b) {
     auto [producer, _] = maybe_create_producer(pid);
     auto header = b.header();

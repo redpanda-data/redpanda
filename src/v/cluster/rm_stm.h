@@ -225,6 +225,8 @@ public:
 
     const producers_t& get_producers() const { return _producers; }
 
+    ss::future<tx::errc> abort_all_txes();
+
 protected:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
