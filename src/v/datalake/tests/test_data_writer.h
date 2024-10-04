@@ -29,14 +29,17 @@ public:
 
     ss::future<data_writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) override {
-        _result.row_count++;
-        data_writer_error status = _return_error ? data_writer_error::uh_oh
-                                                 : data_writer_error::ok;
+        _result.record_count++;
+        data_writer_error status
+          = _return_error ? data_writer_error::parquet_conversion_error
+                          : data_writer_error::ok;
         return ss::make_ready_future<data_writer_error>(status);
     }
 
-    ss::future<data_writer_result> finish() override {
-        return ss::make_ready_future<data_writer_result>(_result);
+    ss::future<result<data_writer_result, data_writer_error>>
+    finish() override {
+        return ss::make_ready_future<
+          result<data_writer_result, data_writer_error>>(_result);
     }
 
 private:

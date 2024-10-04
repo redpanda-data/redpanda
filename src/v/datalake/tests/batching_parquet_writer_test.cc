@@ -13,10 +13,16 @@
 #include "iceberg/values.h"
 #include "test_utils/tmp_dir.h"
 
+#include <seastar/core/seastar.hh>
+
 #include <arrow/io/file.h>
 #include <arrow/table.h>
 #include <gtest/gtest.h>
 #include <parquet/arrow/reader.h>
+
+#include <filesystem>
+
+namespace datalake {
 
 TEST(BatchingParquetWriterTest, WritesParquetFiles) {
     temporary_dir tmp_dir("batching_parquet_writer");
@@ -36,7 +42,12 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
         writer.add_data_struct(std::move(data), 1000).get0();
     }
 
-    writer.finish().get0();
+    auto result = writer.finish().get0();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().file_path, file_path);
+    EXPECT_EQ(result.value().record_count, num_rows);
+    auto true_file_size = std::filesystem::file_size(file_path);
+    EXPECT_EQ(result.value().file_size_bytes, true_file_size);
 
     // Read the file and check the contents
     auto reader = arrow::io::ReadableFile::Open(file_path).ValueUnsafe();
@@ -55,3 +66,27 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
     EXPECT_EQ(table->num_rows(), num_rows);
     EXPECT_EQ(table->num_columns(), 17);
 }
+
+TEST(BatchingParquetWriterTest, DeletesFileOnAbort) {
+    temporary_dir tmp_dir("batching_parquet_writer");
+    std::filesystem::path file_path = tmp_dir.get_path() / "test_file.parquet";
+    int num_rows = 1000;
+
+    datalake::batching_parquet_writer writer(
+      test_schema(iceberg::field_required::no), 500, 1000000);
+
+    writer.initialize(file_path).get0();
+
+    for (int i = 0; i < num_rows; i++) {
+        auto data = iceberg::tests::make_struct_value(
+          iceberg::tests::value_spec{
+            .forced_fixed_val = iobuf::from("Hello world")},
+          test_schema(iceberg::field_required::no));
+        writer.add_data_struct(std::move(data), 1000).get0();
+    }
+    writer.abort().get();
+    auto exists = ss::file_exists(file_path.c_str()).get();
+    EXPECT_FALSE(exists);
+}
+
+} // namespace datalake

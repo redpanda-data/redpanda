@@ -37,7 +37,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].row_count, record_count * batch_count);
+    EXPECT_EQ(result.value()[0].record_count, record_count * batch_count);
 }
 TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     int record_count = 10;
@@ -59,5 +59,6 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
       });
     auto res = reader.consume(std::move(multiplexer), model::no_timeout).get0();
     ASSERT_TRUE(res.has_error());
-    EXPECT_EQ(res.error(), datalake::data_writer_error::uh_oh);
+    EXPECT_EQ(
+      res.error(), datalake::data_writer_error::parquet_conversion_error);
 }

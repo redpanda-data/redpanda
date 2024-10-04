@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "base/outcome.h"
 #include "datalake/arrow_translator.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/parquet_writer.h"
@@ -42,15 +43,20 @@ public:
       size_t row_count_threshold,
       size_t byte_count_threshold);
 
-    ss::future<> initialize(std::filesystem::path output_file_path);
+    ss::future<data_writer_error>
+    initialize(std::filesystem::path output_file_path);
 
     ss::future<data_writer_error>
     add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
 
-    ss::future<data_writer_result> finish() override;
+    ss::future<result<data_writer_result, data_writer_error>> finish() override;
+
+    // Close the file handle, delete any temporary data and clean up any other
+    // state.
+    ss::future<> abort();
 
 private:
-    ss::future<> write_row_group();
+    ss::future<data_writer_error> write_row_group();
 
     // translating
     arrow_translator _iceberg_to_arrow;
@@ -63,8 +69,10 @@ private:
     size_t _byte_count = 0;
 
     // Output
+    std::filesystem::path _output_file_path;
     ss::file _output_file;
     ss::output_stream<char> _output_stream;
+    data_writer_result _result;
 };
 
 } // namespace datalake

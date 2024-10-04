@@ -70,9 +70,13 @@ record_multiplexer::end_of_stream() {
     // TODO: once we have multiple _writers this should be a loop
     if (_writer) {
         chunked_vector<data_writer_result> ret;
-        data_writer_result res = co_await _writer->finish();
-        ret.push_back(res);
-        co_return ret;
+        auto res = co_await _writer->finish();
+        if (res.has_value()) {
+            ret.push_back(res.value());
+            co_return ret;
+        } else {
+            co_return res.error();
+        }
     } else {
         co_return chunked_vector<data_writer_result>{};
     }
