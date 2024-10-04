@@ -1023,7 +1023,7 @@ ss::future<> group_manager::write_version_fence(
 
         // cluster v9 is where offset retention is enabled
         auto batch = _feature_table.local().encode_version_fence(
-          cluster::cluster_version{9});
+          to_cluster_version(features::release_version::v23_1_1));
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
         try {

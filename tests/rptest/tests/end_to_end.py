@@ -85,7 +85,8 @@ class EndToEndTest(Test):
                        environment=None,
                        install_opts: Optional[InstallOptions] = None,
                        new_bootstrap=False,
-                       max_num_seeds=3):
+                       max_num_seeds=3,
+                       license_required=False):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -129,6 +130,9 @@ class EndToEndTest(Test):
         self.redpanda.start(nodes=started_nodes,
                             auto_assign_node_id=new_bootstrap,
                             omit_seeds_on_idx_one=not new_bootstrap)
+        if license_required:
+            # Install an enterprise license before the upgrade
+            self.redpanda.install_license()
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the
             # appropriate version. Redpanda may not start up if starting a new

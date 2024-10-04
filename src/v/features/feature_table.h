@@ -109,6 +109,55 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "lightweight_heartbeats",
 };
 
+// The latest_version associated with past releases. Increment this
+// on protocol changes to raft0 structures, like adding new services and on each
+// major version release.
+//
+// Although some previous stable branches have included feature version
+// bumps, this is _not_ the intended usage, as stable branches are
+// meant to be safely downgradable within the branch, and new features
+// imply that new data formats may be written.
+//
+// The enum variants values should be dense between MIN and MAX inclusive.
+enum class release_version : int64_t {
+    MIN = 3,
+    v22_1_1 = MIN,
+    v22_1_5 = 4,
+    v22_2_1 = 5,
+    v22_2_6 = 6,
+    v22_3_1 = 7,
+    v22_3_6 = 8,
+    v23_1_1 = 9,
+    v23_2_1 = 10,
+    v23_3_1 = 11,
+    v24_1_1 = 12,
+    v24_2_1 = 13,
+    v24_3_1 = 14,
+    MAX = v24_3_1, // affects the latest_version
+};
+
+constexpr cluster::cluster_version to_cluster_version(release_version rv) {
+    switch (rv) {
+    case release_version::v22_1_1:
+    case release_version::v22_1_5:
+    case release_version::v22_2_1:
+    case release_version::v22_2_6:
+    case release_version::v22_3_1:
+    case release_version::v22_3_6:
+    case release_version::v23_1_1:
+    case release_version::v23_2_1:
+    case release_version::v23_3_1:
+    case release_version::v24_1_1:
+    case release_version::v24_2_1:
+    case release_version::v24_3_1:
+        return cluster::cluster_version{static_cast<int64_t>(rv)};
+    }
+    vassert(false, "Invalid release_version");
+}
+
+bool is_major_version_upgrade(
+  cluster::cluster_version from, cluster::cluster_version to);
+
 /**
  * The definition of a feature specifies rules for when it should
  * be activated,
@@ -151,6 +200,15 @@ struct feature_spec {
       , available_rule(apol)
       , prepare_rule(ppol) {}
 
+    constexpr feature_spec(
+      release_version require_version_,
+      std::string_view name_,
+      feature bits_,
+      available_policy apol,
+      prepare_policy ppol)
+      : feature_spec(
+          to_cluster_version(require_version_), name_, bits_, apol, ppol) {}
+
     feature bits{0};
     std::string_view name;
     cluster::cluster_version require_version;
@@ -161,259 +219,259 @@ struct feature_spec {
 
 constexpr static std::array feature_schema{
   feature_spec{
-    cluster::cluster_version{5},
+    release_version::v22_2_1,
     "serde_raft_0",
     feature::serde_raft_0,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{5},
+    release_version::v22_2_1,
     "license",
     feature::license,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{5},
+    release_version::v22_2_1,
     "raft_improved_configuration",
     feature::raft_improved_configuration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{6},
+    release_version::v22_2_6,
     "transaction_ga",
     feature::transaction_ga,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "raftless_node_status",
     feature::raftless_node_status,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "rpc_v2_by_default",
     feature::rpc_v2_by_default,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "cloud_retention",
     feature::cloud_retention,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::requires_migration},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "node_id_assignment",
     feature::node_id_assignment,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "replication_factor_change",
     feature::replication_factor_change,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "ephemeral_secrets",
     feature::ephemeral_secrets,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{7},
+    release_version::v22_3_1,
     "seeds_driven_bootstrap_capable",
     feature::seeds_driven_bootstrap_capable,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{8},
+    release_version::v22_3_6,
     "tm_stm_cache",
     feature::tm_stm_cache,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{9},
+    release_version::v23_1_1,
     "kafka_gssapi",
     feature::kafka_gssapi,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{9},
+    release_version::v23_1_1,
     "partition_move_revert_cancel",
     feature::partition_move_revert_cancel,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{9},
+    release_version::v23_1_1,
     "node_isolation",
     feature::node_isolation,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{9},
+    release_version::v23_1_1,
     "group_offset_retention",
     feature::group_offset_retention,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{9},
+    release_version::v23_1_1,
     "rpc_transport_unknown_errc",
     feature::rpc_transport_unknown_errc,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{10},
+    release_version::v23_2_1,
     "membership_change_controller_cmds",
     feature::membership_change_controller_cmds,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{10},
+    release_version::v23_2_1,
     "controller_snapshots",
     feature::controller_snapshots,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{10},
+    release_version::v23_2_1,
     "cloud_storage_manifest_format_v2",
     feature::cloud_storage_manifest_format_v2,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{10},
+    release_version::v23_2_1,
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{10},
+    release_version::v23_2_1,
     "raft_append_entries_serde",
     feature::raft_append_entries_serde,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{10},
+    release_version::v23_2_1,
     "delete_records",
     feature::delete_records,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "raft_coordinated_recovery",
     feature::raft_coordinated_recovery,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "cloud_storage_scrubbing",
     feature::cloud_storage_scrubbing,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "enhanced_force_reconfiguration",
     feature::enhanced_force_reconfiguration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "broker_time_based_retention",
     feature::broker_time_based_retention,
     feature_spec::available_policy::new_clusters_only,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "wasm_transforms",
     feature::wasm_transforms,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "raft_config_serde",
     feature::raft_config_serde,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "fast_partition_reconfiguration",
     feature::fast_partition_reconfiguration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "disabling_partitions",
     feature::disabling_partitions,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "cloud_metadata_cluster_recovery",
     feature::cloud_metadata_cluster_recovery,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{11},
+    release_version::v23_3_1,
     "audit_logging",
     feature::audit_logging,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{12},
+    release_version::v24_1_1,
     "compaction_placeholder_batch",
     feature::compaction_placeholder_batch,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{12},
+    release_version::v24_1_1,
     "partition_shard_in_health_report",
     feature::partition_shard_in_health_report,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{12},
+    release_version::v24_1_1,
     "role_based_access_control",
     feature::role_based_access_control,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::requires_migration},
   feature_spec{
-    cluster::cluster_version{12},
+    release_version::v24_1_1,
     "cluster_topic_manifest_format_v2",
     feature::cluster_topic_manifest_format_v2,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{13},
+    release_version::v24_2_1,
     "node_local_core_assignment",
     feature::node_local_core_assignment,
     feature_spec::available_policy::explicit_only,
     feature_spec::prepare_policy::requires_migration},
   feature_spec{
-    cluster::cluster_version{13},
+    release_version::v24_2_1,
     "unified_tx_state",
     feature::unified_tx_state,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{13},
+    release_version::v24_2_1,
     "data_migrations",
     feature::data_migrations,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{13},
+    release_version::v24_2_1,
     "group_tx_fence_dedicated_batch_type",
     feature::group_tx_fence_dedicated_batch_type,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{13},
+    release_version::v24_2_1,
     "transforms_specify_offset",
     feature::transforms_specify_offset,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{13},
+    release_version::v24_2_1,
     "remote_labels",
     feature::remote_labels,
     feature_spec::available_policy::always,

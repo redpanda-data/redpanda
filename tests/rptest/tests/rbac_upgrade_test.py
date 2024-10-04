@@ -41,7 +41,8 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         super().setUp()
 
     def _has_license_nag(self):
-        return self.redpanda.search_log_any("Enterprise feature(s).*")
+        return self.redpanda.search_log_any(
+            "license is required to use enterprise features")
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @ok_to_fail_fips  # See NOTE below

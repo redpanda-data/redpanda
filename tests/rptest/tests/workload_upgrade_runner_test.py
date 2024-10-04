@@ -280,7 +280,8 @@ class RedpandaUpgradeTest(PreallocNodesTest):
         for current_version in self.upgrade_through_versions(
                 self.upgrade_steps,
                 already_running=False,
-                mid_upgrade_check=mid_upgrade_check):
+                mid_upgrade_check=mid_upgrade_check,
+                license_required=True):
             current_version = expand_version(self.installer, current_version)
             # setup workload that could start at current_version
             for w in self.adapted_workloads:

@@ -156,11 +156,23 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                    self.previous_version)
 
             self.redpanda.set_seed_servers(self.nodes_with_prev_version)
-            self.redpanda.start(auto_assign_node_id=True,
+
+            # Installing a license is required for version upgrades with enterprise features
+            # We need to install it before the new nodes try to join the cluster, so install
+            # it after the old nodes are started but before the new ones are starting
+            self.redpanda.start(nodes=self.redpanda.nodes[:with_prev_version],
+                                auto_assign_node_id=True,
+                                omit_seeds_on_idx_one=False)
+            self.redpanda.install_license()
+            self.redpanda.start(nodes=self.redpanda.nodes[with_prev_version:],
+                                auto_assign_node_id=True,
                                 omit_seeds_on_idx_one=False)
         else:
             self.redpanda.start(auto_assign_node_id=True,
                                 omit_seeds_on_idx_one=False)
+
+            # Installing a license is required for version upgrades with enterprise features
+            self.redpanda.install_license()
 
         self.redpanda.await_feature('membership_change_controller_cmds',
                                     'active',

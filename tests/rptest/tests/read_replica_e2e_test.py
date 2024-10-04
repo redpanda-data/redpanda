@@ -495,7 +495,8 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         install_opts = InstallOptions(install_previous_version=True)
         self.start_redpanda(3,
                             si_settings=self.si_settings,
-                            install_opts=install_opts)
+                            install_opts=install_opts,
+                            license_required=True)
         spec = TopicSpec(name=self.topic_name,
                          partition_count=partition_count,
                          replication_factor=3)
@@ -521,6 +522,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         self.second_cluster._installer.install(self.second_cluster.nodes,
                                                previous_version)
         self.second_cluster.start(start_si=True)
+        self.second_cluster.install_license()
         create_read_replica_topic(self.second_cluster, self.topic_name,
                                   self.si_settings.cloud_storage_bucket)
 

@@ -67,7 +67,7 @@ class LicenseWorkload(PWorkload):
                 return PWorkload.NOT_DONE
 
             assert self.ctx.redpanda.search_log_any(
-                "Enterprise feature(s).*") is False
+                "license is required to use enterprise features") is False
             return PWorkload.DONE
 
         return PWorkload.DONE
@@ -81,7 +81,7 @@ class LicenseWorkload(PWorkload):
         if version[0:2] <= (22, 1):
             # These logs can't exist in v22.1 but double check anyway...
             assert self.ctx.redpanda.search_log_any(
-                "Enterprise feature(s).*") is False
+                "license is required to use enterprise features") is False
             return PWorkload.DONE
 
         # license is installable
@@ -102,7 +102,8 @@ class LicenseWorkload(PWorkload):
 
             # check for License nag in the log
             assert self.ctx.redpanda.search_log_any(
-                "Enterprise feature(s).*"), "License nag log not found"
+                "license is required to use enterprise features"
+            ), "License nag log not found"
 
             # Install license
             assert admin.put_license(self.license).status_code == 200

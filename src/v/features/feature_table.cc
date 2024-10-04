@@ -156,29 +156,62 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-//
-// For your convenience, a rough guide to the history of how logical
-// versions mapped to redpanda release versions:
-//  22.1.1 -> 3  (22.1.5 was version 4)
-//  22.2.1 -> 5  (22.2.6 later proceeds to version 6)
-//  22.3.1 -> 7  (22.3.6 later proceeds to verison 8)
-//  23.1.1 -> 9
-//  23.2.1 -> 10
-//  23.3.1 -> 11
-//  24.1.1 -> 12
-//  24.2.1 -> 13
-//  24.3.1 -> 14
-//
-// Although some previous stable branches have included feature version
-// bumps, this is _not_ the intended usage, as stable branches are
-// meant to be safely downgradable within the branch, and new features
-// imply that new data formats may be written.
-static constexpr cluster_version latest_version = cluster_version{14};
+constexpr cluster_version latest_version = to_cluster_version(
+  release_version::MAX);
 
 // The earliest version we can upgrade from. This is the version that
 // a freshly initialized node will start at. All features up to this cluster
 // version will automatically be enabled when Redpanda starts.
-static constexpr cluster_version earliest_version = cluster_version{11};
+constexpr cluster_version earliest_version = to_cluster_version(
+  release_version::v23_3_1);
+
+static_assert(
+  latest_version - earliest_version == 3L,
+  "Consider upgrading the earliest_version in lockstep whenever you increment "
+  "the latest_version");
+
+namespace {
+bool is_major_version_release(cluster::cluster_version version) {
+    if (
+      version < to_cluster_version(release_version::MIN)
+      || version > to_cluster_version(release_version::MAX)) {
+        // Unknown versions default to being a major version release
+        return true;
+    }
+    switch (static_cast<release_version>(version())) {
+    case release_version::v22_1_1:
+        return true;
+    case release_version::v22_1_5:
+        return false;
+    case release_version::v22_2_1:
+        return true;
+    case release_version::v22_2_6:
+        return false;
+    case release_version::v22_3_1:
+        return true;
+    case release_version::v22_3_6:
+        return false;
+    case release_version::v23_1_1:
+    case release_version::v23_2_1:
+    case release_version::v23_3_1:
+    case release_version::v24_1_1:
+    case release_version::v24_2_1:
+    case release_version::v24_3_1:
+        return true;
+    }
+    __builtin_unreachable();
+}
+} // namespace
+
+bool is_major_version_upgrade(
+  cluster::cluster_version from, cluster::cluster_version to) {
+    for (cluster::cluster_version i = from + 1L; i <= to; ++i) {
+        if (is_major_version_release(i)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // Extra features that will be wired into the feature table if a special
 // environment variable is set
