@@ -41,6 +41,8 @@ public:
       ss::sharded<topic_table>& topics,
       bool enabled);
 
+    ss::future<> stop();
+
     using notification_id = named_type<uint64_t, struct notification_id_tag>;
     using notification_callback = ss::noncopyable_function<void(id)>;
 

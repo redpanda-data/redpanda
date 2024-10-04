@@ -277,7 +277,8 @@ private:
     ss::sharded<partition_balancer_state>
       _partition_balancer_state; // single instance
     ss::sharded<data_migrations::migrated_resources> _data_migrated_resources;
-    std::unique_ptr<data_migrations::migrations_table> _data_migration_table;
+    ssx::single_sharded<data_migrations::migrations_table>
+      _data_migration_table;
     ss::sharded<partition_leaders_table>
       _partition_leaders;                                // instance per core
     ss::sharded<shard_placement_table> _shard_placement; // instance per core
