@@ -68,6 +68,10 @@ redpanda_cc_library(
         "logger.h",
     ],
     include_prefix = "cloud_io",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(

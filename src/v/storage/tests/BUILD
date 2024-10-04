@@ -6,6 +6,9 @@ redpanda_test_cc_library(
         "kvstore_fixture.h",
     ],
     include_prefix = "storage/tests",
+    deps = [
+        "//src/v/config",
+    ],
 )
 
 redpanda_test_cc_library(

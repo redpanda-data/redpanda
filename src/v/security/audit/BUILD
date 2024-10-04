@@ -7,6 +7,9 @@ redpanda_cc_library(
     ],
     include_prefix = "security/audit",
     visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+    ],
 )
 
 redpanda_cc_library(

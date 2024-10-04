@@ -59,6 +59,7 @@ build:sanitizer --@seastar//:system_allocator=True
 build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
 build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=@llvm_18_toolchain//:clang-tidy
 build:clang-tidy --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
+build:clang-tidy --copt -Wno-pragma-once-outside-header
 build:clang-tidy --output_groups=report
 
 # =================================

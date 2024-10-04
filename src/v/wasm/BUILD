@@ -106,6 +106,9 @@ redpanda_cc_library(
     ],
     include_prefix = "wasm",
     visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+    ],
 )
 
 redpanda_cc_library(

@@ -19,6 +19,6 @@ namespace cluster {
 // passed over the network via the health_manager, and persisted in
 // the feature_manager
 using cluster_version = named_type<int64_t, struct cluster_version_tag>;
-constexpr cluster_version invalid_version = cluster_version{-1};
+inline constexpr cluster_version invalid_version = cluster_version{-1};
 
 } // namespace cluster
