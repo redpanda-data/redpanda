@@ -74,6 +74,31 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "filesystem_catalog_test",
+    timeout = "short",
+    srcs = [
+        "filesystem_catalog_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/iceberg:logger",
+        "//src/v/iceberg:schema",
+        "//src/v/iceberg:table_metadata_json",
+        "//src/v/iceberg:transform",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "manifest_entry_type_test",
     timeout = "short",
     srcs = [
