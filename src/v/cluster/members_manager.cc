@@ -1109,7 +1109,7 @@ members_manager::dispatch_join_to_seed_server(
 
     return f.then_wrapped([it, this, req](ss::future<ret_t> fut) {
         try {
-            auto r = fut.get0();
+            auto r = fut.get();
             if (r.has_error()) {
                 vlog(
                   clusterlog.warn,

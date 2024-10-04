@@ -55,7 +55,7 @@ public:
                            .node_count()
                          == node_count;
               });
-        }).get0();
+        }).get();
     }
 
     void add_node(int id) {
@@ -104,7 +104,7 @@ public:
                      ->controller->get_topics_frontend()
                      .local()
                      .autocreate_topics({std::move(cfg)}, 2s)
-                     .get0();
+                     .get();
         wait_for_metadata(
           node_application(0)->controller->get_topics_state().local(), res);
     }
@@ -126,7 +126,7 @@ public:
                     });
               })
               .handle_exception([](std::exception_ptr) { return false; });
-        }).get0();
+        }).get();
 
         auto retries = 10;
         foreign_batches_t ret;
@@ -168,13 +168,13 @@ public:
                 model::node_id leader_id;
                 leader_id = get_local_cache(model::node_id(0))
                               .get_leader(ntp, 1s + model::timeout_clock::now())
-                              .get0();
+                              .get();
 
                 auto shard = get_shard_table(leader_id).shard_for(ntp);
                 auto& pm = get_partition_manager(leader_id);
-                ret = pm.invoke_on(*shard, single_retry).get0();
+                ret = pm.invoke_on(*shard, single_retry).get();
             } catch (...) {
-                ss::sleep(1s).get0();
+                ss::sleep(1s).get();
                 continue;
             }
         }

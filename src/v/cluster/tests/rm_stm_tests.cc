@@ -77,7 +77,7 @@ void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
           }
           return ss::now();
       })
-      .get0();
+      .get();
 
     uint64_t snapshots_size = 0;
     for (const auto& file : snapshot_files) {
@@ -112,16 +112,16 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
                         std::move(rreader.reader),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
-                      .get0();
+                      .get();
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
-    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
         return first_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
 
     auto pid2 = model::producer_identity{2, 0};
     auto term_op = stm
@@ -131,7 +131,7 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
                        model::partition_id(0))
-                     .get0();
+                     .get();
     BOOST_REQUIRE((bool)term_op);
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
 
@@ -141,24 +141,24 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE((bool)offset_r);
     auto tx_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
         return first_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
 
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.commit_tx(pid2, tx_seq, 2'000ms).get();
     BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
 
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
     check_snapshot_sizes(stm, _raft.get());
@@ -172,7 +172,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -189,16 +189,16 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
                         std::move(rreader.reader),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
-                      .get0();
+                      .get();
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
-    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
         return first_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
 
     auto pid2 = model::producer_identity{2, 0};
     auto term_op = stm
@@ -208,7 +208,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
                        model::partition_id(0))
-                     .get0();
+                     .get();
     BOOST_REQUIRE((bool)term_op);
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
 
@@ -218,24 +218,24 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE((bool)offset_r);
     auto tx_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
         return first_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get();
     BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
     BOOST_REQUIRE(stm
                     .wait_no_throw(
                       _raft.get()->committed_offset(),
                       model::timeout_clock::now() + 2'000ms)
-                    .get0());
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+                    .get());
+    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
 
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 1);
     BOOST_REQUIRE(
@@ -244,7 +244,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
       }));
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
 
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
     check_snapshot_sizes(stm, _raft.get());
@@ -258,7 +258,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     auto tx_seq = model::tx_seq(0);
 
@@ -276,16 +276,16 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
                         std::move(rreader.reader),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
-                      .get0();
+                      .get();
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
-    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
         return first_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
 
     auto pid2 = model::producer_identity{2, 0};
     auto term_op = stm
@@ -295,7 +295,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
                        model::partition_id(0))
-                     .get0();
+                     .get();
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
     BOOST_REQUIRE((bool)term_op);
 
@@ -305,25 +305,25 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
     BOOST_REQUIRE((bool)offset_r);
     auto tx_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
         return first_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get();
     BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
     BOOST_REQUIRE(stm
                     .wait_no_throw(
                       _raft.get()->committed_offset(),
                       model::timeout_clock::now() + 2'000ms)
-                    .get0());
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
+                    .get());
+    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
 
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 1);
     BOOST_REQUIRE(
@@ -333,7 +333,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
 
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
-    }).get0();
+    }).get();
 
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
     check_snapshot_sizes(stm, _raft.get());
@@ -345,7 +345,7 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -358,7 +358,7 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
                         std::move(rreader.reader),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
-                      .get0();
+                      .get();
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
@@ -370,7 +370,7 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
@@ -381,7 +381,7 @@ FIXTURE_TEST(test_stale_begin_tx_fenced, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -394,11 +394,11 @@ FIXTURE_TEST(test_stale_begin_tx_fenced, rm_stm_test_fixture) {
       std::numeric_limits<int32_t>::max());
 
     auto begin_tx = [&](model::tx_seq seq) {
-        return stm.begin_tx(pid1, seq, timeout, model::partition_id(0)).get0();
+        return stm.begin_tx(pid1, seq, timeout, model::partition_id(0)).get();
     };
 
     auto commit_tx = [&](model::tx_seq seq) {
-        return stm.commit_tx(pid1, tx_seq, timeout).get0();
+        return stm.commit_tx(pid1, tx_seq, timeout).get();
     };
 
     // begin should succeed.
@@ -428,7 +428,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     auto tx_seq = model::tx_seq(0);
 
@@ -443,7 +443,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
                         std::move(rreader.reader),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
-                      .get0();
+                      .get();
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{2, 0};
@@ -454,7 +454,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
                        model::partition_id(0))
-                     .get0();
+                     .get();
     BOOST_REQUIRE((bool)term_op);
 
     auto pid21 = model::producer_identity{2, 1};
@@ -465,7 +465,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
                   std::chrono::milliseconds(
                     std::numeric_limits<int32_t>::max()),
                   model::partition_id(0))
-                .get0();
+                .get();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid20, 0, 5, true);
@@ -474,7 +474,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE(!(bool)offset_r);
 
     check_snapshot_sizes(stm, _raft.get());
@@ -486,7 +486,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     auto tx_seq = model::tx_seq(0);
 
@@ -501,7 +501,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
                         std::move(rreader.reader),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
-                      .get0();
+                      .get();
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{2, 0};
@@ -512,7 +512,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
                        model::partition_id(0))
-                     .get0();
+                     .get();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid20, 0, 5, true);
@@ -521,10 +521,10 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE((bool)offset_r);
 
-    auto op = stm.abort_tx(pid20, tx_seq, 2'000ms).get0();
+    auto op = stm.abort_tx(pid20, tx_seq, 2'000ms).get();
     BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
 
     rreader = make_rreader(pid20, 0, 5, true);
@@ -533,7 +533,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
                    rreader.id,
                    std::move(rreader.reader),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
-                 .get0();
+                 .get();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
 
     check_snapshot_sizes(stm, _raft.get());
@@ -548,7 +548,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -570,7 +570,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
     // Few helpers to avoid repeated boiler plate code.
 
     auto aborted_txs = [&](auto begin, auto end) {
-        return stm.aborted_transactions(begin, end).get0();
+        return stm.aborted_transactions(begin, end).get();
     };
 
     // Aborted transactions in a given segment index.
@@ -596,28 +596,28 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
     auto start_tx = [&]() {
         auto pid = model::producer_identity{pid_counter++, 0};
         BOOST_REQUIRE(
-          stm.begin_tx(pid, tx_seq, timeout, model::partition_id(0)).get0());
+          stm.begin_tx(pid, tx_seq, timeout, model::partition_id(0)).get());
         auto rreader = make_rreader(pid, 0, 5, true);
         BOOST_REQUIRE(
-          stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
+          stm.replicate(rreader.id, std::move(rreader.reader), opts).get());
         return pid;
     };
 
     auto commit_tx = [&](auto pid) {
         BOOST_REQUIRE_EQUAL(
-          stm.commit_tx(pid, tx_seq, timeout).get0(), cluster::tx::errc::none);
+          stm.commit_tx(pid, tx_seq, timeout).get(), cluster::tx::errc::none);
     };
 
     auto abort_tx = [&](auto pid) {
         auto rreader = make_rreader(pid, 5, 5, true);
         BOOST_REQUIRE(
-          stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
+          stm.replicate(rreader.id, std::move(rreader.reader), opts).get());
         BOOST_REQUIRE_EQUAL(
-          stm.abort_tx(pid, tx_seq, timeout).get0(), cluster::tx::errc::none);
+          stm.abort_tx(pid, tx_seq, timeout).get(), cluster::tx::errc::none);
     };
 
     auto roll_log = [&]() {
-        disk_log->force_roll(ss::default_priority_class()).get0();
+        disk_log->force_roll(ss::default_priority_class()).get();
         segment_count++;
         BOOST_REQUIRE_EQUAL(disk_log->segment_count(), segment_count);
     };
@@ -715,7 +715,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
         auto rreader = make_rreader(
           model::producer_identity{-1, -1}, 0, 5, false);
         BOOST_REQUIRE(
-          stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
+          stm.replicate(rreader.id, std::move(rreader.reader), opts).get());
 
         // roll and abort.
         roll_log();
@@ -775,7 +775,7 @@ void sync_ser_verify(T type) {
     iobuf_parser async_in(std::move(copy));
 
     auto sync_deser_type = reflection::adl<T>{}.from(sync_in);
-    auto async_deser_type = reflection::async_adl<T>{}.from(async_in).get0();
+    auto async_deser_type = reflection::async_adl<T>{}.from(async_in).get();
     BOOST_REQUIRE(sync_deser_type == async_deser_type);
 }
 
@@ -791,7 +791,7 @@ void async_ser_verify(T type) {
     iobuf_parser async_in(std::move(copy));
 
     auto sync_deser_type = reflection::adl<T>{}.from(sync_in);
-    auto async_deser_type = reflection::async_adl<T>{}.from(async_in).get0();
+    auto async_deser_type = reflection::async_adl<T>{}.from(async_in).get();
     BOOST_REQUIRE(sync_deser_type == async_deser_type);
 }
 
@@ -856,7 +856,7 @@ FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
     auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
+    stm.start().get();
     wait_for_confirmed_leader();
 
     // Check the stm can apply v4/v5 snapshots
@@ -872,7 +872,7 @@ FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
           .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
           .offset = stm.last_stable_offset(),
         };
-        apply_snapshot(hdr, std::move(buf)).get0();
+        apply_snapshot(hdr, std::move(buf)).get();
 
         // validate producer stat after snapshot
         // todo (bharathv): fix this check
@@ -893,7 +893,7 @@ FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
           .snapshot_size = static_cast<int32_t>(buf.size_bytes()),
           .offset = stm.last_stable_offset(),
         };
-        apply_snapshot(hdr, std::move(buf)).get0();
+        apply_snapshot(hdr, std::move(buf)).get();
 
         // validate producer stat after snapshot
         // todo (bharathv): fix this check
@@ -906,7 +906,7 @@ FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
 FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
     create_stm_and_start_raft();
     auto& stm = *_stm;
-    stm.start().get0();
+    stm.start().get();
     stm.testing_only_disable_auto_abort();
 
     wait_for_confirmed_leader();
@@ -919,7 +919,7 @@ FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
                        model::tx_seq{0},
                        std::chrono::milliseconds(10),
                        model::partition_id(0))
-                     .get0();
+                     .get();
     BOOST_REQUIRE(term_op.has_value());
     BOOST_REQUIRE_EQUAL(term_op.value(), _raft->confirmed_term());
     tests::cooperative_spin_wait_with_timeout(5s, [this, pid]() {
@@ -929,5 +929,5 @@ FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
                  expired.end(),
                  [pid](auto producer) { return producer->id() == pid; })
                != expired.end();
-    }).get0();
+    }).get();
 }

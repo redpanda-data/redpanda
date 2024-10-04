@@ -118,7 +118,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
         [this, term](ss::future<result<raft::replicate_result>> f)
           -> checked<model::term_id, tm_stm::op_status> {
             try {
-                if (!f.get0().has_value()) {
+                if (!f.get().has_value()) {
                     return tm_stm::op_status::unknown;
                 }
                 if (term != _raft->term()) {

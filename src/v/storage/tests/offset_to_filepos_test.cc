@@ -45,7 +45,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_not_found) {
                     segment,
                     segment->index().base_timestamp(),
                     ss::default_priority_class())
-                    .get0();
+                    .get();
     BOOST_REQUIRE(result.error() == std::errc::invalid_seek);
 }
 
@@ -79,7 +79,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_not_found) {
                     segment,
                     segment->index().max_timestamp(),
                     ss::default_priority_class())
-                    .get0();
+                    .get();
     BOOST_REQUIRE(result.error() == std::errc::invalid_seek);
 }
 
@@ -116,7 +116,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_found) {
                     segment,
                     segment->index().base_timestamp(),
                     ss::default_priority_class())
-                    .get0();
+                    .get();
     storage::offset_to_file_pos_result expected{
       model::offset{3},
       positions[2],
@@ -157,7 +157,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_found) {
                     segment,
                     segment->index().base_timestamp(),
                     ss::default_priority_class())
-                    .get0();
+                    .get();
     storage::offset_to_file_pos_result expected{
       model::offset{3},
       positions[3], // the end byte offset of the batch containing the needle
@@ -196,7 +196,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_allowed_to_be_missing) {
                     segment->index().max_timestamp(),
                     ss::default_priority_class(),
                     should_fail_on_missing_offset::no)
-                    .get0();
+                    .get();
     storage::offset_to_file_pos_result expected{
       model::offset{1},
       segment->size_bytes(),

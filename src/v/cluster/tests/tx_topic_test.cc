@@ -113,7 +113,7 @@ FIXTURE_TEST(test_tm_stm_eviction, redpanda_thread_fixture) {
                        kafka::transactional_id{"tx-1"},
                        std::chrono::milliseconds(0),
                        pid)
-                     .get0();
+                     .get();
     BOOST_REQUIRE_EQUAL(op_code, cluster::tm_stm::op_status::success);
     auto tx_mgr_log = tx_mgr_prt->log();
     tx_mgr_log->flush().get();
@@ -126,7 +126,7 @@ FIXTURE_TEST(test_tm_stm_eviction, redpanda_thread_fixture) {
                   kafka::transactional_id{"tx-2"},
                   std::chrono::milliseconds(0),
                   pid)
-                .get0();
+                .get();
     BOOST_REQUIRE_EQUAL(op_code, cluster::tm_stm::op_status::success);
     BOOST_REQUIRE_EQUAL(2, tx_mgr_log->segment_count());
 

@@ -14,7 +14,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu) {
-    auto p = ss::smp::submit_to(1, [] { return remote<int>(10); }).get0();
+    auto p = ss::smp::submit_to(1, [] { return remote<int>(10); }).get();
     p.get() += 1;
     ss::smp::submit_to(1, [p = std::move(p)]() mutable {
         auto local = std::move(p);
@@ -49,7 +49,7 @@ SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu_with_foreign_ptr) {
     auto p = ss::smp::submit_to(1, [] {
                  return remote<obj_with_foreign_ptr>(
                    0, ss::make_foreign(std::make_unique<int>(42)));
-             }).get0();
+             }).get();
     p.get().x += 1;
     ss::smp::submit_to(1, [p = std::move(p)]() mutable {
         auto local = std::move(p);

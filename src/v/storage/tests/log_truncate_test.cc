@@ -45,10 +45,10 @@ constexpr model::offset expected_last(model::offset t_offset) {
 FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     std::vector<model::record_batch_header> headers;
     for (auto i = 0; i < 10; i++) {
         append_random_batches(log, 1, model::term_id(i));
@@ -58,7 +58,7 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     log
       ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
-      .get0();
+      .get();
 
     auto read_batches = read_and_validate_all_batches(log);
     auto lstats = log->offsets();
@@ -71,12 +71,12 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
 FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     append_random_batches(log, 6, model::term_id(0));
-    log->flush().get0();
+    log->flush().get();
 
     auto all_batches = read_and_validate_all_batches(log);
     auto truncate_offset = all_batches[4].base_offset();
@@ -86,7 +86,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     log
       ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
-      .get0();
+      .get();
     info("reading all batches");
     auto read_batches = read_and_validate_all_batches(log);
 
@@ -106,10 +106,10 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
 FIXTURE_TEST(test_truncate_in_the_middle_of_batch, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
 
     append_batch(
       log, model::test::make_random_batch(model::offset{0}, 10, true));
@@ -134,12 +134,12 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_batch, storage_test_fixture) {
 FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     append_random_batches(log, 1, model::term_id(1));
-    log->flush().get0();
+    log->flush().get();
 
     auto all_batches = read_and_validate_all_batches(log);
     auto lstats = log->offsets();
@@ -151,10 +151,10 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
     std::cout.setf(std::ios::unitbuf);
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
 
     // Generate from 10 up to 100 batches
     for (auto i = 0; i < 10; i++) {
@@ -170,7 +170,7 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
     log
       ->truncate(storage::truncate_config(
         all_batches.back().base_offset(), ss::default_priority_class()))
-      .get0();
+      .get();
     all_batches.pop_back(); // we just removed the last one!
     auto final_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(all_batches.size(), final_batches.size());
@@ -188,10 +188,10 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
 FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     std::vector<model::record_batch_header> headers;
     for (auto i = 0; i < 10; i++) {
         append_random_batches(log, 1, model::term_id(i));
@@ -202,11 +202,11 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
     log
       ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
-      .get0();
+      .get();
     log
       ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
-      .get0();
+      .get();
 
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
@@ -218,10 +218,10 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
 FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     std::vector<model::record_batch_header> headers;
     for (auto i = 0; i < 10; i++) {
         append_random_batches(log, 1, model::term_id(i));
@@ -234,12 +234,12 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
 
     // first create the reader
     auto reader_ptr = std::make_unique<model::record_batch_reader>(
-      log->make_reader(std::move(cfg)).get0());
+      log->make_reader(std::move(cfg)).get());
     // truncate
     auto f = log->truncate(
       storage::truncate_config(model::offset(0), ss::default_priority_class()));
     // Memory log works fine
-    reader_ptr->consume(batch_validating_consumer{}, model::no_timeout).get0();
+    reader_ptr->consume(batch_validating_consumer{}, model::no_timeout).get();
     reader_ptr = nullptr;
     f.get();
     auto read_batches = read_and_validate_all_batches(log);
@@ -253,12 +253,12 @@ FIXTURE_TEST(
   test_truncate_in_the_middle_of_segment_and_append, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     append_random_batches(log, 6, model::term_id(0));
-    log->flush().get0();
+    log->flush().get();
 
     auto all_batches = read_and_validate_all_batches(log);
     auto truncate_offset = all_batches[4].base_offset();
@@ -268,7 +268,7 @@ FIXTURE_TEST(
     log
       ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
-      .get0();
+      .get();
     info("reading all batches");
     auto read_batches = read_and_validate_all_batches(log);
 
@@ -284,7 +284,7 @@ FIXTURE_TEST(
     }
     // Append new batches
     auto headers = append_random_batches(log, 6, model::term_id(0));
-    log->flush().get0();
+    log->flush().get();
     auto read_after_append = read_and_validate_all_batches(log);
     // 4 batches were not truncated
     BOOST_REQUIRE_EQUAL(read_after_append.size(), headers.size() + 4);
@@ -293,10 +293,10 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     auto headers = append_random_batches(
       log,
       15,
@@ -312,7 +312,7 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
             ts));
           return ret;
       });
-    log->flush().get0();
+    log->flush().get();
 
     for (auto lstats = log->offsets(); lstats.dirty_offset > model::offset{};
          lstats = log->offsets()) {
@@ -320,7 +320,7 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
         log
           ->truncate(storage::truncate_config(
             truncate_offset, ss::default_priority_class()))
-          .get0();
+          .get();
         auto all_batches = read_and_validate_all_batches(log);
         auto expected = truncate_offset - headers.back().record_count;
         headers.pop_back();
@@ -338,7 +338,7 @@ FIXTURE_TEST(
     auto cfg = default_log_config(test_dir);
     storage::log_manager mgr = make_log_manager(cfg);
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
 
     auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
@@ -350,13 +350,13 @@ FIXTURE_TEST(
     auto log = mgr
                  .manage(storage::ntp_config(
                    ntp, mgr.config().base_dir, std::move(overrides)))
-                 .get0();
+                 .get();
     append_random_batches(log, 10, model::term_id(0));
     append_random_batches(log, 10, model::term_id(0));
-    log->flush().get0();
+    log->flush().get();
     auto ts = now();
     append_random_batches(log, 10, model::term_id(0));
-    log->flush().get0();
+    log->flush().get();
     // garbadge collect first append series
     ss::abort_source as;
     log
@@ -367,12 +367,12 @@ FIXTURE_TEST(
         std::nullopt,
         ss::default_priority_class(),
         as))
-      .get0();
+      .get();
     // truncate at 0, offset earlier then the one present in log
     log
       ->truncate(storage::truncate_config(
         model::offset(0), ss::default_priority_class()))
-      .get0();
+      .get();
 
     auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
@@ -436,12 +436,12 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
     {
         storage::log_manager mgr = make_log_manager(cfg);
         info("config: {}", mgr.config());
-        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
 
-        auto log = mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
+        auto log = mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get();
 
         append_random_batches(log, 10, model::term_id(0));
-        log->flush().get0();
+        log->flush().get();
 
         // truncate in the middle
         auto all_batches = read_and_validate_all_batches(log);
@@ -476,9 +476,8 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
     storage::log_manager rec_mgr = make_log_manager(cfg);
 
     auto rec_deferred = ss::defer(
-      [&rec_mgr]() mutable { rec_mgr.stop().get0(); });
-    auto rec_log
-      = rec_mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
+      [&rec_mgr]() mutable { rec_mgr.stop().get(); });
+    auto rec_log = rec_mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get();
     auto& impl = *rec_log;
 
     BOOST_REQUIRE_EQUAL(impl.segment_count(), 3);
@@ -512,7 +511,7 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     storage::log_manager mgr = make_log_manager(cfg);
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
 
     auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
@@ -524,18 +523,18 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     auto log = mgr
                  .manage(storage::ntp_config(
                    ntp, mgr.config().base_dir, std::move(overrides)))
-                 .get0();
+                 .get();
 
     append_random_batches(log, 10, model::term_id(0));
     auto lstats = log->offsets();
 
     append_random_batches(log, 10, model::term_id(1));
-    log->flush().get0();
+    log->flush().get();
 
     auto ts = now();
 
     append_random_batches(log, 10, model::term_id(2));
-    log->flush().get0();
+    log->flush().get();
     ss::abort_source as;
 
     // The call to 'compact' simply triggers a notification
@@ -553,8 +552,8 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     auto f2 = log->truncate_prefix(storage::truncate_prefix_config(
       model::next_offset(lstats.dirty_offset), ss::default_priority_class()));
 
-    f1.get0();
-    f2.get0();
+    f1.get();
+    f2.get();
 
     BOOST_REQUIRE_EQUAL(
       (*log->segments().begin())->offsets().get_base_offset(),
@@ -662,10 +661,10 @@ FIXTURE_TEST(
   test_prefix_truncate_in_the_middle_of_batch, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
 
     append_batch(
       log, model::test::make_random_batch(model::offset{0}, 10, true));
@@ -705,10 +704,10 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_prefix_truncate_then_truncate_all, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
 
     append_batch(
       log, model::test::make_random_batch(model::offset{0}, 10, true));
@@ -742,10 +741,10 @@ FIXTURE_TEST(test_index_max_timestamp_update, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     storage::log_manager mgr = make_log_manager(cfg);
     info("config: {}", mgr.config());
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     auto ntp = model::ntp("default", "test", 0);
     auto log
-      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
     append_batch(
       log,
       model::test::make_random_batch(

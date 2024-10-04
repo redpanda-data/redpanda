@@ -281,7 +281,7 @@ static ss::future<segment_set> unsafe_do_recover(
           to_recover.begin(),
           to_recover.end(),
           [](ss::lw_shared_ptr<segment>& segment) {
-              auto stat = segment->reader().stat().get0();
+              auto stat = segment->reader().stat().get();
               if (stat.st_size != 0) {
                   return true;
               }

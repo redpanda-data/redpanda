@@ -68,7 +68,7 @@ void wait_for_metadata(
           [&md_cache](const cluster::topic_result& r) {
               return md_cache.get_topic_metadata(r.tp_ns);
           });
-    }).get0();
+    }).get();
 }
 
 FIXTURE_TEST(create_single_topic_test_at_current_broker, cluster_test_fixture) {
@@ -83,7 +83,7 @@ FIXTURE_TEST(create_single_topic_test_at_current_broker, cluster_test_fixture) {
                     .local()
                     .autocreate_topics(
                       test_topics_configuration(), std::chrono::seconds(10))
-                    .get0();
+                    .get();
         success = std::all_of(
           results.begin(), results.end(), [](const cluster::topic_result& r) {
               return r.ec == cluster::errc::success;
@@ -125,7 +125,7 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
                     .local()
                     .autocreate_topics(
                       test_topics_configuration(), std::chrono::seconds(10))
-                    .get0();
+                    .get();
         success = std::all_of(
           results.begin(), results.end(), [](const cluster::topic_result& r) {
               return r.ec == cluster::errc::success;

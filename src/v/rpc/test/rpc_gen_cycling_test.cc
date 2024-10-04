@@ -307,7 +307,7 @@ FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
                            std::nullopt, /* CRL */
                            false)
                            .get_credentials_builder()
-                           .get0();
+                           .get();
 
     configure_server(creds_builder);
     register_services();
@@ -330,7 +330,7 @@ class temporary_dir {
 public:
     temporary_dir()
       : _tmp_path("/tmp/rpc-test-XXXX") {
-        _dir = ss::make_tmp_dir(_tmp_path).get0();
+        _dir = ss::make_tmp_dir(_tmp_path).get();
     }
 
     temporary_dir(const temporary_dir&) = delete;
@@ -338,7 +338,7 @@ public:
     temporary_dir(temporary_dir&&) = delete;
     temporary_dir& operator=(temporary_dir&&) = delete;
 
-    ~temporary_dir() { _dir.remove().get0(); }
+    ~temporary_dir() { _dir.remove().get(); }
     /// Prefix file name with tmp path
     std::filesystem::path prefix(const char* name) const {
         auto res = _dir.get_path();
@@ -349,7 +349,7 @@ public:
     std::filesystem::path copy_file(const char* src, const char* dst) {
         auto res = prefix(dst);
         if (std::filesystem::exists(res)) {
-            ss::remove_file(res.native()).get0();
+            ss::remove_file(res.native()).get();
         }
         BOOST_REQUIRE(std::filesystem::copy_file(src, res));
         return res;
@@ -384,7 +384,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                                   std::nullopt, /* CRL */
                                   true)
                                   .get_credentials_builder()
-                                  .get0();
+                                  .get();
     // server credentials
     auto server_key = tmp.copy_file("redpanda.other.key", "server.key");
     auto server_crt = tmp.copy_file("redpanda.other.crt", "server.crt");
@@ -398,7 +398,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                                   std::nullopt, /* CRL */
                                   true)
                                   .get_credentials_builder()
-                                  .get0();
+                                  .get();
 
     configure_server(
       server_creds_builder,
@@ -446,9 +446,9 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                    .ibis_hakka(
                      cycling::san_francisco{66},
                      rpc::client_opts(rpc::no_timeout))
-                   .get0();
+                   .get();
     BOOST_REQUIRE_EQUAL(okret.value().data.x, 66);
-    cli.stop().get0();
+    cli.stop().get();
 }
 
 FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
@@ -466,14 +466,14 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
                  .ibis_hakka(
                    cycling::san_francisco{66},
                    rpc::client_opts(rpc::no_timeout))
-                 .get0();
+                 .get();
     BOOST_REQUIRE(ret.has_value());
     info("Calling echo method");
     auto echo_resp = client
                        .suffix_echo(
                          echo::echo_req{.str = "testing..."},
                          rpc::client_opts(rpc::no_timeout))
-                       .get0();
+                       .get();
     client.stop().get();
     BOOST_REQUIRE(echo_resp.has_value());
 
@@ -492,7 +492,7 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
       echo::sleep_req{.secs = 1},
       rpc::client_opts(rpc::clock_type::now() + 100ms));
     BOOST_REQUIRE_EQUAL(
-      echo_resp.get0().error(), rpc::errc::client_request_timeout);
+      echo_resp.get().error(), rpc::errc::client_request_timeout);
     client.stop().get();
 }
 
@@ -517,7 +517,7 @@ FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
     auto echo_resp = client.sleep_for(
       echo::sleep_req{.secs = 10}, std::move(opts));
     BOOST_REQUIRE_EQUAL(
-      echo_resp.get0().error(), rpc::errc::client_request_timeout);
+      echo_resp.get().error(), rpc::errc::client_request_timeout);
     // Verify that the resources are released correctly after timeout.
     BOOST_REQUIRE(lock.try_get_units().has_value());
     client.stop().get();
@@ -575,7 +575,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
     auto echo_resp
       = client
           .echo(echo::echo_req{.str = data}, rpc::client_opts(rpc::no_timeout))
-          .get0();
+          .get();
     BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, data);
     BOOST_TEST_MESSAGE("Calling echo method *WITH* compression");
     echo_resp = client
@@ -585,7 +585,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                       rpc::timeout_spec::none,
                       rpc::compression_type::zstd,
                       0 /*min bytes compress*/))
-                  .get0();
+                  .get();
     BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, data);
 
     // close resources
@@ -611,7 +611,7 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
                 BOOST_REQUIRE_EQUAL(r.value().expected, i);
             }));
     }
-    ss::when_all_succeed(futures.begin(), futures.end()).get0();
+    ss::when_all_succeed(futures.begin(), futures.end()).get();
     client.stop().get();
 }
 
@@ -625,7 +625,7 @@ FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
                  .throw_exception(
                    {.type = echo::failure_type::exceptional_future},
                    rpc::client_opts(model::no_timeout))
-                 .get0();
+                 .get();
 
     BOOST_REQUIRE(ret.has_error());
     BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::service_error);
@@ -711,7 +711,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
                        .echo(
                          echo::echo_req{.str = "testing..."},
                          rpc::client_opts(rpc::no_timeout))
-                       .get0();
+                       .get();
     BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, "testing...");
 
     // Send request but do not consume response
@@ -727,7 +727,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
         auto ret = t->send(
                       std::move(nb),
                       rpc::client_opts(rpc::clock_type::now() + 1s))
-                     .get0();
+                     .get();
         ret.value()->signal_body_parse();
     } catch (...) {
         err = std::current_exception();
@@ -737,13 +737,13 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
 
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
-    t->connect(model::no_timeout).get0();
+    t->connect(model::no_timeout).get();
     for (int i = 0; i < 10; ++i) {
         auto echo_resp_new = client
                                .echo(
                                  echo::echo_req{.str = "testing..."},
                                  rpc::client_opts(rpc::clock_type::now() + 1s))
-                               .get0();
+                               .get();
 
         BOOST_REQUIRE_EQUAL(echo_resp_new.value().data.str, "testing...");
     }
@@ -762,7 +762,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
                        .echo(
                          echo::echo_req{.str = "testing..."},
                          rpc::client_opts(rpc::no_timeout))
-                       .get0();
+                       .get();
     BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, "testing...");
 
     rpc::netbuf nb;
@@ -776,16 +776,16 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     // will fail all the futures as server close the connection
     auto ret = t->send(
                   std::move(nb), rpc::client_opts(rpc::clock_type::now() + 2s))
-                 .get0();
+                 .get();
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
-    t->connect(model::no_timeout).get0();
+    t->connect(model::no_timeout).get();
     for (int i = 0; i < 10; ++i) {
         auto echo_resp_new = client
                                .echo(
                                  echo::echo_req{.str = "testing..."},
                                  rpc::client_opts(rpc::clock_type::now() + 2s))
-                               .get0();
+                               .get();
 
         BOOST_REQUIRE_EQUAL(echo_resp_new.value().data.str, "testing...");
     }

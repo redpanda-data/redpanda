@@ -100,7 +100,7 @@ struct service::execution_helper {
                           input_f.get_exception());
                     }
                     ctx.signal_body_parse();
-                    auto input = input_f.get0();
+                    auto input = input_f.get();
                     return f(std::move(input), ctx);
                 })
                 .then([method, &ctx](Output out) mutable {

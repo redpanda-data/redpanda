@@ -141,7 +141,7 @@ protected:
     explicit partition_allocator_fixture(
       std::optional<size_t> memory_per_partition,
       std::optional<int32_t> fds_per_partition) {
-        members.start().get0();
+        members.start().get();
         features.start().get();
         _allocator
           .start_single(
@@ -158,7 +158,7 @@ protected:
             config::shard_local_cfg()
               .get("partition_autobalancing_mode")
               .set_value(model::partition_autobalancing_mode::node_add);
-        }).get0();
+        }).get();
     }
 };
 

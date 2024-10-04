@@ -243,15 +243,15 @@ private:
                         return ss::futurize_invoke(
                                  handler, std::move(req), auth_state)
                           .handle_exception(
-                            exception_intercepter<
+                            exception_intercepter<std::remove_reference_t<
                               decltype(handler(std::move(req), auth_state)
-                                         .get0())>(url, auth_state));
+                                         .get())>>(url, auth_state));
 
                     } else {
                         return ss::futurize_invoke(handler, std::move(req))
                           .handle_exception(
-                            exception_intercepter<
-                              decltype(handler(std::move(req)).get0())>(
+                            exception_intercepter<std::remove_reference_t<
+                              decltype(handler(std::move(req)).get())>>(
                               url, auth_state));
                     }
                 });
@@ -312,17 +312,17 @@ private:
                 return ss::futurize_invoke(
                          handler, std::move(req), std::move(rep), auth_state)
                   .handle_exception(
-                    exception_intercepter<
+                    exception_intercepter<std::remove_reference_t<
                       decltype(handler(
                                  std::move(req), std::move(rep), auth_state)
-                                 .get0())>(url, auth_state));
+                                 .get())>>(url, auth_state));
 
             } else {
                 return ss::futurize_invoke(
                          handler, std::move(req), std::move(rep))
                   .handle_exception(
-                    exception_intercepter<
-                      decltype(handler(std::move(req), std::move(rep)).get0())>(
+                    exception_intercepter<std::remove_reference_t<
+                      decltype(handler(std::move(req), std::move(rep)).get())>>(
                       url, auth_state));
             }
         };
@@ -383,9 +383,9 @@ private:
             return ss::futurize_invoke(
                      _handler, std::move(request), std::move(reply))
               .handle_exception(
-                _server.exception_intercepter<
+                _server.exception_intercepter<std::remove_reference_t<
                   decltype(_handler(std::move(request), std::move(reply))
-                             .get0())>(url, auth_state));
+                             .get())>>(url, auth_state));
         }
 
         admin_server& _server;

@@ -152,7 +152,7 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                               to_vector_consumer(), model::no_timeout);
                         });
                   })
-                  .get0();
+                  .get();
             storage.stop().get();
             feature_table.stop().get();
             return batches;

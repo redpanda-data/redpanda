@@ -145,7 +145,7 @@ struct raft_node {
           std::make_unique<storage::ntp_config::default_overrides>(
             std::move(overrides)));
 
-        log = storage.local().log_mgr().manage(std::move(ntp_cfg)).get0();
+        log = storage.local().log_mgr().manage(std::move(ntp_cfg)).get();
 
         recovery_throttle
           .start(
@@ -201,11 +201,11 @@ struct raft_node {
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
         scfg.disable_metrics = net::metrics_disabled::yes;
         scfg.disable_public_metrics = net::public_metrics_disabled::yes;
-        server.start(std::move(scfg)).get0();
-        raft_manager.start().get0();
+        server.start(std::move(scfg)).get();
+        raft_manager.start().get();
         raft_manager
           .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
-          .get0();
+          .get();
         server
           .invoke_on_all([this](rpc::rpc_server& s) {
               s.register_service<raft::service<test_raft_manager, raft_node>>(
@@ -216,8 +216,8 @@ struct raft_node {
                 heartbeat_interval,
                 broker.id());
           })
-          .get0();
-        server.invoke_on_all(&rpc::rpc_server::start).get0();
+          .get();
+        server.invoke_on_all(&rpc::rpc_server::start).get();
         hbeats = std::make_unique<raft::heartbeat_manager>(
           config::mock_binding<std::chrono::milliseconds>(
             std::chrono::milliseconds(heartbeat_interval)),
@@ -227,10 +227,10 @@ struct raft_node {
             heartbeat_interval * 20),
           config::mock_binding<bool>(true),
           feature_table.local());
-        hbeats->start().get0();
+        hbeats->start().get();
         hbeats->register_group(consensus).get();
         started = true;
-        consensus->start(raft::state_machine_manager_builder{}).get0();
+        consensus->start(raft::state_machine_manager_builder{}).get();
     }
 
     ss::future<> stop_node() {
@@ -467,7 +467,7 @@ struct raft_group {
 
     void disable_node(model::node_id node_id) {
         tstlog.info("Disabling node {} in group {}", node_id, _id);
-        _members.find(node_id)->second.stop_node().get0();
+        _members.find(node_id)->second.stop_node().get();
         _members.erase(node_id);
     }
 
@@ -524,7 +524,7 @@ struct raft_group {
     logs_t read_all_logs() {
         logs_t logs_map;
         for (auto& [id, m] : _members) {
-            logs_map.try_emplace(id, m.read_log().get0());
+            logs_map.try_emplace(id, m.read_log().get());
         }
         return logs_map;
     }
@@ -534,7 +534,7 @@ struct raft_group {
         for (auto& [_, m] : _members) {
             close_futures.push_back(m.stop_node());
         }
-        ss::when_all_succeed(close_futures.begin(), close_futures.end()).get0();
+        ss::when_all_succeed(close_futures.begin(), close_futures.end()).get();
     }
 
     members_t& get_members() { return _members; }
@@ -607,7 +607,7 @@ inline void wait_for(
               fmt::format("Timeout elapsed while wating for: {}", msg));
         }
         res = p();
-        ss::sleep(std::chrono::milliseconds(400)).get0();
+        ss::sleep(std::chrono::milliseconds(400)).get();
     }
 }
 
@@ -721,7 +721,7 @@ model::timeout_clock::time_point timeout(std::chrono::duration<T> d) {
 }
 
 inline model::node_id wait_for_group_leader(raft_group& gr) {
-    auto leader_id = gr.wait_for_leader().get0();
+    auto leader_id = gr.wait_for_leader().get();
     assert_at_most_one_leader(gr);
     return leader_id;
 }
@@ -729,7 +729,7 @@ inline model::node_id wait_for_group_leader(raft_group& gr) {
 inline void
 assert_stable_leadership(const raft_group& gr, int number_of_intervals = 5) {
     auto before = gr.get_elections_count();
-    ss::sleep(heartbeat_interval * number_of_intervals).get0();
+    ss::sleep(heartbeat_interval * number_of_intervals).get();
     BOOST_TEST(
       before = gr.get_elections_count(),
       "Group leadership is required to be stable");

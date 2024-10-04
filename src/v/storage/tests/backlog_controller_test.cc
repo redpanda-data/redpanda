@@ -82,7 +82,7 @@ struct backlog_controller_fixture {
 };
 
 FIXTURE_TEST(test_feedback_loop, backlog_controller_fixture) {
-    ctrl->start().get0();
+    ctrl->start().get();
     /**
      * current backlog is equal to 0, setpoint is set to 20, error = 20.0
      * since error hasn't changed and want some more backlog we will down

@@ -173,7 +173,7 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
           BOOST_REQUIRE_EQUAL(configurations[1].offset, offsets[1]);
           BOOST_REQUIRE_EQUAL(configurations[1].cfg, cfg_2);
       })
-      .get0();
+      .get();
 }
 
 /**

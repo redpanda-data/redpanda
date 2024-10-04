@@ -191,7 +191,7 @@ static partition_produce_stages partition_append(
           ss::future<result<raft::replicate_result>> f) {
             produce_response::partition p{.partition_index = id};
             try {
-                auto r = f.get0();
+                auto r = f.get();
                 if (r.has_value()) {
                     // have to subtract num_of_records - 1 as base_offset
                     // is inclusive

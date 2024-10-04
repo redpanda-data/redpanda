@@ -113,7 +113,7 @@ static void write_batches(
     vlog(fixt_log.trace, "num batches {}", batches.size());
     for (auto& b : batches) {
         b.header().header_crc = model::internal_header_only_crc(b.header());
-        auto res = seg->append(std::move(b)).get0();
+        auto res = seg->append(std::move(b)).get();
         vlog(fixt_log.trace, "last-offset {}", res.last_offset);
     }
     seg->flush().get();
@@ -251,7 +251,7 @@ void archiver_fixture::wait_for_partition_leadership(const model::ntp& ntp) {
         auto& table = app.controller->get_partition_leaders().local();
         auto self = app.controller->self();
         ss::lowres_clock::time_point deadline = ss::lowres_clock::now() + 500ms;
-        return table.wait_for_leader(ntp, deadline, {}).get0() == self
+        return table.wait_for_leader(ntp, deadline, {}).get() == self
                && app.partition_manager.local().get(ntp)->is_leader();
     }).get();
 }
@@ -286,7 +286,7 @@ void archiver_fixture::initialize_shard(
                        128_KiB,
                        10,
                        1_MiB)
-                     .get0();
+                     .get();
         vlog(fixt_log.trace, "write random batches to segment");
 
         segment_layout layout;
@@ -381,7 +381,7 @@ void segment_matcher<Fixture>::verify_segment(
     auto size = segment->size_bytes();
     auto reader_handle
       = segment->offset_data_stream(pos, ss::default_priority_class()).get();
-    auto tmp = reader_handle.stream().read_exactly(size).get0();
+    auto tmp = reader_handle.stream().read_exactly(size).get();
     reader_handle.close().get();
     ss::sstring actual = {tmp.get(), tmp.size()};
     vlog(
@@ -461,7 +461,7 @@ void segment_matcher<Fixture>::verify_segments(
       [](auto acc, const auto& seg) { return acc + seg->size_bytes(); });
 
     auto stream = v.take_stream();
-    auto data = stream.read_exactly(expected_size).get0();
+    auto data = stream.read_exactly(expected_size).get();
 
     v.close().get();
     stream.close().get();
@@ -584,7 +584,7 @@ void archiver_fixture::upload_and_verify(
           return archiver.upload_next_candidates(lso).then(
             [expected](auto result) { return result == expected; });
       })
-      .get0();
+      .get();
 }
 
 } // namespace archival

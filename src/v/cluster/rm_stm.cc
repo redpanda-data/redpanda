@@ -1050,7 +1050,7 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
         req_ptr->set_error(cluster::errc::replication_error);
         co_return cluster::errc::replication_error;
     }
-    auto result = replicated.get0();
+    auto result = replicated.get();
     if (result.has_error()) {
         vlog(_ctx_log.warn, "replication failed: {}", result.error());
         req_ptr->set_error(result.error());

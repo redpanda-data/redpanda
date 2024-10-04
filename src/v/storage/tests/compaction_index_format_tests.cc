@@ -134,12 +134,12 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
       ss::default_priority_class(),
       32_KiB,
       &as);
-    auto footer = rdr.load_footer().get0();
+    auto footer = rdr.load_footer().get();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
       footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
-    auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
+    auto vec = compaction_index_reader_to_memory(std::move(rdr)).get();
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
     BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(42));
     BOOST_REQUIRE_EQUAL(vec[0].delta, 66);
@@ -162,12 +162,12 @@ FIXTURE_TEST(
       ss::default_priority_class(),
       32_KiB,
       &as);
-    auto footer = rdr.load_footer().get0();
+    auto footer = rdr.load_footer().get();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
       footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
-    auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
+    auto vec = compaction_index_reader_to_memory(std::move(rdr)).get();
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
     BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(42));
     BOOST_REQUIRE_EQUAL(vec[0].delta, 66);
@@ -208,10 +208,10 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
                         .consume(
                           storage::internal::compaction_key_reducer(),
                           model::no_timeout)
-                        .get0();
+                        .get();
 
     // get all keys
-    auto vec = compaction_index_reader_to_memory(rdr).get0();
+    auto vec = compaction_index_reader_to_memory(rdr).get();
     BOOST_REQUIRE_EQUAL(vec.size(), 100);
 
     info("key bitmap: {}", key_bitmap.toString());
@@ -255,7 +255,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
                                 storage::internal::compaction_key_reducer(
                                   1_KiB + 16),
                                 model::no_timeout)
-                              .get0();
+                              .get();
 
     /*
       There are 2 keys exactly.
@@ -274,10 +274,10 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
                                 storage::internal::compaction_key_reducer(
                                   2_KiB + 2 * entry_size * 2),
                                 model::no_timeout)
-                              .get0();
+                              .get();
 
     // get all keys
-    auto vec = compaction_index_reader_to_memory(rdr).get0();
+    auto vec = compaction_index_reader_to_memory(rdr).get();
     BOOST_REQUIRE_EQUAL(vec.size(), 100);
 
     info("small key bitmap: {}", small_mem_bitmap.toString());
@@ -318,9 +318,9 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
 
     rdr.verify_integrity().get();
     auto bitmap
-      = storage::internal::natural_index_of_entries_to_keep(rdr).get0();
+      = storage::internal::natural_index_of_entries_to_keep(rdr).get();
     {
-        auto vec = compaction_index_reader_to_memory(rdr).get0();
+        auto vec = compaction_index_reader_to_memory(rdr).get();
         BOOST_REQUIRE_EQUAL(vec.size(), 100);
     }
     info("key bitmap: {}", bitmap.toString());
@@ -349,7 +349,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
           &as);
         final_rdr.verify_integrity().get();
         {
-            auto vec = compaction_index_reader_to_memory(final_rdr).get0();
+            auto vec = compaction_index_reader_to_memory(final_rdr).get();
             BOOST_REQUIRE_EQUAL(vec.size(), 2);
             BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));
             BOOST_REQUIRE_EQUAL(vec[1].offset, model::offset(99));
@@ -357,7 +357,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
         {
             auto offset_list = storage::internal::generate_compacted_list(
                                  model::offset(0), final_rdr)
-                                 .get0();
+                                 .get();
 
             BOOST_REQUIRE(offset_list.contains(model::offset(98)));
             BOOST_REQUIRE(offset_list.contains(model::offset(99)));

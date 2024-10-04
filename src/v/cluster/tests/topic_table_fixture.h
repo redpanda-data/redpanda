@@ -53,8 +53,8 @@ struct topic_table_fixture {
         table
           .start(ss::sharded_parameter(
             [this] { return std::ref(migrated_resources.local()); }))
-          .get0();
-        members.start_single().get0();
+          .get();
+        members.start_single().get();
         features.start().get();
         allocator
           .start_single(
@@ -66,7 +66,7 @@ struct topic_table_fixture {
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<std::vector<ss::sstring>>({}),
             config::mock_binding<bool>(false))
-          .get0();
+          .get();
         allocator.local().register_node(
           create_allocation_node(model::node_id(1), 8));
         allocator.local().register_node(
@@ -87,10 +87,10 @@ struct topic_table_fixture {
     ~topic_table_fixture() {
         pb_state.stop().get();
         node_status.stop().get();
-        table.stop().get0();
-        allocator.stop().get0();
+        table.stop().get();
+        allocator.stop().get();
         features.stop().get();
-        members.stop().get0();
+        members.stop().get();
         migrated_resources.stop().get();
         as.request_abort();
     }
@@ -140,7 +140,7 @@ struct topic_table_fixture {
     void add_random_topic() {
         auto cmd = make_create_topic_cmd(
           random_generators::gen_alphanum_string(5), 1, 3);
-        auto res = table.local().apply(std::move(cmd), model::offset(0)).get0();
+        auto res = table.local().apply(std::move(cmd), model::offset(0)).get();
         BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
     }
 
@@ -159,11 +159,11 @@ struct topic_table_fixture {
         auto cmd_3 = make_create_topic_cmd("test_tp_3", 8, 1);
 
         auto res_1
-          = table.local().apply(std::move(cmd_1), model::offset(0)).get0();
+          = table.local().apply(std::move(cmd_1), model::offset(0)).get();
         auto res_2
-          = table.local().apply(std::move(cmd_2), model::offset(0)).get0();
+          = table.local().apply(std::move(cmd_2), model::offset(0)).get();
         auto res_3
-          = table.local().apply(std::move(cmd_3), model::offset(0)).get0();
+          = table.local().apply(std::move(cmd_3), model::offset(0)).get();
 
         BOOST_REQUIRE_EQUAL(res_1, cluster::errc::success);
         BOOST_REQUIRE_EQUAL(res_2, cluster::errc::success);

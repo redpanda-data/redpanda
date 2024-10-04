@@ -85,12 +85,12 @@ public:
     void test_create_topic(
       kafka::create_topics_request req,
       kafka::api_version version = kafka::api_version(2)) {
-        auto client = make_kafka_client().get0();
+        auto client = make_kafka_client().get();
         client.connect().get();
         auto topics = req.data.topics
                         .copy(); // save a copy because we will move out of req
         bool validate_only = req.data.validate_only;
-        auto resp = client.dispatch(std::move(req), version).get0();
+        auto resp = client.dispatch(std::move(req), version).get();
 
         BOOST_REQUIRE_MESSAGE(
           std::all_of(
@@ -176,7 +176,7 @@ public:
           kafka::metadata_request_topic{request_topic.name});
         auto metadata_resp
           = client.dispatch(std::move(metadata_req), kafka::api_version(1))
-              .get0();
+              .get();
 
         // yank out the metadata for the topic from the response
         auto topic_metadata = std::find_if(
@@ -302,10 +302,9 @@ FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
         {"redpanda.remote.readreplica", "panda-bucket"},
         {"redpanda.remote.write", "true"}});
 
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
-    auto resp
-      = client.dispatch(make_req({topic}), kafka::api_version(2)).get0();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(2)).get();
 
     BOOST_CHECK(
       resp.data.topics[0].error_code == kafka::error_code::invalid_config);

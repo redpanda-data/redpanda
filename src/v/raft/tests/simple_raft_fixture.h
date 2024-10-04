@@ -51,10 +51,10 @@ struct simple_raft_fixture {
             [kv_conf]() { return kv_conf; },
             [this]() { return default_log_cfg(); },
             std::ref(_feature_table))
-          .get0();
-        _storage.invoke_on_all(&storage::api::start).get0();
+          .get();
+        _storage.invoke_on_all(&storage::api::start).get();
         _as.start().get();
-        _connections.start(std::ref(_as)).get0();
+        _connections.start(std::ref(_as)).get();
         _recovery_throttle
           .start(
             ss::sharded_parameter([] { return config::mock_binding(100_MiB); }),
@@ -102,9 +102,9 @@ struct simple_raft_fixture {
             std::ref(_storage),
             std::ref(_recovery_throttle),
             std::ref(_feature_table))
-          .get0();
+          .get();
 
-        _group_mgr.invoke_on_all(&raft::group_manager::start).get0();
+        _group_mgr.invoke_on_all(&raft::group_manager::start).get();
 
         _raft = _storage.local()
                   .log_mgr()
@@ -121,7 +121,7 @@ struct simple_raft_fixture {
                         log,
                         raft::with_learner_recovery_throttle::yes);
                   })
-                  .get0();
+                  .get();
     }
 
     void start_raft(storage::ntp_config::default_overrides overrides = {}) {
@@ -139,7 +139,7 @@ struct simple_raft_fixture {
                 [](auto& local) noexcept { local.request_abort(); })
               .get();
             _recovery_throttle.stop().get();
-            _group_mgr.stop().get0();
+            _group_mgr.stop().get();
             if (_raft) {
                 _raft.release();
             }
@@ -174,21 +174,21 @@ struct simple_raft_fixture {
         using namespace std::chrono_literals;
         tests::cooperative_spin_wait_with_timeout(10s, [this] {
             return _raft->is_elected_leader();
-        }).get0();
+        }).get();
     }
 
     void wait_for_confirmed_leader() {
         using namespace std::chrono_literals;
         tests::cooperative_spin_wait_with_timeout(10s, [this] {
             return _raft->is_leader();
-        }).get0();
+        }).get();
     }
 
     void wait_for_meta_initialized() {
         using namespace std::chrono_literals;
         tests::cooperative_spin_wait_with_timeout(10s, [this] {
             return _raft->meta().commit_index >= model::offset(0);
-        }).get0();
+        }).get();
     }
 
     model::node_id _self;

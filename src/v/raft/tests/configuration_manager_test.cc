@@ -67,7 +67,7 @@ struct config_manager_fixture {
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
-        _storage.start().get0();
+        _storage.start().get();
     }
 
     ss::sstring base_dir = "test_cfg_manager_"
@@ -79,7 +79,7 @@ struct config_manager_fixture {
     raft::configuration_manager _cfg_mgr;
 
     ~config_manager_fixture() {
-        _storage.stop().get0();
+        _storage.stop().get();
         _feature_table.stop().get();
     }
 
@@ -100,7 +100,7 @@ struct config_manager_fixture {
 
     raft::group_configuration add_random_cfg(model::offset offset) {
         auto cfg = random_configuration();
-        _cfg_mgr.add(offset, cfg).get0();
+        _cfg_mgr.add(offset, cfg).get();
         return cfg;
     }
 
@@ -124,7 +124,7 @@ struct config_manager_fixture {
           _storage,
           _logger);
 
-        recovered.start(false, model::revision_id(0)).get0();
+        recovered.start(false, model::revision_id(0)).get();
 
         BOOST_REQUIRE_EQUAL(
           recovered.get_highest_known_offset(),
@@ -178,14 +178,14 @@ FIXTURE_TEST(test_getting_configurations, config_manager_fixture) {
 FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
     auto configurations = test_configurations();
 
-    _cfg_mgr.prefix_truncate(model::offset(20)).get0();
-    _cfg_mgr.prefix_truncate(model::offset(0)).get0();
+    _cfg_mgr.prefix_truncate(model::offset(20)).get();
+    _cfg_mgr.prefix_truncate(model::offset(0)).get();
 
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)), configurations[1]);
     BOOST_REQUIRE(_cfg_mgr.get(model::offset(10)).has_value() == false);
     BOOST_REQUIRE(_cfg_mgr.get(model::offset(19)).has_value() == false);
 
-    _cfg_mgr.prefix_truncate(model::offset(21)).get0();
+    _cfg_mgr.prefix_truncate(model::offset(21)).get();
     validate_recovery();
 
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)).has_value(), false);
@@ -194,7 +194,7 @@ FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
 
     validate_recovery();
     // try to truncate whole
-    _cfg_mgr.prefix_truncate(model::offset(3003)).get0();
+    _cfg_mgr.prefix_truncate(model::offset(3003)).get();
     validate_recovery();
     // last known config is preserved
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(3003)), configurations[5]);
@@ -204,8 +204,8 @@ FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
 FIXTURE_TEST(test_truncation, config_manager_fixture) {
     auto configurations = test_configurations();
 
-    _cfg_mgr.truncate(model::offset(34)).get0();
-    _cfg_mgr.truncate(model::offset(50)).get0();
+    _cfg_mgr.truncate(model::offset(34)).get();
+    _cfg_mgr.truncate(model::offset(50)).get();
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(0)), configurations[0]);
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(1)), configurations[0]);
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(19)), configurations[0]);
@@ -218,16 +218,16 @@ FIXTURE_TEST(test_truncation, config_manager_fixture) {
     validate_recovery();
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 3);
     // prefix truncate
-    _cfg_mgr.prefix_truncate(model::offset(33)).get0();
+    _cfg_mgr.prefix_truncate(model::offset(33)).get();
     // try to truncate all configurations
     BOOST_CHECK_THROW(
-      _cfg_mgr.truncate(model::offset(33)).get0(), std::invalid_argument);
+      _cfg_mgr.truncate(model::offset(33)).get(), std::invalid_argument);
 }
 
 FIXTURE_TEST(test_indexing_after_truncate, config_manager_fixture) {
     auto configurations = test_configurations();
 
-    _cfg_mgr.truncate(model::offset(34)).get0();
+    _cfg_mgr.truncate(model::offset(34)).get();
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 3);
     _cfg_mgr.add(model::offset(90), configurations[3]).get();
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 4);
@@ -240,13 +240,13 @@ FIXTURE_TEST(test_waitng_for_change, config_manager_fixture) {
     auto f = _cfg_mgr.wait_for_change(model::offset(21), as);
     auto not_completed = _cfg_mgr.wait_for_change(model::offset(35000), as);
     auto configurations = test_configurations();
-    auto res = f.get0();
+    auto res = f.get();
     BOOST_REQUIRE(res.offset > model::offset(21));
     BOOST_REQUIRE_EQUAL(res.cfg, _cfg_mgr.get(res.offset));
     BOOST_REQUIRE_EQUAL(res.cfg, _cfg_mgr.get(res.offset));
     as.request_abort();
     BOOST_CHECK_THROW(
-      auto res = not_completed.get0(), ss::abort_requested_exception);
+      auto res = not_completed.get(), ss::abort_requested_exception);
 }
 
 FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
@@ -270,7 +270,7 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
     futures.push_back(std::move(start));
     futures.push_back(std::move(add));
 
-    ss::when_all(futures.begin(), futures.end()).get0();
+    ss::when_all(futures.begin(), futures.end()).get();
 
     BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest(), cfg);
     BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest(), cfg);
@@ -296,7 +296,7 @@ FIXTURE_TEST(test_assigning_initial_revision, config_manager_fixture) {
       _storage,
       _logger);
 
-    mgr.start(false, new_revision).get0();
+    mgr.start(false, new_revision).get();
     std::cout << mgr.get_latest() << std::endl;
     BOOST_REQUIRE(
       mgr.get_latest().contains(raft::vnode(model::node_id(0), new_revision)));
@@ -307,16 +307,16 @@ FIXTURE_TEST(test_assigning_initial_revision, config_manager_fixture) {
 FIXTURE_TEST(test_mixed_configuration_versions, config_manager_fixture) {
     auto cfg = random_configuration();
     cfg.set_version(raft::group_configuration::v_5);
-    _cfg_mgr.add(model::offset(0), cfg).get0();
+    _cfg_mgr.add(model::offset(0), cfg).get();
     cfg = random_configuration();
     cfg.set_version(raft::group_configuration::v_6);
-    _cfg_mgr.add(model::offset(1), cfg).get0();
+    _cfg_mgr.add(model::offset(1), cfg).get();
     cfg = random_configuration();
     cfg.set_version(raft::group_configuration::v_6);
-    _cfg_mgr.add(model::offset(2), cfg).get0();
+    _cfg_mgr.add(model::offset(2), cfg).get();
     cfg = random_configuration();
     cfg.set_version(raft::group_configuration::v_5);
-    _cfg_mgr.add(model::offset(3), cfg).get0();
+    _cfg_mgr.add(model::offset(3), cfg).get();
 
     validate_recovery();
 }

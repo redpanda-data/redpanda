@@ -632,7 +632,7 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
       .then_wrapped([tp_ns = std::move(tp_ns), units = std::move(units)](
                       ss::future<std::error_code> f) mutable {
           try {
-              auto error_code = f.get0();
+              auto error_code = f.get();
               auto ret_f = ss::now();
               return ret_f.then(
                 [tp_ns = std::move(tp_ns), error_code]() mutable {
@@ -786,7 +786,7 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
           .then_wrapped(
             [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
                 try {
-                    auto ec = f.get0();
+                    auto ec = f.get();
                     if (ec != errc::success) {
                         return topic_result(std::move(tp_ns), map_errc(ec));
                     } else {
@@ -832,7 +832,7 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
       .then_wrapped(
         [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
             try {
-                auto ec = f.get0();
+                auto ec = f.get();
                 if (ec != errc::success) {
                     return topic_result(std::move(tp_ns), map_errc(ec));
                 }

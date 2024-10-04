@@ -616,7 +616,7 @@ ss::future<> build_compaction_index(
       gclog.info,
       "tx reducer path: {} stats {}",
       w.filename(),
-      index_builder.get0());
+      index_builder.get());
 }
 
 bool compacted_index_needs_rebuild(compacted_index::recovery_state state) {

@@ -42,7 +42,7 @@ copy_range(Iterator begin, Iterator end, AsyncAction action, Container c) {
         if (f.failed()) {
             return ss::make_exception_future<Container>(f.get_exception());
         }
-        *i++ = f.get0();
+        *i++ = f.get();
         if (ss::need_preempt()) {
             return copy_range(
               std::move(begin),
@@ -73,7 +73,7 @@ template<typename Container, typename Iterator, typename AsyncAction>
 requires requires(AsyncAction aa, Iterator it, Container c) {
     ss::futurize_invoke(aa, *it++);
     requires ss::is_future<decltype(ss::futurize_invoke(aa, *it))>::value;
-    *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *it).get0();
+    *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *it).get();
 }
 inline ss::future<Container>
 copy_range(Iterator begin, Iterator end, AsyncAction action) {
@@ -103,7 +103,7 @@ requires requires(AsyncAction aa, Range r, Container c) {
     ss::futurize_invoke(aa, *r.begin());
     requires ss::is_future<decltype(ss::futurize_invoke(
       aa, *r.begin()))>::value;
-    *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *r.begin()).get0();
+    *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *r.begin()).get();
 }
 inline ss::future<Container> copy_range(Range& r, AsyncAction action) {
     return copy_range<Container>(std::begin(r), std::end(r), std::move(action));

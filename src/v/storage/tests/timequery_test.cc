@@ -87,7 +87,7 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
               ss::default_priority_class(),
               std::nullopt);
 
-            auto res = log->timequery(config).get0();
+            auto res = log->timequery(config).get();
             BOOST_TEST(res);
             BOOST_TEST(res->time == model::timestamp(start_offset));
             BOOST_TEST(res->offset == start_offset);
@@ -105,7 +105,7 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
           ss::default_priority_class(),
           std::nullopt);
 
-        auto res = log->timequery(config).get0();
+        auto res = log->timequery(config).get();
         BOOST_TEST(res);
         BOOST_TEST(res->time == model::timestamp(ts));
         BOOST_TEST(res->offset == model::offset(ts));
@@ -130,7 +130,7 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
 
         auto offset = (ts - 100) * 5 + 100;
 
-        auto res = log->timequery(config).get0();
+        auto res = log->timequery(config).get();
         BOOST_TEST(res);
         BOOST_TEST(res->time == model::timestamp(ts));
         BOOST_TEST(res->offset == model::offset(offset));
@@ -192,7 +192,7 @@ FIXTURE_TEST(timequery_multiple_messages_per_batch, log_builder_fixture) {
           ss::default_priority_class(),
           std::nullopt);
 
-        auto res = log->timequery(config).get0();
+        auto res = log->timequery(config).get();
         BOOST_TEST(res);
         BOOST_TEST(res->time == model::timestamp(start_offset));
         BOOST_TEST(res->offset == start_offset);
@@ -223,13 +223,13 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
       ss::default_priority_class(),
       std::nullopt);
 
-    auto empty_res = log->timequery(config).get0();
+    auto empty_res = log->timequery(config).get();
     BOOST_TEST(!empty_res);
 
     // ask for 999 it should return first segment
     config.time = model::timestamp(999);
 
-    auto res = log->timequery(config).get0();
+    auto res = log->timequery(config).get();
     BOOST_TEST(res);
     BOOST_TEST(res->time == model::timestamp(1000));
     BOOST_TEST(res->offset == model::offset(0));
@@ -265,7 +265,7 @@ FIXTURE_TEST(timequery_sparse_index, log_builder_fixture) {
       ss::default_priority_class(),
       std::nullopt);
 
-    auto res = log->timequery(config).get0();
+    auto res = log->timequery(config).get();
     BOOST_TEST(res);
     BOOST_TEST(res->time == model::timestamp(1600));
     BOOST_TEST(res->offset == model::offset(1));
@@ -298,7 +298,7 @@ FIXTURE_TEST(timequery_one_element_index, log_builder_fixture) {
       ss::default_priority_class(),
       std::nullopt);
 
-    auto res = log->timequery(config).get0();
+    auto res = log->timequery(config).get();
     BOOST_TEST(res);
     BOOST_TEST(res->time == model::timestamp(1000));
     BOOST_TEST(res->offset == model::offset(0));
@@ -346,7 +346,7 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
           ss::default_priority_class(),
           std::nullopt);
 
-        auto res = log->timequery(config).get0();
+        auto res = log->timequery(config).get();
 
         if (offset == model::offset(4)) {
             // A timequery will always return from within the
@@ -372,7 +372,7 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
       ss::default_priority_class(),
       std::nullopt);
 
-    auto res = log->timequery(config).get0();
+    auto res = log->timequery(config).get();
 
     BOOST_TEST(res);
     BOOST_TEST(res->offset == model::offset(0));
@@ -414,7 +414,7 @@ FIXTURE_TEST(timequery_clamp, log_builder_fixture) {
       std::nullopt);
 
     const auto& [expected_offset, expected_ts] = batch_spec.back();
-    auto res = log->timequery(config).get0();
+    auto res = log->timequery(config).get();
     BOOST_TEST(res);
     BOOST_TEST(res->time == expected_ts);
     BOOST_TEST(res->offset == expected_offset);

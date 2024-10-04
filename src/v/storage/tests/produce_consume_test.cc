@@ -60,7 +60,7 @@ SEASTAR_THREAD_TEST_CASE(produce_consume_concurrency) {
           .discard_result();
     });
 
-    ss::when_all(std::move(prod), std::move(consumer), [] {}).get0();
+    ss::when_all(std::move(prod), std::move(consumer), [] {}).get();
 
     builder | storage::stop();
 }

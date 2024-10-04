@@ -47,18 +47,18 @@ public:
           .validate_only = false,
         }};
 
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
+        auto client = make_kafka_client().get();
+        client.connect().get();
         auto resp
-          = client.dispatch(std::move(req), kafka::api_version(2)).get0();
+          = client.dispatch(std::move(req), kafka::api_version(2)).get();
     }
 
     kafka::delete_topics_response
     send_delete_topics_request(kafka::delete_topics_request req) {
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
+        auto client = make_kafka_client().get();
+        client.connect().get();
 
-        return client.dispatch(std::move(req), kafka::api_version(2)).get0();
+        return client.dispatch(std::move(req), kafka::api_version(2)).get();
     }
 
     void
@@ -76,15 +76,15 @@ public:
     }
 
     kafka::metadata_response get_topic_metadata(const model::topic& tp) {
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
+        auto client = make_kafka_client().get();
+        client.connect().get();
         chunked_vector<kafka::metadata_request_topic> topics;
         topics.push_back(kafka::metadata_request_topic{tp});
         kafka::metadata_request md_req{
           .data
           = {.topics = std::move(topics), .allow_auto_topic_creation = false},
           .list_all_topics = false};
-        return client.dispatch(std::move(md_req)).get0();
+        return client.dispatch(std::move(md_req)).get();
     }
 
     ss::future<kafka::metadata_response> get_all_metadata() {
@@ -193,7 +193,7 @@ FIXTURE_TEST(error_delete_topics_request, delete_topics_request_fixture) {
     tests::cooperative_spin_wait_with_timeout(5s, [this, tp] {
         return get_all_metadata().then(
           [](kafka::metadata_response resp) { return resp.topics.empty(); });
-    }).get0();
+    }).get();
 
     validate_topic_is_deleteted(model::topic("timeout-topic"));
 }

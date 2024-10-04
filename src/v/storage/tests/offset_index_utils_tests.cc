@@ -79,7 +79,7 @@ FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
           i);
     }
     info("About to flush index");
-    _idx->flush().get0();
+    _idx->flush().get();
     auto data = _data.share_iobuf();
     info("{} - serializing from bytes into mem: buffer{}", _idx, data);
     auto raw_idx = serde::from_iobuf<storage::index_state>(
