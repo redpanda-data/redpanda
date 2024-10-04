@@ -17,7 +17,7 @@
 
 namespace serde {
 
-constexpr auto max_serializable_ms
+inline constexpr auto max_serializable_ms
   = std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::nanoseconds::max());
 
