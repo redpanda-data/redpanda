@@ -240,8 +240,6 @@ public:
         }
     };
 
-    using ntp_delta = topic_table_ntp_delta;
-
     using underlying_t = chunked_hash_map<
       model::topic_namespace,
       topic_metadata_item,
@@ -259,6 +257,13 @@ public:
       topic_disabled_partitions_set,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
+
+    using topic_delta = topic_table_topic_delta;
+
+    using topic_delta_cb_t
+      = ss::noncopyable_function<void(const chunked_vector<topic_delta>&)>;
+
+    using ntp_delta = topic_table_ntp_delta;
 
     using ntp_delta_range_t
       = boost::iterator_range<fragmented_vector<ntp_delta>::const_iterator>;
@@ -302,6 +307,20 @@ public:
     };
 
     explicit topic_table(data_migrations::migrated_resources&);
+
+    cluster::notification_id_type
+    register_topic_delta_notification(topic_delta_cb_t cb) {
+        auto id = _topic_notification_id++;
+        _topic_notifications.emplace_back(id, std::move(cb));
+        return id;
+    }
+
+    void unregister_topic_delta_notification(cluster::notification_id_type id) {
+        std::erase_if(
+          _topic_notifications,
+          [id](const std::pair<cluster::notification_id_type, topic_delta_cb_t>&
+                 n) { return n.first == id; });
+    }
 
     cluster::notification_id_type
     register_ntp_delta_notification(ntp_delta_cb_t cb) {
@@ -674,6 +693,11 @@ private:
     // Unlike other revisions this does not correspond to the command
     // revision that updated the map.
     model::revision_id _topics_map_revision{0};
+
+    chunked_vector<topic_delta> _pending_topic_deltas;
+    cluster::notification_id_type _topic_notification_id{0};
+    std::vector<std::pair<cluster::notification_id_type, topic_delta_cb_t>>
+      _topic_notifications;
 
     fragmented_vector<ntp_delta> _pending_ntp_deltas;
     cluster::notification_id_type _ntp_notification_id{0};

@@ -71,7 +71,15 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     auto md = topic_metadata_item{
       .metadata = topic_metadata(
         std::move(cmd.value), model::revision_id(offset()), remote_revision)};
-    // calculate delta
+
+    // generate deltas
+
+    _pending_topic_deltas.emplace_back(
+      md.get_revision(),
+      cmd.key,
+      model::revision_id{offset},
+      topic_table_topic_delta_type::added);
+
     md.partitions.reserve(cmd.value.assignments.size());
     auto rev_id = model::revision_id{offset};
     for (auto& pas : md.get_assignments()) {
@@ -123,6 +131,12 @@ std::error_code topic_table::do_local_delete(
         return errc::resource_is_being_migrated;
     }
     if (auto tp = _topics.find(nt); tp != _topics.end()) {
+        _pending_topic_deltas.emplace_back(
+          tp->second.get_revision(),
+          nt,
+          model::revision_id{offset},
+          topic_table_topic_delta_type::removed);
+
         for (auto& [_, p_as] : tp->second.get_assignments()) {
             _partition_count--;
             auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
@@ -967,7 +981,14 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     // Apply the changes
     properties = std::move(updated_properties);
 
-    // generate deltas for controller backend
+    // generate deltas
+
+    _pending_topic_deltas.emplace_back(
+      tp->second.get_revision(),
+      cmd.key,
+      model::revision_id{o},
+      topic_table_topic_delta_type::properties_updated);
+
     const auto& assignments = tp->second.get_assignments();
     for (auto& [_, p_as] : assignments) {
         _pending_ntp_deltas.emplace_back(
@@ -976,6 +997,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
           model::revision_id(o),
           topic_table_ntp_delta_type::properties_updated);
     }
+
     notify_waiters();
 
     co_return make_error_code(errc::success);
@@ -1059,6 +1081,7 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
 class topic_table::snapshot_applier {
     updates_t& _updates_in_progress;
     disabled_partitions_t& _disabled_partitions;
+    chunked_vector<topic_delta>& _pending_topic_deltas;
     fragmented_vector<ntp_delta>& _pending_ntp_deltas;
     topic_table_probe& _probe;
     model::revision_id& _topics_map_revision;
@@ -1068,6 +1091,7 @@ public:
     snapshot_applier(topic_table& parent, model::revision_id snap_revision)
       : _updates_in_progress(parent._updates_in_progress)
       , _disabled_partitions(parent._disabled_partitions)
+      , _pending_topic_deltas(parent._pending_topic_deltas)
       , _pending_ntp_deltas(parent._pending_ntp_deltas)
       , _probe(parent._probe)
       , _topics_map_revision(parent._topics_map_revision)
@@ -1098,6 +1122,11 @@ public:
           clusterlog.trace,
           "deleting topic {} not in controller snapshot",
           ns_tp);
+        _pending_topic_deltas.emplace_back(
+          old_md_item.get_revision(),
+          ns_tp,
+          _snap_revision,
+          topic_table_topic_delta_type::removed);
         for (const auto& [_, p_as] : old_md_item.get_assignments()) {
             delete_ntp(ns_tp, p_as);
             co_await ss::coroutine::maybe_yield();
@@ -1267,6 +1296,12 @@ public:
             _topics_map_revision++;
         }
 
+        _pending_topic_deltas.emplace_back(
+          topic.metadata.revision,
+          ns_tp,
+          _snap_revision,
+          topic_table_topic_delta_type::added);
+
         for (const auto& [p_id, partition] : topic.partitions) {
             auto ntp = model::ntp(ns_tp.ns, ns_tp.tp, p_id);
             add_ntp(ntp, topic, partition, ret, false);
@@ -1329,6 +1364,14 @@ ss::future<> topic_table::apply_snapshot(
                     old_disabled_set = std::move(it->second);
                     _disabled_partitions.erase(it);
                     _topics_map_revision++;
+                }
+
+                if (must_update_properties) {
+                    _pending_topic_deltas.emplace_back(
+                      md_item.get_revision(),
+                      ns_tp,
+                      snap_revision,
+                      topic_table_topic_delta_type::properties_updated);
                 }
 
                 // 2. For each partition in the new set, reconcile assignments
@@ -1430,6 +1473,14 @@ void topic_table::notify_waiters() {
     // \ref notify_waiters is called after every apply. Hence for the most
     // part there should only be a few items in \ref _pending_deltas that need
     // to be sent to callbacks in \ref notifications.
+
+    if (!_pending_topic_deltas.empty()) {
+        for (auto& cb : _topic_notifications) {
+            cb.second(_pending_topic_deltas);
+        }
+    }
+    _pending_topic_deltas.clear();
+
     ntp_delta_range_t changes{
       _pending_ntp_deltas.cbegin(), _pending_ntp_deltas.cend()};
     if (!changes.empty()) {
