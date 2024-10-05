@@ -26,7 +26,7 @@ struct broker_revision {
     model::revision_id rev;
 };
 
-static constexpr model::revision_id no_revision{};
+inline constexpr model::revision_id no_revision{};
 
 /**
  * Enum describing configuration state.

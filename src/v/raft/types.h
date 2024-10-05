@@ -724,9 +724,9 @@ enum class metadata_key : int8_t {
 using voter_priority = named_type<uint32_t, struct voter_priority_tag>;
 
 // zero priority doesn't allow node to become a leader
-static constexpr voter_priority zero_voter_priority = voter_priority{0};
+inline constexpr voter_priority zero_voter_priority = voter_priority{0};
 // 1 is smallest possible priority allowing node to become a leader
-static constexpr voter_priority min_voter_priority = voter_priority{1};
+inline constexpr voter_priority min_voter_priority = voter_priority{1};
 
 /**
  * Raft scheduling_config contains Seastar scheduling and IO priority
