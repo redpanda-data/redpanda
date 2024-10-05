@@ -40,7 +40,7 @@ namespace cloud_storage {
 std::filesystem::path
 generate_index_path(const cloud_storage::remote_segment_path& p);
 
-static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
+inline constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 
 class remote_segment_exception : public std::runtime_error {
 public:

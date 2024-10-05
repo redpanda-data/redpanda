@@ -20,7 +20,7 @@
 
 namespace cloud_storage {
 
-constexpr auto cache_tmp_file_extension{".part"};
+inline constexpr auto cache_tmp_file_extension{".part"};
 
 class access_time_tracker;
 

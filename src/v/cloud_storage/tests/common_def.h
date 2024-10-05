@@ -33,7 +33,7 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_topic,
   manifest_partition);
 static const auto manifest_revision = model::initial_revision_id(0); // NOLINT
-static const auto archiver_term = model::term_id{123};
+inline const auto archiver_term = model::term_id{123};
 static const ss::sstring manifest_url = ssx::sformat( // NOLINT
   "10000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),

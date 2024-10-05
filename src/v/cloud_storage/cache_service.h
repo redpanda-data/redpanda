@@ -40,12 +40,12 @@ static constexpr unsigned default_writebehind = 10;
 
 // These timeout/backoff settings are for S3 requests
 using namespace std::chrono_literals;
-static const ss::lowres_clock::duration cache_hydration_timeout = 60s;
-static const ss::lowres_clock::duration cache_hydration_backoff = 250ms;
+inline const ss::lowres_clock::duration cache_hydration_timeout = 60s;
+inline const ss::lowres_clock::duration cache_hydration_backoff = 250ms;
 
 // This backoff is for failure of the local cache to retain recently
 // promoted data (i.e. highly stressed cache)
-static const ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
+inline const ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
 
 class cache_test_fixture;
 
