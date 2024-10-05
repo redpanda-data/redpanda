@@ -74,25 +74,33 @@ class DescribeTopicsTest(RedpandaTest):
         # All the config properties and their values reported by topic describe
         properties = {
             "cleanup.policy":
-            ConfigProperty(config_type="STRING",
-                           value="DELETE",
-                           doc_string="Default topic cleanup policy",
-                           source_type="DYNAMIC_TOPIC_CONFIG"),
+            ConfigProperty(
+                config_type="STRING",
+                value="DELETE",
+                doc_string=
+                "default cleanup policy for topic logs. the topic property `cleanup.policy` overrides the value of `log_cleanup_policy` at the topic level.",
+                source_type="DYNAMIC_TOPIC_CONFIG"),
             "compression.type":
-            ConfigProperty(config_type="STRING",
-                           value="producer",
-                           doc_string="Default topic compression type"),
+            ConfigProperty(
+                config_type="STRING",
+                value="producer",
+                doc_string=
+                "Default topic compression type. The topic property `compression.type` overrides the value of `log_compression_type` at the topic level."
+            ),
             "max.message.bytes":
             ConfigProperty(
                 config_type="INT",
                 value="1048576",
                 doc_string=
-                "Maximum size of a batch processed by server. If batch is compressed the limit applies to compressed batch size"
+                "Maximum size of a batch processed by the server. If the batch is compressed, the limit applies to the compressed batch size."
             ),
             "message.timestamp.type":
-            ConfigProperty(config_type="STRING",
-                           value="CreateTime",
-                           doc_string="Default topic messages timestamp type"),
+            ConfigProperty(
+                config_type="STRING",
+                value="CreateTime",
+                doc_string=
+                "Default timestamp type for topic messages (CreateTime or LogAppendTime). The topic property `message.timestamp.type` overrides the value of `log_message_timestamp_type` at the topic level."
+            ),
             "redpanda.remote.delete":
             ConfigProperty(
                 config_type="BOOLEAN",
@@ -114,27 +122,43 @@ class DescribeTopicsTest(RedpandaTest):
                 config_type="LONG",
                 value="-1",
                 doc_string=
-                "Default max bytes per partition on disk before triggering a compaction"
+                "Default maximum number of bytes per partition on disk before triggering "
+                "deletion of the oldest messages. If `null` (the default value), no "
+                "limit is applied. The topic property `retention.bytes` overrides the "
+                "value of `retention_bytes` at the topic level.",
             ),
             "retention.local.target.bytes":
             ConfigProperty(
                 config_type="LONG",
                 value="-1",
                 doc_string=
-                "Local retention size target for partitions of topics with cloud storage write enabled"
-            ),
+                "Local retention size target for partitions of topics with object "
+                "storage write enabled. If `null`, the property is disabled. This "
+                "property can be overridden on a per-topic basis by setting "
+                "`retention.local.target.bytes` in each topic enabled for Tiered "
+                "Storage. Both `retention_local_target_bytes_default` and "
+                "`retention_local_target_ms_default` can be set. The limit that is "
+                "reached earlier is applied."),
             "retention.local.target.ms":
             ConfigProperty(
                 config_type="LONG",
                 value="86400000",
                 doc_string=
-                "Local retention time target for partitions of topics with cloud storage write enabled"
-            ),
+                "Local retention time target for partitions of topics with object "
+                "storage write enabled. This property can be overridden on a per-topic "
+                "basis by setting `retention.local.target.ms` in each topic enabled for "
+                "Tiered Storage. Both `retention_local_target_bytes_default` and "
+                "`retention_local_target_ms_default` can be set. The limit that is "
+                "reached first is applied."),
             "retention.ms":
             ConfigProperty(
                 config_type="LONG",
                 value="604800000",
-                doc_string="delete segments older than this - default 1 week"),
+                doc_string=
+                "The amount of time to keep a log file before deleting it (in "
+                "milliseconds). If set to `-1`, no time limit is applied. This is a "
+                "cluster-wide default when a topic does not set or disable "
+                "`retention.ms`."),
             "segment.bytes":
             ConfigProperty(
                 config_type="LONG",
@@ -147,8 +171,11 @@ class DescribeTopicsTest(RedpandaTest):
                 config_type="LONG",
                 value="1209600000",  # 2 weeks in ms
                 doc_string=
-                "Default log segment lifetime in ms for topics which do not set segment.ms"
-            ),
+                "Default lifetime of log segments. If `null`, the property is disabled, "
+                "and no default lifetime is set. Any value under 60 seconds (60000 ms) "
+                "is rejected. This property can also be set in the Kafka API using the "
+                "Kafka-compatible alias, `log.roll.ms`. The topic property `segment.ms` "
+                "overrides the value of `log_segment_ms` at the topic level."),
             "redpanda.key.schema.id.validation":
             ConfigProperty(
                 config_type="BOOLEAN",
@@ -208,44 +235,46 @@ class DescribeTopicsTest(RedpandaTest):
                 config_type="LONG",
                 value="-1",
                 doc_string=
-                "Initial local retention size target for partitions of topics with cloud "
-                "storage write enabled. If no initial local target retention is "
-                "configured all locally retained data will be delivered to learner when "
-                "joining partition replica set"),
+                "Initial local retention size target for partitions of topics with Tiered Storage enabled. If no initial local target retention is configured all locally retained data will be delivered to learner when joining partition replica set."
+            ),
             "initial.retention.local.target.ms":
             ConfigProperty(
                 config_type="LONG",
                 value="-1",
                 doc_string=
-                "Initial local retention time target for partitions of topics with cloud "
-                "storage write enabled. If no initial local target retention is "
-                "configured all locally retained data will be delivered to learner when "
-                "joining partition replica set"),
+                "Initial local retention time target for partitions of topics with Tiered Storage enabled. If no initial local target retention is configured all locally retained data will be delivered to learner when joining partition replica set."
+            ),
             "write.caching":
             ConfigProperty(
                 config_type="STRING",
                 value="false",
                 doc_string=
-                "Cache batches until the segment appender chunk is full instead of "
-                "flushing for every acks=all write. This is the global default "
-                "for all topics and can be overriden at a topic scope with property "
-                "write.caching. 'disabled' mode takes precedence over topic overrides "
-                "and disables the feature altogether for the entire cluster."),
+                "The default write caching mode to apply to user topics. Write caching "
+                "acknowledges a message as soon as it is received and acknowledged on a "
+                "majority of brokers, without waiting for it to be written to disk. With "
+                "`acks=all`, this provides lower latency while still ensuring that a "
+                "majority of brokers acknowledge the write. Fsyncs follow "
+                "`raft_replica_max_pending_flush_bytes` and "
+                "`raft_replica_max_flush_delay_ms`, whichever is reached first. The "
+                "`write_caching_default` cluster property can be overridden with the "
+                "`write.caching` topic property. Accepted values: * `true` * `false` * "
+                "`disabled`: This takes precedence over topic overrides and disables "
+                "write caching for the entire cluster.",
+            ),
             "flush.ms":
             ConfigProperty(
                 config_type="LONG",
                 value="100",
                 doc_string=
-                "Maximum delay (in ms) between two subsequent flushes. After this delay, "
-                "the log will be automatically force flushed."),
+                "Maximum delay between two subsequent flushes. After this delay, the log is automatically force flushed."
+            ),
             "flush.bytes":
             ConfigProperty(
                 config_type="LONG",
                 value="262144",
                 doc_string=
-                "Max not flushed bytes per partition. If configured threshold is reached "
-                "log will automatically be flushed even though it wasn't explicitly "
-                "requested"),
+                "Maximum number of bytes that are not flushed per partition. If the configured threshold is reached, the log is automatically flushed even if it has not been explicitly requested."
+            ),
             "iceberg.enabled":
             ConfigProperty(
                 config_type="BOOLEAN",
@@ -330,5 +359,5 @@ class DescribeTopicsTest(RedpandaTest):
             name = name_match.group("name")
             assert name in properties
             prop = properties[name]
-            assert doc_string == prop.doc_string
+            assert doc_string == prop.doc_string, f"{doc_string} != {prop.doc_string}"
             assert len(empty_line) == 0
