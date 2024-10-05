@@ -22,7 +22,7 @@ namespace kafka {
 
 namespace internal {
 
-constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
+inline constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
                                      sizeof(int32_t) + // batch length
                                      sizeof(int32_t) + // partition leader epoch
                                      sizeof(int8_t) +  // magic

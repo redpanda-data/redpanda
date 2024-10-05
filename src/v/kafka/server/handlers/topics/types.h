@@ -37,71 +37,71 @@ using config_map_t
 /**
  * Topic properties string names
  */
-static constexpr std::string_view topic_property_compaction_strategy
+inline constexpr std::string_view topic_property_compaction_strategy
   = "compaction.strategy";
-static constexpr std::string_view topic_property_timestamp_type
+inline constexpr std::string_view topic_property_timestamp_type
   = "message.timestamp.type";
-static constexpr std::string_view topic_property_segment_size = "segment.bytes";
-static constexpr std::string_view topic_property_max_message_bytes
+inline constexpr std::string_view topic_property_segment_size = "segment.bytes";
+inline constexpr std::string_view topic_property_max_message_bytes
   = "max.message.bytes";
-static constexpr std::string_view topic_property_recovery
+inline constexpr std::string_view topic_property_recovery
   = "redpanda.remote.recovery";
-static constexpr std::string_view topic_property_remote_write
+inline constexpr std::string_view topic_property_remote_write
   = "redpanda.remote.write";
-static constexpr std::string_view topic_property_remote_read
+inline constexpr std::string_view topic_property_remote_read
   = "redpanda.remote.read";
-static constexpr std::string_view topic_property_read_replica
+inline constexpr std::string_view topic_property_read_replica
   = "redpanda.remote.readreplica";
-static constexpr std::string_view topic_property_replication_factor
+inline constexpr std::string_view topic_property_replication_factor
   = "replication.factor";
-static constexpr std::string_view topic_property_remote_delete
+inline constexpr std::string_view topic_property_remote_delete
   = "redpanda.remote.delete";
-static constexpr std::string_view topic_property_segment_ms = "segment.ms";
-static constexpr std::string_view topic_property_write_caching
+inline constexpr std::string_view topic_property_segment_ms = "segment.ms";
+inline constexpr std::string_view topic_property_write_caching
   = "write.caching";
 
-static constexpr std::string_view topic_property_flush_ms = "flush.ms";
-static constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
+inline constexpr std::string_view topic_property_flush_ms = "flush.ms";
+inline constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
 
 // Server side schema id validation
-static constexpr std::string_view topic_property_record_key_schema_id_validation
+inline constexpr std::string_view topic_property_record_key_schema_id_validation
   = "redpanda.key.schema.id.validation";
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_key_subject_name_strategy
   = "redpanda.key.subject.name.strategy";
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_value_schema_id_validation
   = "redpanda.value.schema.id.validation";
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_value_subject_name_strategy
   = "redpanda.value.subject.name.strategy";
 
 // Server side schema id validation (compat names)
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_key_schema_id_validation_compat
   = "confluent.key.schema.validation";
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_key_subject_name_strategy_compat
   = "confluent.key.subject.name.strategy";
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_value_schema_id_validation_compat
   = "confluent.value.schema.validation";
-static constexpr std::string_view
+inline constexpr std::string_view
   topic_property_record_value_subject_name_strategy_compat
   = "confluent.value.subject.name.strategy";
 
-static constexpr std::string_view topic_property_mpx_virtual_cluster_id
+inline constexpr std::string_view topic_property_mpx_virtual_cluster_id
   = "redpanda.virtual.cluster.id";
 
-static constexpr std::string_view topic_property_iceberg_enabled
+inline constexpr std::string_view topic_property_iceberg_enabled
   = "iceberg.enabled";
 
-static constexpr std::string_view topic_property_leaders_preference
+inline constexpr std::string_view topic_property_leaders_preference
   = "redpanda.leaders.preference";
 
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
-static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
+inline constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
 
   // Not used in Redpanda
   "unclean.leader.election.enable",

@@ -131,7 +131,7 @@ using tagged_fields
 ///
 /// The only request that is never flexible is sasl_handshake_request - 17.
 /// Older versions of schemas may also contain values of 'none' that map to -1
-static constexpr api_version never_flexible = api_version(-1);
+inline constexpr api_version never_flexible = api_version(-1);
 
 template<typename T>
 concept KafkaApi = requires(T request) {
