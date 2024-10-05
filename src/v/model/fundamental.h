@@ -93,7 +93,7 @@ namespace model {
 using node_uuid = named_type<uuid_t, struct node_uuid_type>;
 using cluster_uuid = named_type<uuid_t, struct cluster_uuid_type>;
 
-static constexpr cluster_uuid default_cluster_uuid{};
+inline constexpr cluster_uuid default_cluster_uuid{};
 
 using node_id = named_type<int32_t, struct node_id_model_type>;
 
@@ -102,7 +102,7 @@ using node_id = named_type<int32_t, struct node_id_model_type>;
  * when node is configured for automatic assignment of node_ids.
  * Never used in node configuration.
  */
-constexpr node_id unassigned_node_id(-1);
+inline constexpr node_id unassigned_node_id(-1);
 
 /**
  * We use revision_id to identify entities evolution in time. f.e. NTP that was
@@ -291,7 +291,7 @@ inline constexpr model::offset prev_offset(model::offset o) {
 
 // An invalid offset indicating that actual LSO is not yet ready to be returned.
 // Follows the policy that LSO is the next offset of the decided offset.
-static constexpr model::offset invalid_lso{next_offset(model::offset::min())};
+inline constexpr model::offset invalid_lso{next_offset(model::offset::min())};
 
 struct topic_partition_view {
     topic_partition_view(model::topic_view tp, model::partition_id p)
@@ -426,7 +426,7 @@ std::ostream& operator<<(std::ostream&, const control_record_type&);
 using control_record_version
   = named_type<int16_t, struct control_record_version_tag>;
 
-static constexpr control_record_version current_control_record_version{0};
+inline constexpr control_record_version current_control_record_version{0};
 
 enum class shadow_indexing_mode : uint8_t {
     // Upload is disabled
