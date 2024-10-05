@@ -329,7 +329,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
         by cloud based retention settings if cloud based retention is more strict
         """
         # set cloud retention to 10 seconds
-        self.redpanda.set_cluster_config({"delete_retention_ms": 10000},
+        self.redpanda.set_cluster_config({"log_retention_ms": 10000},
                                          expect_restart=False)
 
         # create topic with large local retention

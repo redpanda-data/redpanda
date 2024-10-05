@@ -1659,11 +1659,13 @@ PropertyAliasData:
     redpanda_version: RedpandaVersionLine  # this is the first version to use primary_name
     test_values: list[Any, Any, Any]  # values for this property to run the tests
     expect_restart: bool # setting property will ask for a restart
+    alias_deprecated_on_HEAD: bool = False  # True if on version HEAD the aliased_name is deprecated (setting it will not affect primary_name)
 """
 PropertyAliasData = namedtuple("PropertyAliasData", [
     "primary_name", "aliased_name", "redpanda_version", "test_values",
-    "expect_restart"
-])
+    "expect_restart", "alias_deprecated_on_HEAD"
+],
+                               defaults=(False, ))
 
 cloud_storage_graceful_transfer_timeout = PropertyAliasData(
     primary_name="cloud_storage_graceful_transfer_timeout_ms",
@@ -1675,7 +1677,8 @@ log_retention_ms = PropertyAliasData(primary_name="log_retention_ms",
                                      aliased_name="delete_retention_ms",
                                      redpanda_version=(23, 3),
                                      test_values=(1000000, 300000, 500000),
-                                     expect_restart=False)
+                                     expect_restart=False,
+                                     alias_deprecated_on_HEAD=True)
 # NOTE due to https://github.com/redpanda-data/redpanda/issues/13432 ,
 # test_values can't be -1 (a valid value nonetheless to signal infinite value)
 data_transforms_per_core_memory_reservation = PropertyAliasData(
@@ -1697,16 +1700,51 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
     def setUp(self):
         pass  # Will start cluster in test
 
+    # Retrieve a module variable from a string.
+    # The params of these tests might cause a folder name to become too long for the operating system.
+    def _get_prop_set(self, name: str) -> PropertyAliasData:
+        vars = globals()
+        assert name in vars, f"{name=} is not a variable of this module"
+        self.logger.info(f"prop_set={vars[name]}")
+        return vars[name]
+
+    @cluster(num_nodes=1)
+    @matrix(prop_set_str=['log_retention_ms'])
+    def test_deprecation_of_alias(self, prop_set_str: str):
+        """
+        Validate that an alias that was moved to deprecated cannot affect anymore the primary name
+        """
+        prop_set = self._get_prop_set(prop_set_str)
+
+        assert prop_set.alias_deprecated_on_HEAD, f"test error: {prop_set=} is not marked as deprecated, should not appear here but in `test_aliasing"
+        # set value for primary name
+        self.redpanda.set_extra_rp_conf(
+            {prop_set.primary_name: prop_set.test_values[0]})
+        self.redpanda.start()
+        self._check_value_everywhere(prop_set.primary_name,
+                                     prop_set.test_values[0])
+
+        # Try setting via the aliased name, primary name should be unaffected
+        self.redpanda.set_cluster_config(
+            {prop_set.aliased_name: prop_set.test_values[1]},
+            expect_restart=False)
+        self._check_value_everywhere(prop_set.primary_name,
+                                     prop_set.test_values[0])
+
     @cluster(num_nodes=3)
-    @matrix(prop_set=[
-        cloud_storage_graceful_transfer_timeout, log_retention_ms,
-        data_transforms_per_core_memory_reservation
+    @matrix(prop_set_str=[
+        'cloud_storage_graceful_transfer_timeout',
+        'data_transforms_per_core_memory_reservation'
     ])
-    def test_aliasing(self, prop_set: PropertyAliasData):
+    def test_aliasing(self, prop_set_str: str):
         """
         Validate that configuration property aliases enable the various means
         of setting a property to accept the old name (alias) as well as the new one.
         """
+        prop_set = self._get_prop_set(prop_set_str)
+
+        assert not prop_set.alias_deprecated_on_HEAD, f"test error: {prop_set} is marked as deprecated, should not appear here but in `test_deprecation_of_alias`"
+
         # Aliases should work when used in bootstrap
         self.redpanda.set_extra_rp_conf({
             prop_set.aliased_name:
@@ -1755,11 +1793,14 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
                                               prop_set.test_values[2])
 
     @cluster(num_nodes=3)
-    @matrix(
-        wipe_cache=[False, True],
-        prop_set=[cloud_storage_graceful_transfer_timeout, log_retention_ms])
+    @matrix(wipe_cache=[False, True],
+            skip_intermediate_set=[False, True],
+            prop_set_str=[
+                'cloud_storage_graceful_transfer_timeout', 'log_retention_ms'
+            ])
     def test_aliasing_with_upgrade(self, wipe_cache: bool,
-                                   prop_set: PropertyAliasData):
+                                   skip_intermediate_set: bool,
+                                   prop_set_str: str):
         """
         Validate that a property written under an alias in a previous release
         is read correctly after upgrade.
@@ -1767,7 +1808,11 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         :param wipe_cache: if true, erase cluster config cache to ensure that the
                            upgraded node is reading from the controller log rather
                            than just cache.
+        :param skip_intermediate_set: if true, don't set the property after the upgrade,
+                to test that the translation mechanism is working without external input
         """
+
+        prop_set = self._get_prop_set(prop_set_str)
 
         old_version = self.installer.highest_from_prior_feature_version(
             prop_set.redpanda_version)
@@ -1805,17 +1850,47 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
         self._check_value_everywhere(prop_set.primary_name,
                                      prop_set.test_values[0])
 
-        # Setting via the new name works
-        self.redpanda.set_cluster_config(
-            {prop_set.primary_name: prop_set.test_values[1]})
-        self._check_value_everywhere(prop_set.primary_name,
-                                     prop_set.test_values[1])
+        # if the property is completely deprecated on HEAD,
+        # the translation alias->primary should still happen without external interaction.
+        # skipping `set` checks that this is the case
+        if not skip_intermediate_set:
+            # Setting via the new name works
+            self.redpanda.set_cluster_config(
+                {prop_set.primary_name: prop_set.test_values[1]})
+            self._check_value_everywhere(prop_set.primary_name,
+                                         prop_set.test_values[1])
 
-        # Setting via the old name also still works
-        self.redpanda.set_cluster_config(
-            {prop_set.aliased_name: prop_set.test_values[2]})
-        self._check_value_everywhere(prop_set.primary_name,
-                                     prop_set.test_values[2])
+            # Setting via the old name also still works
+            self.redpanda.set_cluster_config(
+                {prop_set.aliased_name: prop_set.test_values[2]})
+            self._check_value_everywhere(prop_set.primary_name,
+                                         prop_set.test_values[2])
+
+        if prop_set.alias_deprecated_on_HEAD:
+            # The alias should not be usable anymore after upgrade
+            # upgrade to redpanda_version_deprecation to verify that the aliased_name does not work anymore
+
+            # depending on `skip_intermediate_set`, last value for primary name may be different
+            last_prop_value = self.admin.get_cluster_config()[
+                prop_set.primary_name]
+
+            for version in self.upgrade_through_versions(
+                    versions_in=self.load_version_range(
+                        prop_set.redpanda_version),
+                    already_running=True):
+                # proceed to upgrade to HEAD, one version at a time
+                self.logger.info(f"Updated to {version}")
+
+            # Assert that on HEAD the value is persisting
+            self._check_value_everywhere(prop_set.primary_name,
+                                         last_prop_value)
+
+            # Try setting via the aliased name, primary name should be unaffected
+            self.redpanda.set_cluster_config(
+                {prop_set.aliased_name: prop_set.test_values[0]},
+                expect_restart=False)
+            self._check_value_everywhere(prop_set.primary_name,
+                                         last_prop_value)
 
 
 class ClusterConfigClusterIdTest(RedpandaTest):
