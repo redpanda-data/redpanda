@@ -15,7 +15,7 @@
 namespace datalake {
 
 using proto_descriptors_stack = std::deque<const google::protobuf::Descriptor*>;
-static constexpr int max_recursion_depth = 100;
+inline constexpr int max_recursion_depth = 100;
 
 bool is_recursive_type(
   const google::protobuf::Descriptor& msg,

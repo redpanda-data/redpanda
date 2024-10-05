@@ -21,7 +21,7 @@ namespace detail {
 struct dummyassert {
     static inline ss::logger l{"assert"};
 };
-static dummyassert g_assert_log;
+inline dummyassert g_assert_log;
 } // namespace detail
 
 /** Meant to be used in the same way as assert(condition, msg);

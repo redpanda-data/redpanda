@@ -570,6 +570,7 @@ redpanda_cc_library(
     deps = [
         ":named_type",
         "//src/v/base",
+        "//src/v/ssx:semaphore",
     ],
 )
 

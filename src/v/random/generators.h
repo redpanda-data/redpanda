@@ -33,8 +33,8 @@ static const auto seed = get_seed();
 
 // NOLINTBEGIN
 static thread_local std::default_random_engine gen(internal::seed);
-static thread_local crypto::secure_private_rng secure_private_rng{};
-static thread_local crypto::secure_public_rng secure_public_rng{};
+inline thread_local crypto::secure_private_rng secure_private_rng{};
+inline thread_local crypto::secure_public_rng secure_public_rng{};
 // NOLINTEND
 } // namespace internal
 
@@ -44,7 +44,7 @@ static thread_local crypto::secure_public_rng secure_public_rng{};
  */
 ss::sstring gen_alphanum_string(size_t n, bool use_secure_rng = false);
 
-static constexpr size_t alphanum_max_distinct_strlen = 32;
+inline constexpr size_t alphanum_max_distinct_strlen = 32;
 /**
  * Random string generator that limits the maximum number of distinct values
  * that will be returned. That is, this function is a generator, which creates

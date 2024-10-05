@@ -11,6 +11,7 @@
 
 #include "debug_bundle/utils.h"
 
+#include "base/seastarx.h"
 #include "base/units.h"
 #include "crypto/crypto.h"
 #include "crypto/types.h"
@@ -28,7 +29,7 @@ ss::future<bytes> calculate_sha256_sum(std::string_view path) {
     crypto::digest_ctx ctx(crypto::digest_type::SHA256);
     auto handle = co_await ss::open_file_dma(path, ss::open_flags::ro);
     auto h = ss::defer(
-      [handle]() mutable { ssx::background = handle.close(); });
+      [handle]() mutable noexcept { ssx::background = handle.close(); });
 
     auto stream = ss::make_file_input_stream(
       handle,

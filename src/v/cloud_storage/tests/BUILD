@@ -63,8 +63,10 @@ redpanda_test_cc_library(
     deps = [
         ":s3_imposter",
         "//src/v/bytes:iobuf",
+        "//src/v/cloud_storage",
         "//src/v/model/tests:random",
         "//src/v/storage/tests:disk_log_builder",
+        "//src/v/test_utils:seastar_boost",
         "@boost//:numeric_conversion",
     ],
 )

@@ -100,6 +100,8 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/serde",
+        "//src/v/serde:enum",
+        "//src/v/serde:sstring",
         "@seastar",
     ],
 )

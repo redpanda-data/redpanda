@@ -2,6 +2,17 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 load("//src/v/kafka/protocol:protocol.bzl", "generate_kafka_message_libs")
 load("//src/v/kafka/protocol/schemata:generator.bzl", "MESSAGE_TYPES")
 
+package(default_visibility = ["//src/v/kafka/protocol:__subpackages__"])
+
+redpanda_cc_library(
+    name = "messages",
+    hdrs = [
+        "messages.h",
+    ],
+    include_prefix = "kafka/protocol",
+    deps = MESSAGE_TYPES,
+)
+
 redpanda_cc_library(
     name = "protocol",
     srcs = [
@@ -20,7 +31,6 @@ redpanda_cc_library(
         "kafka_batch_adapter.h",
         "legacy_message.h",
         "logger.h",
-        "messages.h",
         "timeout.h",
         "topic_properties.h",
         "types.h",
@@ -62,6 +72,7 @@ redpanda_cc_library(
     include_prefix = "kafka/protocol",
     visibility = ["//visibility:public"],
     deps = [
+        ":messages",
         ":protocol",
         "//src/v/utils:vint",
         "@seastar",

@@ -31,6 +31,7 @@ redpanda_test_cc_library(
     include_prefix = "cluster/tests",
     deps = [
         "//src/v/base",
+        "//src/v/cluster",
     ],
 )
 
