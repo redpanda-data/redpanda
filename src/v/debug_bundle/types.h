@@ -32,7 +32,7 @@
 #include <variant>
 namespace debug_bundle {
 
-static constexpr ss::shard_id service_shard = 0;
+inline constexpr ss::shard_id service_shard = 0;
 
 using job_id_t = named_type<uuid_t, struct uuid_t_tag>;
 
