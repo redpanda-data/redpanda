@@ -1,6 +1,19 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "fips_config",
+    hdrs = [
+        "fips_config.h",
+    ],
+    include_prefix = "model",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model",
+        "//src/v/config",
+    ],
+)
+
+redpanda_cc_library(
     name = "model",
     srcs = [
         "adl_serde.cc",
@@ -17,7 +30,6 @@ redpanda_cc_library(
         "async_adl_serde.h",
         "compression.h",
         "errc.h",
-        "fips_config.h",
         "fundamental.h",
         "ktp.h",
         "limits.h",

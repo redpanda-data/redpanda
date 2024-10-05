@@ -45,6 +45,7 @@ redpanda_cc_library(
         "//src/v/utils:inet_address",
         "//src/v/utils:log_hist",
         "//src/v/utils:mutex",
+        "//src/v/utils:named_type",
         "//src/v/utils:unresolved_address",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:node_hash_map",
