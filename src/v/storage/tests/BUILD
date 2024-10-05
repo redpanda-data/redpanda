@@ -8,6 +8,10 @@ redpanda_test_cc_library(
     include_prefix = "storage/tests",
     deps = [
         "//src/v/config",
+        "//src/v/features",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
     ],
 )
 

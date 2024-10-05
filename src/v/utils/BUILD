@@ -187,6 +187,7 @@ redpanda_cc_library(
     include_prefix = "utils",
     deps = [
         "//src/v/base",
+        "@abseil-cpp//absl/container:node_hash_map",
         "@fmt",
         "@seastar",
     ],

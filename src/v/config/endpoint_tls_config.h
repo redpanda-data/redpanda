@@ -12,8 +12,11 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "config/convert.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <yaml-cpp/yaml.h>
 

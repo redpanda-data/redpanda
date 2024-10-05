@@ -13,9 +13,11 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 #include "json/encodings.h"
 #include "json/types.h"
 #include "kafka/protocol/errors.h"
+#include "model/fundamental.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "strings/string_switch.h"

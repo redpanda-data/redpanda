@@ -9,6 +9,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/bytes:random",
         "//src/v/security",
+        "//src/v/test_utils:random",
     ],
 )
 

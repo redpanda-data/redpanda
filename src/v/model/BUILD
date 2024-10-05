@@ -65,6 +65,7 @@ redpanda_cc_library(
         "//src/v/utils:uuid",
         "//src/v/utils:vint",
         "//src/v/utils:xid",
+        "//src/v/utils:move_canary",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:node_hash_map",

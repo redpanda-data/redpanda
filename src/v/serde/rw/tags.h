@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 class iobuf;
 class iobuf_parser;
 

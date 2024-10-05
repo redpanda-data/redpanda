@@ -213,6 +213,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
+        ":iobuf",
         "//src/v/ssx:sformat",
         "@seastar",
     ],

@@ -15,6 +15,7 @@
 #include "bytes/bytes.h"
 #include "config/tls_config.h"
 #include "metrics/metrics.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/net/tls.hh>
