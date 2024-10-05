@@ -88,8 +88,11 @@ EOF
 
 FROM base AS lto-build
 
+ARG LTO_MODE=On
+
 RUN /opt/build.sh \
-  -DCMAKE_INSTALL_PREFIX=/opt/install
+  -DCMAKE_INSTALL_PREFIX=/opt/install \
+  -DLLVM_ENABLE_LTO=${LTO_MODE}
 
 WORKDIR /opt/install
 
@@ -101,6 +104,8 @@ COPY --from=lto-build /opt/llvm-*.tar.gz .
 
 FROM base AS pgo-build
 
+ARG LTO_MODE=On
+
 RUN mkdir -p /tmp/clang-pgo/data/
 
 RUN /opt/build.sh \
@@ -110,7 +115,8 @@ RUN /opt/build.sh \
   -DLLVM_ENABLE_PROJECTS="clang;lld;bolt" \
   -DCMAKE_C_FLAGS="-Xclang -mllvm -Xclang -vp-counters-per-site=6" \
   -DCMAKE_CXX_FLAGS="-Xclang -mllvm -Xclang -vp-counters-per-site=6" \
-  -DLLVM_BUILD_RUNTIME=No
+  -DLLVM_BUILD_RUNTIME=No \
+  -DLLVM_ENABLE_LTO=${LTO_MODE}
 
 RUN git clone --branch dev --single-branch https://github.com/redpanda-data/redpanda.git
 
@@ -135,9 +141,10 @@ RUN cat pgo_compiler.bzl >> MODULE.bazel
 
 RUN retry --sleep=0 --tries=100 -- bazel build \
   --config=release \
-  --copt=-g \
-  --copt=-Wno-everything \
   --extra_toolchains=@pgo_toolchain//:all \
+  --copt=-g \
+  --copt=-w \
+  --copt=-Wno-error \
   //...
 
 RUN bazel clean --expunge
@@ -150,6 +157,7 @@ RUN llvm-profdata-${SYSTEM_CLANG_VERSION} merge -output=/tmp/profdata.prof /tmp/
 # Rebuild clang toolchain with profile data this time
 RUN /opt/build.sh \
   -DCMAKE_INSTALL_PREFIX=/opt/stage-2 \
+  -DLLVM_ENABLE_LTO=${LTO_MODE} \
   -DLLVM_PROFDATA_FILE=/tmp/profdata.prof
 
 WORKDIR /opt/stage-2
