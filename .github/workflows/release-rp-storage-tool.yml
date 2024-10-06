@@ -23,11 +23,6 @@ jobs:
         with:
           aws-region: ${{ vars.RP_AWS_CRED_REGION }}
           role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
-      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
-        with:
-          secret-ids: |
-            ,sdlc/prod/github/rp_storage_tool_uploader
-          parse-json-secrets: true
       - uses: actions/checkout@v4
       - name: Build binary
         run: |
@@ -45,10 +40,6 @@ jobs:
           docker cp $id:/usr/local/bin/rp-storage-tool ./
           ./rp-storage-tool --help
       - name: Push to public bucket
-        env:
-          AWS_ACCESS_KEY_ID: ${{ env.AWS_RP_STORAGE_UPLOADER_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_RP_STORAGE_UPLOADER_SECRET }}
-          AWS_DEFAULT_REGION: us-west-2
         run: |
           arch=$(uname -m)
           os=$(uname | tr '[:upper:]' '[:lower:]')
