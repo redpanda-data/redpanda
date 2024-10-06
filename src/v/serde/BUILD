@@ -212,8 +212,8 @@ redpanda_cc_library(
     include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
-        ":serde",
         ":iobuf",
+        ":serde",
         "//src/v/ssx:sformat",
         "@seastar",
     ],
