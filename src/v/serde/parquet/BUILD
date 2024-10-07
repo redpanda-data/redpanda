@@ -73,5 +73,6 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
+        "//src/v/utils:vint",
     ],
 )
