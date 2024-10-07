@@ -23,6 +23,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/context.hpp>
 #include <fmt/core.h>
+#include <jsoncons/json.hpp>
+#include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
@@ -81,12 +83,12 @@ static const auto error_test_cases = std::to_array({
     R"({])",
     pps::error_info{
       pps::error_code::schema_invalid,
-      "Malformed json schema: Missing a name for object member. at offset 1"}},
+      "Malformed json schema: Expected object member key at line 1 column 2"}},
   error_test_case{
     "",
     pps::error_info{
       pps::error_code::schema_invalid,
-      "Malformed json schema: The document is empty. at offset 0"}},
+      "Malformed json schema: Invalid document at line 1 column 1"}},
   error_test_case{
     R"({"type": "thisisnotapropertype"})",
     pps::error_info{
@@ -113,7 +115,90 @@ static const auto error_test_cases = std::to_array({
 })",
     pps::error_info{
       pps::error_code::schema_invalid,
-      R"(Invalid json schema: '{"$schema":"http://json-schema.org/draft-06/schema#","exclusiveMinimum":false,"minimum":0,"type":"number"}'. Error: '/exclusiveMinimum: Expected number, found boolean')"}},
+      R"(Invalid json schema: '{"$schema":"http://json-schema.org/draft-06/schema#","type":"number","minimum":0,"exclusiveMinimum":false}'. Error: '/exclusiveMinimum: Expected number, found boolean')"}},
+  // properties, patternProperties, dependencies, can't be
+  // refs (they need to contain key:values)
+  error_test_case{
+    R"(
+{
+  "type": "object",
+  "properties": {
+    "$ref": "#/$defs/props"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"type":"object","properties":{"$ref":"#/$defs/props"}}'. Error: ': Must be valid against all schemas, but found unmatched schemas')"}},
+  error_test_case{
+    R"(
+{
+  "type": "object",
+  "patternProperties": {
+    "$ref": "#/$defs/patprops"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"type":"object","patternProperties":{"$ref":"#/$defs/patprops"}}'. Error: ': Must be valid against all schemas, but found unmatched schemas')"}},
+  error_test_case{
+    R"(
+{
+  "type": "object",
+  "dependencies": {
+    "$ref": "#/$defs/deps"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(Invalid json schema: '{"type":"object","dependencies":{"$ref":"#/$defs/deps"}}'. Error: '/dependencies: Additional property '$ref' found but was invalid.')"}},
+  // invalid bundled schemas
+  error_test_case{
+    R"(
+{
+  "$comment": "the root schema is valid but the bundled schema is not",
+  "$defs": {
+      "$comment": "dialect is draft-04, but id key is '$id'",
+      "$id": "https://example.com/mismatch_id",
+      "$schema": "http://json-schema.org/draft-04/schema#"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema with mismatched dialect "
+      "'http://json-schema.org/draft-04/schema#' for id key"}},
+  error_test_case{
+    R"(
+{
+  "$comment": "the root schema is valid but the bundled schema is not",
+  "$defs": {
+      "$comment": "dialect is unkown",
+      "$id": "https://example.com/mismatch_id",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema without a known dialect: "
+      "'http://json-schema.org/draft-3000/schema#'"}},
+  error_test_case{
+    R"(
+{
+  "$comment": "the root schema is valid but the bundled schema is not",
+  "$defs": {
+      "$comment": "schema is invalid",
+      "$id": "https://example.com/mismatch_id",
+      "type": "potato"
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$id":"https://example.com/mismatch_id","type":"potato"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
@@ -499,7 +584,7 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
   // object checks: new properties need to be compatible with all old patternProperties
   {
     .reader_schema
-    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}, "^b": {"type": "string"}, "^b": {"type": "integer"}}})",
+    = R"({"type": "object", "patternProperties": {"^a": {"type": "integer"}, "^b": {"type": "integer"}}})",
     .writer_schema
     = R"({"type": "object", "properties": {"bbbb": {"type": "string"}}})",
     .compat_result = {
@@ -1403,6 +1488,707 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
 })",
     .compat_result = {},
   },
+  /* internal refs checks section */
+  {
+// simple fragment ref
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+  },
+  {
+// simple fragment ref incompatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+})",
+    .compat_result = {{"#/properties/a/exclusiveMinimum", incompat_t::exclusive_minimum_added}},
+  },
+{
+// simple full relative ref
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$id": "https://example.com/schemas/positive_num",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "/schemas/positive_num#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+  },
+  {
+// simple full relative ref incompatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$id": "https://example.com/schemas/positive_num",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "/schemas/positive_num#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+})",
+    .compat_result = {{"#/properties/a/exclusiveMinimum", incompat_t::exclusive_minimum_added}},
+  },
+  {
+// simple partial relative ref
+.reader_schema = R"(
+{
+  "type": "object",
+  "$id": "https://example.com/schemas/positive_num",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "positive_num#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+  },
+  {
+// simple partial relative ref incompatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$id": "https://example.com/schemas/positive_num",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "positive_num#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+})",
+    .compat_result = {{"#/properties/a/exclusiveMinimum", incompat_t::exclusive_minimum_added}},
+  },
+  {
+// simple infinite recursive ref
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#" }
+    }
+  }
+}
+)",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#" }
+    }
+  }
+})",
+    .compat_result = {},
+    .expected_exception = true,
+  },
+  {
+// simple multiple recursive ref
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "a": { "$ref": "#/properties/name" },
+    "b": { "$ref": "#/properties/name" },
+    "c": { "$ref": "#/properties/name" },
+    "d": { "$ref": "#/properties/name" },
+    "e": { "$ref": "#/properties/name" },
+    "f": { "$ref": "#/properties/name" },
+    "g": { "$ref": "#/properties/name" },
+    "h": { "$ref": "#/properties/name" },
+    "i": { "$ref": "#/properties/name" },
+    "l": { "$ref": "#/properties/name" },
+    "m": { "$ref": "#/properties/name" },
+    "n": { "$ref": "#/properties/name" },
+    "o": { "$ref": "#/properties/name" },
+    "p": { "$ref": "#/properties/name" },
+    "q": { "$ref": "#/properties/name" },
+    "r": { "$ref": "#/properties/name" },
+    "s": { "$ref": "#/properties/name" },
+    "t": { "$ref": "#/properties/name" },
+    "u": { "$ref": "#/properties/name" },
+    "v": { "$ref": "#/properties/name" },
+    "z": { "$ref": "#/properties/name" },
+    "j": { "$ref": "#/properties/name" },
+    "k": { "$ref": "#/properties/name" },
+    "w": { "$ref": "#/properties/name" },
+    "y": { "$ref": "#/properties/name" }
+  }
+}
+)",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "a": { "$ref": "#/properties/name" },
+    "b": { "$ref": "#/properties/name" },
+    "c": { "$ref": "#/properties/name" },
+    "d": { "$ref": "#/properties/name" },
+    "e": { "$ref": "#/properties/name" },
+    "f": { "$ref": "#/properties/name" },
+    "g": { "$ref": "#/properties/name" },
+    "h": { "$ref": "#/properties/name" },
+    "i": { "$ref": "#/properties/name" },
+    "l": { "$ref": "#/properties/name" },
+    "m": { "$ref": "#/properties/name" },
+    "n": { "$ref": "#/properties/name" },
+    "o": { "$ref": "#/properties/name" },
+    "p": { "$ref": "#/properties/name" },
+    "q": { "$ref": "#/properties/name" },
+    "r": { "$ref": "#/properties/name" },
+    "s": { "$ref": "#/properties/name" },
+    "t": { "$ref": "#/properties/name" },
+    "u": { "$ref": "#/properties/name" },
+    "v": { "$ref": "#/properties/name" },
+    "z": { "$ref": "#/properties/name" },
+    "j": { "$ref": "#/properties/name" },
+    "k": { "$ref": "#/properties/name" },
+    "w": { "$ref": "#/properties/name" },
+    "y": { "$ref": "#/properties/name" }
+  }
+}
+)",
+    .compat_result = {},
+  },
+{
+// simple ref in bundled schema compatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+  },
+{
+// simple ref in bundled schema incompatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+})",
+    .compat_result = {{"#/properties/a/exclusiveMinimum", incompat_t::exclusive_minimum_added}},
+  },
+{
+// double jump ref in bundled schema compatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "$ref": "#/$defs/pnum_impl"
+        },
+        "pnum_impl": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+  },
+  {
+    // double jump ref in bundled schema incompatible
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "$ref": "#/$defs/pnum_impl"
+        },
+        "pnum_impl": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+})",
+    .compat_result = {{"#/properties/a/exclusiveMinimum", incompat_t::exclusive_minimum_added}},
+  },
+  {
+    // recursive double jump ref in bundled schema error
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "$ref": "#/$defs/pnum_impl"
+        },
+        "pnum_impl": {
+          "$ref": "#/$defs/positive_num"
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+    .expected_exception = true,
+  },
+  {
+    // recursive double jump ref with siblings in bundled schema error
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "$ref": "#/$defs/pnum_impl",
+          "minimum": 0
+        },
+        "pnum_impl": {
+          "$ref": "#/$defs/positive_num",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+    .expected_exception = true,
+  },
+  {
+    // non existing bundled schema
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+    .expected_exception = true,
+  },
+  {
+    // non existing external ref
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "$ref": "an.external.schema#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+    .expected_exception = true,
+  },
+  {
+    // non existing local ref in bundled schema
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "$ref": "#/$defs/pnum_impl"
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num"
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+})",
+    .compat_result = {},
+    .expected_exception = true,
+  },
+  {
+    // local ref with siblings
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "#/$defs/positive_num",
+      "type": "number",
+      "multipleOf": 33
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "allOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "number",
+          "multipleOf": 33
+        }
+      ]
+    }
+  }
+})",
+    .compat_result = {},
+  },
+  {
+    // recursive double jump ref with siblings in bundled schema
+    .reader_schema = R"(
+{
+  "type": "object",
+  "$defs": {
+    "positive_num": {
+      "$id": "https://example.com/schemas/external",
+      "$defs": {
+        "positive_num": {
+          "$ref": "#/$defs/pnum_impl"
+        },
+        "pnum_impl": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/schemas/external#/$defs/positive_num",
+      "type": "number",
+      "multipleOf": 33
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "allOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "number",
+          "multipleOf": 33
+        }
+      ]
+    }
+  }
+})",
+    .compat_result = {},
+  },
+  {
+    // ref in arrays
+    .reader_schema = R"(
+{
+  "$id": "https://example.com/schemas/base",
+  "type": "array",
+  "prefixItems": [
+    {"$ref": "#/$defs/positive_num"},
+    {"type": "string"}
+  ],
+  "items": {"$ref": "https://example.com/schemas/base#/$defs/negative_num", "mutipleOf": 10},
+  "$defs": {
+    "positive_num": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "negative_num": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+})",
+    .writer_schema = R"(
+{
+  "type": "array",
+  "prefixItems": [
+    {"type": "number", "exclusiveMinimum": 0},
+    {"type": "string"}
+  ],
+  "items": {
+    "allOf": [
+      {"type": "number", "exclusiveMaximum": 0},
+      {"multipleOf": 10}
+    ]
+  }
+})",
+  .compat_result = {},
+  },
 });
 SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;
@@ -1555,5 +2341,137 @@ SEASTAR_THREAD_TEST_CASE(test_json_compat_messages) {
         BOOST_REQUIRE_MESSAGE(
           errs == expected,
           fmt::format("{} != {}", format_set(errs), format_set(expected)));
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
+    // test that look check that in the in-memory representation of a schema,
+    // the refs are absolute
+    using namespace jsoncons::literals;
+
+    // input schema with a mix of local, relative and absolute refs
+    auto input_schema = R"({
+  // root schema has no id
+  "properties": {
+    // local ref
+    "giga": {"$ref": "#/properties/mega"},
+    // absolute ref to bundled schema
+    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"}
+  },
+  "$defs": {
+    "bundled": {
+      // $id makes it a bundled schema
+      "$id": "https://example.com/schemas/customer",
+      "properties": {
+        // relative local ref to this bundled schema
+        "local": { "$ref": "#/$defs/name" },
+
+        // absolute ref to this bundled schema
+        "local_absolute": { "$ref": "https://example.com/schemas/customer#/$defs/name" },
+
+        // relative ref to another bundled schema, with uri relative to this bundled schema host
+        "another_schema": { "$ref": "/schemas/address" },
+
+        // absolute ref to another bundled schema, with fragment
+        "another_schemas_absolute": { "$ref": "https://example.com/schemas/address#/name" },
+
+        // relative version of the above
+        "another_schema_frag": { "$ref": "/schemas/address#/name" },
+
+        // recursive ref
+        "recursive": { "$ref": "#/properties/recursive" }
+      },
+      "$defs": {
+        "bundled": {
+          // this makes it a bundled schema (in a bundled schema)
+          "$id" : "https://example.com/schemas/boat",
+          "properties": {
+            // local to this bundled schema
+            "self": { "$ref": "#/$defs/name" }
+          },
+          "$defs": {
+            "bundled": {
+              // bundled schema with a relative id.
+              // NOTE: this will be resolved against example.com,
+              // but the value will not be rewritten in the in-memory schema
+              "$id": "/schemas/nanites"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+)"_json;
+
+    store_fixture f;
+    // get a schema definiton from the input schema, this will produce an
+    // in-memory where refs are resolved
+    auto json_schema_def
+      = pps::make_json_schema_definition(
+          f.store,
+          pps::make_canonical_json_schema(
+            f.store,
+            {pps::subject{"test"},
+             {fmt::format("{}", jsoncons::print(input_schema)),
+              pps::schema_type::json}})
+            .get())
+          .get();
+
+    // extract the in-memory schema to check te results
+    auto inmemory_buffer = iobuf_parser{json_schema_def.raw()};
+    auto processed_schema = jsoncons::json::parse(
+      inmemory_buffer.read_string(inmemory_buffer.bytes_left()));
+
+    // this is the expected in memory result
+    auto expected_schema = R"({
+  "properties": {
+    "giga": {"$ref": "#/properties/mega"},
+    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"}
+  },
+  "$defs": {
+    "bundled": {
+      "$id": "https://example.com/schemas/customer",
+      "properties": {
+        "local": { "$ref": "https://example.com/schemas/customer#/$defs/name" },
+        "local_absolute": { "$ref": "https://example.com/schemas/customer#/$defs/name" },
+        "another_schema": { "$ref": "https://example.com/schemas/address" },
+        "another_schemas_absolute": { "$ref": "https://example.com/schemas/address#/name" },
+        "another_schema_frag": { "$ref": "https://example.com/schemas/address#/name" },
+        "recursive": { "$ref": "https://example.com/schemas/customer#/properties/recursive" }
+      },
+      "$defs": {
+        "bundled": {
+          "$id" : "https://example.com/schemas/boat",
+          "properties": {
+            "self": { "$ref": "https://example.com/schemas/boat#/$defs/name" }
+          },
+          "$defs": {
+            "bundled": {
+              // NOTE: $id is not rewritten, unlike $ref
+              "$id": "/schemas/nanites"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+)"_json;
+
+    BOOST_TEST_CONTEXT(fmt::format(
+      "input_schema:\n{}\n\nexpected_schema:\n{}\n\nprocessed_schema:\n{}\n\n",
+      jsoncons::pretty_print(input_schema),
+      jsoncons::pretty_print(expected_schema),
+      jsoncons::pretty_print(processed_schema))) {
+        // check that the processed schema is the same as the expected schema,
+        // output the difference if not
+        auto jpatch = jsoncons::jsonpatch::from_diff(
+          expected_schema, processed_schema);
+        BOOST_CHECK_MESSAGE(
+          expected_schema == processed_schema,
+          fmt::format(
+            "differences expected_schema-processed_schema:\n{}\n",
+            jsoncons::pretty_print(jpatch)));
     }
 }

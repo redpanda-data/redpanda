@@ -15,15 +15,13 @@
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
-#include "json/schema.h"
-#include "json/stringbuffer.h"
+#include "json/pointer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "utils/absl_sstring_hash.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -32,6 +30,7 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
 #include <boost/graph/adjacency_list.hpp>
@@ -107,14 +106,64 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
       .default_match(std::nullopt);
 }
 
+// type to contain the canonical uri for an id, in the form host/path
+// useful to limit the degree of freedom of the uri (https vs http, ports, user
+// info, etc)
+using json_id_uri = named_type<ss::sstring, struct json_id_uri_tag>;
+
+// mapping of $id to jsonpointer to the parent object
+// it contains at least the root $id for doc. If the root $id is not
+// present, then the default value "" is used
+using id_to_schema_pointer = absl::
+  flat_hash_map<json_id_uri, std::pair<json::Pointer, json_schema_dialect>>;
+
+json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
+    // ensure that only scheme, host and path are used
+    return json_id_uri{
+      jsoncons::uri{uri.scheme(), "", uri.host(), "", uri.path(), "", ""}
+        .string()};
+}
+
 struct document_context {
     json::Document doc;
     json_schema_dialect dialect;
+    id_to_schema_pointer bundled_schemas;
 };
 
 // Passed into is_superset_* methods where the path and the generated verbose
 // incompatibilities don't matter, only whether they are compatible or not
 static const std::filesystem::path ignored_path = "";
+
+// helper struct to hold a json::Document or a json::Value::ConstObject, used in
+// ref_resolution to either hold an existing json::Value from the root object or
+// a synthesized one, when a $ref has siblings
+struct json_const_object {
+    std::variant<json::Value::ConstObject, std::unique_ptr<json::Document>>
+      storage;
+    json_const_object(const json::Value::ConstObject& co) noexcept
+      : storage(co) {}
+    json_const_object(std::unique_ptr<json::Document>&& d) noexcept
+      : storage(std::move(d)) {}
+
+    operator const json::Value&() const {
+        return std::visit(
+          ss::make_visitor(
+            [](const json::Value::ConstObject& co) -> const json::Value& {
+                return co;
+            },
+            [](const std::unique_ptr<json::Document>& d) -> const json::Value& {
+                return d->GetObject();
+            }),
+          storage);
+    }
+
+    const json::Value& operator*() const {
+        return static_cast<const json::Value&>(*this);
+    }
+    const json::Value* operator->() const {
+        return &static_cast<const json::Value&>(*this);
+    }
+};
 
 } // namespace
 
@@ -205,15 +254,39 @@ struct pj {
     }
 };
 
+struct pjp {
+    const json::Pointer& p;
+    friend std::ostream& operator<<(std::ostream& os, const pjp& p) {
+        auto osw = json::OStreamWrapper{os};
+        p.p.Stringify(osw);
+        return os;
+    }
+};
+
 class schema_context {
 public:
     explicit schema_context(const json_schema_definition::impl& schema)
       : _schema{schema} {}
 
     json_schema_dialect dialect() const { return _schema.ctx.dialect; }
+    const json::Value& doc() const { return _schema.ctx.doc; }
+
+    const id_to_schema_pointer::mapped_type*
+    find_bundled(const json_id_uri id) const {
+        auto it = _schema.ctx.bundled_schemas.find(id);
+        if (it == _schema.ctx.bundled_schemas.end()) {
+            return nullptr;
+        }
+        return &(it->second);
+    }
+
+    int remaining_ref_units() const { return _ref_units; }
+    int consume_ref_units() { return --_ref_units; }
 
 private:
     const json_schema_definition::impl& _schema;
+    static constexpr int max_recursion_depth{5};
+    int _ref_units{max_recursion_depth};
 };
 
 struct context {
@@ -222,25 +295,25 @@ struct context {
 };
 
 template<json_schema_dialect Dialect>
-const jsoncons::jsonschema::json_schema<jsoncons::json>& get_metaschema() {
+const jsoncons::jsonschema::json_schema<jsoncons::ojson>& get_metaschema() {
     static const auto meteschema_doc = [] {
         auto metaschema = [] {
             switch (Dialect) {
             case json_schema_dialect::draft4:
                 return jsoncons::jsonschema::draft4::schema_draft4<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft6:
                 return jsoncons::jsonschema::draft6::schema_draft6<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft7:
                 return jsoncons::jsonschema::draft7::schema_draft7<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft201909:
                 return jsoncons::jsonschema::draft201909::schema_draft201909<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             case json_schema_dialect::draft202012:
                 return jsoncons::jsonschema::draft202012::schema_draft202012<
-                  jsoncons::json>::get_schema();
+                  jsoncons::ojson>::get_schema();
             }
         }();
 
@@ -253,7 +326,7 @@ const jsoncons::jsonschema::json_schema<jsoncons::json>& get_metaschema() {
 }
 
 result<json_schema_dialect> validate_json_schema(
-  json_schema_dialect dialect, const jsoncons::json& schema) {
+  json_schema_dialect dialect, const jsoncons::ojson& schema) {
     // validation pre-step: get metaschema for json draft
     const auto& metaschema_doc = [=]() -> const auto& {
         using enum json_schema_dialect;
@@ -291,7 +364,7 @@ result<json_schema_dialect> validate_json_schema(
 }
 
 result<json_schema_dialect>
-try_validate_json_schema(const jsoncons::json& schema) {
+try_validate_json_schema(const jsoncons::ojson& schema) {
     using enum json_schema_dialect;
 
     // no explicit $schema: try to validate from newest to oldest draft
@@ -314,40 +387,52 @@ try_validate_json_schema(const jsoncons::json& schema) {
     return first_error.value();
 }
 
+// forward declaration
+result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
+  jsoncons::ojson& doc, json_schema_dialect dialect);
+
 result<document_context> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
-    auto schema_stream = json::chunked_input_stream{
-      buf.share(0, buf.size_bytes())};
-    auto schema = json::Document{};
-    if (schema.ParseStream(schema_stream).HasParseError()) {
+    iobuf_istream is{buf.share(0, buf.size_bytes())};
+
+    auto decoder = jsoncons::json_decoder<jsoncons::ojson>{};
+    auto reader = jsoncons::basic_json_reader(is.istream(), decoder);
+    auto ec = std::error_code{};
+    reader.read(ec);
+    if (ec || !decoder.is_valid()) {
         // not a valid json document, return error
         return error_info{
           error_code::schema_invalid,
           fmt::format(
-            "Malformed json schema: {} at offset {}",
-            rapidjson::GetParseError_En(schema.GetParseError()),
-            schema.GetErrorOffset())};
+            "Malformed json schema: {} at line {} column {}",
+            ec ? ec.message() : "Invalid document",
+            reader.line(),
+            reader.column())};
     }
+    auto schema = decoder.get_result();
 
     // get the dialect, try to directly validate it against the appropriate
     // metaschema
-    auto dialect = std::optional<json_schema_dialect>{};
+    auto maybe_dialect = std::optional<json_schema_dialect>{};
 
-    if (schema.IsObject()) {
+    if (schema.is_object()) {
         // "true/false" are valid schemas so here we need to check that the
         // schema is an actual object
-        if (auto it = schema.FindMember("$schema"); it != schema.MemberEnd()) {
-            if (it->value.IsString()) {
-                dialect = from_uri(as_string_view(it->value));
+        if (auto it = schema.find("$schema");
+            it != schema.object_range().end()) {
+            if (it->value().is_string()) {
+                maybe_dialect = from_uri(it->value().as_string_view());
             }
 
-            if (it->value.IsString() == false || dialect == std::nullopt) {
+            if (
+              it->value().is_string() == false || !maybe_dialect.has_value()) {
                 // if present, "$schema" have to be a string, and it has to be
                 // one the implemented dialects. If not, return an error
                 return error_info{
                   error_code::schema_invalid,
                   fmt::format(
-                    "Unsupported json schema dialect: '{}'", pj{it->value})};
+                    "Unsupported json schema dialect: '{}'",
+                    jsoncons::print(it->value()))};
             }
         }
     }
@@ -355,17 +440,46 @@ result<document_context> parse_json(iobuf buf) {
     // We use jsoncons for validating the schema against the metaschema as
     // currently rapidjson doesn't support validating schemas newer than
     // draft 5.
-    iobuf_istream is{std::move(buf)};
-    auto jsoncons_schema = jsoncons::json::parse(is.istream());
-    auto validation_res = dialect.has_value()
+    auto validation_res = maybe_dialect.has_value()
                             ? validate_json_schema(
-                                dialect.value(), jsoncons_schema)
-                            : try_validate_json_schema(jsoncons_schema);
+                                maybe_dialect.value(), schema)
+                            : try_validate_json_schema(schema);
     if (validation_res.has_error()) {
         return validation_res.as_failure();
     }
+    auto dialect = validation_res.assume_value();
 
-    return {std::move(schema), validation_res.assume_value()};
+    // this function will resolve al local ref against their respective baseuri.
+    auto bundled_schemas_map = collect_bundled_schema_and_fix_refs(
+      schema, dialect);
+    if (bundled_schemas_map.has_error()) {
+        return bundled_schemas_map.as_failure();
+    }
+
+    // to use rapidjson we need to serialized schema again
+    // We take a copy of the jsoncons schema here because it has the fixed-up
+    // references that we want to use for compatibility checks
+    auto iobuf_os = iobuf_ostream{};
+    schema.dump(iobuf_os.ostream());
+
+    auto schema_stream = json::chunked_input_stream{std::move(iobuf_os).buf()};
+    auto rapidjson_schema = json::Document{};
+    if (rapidjson_schema.ParseStream(schema_stream).HasParseError()) {
+        // not a valid json document, return error
+        // this is unlikely to happen, since we already parsed this stream with
+        // jsoncons, but the possibility of a bug exists
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Malformed json schema: {} at offset {}",
+            rapidjson::GetParseError_En(rapidjson_schema.GetParseError()),
+            rapidjson_schema.GetErrorOffset())};
+    }
+
+    return {
+      std::move(rapidjson_schema),
+      dialect,
+      std::move(bundled_schemas_map).assume_value()};
 }
 
 /// is_superset section
@@ -374,7 +488,7 @@ result<document_context> parse_json(iobuf buf) {
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  const context& ctx,
+  context ctx,
   const json::Value& older,
   const json::Value& newer,
   std::filesystem::path p);
@@ -533,11 +647,208 @@ json_type_list normalized_type(const json::Value& v) {
     return ret;
 }
 
-// helper to convert a boolean to a schema
-json::Value::ConstObject
-get_schema(const schema_context&, const json::Value& v) {
+// builder for merged references. this will spilt out a json that is validated
+// by this schema.
+// {
+//   "oneOf": [
+//     {
+//       "$comment": "the referenced schema, if the base schema did not contain
+//       siblings to $ref"
+//     },
+//     {
+//       "type": "object",
+//       "properties": {
+//         "allOf": {
+//           "type": "array",
+//           "minItems": 2,
+//           "items": true,
+//           "$comment": "items are 1) the original schema without the $ref and
+//           2) the referenced schema. if the referenced schema contains a $ref,
+//           further referenced schemas are flattened"
+//         }
+//       }
+//     }
+//   ]
+// }
+// the caller is responsible to keep the root object alive, since the result may
+// reference strings in it
+json_const_object
+merge_references(std::span<json::Value::ConstObject> references_objects) {
+    if (references_objects.empty()) {
+        throw std::logic_error("merged_references called on empty sequence");
+    }
+
+    const auto ref_key = json::Value{"$ref"};
+
+    auto empty_refless = [&](const json::Value::ConstObject& obj) {
+        // empty_refless if empty once $ref is removed
+        return obj.ObjectEmpty()
+               || (obj.MemberCount() == 1 && obj.FindMember(ref_key) != obj.MemberEnd());
+    };
+
+    // list of objects once we remove the $ref-only schemas
+    auto non_empty_references = references_objects
+                                | std::views::filter([&](const auto& obj) {
+                                      return !empty_refless(obj);
+                                  });
+
+    auto non_empty_size = std::ranges::distance(non_empty_references);
+
+    if (non_empty_size == 0) {
+        // a degenerate case: all the objects are empty, once removed the
+        // references.
+        return get_true_schema();
+    }
+
+    if (non_empty_size == 1) {
+        // only one object is not empty, return it directly
+        // this is the case for objects with a single $ref without siblings
+        return non_empty_references.front();
+    }
+
+    // at least 2 non-empty objects, build the allOf array
+
+    auto to_document_without_ref = [&](const json::Value::ConstObject& obj) {
+        // copy obj to a new document without the $ref key
+        auto doc = json::Document{rapidjson::kObjectType};
+        auto& alloc = doc.GetAllocator();
+        for (auto& [k, v] : obj) {
+            if (k != ref_key) {
+                // copy the key-value pair, try to reference the strings from
+                // the original document if possible
+                doc.AddMember(
+                  json::Value(k, alloc, false),
+                  json::Value(v, alloc, false),
+                  alloc);
+            }
+        }
+        return doc;
+    };
+
+    // build the result document with the allof array
+    auto res = std::make_unique<json::Document>();
+    res->Parse(R"({"allOf": []})");
+    vassert(!res->HasParseError(), "malformed merged references template");
+
+    // append everything to the allof array
+    auto& res_alloc = res->GetAllocator();
+    auto& allof_array = res->FindMember("allOf")->value;
+    allof_array.Reserve(non_empty_size, res_alloc);
+    for (auto d : non_empty_references
+                    | std::views::transform(to_document_without_ref)) {
+        allof_array.PushBack(json::Value(d, res_alloc), res_alloc);
+    }
+
+    return res;
+}
+
+// helper to parse a json pointer with rapidjson. throws if there is an error
+// parsing it
+json::Pointer to_json_pointer(std::string_view sv) {
+    auto candidate = json::Pointer{sv.data(), sv.size()};
+    if (auto ec = candidate.GetParseErrorCode();
+        ec != rapidjson::kPointerParseErrorNone) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "invalid fragment '{}' error {} at {}",
+            sv,
+            ec,
+            candidate.GetParseErrorOffset())});
+    }
+
+    return candidate;
+}
+
+// helper to resolve a pointer in a json object. throws if the object can't be
+// retrieved
+const json::Value&
+resolve_pointer(const json::Pointer& p, const json::Value& root) {
+    auto unresolved_token = size_t{0};
+    auto* value = p.Get(root, &unresolved_token);
+    if (value == nullptr) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "object not found for pointer '{}' unresolved token at index "
+            "{}",
+            pjp{p},
+            unresolved_token)});
+    }
+
+    return *value;
+}
+
+// iteratively resolve a reference, following the $ref field until the end or
+// the max_allowed_depth is reached. throws if the max depth is reached or if
+// the reference can't be resolved
+json_const_object
+resolve_reference(schema_context& ctx, const json::Value& candidate) {
+    auto ref_it = candidate.FindMember("$ref");
+    if (ref_it == candidate.MemberEnd()) { // not a reference, no-op
+        return candidate.GetObject();
+    }
+
+    auto get_uri_fragment = [](std::string uri_s) {
+        // split into host and fragment
+        auto uri = jsoncons::uri{uri_s};
+        return std::pair{to_json_id_uri(uri), to_json_pointer(uri.fragment())};
+    };
+
+    auto [id_uri, fragment_p] = get_uri_fragment(ref_it->value.GetString());
+
+    // store the reference chains here, to merge them later, start with base
+    auto references_objects = absl::InlinedVector<json::Value::ConstObject, 4>{
+      candidate.GetObject()};
+
+    // resolve the reference:
+    while (ctx.consume_ref_units() > 0) {
+        // try to find the bundled schema, get a pointer to it
+        auto* lookup_p = ctx.find_bundled(id_uri);
+        if (lookup_p == nullptr) {
+            // TODO use a better error code
+            throw as_exception(error_info{
+              error_code::schema_invalid,
+              fmt::format("schema pointer not found for uri '{}'", id_uri)});
+        }
+        const auto& [schema_pointer, dialect] = *lookup_p;
+
+        // step 1: get the schema object
+        const auto& schema = resolve_pointer(schema_pointer, ctx.doc());
+        // step 2: get the referenced object inside the schema
+        const auto& referenced_obj = resolve_pointer(fragment_p, schema);
+        // step 2.5: store referenced_obj for merging later
+        references_objects.push_back(referenced_obj.GetObject());
+
+        // step 3: check if the referenced object has a $ref field, and if so
+        // resolve it
+        if (auto next_ref_it = referenced_obj.FindMember("$ref");
+            next_ref_it != referenced_obj.MemberEnd()) {
+            std::tie(id_uri, fragment_p) = get_uri_fragment(
+              next_ref_it->value.GetString());
+        } else {
+            // if this is the final target, return it.
+
+            // require that we are using the same dialect as the root object.
+            // this requirement could be relaxed but it requires to keep track
+            // of the dialect for each json::Value
+            if (dialect != ctx.dialect()) {
+                throw as_exception(error_info{
+                  error_code::schema_invalid,
+                  fmt::format("schema dialect mismatch for uri '{}'", id_uri)});
+            }
+
+            return merge_references(references_objects);
+        }
+    }
+    throw std::runtime_error(fmt::format(
+      "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p}));
+}
+
+// helper to convert a boolean to a schema, and to traverse $refs
+json_const_object get_schema(schema_context& ctx, const json::Value& v) {
     if (v.IsObject()) {
-        return v.GetObject();
+        return resolve_reference(ctx, v.GetObject());
     }
 
     if (v.IsBool()) {
@@ -553,15 +864,27 @@ get_schema(const schema_context&, const json::Value& v) {
 
 // helper to retrieve the object value for a key, or an empty object if the key
 // is not present
-json::Value::ConstObject get_object_or_empty(
-  const schema_context& ctx, const json::Value& v, std::string_view key) {
+json::Value::ConstObject
+get_object_or_empty(const json::Value& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
-    if (it != v.MemberEnd()) {
-        return get_schema(ctx, it->value);
+    if (it == v.MemberEnd()) {
+        return get_true_schema();
     }
 
-    return get_true_schema();
+    if (it->value.IsObject()) {
+        return it->value.GetObject();
+    }
+
+    if (it->value.IsBool()) {
+        // in >= draft6 "true/false" is a valid schema and means
+        // {}/{"not":{}}
+        return it->value.GetBool() ? get_true_schema() : get_false_schema();
+    }
+    throw as_exception(error_info{
+      error_code::schema_invalid,
+      fmt::format(
+        "Invalid JSON Schema, should be object or boolean: '{}'", pj{v})});
 }
 
 // helper to retrieve the array value for a key, or an empty array if the key
@@ -1113,8 +1436,8 @@ json_compatibility_result is_array_superset(
         // "items"
         res.merge(is_superset(
           ctx,
-          get_object_or_empty(ctx.older, older, "items"),
-          get_object_or_empty(ctx.newer, newer, "items"),
+          get_object_or_empty(older, "items"),
+          get_object_or_empty(newer, "items"),
           p / "items"));
         return res;
     }
@@ -1152,9 +1475,9 @@ json_compatibility_result is_array_superset(
     // To be compatible, excess elements needs to be compatible with the other
     // "additionalItems" schema
     auto older_additional_schema = get_object_or_empty(
-      ctx.older, older, get_additional_items_kw(ctx.older.dialect()));
+      older, get_additional_items_kw(ctx.older.dialect()));
     auto newer_additional_schema = get_object_or_empty(
-      ctx.newer, newer, get_additional_items_kw(ctx.newer.dialect()));
+      newer, get_additional_items_kw(ctx.newer.dialect()));
 
     // newer_has_more: true if newer has excess elements, false if older has
     // excess elements
@@ -1199,20 +1522,20 @@ json_compatibility_result is_object_properties_superset(
     // or
     //    it has to be compatible with older["additionalProperties"]
 
-    auto newer_properties = get_object_or_empty(ctx.newer, newer, "properties");
+    auto newer_properties = get_object_or_empty(newer, "properties");
     if (newer_properties.ObjectEmpty()) {
         // no "properties" in newer, all good
         return res;
     }
 
     // older["properties"] is a map of <prop, schema>
-    auto older_properties = get_object_or_empty(ctx.older, older, "properties");
+    auto older_properties = get_object_or_empty(older, "properties");
     // older["patternProperties"] is a map of <pattern, schema>
     auto older_pattern_properties = get_object_or_empty(
-      ctx.older, older, "patternProperties");
+      older, "patternProperties");
     // older["additionalProperties"] is a schema
     auto older_additional_properties = get_object_or_empty(
-      ctx.older, older, "additionalProperties");
+      older, "additionalProperties");
     // scan every prop in newer["properties"]
     for (const auto& [prop, schema] : newer_properties) {
         auto prop_path = [&p, &prop] {
@@ -1287,10 +1610,7 @@ json_compatibility_result is_object_properties_superset(
 }
 
 json_compatibility_result is_object_required_superset(
-  const context& ctx,
-  const json::Value& older,
-  const json::Value& newer,
-  std::filesystem::path p) {
+  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
     json_compatibility_result res;
     // to pass the check, a required property from newer has to be present in
     // older, or if new it needs to have a default value.
@@ -1303,8 +1623,8 @@ json_compatibility_result is_object_required_superset(
 
     auto older_req = get_array_or_empty(older, "required");
     auto newer_req = get_array_or_empty(newer, "required");
-    auto older_props = get_object_or_empty(ctx.older, older, "properties");
-    auto newer_props = get_object_or_empty(ctx.newer, newer, "properties");
+    auto older_props = get_object_or_empty(older, "properties");
+    auto newer_props = get_object_or_empty(newer, "properties");
 
     // TODO O(n^2) lookup that can be a set_intersection.
     auto older_req_in_both_properties
@@ -1321,7 +1641,7 @@ json_compatibility_result is_object_required_superset(
       older_req_in_both_properties, [&](const json::Value& o) {
           if (
             std::ranges::find(newer_req, o) == newer_req.End()
-            && !older_props[o].HasMember("default")) {
+            && !older_props.FindMember(o)->value.HasMember("default")) {
               res.emplace<json_incompatibility>(
                 p / "required" / as_string_view(o),
                 json_incompatibility_type::required_attribute_added);
@@ -1342,8 +1662,8 @@ json_compatibility_result is_object_dependencies_superset(
     // older string array needs to be a subset of newer string array.
     // older schema needs to be compatible with newer schema
 
-    auto older_p = get_object_or_empty(ctx.older, older, "dependencies");
-    auto newer_p = get_object_or_empty(ctx.newer, newer, "dependencies");
+    auto older_p = get_object_or_empty(older, "dependencies");
+    auto newer_p = get_object_or_empty(newer, "dependencies");
 
     // all dependencies in older need to carry over in newer, and need to be
     // compatible
@@ -1470,7 +1790,7 @@ json_compatibility_result is_object_superset(
     // is omitted
 
     // Check if required properties are compatible
-    res.merge(is_object_required_superset(ctx, older, newer, p));
+    res.merge(is_object_required_superset(older, newer, p));
 
     // Check if dependencies are compatible
     res.merge(is_object_dependencies_superset(ctx, older, newer, std::move(p)));
@@ -1772,7 +2092,7 @@ using namespace is_superset_impl;
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  const context& ctx,
+  context ctx,
   const json::Value& older_schema,
   const json::Value& newer_schema,
   std::filesystem::path p) {
@@ -1858,25 +2178,6 @@ json_compatibility_result is_superset(
     res.merge(is_not_combinator_superset(ctx, older, newer, p));
     res.merge(is_positive_combinator_superset(ctx, older, newer, p));
 
-    for (auto not_yet_handled_keyword : {
-           // draft 6 unhandled keywords:
-           "$ref",
-         }) {
-        if (
-          newer.HasMember(not_yet_handled_keyword)
-          || older.HasMember(not_yet_handled_keyword)) {
-            // these keyword are not yet handled, their presence might change
-            // the result of this function
-            throw as_exception(invalid_schema(fmt::format(
-              "{} not fully implemented yet. unsupported keyword: {}, input: "
-              "older: '{}', newer: '{}'",
-              __FUNCTION__,
-              not_yet_handled_keyword,
-              pj{older},
-              pj{newer})));
-        }
-    }
-
     // no rule in newer is less strict than older, older is superset of newer
     return res;
 }
@@ -1902,6 +2203,176 @@ void sort(json::Value& val) {
         });
     }
     }
+}
+
+void collect_bundled_schemas_and_fix_refs(
+  id_to_schema_pointer& bundled_schemas,
+  jsoncons::uri base_uri,
+  jsoncons::jsonpointer::json_pointer this_obj_ptr,
+  jsoncons::ojson& this_obj,
+  json_schema_dialect dialect) {
+    // scan the json schema object for bundled schema.
+    // A bundled schema is defined as a schema with `"$id" : a_base_uri`.
+    // all relative refs under this bundled schema will be relative
+    // to a_base_uri. if this_obj is a bundled schema, it might use a different
+    // dialect than the root schema, and the current implementation requires
+    // that the dialect is known. the jsonschema spec is not strict so we could
+    // receive some valid but nonsensical edge cases. these are not supported
+    // but do not generate errors here, since they are problematic only when a
+    // accessed by a $ref. so we don't register them in the base_uris_map, an
+    // will raise an error later if we try to access them.
+    // keyword | $schema  | is bundled schema
+    //   "$id" | missing  | if root is >=draft6
+    //   "$id" | >draft4  |       yes
+    //   "$id" |  draft4  |       no
+    //   "id"  | missing  | if root is draft4
+    //   "id"  | >draft4  |       no
+    //   "id"  |  draft4  |       yes
+
+    auto maybe_draft4_id_it = this_obj.find("id");
+    auto maybe_id_it = this_obj.find("$id");
+    if (
+      maybe_id_it != this_obj.object_range().end()
+      || maybe_draft4_id_it != this_obj.object_range().end()) {
+        // we are visiting a bundled schema. the dialect has to be known and has
+        // to match the keyword used.
+        // try to extract the dialect from the $schema keyword, or use the
+        // parent dialect. empty means that "$schema" is present but the dialect
+        // is not known, and we should stop scanning this branch.
+        auto maybe_new_dialect = [&]() -> std::optional<json_schema_dialect> {
+            auto dialect_it = this_obj.find("$schema");
+            if (dialect_it == this_obj.object_range().end()) {
+                // If no $schema is declared in an embedded schema, it defaults
+                // to using the dialect of the parent schema. from
+                // https://json-schema.org/understanding-json-schema/structuring#bundling
+                return dialect;
+            }
+
+            // we have a $schema keyword, use this dialect if we find out that
+            // this_obj is a bundled schema
+            return from_uri(dialect_it->value().as_string_view());
+        }();
+
+        if (maybe_new_dialect.has_value() == false) {
+            // stop scanning this tree, we might be in a bundled schema but we
+            // don't know the dialect.
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema without a known dialect: '{}'",
+              this_obj["$schema"].as_string_view())));
+        }
+
+        // we are in a bundled schema and we know the dialect to use, now we
+        // know which keyword to use to get the base_uri
+        auto id_it = [&] {
+            switch (maybe_new_dialect.value()) {
+            case json_schema_dialect::draft4:
+                return maybe_draft4_id_it;
+            case json_schema_dialect::draft6:
+            case json_schema_dialect::draft7:
+            case json_schema_dialect::draft201909:
+            case json_schema_dialect::draft202012:
+                return maybe_id_it;
+            }
+        }();
+
+        if (id_it == this_obj.object_range().end()) {
+            // stop scanning this branch, the keyword for base uri does not
+            // agree with schema dialect.
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema with mismatched dialect '{}' for id key",
+              to_uri(maybe_new_dialect.value()))));
+        }
+
+        // run validation since we are not a guaranteed to be in proper schema
+        if (auto validation = validate_json_schema(
+              maybe_new_dialect.value(), this_obj);
+            validation.has_error()) {
+            // stop exploring this branch, the schema is invalid
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema is invalid. {}",
+              validation.assume_error().message())));
+        }
+
+        // base uri keyword agrees with the dialect, it's a validated schema, we
+        // can register this as a bundled schema and continue scanning.
+        // (run resolve because it could be relative to the parent schema).
+        base_uri = jsoncons::uri{id_it->value().as_string()}.resolve(base_uri);
+        dialect = maybe_new_dialect.value();
+        bundled_schemas.insert_or_assign(
+          to_json_id_uri(base_uri),
+          std::pair{json::Pointer{this_obj_ptr.to_string()}, dialect});
+    }
+
+    if (auto ref_it = this_obj.find("$ref");
+        ref_it != this_obj.object_range().end()) {
+        // ensure refs are absolute uris
+        ref_it->value() = jsoncons::uri{ref_it->value().as_string()}
+                            .resolve(base_uri)
+                            .string();
+    }
+
+    // lambda to recursively scan the object for more bundled schemas and $refs
+    auto collect_and_fix = [&](const auto& key, auto& value) {
+        collect_bundled_schemas_and_fix_refs(
+          bundled_schemas, base_uri, this_obj_ptr / key, value, dialect);
+    };
+
+    // recursively scan the object for more bundled schemas and $refs
+    for (auto& e : this_obj.object_range()) {
+        const auto& key = e.key();
+        auto& value = e.value();
+        if (value.is_object()) {
+            collect_and_fix(key, value);
+        } else if (value.is_array()) {
+            for (auto i = 0u; i < value.size(); ++i) {
+                if (value[i].is_object()) {
+                    collect_and_fix(i, value[i]);
+                }
+            }
+        }
+    }
+}
+
+result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
+  jsoncons::ojson& doc, json_schema_dialect dialect) {
+    // entry point to collect all bundled schemas
+    // fetch the root id, if it exists
+    auto root_id = [&] {
+        if (!doc.is_object()) {
+            // might be the case for "true" or "false" schemas
+            return json_id_uri{""};
+        }
+
+        auto id_it = doc.find(
+          dialect == json_schema_dialect::draft4 ? "id" : "$id");
+        if (id_it == doc.object_range().end()) {
+            // no explicit id, use the empty string
+            return json_id_uri{""};
+        }
+
+        // $id is set in the schema, use it as the root id
+        return to_json_id_uri(jsoncons::uri{id_it->value().as_string()});
+    }();
+
+    // insert the root schema as a bundled schema
+    auto bundled_schemas = id_to_schema_pointer{
+      {root_id, std::pair{json::Pointer{}, dialect}}};
+
+    if (doc.is_object()) {
+        // note: current implementation is overly strict and reject any bundled
+        // schema that is deemed invalid. this could be relaxed if the invalid
+        // schema is not actually accessed by a $ref, but it requires to scan
+        // the document in two passes.
+        try {
+            collect_bundled_schemas_and_fix_refs(
+              bundled_schemas, jsoncons::uri{}, {}, doc, dialect);
+        } catch (const exception& e) {
+            return error_info(
+              static_cast<error_code>(e.code().value()), e.message());
+        }
+    }
+
+    return bundled_schemas;
 }
 
 } // namespace
