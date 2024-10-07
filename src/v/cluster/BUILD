@@ -194,6 +194,7 @@ redpanda_cc_library(
     include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
+        ":cloud_metadata_offsets_recovery_router",
         "//src/v/base",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
@@ -211,6 +212,42 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:node_hash_set",
         "@seastar",
     ],
+)
+
+# TODO the following headers are the only headers in redpanda which are excluded
+# from clang-tidy. if you remove the exclusion then you'll observe a tangled web
+# of header dependencies. after many hours those have not yet been resolved, so
+# they are excluded here so that we don't hold up clang-tidy from being applied
+# to the entire tree.
+
+redpanda_cc_library(
+    name = "cloud_metadata_offsets_recovery_router",
+    hdrs = [
+        "cloud_metadata/offsets_recovery_router.h",
+    ],
+    include_prefix = "cluster",
+    tags = ["noclangtidy"],
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "cloud_metadata_offsets_recovery_service",
+    hdrs = [
+        "cloud_metadata/offsets_recovery_service.h",
+    ],
+    include_prefix = "cluster",
+    tags = ["noclangtidy"],
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "cloud_metadata_offsets_upload_router",
+    hdrs = [
+        "cloud_metadata/offsets_upload_router.h",
+    ],
+    include_prefix = "cluster",
+    tags = ["noclangtidy"],
+    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(
@@ -397,11 +434,8 @@ redpanda_cc_library(
         "cloud_metadata/error_outcome.h",
         "cloud_metadata/key_utils.h",
         "cloud_metadata/manifest_downloads.h",
-        "cloud_metadata/offsets_recovery_router.h",
         "cloud_metadata/offsets_recovery_rpc_types.h",
-        "cloud_metadata/offsets_recovery_service.h",
         "cloud_metadata/offsets_snapshot.h",
-        "cloud_metadata/offsets_upload_router.h",
         "cloud_metadata/offsets_upload_rpc_types.h",
         "cloud_metadata/producer_id_recovery_manager.h",
         "cloud_metadata/types.h",
@@ -636,6 +670,7 @@ redpanda_cc_library(
         "//src/v/serde:map",
         "//src/v/serde:named_type",
         "//src/v/serde:optional",
+        "//src/v/serde:set",
         "//src/v/serde:sstring",
         "//src/v/serde:tristate",
         "//src/v/serde:uuid",

@@ -68,6 +68,10 @@ redpanda_cc_library(
         "data_file.h",
     ],
     include_prefix = "datalake/coordinator",
+    visibility = [
+        ":__subpackages__",
+        "//src/v/datalake:__pkg__",
+    ],
     deps = [
         "//src/v/base",
         "//src/v/serde",

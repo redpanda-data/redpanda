@@ -11,6 +11,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/thirdparty/ada",
+        "//src/v/utils:named_type",
         "@boost//:beast",
         "@seastar",
     ],
