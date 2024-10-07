@@ -36,6 +36,7 @@ v_cc_library(
     Parquet::parquet_shared
     protobuf::libprotobuf
     v::iceberg
+    v::kafka_utils
     v::serde_protobuf
 )
 

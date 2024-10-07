@@ -22,4 +22,9 @@ class translation_stm;
 class partition_translator;
 }; // namespace translation
 class datalake_manager;
+
+namespace tests {
+class datalake_cluster_test_fixture;
+}
+
 } // namespace datalake
