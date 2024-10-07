@@ -181,6 +181,37 @@ class DebugBundleTest(RedpandaTest):
         assert res.headers['Content-Type'] == 'application/json', res.json()
         assert not node.account.exists(file)
 
+        # Get the non-existant debug bundle
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.get_debug_bundle,
+            node=node)
+
+        # Cancel the non-existant debug bundle
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.delete_debug_bundle,
+            job_id=job_id,
+            node=node)
+
+        # Get the non-existant debug bundle file
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.get_debug_bundle_file,
+            filename=filename,
+            node=node)
+
+        # Delete the debug bundle file again
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.delete_debug_bundle_file,
+            filename=filename,
+            node=node)
+
     def _run_debug_bundle(self, job_id: UUID, node: ClusterNode,
                           cancel_after_start: bool):
         res = self.admin.post_debug_bundle(

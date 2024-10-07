@@ -602,19 +602,8 @@ ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
     if (_rpk_process->job_id() != job_id) {
         co_return error_info(error_code::job_id_not_recognized);
     }
-    try {
-        if (co_await ss::file_exists(
-              _rpk_process->output_file_path().native())) {
-            co_await ss::remove_file(_rpk_process->output_file_path().native());
-        }
-    } catch (const std::exception& e) {
-        co_return error_info(
-          error_code::internal_error,
-          fmt::format(
-            "Failed to delete debug bundle file {}: {}",
-            _rpk_process->output_file_path(),
-            e.what()));
-    }
+    co_await cleanup_previous_run();
+    _rpk_process.reset();
     co_return outcome::success();
 }
 
