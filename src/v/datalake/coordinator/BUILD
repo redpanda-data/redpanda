@@ -59,6 +59,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "translated_offset_range",
+    hdrs = [
+        "translated_offset_range.h",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        ":data_file",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/serde",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
     name = "frontend",
     srcs = [
         "frontend.cc",
