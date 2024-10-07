@@ -86,6 +86,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/base",
+        "//src/v/datalake/coordinator:data_file",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
         "//src/v/serde",
