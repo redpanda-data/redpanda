@@ -9,6 +9,7 @@
  */
 #pragma once
 #include "cluster/state_machine_registry.h"
+#include "datalake/coordinator/state.h"
 #include "datalake/coordinator/types.h"
 #include "raft/persisted_stm.h"
 
@@ -41,6 +42,8 @@ public:
       fetch_latest_data_file(fetch_latest_data_file_request);
 
 private:
+    // The deterministic state managed by this STM.
+    topics_state state_;
 };
 class stm_factory : public cluster::state_machine_factory {
 public:
