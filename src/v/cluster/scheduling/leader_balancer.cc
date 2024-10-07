@@ -347,10 +347,11 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     /*
      * GC the muted, last leader, and in flight changes indices.
      */
-    absl::erase_if(
+
+    std::erase_if(
       _muted, [now = clock_type::now()](auto g) { return now >= g.second; });
 
-    absl::erase_if(_last_leader, [now = clock_type::now()](auto g) {
+    std::erase_if(_last_leader, [now = clock_type::now()](auto g) {
         return now >= g.second.expires;
     });
 

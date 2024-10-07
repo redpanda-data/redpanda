@@ -108,7 +108,7 @@ private:
     using index_type = leader_balancer_strategy::index_type;
     using reassignment = leader_balancer_strategy::reassignment;
 
-    using group_replicas_t = absl::btree_map<raft::group_id, replicas_t>;
+    using group_replicas_t = chunked_hash_map<raft::group_id, replicas_t>;
     ss::future<std::optional<group_replicas_t>>
     collect_group_replicas_from_health_report(const cluster_health_report&);
 
@@ -228,11 +228,11 @@ private:
         model::broker_shard shard;
         clock_type::time_point expires;
     };
-    absl::btree_map<raft::group_id, last_known_leader> _last_leader;
+    chunked_hash_map<raft::group_id, last_known_leader> _last_leader;
 
     bool _need_controller_refresh{true};
     bool _throttled{false};
-    absl::btree_map<raft::group_id, clock_type::time_point> _muted;
+    chunked_hash_map<raft::group_id, clock_type::time_point> _muted;
 
     struct in_flight_reassignment {
         reassignment value;
