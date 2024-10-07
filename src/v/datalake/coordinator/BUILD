@@ -78,6 +78,25 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "state_update",
+    srcs = [
+        "state_update.cc",
+    ],
+    hdrs = [
+        "state_update.h",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        ":state",
+        ":translated_offset_range",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "translated_offset_range",
     hdrs = [
         "translated_offset_range.h",
