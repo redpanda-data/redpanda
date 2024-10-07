@@ -10,10 +10,13 @@
  */
 #pragma once
 
+#include "config/leaders_preference.h"
 #include "container/chunked_hash_map.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <roaring/roaring64map.hh>
 
 namespace cluster::leader_balancer_types {
@@ -43,6 +46,32 @@ using topic_id_t
   = named_type<model::revision_id::type, struct lb_topic_id_type>;
 
 using group_id_to_topic_id = chunked_hash_map<raft::group_id, topic_id_t>;
+
+template<typename ValueType>
+using topic_map = chunked_hash_map<topic_id_t, ValueType>;
+
+struct leaders_preference {
+    absl::flat_hash_set<model::rack_id> racks;
+
+    leaders_preference() = default;
+    explicit leaders_preference(const config::leaders_preference& cfg) {
+        switch (cfg.type) {
+        case config::leaders_preference::type_t::none:
+            break;
+        case config::leaders_preference::type_t::racks:
+            racks.reserve(cfg.racks.size());
+            racks.insert(cfg.racks.begin(), cfg.racks.end());
+            break;
+        }
+    }
+};
+
+/// Indexes needed for leadership pinning.
+struct preference_index {
+    leaders_preference default_preference;
+    topic_map<leaders_preference> topic2preference;
+    absl::flat_hash_map<model::node_id, model::rack_id> node2rack;
+};
 
 using muted_groups_t = roaring::Roaring64Map;
 /*

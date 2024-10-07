@@ -312,6 +312,10 @@ bool leader_balancer::should_stop_balance() const {
     return !_enabled() || _as.local().abort_requested();
 }
 
+bool leader_balancer::leadership_pinning_enabled() const {
+    return _enable_rack_awareness();
+}
+
 static bool validate_indexes(
   const leader_balancer_types::group_id_to_topic_id& group_to_topic,
   const leader_balancer_types::index_type& index) {
@@ -430,6 +434,11 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     auto index = build_index(std::move(group_replicas));
     auto group_id_to_topic = build_group_id_to_topic_id();
 
+    std::optional<leader_balancer_types::preference_index> preference_index;
+    if (leadership_pinning_enabled()) {
+        preference_index = build_preference_index();
+    }
+
     if (!validate_indexes(group_id_to_topic, index)) {
         vlog(clusterlog.warn, "Leadership balancer tick: invalid indexes.");
         co_return ss::stop_iteration::no;
@@ -441,14 +450,17 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     std::unique_ptr<leader_balancer_strategy> strategy;
 
     switch (mode) {
-    case model::leader_balancer_mode::random_hill_climbing:
+    case model::leader_balancer_mode::random_hill_climbing: {
         vlog(clusterlog.debug, "using random_hill_climbing");
+
         strategy = std::make_unique<
           leader_balancer_types::random_hill_climbing_strategy>(
           std::move(index),
           std::move(group_id_to_topic),
-          leader_balancer_types::muted_index{std::move(muted_nodes), {}});
+          leader_balancer_types::muted_index{std::move(muted_nodes), {}},
+          std::move(preference_index));
         break;
+    }
     case model::leader_balancer_mode::greedy_balanced_shards:
         vlog(clusterlog.debug, "using greedy_balanced_shards");
         strategy = std::make_unique<greedy_balanced_shards>(
@@ -705,6 +717,32 @@ leader_balancer::build_group_id_to_topic_id() const {
     }
 
     return group_id_to_topic;
+}
+
+leader_balancer_types::preference_index
+leader_balancer::build_preference_index() const {
+    leader_balancer_types::preference_index ret;
+
+    ret.default_preference = leader_balancer_types::leaders_preference{
+      _default_preference()};
+
+    for (const auto& topic : _topics.topics_map()) {
+        const auto& preference
+          = topic.second.get_configuration().properties.leaders_preference;
+        if (preference.has_value()) {
+            ret.topic2preference.try_emplace(
+              leader_balancer_types::topic_id_t{topic.second.get_revision()},
+              preference.value());
+        }
+    }
+
+    for (const auto& [id, node_md] : _members.nodes()) {
+        if (node_md.broker.rack()) {
+            ret.node2rack[id] = node_md.broker.rack().value();
+        }
+    }
+
+    return ret;
 }
 
 /// Returns nullopt if shard info from health report can not yet be used. In

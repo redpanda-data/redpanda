@@ -486,7 +486,8 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
     auto rhc = lbt::random_hill_climbing_strategy(
       leader_balancer_test_utils::copy_cluster_index(shard_index1.shards()),
       std::move(g_id_to_t_id1),
-      std::move(muted_index1));
+      std::move(muted_index1),
+      std::nullopt);
 
     cluster::leader_balancer_types::muted_groups_t muted_groups{};
 

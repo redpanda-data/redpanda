@@ -107,9 +107,6 @@ class even_topic_distribution_constraint final
     // more than this value.
     static constexpr double error_jitter = 0.000001;
 
-    template<typename ValueType>
-    using topic_map = chunked_hash_map<topic_id_t, ValueType>;
-
 public:
     even_topic_distribution_constraint(
       const group_id_to_topic_id&,

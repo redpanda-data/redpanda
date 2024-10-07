@@ -102,7 +102,10 @@ private:
 class random_hill_climbing_strategy final : public leader_balancer_strategy {
 public:
     random_hill_climbing_strategy(
-      index_type index, group_id_to_topic_id g_to_topic, muted_index mi)
+      index_type index,
+      group_id_to_topic_id g_to_topic,
+      muted_index mi,
+      std::optional<preference_index>)
       : _mi(std::make_unique<muted_index>(std::move(mi)))
       , _group2topic(
           std::make_unique<group_id_to_topic_id>(std::move(g_to_topic)))
