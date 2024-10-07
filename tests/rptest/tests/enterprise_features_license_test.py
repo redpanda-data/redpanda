@@ -189,7 +189,8 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                     self.redpanda.get_openssl_modules_directory()
                 })
         elif feature == Features.datalake_iceberg:
-            self.redpanda.set_cluster_config({'iceberg_enabled': 'true'})
+            self.redpanda.set_cluster_config({'iceberg_enabled': 'true'},
+                                             expect_restart=True)
         else:
             assert False, f"Unexpected feature={feature}"
 

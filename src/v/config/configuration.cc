@@ -3668,7 +3668,7 @@ configuration::configuration()
       "redpanda.iceberg.enabled topic-level property to true. When set to "
       "false, this disables the feature at the cluster level, effectively "
       "turning it off for all topics.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , development_enable_cloud_topics(
       *this,
