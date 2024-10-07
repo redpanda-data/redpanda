@@ -38,6 +38,8 @@ struct error_category final : std::error_category {
             return "debug bundle process was never started";
         case error_code::rpk_binary_not_present:
             return "rpk binary not present";
+        case error_code::debug_bundle_expired:
+            return "debug bundle expired and was removed";
         }
 
         return "(unknown error code)";

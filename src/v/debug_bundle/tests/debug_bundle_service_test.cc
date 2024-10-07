@@ -39,6 +39,8 @@
 #include <chrono>
 #include <variant>
 
+using namespace std::chrono_literals;
+
 struct debug_bundle_service_fixture : public seastar_test {
     ss::future<> SetUpAsync() override {
         const char* script_path = std::getenv("RPK_SHIM");
@@ -87,6 +89,27 @@ struct debug_bundle_service_fixture : public seastar_test {
           [](debug_bundle::service& s) { return s.start(); }));
     }
 
+    ss::future<> wait_for_status(
+      const debug_bundle::debug_bundle_status expected_status,
+      const std::chrono::seconds timeout = 10s,
+      const std::chrono::milliseconds backoff = 100ms) {
+        const auto start_time = debug_bundle::clock::now();
+        while (debug_bundle::clock::now() - start_time <= timeout) {
+            auto status = co_await _service.local().rpk_debug_bundle_status();
+            if (!status.has_value()) {
+                throw std::system_error(
+                  status.assume_error().code(),
+                  status.assume_error().message());
+            }
+            if (status.assume_value().status == expected_status) {
+                co_return;
+            }
+            co_await ss::sleep(backoff);
+        }
+        throw std::runtime_error(
+          fmt::format("Timed out waiting for status {}", expected_status));
+    }
+
     ss::future<debug_bundle::result<debug_bundle::debug_bundle_status_data>>
     wait_for_process_to_finish(
       const std::chrono::seconds timeout = std::chrono::seconds{10},
@@ -108,6 +131,18 @@ struct debug_bundle_service_fixture : public seastar_test {
             co_await ss::sleep(backoff);
         }
         throw std::runtime_error("Timed out waiting for process to exit");
+    }
+
+    std::filesystem::path
+    generate_job_file_path(debug_bundle::job_id_t job_id) {
+        return _data_dir / debug_bundle::service::debug_bundle_dir_name
+               / fmt::format("{}.zip", job_id);
+    }
+
+    std::filesystem::path
+    generate_process_output_file_path(debug_bundle::job_id_t job_id) {
+        return _data_dir / debug_bundle::service::debug_bundle_dir_name
+               / fmt::format("{}.out", job_id);
     }
 
     std::filesystem::path _rpk_shim_path;
@@ -146,7 +181,7 @@ struct debug_bundle_service_started_fixture
         ASSERT_EQ_CORO(
           status.assume_value().status,
           debug_bundle::debug_bundle_status::success);
-        co_return;
+        co_return co_await ss::check_for_io_immediately();
     }
 };
 
@@ -928,4 +963,125 @@ TEST_F_CORO(debug_bundle_service_started_fixture, restart_garbage_out_file) {
 
     EXPECT_TRUE(status_restart.assume_value().cout.empty());
     EXPECT_TRUE(status_restart.assume_value().cerr.empty());
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, test_timeout_during_restart) {
+    using namespace std::chrono_literals;
+    const auto ttl = 2s;
+    config::shard_local_cfg().debug_bundle_auto_removal_seconds.set_value(
+      ttl.count());
+
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    co_await run_bundle(job_id);
+
+    ASSERT_NO_THROW_CORO(co_await wait_for_kvstore_to_populate(_kvstore.get()));
+    ASSERT_NO_THROW_CORO(co_await _service.stop());
+
+    co_await ss::sleep(ttl + 1s);
+    ASSERT_NO_THROW_CORO(co_await _service.start(_kvstore.get()));
+    ASSERT_NO_THROW_CORO(co_await _service.invoke_on_all(
+      [](debug_bundle::service& s) { return s.start(); }));
+
+    std::filesystem::path job_file
+      = _data_dir
+        / fmt::format(
+          "{}/{}.zip", debug_bundle::service::debug_bundle_dir_name, job_id);
+    EXPECT_FALSE(co_await ss::file_exists(job_file.native()));
+
+    std::filesystem::path process_output_file
+      = _data_dir / debug_bundle::service::debug_bundle_dir_name
+        / fmt::format("{}.out", job_id);
+    EXPECT_FALSE(co_await ss::file_exists(process_output_file.native()));
+    EXPECT_FALSE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, test_debug_bundle_expired) {
+    using namespace std::chrono_literals;
+    const auto ttl = 4s;
+    config::shard_local_cfg().debug_bundle_auto_removal_seconds.set_value(
+      ttl.count());
+
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    co_await run_bundle(job_id);
+
+    auto status = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status.has_value()) << status.assume_error().message();
+
+    ASSERT_EQ_CORO(
+      status.assume_value().status, debug_bundle::debug_bundle_status::success);
+
+    co_await ss::sleep(2s);
+    status = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status.has_value()) << status.assume_error().message();
+
+    auto job_file = generate_job_file_path(job_id);
+    auto process_output_file = generate_process_output_file_path(job_id);
+
+    EXPECT_EQ(
+      status.assume_value().status, debug_bundle::debug_bundle_status::success);
+    EXPECT_TRUE(co_await ss::file_exists(job_file.native()));
+    EXPECT_TRUE(co_await ss::file_exists(process_output_file.native()));
+    EXPECT_TRUE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+
+    co_await ss::sleep(3s);
+
+    status = co_await _service.local().rpk_debug_bundle_status();
+    ASSERT_TRUE_CORO(status.has_value()) << status.assume_error().message();
+    EXPECT_EQ(
+      status.assume_value().status, debug_bundle::debug_bundle_status::expired);
+    EXPECT_FALSE(co_await ss::file_exists(job_file.native()));
+    EXPECT_FALSE(co_await ss::file_exists(process_output_file.native()));
+    EXPECT_FALSE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
+}
+
+TEST_F_CORO(
+  debug_bundle_service_started_fixture,
+  test_debug_bundle_expired_after_config_set) {
+    using namespace std::chrono_literals;
+    const auto ttl = 1s;
+
+    debug_bundle::job_id_t job_id(uuid_t::create());
+    co_await run_bundle(job_id);
+
+    auto job_file = generate_job_file_path(job_id);
+    auto process_output_file = generate_process_output_file_path(job_id);
+
+    ASSERT_NO_THROW_CORO(
+      co_await wait_for_file_to_be_created(job_file.native()));
+    ASSERT_NO_THROW_CORO(
+      co_await wait_for_file_to_be_created(process_output_file.native()));
+    ASSERT_NO_THROW_CORO(co_await wait_for_kvstore_to_populate(_kvstore.get()));
+
+    // wait for twice the TTL and then set the config
+    co_await ss::sleep(ttl * 2);
+    config::shard_local_cfg().debug_bundle_auto_removal_seconds.set_value(
+      ttl.count());
+
+    // we need to permit the scheduled background fiber to run
+    ASSERT_NO_THROW_CORO(
+      co_await wait_for_status(debug_bundle::debug_bundle_status::expired));
+    co_await ss::check_for_io_immediately();
+    EXPECT_FALSE(co_await ss::file_exists(job_file.native()));
+    EXPECT_FALSE(co_await ss::file_exists(process_output_file.native()));
+    EXPECT_FALSE(
+      _kvstore
+        ->get(
+          storage::kvstore::key_space::debug_bundle,
+          bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
+        .has_value());
 }

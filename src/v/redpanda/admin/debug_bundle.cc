@@ -95,6 +95,9 @@ std::unique_ptr<ss::http::reply> make_error_body(
     case debug_bundle::error_code::job_id_not_recognized:
         status = ss::http::reply::status_type::not_found;
         break;
+    case debug_bundle::error_code::debug_bundle_expired:
+        status = ss::http::reply::status_type::gone;
+        break;
     }
     return make_json_body(status, res, std::move(rep));
 }
@@ -279,6 +282,10 @@ debug_bundle::result<debug_bundle::job_id_t> get_debug_bundle_job_id(
     case debug_bundle::debug_bundle_status::error:
         return debug_bundle::error_info{
           debug_bundle::error_code::internal_error, "Process errored out"};
+    case debug_bundle::debug_bundle_status::expired:
+        return debug_bundle::error_info{
+          debug_bundle::error_code::debug_bundle_expired,
+          "Debug bundle expired"};
     case debug_bundle::debug_bundle_status::success:
         break;
     }

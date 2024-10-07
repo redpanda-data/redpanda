@@ -3569,6 +3569,14 @@ configuration::configuration()
       "broker configuration file.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , debug_bundle_auto_removal_seconds(
+      *this,
+      "debug_bundle_auto_removal_seconds",
+      "If set, how long debug bundles are kept in the debug bundle storage "
+      "directory after they are created. If not set, debug bundles are kept "
+      "indefinitely.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
   , oidc_discovery_url(
       *this,
       "oidc_discovery_url",
