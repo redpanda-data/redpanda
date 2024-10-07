@@ -181,12 +181,62 @@ void leader_balancer::handle_topic_deltas(
     }
 
     for (const auto& d : deltas) {
-        if (d.type == topic_table_topic_delta_type::added) {
+        switch (d.type) {
+        case topic_table_topic_delta_type::removed:
+            continue;
+        case topic_table_topic_delta_type::added:
             vlog(
               clusterlog.trace, "topic {} added, scheduling balance", d.ns_tp);
             // Don't schedule right away, allow partitions to elect leaders and
             // propagate metadata.
             schedule_sooner(leader_activation_delay);
+            continue;
+        case topic_table_topic_delta_type::properties_updated:
+            break;
+        }
+
+        if (!leadership_pinning_enabled()) {
+            continue;
+        }
+
+        // Schedule a tick if current topic leaders preference differs from
+        // what we've last seen.
+
+        if (!_last_seen_preferences) {
+            // Last seen map will be built for the first time when the balancer
+            // will next activate, we don't need to schedule additional ticks
+            // yet.
+            continue;
+        }
+
+        const config::leaders_preference* new_lp = nullptr;
+        auto maybe_md = _topics.get_topic_metadata_ref(d.ns_tp);
+        if (
+          maybe_md
+          && maybe_md->get()
+               .get_configuration()
+               .properties.leaders_preference) {
+            new_lp = &maybe_md->get()
+                        .get_configuration()
+                        .properties.leaders_preference.value();
+        }
+
+        leader_balancer_types::topic_id_t topic_id{d.creation_revision};
+        auto cache_it = _last_seen_preferences->find(topic_id);
+        if (cache_it != _last_seen_preferences->end()) {
+            if (!new_lp || *new_lp != cache_it->second) {
+                vlog(
+                  clusterlog.trace,
+                  "topic {} leaders_preference modified, scheduling balance",
+                  d.ns_tp);
+                schedule_sooner(0s);
+            }
+        } else if (new_lp) {
+            vlog(
+              clusterlog.trace,
+              "topic {} leaders_preference removed, scheduling balance",
+              d.ns_tp);
+            schedule_sooner(0s);
         }
     }
 }
@@ -469,6 +519,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         // They would not be accurate post-leadership loss.
         _in_flight_changes.clear();
         check_unregister_leadership_change_notification();
+
+        _last_seen_preferences = std::nullopt;
 
         auto res = co_await _raft0->linearizable_barrier();
         if (!res) {
@@ -775,19 +827,26 @@ leader_balancer::build_group_id_to_topic_id() const {
 }
 
 leader_balancer_types::preference_index
-leader_balancer::build_preference_index() const {
+leader_balancer::build_preference_index() {
     leader_balancer_types::preference_index ret;
 
     ret.default_preference = leader_balancer_types::leaders_preference{
       _default_preference()};
 
+    if (_last_seen_preferences) {
+        _last_seen_preferences->clear();
+    } else {
+        _last_seen_preferences.emplace();
+    }
+
     for (const auto& topic : _topics.topics_map()) {
+        leader_balancer_types::topic_id_t topic_id{topic.second.get_revision()};
         const auto& preference
           = topic.second.get_configuration().properties.leaders_preference;
         if (preference.has_value()) {
-            ret.topic2preference.try_emplace(
-              leader_balancer_types::topic_id_t{topic.second.get_revision()},
-              preference.value());
+            _last_seen_preferences.value().try_emplace(
+              topic_id, preference.value());
+            ret.topic2preference.try_emplace(topic_id, preference.value());
         }
     }
 

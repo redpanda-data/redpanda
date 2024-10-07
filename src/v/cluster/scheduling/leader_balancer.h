@@ -108,7 +108,7 @@ private:
     leader_balancer_types::group_id_to_topic_id
     build_group_id_to_topic_id() const;
 
-    leader_balancer_types::preference_index build_preference_index() const;
+    leader_balancer_types::preference_index build_preference_index();
 
     index_type build_index(std::optional<group_replicas_t>);
     absl::flat_hash_set<model::node_id>
@@ -246,6 +246,9 @@ private:
     };
     absl::flat_hash_map<raft::group_id, in_flight_reassignment>
       _in_flight_changes;
+
+    std::optional<leader_balancer_types::topic_map<config::leaders_preference>>
+      _last_seen_preferences;
 
     leader_balancer_probe _probe;
 };
