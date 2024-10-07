@@ -25,17 +25,14 @@ struct translated_data_file_entry
       serde::compat_version<0>> {
     model::topic_partition tp;
     // inclusive offset range
-    model::offset begin_offset;
-    model::offset end_offset;
     // term of the leader that performed this
     // translation
     model::term_id translator_term;
 
-    data_writer_result translation_result;
+    translated_offset_range translation_result;
 
     auto serde_fields() {
-        return std::tie(
-          tp, begin_offset, end_offset, translator_term, translation_result);
+        return std::tie(tp, translator_term, translation_result);
     }
 };
 
@@ -103,6 +100,7 @@ struct fetch_latest_data_file_request
     fetch_latest_data_file_request() = default;
 
     model::topic_partition tp;
+    kafka::offset committed;
 
     const model::topic_partition& topic_partition() const { return tp; }
 

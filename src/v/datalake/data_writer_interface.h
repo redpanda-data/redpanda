@@ -10,6 +10,7 @@
 #include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
+#include "model/fundamental.h"
 #include "serde/envelope.h"
 
 #include <cstddef>
@@ -18,14 +19,38 @@
 #pragma once
 
 namespace datalake {
-struct data_writer_result
+
+// Corresponds to a single file.
+struct data_file_result
   : serde::envelope<
-      data_writer_result,
+      data_file_result,
       serde::version<0>,
       serde::compat_version<0>> {
     size_t row_count = 0;
 
     auto serde_fields() { return std::tie(row_count); }
+
+    // new stuff
+    size_t file_size_bytes = 0;
+    ss::sstring remote_path = "";
+    // TODO: add kafka schema id
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const data_file_result&) {
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(row_count, file_size_bytes, remote_path); }
+};
+
+struct translated_offset_range
+  : serde::envelope<
+      translated_offset_range,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    kafka::offset start_offset;
+    kafka::offset last_offset;
+    chunked_vector<data_file_result> files;
 };
 
 class data_writer {
@@ -37,7 +62,7 @@ public:
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual data_writer_result finish() = 0;
+    virtual data_file_result finish() = 0;
 };
 
 class data_writer_factory {
