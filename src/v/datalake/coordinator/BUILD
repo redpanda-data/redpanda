@@ -8,6 +8,20 @@ redpanda_cc_rpc_library(
 )
 
 redpanda_cc_library(
+    name = "data_file",
+    hdrs = [
+        "data_file.h",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        "//src/v/base",
+        "//src/v/serde",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "model",
     hdrs = [
         "types.h",
