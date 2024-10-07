@@ -265,7 +265,7 @@ private:
       model::revision_id bootstrap_revision,
       absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot);
 
-    void process_delta(const topic_table::delta&);
+    void process_delta(const topic_table::ntp_delta&);
 
     ss::future<> reconcile_ntp_fiber(
       model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);

@@ -28,22 +28,6 @@
 
 #include <seastar/core/sharded.hh>
 
-inline void validate_delta(
-  const std::vector<cluster::topic_table::delta>& d,
-  int new_partitions,
-  int removed_partitions) {
-    size_t additions = std::count_if(
-      d.begin(), d.end(), [](const cluster::topic_table::delta& d) {
-          return d.type == cluster::topic_table_delta_type::added;
-      });
-    size_t deletions = std::count_if(
-      d.begin(), d.end(), [](const cluster::topic_table::delta& d) {
-          return d.type == cluster::topic_table_delta_type::removed;
-      });
-    BOOST_REQUIRE_EQUAL(additions, new_partitions);
-    BOOST_REQUIRE_EQUAL(deletions, removed_partitions);
-}
-
 struct topic_table_fixture {
     static constexpr uint32_t partitions_per_shard = 7000;
     static constexpr uint32_t partitions_reserve_shard0 = 2;

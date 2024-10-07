@@ -87,7 +87,7 @@ bool partition_balancer_backend::is_enabled() const {
 }
 
 void partition_balancer_backend::start() {
-    _topic_table_updates = _state.topics().register_lw_notification(
+    _topic_table_updates = _state.topics().register_lw_ntp_notification(
       [this]() { on_topic_table_update(); });
     _member_updates = _state.members().register_members_updated_notification(
       [this](model::node_id n, model::membership_state state) {
@@ -287,7 +287,7 @@ void partition_balancer_backend::tick() {
 
 ss::future<> partition_balancer_backend::stop() {
     vlog(clusterlog.info, "stopping...");
-    _state.topics().unregister_lw_notification(_topic_table_updates);
+    _state.topics().unregister_lw_ntp_notification(_topic_table_updates);
     _state.members().unregister_members_updated_notification(_member_updates);
     _health_monitor.unregister_node_callback(_health_monitor_updates);
     _timer.cancel();

@@ -120,8 +120,8 @@ ss::future<> group_manager::start() {
      * are cleaned-up.
      */
     _topic_table_notify_handle
-      = _topic_table.local().register_delta_notification(
-        [this](cluster::topic_table::delta_range_t deltas) {
+      = _topic_table.local().register_ntp_delta_notification(
+        [this](cluster::topic_table::ntp_delta_range_t deltas) {
             handle_topic_delta(deltas);
         });
 
@@ -396,7 +396,7 @@ ss::future<> group_manager::stop() {
     _pm.local().unregister_manage_notification(_manage_notify_handle);
     _pm.local().unregister_unmanage_notification(_unmanage_notify_handle);
     _gm.local().unregister_leadership_notification(_leader_notify_handle);
-    _topic_table.local().unregister_delta_notification(
+    _topic_table.local().unregister_ntp_delta_notification(
       _topic_table_notify_handle);
 
     for (auto& e : _partitions) {
@@ -501,13 +501,13 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
 }
 
 void group_manager::handle_topic_delta(
-  cluster::topic_table::delta_range_t deltas) {
+  cluster::topic_table::ntp_delta_range_t deltas) {
     // topic-partition deletions in the kafka namespace are the only deltas that
     // are relevant to the group manager
     chunked_vector<model::topic_partition> tps;
     for (const auto& delta : deltas) {
         if (
-          delta.type == cluster::topic_table_delta_type::removed
+          delta.type == cluster::topic_table_ntp_delta_type::removed
           && delta.ntp.ns == model::kafka_namespace) {
             tps.emplace_back(delta.ntp.tp);
         }

@@ -181,22 +181,23 @@ ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
     // we shouldn't be receiving any controller updates at this point, so no
     // risk of missing a notification between initializing shard_placement_table
     // and subscribing.
-    _topic_table_notify_handle = _topics.local().register_delta_notification(
-      [this](topic_table::delta_range_t deltas_range) {
-          for (const auto& delta : deltas_range) {
-              // Filter out only deltas that might change the set of partition
-              // replicas on this node.
-              switch (delta.type) {
-              case topic_table_delta_type::disabled_flag_updated:
-              case topic_table_delta_type::properties_updated:
-                  continue;
-              default:
-                  _to_assign.insert(delta.ntp);
-                  _wakeup_event.set();
-                  break;
-              }
-          }
-      });
+    _topic_table_notify_handle
+      = _topics.local().register_ntp_delta_notification(
+        [this](topic_table::ntp_delta_range_t deltas_range) {
+            for (const auto& delta : deltas_range) {
+                // Filter out only deltas that might change the set of partition
+                // replicas on this node.
+                switch (delta.type) {
+                case topic_table_ntp_delta_type::disabled_flag_updated:
+                case topic_table_ntp_delta_type::properties_updated:
+                    continue;
+                default:
+                    _to_assign.insert(delta.ntp);
+                    _wakeup_event.set();
+                    break;
+                }
+            }
+        });
 
     vassert(
       tt_version == _topics.local().topics_map_revision(),
@@ -292,7 +293,8 @@ ss::future<> shard_balancer::stop() {
       "method can only be invoked on shard {}",
       shard_id);
 
-    _topics.local().unregister_delta_notification(_topic_table_notify_handle);
+    _topics.local().unregister_ntp_delta_notification(
+      _topic_table_notify_handle);
     _balance_timer.cancel();
     _wakeup_event.set();
     return _gate.close();

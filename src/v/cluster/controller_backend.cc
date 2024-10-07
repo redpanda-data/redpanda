@@ -370,7 +370,8 @@ bool controller_backend::command_based_membership_active() const {
 ss::future<> controller_backend::stop() {
     vlog(clusterlog.info, "Stopping Controller Backend...");
 
-    _topics.local().unregister_delta_notification(_topic_table_notify_handle);
+    _topics.local().unregister_ntp_delta_notification(
+      _topic_table_notify_handle);
 
     for (auto& [_, rs] : _states) {
         rs->wakeup_event.set();
@@ -482,12 +483,13 @@ ss::future<> controller_backend::bootstrap_controller_backend() {
         notify_reconciliation(ntp);
     }
 
-    _topic_table_notify_handle = _topics.local().register_delta_notification(
-      [this](topic_table::delta_range_t deltas_range) {
-          for (const auto& d : deltas_range) {
-              process_delta(d);
-          }
-      });
+    _topic_table_notify_handle
+      = _topics.local().register_ntp_delta_notification(
+        [this](topic_table::ntp_delta_range_t deltas_range) {
+            for (const auto& d : deltas_range) {
+                process_delta(d);
+            }
+        });
 
     co_return;
 }
@@ -692,12 +694,12 @@ controller_backend::calculate_learner_initial_offset(
       std::min(cloud_storage_safe_offset, *retention_offset));
 }
 
-void controller_backend::process_delta(const topic_table::delta& d) {
+void controller_backend::process_delta(const topic_table::ntp_delta& d) {
     vlog(clusterlog.trace, "got delta: {}", d);
 
     // update partition_leaders_table if needed
 
-    if (d.type == topic_table_delta_type::removed) {
+    if (d.type == topic_table_ntp_delta_type::removed) {
         _partition_leaders_table.local().remove_leader(d.ntp, d.revision);
     }
 
@@ -710,17 +712,17 @@ void controller_backend::process_delta(const topic_table::delta& d) {
     auto& rs = *rs_it->second;
     rs.pending_notifies += 1;
 
-    if (d.type == topic_table_delta_type::added) {
+    if (d.type == topic_table_ntp_delta_type::added) {
         rs.removed_at.reset();
     } else {
         vassert(
           !rs.removed_at, "[{}] unexpected delta: {}, state: {}", d.ntp, d, rs);
-        if (d.type == topic_table_delta_type::removed) {
+        if (d.type == topic_table_ntp_delta_type::removed) {
             rs.removed_at = d.revision;
         }
     }
 
-    if (d.type == topic_table_delta_type::properties_updated) {
+    if (d.type == topic_table_ntp_delta_type::properties_updated) {
         rs.properties_changed_at = d.revision;
     }
 

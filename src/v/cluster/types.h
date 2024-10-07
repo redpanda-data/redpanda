@@ -1229,34 +1229,67 @@ enum class partition_operation_type {
 };
 std::ostream& operator<<(std::ostream&, const partition_operation_type&);
 
+/// Notification of topic table state change related to a topic as a whole
+
+enum class topic_table_topic_delta_type {
+    added,
+    removed,
+    properties_updated,
+};
+std::ostream& operator<<(std::ostream&, const topic_table_topic_delta_type&);
+
+struct topic_table_topic_delta {
+    // revision of topic creation command (can be used to identify a topic
+    // incarnation).
+    model::revision_id creation_revision;
+    model::topic_namespace ns_tp;
+    // revision corresponding to the change itself.
+    model::revision_id revision;
+    topic_table_topic_delta_type type;
+
+    topic_table_topic_delta(
+      model::revision_id creation_rev,
+      model::topic_namespace ns_tp,
+      model::revision_id rev,
+      topic_table_topic_delta_type type)
+      : creation_revision(creation_rev)
+      , ns_tp(std::move(ns_tp))
+      , revision(rev)
+      , type(type) {}
+
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_table_topic_delta&);
+};
+
 /// Notification of topic table state change related to a single ntp
 
-enum class topic_table_delta_type {
+enum class topic_table_ntp_delta_type {
     added,
     removed,
     replicas_updated,
     properties_updated,
     disabled_flag_updated,
 };
-std::ostream& operator<<(std::ostream&, const topic_table_delta_type&);
+std::ostream& operator<<(std::ostream&, const topic_table_ntp_delta_type&);
 
-struct topic_table_delta {
+struct topic_table_ntp_delta {
     model::ntp ntp;
     raft::group_id group;
     model::revision_id revision;
-    topic_table_delta_type type;
+    topic_table_ntp_delta_type type;
 
-    topic_table_delta(
+    topic_table_ntp_delta(
       model::ntp ntp,
       raft::group_id gr,
       model::revision_id rev,
-      topic_table_delta_type type)
+      topic_table_ntp_delta_type type)
       : ntp(std::move(ntp))
       , group(gr)
       , revision(rev)
       , type(type) {}
 
-    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_table_ntp_delta&);
 };
 
 struct create_acls_cmd_data

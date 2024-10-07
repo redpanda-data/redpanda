@@ -118,8 +118,8 @@ ss::future<> backend::start() {
             }
         });
 
-    _topic_table_notification_id = _topic_table.register_delta_notification(
-      [this](topic_table::delta_range_t deltas) {
+    _topic_table_notification_id = _topic_table.register_ntp_delta_notification(
+      [this](topic_table::ntp_delta_range_t deltas) {
           _unprocessed_deltas.reserve(
             _unprocessed_deltas.size() + deltas.size());
           for (const auto& delta : deltas) {
@@ -173,7 +173,8 @@ ss::future<> backend::stop() {
     _sem.broken();
     _timer.cancel();
     _shard_table.unregister_delta_notification(_shard_notification_id);
-    _topic_table.unregister_delta_notification(_topic_table_notification_id);
+    _topic_table.unregister_ntp_delta_notification(
+      _topic_table_notification_id);
     _leaders_table.unregister_leadership_change_notification(
       model::controller_ntp, _plt_raft0_leadership_notification_id);
     if (_cloud_storage_api) {
@@ -915,7 +916,7 @@ ss::future<> backend::handle_migration_update(id id) {
     }
 }
 
-ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
+ss::future<> backend::process_delta(cluster::topic_table_ntp_delta&& delta) {
     vlog(dm_log.debug, "processing topic table delta={}", delta);
     model::topic_namespace nt{delta.ntp.ns, delta.ntp.tp.topic};
     auto it = _topic_migration_map.find(nt);
@@ -925,8 +926,8 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
     auto migration_id = it->second;
 
     if (
-      delta.type == topic_table_delta_type::added
-      || delta.type == topic_table_delta_type::removed) {
+      delta.type == topic_table_ntp_delta_type::added
+      || delta.type == topic_table_ntp_delta_type::removed) {
         // it can be only ourselves, as partition changes are not allowed when
         // the topic migration is in one of the states tracked here
         co_return;
@@ -934,8 +935,8 @@ ss::future<> backend::process_delta(cluster::topic_table_delta&& delta) {
 
     // coordination
     vassert(
-      delta.type == topic_table_delta_type::replicas_updated
-        || delta.type == topic_table_delta_type::disabled_flag_updated,
+      delta.type == topic_table_ntp_delta_type::replicas_updated
+        || delta.type == topic_table_ntp_delta_type::disabled_flag_updated,
       "topic {} altered with topic_table_delta_type={} during "
       "migration {}",
       nt,

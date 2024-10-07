@@ -240,8 +240,6 @@ public:
         }
     };
 
-    using delta = topic_table_delta;
-
     using underlying_t = chunked_hash_map<
       model::topic_namespace,
       topic_metadata_item,
@@ -260,10 +258,17 @@ public:
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 
-    using delta_range_t
-      = boost::iterator_range<fragmented_vector<delta>::const_iterator>;
-    using delta_cb_t = ss::noncopyable_function<void(delta_range_t)>;
-    using lw_cb_t = ss::noncopyable_function<void()>;
+    using topic_delta = topic_table_topic_delta;
+
+    using topic_delta_cb_t
+      = ss::noncopyable_function<void(const chunked_vector<topic_delta>&)>;
+
+    using ntp_delta = topic_table_ntp_delta;
+
+    using ntp_delta_range_t
+      = boost::iterator_range<fragmented_vector<ntp_delta>::const_iterator>;
+    using ntp_delta_cb_t = ss::noncopyable_function<void(ntp_delta_range_t)>;
+    using lw_ntp_cb_t = ss::noncopyable_function<void()>;
 
     /// A helper struct that has various replica-related metadata all in one
     /// place, so that the API user doesn't have to query several maps manually.
@@ -303,32 +308,48 @@ public:
 
     explicit topic_table(data_migrations::migrated_resources&);
 
-    cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
-        auto id = _notification_id++;
-        _notifications.emplace_back(id, std::move(cb));
+    cluster::notification_id_type
+    register_topic_delta_notification(topic_delta_cb_t cb) {
+        auto id = _topic_notification_id++;
+        _topic_notifications.emplace_back(id, std::move(cb));
         return id;
     }
 
-    void unregister_delta_notification(cluster::notification_id_type id) {
+    void unregister_topic_delta_notification(cluster::notification_id_type id) {
         std::erase_if(
-          _notifications,
-          [id](const std::pair<cluster::notification_id_type, delta_cb_t>& n) {
+          _topic_notifications,
+          [id](const std::pair<cluster::notification_id_type, topic_delta_cb_t>&
+                 n) { return n.first == id; });
+    }
+
+    cluster::notification_id_type
+    register_ntp_delta_notification(ntp_delta_cb_t cb) {
+        auto id = _ntp_notification_id++;
+        _ntp_notifications.emplace_back(id, std::move(cb));
+        return id;
+    }
+
+    void unregister_ntp_delta_notification(cluster::notification_id_type id) {
+        std::erase_if(
+          _ntp_notifications,
+          [id](
+            const std::pair<cluster::notification_id_type, ntp_delta_cb_t>& n) {
               return n.first == id;
           });
     }
 
     /// similar to delta notifications but lightweight because a copy of delta
     /// is not included in the notification.
-    cluster::notification_id_type register_lw_notification(lw_cb_t cb) {
-        auto id = _lw_notification_id++;
-        _lw_notifications.emplace_back(id, std::move(cb));
+    cluster::notification_id_type register_lw_ntp_notification(lw_ntp_cb_t cb) {
+        auto id = _lw_ntp_notification_id++;
+        _lw_ntp_notifications.emplace_back(id, std::move(cb));
         return id;
     }
 
-    void unregister_lw_notification(cluster::notification_id_type id) {
+    void unregister_lw_ntp_notification(cluster::notification_id_type id) {
         std::erase_if(
-          _lw_notifications,
-          [id](const std::pair<cluster::notification_id_type, lw_cb_t>& n) {
+          _lw_ntp_notifications,
+          [id](const std::pair<cluster::notification_id_type, lw_ntp_cb_t>& n) {
               return n.first == id;
           });
     }
@@ -624,7 +645,7 @@ private:
     struct waiter {
         explicit waiter(uint64_t id)
           : id(id) {}
-        ss::promise<fragmented_vector<delta>> promise;
+        ss::promise<fragmented_vector<ntp_delta>> promise;
         ss::abort_source::subscription sub;
         uint64_t id;
     };
@@ -673,13 +694,19 @@ private:
     // revision that updated the map.
     model::revision_id _topics_map_revision{0};
 
-    fragmented_vector<delta> _pending_deltas;
-    cluster::notification_id_type _notification_id{0};
-    cluster::notification_id_type _lw_notification_id{0};
-    std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
-      _notifications;
-    std::vector<std::pair<cluster::notification_id_type, lw_cb_t>>
-      _lw_notifications;
+    chunked_vector<topic_delta> _pending_topic_deltas;
+    cluster::notification_id_type _topic_notification_id{0};
+    std::vector<std::pair<cluster::notification_id_type, topic_delta_cb_t>>
+      _topic_notifications;
+
+    fragmented_vector<ntp_delta> _pending_ntp_deltas;
+    cluster::notification_id_type _ntp_notification_id{0};
+    cluster::notification_id_type _lw_ntp_notification_id{0};
+    std::vector<std::pair<cluster::notification_id_type, ntp_delta_cb_t>>
+      _ntp_notifications;
+    std::vector<std::pair<cluster::notification_id_type, lw_ntp_cb_t>>
+      _lw_ntp_notifications;
+
     topic_table_probe _probe;
     force_recoverable_partitions_t _partitions_to_force_reconfigure;
     model::revision_id _partitions_to_force_reconfigure_revision{0};

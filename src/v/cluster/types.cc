@@ -215,23 +215,48 @@ std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_table_delta_type& tp) {
+std::ostream&
+operator<<(std::ostream& o, const topic_table_topic_delta_type& tp) {
     switch (tp) {
-    case topic_table_delta_type::added:
+    case topic_table_topic_delta_type::added:
         return o << "added";
-    case topic_table_delta_type::removed:
+    case topic_table_topic_delta_type::removed:
         return o << "removed";
-    case topic_table_delta_type::replicas_updated:
-        return o << "replicas_updated";
-    case topic_table_delta_type::properties_updated:
+    case topic_table_topic_delta_type::properties_updated:
         return o << "properties_updated";
-    case topic_table_delta_type::disabled_flag_updated:
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_table_topic_delta& d) {
+    fmt::print(
+      o,
+      "{{creation_revision:{}, ns_tp: {}, type: {}, revision: {}}}",
+      d.creation_revision,
+      d.ns_tp,
+      d.type,
+      d.revision);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const topic_table_ntp_delta_type& tp) {
+    switch (tp) {
+    case topic_table_ntp_delta_type::added:
+        return o << "added";
+    case topic_table_ntp_delta_type::removed:
+        return o << "removed";
+    case topic_table_ntp_delta_type::replicas_updated:
+        return o << "replicas_updated";
+    case topic_table_ntp_delta_type::properties_updated:
+        return o << "properties_updated";
+    case topic_table_ntp_delta_type::disabled_flag_updated:
         return o << "disabled_flag_updated";
     }
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
+std::ostream& operator<<(std::ostream& o, const topic_table_ntp_delta& d) {
     fmt::print(
       o, "{{ntp: {}, type: {}, revision: {}}}", d.ntp, d.type, d.revision);
     return o;
