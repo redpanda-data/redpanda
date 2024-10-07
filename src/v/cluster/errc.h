@@ -174,7 +174,7 @@ struct errc_category final : public std::error_category {
             return "Unable to perform requested topic operation ";
         case errc::no_eligible_allocation_nodes:
             return "No nodes are available to perform allocation after hard "
-                   "constrains were solved";
+                   "constraints were solved";
         case errc::allocation_error:
             return "Exception was thrown when allocating partitions ";
         case errc::partition_configuration_revision_not_updated:
