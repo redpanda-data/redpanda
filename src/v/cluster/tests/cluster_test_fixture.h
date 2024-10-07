@@ -237,38 +237,41 @@ public:
         return groups;
     }
 
-    void create_topic(
+    ss::future<> create_topic(
       model::topic_namespace_view tp_ns,
       int partitions = 1,
-      int16_t replication_factor = 1) {
+      int16_t replication_factor = 1,
+      std::optional<cluster::topic_properties> custom_properties
+      = std::nullopt) {
         vassert(!_instances.empty(), "no nodes in the cluster");
         // wait until there is a controller stm leader.
-        tests::cooperative_spin_wait_with_timeout(10s, [this] {
+        co_await tests::cooperative_spin_wait_with_timeout(10s, [this] {
             return std::any_of(
               _instances.begin(), _instances.end(), [](auto& it) {
-                  return it.second->app.controller->linearizable_barrier()
-                    .get();
+                  return it.second->app.controller->is_raft0_leader();
               });
-        }).get();
+        });
         auto leader_it = std::find_if(
           _instances.begin(), _instances.end(), [](auto& it) {
               return it.second->app.controller->is_raft0_leader();
           });
         auto& app_0 = leader_it->second->app;
-        cluster::topic_configuration_vector cfgs = {
-          cluster::topic_configuration{
-            tp_ns.ns, tp_ns.tp, partitions, replication_factor}};
-        auto results = app_0.controller->get_topics_frontend()
+        auto topic_cfg = cluster::topic_configuration{
+          tp_ns.ns, tp_ns.tp, partitions, replication_factor};
+        if (custom_properties) {
+            topic_cfg.properties = custom_properties.value();
+        }
+        cluster::topic_configuration_vector cfgs = {std::move(topic_cfg)};
+        auto results = co_await app_0.controller->get_topics_frontend()
                          .local()
                          .create_topics(
                            cluster::without_custom_assignments(std::move(cfgs)),
-                           model::no_timeout)
-                         .get();
+                           model::no_timeout);
         BOOST_REQUIRE_EQUAL(results.size(), 1);
         auto& result = results.at(0);
         BOOST_REQUIRE_EQUAL(result.ec, cluster::errc::success);
         auto& leaders = app_0.controller->get_partition_leaders().local();
-        tests::cooperative_spin_wait_with_timeout(10s, [&]() {
+        co_await tests::cooperative_spin_wait_with_timeout(10s, [&]() {
             auto md = app_0.metadata_cache.local().get_topic_metadata(
               result.tp_ns);
             return md && md->get_assignments().size() == partitions
@@ -278,7 +281,7 @@ public:
                      [&](const cluster::assignments_set::value_type& p) {
                          return leaders.get_leader(tp_ns, p.second.id);
                      });
-        }).get();
+        });
     }
 
     std::tuple<redpanda_thread_fixture*, ss::lw_shared_ptr<cluster::partition>>
@@ -296,21 +299,24 @@ public:
         return std::make_tuple(nullptr, nullptr);
     }
 
-    void shuffle_leadership(model::ntp ntp) {
+    ss::future<> shuffle_leadership(model::ntp ntp) {
         BOOST_REQUIRE(!_instances.empty());
         auto& app = _instances.begin()->second.get()->app;
         auto& leaders = app.controller->get_partition_leaders().local();
         auto current_leader = leaders.get_leader(ntp);
         if (!current_leader) {
-            return;
+            return ss::now();
         }
         auto& leader_app = _instances.at(*current_leader).get()->app;
         auto partition = leader_app.partition_manager.local().get(ntp);
         BOOST_REQUIRE(partition);
-        partition
-          ->transfer_leadership(
-            raft::transfer_leadership_request{.group = partition->group()})
-          .get();
+        auto current_leader_id = current_leader.value()();
+        auto new_leader_id = model::node_id{
+          ++current_leader_id % static_cast<int>(_instances.size())};
+        return partition
+          ->transfer_leadership(raft::transfer_leadership_request{
+            .group = partition->group(), .target = new_leader_id})
+          .discard_result();
     }
 
 protected:

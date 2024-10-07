@@ -106,7 +106,8 @@ public:
       = empty_seed_starts_cluster::yes,
       std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt,
       bool enable_data_transforms = false,
-      bool enable_legacy_upload_mode = true)
+      bool enable_legacy_upload_mode = true,
+      bool iceberg_enabled = false)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -126,7 +127,8 @@ public:
           empty_seed_starts_cluster_val,
           kafka_admin_topic_api_rate,
           enable_data_transforms,
-          enable_legacy_upload_mode);
+          enable_legacy_upload_mode,
+          iceberg_enabled);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -336,7 +338,8 @@ public:
       = empty_seed_starts_cluster::yes,
       std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt,
       bool data_transforms_enabled = false,
-      bool legacy_upload_mode_enabled = true) {
+      bool legacy_upload_mode_enabled = true,
+      bool iceberg_enabled = false) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([=]() {
             auto& config = config::shard_local_cfg();
@@ -432,6 +435,7 @@ public:
               .set_value(data_transforms_enabled);
             config.get("cloud_storage_disable_archiver_manager")
               .set_value(legacy_upload_mode_enabled);
+            config.get("iceberg_enabled").set_value(iceberg_enabled);
         }).get();
     }
 

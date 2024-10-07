@@ -60,6 +60,24 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+rp_test(
+  FIXTURE_TEST
+  GTEST
+  BINARY_NAME translator_test
+  SOURCES translator_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake
+    v::application
+    v::iceberg_test_utils
+    v::kafka_test_utils
+    v::model_test_utils
+    v::http_test_utils
+    v::s3_imposter
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
 
 set(PROTO_FILES
   testdata/person.proto

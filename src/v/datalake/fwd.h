@@ -23,4 +23,8 @@ class partition_translator;
 }; // namespace translation
 class datalake_manager;
 class cloud_data_io;
+namespace tests {
+class datalake_cluster_test_fixture;
+}
+
 } // namespace datalake
