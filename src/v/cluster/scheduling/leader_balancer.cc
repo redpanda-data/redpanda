@@ -113,7 +113,6 @@ void leader_balancer::check_if_controller_leader(
         _timer.arm(leader_activation_delay);
     } else {
         vlog(clusterlog.info, "Leader balancer: node is not controller leader");
-        _need_controller_refresh = true;
         _timer.cancel();
         _timer.arm(_idle_timeout());
     }
@@ -389,7 +388,6 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         if (!_timer.armed()) {
             _timer.arm(_idle_timeout());
         }
-        _need_controller_refresh = true;
         co_return ss::stop_iteration::yes;
     } else if (_members.node_count() == 1) {
         vlog(clusterlog.trace, "Leadership balancer tick: single node cluster");
@@ -402,7 +400,9 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * until the controller has replayed its log. if an error occurs, retry
      * after a short delay to account for transient issues on startup.
      */
-    if (_need_controller_refresh) {
+    if (_sync_term != _raft0->term()) {
+        auto cur_term = _raft0->term();
+
         // Invalidate whatever in flight changes exist.
         // They would not be accurate post-leadership loss.
         _in_flight_changes.clear();
@@ -423,7 +423,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
             }
             co_return ss::stop_iteration::yes;
         }
-        _need_controller_refresh = false;
+        _sync_term = cur_term;
     }
 
     auto health_report = co_await _health_monitor.get_cluster_health(

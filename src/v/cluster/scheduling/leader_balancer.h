@@ -230,7 +230,7 @@ private:
     };
     chunked_hash_map<raft::group_id, last_known_leader> _last_leader;
 
-    bool _need_controller_refresh{true};
+    model::term_id _sync_term;
     bool _throttled{false};
     chunked_hash_map<raft::group_id, clock_type::time_point> _muted;
 
