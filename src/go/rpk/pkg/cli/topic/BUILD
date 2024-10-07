@@ -54,6 +54,7 @@ go_test(
     embed = [":topic"],
     deps = [
         "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
