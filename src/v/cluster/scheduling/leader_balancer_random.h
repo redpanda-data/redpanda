@@ -102,11 +102,11 @@ private:
 class random_hill_climbing_strategy final : public leader_balancer_strategy {
 public:
     random_hill_climbing_strategy(
-      index_type index, group_id_to_topic_revision_t g_to_ntp, muted_index mi)
+      index_type index, group_id_to_topic_id g_to_topic, muted_index mi)
       : _mi(std::make_unique<muted_index>(std::move(mi)))
       , _si(std::make_unique<shard_index>(std::move(index)))
       , _reassignments(_si->shards())
-      , _etdc(std::move(g_to_ntp), *_si, *_mi)
+      , _etdc(std::move(g_to_topic), *_si, *_mi)
       , _eslc(*_si, *_mi) {}
 
     double error() const override { return _eslc.error() + _etdc.error(); }

@@ -313,7 +313,7 @@ bool leader_balancer::should_stop_balance() const {
 }
 
 static bool validate_indexes(
-  const leader_balancer_types::group_id_to_topic_revision_t& group_to_topic,
+  const leader_balancer_types::group_id_to_topic_id& group_to_topic,
   const leader_balancer_types::index_type& index) {
     // Ensure every group in the shard index has a
     // topic mapping in the group_to_topic index.
@@ -428,7 +428,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     auto group_replicas = co_await collect_group_replicas_from_health_report(
       health_report.value());
     auto index = build_index(std::move(group_replicas));
-    auto group_id_to_topic = build_group_id_to_topic_rev();
+    auto group_id_to_topic = build_group_id_to_topic_id();
 
     if (!validate_indexes(group_id_to_topic, index)) {
         vlog(clusterlog.warn, "Leadership balancer tick: invalid indexes.");
@@ -683,9 +683,9 @@ leader_balancer_types::muted_groups_t leader_balancer::muted_groups() const {
     return res;
 }
 
-leader_balancer_types::group_id_to_topic_revision_t
-leader_balancer::build_group_id_to_topic_rev() const {
-    leader_balancer_types::group_id_to_topic_revision_t group_id_to_topic_rev;
+leader_balancer_types::group_id_to_topic_id
+leader_balancer::build_group_id_to_topic_id() const {
+    leader_balancer_types::group_id_to_topic_id group_id_to_topic;
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
@@ -699,12 +699,12 @@ leader_balancer::build_group_id_to_topic_rev() const {
                 continue;
             }
 
-            group_id_to_topic_rev.try_emplace(
+            group_id_to_topic.try_emplace(
               partition.group, topic.second.get_revision());
         }
     }
 
-    return group_id_to_topic_rev;
+    return group_id_to_topic;
 }
 
 /// Returns nullopt if shard info from health report can not yet be used. In

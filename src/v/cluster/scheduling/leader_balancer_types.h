@@ -38,8 +38,11 @@ using index_type = chunked_hash_map<
   model::broker_shard,
   chunked_hash_map<raft::group_id, std::vector<model::broker_shard>>>;
 
-using group_id_to_topic_revision_t
-  = chunked_hash_map<raft::group_id, model::revision_id>;
+// Using revision id of create_topic command as a topic identifier.
+using topic_id_t
+  = named_type<model::revision_id::type, struct lb_topic_id_type>;
+
+using group_id_to_topic_id = chunked_hash_map<raft::group_id, topic_id_t>;
 
 using muted_groups_t = roaring::Roaring64Map;
 /*
