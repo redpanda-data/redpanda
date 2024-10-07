@@ -1,6 +1,23 @@
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//bazel:build.bzl", "redpanda_cc_binary")
+load("//bazel:test.bzl", "redpanda_cc_gtest")
+
+redpanda_cc_gtest(
+    name = "value_test",
+    timeout = "short",
+    srcs = [
+        "value_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
 
 redpanda_cc_binary(
     name = "generate_metadata_binary",
@@ -56,3 +73,19 @@ TEST_CASES = range(4)
     )
     for test_case in TEST_CASES
 ]
+
+redpanda_cc_gtest(
+    name = "encoding_test",
+    timeout = "short",
+    srcs = [
+        "encoding_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:encoding",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
