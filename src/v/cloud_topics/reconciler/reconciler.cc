@@ -29,7 +29,7 @@ ss::logger lg("reconciler");
  */
 bool is_cloud_partition(
   const ss::lw_shared_ptr<cluster::partition>& partition) {
-    return partition->ntp().tp.topic().ends_with("_ct");
+    return partition->get_ntp_config().cloud_topic_enabled();
 }
 } // namespace
 
