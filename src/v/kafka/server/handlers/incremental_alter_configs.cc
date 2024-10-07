@@ -37,10 +37,11 @@ namespace kafka {
 using req_resource_t = incremental_alter_configs_resource;
 using resp_resource_t = incremental_alter_configs_resource_response;
 
-/**
- * We pass returned value as a paramter to allow template to be automatically
- * resolved.
- */
+// Legacy function, bug prone for multiple property updates, i.e
+// alter-config --set redpanda.remote.read=true --set
+// redpanda.remote.write=false.
+// Used if feature flag shadow_indexing_split_topic_property_update (v24.3) is
+// not active.
 static void parse_and_set_shadow_indexing_mode(
   cluster::property_update<std::optional<model::shadow_indexing_mode>>& simode,
   const std::optional<ss::sstring>& value,
@@ -123,13 +124,21 @@ bool valid_config_resource_operation(uint8_t v) {
 
 checked<cluster::topic_properties_update, resp_resource_t>
 create_topic_properties_update(
-  request_context&, incremental_alter_configs_resource& resource) {
+  const request_context& ctx, incremental_alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       update.properties};
+
+    /*
+      As of v24.3, a new update path for shadow indexing properties should be
+      used.
+    */
+    const auto shadow_indexing_split_update
+      = ctx.feature_table().local().is_active(
+        features::feature::shadow_indexing_split_topic_property_update);
 
     for (auto& cfg : resource.configs) {
         // Validate int8_t is within range of config_resource_operation
@@ -189,14 +198,6 @@ create_topic_properties_update(
                   update.properties.retention_duration, cfg.value, op);
                 continue;
             }
-            if (cfg.name == topic_property_remote_write) {
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing,
-                  cfg.value,
-                  op,
-                  model::shadow_indexing_mode::archival);
-                continue;
-            }
             if (cfg.name == topic_property_retention_local_target_bytes) {
                 parse_and_set_tristate(
                   update.properties.retention_local_target_bytes,
@@ -210,11 +211,43 @@ create_topic_properties_update(
                 continue;
             }
             if (cfg.name == topic_property_remote_read) {
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing,
-                  cfg.value,
-                  op,
-                  model::shadow_indexing_mode::fetch);
+                if (shadow_indexing_split_update) {
+                    parse_and_set_bool(
+                      tp_ns,
+                      update.properties.remote_read,
+                      cfg.value,
+                      op,
+                      config::shard_local_cfg()
+                        .cloud_storage_enable_remote_read());
+                } else {
+                    // Legacy update for shadow indexing field
+                    parse_and_set_shadow_indexing_mode(
+                      update.properties.get_shadow_indexing(),
+                      cfg.value,
+                      op,
+                      model::shadow_indexing_mode::fetch);
+                }
+
+                continue;
+            }
+            if (cfg.name == topic_property_remote_write) {
+                if (shadow_indexing_split_update) {
+                    parse_and_set_bool(
+                      tp_ns,
+                      update.properties.remote_write,
+                      cfg.value,
+                      op,
+                      config::shard_local_cfg()
+                        .cloud_storage_enable_remote_write());
+                } else {
+                    // Legacy update for shadow indexing field
+                    parse_and_set_shadow_indexing_mode(
+                      update.properties.get_shadow_indexing(),
+                      cfg.value,
+                      op,
+                      model::shadow_indexing_mode::archival);
+                }
+
                 continue;
             }
             if (cfg.name == topic_property_remote_delete) {

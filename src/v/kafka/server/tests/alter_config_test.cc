@@ -248,7 +248,6 @@ public:
               return res.name == key;
           });
         BOOST_REQUIRE(cfg_it != it->configs.end());
-
         BOOST_REQUIRE_EQUAL(cfg_it->value, value);
     }
 };
@@ -887,4 +886,202 @@ FIXTURE_TEST(test_alter_config_internal_topic, alter_config_test_fixture) {
     BOOST_REQUIRE_EQUAL(
       incr_resp.data.responses[0].error_code,
       kafka::error_code::invalid_config);
+}
+
+FIXTURE_TEST(test_shadow_indexing_alter_configs, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
+    std::vector<map_t> test_cases;
+
+    {
+        map_t properties;
+        properties.emplace("redpanda.remote.write", "false");
+        properties.emplace("redpanda.remote.read", "true");
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace("redpanda.remote.write", "true");
+        properties.emplace("redpanda.remote.read", "false");
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace("redpanda.remote.write", "true");
+        properties.emplace("redpanda.remote.read", "true");
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace("redpanda.remote.write", "false");
+        properties.emplace("redpanda.remote.read", "false");
+        test_cases.push_back(std::move(properties));
+    }
+
+    for (const auto& test_case : test_cases) {
+        auto resp = alter_configs(
+          make_alter_topic_config_resource_cv(test_tp, test_case));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::none);
+        auto describe_resp = describe_configs(test_tp);
+        assert_property_value(
+          test_tp,
+          "redpanda.remote.write",
+          test_case.at("redpanda.remote.write"),
+          describe_resp);
+        assert_property_value(
+          test_tp,
+          "redpanda.remote.read",
+          test_case.at("redpanda.remote.read"),
+          describe_resp);
+    }
+}
+
+FIXTURE_TEST(
+  test_shadow_indexing_incremental_alter_configs, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
+    std::vector<map_t> test_cases;
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair("false", kafka::config_resource_operation::set));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair("false", kafka::config_resource_operation::set));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair("false", kafka::config_resource_operation::set));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair("false", kafka::config_resource_operation::set));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair(
+            std::nullopt, kafka::config_resource_operation::remove));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair(
+            std::nullopt, kafka::config_resource_operation::remove));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        test_cases.push_back(std::move(properties));
+    }
+    {
+        map_t properties;
+        properties.emplace(
+          "redpanda.remote.write",
+          std::make_pair(
+            std::nullopt, kafka::config_resource_operation::remove));
+        properties.emplace(
+          "redpanda.remote.read",
+          std::make_pair(
+            std::nullopt, kafka::config_resource_operation::remove));
+        test_cases.push_back(std::move(properties));
+    }
+
+    for (const auto& test_case : test_cases) {
+        auto resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(test_tp, test_case));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::none);
+        auto describe_resp = describe_configs(test_tp);
+        assert_property_value(
+          test_tp,
+          "redpanda.remote.write",
+          test_case.at("redpanda.remote.write").first.value_or("false"),
+          describe_resp);
+        assert_property_value(
+          test_tp,
+          "redpanda.remote.read",
+          test_case.at("redpanda.remote.read").first.value_or("false"),
+          describe_resp);
+    }
+}
+
+FIXTURE_TEST(
+  test_shadow_indexing_uppercase_alter_config, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
+    map_t properties;
+    // Case is on purpose.
+    properties.emplace(
+      "redpanda.remote.write",
+      std::make_pair("True", kafka::config_resource_operation::set));
+    properties.emplace(
+      "redpanda.remote.read",
+      std::make_pair("TRUE", kafka::config_resource_operation::set));
+
+    auto resp = incremental_alter_configs(
+      make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
+    auto describe_resp = describe_configs(test_tp);
+    assert_property_value(
+      test_tp, "redpanda.remote.write", "true", describe_resp);
+    assert_property_value(
+      test_tp, "redpanda.remote.read", "true", describe_resp);
 }

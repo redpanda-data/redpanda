@@ -120,6 +120,8 @@ std::string_view to_string_view(feature f) {
         return "remote_labels";
     case feature::partition_properties_stm:
         return "partition_properties_stm";
+    case feature::shadow_indexing_split_topic_property_update:
+        return "shadow_indexing_split_topic_property_update";
 
     /*
      * testing features

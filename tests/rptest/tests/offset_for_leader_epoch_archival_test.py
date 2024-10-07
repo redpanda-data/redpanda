@@ -11,7 +11,6 @@ from math import fabs
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
-
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.clients.kcl import KCL
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings, MetricsEndpoint
@@ -86,9 +85,14 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         epoch_offsets = {}
         rpk = RpkTool(self.redpanda)
         self.client().create_topic(topic)
+        remote_reads_str = 'true' if remote_reads else 'false'
         rpk.alter_topic_config(topic.name, "redpanda.remote.read",
-                               str(remote_reads))
+                               remote_reads_str)
         rpk.alter_topic_config(topic.name, "redpanda.remote.write", 'true')
+        desc = rpk.describe_topic_configs(topic.name)
+
+        assert desc['redpanda.remote.read'][0] == remote_reads_str
+        assert desc['redpanda.remote.write'][0] == 'true'
 
         def wait_for_topic():
             wait_until(lambda: len(list(rpk.describe_topic(topic.name))) > 0,

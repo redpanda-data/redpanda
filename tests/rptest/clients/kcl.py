@@ -136,7 +136,12 @@ class KCL:
         cmd.append(topic)
         return self._cmd(cmd)
 
-    def _alter_config(self, values, incremental, entity_type, entity):
+    def _alter_config(self,
+                      values,
+                      incremental,
+                      entity_type,
+                      entity,
+                      node=None):
         """
         :param broker: node id.
         :param values: dict of property name to new value
@@ -165,7 +170,7 @@ class KCL:
             # cmd needs to be string, so handle things like broker=1
             cmd.append(str(entity))
 
-        r = self._cmd(cmd, attempts=1)
+        r = self._cmd(cmd, attempts=1, node=node)
         if 'OK' not in r:
             raise RuntimeError(r)
         else:
@@ -174,8 +179,12 @@ class KCL:
     def alter_broker_config(self, values, incremental, broker=None):
         return self._alter_config(values, incremental, "broker", broker)
 
-    def alter_topic_config(self, values, incremental, topic):
-        return self._alter_config(values, incremental, "topic", topic)
+    def alter_topic_config(self, values, incremental, topic, node=None):
+        return self._alter_config(values,
+                                  incremental,
+                                  "topic",
+                                  topic,
+                                  node=node)
 
     def delete_broker_config(self, keys, incremental):
         """
@@ -194,7 +203,8 @@ class KCL:
     def describe_topic(self,
                        topic: str,
                        with_docs: bool = False,
-                       with_types: bool = False):
+                       with_types: bool = False,
+                       node=None):
         """
         :param topic: the name of the topic to describe
         :param with_docs: if true, include documention strings in the response
@@ -207,7 +217,7 @@ class KCL:
         if with_types:
             cmd.append("--with-types")
 
-        return self._cmd(cmd, attempts=1)
+        return self._cmd(cmd, attempts=1, node=node)
 
     def offset_delete(self, group: str, topic_partitions: dict):
         """
@@ -374,16 +384,17 @@ class KCL:
 
         return ret
 
-    def _cmd(self, cmd, input=None, attempts=5):
+    def _cmd(self, cmd, input=None, attempts=5, node=None):
         """
 
         :param attempts: how many times to try before giving up (1 for no retries)
         :return: stdout string
         """
-        brokers = self._redpanda.brokers()
+        brokers = node.name if node is not None else self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
                ] + self.sasl_options() + cmd
         assert attempts > 0
+        self._redpanda.logger.debug(f"Executing {cmd}")
         for retry in reversed(range(attempts)):
             try:
                 res = subprocess.check_output(cmd,

@@ -373,7 +373,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "record_value_subject_name_strategy_compat: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {}, iceberg_enabled: {}, leaders_preference: {}",
+      "flush_bytes: {}, iceberg_enabled: {}, leaders_preference: {}, "
+      "remote_read: {}, remote_write: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -381,7 +382,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.segment_size,
       i.retention_bytes,
       i.retention_duration,
-      i.shadow_indexing,
+      i.get_shadow_indexing(),
       i.batch_max_bytes,
       i.retention_local_target_bytes,
       i.retention_local_target_ms,
@@ -401,7 +402,9 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.flush_ms,
       i.flush_bytes,
       i.iceberg_enabled,
-      i.leaders_preference);
+      i.leaders_preference,
+      i.remote_read,
+      i.remote_write);
     return o;
 }
 
@@ -1187,7 +1190,7 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing,
+      t.get_shadow_indexing(),
       t.batch_max_bytes,
       t.retention_local_target_bytes,
       t.retention_local_target_ms,
@@ -1264,9 +1267,9 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
     if (
       version
       <= cluster::incremental_topic_updates::version_with_shadow_indexing) {
-        updates.shadow_indexing = adl<cluster::property_update<
+        updates.get_shadow_indexing() = adl<cluster::property_update<
           std::optional<model::shadow_indexing_mode>>>{}
-                                    .from(in);
+                                          .from(in);
     }
 
     if (

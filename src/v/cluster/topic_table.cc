@@ -814,10 +814,20 @@ void incremental_update(
     }
 }
 
+// This is a deprecated (as of `v24.3`) function here for legacy purposes. Bug
+// prone. Utilize `incremental_update` overload below for `remote_read` and
+// `remote_write` updates. See:
+// https://github.com/redpanda-data/redpanda/issues/9191
+// https://github.com/redpanda-data/redpanda/pull/23220
 template<>
 void incremental_update(
   std::optional<model::shadow_indexing_mode>& property,
   property_update<std::optional<model::shadow_indexing_mode>> override) {
+    if (override.op != incremental_update_operation::none) {
+        vlog(
+          clusterlog.trace,
+          "Performing deprecated incremental_update to shadow_indexing_mode");
+    }
     switch (override.op) {
     case incremental_update_operation::remove:
         if (!override.value || !property) {
@@ -839,6 +849,37 @@ void incremental_update(
           property ? *property : model::shadow_indexing_mode::disabled,
           *override.value);
         return;
+    case incremental_update_operation::none:
+        // do nothing
+        return;
+    }
+}
+
+void incremental_update(
+  std::optional<model::shadow_indexing_mode>& property,
+  property_update<bool> overrides,
+  model::shadow_indexing_mode m) {
+    switch (overrides.op) {
+    case incremental_update_operation::remove: {
+        // This codepath is currently unused, as remove operation at Kafka layer
+        // causes a set operation to the default cluster value.
+        if (!property.has_value()) {
+            break;
+        }
+        auto simode = property.value();
+        property = model::add_shadow_indexing_flag(
+          simode, model::negate_shadow_indexing_flag(m));
+        return;
+    }
+    case incremental_update_operation::set: {
+        // set new value
+        auto simode = property.value_or(model::shadow_indexing_mode::disabled);
+        auto si_flag_update = overrides.value
+                                ? m
+                                : model::negate_shadow_indexing_flag(m);
+        property = model::add_shadow_indexing_flag(simode, si_flag_update);
+        return;
+    }
     case incremental_update_operation::none:
         // do nothing
         return;
@@ -913,8 +954,6 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       updated_properties.timestamp_type, overrides.timestamp_type);
     incremental_update(
-      updated_properties.shadow_indexing, overrides.shadow_indexing);
-    incremental_update(
       updated_properties.batch_max_bytes, overrides.batch_max_bytes);
     incremental_update(
       updated_properties.retention_local_target_bytes,
@@ -922,6 +961,25 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       updated_properties.retention_local_target_ms,
       overrides.retention_local_target_ms);
+    // These tiered storage properties shouldn't be set at the
+    // same time, due to feature gating from
+    // `shadow_indexing_split_topic_property_update`, but still set the
+    // deprecated update to `none` as a sanity check.
+    if (
+      overrides.remote_read.op != incremental_update_operation::none
+      || overrides.remote_write.op != incremental_update_operation::none) {
+        overrides.get_shadow_indexing().op = incremental_update_operation::none;
+    }
+    incremental_update(
+      updated_properties.shadow_indexing, overrides.get_shadow_indexing());
+    incremental_update(
+      updated_properties.shadow_indexing,
+      overrides.remote_read,
+      model::shadow_indexing_mode::fetch);
+    incremental_update(
+      updated_properties.shadow_indexing,
+      overrides.remote_write,
+      model::shadow_indexing_mode::archival);
     incremental_update(
       updated_properties.remote_delete,
       overrides.remote_delete,

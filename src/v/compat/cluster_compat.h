@@ -631,7 +631,7 @@ GEN_COMPAT_CHECK(
       json_write(segment_size);
       json_write(retention_bytes);
       json_write(retention_duration);
-      json_write(shadow_indexing);
+      json_write(get_shadow_indexing());
       json_write(remote_delete);
   },
   {
@@ -642,7 +642,7 @@ GEN_COMPAT_CHECK(
       json_read(segment_size);
       json_read(retention_bytes);
       json_read(retention_duration);
-      json_read(shadow_indexing);
+      json_read(get_shadow_indexing());
       json_read(remote_delete);
   })
 

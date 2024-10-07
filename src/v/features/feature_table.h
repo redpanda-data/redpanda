@@ -82,6 +82,7 @@ enum class feature : std::uint64_t {
     transforms_specify_offset = 1ULL << 50U,
     remote_labels = 1ULL << 51U,
     partition_properties_stm = 1ULL << 52U,
+    shadow_indexing_split_topic_property_update = 1ULL << 53U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -477,9 +478,15 @@ inline constexpr std::array feature_schema{
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster::cluster_version{14},
+    release_version::v24_3_1,
     "partition_properties_stm",
     feature::partition_properties_stm,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v24_3_1,
+    "shadow_indexing_split_topic_property_update",
+    feature::shadow_indexing_split_topic_property_update,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
