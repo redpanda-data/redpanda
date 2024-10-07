@@ -66,13 +66,6 @@ class leader_balancer {
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
     /*
-     * Used to reschedule the balancer after it has been throttled due to it
-     * hitting its max in flight limit. This delay will occur after one of the
-     * in flight transfers successfully completes.
-     */
-    static constexpr clock_type::duration throttle_reactivation_delay = 5s;
-
-    /*
      * Used to specify how long a leader should spend trying to recover a
      * replica the balancer is trying to transfer leadership to.
      */
@@ -128,6 +121,9 @@ private:
     ss::future<bool> do_transfer_remote(reassignment);
     ss::future<bool> do_transfer_remote_legacy(reassignment);
 
+    bool can_schedule_sooner() const;
+    void schedule_sooner(clock_type::duration timeout);
+
     void on_enable_changed();
 
     void check_if_controller_leader(model::ntp, model::term_id, model::node_id);
@@ -140,7 +136,12 @@ private:
     void check_unregister_leadership_change_notification();
 
     void trigger_balance();
+    ss::future<> balance_fiber();
     ss::future<ss::stop_iteration> balance();
+
+    // Min time between balance iterations. Chosen so as to allow leadership
+    // updates from the previous iteration to propagate.
+    clock_type::duration min_iteration_interval() const;
 
     bool should_stop_balance() const;
 
@@ -221,6 +222,8 @@ private:
 
     ss::gate _gate;
     ss::timer<clock_type> _timer;
+    clock_type::time_point _last_iteration_at;
+    int64_t _pending_notifies = 0;
 
     /// Internal state
 

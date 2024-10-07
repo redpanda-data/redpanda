@@ -93,7 +93,7 @@ leader_balancer::leader_balancer(
 void leader_balancer::check_if_controller_leader(
   model::ntp, model::term_id, model::node_id) {
     // Don't bother doing anything if it's not enabled
-    if (!_enabled()) {
+    if (should_stop_balance()) {
         return;
     }
 
@@ -103,8 +103,7 @@ void leader_balancer::check_if_controller_leader(
         vlog(
           clusterlog.info,
           "Leader balancer: controller leadership detected. "
-          "Starting "
-          "rebalancer in {} seconds",
+          "Starting rebalancer in {} seconds",
           std::chrono::duration_cast<std::chrono::seconds>(
             leader_activation_delay)
             .count());
@@ -120,7 +119,7 @@ void leader_balancer::check_if_controller_leader(
 
 void leader_balancer::on_leadership_change(
   model::ntp ntp, model::term_id, model::node_id) {
-    if (!_enabled()) {
+    if (should_stop_balance()) {
         return;
     }
 
@@ -157,26 +156,21 @@ void leader_balancer::on_leadership_change(
         if (_throttled) {
             _throttled = false;
             _timer.cancel();
-            _timer.arm(throttle_reactivation_delay);
+            _timer.arm(min_iteration_interval());
         }
     }
 }
 
 void leader_balancer::on_maintenance_change(
   model::node_id, model::maintenance_state ms) {
-    if (!_enabled()) {
-        return;
-    }
-
-    if (!_raft0->is_elected_leader()) {
+    if (!can_schedule_sooner()) {
         return;
     }
 
     // if a node transitions out of maintenance wake up the balancer early to
     // transfer leadership back to it.
     if (ms == model::maintenance_state::inactive) {
-        _timer.cancel();
-        _timer.arm(leader_activation_delay);
+        schedule_sooner(leader_activation_delay);
     }
 }
 
@@ -254,16 +248,45 @@ void leader_balancer::on_enable_changed() {
 
     if (_enabled()) {
         vlog(clusterlog.info, "Leader balancer enabled");
-        if (!_timer.armed()) {
-            _timer.arm(_idle_timeout());
-        }
+        _timer.cancel();
+        _timer.arm(leader_activation_delay);
     } else {
         vlog(clusterlog.info, "Leader balancer disabled");
         _timer.cancel();
     }
 }
 
+bool leader_balancer::can_schedule_sooner() const {
+    return !should_stop_balance() && !_throttled && _raft0->is_elected_leader()
+           && _sync_term == _raft0->term();
+}
+
+void leader_balancer::schedule_sooner(
+  leader_balancer::clock_type::duration timeout) {
+    if (!can_schedule_sooner()) {
+        return;
+    }
+
+    clock_type::time_point deadline = clock_type::now() + timeout;
+    if (!_timer.armed() || _timer.get_timeout() > deadline) {
+        vlog(clusterlog.trace, "scheduling timer in {} s.", timeout / 1s);
+        _timer.cancel();
+        _timer.arm(deadline);
+    }
+}
+
 void leader_balancer::trigger_balance() {
+    vlog(
+      clusterlog.trace,
+      "timer fired, should_stop: {}, is_leader: {} (term: {}), "
+      "sync_term: {}, running: {}, throttled: {}",
+      should_stop_balance(),
+      _raft0->is_elected_leader(),
+      _raft0->term(),
+      _sync_term,
+      _gate.get_count() > 0,
+      _throttled);
+
     /*
      * there are many ways in which the rebalance fiber may not exit quickly
      * (e.g. rpc timeouts) because of this, it is possible for leadership to
@@ -274,49 +297,67 @@ void leader_balancer::trigger_balance() {
      * previous fiber on its way out.
      */
     if (_gate.get_count()) {
-        vlog(
-          clusterlog.info, "Cannot start rebalance until previous fiber exits");
-        _timer.arm(_idle_timeout());
+        _pending_notifies += 1;
         return;
     }
 
-    if (!_enabled()) {
+    if (should_stop_balance()) {
         return;
     }
 
     // If the balancer is resumed after being throttled
     // reset the flag.
-    if (_throttled) {
-        _throttled = false;
-    }
+    _throttled = false;
 
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::repeat([this] {
-                   if (_as.local().abort_requested()) {
-                       return ss::make_ready_future<ss::stop_iteration>(
-                         ss::stop_iteration::yes);
-                   }
-                   return balance();
-               })
-          .handle_exception_type([](const ss::gate_closed_exception&) {})
-          .handle_exception_type([](const ss::sleep_aborted&) {})
-          .handle_exception_type([this](const std::exception& e) {
-              vlog(
-                clusterlog.info,
-                "Leadership rebalance experienced an unhandled error: {}. "
-                "Retrying in {} seconds",
-                e,
-                std::chrono::duration_cast<std::chrono::seconds>(
-                  _idle_timeout())
-                  .count());
-              _timer.cancel();
-              _timer.arm(_idle_timeout());
-          });
-    });
+    ssx::spawn_with_gate(_gate, [this] { return balance_fiber(); });
+}
+
+ss::future<> leader_balancer::balance_fiber() {
+    try {
+        while (!should_stop_balance()) {
+            auto since_prev_run = clock_type::now() - _last_iteration_at;
+            if (since_prev_run < min_iteration_interval()) {
+                co_await ss::sleep_abortable(
+                  min_iteration_interval() - since_prev_run, _as.local());
+            }
+
+            int64_t notifies = _pending_notifies;
+            _last_iteration_at = clock_type::now();
+            auto stop = co_await balance();
+            _pending_notifies -= notifies;
+
+            if (stop && _pending_notifies == 0) {
+                if (!should_stop_balance() && !_timer.armed()) {
+                    _timer.arm(_idle_timeout());
+                }
+                break;
+            }
+        }
+    } catch (...) {
+        auto e = std::current_exception();
+        if (!ssx::is_shutdown_exception(e)) {
+            vlog(
+              clusterlog.info,
+              "Leadership rebalance experienced an unhandled error: {}. "
+              "Retrying in {} seconds",
+              e,
+              std::chrono::duration_cast<std::chrono::seconds>(_idle_timeout())
+                .count());
+            _timer.cancel();
+            _timer.arm(_idle_timeout());
+        }
+    }
+}
+
+leader_balancer::clock_type::duration
+leader_balancer::min_iteration_interval() const {
+    // Wait for metadata dissemination and allow some time for leader
+    // re-election etc.
+    return _metadata_dissemination_interval + 1s;
 }
 
 bool leader_balancer::should_stop_balance() const {
-    return !_enabled() || _as.local().abort_requested();
+    return !_enabled() || _as.local().abort_requested() || _gate.is_closed();
 }
 
 bool leader_balancer::leadership_pinning_enabled() const {
@@ -350,6 +391,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (should_stop_balance()) {
         co_return ss::stop_iteration::yes;
     }
+
+    vlog(clusterlog.trace, "balancer iteration");
 
     /*
      * GC the muted, last leader, and in flight changes indices.
@@ -385,9 +428,6 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
     if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.debug, "Leadership balancer tick: not leader");
-        if (!_timer.armed()) {
-            _timer.arm(_idle_timeout());
-        }
         co_return ss::stop_iteration::yes;
     } else if (_members.node_count() == 1) {
         vlog(clusterlog.trace, "Leadership balancer tick: single node cluster");
@@ -418,9 +458,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
               std::chrono::duration_cast<std::chrono::seconds>(
                 leader_activation_delay)
                 .count());
-            if (!_timer.armed()) {
-                _timer.arm(leader_activation_delay);
-            }
+            _timer.cancel();
+            _timer.arm(leader_activation_delay);
             co_return ss::stop_iteration::yes;
         }
         _sync_term = cur_term;
@@ -495,11 +534,6 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (cores.size() == 0) {
         vlog(
           clusterlog.debug, "Leadership balancer tick: no topics to balance.");
-
-        if (!_timer.armed()) {
-            _timer.arm(_idle_timeout());
-        }
-
         co_return ss::stop_iteration::yes;
     }
 
@@ -518,10 +552,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           max_inflight_changes);
 
         _throttled = true;
-
-        if (_timer.armed()) {
-            co_return ss::stop_iteration::yes;
-        }
+        _timer.cancel();
 
         // Find change that will time out the soonest and wait for it to timeout
         // before running the balancer again.
@@ -544,26 +575,13 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
     size_t num_dispatched = 0;
     for (size_t i = 0; i < allowed_change_cnt; i++) {
-        if (should_stop_balance()) {
+        if (should_stop_balance() || !_raft0->is_elected_leader()) {
             co_return ss::stop_iteration::yes;
         }
 
         auto transfer = strategy->find_movement(muted_groups());
         if (!transfer) {
-            vlog(
-              clusterlog.info,
-              "Leadership balancer tick: no further improvements found, "
-              "total error: {:.4}, number of muted groups: {}, "
-              "number in flight: {}, dispatched in this tick: {}",
-              strategy->error(),
-              _muted.size(),
-              _in_flight_changes.size(),
-              num_dispatched);
-            if (!_timer.armed()) {
-                _timer.arm(_idle_timeout());
-            }
-            _probe.leader_transfer_no_improvement();
-            co_return ss::stop_iteration::yes;
+            break;
         }
 
         vlog(
@@ -609,15 +627,27 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
              * don't delay a lot.
              */
             _probe.leader_transfer_error();
-
-            co_await ss::sleep_abortable(5s, _as.local());
             co_return ss::stop_iteration::no;
-
         } else {
             _probe.leader_transfer_succeeded();
             num_dispatched += 1;
             strategy->apply_movement(*transfer);
         }
+    }
+
+    vlog(
+      clusterlog.info,
+      "balancer iteration finished: "
+      "total error: {:.4}, number of muted groups: {}, "
+      "number in flight: {}, dispatched in this tick: {}",
+      strategy->error(),
+      _muted.size(),
+      _in_flight_changes.size(),
+      num_dispatched);
+
+    if (num_dispatched == 0) {
+        _probe.leader_transfer_no_improvement();
+        co_return ss::stop_iteration::yes;
     }
 
     co_return ss::stop_iteration::no;
@@ -682,9 +712,7 @@ leader_balancer::collect_muted_nodes(const cluster_health_report& hr) {
 
             // schedule a tick soon so that we can rebalance to the restarted
             // node.
-            _timer.cancel();
-            _timer.arm(leader_activation_delay);
-
+            schedule_sooner(leader_activation_delay);
             continue;
         }
     }
