@@ -11,6 +11,7 @@ v_cc_library(
     SRCS
         frontend.cc
         service.cc
+        state.cc
         state_machine.cc
     DEPS
         generated_datalake_coordinator_rpc

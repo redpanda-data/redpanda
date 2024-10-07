@@ -1,6 +1,8 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 
+package(default_visibility = ["//src/v/datalake/coordinator:__subpackages__"])
+
 redpanda_cc_rpc_library(
     name = "generated_datalake_coordinator_rpc",
     src = "rpc.json",
@@ -35,6 +37,23 @@ redpanda_cc_library(
         "//src/v/model",
         # todo: split writer further once it evolves
         "//src/v/datalake:writer",
+    ],
+)
+
+redpanda_cc_library(
+    name = "state",
+    srcs = [
+        "state.cc",
+    ],
+    hdrs = [
+        "state.h",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        ":translated_offset_range",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "//src/v/serde",
     ],
 )
 
