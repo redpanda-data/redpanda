@@ -17,7 +17,7 @@ namespace leader_balancer_test_utils {
  * @brief Create an artificial cluster index object with the given
  * number of nodes, shards, groups and replica count.
  */
-static cluster::leader_balancer_strategy::index_type make_cluster_index(
+inline cluster::leader_balancer_strategy::index_type make_cluster_index(
   int node_count,
   unsigned shards_per_node,
   unsigned groups_per_shard,
@@ -51,7 +51,7 @@ static cluster::leader_balancer_strategy::index_type make_cluster_index(
     return index;
 }
 
-static inline cluster::leader_balancer_strategy::index_type copy_cluster_index(
+inline cluster::leader_balancer_strategy::index_type copy_cluster_index(
   const cluster::leader_balancer_strategy::index_type& c_index) {
     cluster::leader_balancer_strategy::index_type index;
 

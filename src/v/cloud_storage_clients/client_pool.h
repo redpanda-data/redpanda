@@ -33,7 +33,7 @@ enum class client_pool_overdraft_policy {
     borrow_if_empty
 };
 
-constexpr ss::shard_id self_config_shard = ss::shard_id{0};
+inline constexpr ss::shard_id self_config_shard = ss::shard_id{0};
 
 /// Connection pool implementation
 /// All connections share the same configuration

@@ -15,6 +15,10 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/map.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/vector.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
 

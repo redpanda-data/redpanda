@@ -22,19 +22,21 @@ namespace kafka {
 
 namespace internal {
 
-constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
-                                     sizeof(int32_t) + // batch length
-                                     sizeof(int32_t) + // partition leader epoch
-                                     sizeof(int8_t) +  // magic
-                                     sizeof(uint32_t) + // crc
-                                     sizeof(int16_t) +  // attributes
-                                     sizeof(int32_t) +  // last offset delta
-                                     sizeof(int64_t) +  // first timestamp
-                                     sizeof(int64_t) +  // max timestamp
-                                     sizeof(int64_t) +  // producer id
-                                     sizeof(int16_t) +  // producer epoch
-                                     sizeof(int32_t) +  // base sequence
-                                     sizeof(int32_t);   // num records
+inline constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
+                                            sizeof(int32_t) + // batch length
+                                            sizeof(int32_t)
+                                            + // partition leader epoch
+                                            sizeof(int8_t) +   // magic
+                                            sizeof(uint32_t) + // crc
+                                            sizeof(int16_t) +  // attributes
+                                            sizeof(int32_t)
+                                            + // last offset delta
+                                            sizeof(int64_t) + // first timestamp
+                                            sizeof(int64_t) + // max timestamp
+                                            sizeof(int64_t) + // producer id
+                                            sizeof(int16_t) + // producer epoch
+                                            sizeof(int32_t) + // base sequence
+                                            sizeof(int32_t);  // num records
 
 } // namespace internal
 

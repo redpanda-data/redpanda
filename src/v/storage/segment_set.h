@@ -16,6 +16,7 @@
 #include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
+#include "storage/segment.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/sharded.hh>

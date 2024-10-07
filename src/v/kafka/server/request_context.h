@@ -56,9 +56,9 @@ skip_auditing(api_key key, const security::acl_principal& principal) {
            && principal == security::audit_principal;
 }
 
-constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
-                                     + sizeof(correlation_id::type)
-                                     + sizeof(int16_t);
+inline constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
+                                            + sizeof(correlation_id::type)
+                                            + sizeof(int16_t);
 
 using audit_on_success = ss::bool_class<struct audit_on_success_tag>;
 

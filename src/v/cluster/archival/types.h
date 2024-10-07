@@ -166,7 +166,7 @@ private:
 };
 
 /// Number of segment reuploads the job can do per housekeeping run
-static constexpr int max_reuploads_per_run = 4;
+inline constexpr int max_reuploads_per_run = 4;
 
 enum class error_outcome {
     unexpected_failure = 1,

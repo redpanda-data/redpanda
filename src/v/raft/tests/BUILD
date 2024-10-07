@@ -15,6 +15,7 @@ redpanda_test_cc_library(
         "//src/v/random:generators",
         "//src/v/rpc",
         "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
         "//src/v/utils:unresolved_address",
         "@seastar",
     ],
@@ -44,6 +45,7 @@ redpanda_test_cc_library(
     ],
     include_prefix = "raft/tests",
     deps = [
+        ":raft_fixture",
         "//src/v/raft",
     ],
 )

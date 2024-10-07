@@ -187,7 +187,7 @@ private:
       size_t reserved_size_in_bytes,
       size_t guard_size_in_bytes,
       wasmtime_linear_memory_t* memory_ret);
-    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
+    // NOLINTEND(bugprone-easily-swappable-parameters)
 
     wasmtime_error_t* allocate_heap_memory(
       heap_allocator::request, wasmtime_linear_memory_t* memory_ret);

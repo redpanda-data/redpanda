@@ -16,6 +16,6 @@
 namespace raft {
 using group_manager_notification_id
   = named_type<int32_t, struct raft_group_manager_notification_id>;
-constexpr group_manager_notification_id notification_id_type_invalid{-1};
+inline constexpr group_manager_notification_id notification_id_type_invalid{-1};
 
 } // namespace raft

@@ -30,7 +30,7 @@ namespace cloud_storage {
 constexpr size_t cstore_max_frame_size = 0x400;
 // every #cstore_sampling_rate element inserted, the byte position in the
 // compressed buffer is recorded to speed up random access
-constexpr size_t cstore_sampling_rate = 8;
+inline constexpr size_t cstore_sampling_rate = 8;
 
 /// Column-store iterator
 ///

@@ -42,7 +42,7 @@ namespace cloud_storage {
 
 class materialized_resources;
 
-static constexpr ss::shard_id auth_refresh_shard_id = 0;
+inline constexpr ss::shard_id auth_refresh_shard_id = 0;
 
 enum class api_activity_type {
     segment_upload,

@@ -113,7 +113,7 @@ static auto from_spec(
 // a mapping of group_id to ntp.
 using group_to_ntp_spec
   = std::vector<std::pair<model::revision_id::type, std::vector<int>>>;
-static auto group_to_topic_from_spec(const group_to_ntp_spec& spec) {
+inline auto group_to_topic_from_spec(const group_to_ntp_spec& spec) {
     lbt::group_id_to_topic_revision_t group_to_topic;
 
     for (const auto& [topic, groups] : spec) {
@@ -144,7 +144,7 @@ static void check_valid(const index_type& index, const reassignment& movement) {
 /**
  * @brief returns true iff the passed spec had no movement on balance
  */
-static bool no_movement(
+inline bool no_movement(
   const cluster_spec& spec,
   const absl::flat_hash_set<int>& muted = {},
   const absl::flat_hash_set<raft::group_id>& skip = {}) {
@@ -171,7 +171,7 @@ static ss::sstring to_string(const reassignment& r) {
  * @brief Test helper which checks that the given spec and other parameters
  * result in the expected resassignment.
  */
-static ss::sstring expect_movement(
+inline ss::sstring expect_movement(
   const cluster_spec& spec,
   const reassignment& expected_reassignment,
   const absl::flat_hash_set<int>& muted = {},
@@ -208,7 +208,7 @@ static ss::sstring expect_movement(
  * @brief Helper to create a reassignment from group, from and to passed as
  * integers.
  */
-static reassignment re(unsigned group, int from, int to) {
+inline reassignment re(unsigned group, int from, int to) {
     return {
       raft::group_id(group),
       model::broker_shard{model::node_id(from)},

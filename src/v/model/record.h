@@ -611,7 +611,7 @@ struct tx_range_cmp {
     }
 };
 
-static constexpr producer_identity no_pid{no_producer_id, no_producer_epoch};
+inline constexpr producer_identity no_pid{no_producer_id, no_producer_epoch};
 
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {

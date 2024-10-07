@@ -39,7 +39,7 @@
 #include <ranges>
 namespace raft {
 
-static constexpr raft::group_id test_group(123);
+inline constexpr raft::group_id test_group(123);
 
 enum class msg_type {
     append_entries,

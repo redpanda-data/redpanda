@@ -8,6 +8,7 @@ redpanda_test_cc_library(
     include_prefix = "cluster/tests",
     deps = [
         "//src/v/cluster",
+        "//src/v/test_utils:seastar_boost",
     ],
 )
 
@@ -30,6 +31,7 @@ redpanda_test_cc_library(
     ],
     include_prefix = "cluster/tests",
     deps = [
+        ":utils",
         "//src/v/base",
         "//src/v/cluster",
     ],
@@ -64,6 +66,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/cluster",
         "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
     ],
 )
 

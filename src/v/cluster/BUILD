@@ -614,6 +614,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol",
         "//src/v/metrics",
         "//src/v/model",
+        "//src/v/model:fips_config",
         "//src/v/net",
         "//src/v/pandaproxy:config",
         "//src/v/pandaproxy:subject_name_strategy",

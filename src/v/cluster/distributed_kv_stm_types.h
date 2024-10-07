@@ -66,8 +66,7 @@ struct repartitioning_record_data
     auto serde_fields() { return std::tie(num_partitions); }
 };
 
-static inline simple_batch_builder
-make_repartitioning_batch(size_t num_partitions) {
+inline simple_batch_builder make_repartitioning_batch(size_t num_partitions) {
     simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
     iobuf val_data;

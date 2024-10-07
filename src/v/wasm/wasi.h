@@ -62,21 +62,21 @@ private:
  * This is the function that the wasi standard expects to be exported to call
  * into the user's main function.
  */
-constexpr std::string_view preview_1_start_function_name = "_start";
+inline constexpr std::string_view preview_1_start_function_name = "_start";
 
 // Identifiers for errors.
 using errno_t = named_type<uint16_t, struct errc_tag>;
-constexpr errno_t ERRNO_SUCCESS{0};
-constexpr errno_t ERRNO_INVAL{16};
-constexpr errno_t ERRNO_NOSYS{52};
-constexpr errno_t ERRNO_BADF{8};
+inline constexpr errno_t ERRNO_SUCCESS{0};
+inline constexpr errno_t ERRNO_INVAL{16};
+inline constexpr errno_t ERRNO_NOSYS{52};
+inline constexpr errno_t ERRNO_BADF{8};
 
 // Identifiers for clocks.
 using clock_id_t = named_type<uint32_t, struct clock_id_tag>;
-constexpr clock_id_t REALTIME_CLOCK_ID{0};
-constexpr clock_id_t MONOTONIC_CLOCK_ID{1};
-constexpr clock_id_t PROCESS_CPUTIME_CLOCK_ID{2};
-constexpr clock_id_t THREAD_CPUTIME_CLOCK_ID{3};
+inline constexpr clock_id_t REALTIME_CLOCK_ID{0};
+inline constexpr clock_id_t MONOTONIC_CLOCK_ID{1};
+inline constexpr clock_id_t PROCESS_CPUTIME_CLOCK_ID{2};
+inline constexpr clock_id_t THREAD_CPUTIME_CLOCK_ID{3};
 
 // A timestamp in nanoseconds
 using timestamp_t = named_type<uint64_t, struct timestamp_tag>;
@@ -89,17 +89,17 @@ using event_type_t = named_type<uint8_t, struct eventtype_tag>;
  * The time value of clock `subscription_clock::id` has
  * reached timestamp `subscription_clock::timeout`.
  */
-constexpr event_type_t CLOCK_EVENT_TYPE{0};
+inline constexpr event_type_t CLOCK_EVENT_TYPE{0};
 /**
  * File descriptor `subscription_fd_readwrite::file_descriptor` has data
  * available for reading. This event always triggers for regular files.
  */
-constexpr event_type_t FD_READ_EVENT_TYPE{1};
+inline constexpr event_type_t FD_READ_EVENT_TYPE{1};
 /**
  * File descriptor `subscription_fd_readwrite::file_descriptor` has capacity
  * available for writing. This event always triggers for regular files.
  */
-constexpr event_type_t FD_WRITE_EVENT_TYPE{2};
+inline constexpr event_type_t FD_WRITE_EVENT_TYPE{2};
 
 // Arbitrary user data for subscriptions
 using user_data_t = named_type<int64_t, struct user_data_tag>;
@@ -113,8 +113,8 @@ using subclockflags_t = named_type<int16_t, struct subclockflags_tag>;
  * provided in `subscription_clock::timeout` relative to the
  * current time value of clock `subscription_clock::id`.
  */
-constexpr subclockflags_t RELATIVE_TIME_SUBCLOCK_FLAG{0};
-constexpr subclockflags_t ABSOLUTE_TIME_SUBCLOCK_FLAG{1};
+inline constexpr subclockflags_t RELATIVE_TIME_SUBCLOCK_FLAG{0};
+inline constexpr subclockflags_t ABSOLUTE_TIME_SUBCLOCK_FLAG{1};
 
 /**
  * The contents of a `subscription` when type is `eventtype::clock`.

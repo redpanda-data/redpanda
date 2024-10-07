@@ -16,6 +16,7 @@
 #include "raft/fundamental.h"
 #include "serde/async.h"
 #include "serde/envelope.h"
+#include "serde/rw/enum.h"
 #include "serde/rw/rw.h"
 #include "utils/delta_for.h"
 
