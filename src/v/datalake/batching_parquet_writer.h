@@ -21,6 +21,7 @@
 #include <base/seastarx.h>
 
 #include <filesystem>
+#include <memory>
 
 namespace datalake {
 // batching_parquet_writer ties together the low-level components for iceberg to
@@ -73,6 +74,24 @@ private:
     ss::file _output_file;
     ss::output_stream<char> _output_stream;
     data_writer_result _result;
+};
+
+class batching_parquet_writer_factory : public data_writer_factory {
+public:
+    batching_parquet_writer_factory(
+      std::filesystem::path local_directory,
+      ss::sstring file_name_prefix,
+      size_t row_count_threshold,
+      size_t byte_count_threshold);
+
+    ss::future<std::unique_ptr<data_writer>>
+    create_writer(iceberg::struct_type schema) override;
+
+private:
+    std::filesystem::path _local_directory;
+    ss::sstring _file_name_prefix;
+    size_t _row_count_threshold;
+    size_t _byte_count_treshold;
 };
 
 } // namespace datalake

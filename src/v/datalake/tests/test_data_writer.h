@@ -52,9 +52,9 @@ public:
     explicit test_data_writer_factory(bool return_error)
       : _return_error{return_error} {}
 
-    std::unique_ptr<data_writer>
+    ss::future<std::unique_ptr<data_writer>>
     create_writer(iceberg::struct_type schema) override {
-        return std::make_unique<test_data_writer>(
+        co_return std::make_unique<test_data_writer>(
           std::move(schema), _return_error);
     }
 
