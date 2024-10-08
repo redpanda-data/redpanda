@@ -54,6 +54,7 @@ struct data_file {
     // - equality_ids
     // - sort_order_ids
     friend bool operator==(const data_file&, const data_file&) = default;
+    data_file copy() const;
 };
 
 enum class manifest_entry_status {
@@ -73,6 +74,7 @@ struct manifest_entry {
     data_file data_file;
     friend bool operator==(const manifest_entry&, const manifest_entry&)
       = default;
+    manifest_entry copy() const;
 };
 
 } // namespace iceberg

@@ -38,6 +38,7 @@ v_cc_library(
     manifest_entry_type.cc
     manifest_entry_values.cc
     manifest_io.cc
+    manifest_entry.cc
     manifest_file_packer.cc
     manifest_list_avro.cc
     merge_append_action.cc
