@@ -34,3 +34,29 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "placeholder_extent_reader",
+    srcs = [
+        "placeholder_extent_reader.cc",
+    ],
+    hdrs = [
+        "placeholder_extent_reader.h",
+    ],
+    include_prefix = "cloud_topics/reader",
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_io:basic_cache_service_api",
+        "//src/v/cloud_io:io_result",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:placeholder",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/reader:placeholder_extent",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/utils:retry_chain_node",
+        "@seastar",
+    ],
+)
