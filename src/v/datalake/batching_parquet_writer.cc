@@ -22,6 +22,8 @@
 #include <seastar/coroutine/as_future.hh>
 
 #include <cstdint>
+#include <memory>
+#include <utility>
 
 namespace datalake {
 
@@ -159,4 +161,29 @@ ss::future<> batching_parquet_writer::abort() {
     }
 }
 
+batching_parquet_writer_factory::batching_parquet_writer_factory(
+  std::filesystem::path local_directory,
+  ss::sstring file_name_prefix,
+  size_t row_count_threshold,
+  size_t byte_count_threshold)
+  : _local_directory{std::move(local_directory)}
+  , _file_name_prefix{std::move(file_name_prefix)}
+  , _row_count_threshold{row_count_threshold}
+  , _byte_count_treshold{byte_count_threshold} {}
+
+ss::future<std::unique_ptr<data_writer>>
+batching_parquet_writer_factory::create_writer(iceberg::struct_type schema) {
+    auto ret = std::make_unique<batching_parquet_writer>(
+      std::move(schema), _row_count_threshold, _byte_count_treshold);
+    std::string filename = fmt::format(
+      "{}-{}.parquet", _file_name_prefix, uuid_t::create());
+    std::filesystem::path file_path = _local_directory / filename;
+    auto err = co_await ret->initialize(file_path);
+    if (err != data_writer_error::ok) {
+        // FIXME: This method should return a result and let the multiplexer
+        // deal with it appropriately
+        co_return nullptr;
+    }
+    co_return ret;
+}
 } // namespace datalake

@@ -47,7 +47,7 @@ public:
 
 private:
     schemaless_translator& get_translator();
-    data_writer& get_writer();
+    ss::future<data_writer&> get_writer();
 
     // TODO: in a future PR this will be a map of translators keyed by schema_id
     schemaless_translator _translator;
