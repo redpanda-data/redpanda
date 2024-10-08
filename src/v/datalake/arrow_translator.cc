@@ -11,6 +11,7 @@
 
 #include "container/fragmented_vector.h"
 #include "iceberg/datatypes.h"
+#include "iceberg/values.h"
 
 #include <arrow/api.h>
 #include <arrow/array/array_primitive.h>
@@ -93,6 +94,8 @@ public:
       const std::optional<iceberg::value>& maybe_value) override;
 
     void add_data(const iceberg::value& value) override;
+
+    void add_struct_data(const iceberg::struct_value value);
 
     arrow::FieldVector get_field_vector();
 
@@ -524,25 +527,19 @@ void struct_converter::add_optional_data(
     }
 }
 
-void struct_converter::add_data(const iceberg::value& value) {
-    // 1. Call add_data on all children
-    // 2. Call append on our builder
-    const auto& struct_val
-      = get_or_throw<std::unique_ptr<iceberg::struct_value>>(
-        value, "Scalar converter expected a binary field");
-
-    if (struct_val->fields.size() != _child_converters.size()) {
+void struct_converter::add_struct_data(const iceberg::struct_value struct_val) {
+    if (struct_val.fields.size() != _child_converters.size()) {
         throw std::invalid_argument(fmt::format(
           "Got incorrect number of fields in struct converter. Expected {} "
           "got {}",
           _child_converters.size(),
-          struct_val->fields.size()));
+          struct_val.fields.size()));
     }
     for (size_t i = 0; i < _child_converters.size(); i++) {
-        if (_field_required[i] && !struct_val->fields[i].has_value()) {
+        if (_field_required[i] && !struct_val.fields[i].has_value()) {
             throw std::invalid_argument("Missing required field");
         }
-        _child_converters[i]->add_optional_data(struct_val->fields[i]);
+        _child_converters[i]->add_optional_data(struct_val.fields[i]);
     }
     auto status = _builder->Append();
     if (!status.ok()) {
@@ -551,6 +548,16 @@ void struct_converter::add_data(const iceberg::value& value) {
         throw std::runtime_error(fmt::format(
           "Unable to append to struct builder: {}", status.ToString()));
     }
+}
+
+void struct_converter::add_data(const iceberg::value& value) {
+    // 1. Call add_data on all children
+    // 2. Call append on our builder
+    const auto& struct_val
+      = get_or_throw<std::unique_ptr<iceberg::struct_value>>(
+        value, "Scalar converter expected a binary field");
+
+    add_struct_data(std::move(*struct_val));
 }
 
 arrow::FieldVector struct_converter::get_field_vector() { return _fields; }
@@ -708,9 +715,8 @@ void map_converter::add_data(const iceberg::value& value) {
     }
 }
 
-arrow_translator::arrow_translator(iceberg::struct_type&& schema)
-  : _schema(std::move(schema))
-  , _struct_converter(std::make_unique<struct_converter>(_schema)) {}
+arrow_translator::arrow_translator(iceberg::struct_type schema)
+  : _struct_converter(std::make_unique<struct_converter>(std::move(schema))) {}
 
 arrow_translator::~arrow_translator() = default;
 
@@ -718,8 +724,8 @@ std::shared_ptr<arrow::Schema> arrow_translator::build_arrow_schema() {
     return arrow::schema(_struct_converter->get_field_vector());
 }
 
-void arrow_translator::add_data(iceberg::value value) {
-    _struct_converter->add_data(value);
+void arrow_translator::add_data(iceberg::struct_value value) {
+    _struct_converter->add_struct_data(std::move(value));
 }
 
 std::shared_ptr<arrow::Array> arrow_translator::take_chunk() {

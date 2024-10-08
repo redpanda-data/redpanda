@@ -38,5 +38,6 @@ struct value_spec {
 
 // Creates an Iceberg value in accordance to the provided specification.
 value make_value(const value_spec&, const field_type&);
+struct_value make_struct_value(const value_spec&, const field_type&);
 
 } // namespace iceberg::tests

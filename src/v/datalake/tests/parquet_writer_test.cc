@@ -31,7 +31,7 @@ TEST(ParquetWriter, CreatesValidParquetData) {
     iobuf full_result;
 
     for (int i = 0; i < 5; i++) {
-        auto data = iceberg::tests::make_value(
+        auto data = iceberg::tests::make_struct_value(
           iceberg::tests::value_spec{
             .forced_fixed_val = iobuf::from("Hello world")},
           test_schema(iceberg::field_required::no));
@@ -41,7 +41,7 @@ TEST(ParquetWriter, CreatesValidParquetData) {
     std::shared_ptr<arrow::Array> result = translator.take_chunk();
     ASSERT_NE(result, nullptr);
 
-    datalake::arrow_to_iobuf writer(*translator.build_arrow_schema());
+    datalake::arrow_to_iobuf writer(translator.build_arrow_schema());
 
     for (int i = 0; i < 10; i++) {
         writer.add_arrow_array(result);

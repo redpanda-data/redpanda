@@ -77,7 +77,7 @@ TEST(ArrowWriterTest, TranslatesData) {
       test_schema(iceberg::field_required::no));
 
     for (int i = 0; i < 5; i++) {
-        auto data = iceberg::tests::make_value(
+        auto data = iceberg::tests::make_struct_value(
           iceberg::tests::value_spec{
             .forced_fixed_val = iobuf::from("Hello world")},
           test_schema(iceberg::field_required::no));
@@ -87,15 +87,6 @@ TEST(ArrowWriterTest, TranslatesData) {
     std::string result_string = schema_translator.take_chunk()->ToString();
 
     EXPECT_EQ(result_string, get_expected_translation_output());
-}
-
-TEST(ArrowWriterTest, FailsOnNonStruct) {
-    datalake::arrow_translator schema_translator(
-      test_schema(iceberg::field_required::no));
-    iceberg::value not_a_struct = iceberg::int_value{5};
-    EXPECT_THROW(
-      schema_translator.add_data(std::move(not_a_struct)),
-      std::invalid_argument);
 }
 
 TEST(ArrowWriterTest, FailsOnWrongFieldCount) {
@@ -113,7 +104,7 @@ TEST(ArrowWriterTest, FailsOnWrongFieldCount) {
     too_little_data->fields.emplace_back(boolean_value{true});
 
     EXPECT_THROW(
-      schema_translator.add_data(value{std::move(too_little_data)}),
+      schema_translator.add_data(std::move(*too_little_data)),
       std::invalid_argument);
 }
 
@@ -151,10 +142,10 @@ TEST_P(RequiredFieldTest, DoRequiredFieldTest) {
 
     if (params.should_fail) {
         EXPECT_THROW(
-          schema_translator.add_data(value{std::move(missing_field)}),
+          schema_translator.add_data(std::move(*missing_field)),
           std::invalid_argument);
     } else {
-        schema_translator.add_data(value{std::move(missing_field)});
+        schema_translator.add_data(std::move(*missing_field));
     }
 }
 

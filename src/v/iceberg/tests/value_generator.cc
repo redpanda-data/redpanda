@@ -184,4 +184,10 @@ value make_value(const value_spec& spec, const field_type& type) {
     return std::visit(generating_value_visitor{spec}, type);
 }
 
+struct_value make_struct_value(const value_spec& spec, const field_type& type) {
+    auto val = std::visit(generating_value_visitor{spec}, type);
+
+    return std::move(*std::get<std::unique_ptr<struct_value>>(val));
+}
+
 } // namespace iceberg::tests

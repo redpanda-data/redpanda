@@ -10,6 +10,7 @@
 #include "datalake/parquet_writer.h"
 
 #include "bytes/iobuf.h"
+#include "datalake/data_writer_interface.h"
 
 #include <arrow/array/array_base.h>
 #include <arrow/chunked_array.h>
@@ -63,7 +64,7 @@ private:
     int64_t _position = 0;
 };
 
-arrow_to_iobuf::arrow_to_iobuf(const arrow::Schema& schema) {
+arrow_to_iobuf::arrow_to_iobuf(std::shared_ptr<arrow::Schema> schema) {
     // TODO: make the compression algorithm configurable.
     std::shared_ptr<parquet::WriterProperties> writer_props
       = parquet::WriterProperties::Builder()
@@ -77,7 +78,7 @@ arrow_to_iobuf::arrow_to_iobuf(const arrow::Schema& schema) {
     _ostream = std::make_shared<iobuf_output_stream>();
 
     auto writer_result = parquet::arrow::FileWriter::Open(
-      schema,
+      *schema,
       arrow::default_memory_pool(),
       _ostream,
       std::move(writer_props),
@@ -117,5 +118,4 @@ iobuf arrow_to_iobuf::close_and_take_iobuf() {
     }
     return take_iobuf();
 }
-
 } // namespace datalake

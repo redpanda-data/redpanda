@@ -16,8 +16,8 @@
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     int record_count = 10;
     int batch_count = 10;
-    auto writer_factory
-      = std::make_unique<datalake::test_data_writer_factory>();
+    auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
+      false);
     datalake::record_multiplexer multiplexer(std::move(writer_factory));
 
     model::test::record_batch_spec batch_spec;
@@ -35,6 +35,30 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     auto result
       = reader.consume(std::move(multiplexer), model::no_timeout).get();
 
-    ASSERT_EQ(result.size(), 1);
-    EXPECT_EQ(result[0].row_count, record_count * batch_count);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result.value().size(), 1);
+    EXPECT_EQ(result.value()[0].record_count, record_count * batch_count);
+}
+TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
+    int record_count = 10;
+    int batch_count = 10;
+    auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
+      true);
+    datalake::record_multiplexer multiplexer(std::move(writer_factory));
+
+    model::test::record_batch_spec batch_spec;
+    batch_spec.records = record_count;
+    batch_spec.count = batch_count;
+    ss::circular_buffer<model::record_batch> batches
+      = model::test::make_random_batches(batch_spec).get0();
+
+    auto reader = model::make_generating_record_batch_reader(
+      [batches = std::move(batches)]() mutable {
+          return ss::make_ready_future<model::record_batch_reader::data_t>(
+            std::move(batches));
+      });
+    auto res = reader.consume(std::move(multiplexer), model::no_timeout).get0();
+    ASSERT_TRUE(res.has_error());
+    EXPECT_EQ(
+      res.error(), datalake::data_writer_error::parquet_conversion_error);
 }

@@ -13,6 +13,7 @@
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <cstdint>
@@ -21,31 +22,45 @@ namespace datalake {
 
 class test_data_writer : public data_writer {
 public:
-    explicit test_data_writer(iceberg::struct_type schema)
+    explicit test_data_writer(iceberg::struct_type schema, bool return_error)
       : _schema(std::move(schema))
-      , _result{} {}
+      , _result{}
+      , _return_error{return_error} {}
 
-    bool add_data_struct(
+    ss::future<data_writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) override {
-        _result.row_count++;
-        return false;
+        _result.record_count++;
+        data_writer_error status
+          = _return_error ? data_writer_error::parquet_conversion_error
+                          : data_writer_error::ok;
+        return ss::make_ready_future<data_writer_error>(status);
     }
 
-    data_writer_result finish() override { return _result; }
+    ss::future<result<data_writer_result, data_writer_error>>
+    finish() override {
+        return ss::make_ready_future<
+          result<data_writer_result, data_writer_error>>(_result);
+    }
 
 private:
     iceberg::struct_type _schema;
     data_writer_result _result;
+    bool _return_error;
 };
 class test_data_writer_factory : public data_writer_factory {
 public:
+    explicit test_data_writer_factory(bool return_error)
+      : _return_error{return_error} {}
+
     std::unique_ptr<data_writer>
     create_writer(iceberg::struct_type schema) override {
-        return std::make_unique<test_data_writer>(std::move(schema));
+        return std::make_unique<test_data_writer>(
+          std::move(schema), _return_error);
     }
 
 private:
     iceberg::struct_type _schema;
+    bool _return_error;
 };
 
 } // namespace datalake
