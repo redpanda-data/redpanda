@@ -891,3 +891,28 @@ redpanda_cc_library(
         "//src/v/bytes",
     ],
 )
+
+redpanda_cc_library(
+    name = "metadata_query",
+    srcs = [
+        "metadata_query.cc",
+    ],
+    hdrs = [
+        "metadata_query.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/utils:uuid",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":manifest_io",
+        ":schema",
+        ":table_metadata",
+        ":table_requirement",
+        ":table_update",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "@seastar",
+    ],
+)

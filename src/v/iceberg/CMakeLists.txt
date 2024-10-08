@@ -43,6 +43,7 @@ v_cc_library(
     manifest_file_packer.cc
     manifest_list_avro.cc
     merge_append_action.cc
+    metadata_query.cc
     partition_key.cc
     partition_key_type.cc
     partition_json.cc
