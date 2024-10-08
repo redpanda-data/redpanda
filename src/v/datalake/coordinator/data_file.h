@@ -22,11 +22,12 @@ namespace datalake::coordinator {
 struct data_file
   : serde::envelope<data_file, serde::version<0>, serde::compat_version<0>> {
     auto serde_fields() {
-        return std::tie(remote_path, row_count, file_size_bytes);
+        return std::tie(remote_path, row_count, file_size_bytes, hour);
     }
     ss::sstring remote_path = "";
     size_t row_count = 0;
     size_t file_size_bytes = 0;
+    int hour = 0;
     // TODO: add kafka schema id
 };
 
