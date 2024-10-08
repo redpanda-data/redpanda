@@ -23,7 +23,6 @@ enum class data_writer_error {
     ok = 0,
     parquet_conversion_error,
     file_io_error,
-
 };
 
 struct data_writer_result
@@ -78,7 +77,7 @@ class data_writer_factory {
 public:
     virtual ~data_writer_factory() = default;
 
-    virtual ss::future<std::unique_ptr<data_writer>>
+    virtual ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
       create_writer(iceberg::struct_type /* schema */) = 0;
 };
 
