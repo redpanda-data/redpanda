@@ -359,11 +359,22 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in self._ctx.globals:
             self._clean_resources()
 
-    def load_many_segments(self):
+    def load_many_segments(self,
+                           target_segments=None,
+                           timeout_segments=None,
+                           num_segments_per_partition=100):
         """
         This methods intended use is to pre-load the cluster (and S3) with
-        small segments to bootstrap a test enviornment that would stress
-        the tiered storage subsytem.
+        small segments to bootstrap a test environment that would stress
+        the tiered storage subsystem.
+        
+        Parameters:
+        - target_segments: Optional. The number of segments you want to create. 
+        If not specified, the function will use a default value suitable for the test.
+        - timeout_secs: Optional. The maximum time to wait for the segments to be generated.
+        If not specified, the function will estimate the time based on the data size and ingress rate.
+        - num_segments_per_partition: Optional. The number of segments to create per partition.
+        Default value is 100.
         """
         def _check_cloud_segments(target_segments):
             # variation of si_utils function 'nodes_report_cloud_segments'
@@ -388,7 +399,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         #   at '10'
         #     [INFO  - 2023-10-24 15:50:00,793 - kgo_verifier_services - _ingest_status - lineno:364]: Producer KgoVerifierProducer-0-140624622493344 progress: 69.58% ProduceStatus<2137520 2136495 0 0 0 0 115750.5/5504122.5/6040921.75>
         #     [INFO  - 2023-10-24 15:50:03,314 - si_utils - nodes_report_cloud_segments - lineno:539]: Cluster metrics report 2238 / 4000 cloud segments
-        num_segments_per_partition = 100
+
         # Use half upper limit for projected number of segments in the cloud for 100% messages produced
         projected_cloud_segments = num_segments_per_partition * (
             self._partitions_upper_limit // 2)
@@ -411,14 +422,19 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # for any network hiccups or transitent errors
         estimated_produce_time_secs = int(
             (total_bytes_to_produce / self._advertised_max_ingress) * 1.2)
+        # Use the provided timeout or fall back to the estimated production time if not specified
+        timeout_secs = timeout_segments or estimated_produce_time_secs
         # Use sensible target cloud segments number
-        # based on ingress rate and amount of data can be produced in 10 min
+        # based on ingress rate and amount of data can be produced in 10 min (or custom timeout)
         # on current tier
-        target_cloud_segments = self._advertised_max_ingress // cloud_segment_size * 600 // 4
+        target_cloud_segments = self._advertised_max_ingress // cloud_segment_size * timeout_secs // 4
+        # Determine the target number of segments
+        target_segments = target_segments or target_cloud_segments
+
         try:
             producer.start()
-            wait_until(lambda: _check_cloud_segments(target_cloud_segments),
-                       timeout_sec=estimated_produce_time_secs,
+            wait_until(lambda: _check_cloud_segments(target_segments),
+                       timeout_sec=timeout_secs,
                        backoff_sec=5)
         finally:
             producer.stop()
