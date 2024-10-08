@@ -11,7 +11,9 @@ v_cc_library(
     SRCS
         frontend.cc
         service.cc
+        state.cc
         state_machine.cc
+        state_update.cc
     DEPS
         generated_datalake_coordinator_rpc
         v::cluster
@@ -19,3 +21,5 @@ v_cc_library(
         v::rpc
         Seastar::seastar
 )
+
+add_subdirectory(tests)
