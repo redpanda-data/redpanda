@@ -57,6 +57,25 @@ struct manifest_file {
 
     friend bool operator==(const manifest_file&, const manifest_file&)
       = default;
+
+    manifest_file copy() const {
+        return manifest_file{
+          .manifest_path = manifest_path,
+          .manifest_length = manifest_length,
+          .partition_spec_id = partition_spec_id,
+          .content = content,
+          .seq_number = seq_number,
+          .min_seq_number = min_seq_number,
+          .added_snapshot_id = added_snapshot_id,
+          .added_files_count = added_files_count,
+          .existing_files_count = existing_files_count,
+          .deleted_files_count = deleted_files_count,
+          .added_rows_count = added_rows_count,
+          .existing_rows_count = existing_rows_count,
+          .deleted_rows_count = deleted_rows_count,
+          .partitions = partitions.copy(),
+        };
+    }
 };
 
 struct manifest_list {
