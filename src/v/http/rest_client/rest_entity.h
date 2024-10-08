@@ -56,10 +56,10 @@ public:
 
     virtual request_builder create(
       optional_headers headers = std::nullopt,
-      optional_query_params query_params = std::nullopt);
+      optional_query_params query_params = std::nullopt) const;
     virtual request_builder list(
       optional_headers headers = std::nullopt,
-      optional_query_params query_params = std::nullopt);
+      optional_query_params query_params = std::nullopt) const;
 
     // The get method retrieves an object of the type of this rest entity using
     // the identifier, eg get("1") maps to call GET /api/v1/person/1. An
@@ -69,15 +69,15 @@ public:
       ss::sstring identifier,
       ss::sstring subpath = "",
       optional_headers headers = std::nullopt,
-      optional_query_params query_params = std::nullopt);
+      optional_query_params query_params = std::nullopt) const;
     virtual request_builder update(
       ss::sstring identifier,
       optional_headers headers = std::nullopt,
-      optional_query_params query_params = std::nullopt);
+      optional_query_params query_params = std::nullopt) const;
     virtual request_builder delete_(
       ss::sstring identifier,
       optional_headers headers = std::nullopt,
-      optional_query_params query_params = std::nullopt);
+      optional_query_params query_params = std::nullopt) const;
 
     ss::sstring resource_url() const;
 
@@ -85,7 +85,7 @@ private:
     virtual request_builder& apply_optionals(
       request_builder& rb,
       optional_headers headers,
-      optional_query_params query_params);
+      optional_query_params query_params) const;
 
     ss::sstring _root_url;
 };
