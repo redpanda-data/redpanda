@@ -19,6 +19,28 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
+    name = "coordinator_test",
+    timeout = "short",
+    srcs = [
+        "coordinator_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":state_test_utils",
+        "//src/v/datalake:logger",
+        "//src/v/datalake/coordinator",
+        "//src/v/datalake/coordinator:state",
+        "//src/v/datalake/coordinator:stm",
+        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "state_update_test",
     timeout = "short",
     srcs = [
