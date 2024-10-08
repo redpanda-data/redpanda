@@ -21,6 +21,20 @@ from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoi
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 
+
+class DebugBundleErrorCode:
+    SUCCESS = 0
+    DEBUG_BUNDLE_PROCESS_RUNNING = 1
+    DEBUG_BUNDLE_PROCESS_NOT_RUNNING = 2
+    INVALID_PARAMETERS = 3
+    PROCESS_FAILED = 4
+    INTERNAL_ERROR = 5
+    JOB_ID_NOT_RECOGNIZED = 6
+    DEBUG_BUNDLE_PROCESS_NEVER_STARTED = 7
+    RPK_BINARY_NOT_PRESENT = 8
+    DEBUG_BUNDLE_EXPIRED = 9
+
+
 log_config = LoggingConfig('info',
                            logger_levels={
                                'admin_api_server': 'trace',
@@ -73,6 +87,17 @@ class DebugBundleTest(RedpandaTest):
             self.metrics), f"Missing expected metrics from node {node.name}"
         return samples
 
+    def _assert_http_error(self, expected_status_code: int,
+                           expected_error_code: DebugBundleErrorCode, request,
+                           *args, **kwargs):
+        try:
+            request(*args, **kwargs)
+            assert False, f"Expected HTTPError with status code {expected_status_code}"
+        except requests.HTTPError as e:
+            json = e.response.json()
+            assert e.response.status_code == expected_status_code, json
+            assert json["code"] == expected_error_code, json
+
     @cluster(num_nodes=1)
     @matrix(ignore_none=[True, False])
     def test_post_debug_bundle(self, ignore_none: bool):
@@ -89,18 +114,15 @@ class DebugBundleTest(RedpandaTest):
         assert res.status_code == requests.codes.ok, res.json()
 
         # Start a second debug bundle with the same job_id, expect a conflict
-        try:
-            self.admin.post_debug_bundle(
-                DebugBundleStartConfig(job_id=job_id,
-                                       config=DebugBundleStartConfigParams(
-                                           cpu_profiler_wait_seconds=16,
-                                           metrics_interval_seconds=16)),
-                ignore_none=ignore_none,
-                node=node)
-            assert False, f"Expected a conflict {res.content}"
-        except requests.HTTPError as e:
-            assert e.response.status_code == requests.codes.conflict, res.json(
-            )
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_RUNNING,
+            self.admin.post_debug_bundle,
+            config=DebugBundleStartConfig(job_id=job_id,
+                                          config=DebugBundleStartConfigParams(
+                                              cpu_profiler_wait_seconds=16,
+                                              metrics_interval_seconds=16)),
+            node=node)
 
         # Get the debug bundle status, expect running
         res = self.admin.get_debug_bundle(node=node)
@@ -127,13 +149,13 @@ class DebugBundleTest(RedpandaTest):
         filename = res.json()['filename']
         assert filename == f"{job_id}.zip", res.json()
 
-        # Delete the debug bundle after it has completed, expect a conflict
-        try:
-            self.admin.delete_debug_bundle(job_id=job_id, node=node)
-            assert False, f"Expected a conflict {res.content}"
-        except requests.HTTPError as e:
-            assert e.response.status_code == requests.codes.conflict, res.json(
-            )
+        # Delete the debug bundle after it has completed
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NOT_RUNNING,
+            self.admin.delete_debug_bundle,
+            job_id=job_id,
+            node=node)
 
         res = self.admin.get_debug_bundle_file(filename=filename, node=node)
         assert res.status_code == requests.codes.ok, res.json()
@@ -153,10 +175,42 @@ class DebugBundleTest(RedpandaTest):
         assert self._get_sha256sum(node, file) == hashlib.sha256(
             res.content).hexdigest()
 
+        # Delete the debug bundle file
         res = self.admin.delete_debug_bundle_file(filename=filename, node=node)
         assert res.status_code == requests.codes.no_content, res.json()
         assert res.headers['Content-Type'] == 'application/json', res.json()
         assert not node.account.exists(file)
+
+        # Get the non-existant debug bundle
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.get_debug_bundle,
+            node=node)
+
+        # Cancel the non-existant debug bundle
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.delete_debug_bundle,
+            job_id=job_id,
+            node=node)
+
+        # Get the non-existant debug bundle file
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.get_debug_bundle_file,
+            filename=filename,
+            node=node)
+
+        # Delete the debug bundle file again
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.delete_debug_bundle_file,
+            filename=filename,
+            node=node)
 
     def _run_debug_bundle(self, job_id: UUID, node: ClusterNode,
                           cancel_after_start: bool):
