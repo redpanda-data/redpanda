@@ -1415,32 +1415,34 @@ void application::wire_up_runtime_services(
           .get();
     }
 
-    syschecks::systemd_message("Starting datalake services").get();
-    construct_service(
-      _datalake_coordinator_fe,
-      node_id,
-      &raft_group_manager,
-      &partition_manager,
-      &controller->get_topics_frontend(),
-      &metadata_cache,
-      &controller->get_partition_leaders(),
-      &controller->get_shard_table())
-      .get();
+    if (datalake_enabled()) {
+        syschecks::systemd_message("Starting datalake services").get();
+        construct_service(
+          _datalake_coordinator_fe,
+          node_id,
+          &raft_group_manager,
+          &partition_manager,
+          &controller->get_topics_frontend(),
+          &metadata_cache,
+          &controller->get_partition_leaders(),
+          &controller->get_shard_table())
+          .get();
 
-    construct_service(
-      _datalake_manager,
-      node_id,
-      &raft_group_manager,
-      &partition_manager,
-      &controller->get_topics_state(),
-      &controller->get_topics_frontend(),
-      &controller->get_partition_leaders(),
-      &controller->get_shard_table(),
-      &_datalake_coordinator_fe,
-      &_as,
-      sched_groups.datalake_sg(),
-      memory_groups().datalake_max_memory())
-      .get();
+        construct_service(
+          _datalake_manager,
+          node_id,
+          &raft_group_manager,
+          &partition_manager,
+          &controller->get_topics_state(),
+          &controller->get_topics_frontend(),
+          &controller->get_partition_leaders(),
+          &controller->get_shard_table(),
+          &_datalake_coordinator_fe,
+          &_as,
+          sched_groups.datalake_sg(),
+          memory_groups().datalake_max_memory())
+          .get();
+    }
 
     construct_single_service(_monitor_unsafe, std::ref(feature_table));
 
@@ -2342,6 +2344,10 @@ bool application::archival_storage_enabled() {
 bool application::wasm_data_transforms_enabled() {
     return config::shard_local_cfg().data_transforms_enabled.value()
            && !config::node().emergency_disable_data_transforms.value();
+}
+
+bool application::datalake_enabled() {
+    return config::shard_local_cfg().iceberg_enabled();
 }
 
 ss::future<>

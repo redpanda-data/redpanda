@@ -249,6 +249,8 @@ private:
 
     bool wasm_data_transforms_enabled();
 
+    bool datalake_enabled();
+
     /**
      * @brief Construct service boilerplate.
      *

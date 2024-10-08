@@ -3662,13 +3662,13 @@ configuration::configuration()
   , iceberg_enabled(
       *this,
       "iceberg_enabled",
-      "Enables the feature that translates topic data to Iceberg tables. When "
-      "set to true, this enables the feature at the cluster level and requires "
-      "individual topics to explicitly opt in by setting the iceberg.enabled "
-      "topic-level property to true. When set to false, this disables the "
-      "feature at the cluster level, effectively turning it off for all "
-      "topics.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "Enables the translation of topic data into Iceberg tables. Setting "
+      "iceberg_enabled to true activates the feature at the cluster level, but "
+      "each topic must also set the redpanda.iceberg.enabled topic-level "
+      "property to true to use it. If iceberg_enabled is set to false, the "
+      "feature is disabled for all topics in the cluster, overriding any "
+      "topic-level settings.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , development_enable_cloud_topics(
       *this,

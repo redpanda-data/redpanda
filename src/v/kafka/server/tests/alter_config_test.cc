@@ -42,10 +42,13 @@ inline ss::logger test_log("test"); // NOLINT
 
 class alter_config_test_fixture : public redpanda_thread_fixture {
 public:
-    void create_topic(model::topic name, int partitions) {
+    void create_topic(
+      model::topic name,
+      int partitions,
+      std::optional<cluster::topic_properties> props = std::nullopt) {
         model::topic_namespace tp_ns(model::kafka_namespace, std::move(name));
 
-        add_topic(tp_ns, partitions).get();
+        add_topic(tp_ns, partitions, std::move(props)).get();
 
         ss::parallel_for_each(
           boost::irange(0, partitions),
@@ -71,6 +74,37 @@ public:
                       });
                 });
           });
+    }
+
+    kafka::create_topics_response create_topic(
+      const model::topic& tp,
+      const absl::flat_hash_map<ss::sstring, ss::sstring>& properties,
+      int num_partitions = 1,
+      int16_t replication_factor = 1) {
+        kafka::creatable_topic topic{
+          .name = model::topic(tp),
+          .num_partitions = num_partitions,
+          .replication_factor = replication_factor,
+        };
+        for (auto& [k, v] : properties) {
+            kafka::createable_topic_config config;
+            config.name = k;
+            config.value = v;
+            topic.configs.push_back(std::move(config));
+        }
+
+        auto req = kafka::create_topics_request{.data{
+          .topics = {topic},
+          .timeout_ms = 10s,
+          .validate_only = false,
+        }};
+
+        return do_with_client([req = std::move(req)](
+                                kafka::client::transport& client) mutable {
+                   return client.dispatch(
+                     std::move(req), kafka::api_version(0));
+               })
+          .get();
     }
 
     kafka::alter_configs_resource make_alter_topic_config_resource(
@@ -395,7 +429,7 @@ FIXTURE_TEST(
       "write.caching",
       "flush.ms",
       "flush.bytes",
-      "iceberg.enabled",
+      "redpanda.iceberg.enabled",
       "redpanda.leaders.preference",
     };
 
@@ -578,8 +612,7 @@ FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
       {"not.exists", "1234"},
       {"write.caching", "disabled"},
       {"write.caching", "gnihcac.etirw"},
-      {"flush.ms", "0"},
-      {"iceberg.enabled", "captain_jack_sparrow"}};
+      {"flush.ms", "0"}};
 
     for (auto& property : properties_to_check) {
         vlog(
@@ -676,9 +709,6 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     properties.emplace(
       "flush.bytes",
       std::make_pair("5678", kafka::config_resource_operation::set));
-    properties.emplace(
-      "iceberg.enabled",
-      std::make_pair("true", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
       make_incremental_alter_topic_config_resource_cv(test_tp, properties));
@@ -694,7 +724,6 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", describe_resp);
-    assert_property_value(test_tp, "iceberg.enabled", "true", describe_resp);
 
     /**
      * Set only few properties, only they should be updated
@@ -722,7 +751,6 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "false", new_describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", new_describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", new_describe_resp);
-    assert_property_value(test_tp, "iceberg.enabled", "true", describe_resp);
 }
 
 FIXTURE_TEST(
@@ -768,9 +796,6 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
     properties.emplace(
       "flush.bytes",
       std::make_pair("8888", kafka::config_resource_operation::set));
-    properties.emplace(
-      "iceberg.enabled",
-      std::make_pair("true", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
       make_incremental_alter_topic_config_resource_cv(test_tp, properties));
@@ -786,7 +811,6 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "9999", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "8888", describe_resp);
-    assert_property_value(test_tp, "iceberg.enabled", "true", describe_resp);
 
     /**
      * Remove custom properties
@@ -806,9 +830,6 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
     new_properties.emplace(
       "flush.bytes",
-      std::pair{std::nullopt, kafka::config_resource_operation::remove});
-    new_properties.emplace(
-      "iceberg.enabled",
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
 
     resp = incremental_alter_configs(
@@ -847,45 +868,165 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
           .raft_replica_max_pending_flush_bytes()
           .value()),
       new_describe_resp);
-    assert_property_value(
-      test_tp, "iceberg.enabled", "false", new_describe_resp);
 }
 
-FIXTURE_TEST(test_alter_config_internal_topic, alter_config_test_fixture) {
+FIXTURE_TEST(test_iceberg_property, alter_config_test_fixture) {
     wait_for_controller_leadership().get();
-    // create an internal topic
-    BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
-                    app.coordinator_ntp_mapper.local(),
-                    app.controller->get_topics_frontend().local(),
-                    1)
-                    .get());
-    // enable authorization on it, to be able to make alter requests.
+
+    auto do_create_topic = [&](model::topic tp, bool iceberg) {
+        absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+        properties.emplace(
+          "redpanda.iceberg.enabled", (iceberg ? "true" : "false"));
+        return create_topic(tp, properties);
+    };
+
+    model::topic topic1{"test1"};
+    model::topic topic2{"topic2"};
+    {
+        // Try creating a topic with iceberg enabled while it is
+        // disabled in cluster config.
+        auto resp = do_create_topic(topic1, true);
+        BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+    }
+
+    {
+        // create a topic without iceberg and try enabling iceberg
+        // while it is disabled at the cluster lvel.
+        auto resp = do_create_topic(topic2, false);
+        BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::none);
+
+        absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+        properties.emplace("redpanda.iceberg.enabled", "true");
+        auto alter_resp = alter_configs(
+          make_alter_topic_config_resource_cv(topic2, properties));
+        BOOST_REQUIRE_EQUAL(alter_resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          alter_resp.data.responses[0].error_code,
+          kafka::error_code::invalid_config);
+    }
+
+    {
+        // same as above, with incremental alter
+        absl::flat_hash_map<
+          ss::sstring,
+          std::
+            pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+          properties;
+        properties.emplace(
+          "redpanda.iceberg.enabled",
+          std::make_pair("true", kafka::config_resource_operation::set));
+
+        auto resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(topic2, properties));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::invalid_config);
+    }
+
+    // Enable iceberg at the cluster level
     scoped_config config;
-    config.get("kafka_nodelete_topics").set_value(std::vector<ss::sstring>{});
+    config.get("iceberg_enabled").set_value(true);
 
-    absl::flat_hash_map<ss::sstring, ss::sstring> properties;
-    properties.emplace("iceberg.enabled", "true");
+    {
+        // Attempt to create the topic again.
+        auto resp = do_create_topic(topic1, true);
+        BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::none);
+    }
 
-    auto resp = alter_configs(make_alter_topic_config_resource_cv(
-      model::kafka_consumer_offsets_topic, properties));
-    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
-    BOOST_REQUIRE_EQUAL(
-      resp.data.responses[0].error_code, kafka::error_code::invalid_config);
+    {
+        // alter the iceberg config of an existing topic, should work.
+        for (auto prop : {false, true}) {
+            ss::sstring prop_str = prop ? "true" : "false";
+            absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+            properties.emplace("redpanda.iceberg.enabled", prop_str);
 
-    absl::flat_hash_map<
-      ss::sstring,
-      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
-      incr_properties;
-    incr_properties.emplace(
-      "iceberg.enabled",
-      std::make_pair("true", kafka::config_resource_operation::set));
-    auto incr_resp = incremental_alter_configs(
-      make_incremental_alter_topic_config_resource_cv(
-        model::kafka_consumer_offsets_topic, incr_properties));
-    BOOST_REQUIRE_EQUAL(incr_resp.data.responses.size(), 1);
-    BOOST_REQUIRE_EQUAL(
-      incr_resp.data.responses[0].error_code,
-      kafka::error_code::invalid_config);
+            auto resp = alter_configs(
+              make_alter_topic_config_resource_cv(topic2, properties));
+
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            BOOST_REQUIRE_EQUAL(
+              resp.data.responses[0].error_code, kafka::error_code::none);
+            BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, topic2);
+
+            auto describe_resp = describe_configs(topic2);
+            assert_property_value(
+              topic2, "redpanda.iceberg.enabled", prop_str, describe_resp);
+        }
+    }
+
+    {
+        // same as above, with incremental alter
+        for (auto prop : {false, true}) {
+            ss::sstring prop_str = prop ? "true" : "false";
+            absl::flat_hash_map<
+              ss::sstring,
+              std::pair<
+                std::optional<ss::sstring>,
+                kafka::config_resource_operation>>
+              properties;
+            properties.emplace(
+              "redpanda.iceberg.enabled",
+              std::make_pair(prop_str, kafka::config_resource_operation::set));
+
+            auto resp = incremental_alter_configs(
+              make_incremental_alter_topic_config_resource_cv(
+                topic2, properties));
+
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            BOOST_REQUIRE_EQUAL(
+              resp.data.responses[0].error_code, kafka::error_code::none);
+            BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, topic2);
+
+            auto describe_resp = describe_configs(topic2);
+            assert_property_value(
+              topic2, "redpanda.iceberg.enabled", prop_str, describe_resp);
+        }
+    }
+
+    {
+        // Altering iceberg configuration on an internal topic should fail
+        // create an internal topic
+        BOOST_REQUIRE(kafka::try_create_consumer_group_topic(
+                        app.coordinator_ntp_mapper.local(),
+                        app.controller->get_topics_frontend().local(),
+                        1)
+                        .get());
+        // enable authorization on it, to be able to make alter requests.
+        config.get("kafka_nodelete_topics")
+          .set_value(std::vector<ss::sstring>{});
+
+        absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+        properties.emplace("redpanda.iceberg.enabled", "true");
+
+        auto resp = alter_configs(make_alter_topic_config_resource_cv(
+          model::kafka_consumer_offsets_topic, properties));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::invalid_config);
+
+        absl::flat_hash_map<
+          ss::sstring,
+          std::
+            pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+          incr_properties;
+        incr_properties.emplace(
+          "redpanda.iceberg.enabled",
+          std::make_pair("true", kafka::config_resource_operation::set));
+        auto incr_resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(
+            model::kafka_consumer_offsets_topic, incr_properties));
+        BOOST_REQUIRE_EQUAL(incr_resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          incr_resp.data.responses[0].error_code,
+          kafka::error_code::invalid_config);
+    }
 }
 
 FIXTURE_TEST(test_shadow_indexing_alter_configs, alter_config_test_fixture) {

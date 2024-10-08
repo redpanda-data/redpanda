@@ -457,11 +457,17 @@ struct flush_bytes_validator {
 };
 
 struct iceberg_config_validator {
-    std::optional<ss::sstring>
-    operator()(model::topic_namespace_view tns, const ss::sstring&, bool) {
+    std::optional<ss::sstring> operator()(
+      model::topic_namespace_view tns, const ss::sstring&, bool value) {
         if (!model::is_user_topic(tns)) {
             return fmt::format(
               "Iceberg configuration cannot be altered on non user topics");
+        }
+        if (!config::shard_local_cfg().iceberg_enabled() && value) {
+            return fmt::format(
+              "Iceberg disabled in the cluster configuration, enable it by "
+              "setting: {}",
+              config::shard_local_cfg().iceberg_enabled.name());
         }
         return std::nullopt;
     }

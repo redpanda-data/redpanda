@@ -268,6 +268,39 @@ private:
     }
 };
 
+struct iceberg_config_validator {
+    static constexpr const char* error_message
+      = "Invalid property value or Iceberg configuration disabled at cluster "
+        "level.";
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_iceberg_enabled;
+          });
+        if (it == c.configs.end() || !it->value.has_value()) {
+            return true;
+        }
+        bool enabled_with_topic_override = false;
+        try {
+            enabled_with_topic_override = string_switch<bool>(it->value.value())
+                                            .match("true", true)
+                                            .match("false", false);
+        } catch (...) {
+            return false;
+        }
+        // If iceberg is enabled at the cluster level, the topic can
+        // be created with any override. If it is disabled
+        // at the cluster level, it cannot be enabled with a topic
+        // override.
+        return config::shard_local_cfg().iceberg_enabled()
+               || !enabled_with_topic_override;
+    }
+};
+
 struct write_caching_configs_validator {
     static constexpr const char* error_message
       = "Unsupported write caching configuration.";

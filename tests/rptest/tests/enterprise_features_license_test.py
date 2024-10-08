@@ -37,6 +37,7 @@ class Features(IntEnum):
     schema_id_validation = 6
     rbac = 7
     fips = 8
+    datalake_iceberg = 9
 
 
 SKIP_FEATURES = [
@@ -187,6 +188,9 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                     "openssl_module_directory":
                     self.redpanda.get_openssl_modules_directory()
                 })
+        elif feature == Features.datalake_iceberg:
+            self.redpanda.set_cluster_config({'iceberg_enabled': 'true'},
+                                             expect_restart=True)
         else:
             assert False, f"Unexpected feature={feature}"
 
