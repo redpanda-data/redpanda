@@ -49,9 +49,7 @@ ss::future<std::error_code> topic_updates_dispatcher::do_topic_delete(
     std::optional<assignments_set> topic_assignments;
 
     bool local_delete = transition.mode
-                          == topic_lifecycle_transition_mode::oneshot_delete
-                        || transition.mode
-                             == topic_lifecycle_transition_mode::pending_gc;
+                        != topic_lifecycle_transition_mode::drop;
 
     // If the command includes local deletion of the topic, we will do some
     // extra work as well as applying the command to the topic table.
