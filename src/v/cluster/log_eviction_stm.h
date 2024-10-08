@@ -118,6 +118,7 @@ protected:
     virtual ss::future<model::offset> storage_eviction_event();
 
 private:
+    using base_t = raft::persisted_stm<raft::kvstore_backed_stm_snapshot>;
     void increment_start_offset(model::offset);
     bool should_process_evict(model::offset);
 

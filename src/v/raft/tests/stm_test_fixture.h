@@ -68,10 +68,12 @@ struct value_entry
 /**
  * Simple kv-store state machine
  */
-struct simple_kv : public raft::state_machine_base {
+template<typename BaseT = state_machine_base>
+struct simple_kv_base : public BaseT {
     using state_t = absl::flat_hash_map<ss::sstring, value_entry>;
     static constexpr std::string_view name = "simple_kv";
-    explicit simple_kv(raft_node_instance& rn)
+
+    explicit simple_kv_base(raft_node_instance& rn)
       : raft_node(rn) {}
 
     static void apply_to_state(
@@ -96,7 +98,7 @@ struct simple_kv : public raft::state_machine_base {
         });
     }
     ss::future<> start() override { return ss::now(); }
-    ss::future<> stop() override { co_await raft::state_machine_base::stop(); };
+    ss::future<> stop() override { co_await BaseT::stop(); };
 
     ss::future<> apply(const model::record_batch& batch) override {
         apply_to_state(batch, state);
@@ -110,6 +112,14 @@ struct simple_kv : public raft::state_machine_base {
 
     size_t get_local_state_size() const final { return 0; }
     ss::future<> remove_local_state() final { co_return; }
+
+    state_t state;
+    raft_node_instance& raft_node;
+};
+class simple_kv : public simple_kv_base<state_machine_base> {
+public:
+    explicit simple_kv(raft_node_instance& rn)
+      : simple_kv_base<>(rn) {}
 
     ss::future<iobuf>
     take_snapshot(model::offset last_included_offset) override {
@@ -134,14 +144,11 @@ struct simple_kv : public raft::state_machine_base {
           batches.begin(),
           batches.end(),
           [&inc_state](const model::record_batch& b) {
-              return simple_kv::apply_to_state(b, inc_state);
+              return simple_kv_base::apply_to_state(b, inc_state);
           });
 
         co_return serde::to_iobuf(std::move(inc_state));
     };
-
-    state_t state;
-    raft_node_instance& raft_node;
 };
 using wait_for_each_batch = ss::bool_class<struct wait_for_each_tag>;
 

@@ -434,16 +434,17 @@ struct persisted_stm_test_fixture : state_machine_fixture {
           });
 
         // take snapshots on all of the nodes
-        co_await parallel_for_each_node(
-          [snapshot_offset](raft_node_instance& n) {
-              return n.raft()
-                ->stm_manager()
-                ->take_snapshot(snapshot_offset)
-                .then([raft = n.raft(), snapshot_offset](iobuf snapshot_data) {
-                    return raft->write_snapshot(raft::write_snapshot_cfg(
-                      snapshot_offset, std::move(snapshot_data)));
-                });
-          });
+        co_await parallel_for_each_node([snapshot_offset](
+                                          raft_node_instance& n) {
+            return n.raft()
+              ->stm_manager()
+              ->take_snapshot(snapshot_offset)
+              .then([raft = n.raft(), snapshot_offset](
+                      state_machine_manager::snapshot_result snapshot_result) {
+                  return raft->write_snapshot(raft::write_snapshot_cfg(
+                    snapshot_offset, std::move(snapshot_result.data)));
+              });
+        });
     }
 
     ss::future<> take_local_snapshot_on_every_node() {

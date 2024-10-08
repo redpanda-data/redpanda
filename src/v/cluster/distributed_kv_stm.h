@@ -95,7 +95,7 @@ public:
     static constexpr std::string_view name = Name;
     explicit distributed_kv_stm(
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
-      : persisted_stm<>("distributed_kv_stm.snapshot", logger, raft)
+      : raft::persisted_stm<>("distributed_kv_stm.snapshot", logger, raft)
       , _default_max_partitions(max_partitions)
       , _is_routing_partition(_raft->ntp().tp.partition == routing_partition) {}
 

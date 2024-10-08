@@ -165,6 +165,9 @@ state_machine_manager::state_machine_manager(
   , _log(ctx_log(_raft->group(), _raft->ntp()))
   , _apply_sg(apply_sg) {
     for (auto& n_stm : stms) {
+        _supports_snapshot_at_offset
+          = _supports_snapshot_at_offset
+            && n_stm.stm->supports_snapshot_at_offset();
         _machines.try_emplace(
           n_stm.name,
           ss::make_lw_shared<state_machine_entry>(
@@ -482,8 +485,13 @@ ss::future<> state_machine_manager::background_apply_fiber(
       entry->name);
 }
 
-ss::future<iobuf>
+ss::future<state_machine_manager::snapshot_result>
 state_machine_manager::take_snapshot(model::offset last_included_offset) {
+    vassert(
+      static_cast<bool>(_supports_snapshot_at_offset),
+      "Snapshot at arbitrary offset can only be taken if manager supports fast "
+      "reconfigurations");
+
     vlog(
       _log.debug,
       "taking snapshot with last included offset: {}",
@@ -513,7 +521,41 @@ state_machine_manager::take_snapshot(model::offset last_included_offset) {
             });
       });
 
-    co_return serde::to_iobuf(std::move(snapshot));
+    co_return state_machine_manager::snapshot_result{
+      serde::to_iobuf(std::move(snapshot)), last_included_offset};
+}
+
+ss::future<state_machine_manager::snapshot_result>
+state_machine_manager::take_snapshot() {
+    auto holder = _gate.hold();
+    // wait for all STMs to be on the same page
+    co_await wait(last_applied(), model::no_timeout, _as);
+
+    auto u = co_await _apply_mutex.get_units();
+    if (last_applied() < _raft->start_offset()) {
+        throw std::logic_error(fmt::format(
+          "Can not take snapshot of a state from before raft start offset. "
+          "Requested offset: {}, start offset: {}",
+          last_applied(),
+          _raft->start_offset()));
+    }
+    // wait once again for all state machines to finish applying batches
+    co_await wait(last_applied(), model::no_timeout, _as);
+    // snapshot can only be taken  after  all background applies finished
+    auto units = co_await acquire_background_apply_mutexes();
+    auto snapshot_offset = last_applied();
+    managed_snapshot snapshot;
+    co_await ss::coroutine::parallel_for_each(
+      _machines, [snapshot_offset, &snapshot](auto entry_pair) {
+          return entry_pair.second->stm->take_snapshot(snapshot_offset)
+            .then([&snapshot, key = entry_pair.first](auto snapshot_part) {
+                snapshot.snapshot_map.try_emplace(
+                  key, std::move(snapshot_part));
+            });
+      });
+
+    co_return state_machine_manager::snapshot_result{
+      serde::to_iobuf(std::move(snapshot)), snapshot_offset};
 }
 
 ss::future<> state_machine_manager::wait(

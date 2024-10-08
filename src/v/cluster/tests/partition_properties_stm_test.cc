@@ -301,11 +301,10 @@ TEST_F_CORO(
         auto base_offset = co_await node->random_batch_base_offset(
           node->raft()->committed_offset(), model::offset(100));
         auto snapshot_offset = model::prev_offset(base_offset);
-
-        co_await node->raft()->write_snapshot(raft::write_snapshot_cfg(
-          snapshot_offset,
-          co_await node->raft()->stm_manager()->take_snapshot(
-            snapshot_offset)));
+        auto result = co_await node->raft()->stm_manager()->take_snapshot(
+          snapshot_offset);
+        co_await node->raft()->write_snapshot(
+          raft::write_snapshot_cfg(snapshot_offset, std::move(result.data)));
     }
 
     // test follower recovery with snapshot

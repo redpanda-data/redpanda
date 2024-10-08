@@ -209,6 +209,11 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     return flush_after_append(is_last || should_checkpoint_flush);
 }
 
+bool recovery_stm::is_snapshot_at_offset_supported() const {
+    return !_ptr->stm_manager().has_value()
+           || _ptr->stm_manager()->supports_snapshot_at_offset();
+}
+
 recovery_stm::required_snapshot_type recovery_stm::get_required_snapshot_type(
   const follower_index_metadata& follower_metadata) const {
     /**
@@ -217,8 +222,10 @@ recovery_stm::required_snapshot_type recovery_stm::get_required_snapshot_type(
      * use greater than (not greater than or equal) while the other branch is
      * comparing next index with last included snapshot offset
      */
+
     if (
-      follower_metadata.is_learner && _ptr->get_learner_start_offset()
+      is_snapshot_at_offset_supported() && follower_metadata.is_learner
+      && _ptr->get_learner_start_offset()
       && follower_metadata.next_index < *_ptr->get_learner_start_offset()) {
         // current snapshot moved beyond configured learner start offset, we can
         // use current snapshot instead creating a new on demand one
@@ -470,8 +477,9 @@ recovery_stm::take_on_demand_snapshot(model::offset last_included_offset) {
     iobuf snapshot_data;
 
     if (_ptr->stm_manager()) {
-        snapshot_data = co_await _ptr->stm_manager()->take_snapshot(
-          last_included_offset);
+        snapshot_data = (co_await _ptr->stm_manager()->take_snapshot(
+                           last_included_offset))
+                          .data;
     }
     auto cfg = _ptr->_configuration_manager.get(last_included_offset);
     const auto term = _ptr->log()->get_term(last_included_offset);
