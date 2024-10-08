@@ -54,7 +54,8 @@ enum class record_batch_type : int8_t {
     group_fence_tx = 33,      // fence batch in group transactions
     partition_properties_update
     = 34, // special batch type used to update partition properties
-    MAX = group_fence_tx,
+    datalake_coordinator = 35, // datalake::coordinator::*
+    MAX = datalake_coordinator,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
