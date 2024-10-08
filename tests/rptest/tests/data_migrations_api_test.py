@@ -287,7 +287,8 @@ class DataMigrationsApiTest(RedpandaTest):
             'archival'  # a variety of archival errors is observed
         ])
     def test_creating_when_cluster_misconfigured2(self):
-        self.creating_when_cluster_misconfigured("cloud_storage_enabled")
+        self.creating_when_cluster_misconfigured(
+            "cloud_storage_disable_archiver_manager")
 
     def creating_when_cluster_misconfigured(self, param_to_disable):
         self.redpanda.set_cluster_config({param_to_disable: False},
