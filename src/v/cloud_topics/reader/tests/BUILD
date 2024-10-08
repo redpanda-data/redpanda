@@ -49,3 +49,21 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "placeholder_extent_reader_test",
+    timeout = "short",
+    srcs = [
+        "placeholder_extent_reader_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_topics/reader:placeholder_extent_reader",
+        "//src/v/cloud_topics/reader/tests:placeholder_extent_fixture",
+        "//src/v/model",
+        "//src/v/ssx:sformat",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
