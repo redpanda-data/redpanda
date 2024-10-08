@@ -404,6 +404,7 @@ redpanda_cc_library(
         "partition.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         ":transform",
@@ -491,6 +492,7 @@ redpanda_cc_library(
         "schema.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         "//src/v/container:chunked_hash_map",
@@ -777,6 +779,7 @@ redpanda_cc_library(
         "transform.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(

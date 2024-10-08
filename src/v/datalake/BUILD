@@ -85,6 +85,7 @@ redpanda_cc_library(
     include_prefix = "datalake",
     visibility = [":__subpackages__"],
     deps = [
+        ":table_definition",
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
@@ -114,6 +115,25 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
         "@fmt",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_definition",
+    srcs = [
+        "table_definition.cc",
+    ],
+    hdrs = [
+        "table_definition.h",
+    ],
+    implementation_deps = [
+        "//src/v/iceberg:transform",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:schema",
     ],
 )
 
