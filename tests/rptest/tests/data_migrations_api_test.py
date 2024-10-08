@@ -17,6 +17,8 @@ from requests.exceptions import ConnectionError
 from rptest.services.admin import Admin, MigrationAction
 from rptest.services.admin import OutboundDataMigration, InboundDataMigration, NamespacedTopic, InboundTopic
 
+import confluent_kafka as ck
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, SISettings
 from ducktape.utils.util import wait_until
@@ -26,7 +28,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.tests.test import TestContext
 from rptest.clients.types import TopicSpec
 from rptest.tests.e2e_finjector import Finjector
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.mark import matrix, ok_to_fail
 from contextlib import nullcontext
 import requests
@@ -438,10 +440,27 @@ class DataMigrationsApiTest(RedpandaTest):
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_higher_level_migration_api(self):
-        topics = [TopicSpec(partition_count=3) for i in range(5)]
+        rpk = RpkTool(self.redpanda)
 
+        topics = [TopicSpec(partition_count=3) for i in range(5)]
         for t in topics:
             self.client().create_topic(t)
+
+        producer = ck.Producer(
+            {
+                'bootstrap.servers': self.redpanda.brokers(),
+                'transactional.id': "tx-id-1",
+            },
+            logger=self.logger,
+            debug='all')
+        producer.init_transactions()
+        # commit one message
+        producer.begin_transaction()
+        producer.produce(topics[0].name, key="key1", value="value1")
+        producer.commit_transaction()
+        # leave second message uncommitted
+        producer.begin_transaction()
+        producer.produce(topics[0].name, key="key2", value="value2")
 
         with Finjector(self.redpanda, self.scale).finj_thread():
             # out
@@ -484,6 +503,20 @@ class DataMigrationsApiTest(RedpandaTest):
                 )
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
+
+        consumer = ck.Consumer({
+            'group.id': 'group-1',
+            'bootstrap.servers': self.redpanda.brokers(),
+            'auto.offset.reset': 'earliest',
+            'isolation.level': 'read_committed',
+        })
+        try:
+            consumer.subscribe([topics[0].name])
+            records = consumer.consume(2, 10)
+            self.logger.debug(f"consumed: {records}")
+            assert len(records) == 1
+        finally:
+            consumer.close()
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(
