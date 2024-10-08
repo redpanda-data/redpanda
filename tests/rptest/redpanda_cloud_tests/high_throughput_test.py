@@ -243,6 +243,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._memory_per_broker = get_machine_info(
             config_profile['machine_type']).memory
 
+        if self.redpanda.is_operator_v2_cluster():
+            self.operator_version = 2
+        else:
+            self.operator_version = 1
+
         tier_product = self.redpanda.get_product()
         assert tier_product, "Could not get product info"
         """
@@ -361,8 +366,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     def load_many_segments(self):
         """
-        This methods intended use is to pre-load the cluster (and S3) with
-        small segments to bootstrap a test enviornment that would stress
+        This method's intended use is to pre-load the cluster (and S3) with
+        small segments to bootstrap a test environment that would stress
         the tiered storage subsytem.
         """
         def _check_cloud_segments(target_segments):
@@ -865,205 +870,95 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 f"Low throughput while preparing for the test: {_throughput} MB/s"
             ) from None
 
-    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_decommission_and_add(self):
-        """Decommission and add while under load.
+    # returns a tuple of (replicas, readyReplicas)
+    def get_cluster_replicas(self, cluster_name: str) -> tuple[int, int]:
+        if self.operator_version == 2:
+            return self._get_cluster_replicas_v2(
+            ), self._get_cluster_ready_replicas_v2()
+        else:
+            return self._get_cluster_replicas(
+                cluster_name), self._get_cluster_ready_replicas(cluster_name)
 
-        Preloads cluster with large number of messages/segments that are also
-        replicated to the cloud. Then runs the decommission-and-add a node
-        stage.
-        """
-
-        self.logger.info(f'verify cluster > 3 nodes')
-        if self._num_brokers <= 3:
-            self.logger.warn('need more than 3 nodes to run test')
+    # sets new target replica count for the cluster
+    def set_cluster_replicas(self, cluster_name: str, new_replicas: int):
+        # for operator v2, we should be able to just use the ScaleCluster endpoint
+        if self.operator_version == 2:
+            self.redpanda.scale_cluster(new_replicas, True)
             return
 
-        self.logger.info('verify operator-v2 is not activated')
-        if self.redpanda.is_operator_v2_cluster():
-            self.logger.warn('cannot run test with operator-v2')
-            return
-
-        # create default topics
-        self._create_default_topics()
-
-        self.adjust_topic_segment_properties(
-            segment_bytes=self.min_segment_size,
-            retention_local_bytes=2 * self.min_segment_size)
-
-        # Generate a realistic number of segments per partition.
-        self.load_many_segments()
-
-        initial_workload = self._make_workload(10)
-        self.logger.info(
-            f'Starting workload, initial spec: {initial_workload}')
-
-        producer = KgoVerifierProducer(
-            self.test_context,
-            self.redpanda,
-            self.topic,
-            msg_size=self.msg_size,
-            msg_count=5_000_000_000_000,
-            rate_limit_bps=self._advertised_max_ingress,
-            custom_node=[self.preallocated_nodes[0]])
-
-        try:
-            producer.start()
-            self._wait_for_traffic(producer,
-                                   initial_workload.msg_count,
-                                   timeout=initial_workload.timeout_seconds)
-            self.stage_decommission_and_add()
-
-        finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
-
-        self.redpanda.assert_cluster_is_reusable()
-
-    def stage_decommission_and_add(self):
-        def cluster_ready_replicas(cluster_name):
-            # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-            return int(
-                self.redpanda.kubectl.cmd([
-                    'get', 'cluster', cluster_name, '-n=redpanda',
-                    "-o=jsonpath='{.status.readyReplicas}'"
-                ]))
-
-        def deployment_ready_replicas():
-            # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.status.readyReplicas}'
-            return int(
-                self.redpanda.kubectl.cmd([
-                    'get', 'deployment', 'redpanda-controller-manager',
-                    '-n=redpanda-system',
-                    "-o=jsonpath='{.status.readyReplicas}'"
-                ]))
-
-        agent_services = [
-            'redpanda-agent.service', 'redpanda-agent-boot.service'
-        ]
-        if self.redpanda._cloud_cluster.config.provider == PROVIDER_AWS:
-            agent_services.append('redpanda-agent-init.service')
-
-        self.logger.info('disabling agent services')
-        # sudo systemctl disable --now redpanda-agent.service redpanda-agent-boot.service redpanda-agent-init.service
-        self.redpanda.cloud_agent_ssh(
-            ['sudo', 'systemctl', 'disable', '--now'] + agent_services)
-
-        self.logger.info('getting list of args from deployment')
-        # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.spec.template.spec.containers[0].args}'
-        deployment_args = self.redpanda.kubectl.cmd([
-            'get', 'deployment', 'redpanda-controller-manager',
-            '-n=redpanda-system',
-            "-o=jsonpath='{.spec.template.spec.containers[0].args}'"
-        ])
-
-        self.logger.info('patching deployment to allow downscaling')
-        deployment_args = deployment_args.decode().replace(
-            '--allow-downscaling=false', '--allow-downscaling=true', 1)
-        patch = [{
-            'op': 'replace',
-            'path': '/spec/template/spec/containers/0/args',
-            'value': json.loads(deployment_args)
-        }]
-        patch_str = json.dumps(patch)
-        # kubectl patch deployment redpanda-controller-manager -n=redpanda-system --type=json \
-        #         --patch='[{"op":"replace","path":"/spec/template/spec/containers/0/args","value":["arg1","arg2","etc..."]}]'
-        self.redpanda.kubectl.cmd([
-            'patch', 'deployment', 'redpanda-controller-manager',
-            '-n=redpanda-system', '--type=json', f"-p='{patch_str}'"
-        ])
-
-        self.logger.info('waiting for deployment to become ready after patch')
-        wait_until(lambda: deployment_ready_replicas() == 1,
-                   timeout_sec=600,
-                   backoff_sec=1)
-
-        cluster_name = f'rp-{self.redpanda._cloud_cluster.cluster_id}'
-        self.logger.info(f'getting replicas from cluster {cluster_name}')
-        orig_replicas = cluster_ready_replicas(cluster_name)
-        new_replicas = orig_replicas - 1
-        self.logger.info(
-            f'decomm by patching cluster {cluster_name} with replicas {new_replicas}'
-        )
+        # for operator v1, we patch the cluster CRD instead
         patch = [{
             'op': 'replace',
             'path': '/spec/replicas',
             'value': new_replicas
         }]
         patch_str = json.dumps(patch)
-        # kubectl patch cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --type=json -p='[{"op":"replace","path":"/spec/replicas","value":4}]'
+
+        # kubectl patch -n=redpanda cluster rp-clkd0n22nfn1jf7vd9t0 --type=json -p='[{"op":"replace","path":"/spec/replicas","value":4}]'
         self.redpanda.kubectl.cmd([
-            'patch', 'cluster', cluster_name, '-n=redpanda', '--type=json',
+            'patch', '-n=redpanda', 'cluster', cluster_name, '--type=json',
             f"-p='{patch_str}'"
         ])
 
-        self.logger.info(
-            f'waiting for decommissioning of {cluster_name} to arrive at {new_replicas}'
-        )
-        wait_until(
-            lambda: cluster_ready_replicas(cluster_name) == new_replicas,
-            timeout_sec=600,
-            backoff_sec=1)
+    # waits until the Redpanda broker replica count reaches the target value
+    def wait_cluster_replicas(self, cluster_name: str, replicas: int):
+        if self.operator_version == 2:
+            self._wait_statefulset_ready_replicas('redpanda-broker', replicas)
+        else:
+            self._wait_cluster_ready_replicas(cluster_name, replicas)
 
-        pvc_name = f'datadir-rp-{self.redpanda._cloud_cluster.cluster_id}-{new_replicas}'
-        self.logger.info(f'deleting pvc {pvc_name}')
-        # kubectl delete pvc datadir-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
-        self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
+    # operator V1
+    def _get_cluster_replicas(self, cluster_name):
+        # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.replicas}'
+        return int(
+            self.redpanda.kubectl.cmd([
+                'get', 'cluster', cluster_name, '-n=redpanda',
+                "-o=jsonpath='{.status.replicas}'"
+            ]))
 
-        pvc_name = f'shadow-index-cache-rp-{self.redpanda._cloud_cluster.cluster_id}-{new_replicas}'
-        self.logger.info(f'deleting pvc {pvc_name}')
-        # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
-        self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
+    # operator V1
+    def _get_cluster_ready_replicas(self, cluster_name):
+        # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
+        return int(
+            self.redpanda.kubectl.cmd([
+                'get', 'cluster', cluster_name, '-n=redpanda',
+                "-o=jsonpath='{.status.readyReplicas}'"
+            ]))
 
-        self.logger.info(
-            f'ensuring decommission of {cluster_name} reduced replicas to {new_replicas}'
-        )
-        assert cluster_ready_replicas(cluster_name) == new_replicas
+    # operator v2
+    def _get_cluster_replicas_v2(self):
+        # kubectl get statefulset redpanda-broker -n=redpanda -o=jsonpath='{.status.readyReplicas}'
+        return int(
+            self.redpanda.kubectl.cmd([
+                'get', 'statefulset', 'redpanda-broker', '-n=redpanda',
+                "-o=jsonpath='{.status.replicas}'"
+            ]))
 
-        # skip decomm via broker admin api so it does not conflict with decomm via kubectl
-        #admin = self.redpanda._admin
-        #admin.decommission_broker(pod_id)
-        #waiter = NodeDecommissionWaiter(self.redpanda, pod_id, self.logger, progress_timeout=120)
-        #waiter.wait_for_removal()
-        #self.redpanda.stop_node(pod)
+    # operator V2
+    def _get_cluster_ready_replicas_v2(self):
+        # kubectl get statefulset redpanda-broker -n=redpanda -o=jsonpath='{.status.readyReplicas}'
+        return int(
+            self.redpanda.kubectl.cmd([
+                'get', 'statefulset', 'redpanda-broker', '-n=redpanda',
+                "-o=jsonpath='{.status.readyReplicas}'"
+            ]))
 
-        self.logger.info(
-            f'adding new broker by patching cluster {cluster_name} with replicas {orig_replicas}'
-        )
-        patch = [{
-            'op': 'replace',
-            'path': '/spec/replicas',
-            'value': orig_replicas
-        }]
-        patch_str = json.dumps(patch)
-        # kubectl patch cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --type=json -p='[{"op":"replace","path":"/spec/replicas","value":5}]'
-        self.redpanda.kubectl.cmd([
-            'patch', 'cluster', cluster_name, '-n=redpanda', '--type=json',
-            f"-p='{patch_str}'"
+    def _wait_cluster_ready_replicas(self, cluster_name, ready_replicas):
+        # kubectl wait cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --for=jsonpath='{.status.readyReplicas}'=4 --timeout=1200s
+        return self.redpanda.kubectl.cmd([
+            'wait', 'cluster', cluster_name, '-n=redpanda',
+            "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
+            '--timeout=1200s'
         ])
 
-        self.logger.info(
-            f'waiting for commissioning of {cluster_name} to arrive at replicas {orig_replicas}'
-        )
-        wait_until(
-            lambda: cluster_ready_replicas(cluster_name) == orig_replicas,
-            timeout_sec=600,
-            backoff_sec=1)
-
-        self.logger.info('reenabling agent services')
-        self.redpanda.cloud_agent_ssh(
-            ['sudo', 'systemctl', 'enable', '--now'] + agent_services)
-
-        self.logger.info(
-            f'ensuring commission of {cluster_name} restored replicas to {orig_replicas}'
-        )
-        assert cluster_ready_replicas(cluster_name) == orig_replicas
-
-        # skip new node creation so it does not conflict with add via kubectl
-        #self.redpanda.clean_node(pod, preserve_logs=True, preserve_current_install=True)
-        #self.redpanda.start_node(pod, auto_assign_node_id=False, omit_seeds_on_idx_one=False)
-        #wait_until(self.redpanda.cluster_healthy(), timeout_sec=600, backoff_sec=1)
-        #new_node_id = self.redpanda.node_id(pod, force_refresh=True)
+    def _wait_statefulset_ready_replicas(self, statefulset_name,
+                                         ready_replicas):
+        # kubectl wait statefulset redpanda-broker -n=redpanda --for=jsonpath='{.status.readyReplicas}'=4 --timeout=1200s
+        return self.redpanda.kubectl.cmd([
+            'wait', 'statefulset', statefulset_name, '-n=redpanda',
+            "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
+            '--timeout=1200s'
+        ])
 
     def _disable_agent_services(self):
         self.logger.debug(f'disabling agent services')
@@ -1108,83 +1003,146 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             '-n=redpanda-system', '--timeout=10m'
         ])
 
-    def _get_cluster_replicas(self, cluster_name):
-        # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.replicas}'
-        return int(
-            self.redpanda.kubectl.cmd([
-                'get', 'cluster', cluster_name, '-n=redpanda',
-                "-o=jsonpath='{.status.replicas}'"
-            ]))
-
-    def _get_cluster_ready_replicas(self, cluster_name):
-        # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-        return int(
-            self.redpanda.kubectl.cmd([
-                'get', 'cluster', cluster_name, '-n=redpanda',
-                "-o=jsonpath='{.status.readyReplicas}'"
-            ]))
-
-    def _wait_cluster_ready_replicas(self, cluster_name, ready_replicas):
-        # kubectl wait cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --for=jsonpath='{.status.readyReplicas}'=4 --timeout=600s
-        return self.redpanda.kubectl.cmd([
-            'wait', 'cluster', cluster_name, '-n=redpanda',
-            "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
-            '--timeout=1200s'
-        ])
-
-    def _patch_cluster_replicas(self, cluster_name, replicas):
-        def cluster_ready_replicas(cluster_name):
-            # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-            return int(
-                self.redpanda.kubectl.cmd([
-                    'get', 'cluster', cluster_name, '-n=redpanda',
-                    "-o=jsonpath='{.status.readyReplicas}'"
-                ]))
-
-        patch = [{
-            'op': 'replace',
-            'path': '/spec/replicas',
-            'value': replicas
-        }]
-        patch_str = json.dumps(patch)
-        # kubectl patch cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --type=json -p='[{"op":"replace","path":"/spec/replicas","value":4}]'
-        self.redpanda.kubectl.cmd([
-            'patch', 'cluster', cluster_name, '-n=redpanda', '--type=json',
-            f"-p='{patch_str}'"
-        ])
-
-        self.logger.debug(
-            f'waiting for cluster {cluster_name} to arrive at replicas {replicas}'
-        )
-        wait_until(
-            lambda: cluster_ready_replicas(cluster_name) == replicas,
-            timeout_sec=600,
-            backoff_sec=1,
-            retry_on_exc=True,
-            err_msg=
-            f'number of ready replicas for {cluster_name} did not arrive at {replicas}'
-        )
-
     def _delete_cluster_pvc(self, cluster_name, num):
-        pvc_name = f'datadir-{cluster_name}-{num}'
+        pvc_name = f'datadir-{cluster_name}-{num}' if self.operator_version == 1 else f'datadir-redpanda-broker-{num}'
         self.logger.info(f'deleting pvc {pvc_name}')
         # kubectl delete pvc datadir-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
         self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
 
-        pvc_name = f'shadow-index-cache-{cluster_name}-{num}'
-        self.logger.info(f'deleting pvc {pvc_name}')
-        # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
-        self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
+        if self.operator_version == 1:
+            pvc_name = f'shadow-index-cache-{cluster_name}-{num}'
+            self.logger.info(f'deleting pvc {pvc_name}')
+            # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
+            self.redpanda.kubectl.cmd(
+                ['delete', 'pvc', pvc_name, '-n=redpanda'])
+
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommission_and_add(self):
+        """Decommission and add while under load.
+
+        Preloads cluster with large number of messages/segments that are also
+        replicated to the cloud. Then runs the decommission-and-add a node
+        stage.
+        """
+
+        self.logger.info(f'verify cluster > 3 nodes')
+        if self._num_brokers <= 3:
+            self.logger.warn('need more than 3 nodes to run test')
+            return
+
+        self.logger.info('creating default topics')
+        # create default topics
+        self._create_default_topics()
+
+        self.logger.info('adjusting topic segment properties')
+        self.adjust_topic_segment_properties(
+            segment_bytes=self.min_segment_size,
+            retention_local_bytes=2 * self.min_segment_size)
+
+        self.logger.info('loading many segments')
+        # Generate a realistic number of segments per partition.
+        self.load_many_segments()
+
+        initial_workload = self._make_workload(10)
+        self.logger.info(
+            f'Starting workload, initial spec: {initial_workload}')
+
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=5_000_000_000_000,
+            rate_limit_bps=self._advertised_max_ingress,
+            custom_node=[self.preallocated_nodes[0]])
+
+        try:
+            self.logger.info('starting producer')
+            producer.start()
+            self.logger.info('waiting for traffic…')
+            self._wait_for_traffic(producer,
+                                   initial_workload.msg_count,
+                                   timeout=initial_workload.timeout_seconds)
+            self.logger.info('staging decomm/add')
+            self._stage_decommission_and_add()
+
+        finally:
+            producer.stop()
+            producer.wait(timeout_sec=600)
+
+        self.redpanda.assert_cluster_is_reusable()
+
+    def _stage_decommission_and_add(self):
+        self._disable_agent_services()
+
+        if self.operator_version == 1:
+            self._patch_deployment_args('--allow-downscaling=false',
+                                        '--allow-downscaling=true')
+
+        cluster_name = f'rp-{self.redpanda._cloud_cluster.cluster_id}'
+        self.logger.info(f'getting replicas from cluster {cluster_name}')
+
+        orig_replicas, orig_ready = self.get_cluster_replicas(cluster_name)
+        assert orig_replicas == orig_ready, f'cluster is unstable, replicas expected {orig_replicas} != ready {orig_ready}'
+
+        new_replicas = orig_replicas - 1
+        self.logger.info(
+            f'decomm by patching cluster {cluster_name} with replicas {new_replicas}'
+        )
+
+        self.set_cluster_replicas(cluster_name, new_replicas)
+
+        self.logger.info(
+            f'waiting for decommissioning of {cluster_name} to arrive at {new_replicas}'
+        )
+
+        self.wait_cluster_replicas(cluster_name, new_replicas)
+
+        self._delete_cluster_pvc(cluster_name, orig_replicas)
+
+        self.logger.info(
+            f'ensuring decommission of {cluster_name} reduced replicas to {new_replicas}'
+        )
+        _, ready_replicas = self.get_cluster_replicas(cluster_name)
+        assert ready_replicas == new_replicas, f'expected: {new_replicas} actual: {ready_replicas}'
+
+        # skip decomm via broker admin api so it does not conflict with decomm via kubectl
+        #admin = self.redpanda._admin
+        #admin.decommission_broker(pod_id)
+        #waiter = NodeDecommissionWaiter(self.redpanda, pod_id, self.logger, progress_timeout=120)
+        #waiter.wait_for_removal()
+        #self.redpanda.stop_node(pod)
+
+        self.logger.info(
+            f'adding new broker by patching cluster {cluster_name} with replicas {orig_replicas}'
+        )
+
+        self.set_cluster_replicas(cluster_name, orig_replicas)
+
+        self.logger.info(
+            f'waiting for commissioning of {cluster_name} to arrive at replicas {orig_replicas}'
+        )
+        self.wait_cluster_replicas(cluster_name, orig_replicas)
+
+        self.logger.info('reenabling agent services')
+        self._enable_agent_services()
+
+        self.logger.info(
+            f'ensuring commission of {cluster_name} restored replicas to {orig_replicas}'
+        )
+        _, ready_replicas = self.get_cluster_replicas(cluster_name)
+        assert ready_replicas == orig_replicas, f'expected ready replicas: {orig_replicas}, actual: {ready_replicas}'
+
+        # skip new node creation so it does not conflict with add via kubectl
+        #self.redpanda.clean_node(pod, preserve_logs=True, preserve_current_install=True)
+        #self.redpanda.start_node(pod, auto_assign_node_id=False, omit_seeds_on_idx_one=False)
+        #wait_until(self.redpanda.cluster_healthy(), timeout_sec=600, backoff_sec=1)
+        #new_node_id = self.redpanda.node_id(pod, force_refresh=True)
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_add_and_decommission(self):
         """Add a new node and then decommission it while under load.
         """
-
-        self.logger.info('verify operator-v2 is not activated')
-        if self.redpanda.is_operator_v2_cluster():
-            self.logger.warn('cannot run test with operator-v2')
-            return
 
         # create default topics
         self._create_default_topics()
@@ -1220,35 +1178,39 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     def _stage_add_and_decommission(self):
         cluster_name = f'rp-{self.redpanda._cloud_cluster.cluster_id}'
-        orig_replicas = self._get_cluster_replicas(cluster_name)
+        orig_replicas, orig_ready = self.get_cluster_replicas(cluster_name)
+        assert orig_replicas == orig_ready, f'cluster is unstable, replicas expected {orig_replicas} != ready {orig_ready}'
+
         new_replicas = orig_replicas + 1
 
         self.logger.info(
             f'scaling out cluster {cluster_name} from {orig_replicas} to {new_replicas}'
         )
-        self.redpanda.scale_cluster(new_replicas)
+        self.redpanda.scale_cluster(new_replicas, True)
 
         self.logger.info(
             f'waiting for cluster {cluster_name} to have ready replicas {new_replicas}'
         )
-        self._wait_cluster_ready_replicas(cluster_name, new_replicas)
+        self.wait_cluster_replicas(cluster_name, new_replicas)
 
         self.logger.info(
             f'scaling in cluster {cluster_name} from {new_replicas} to {orig_replicas}'
         )
         self._disable_agent_services()
-        self._patch_deployment_args('--allow-downscaling=false',
-                                    '--allow-downscaling=true')
-        self._patch_cluster_replicas(cluster_name, orig_replicas)
+        if self.operator_version == 1:
+            self._patch_deployment_args('--allow-downscaling=false',
+                                        '--allow-downscaling=true')
+        self.set_cluster_replicas(cluster_name, orig_replicas)
         self._delete_cluster_pvc(cluster_name, orig_replicas)
-        self._patch_deployment_args('--allow-downscaling=true',
-                                    '--allow-downscaling=false')
+        if self.operator_version == 1:
+            self._patch_deployment_args('--allow-downscaling=true',
+                                        '--allow-downscaling=false')
         self._enable_agent_services()
 
         self.logger.info(
             f'waiting for cluster {cluster_name} to have ready replicas {orig_replicas}'
         )
-        self._wait_cluster_ready_replicas(cluster_name, orig_replicas)
+        self.wait_cluster_replicas(cluster_name, orig_replicas)
 
     # This test is ignored because it is impractical at this time to write
     # enough data to the cluster to trigger local storage eviction and read
