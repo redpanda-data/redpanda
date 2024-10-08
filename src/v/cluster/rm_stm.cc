@@ -784,24 +784,23 @@ ss::future<result<partition_transactions>> rm_stm::get_transactions() {
     co_return ans;
 }
 
-ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
+ss::future<tx::errc> rm_stm::mark_expired(model::producer_identity pid) {
     if (!co_await sync(_sync_timeout())) {
-        co_return std::error_code(tx::errc::leader_not_found);
+        co_return tx::errc::leader_not_found;
     }
     auto holder = co_await _state_lock.hold_read_lock();
     auto producer_it = _producers.find(pid.get_id());
     if (
       producer_it == _producers.end()
       || !producer_it->second->has_transaction_in_progress()) {
-        co_return std::error_code{tx::errc::none};
+        co_return tx::errc::none;
     }
     auto producer = producer_it->second;
     co_return co_await producer->run_with_lock(
       [this, producer](ssx::semaphore_units units) {
           producer->force_transaction_expiry();
-          return do_try_abort_old_tx(producer)
-            .then([](tx::errc result) { return std::error_code(result); })
-            .finally([units = std::move(units)] {});
+          return do_try_abort_old_tx(producer).finally(
+            [units = std::move(units)] {});
       });
 }
 
