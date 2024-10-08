@@ -11,7 +11,10 @@
 
 #include "serde/parquet/encoding.h"
 
+#include "utils/vint.h"
+
 #include <algorithm>
+#include <bit>
 #include <climits>
 
 namespace serde::parquet {
@@ -87,6 +90,42 @@ iobuf encode_plain(chunked_vector<fixed_byte_array_value> vals) {
     for (auto& v : vals) {
         buf.append(std::move(v.val));
     }
+    return buf;
+}
+
+iobuf encode_levels(uint8_t max_value, const chunked_vector<uint8_t>& levels) {
+    size_t bit_width = std::bit_width(max_value);
+    iobuf buf;
+    if (bit_width == 0) {
+        bytes len = unsigned_vint::to_bytes(levels.size() << 1U);
+        buf.append(len.data(), len.size());
+        buf.append(&max_value, sizeof(uint8_t));
+        return buf;
+    }
+    auto it = levels.begin();
+    vassert(it != levels.end(), "bit width must be 0 if levels is empty");
+    // NOTE: This implementation is simple, not optimal. A clean optimal
+    // encoding can be found in parquet-go, which alternates between bitpacking
+    // and run length encoding depending on which encodes better. This tradeoff
+    // is also what duckdb does FWIW.
+    uint8_t current_value = *it;
+    uint32_t current_run = 1;
+    auto flush = [&]() {
+        bytes rl = unsigned_vint::to_bytes(current_run << 1U);
+        buf.append(rl.data(), rl.size());
+        buf.append(&current_value, sizeof(uint8_t));
+    };
+    for (++it; it != levels.end(); ++it) {
+        uint8_t v = *it;
+        if (v == current_value) {
+            ++current_run;
+        } else {
+            flush();
+            current_value = v;
+            current_run = 1;
+        }
+    }
+    flush();
     return buf;
 }
 

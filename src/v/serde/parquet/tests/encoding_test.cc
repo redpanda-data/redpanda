@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <limits>
 
 // NOLINTNEXTLINE(*internal-linkage*)
@@ -170,6 +171,142 @@ TEST(PlainEncoding, FixedBytes) {
     }));
     EXPECT_EQ(encoded, buf<4>("\x00\x05\xFF\xEE"));
 }
+
+struct level_encoding_test_case {
+    std::vector<int32_t> levels;
+    std::vector<uint8_t> encoding;
+
+    friend void PrintTo(const level_encoding_test_case& b, std::ostream* os) {
+        *os << fmt::format("{{levels:[{}]}}", fmt::join(b.levels, ","));
+    }
+};
+
+class LevelEncoding
+  : public testing::TestWithParam<level_encoding_test_case> {};
+
+TEST_P(LevelEncoding, CanEncode) {
+    auto testcase = GetParam();
+    chunked_vector<uint8_t> levels(
+      testcase.levels.begin(), testcase.levels.end());
+    uint8_t max_value = 0;
+    if (!levels.empty()) {
+        max_value = *std::ranges::max_element(levels);
+    }
+    iobuf actual = encode_levels(max_value, levels);
+    iobuf expected;
+    expected.append(testcase.encoding.data(), testcase.encoding.size());
+    EXPECT_EQ(actual, expected);
+}
+
+// These test cases are from the parquet-go library
+// Although we have a different (simpler less optimal) algorithm, so we get
+// different encodings
+INSTANTIATE_TEST_SUITE_P(
+  ParquetGoTestCases,
+  LevelEncoding,
+  testing::Values(
+    level_encoding_test_case{
+      .levels = {},
+      .encoding = {0x00, 0x00},
+    },
+    level_encoding_test_case{
+      .levels = {0},
+      .encoding = {0x02, 0x00},
+    },
+    level_encoding_test_case{
+      .levels = {1},
+      .encoding = {0x02, 0x01},
+    },
+    level_encoding_test_case{
+      .levels = {0, 1, 0, 2, 3, 4, 5, 6, 127, 127, 0},
+      .encoding = {
+        0x02, 0x00,
+        0x02, 0x01,
+        0x02, 0x00,
+        0x02, 0x02,
+        0x02, 0x03,
+        0x02, 0x04,
+        0x02, 0x05,
+        0x02, 0x06,
+        0x04, 0x7F,
+        0x02, 0x00,
+      },
+    },
+    level_encoding_test_case{
+      // 24 of the same value
+      .levels = {42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
+                 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42},
+      .encoding = {0x30, 42}
+    },
+    level_encoding_test_case{
+      // no repeats
+      .levels = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F},
+      .encoding = {
+        0x02, 0x00,
+        0x02, 0x01,
+        0x02, 0x02,
+        0x02, 0x03,
+        0x02, 0x04,
+        0x02, 0x05,
+        0x02, 0x06,
+        0x02, 0x07,
+        0x02, 0x08,
+        0x02, 0x09,
+        0x02, 0x0A,
+        0x02, 0x0B,
+        0x02, 0x0C,
+        0x02, 0x0D,
+        0x02, 0x0E,
+        0x02, 0x0F,
+        0x02, 0x10,
+        0x02, 0x11,
+        0x02, 0x12,
+        0x02, 0x13,
+        0x02, 0x14,
+        0x02, 0x15,
+        0x02, 0x16,
+        0x02, 0x17,
+        0x02, 0x18,
+        0x02, 0x19,
+        0x02, 0x1A,
+        0x02, 0x1B,
+        0x02, 0x1C,
+        0x02, 0x1D,
+        0x02, 0x1E,
+        0x02, 0x1F,
+      }
+    },
+    level_encoding_test_case{
+      // lots of repeats
+      .levels = {
+        0, 0, 0, 0,
+        1, 1, 1, 1,
+        2, 2, 2, 2,
+        3, 3, 3, 3,
+        4, 4, 4, 4,
+        5, 5, 5, 5,
+        6, 6, 6,
+        7, 7, 7,
+        8, 8, 8,
+        9, 9, 9,
+      },
+      .encoding = {
+        0x08, 0x00,
+        0x08, 0x01,
+        0x08, 0x02,
+        0x08, 0x03,
+        0x08, 0x04,
+        0x08, 0x05,
+        0x06, 0x06,
+        0x06, 0x07,
+        0x06, 0x08,
+        0x06, 0x09,
+      }
+    }));
+
 // NOLINTEND(*magic-number*)
 
 } // namespace serde::parquet
