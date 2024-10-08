@@ -18,7 +18,7 @@ rest_entity::rest_entity(std::string_view root_url)
       root_url.ends_with("/") ? root_url : fmt::format("{}/", root_url)} {}
 
 request_builder rest_entity::create(
-  optional_headers headers, optional_query_params query_params) {
+  optional_headers headers, optional_query_params query_params) const {
     request_builder rb;
     return apply_optionals(rb, headers, query_params)
       .path(resource_url())
@@ -26,7 +26,7 @@ request_builder rest_entity::create(
 }
 
 request_builder rest_entity::list(
-  optional_headers headers, optional_query_params query_params) {
+  optional_headers headers, optional_query_params query_params) const {
     request_builder rb;
     return apply_optionals(rb, headers, query_params)
       .path(resource_url())
@@ -37,7 +37,7 @@ request_builder rest_entity::get(
   ss::sstring identifier,
   ss::sstring subpath,
   optional_headers headers,
-  optional_query_params query_params) {
+  optional_query_params query_params) const {
     auto target = fmt::format("{}/{}", resource_url(), identifier);
     if (!subpath.empty()) {
         target = fmt::format("{}/{}", target, subpath);
@@ -51,7 +51,7 @@ request_builder rest_entity::get(
 request_builder rest_entity::update(
   ss::sstring identifier,
   optional_headers headers,
-  optional_query_params query_params) {
+  optional_query_params query_params) const {
     request_builder rb;
     return apply_optionals(rb, headers, query_params)
       .path(fmt::format("{}/{}", resource_url(), identifier))
@@ -61,7 +61,7 @@ request_builder rest_entity::update(
 request_builder rest_entity::delete_(
   ss::sstring identifier,
   optional_headers headers,
-  optional_query_params query_params) {
+  optional_query_params query_params) const {
     request_builder rb;
     return apply_optionals(rb, headers, query_params)
       .path(fmt::format("{}/{}", resource_url(), identifier))
@@ -71,7 +71,7 @@ request_builder rest_entity::delete_(
 request_builder& rest_entity::apply_optionals(
   request_builder& rb,
   optional_headers headers,
-  optional_query_params query_params) {
+  optional_query_params query_params) const {
     if (headers.has_value()) {
         rb.headers(headers.value());
     }
