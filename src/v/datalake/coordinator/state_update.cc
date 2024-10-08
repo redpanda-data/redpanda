@@ -16,6 +16,15 @@
 
 namespace datalake::coordinator {
 
+std::ostream& operator<<(std::ostream& o, const update_key& u) {
+    switch (u) {
+    case update_key::add_files:
+        return o << "update_key::add_files";
+    case update_key::mark_files_committed:
+        return o << "update_key::mark_files_committed";
+    }
+}
+
 checked<add_files_update, stm_update_error> add_files_update::build(
   const topics_state& state,
   const model::topic_partition& tp,

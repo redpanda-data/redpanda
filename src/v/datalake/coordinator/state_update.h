@@ -24,6 +24,7 @@ enum class update_key : uint8_t {
     add_files = 0,
     mark_files_committed = 1,
 };
+std::ostream& operator<<(std::ostream&, const update_key&);
 
 enum class stm_update_error {
     failed,
