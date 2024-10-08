@@ -159,6 +159,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "manifest",
+    srcs = [
+        "manifest.cc",
+    ],
     hdrs = [
         "manifest.h",
     ],
