@@ -23,6 +23,7 @@
 #include "utils/uuid.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/net/socket_defs.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <boost/container_hash/hash.hpp>
@@ -506,7 +507,7 @@ static_assert(
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
-using client_address_t = named_type<ss::sstring, struct client_address_tag>;
+using client_address_t = ss::socket_address;
 
 enum class fips_mode_flag : uint8_t {
     // FIPS mode disabled
