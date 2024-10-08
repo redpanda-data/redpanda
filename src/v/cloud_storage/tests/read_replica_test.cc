@@ -97,7 +97,7 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
     cluster::topic_properties read_replica_props;
     read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
     read_replica_props.read_replica = true;
-    read_replica_props.read_replica_bucket = "test-bucket";
+    read_replica_props.bucket_override = "test-bucket";
     rr_rp
       ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
       .get();
@@ -145,7 +145,7 @@ FIXTURE_TEST(
     cluster::topic_properties read_replica_props;
     read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
     read_replica_props.read_replica = true;
-    read_replica_props.read_replica_bucket = "test-bucket";
+    read_replica_props.bucket_override = "test-bucket";
     rr_rp
       ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
       .get();
@@ -195,7 +195,7 @@ FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
     cluster::topic_properties read_replica_props;
     read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
     read_replica_props.read_replica = true;
-    read_replica_props.read_replica_bucket = "test-bucket";
+    read_replica_props.bucket_override = "test-bucket";
     rr_rp
       ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
       .get();
@@ -317,7 +317,7 @@ FIXTURE_TEST(
     cluster::topic_properties read_replica_props;
     read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
     read_replica_props.read_replica = true;
-    read_replica_props.read_replica_bucket = "test-bucket";
+    read_replica_props.bucket_override = "test-bucket";
     rr_rp
       ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
       .get();

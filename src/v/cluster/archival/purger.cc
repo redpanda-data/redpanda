@@ -388,19 +388,24 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
             continue;
         }
 
-        auto& bucket_config_property
-          = cloud_storage::configuration::get_bucket_config();
-        if (!bucket_config_property().has_value()) {
-            vlog(
-              archival_log.error,
-              "Lifecycle marker exists but cannot be purged because "
-              "{} is not set.",
-              bucket_config_property.name());
-            co_return result;
+        cloud_storage_clients::bucket_name bucket;
+        if (marker.config.properties.bucket_override.has_value()) {
+            bucket = cloud_storage_clients::bucket_name{
+              marker.config.properties.bucket_override.value()};
+        } else {
+            auto& bucket_config_property
+              = cloud_storage::configuration::get_bucket_config();
+            if (!bucket_config_property().has_value()) {
+                vlog(
+                  archival_log.error,
+                  "Lifecycle marker exists but cannot be purged because "
+                  "{} is not set.",
+                  bucket_config_property.name());
+                co_return result;
+            }
+            bucket = cloud_storage_clients::bucket_name{
+              bucket_config_property().value()};
         }
-
-        auto bucket = cloud_storage_clients::bucket_name{
-          bucket_config_property().value()};
 
         // TODO: share work at partition granularity, not topic.  Requires
         // a feedback mechanism for the work done on partitions to be made

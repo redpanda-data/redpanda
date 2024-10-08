@@ -48,7 +48,7 @@ partition::partition(
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
-  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
+  std::optional<cloud_storage_clients::bucket_name> bucket_override)
   : _raft(std::move(r))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _feature_table(feature_table)
@@ -68,17 +68,14 @@ partition::partition(
             const auto& bucket_config
               = cloud_storage::configuration::get_bucket_config();
             auto bucket = bucket_config.value();
-            if (
-              read_replica_bucket
-              && _raft->log_config().is_read_replica_mode_enabled()) {
+            if (bucket_override) {
                 vlog(
                   clusterlog.info,
                   "{} Remote topic bucket is {}",
                   _raft->ntp(),
-                  read_replica_bucket);
-                // Override the bucket for read replicas
-                _read_replica_bucket = read_replica_bucket;
-                bucket = read_replica_bucket;
+                  bucket_override);
+                _bucket_override = bucket_override;
+                bucket = bucket_override;
             }
             if (!bucket) {
                 throw std::runtime_error{fmt::format(
@@ -433,16 +430,13 @@ ss::future<> partition::start(
         const auto& bucket_config
           = cloud_storage::configuration::get_bucket_config();
         auto bucket = bucket_config.value();
-        if (
-          _read_replica_bucket
-          && _raft->log_config().is_read_replica_mode_enabled()) {
+        if (_bucket_override) {
             vlog(
               clusterlog.info,
               "{} Remote topic bucket is {}",
               _raft->ntp(),
-              _read_replica_bucket);
-            // Override the bucket for read replicas
-            bucket = _read_replica_bucket;
+              _bucket_override);
+            bucket = _bucket_override;
         }
         if (!bucket) {
             throw std::runtime_error{fmt::format(
@@ -1231,8 +1225,8 @@ ss::future<>
 partition::do_unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
     const auto initial_rev = _raft->log_config().get_initial_revision();
     const auto bucket = [this]() {
-        if (is_read_replica_mode_enabled()) {
-            return get_read_replica_bucket();
+        if (_bucket_override.has_value()) {
+            return _bucket_override.value();
         }
 
         const auto& bucket_config
@@ -1464,6 +1458,10 @@ ss::future<model::record_batch_reader> partition::make_reader(
 }
 
 model::term_id partition::term() const { return _raft->term(); }
+
+bool partition::has_bucket_override() const {
+    return _bucket_override.has_value();
+}
 
 bool partition::is_read_replica_mode_enabled() const {
     const auto& cfg = _raft->log_config();
