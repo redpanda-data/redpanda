@@ -51,6 +51,7 @@ def redpanda_cc_binary(
         local_defines = [],
         visibility = None,
         copts = [],
+        linkopts = [],
         deps = []):
     """
     Define a Redpanda C++ binary.
@@ -64,6 +65,7 @@ def redpanda_cc_binary(
         visibility = visibility,
         deps = deps,
         copts = redpanda_copts() + copts,
+        linkopts = linkopts,
         features = [
             "layering_check",
         ],

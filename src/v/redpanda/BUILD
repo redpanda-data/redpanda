@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:build.bzl", "redpanda_cc_binary", "redpanda_cc_library")
 
 redpanda_cc_library(
@@ -95,11 +96,34 @@ redpanda_cc_library(
     ],
 )
 
+# Enable or disable (thin) LTO for the redpanda binary (only)
+bool_flag(
+    name = "lto",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_lto",
+    flag_values = {
+        ":lto": "true",
+    },
+    visibility = ["//visibility:public"],
+)
+
 redpanda_cc_binary(
     name = "redpanda",
     srcs = [
         "main.cc",
     ],
+    linkopts =
+        select({
+            ":use_lto": [
+                "-flto=thin",
+                "-ffat-lto-objects",
+            ],
+            "//conditions:default": [
+            ],
+        }),
     visibility = ["//visibility:public"],
     deps = [
         ":application",
