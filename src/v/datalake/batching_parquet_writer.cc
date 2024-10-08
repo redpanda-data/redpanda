@@ -10,9 +10,11 @@
 
 #include "datalake/batching_parquet_writer.h"
 
+#include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "datalake/arrow_translator.h"
 #include "datalake/data_writer_interface.h"
+#include "datalake/logger.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/fstream.hh>
@@ -22,6 +24,7 @@
 #include <seastar/coroutine/as_future.hh>
 
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <sstream>
 #include <utility>
@@ -46,12 +49,24 @@ batching_parquet_writer::initialize(std::filesystem::path output_file_path) {
           ss::open_flags::create | ss::open_flags::truncate
             | ss::open_flags::wo);
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error opening output file {}: {}",
+          _output_file_path,
+          std::current_exception());
         co_return data_writer_error::file_io_error;
     }
     bool error = false;
     try {
         _output_stream = co_await ss::make_file_output_stream(_output_file);
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error making output stream for file {}: {}",
+          _output_file_path,
+          std::current_exception());
         error = true;
     }
     if (error) {
@@ -69,6 +84,11 @@ ss::future<data_writer_error> batching_parquet_writer::add_data_struct(
     try {
         _iceberg_to_arrow.add_data(std::move(data));
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error adding data value to Arrow table: {}",
+          std::current_exception());
         error = true;
     }
     if (error) {
@@ -99,6 +119,11 @@ batching_parquet_writer::finish() {
         out = _arrow_to_iobuf.close_and_take_iobuf();
         _result.file_size_bytes += out.size_bytes();
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error closing arrow_to_iobuf stream: {}",
+          std::current_exception());
         error = true;
     }
     if (error) {
@@ -110,6 +135,11 @@ batching_parquet_writer::finish() {
         co_await write_iobuf_to_output_stream(std::move(out), _output_stream);
         co_await _output_stream.close();
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error closing output stream: {}",
+          std::current_exception());
         error = true;
     }
     if (error) {
@@ -136,6 +166,11 @@ ss::future<data_writer_error> batching_parquet_writer::write_row_group() {
         out = _arrow_to_iobuf.take_iobuf();
         _result.file_size_bytes += out.size_bytes();
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error converting Arrow to Parquet iobuf: {}",
+          std::current_exception());
         error = true;
     }
     if (error) {
@@ -145,6 +180,11 @@ ss::future<data_writer_error> batching_parquet_writer::write_row_group() {
     try {
         co_await write_iobuf_to_output_stream(std::move(out), _output_stream);
     } catch (...) {
+        vlogl(
+          datalake_log,
+          ss::log_level::error,
+          "Error writing to output stream: {}",
+          std::current_exception());
         error = true;
     }
     if (error) {
