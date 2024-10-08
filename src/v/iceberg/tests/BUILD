@@ -508,3 +508,31 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "metadata_query_test",
+    timeout = "short",
+    srcs = [
+        "metadata_query_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:merge_append_action",
+        "//src/v/iceberg:metadata_query",
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:table_io",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
+        "//src/v/iceberg:transaction",
+        "//src/v/iceberg:values",
+        "//src/v/iceberg:values_bytes",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
