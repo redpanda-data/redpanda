@@ -10,7 +10,9 @@
 #include "datalake/record_multiplexer.h"
 
 #include "datalake/data_writer_interface.h"
+#include "datalake/logger.h"
 #include "datalake/schemaless_translator.h"
+#include "datalake/tests/test_data_writer.h"
 #include "iceberg/values.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
@@ -49,13 +51,17 @@ record_multiplexer::operator()(model::record_batch batch) {
         iceberg::struct_value data = translator.translate_event(
           std::move(key), std::move(val), timestamp, offset);
         // Send it to the writer
-        auto& writer = get_writer();
-        data_writer_error writer_status = co_await writer.add_data_struct(
-          std::move(data), estimated_size);
-        if (writer_status != data_writer_error::ok) {
+
+        try {
+            auto& writer = co_await get_writer();
+            _writer_status = co_await writer.add_data_struct(
+              std::move(data), estimated_size);
+        } catch (const std::runtime_error& err) {
+            datalake_log.error("Failed to add data to writer");
+        }
+        if (_writer_status != data_writer_error::ok) {
             // If a write fails, the writer is left in an indeterminate state,
             // we cannot continue in this case.
-            _writer_status = writer_status;
             co_return ss::stop_iteration::yes;
         }
     }
@@ -86,12 +92,18 @@ schemaless_translator& record_multiplexer::get_translator() {
     return _translator;
 }
 
-data_writer& record_multiplexer::get_writer() {
+ss::future<data_writer&> record_multiplexer::get_writer() {
     if (!_writer) {
         auto& translator = get_translator();
         auto schema = translator.get_schema();
-        _writer = _writer_factory->create_writer(std::move(schema));
+        _writer = co_await _writer_factory->create_writer(std::move(schema));
+        if (!_writer) {
+            // FIXME: modify create_writer to return a result and check that
+            // here. This method should also return a result. That is coming in
+            // one of the next commits. For now throw & catch.
+            throw std::runtime_error("Could not create data writer");
+        }
     }
-    return *_writer;
+    co_return *_writer;
 }
 } // namespace datalake
