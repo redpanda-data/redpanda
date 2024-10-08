@@ -210,7 +210,7 @@ batching_parquet_writer_factory::batching_parquet_writer_factory(
   , _row_count_threshold{row_count_threshold}
   , _byte_count_treshold{byte_count_threshold} {}
 
-ss::future<std::unique_ptr<data_writer>>
+ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
 batching_parquet_writer_factory::create_writer(iceberg::struct_type schema) {
     auto ret = std::make_unique<batching_parquet_writer>(
       std::move(schema), _row_count_threshold, _byte_count_treshold);
@@ -218,9 +218,7 @@ batching_parquet_writer_factory::create_writer(iceberg::struct_type schema) {
     std::filesystem::path file_path = _local_directory / filename;
     auto err = co_await ret->initialize(file_path);
     if (err != data_writer_error::ok) {
-        // FIXME: This method should return a result and let the multiplexer
-        // deal with it appropriately
-        co_return nullptr;
+        co_return err;
     }
     co_return ret;
 }

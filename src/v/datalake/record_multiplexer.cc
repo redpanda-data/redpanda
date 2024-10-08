@@ -96,13 +96,12 @@ ss::future<data_writer&> record_multiplexer::get_writer() {
     if (!_writer) {
         auto& translator = get_translator();
         auto schema = translator.get_schema();
-        _writer = co_await _writer_factory->create_writer(std::move(schema));
-        if (!_writer) {
-            // FIXME: modify create_writer to return a result and check that
-            // here. This method should also return a result. That is coming in
-            // one of the next commits. For now throw & catch.
+        auto writer_result = co_await _writer_factory->create_writer(std::move(schema));
+        if (!writer_result.has_value()) {
+            // FIXME: handle this error correctly
             throw std::runtime_error("Could not create data writer");
         }
+        _writer = std::move(writer_result.value());
     }
     co_return *_writer;
 }
