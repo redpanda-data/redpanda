@@ -52,14 +52,14 @@ record_multiplexer::operator()(model::record_batch batch) {
           std::move(key), std::move(val), timestamp, offset);
         // Send it to the writer
 
-        try {
-            auto& writer = co_await get_writer();
-            _writer_status = co_await writer.add_data_struct(
-              std::move(data), estimated_size);
-        } catch (const std::runtime_error& err) {
-            datalake_log.error("Failed to add data to writer");
-            _writer_status =data_writer_error::parquet_conversion_error;
+        auto writer_result = co_await get_writer();
+        if (!writer_result.has_value()) {
+            _writer_status = writer_result.error();
+            co_return ss::stop_iteration::yes;
         }
+        auto writer = std::move(writer_result.value());
+        _writer_status = co_await writer->add_data_struct(
+          std::move(data), estimated_size);
         if (_writer_status != data_writer_error::ok) {
             // If a write fails, the writer is left in an indeterminate state,
             // we cannot continue in this case.
@@ -93,17 +93,19 @@ schemaless_translator& record_multiplexer::get_translator() {
     return _translator;
 }
 
-ss::future<data_writer&> record_multiplexer::get_writer() {
+ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+record_multiplexer::get_writer() {
     if (!_writer) {
         auto& translator = get_translator();
         auto schema = translator.get_schema();
-        auto writer_result = co_await _writer_factory->create_writer(std::move(schema));
+        auto writer_result = co_await _writer_factory->create_writer(
+          std::move(schema));
         if (!writer_result.has_value()) {
-            // FIXME: handle this error correctly
-            throw std::runtime_error("Could not create data writer");
+            co_return writer_result.error();
         }
-        _writer = std::move(writer_result.value());
+        _writer = writer_result.value();
+        co_return _writer;
     }
-    co_return *_writer;
+    co_return _writer;
 }
 } // namespace datalake
