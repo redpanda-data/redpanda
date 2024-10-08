@@ -210,9 +210,9 @@ batching_parquet_writer_factory::batching_parquet_writer_factory(
   , _row_count_threshold{row_count_threshold}
   , _byte_count_treshold{byte_count_threshold} {}
 
-ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
+ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
 batching_parquet_writer_factory::create_writer(iceberg::struct_type schema) {
-    auto ret = std::make_unique<batching_parquet_writer>(
+    auto ret = ss::make_shared<batching_parquet_writer>(
       std::move(schema), _row_count_threshold, _byte_count_treshold);
     std::string filename = fmt::format("{}.parquet", uuid_t::create());
     std::filesystem::path file_path = _local_directory / filename;

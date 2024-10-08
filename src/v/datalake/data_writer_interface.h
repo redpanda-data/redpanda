@@ -77,7 +77,7 @@ class data_writer_factory {
 public:
     virtual ~data_writer_factory() = default;
 
-    virtual ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
+    virtual ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
       create_writer(iceberg::struct_type /* schema */) = 0;
 };
 
