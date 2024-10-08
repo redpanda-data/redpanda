@@ -57,6 +57,10 @@ configure_make(
     visibility = [
         "//visibility:public",
     ],
+    # bug
+    copts = [
+        "-fuse-ld=lld",
+    ],
     deps = [
         "@openssl",
     ],

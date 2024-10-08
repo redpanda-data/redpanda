@@ -93,4 +93,8 @@ redpanda_cc_binary(
         ":application",
         "//src/v/syschecks",
     ],
+    linkopts = [
+        "-flto=thin",
+        "-ffat-lto-objects",
+    ]
 )
