@@ -291,6 +291,7 @@ ss::future<> leader_balancer::start() {
     }
 
     _enabled.watch([this]() { on_enable_changed(); });
+    _default_preference.watch([this]() { on_default_preference_changed(); });
 
     co_return;
 }
@@ -325,6 +326,15 @@ void leader_balancer::on_enable_changed() {
     } else {
         vlog(clusterlog.info, "Leader balancer disabled");
         _timer.cancel();
+    }
+}
+
+void leader_balancer::on_default_preference_changed() {
+    if (leadership_pinning_enabled()) {
+        vlog(
+          clusterlog.trace,
+          "default leaders_preference modified, scheduling balance");
+        schedule_sooner(0s);
     }
 }
 

@@ -125,6 +125,7 @@ private:
     void schedule_sooner(clock_type::duration timeout);
 
     void on_enable_changed();
+    void on_default_preference_changed();
 
     void check_if_controller_leader(model::ntp, model::term_id, model::node_id);
 
