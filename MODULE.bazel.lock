@@ -172,7 +172,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "45KNLUphrxp8wvfiTQlp8CbqNl4+QlzCzIq2wb6lpYs=",
+        "bzlTransitiveDigest": "SCZjpI06Yn3xYuiBvLsYY4VLQ7Dx8ycF1wj5/tGuXZs=",
         "usagesDigest": "bsXDsdl5Gq0iZDf6R9bhf3oHUM35HAGF1usXoFeQrF0=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -303,9 +303,9 @@
             "ruleClassName": "http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:unordered_dense.BUILD",
-              "sha256": "98c9d02ff8761d50a2cb6ebd53f78f7d311f6980aef509efdcdaa5f3868ca06c",
-              "strip_prefix": "unordered_dense-9338f301522a965309ecec58ce61f54a52fb5c22",
-              "url": "https://github.com/redpanda-data/unordered_dense/archive/9338f301522a965309ecec58ce61f54a52fb5c22.tar.gz"
+              "sha256": "8393d08b2a41949c70345926515036df55643e80118b608bcec6f4202d4a3026",
+              "strip_prefix": "unordered_dense-f30ed41b58af8c79788e8581fe57a6faf856258e",
+              "url": "https://github.com/martinus/unordered_dense/archive/f30ed41b58af8c79788e8581fe57a6faf856258e.tar.gz"
             }
           },
           "seastar": {
