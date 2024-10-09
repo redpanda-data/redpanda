@@ -71,7 +71,7 @@ batching_parquet_writer::initialize(std::filesystem::path output_file_path) {
         co_return data_writer_error::file_io_error;
     }
 
-    _result.file_path = _output_file_path.string();
+    _result.remote_path = _output_file_path.string();
     co_return data_writer_error::ok;
 }
 
@@ -102,7 +102,7 @@ ss::future<data_writer_error> batching_parquet_writer::add_data_struct(
     co_return data_writer_error::ok;
 }
 
-ss::future<result<data_writer_result, data_writer_error>>
+ss::future<result<coordinator::data_file, data_writer_error>>
 batching_parquet_writer::finish() {
     auto write_result = co_await write_row_group();
     if (write_result != data_writer_error::ok) {
@@ -153,7 +153,7 @@ ss::future<data_writer_error> batching_parquet_writer::write_row_group() {
     iobuf out;
     try {
         auto chunk = _iceberg_to_arrow.take_chunk();
-        _result.record_count += _row_count;
+        _result.row_count += _row_count;
         _row_count = 0;
         _byte_count = 0;
         _arrow_to_iobuf.add_arrow_array(chunk);

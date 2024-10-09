@@ -44,8 +44,8 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
 
     auto result = writer.finish().get0();
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().file_path, file_path);
-    EXPECT_EQ(result.value().record_count, num_rows);
+    EXPECT_EQ(result.value().remote_path, file_path);
+    EXPECT_EQ(result.value().row_count, num_rows);
     auto true_file_size = std::filesystem::file_size(file_path);
     EXPECT_EQ(result.value().file_size_bytes, true_file_size);
 
