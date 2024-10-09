@@ -353,6 +353,14 @@ create_topic_properties_update(
                   config::leaders_preference::parse);
                 continue;
             }
+            if (cfg.name == topic_property_cloud_topic_enabled) {
+                if (config::shard_local_cfg()
+                      .development_enable_cloud_topics()) {
+                    throw validation_error(
+                      "Cloud topics property cannot be changed");
+                }
+                throw validation_error("Cloud topics is not enabled");
+            }
 
         } catch (const validation_error& e) {
             vlog(
