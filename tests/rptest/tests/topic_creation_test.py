@@ -380,6 +380,21 @@ class CreateTopicsTest(RedpandaTest):
             rpk.create_topic('topic-1',
                              config={'redpanda.remote.read': 'affirmative'})
 
+    @cluster(num_nodes=3)
+    def test_case_insensitive_boolean_property(self):
+        """
+        Validates that boolean properties are case insensitive.
+        """
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic('topic-1',
+                         config={
+                             'redpanda.remote.read': 'tRuE',
+                             'redpanda.remote.write': 'FALSE'
+                         })
+        cfg = rpk.describe_topic_configs('topic-1')
+        assert cfg['redpanda.remote.read'][0] == 'true'
+        assert cfg['redpanda.remote.write'][0] == 'false'
+
 
 class CreateTopicsResponseTest(RedpandaTest):
     SUCCESS_EC = 0

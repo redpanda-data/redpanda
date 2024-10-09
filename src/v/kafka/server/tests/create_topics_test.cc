@@ -428,3 +428,19 @@ FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
       resp.data.topics[0].error_message == "Configuration is invalid");
     BOOST_CHECK(resp.data.topics[0].name == "topic1");
 }
+
+FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
+    auto topic = make_topic(
+      "topic1",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "tRuE"}, {"redpanda.remote.read", "FALSE"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
+    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+}
