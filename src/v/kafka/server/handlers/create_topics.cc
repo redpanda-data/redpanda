@@ -75,10 +75,25 @@ bool is_supported(std::string_view name) {
        topic_property_iceberg_enabled,
        topic_property_leaders_preference});
 
-    return std::any_of(
-      supported_configs.begin(),
-      supported_configs.end(),
-      [name](std::string_view p) { return name == p; });
+    if (std::any_of(
+          supported_configs.begin(),
+          supported_configs.end(),
+          [name](std::string_view p) { return name == p; })) {
+        return true;
+    }
+
+    /*
+     * check development features below. if a development feature is not
+     * enabled, the system should behave as if the feature does not exist.
+     */
+
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        if (name == topic_property_cloud_topic_enabled) {
+            return true;
+        }
+    }
+
+    return false;
 }
 } // namespace
 
@@ -99,7 +114,8 @@ using validators = make_validator_types<
   replication_factor_must_be_greater_or_equal_to_minimum,
   vcluster_id_validator,
   write_caching_configs_validator,
-  iceberg_config_validator>;
+  iceberg_config_validator,
+  cloud_topic_config_validator>;
 
 static void
 append_topic_configs(request_context& ctx, create_topics_response& response) {

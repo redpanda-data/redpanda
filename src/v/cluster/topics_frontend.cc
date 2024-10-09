@@ -424,6 +424,19 @@ errc topics_frontend::validate_topic_configuration(
         return errc::topic_invalid_config;
     }
 
+    // the only way that cloud topics can be enabled on a topic is if the cloud
+    // topics development feature is also enabled.
+    if (!config::shard_local_cfg().development_enable_cloud_topics()) {
+        if (assignable_config.cfg.properties.cloud_topic_enabled) {
+            vlog(
+              clusterlog.error,
+              "Cloud topic flag on {} is set but development feature is "
+              "disabled",
+              assignable_config.cfg.tp_ns);
+            return errc::topic_invalid_config;
+        }
+    }
+
     return errc::success;
 }
 

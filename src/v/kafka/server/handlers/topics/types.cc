@@ -285,6 +285,12 @@ to_cluster_type(const creatable_topic& t) {
           p, kafka::config_resource_operation::set);
     }
 
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        cfg.properties.cloud_topic_enabled
+          = get_bool_value(config_entries, topic_property_cloud_topic_enabled)
+              .value_or(storage::ntp_config::default_cloud_topic_enabled);
+    }
+
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
