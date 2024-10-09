@@ -227,6 +227,7 @@ redpanda_cc_gtest(
     deps = [
         ":s3_imposter_gtest",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster:topic_configuration",
         "//src/v/config",

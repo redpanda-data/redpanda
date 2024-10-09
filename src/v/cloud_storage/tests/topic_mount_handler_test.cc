@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_label.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/topic_mount_handler.h"
 #include "cloud_storage/types.h"
@@ -83,6 +85,10 @@ struct TopicMountHandlerFixture : public s3_imposter_fixture {
 struct TopicMountHandlerSuite
   : public TopicMountHandlerFixture
   , public testing::TestWithParam<std::tuple<bool, bool>> {};
+
+struct TopicMountHandlerListSuite
+  : public TopicMountHandlerFixture
+  , public ::testing::Test {};
 
 TEST_P(TopicMountHandlerSuite, TestMountTopicManifestDoesNotExist) {
     set_expectations_and_listen({});
@@ -318,6 +324,69 @@ TEST_P(TopicMountHandlerSuite, TestUnmountTopicSuccess) {
           .object_exists(bucket_name, path, rtc, existence_check_type::manifest)
           .get();
     ASSERT_EQ(exists_result, download_result::success);
+}
+
+TEST_F(TopicMountHandlerListSuite, TestListUnmountedTopics) {
+    set_expectations_and_listen({});
+    retry_chain_node rtc(never_abort, 10s, 20ms);
+
+    auto handler = topic_mount_handler(bucket_name, remote.local());
+    auto result = handler.list_unmounted_topics(rtc).get();
+
+    // Create some dummy expectations to make sure we don't fail.
+    add_expectations({
+      expectation{.url = "foobar"},
+      expectation{.url = "migration/foo"},
+      expectation{.url = "migration/foo/bar"},
+      expectation{.url = "migration/foo/bar/baz"},
+    });
+
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(result.value().empty());
+
+    std::vector<cluster::topic_configuration> topics{
+      cluster::topic_configuration(
+        model::ns("kafka"), model::topic("tp1"), 1, 1),
+      cluster::topic_configuration(
+        model::ns("kafka"), model::topic("tp2"), 1, 1),
+    };
+
+    for (auto label : {model::default_cluster_uuid, test_uuid}) {
+        for (const auto& tp_ns : {test_tp_ns, test_tp_ns_override}) {
+            auto topic = cluster::topic_configuration(tp_ns.ns, tp_ns.tp, 1, 1);
+            if (label != model::default_cluster_uuid) {
+                topic.properties.remote_label = remote_label{label};
+            }
+            if (tp_ns != test_tp_ns) {
+                topic.properties.remote_topic_namespace_override = tp_ns;
+            }
+            topics.push_back(topic);
+        }
+    }
+
+    auto expectations = std::vector<topic_mount_manifest_path>{};
+    for (const auto& topic : topics) {
+        ASSERT_EQ(
+          handler.unmount_topic(topic, rev_id, rtc).get(),
+          topic_unmount_result::success);
+
+        expectations.emplace_back(
+          topic.properties.remote_label
+            .value_or(remote_label{model::default_cluster_uuid})
+            .cluster_uuid,
+          topic.remote_tp_ns(),
+          rev_id);
+    }
+
+    result = handler.list_unmounted_topics(rtc).get();
+    ASSERT_TRUE(result);
+    ASSERT_EQ(result.value().size(), topics.size());
+
+    for (const auto& topic : result.value()) {
+        auto it = std::find(expectations.begin(), expectations.end(), topic);
+        ASSERT_NE(it, expectations.end());
+        expectations.erase(it);
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

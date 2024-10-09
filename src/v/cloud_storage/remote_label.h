@@ -9,6 +9,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/uuid.h"
 

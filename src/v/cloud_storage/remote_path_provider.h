@@ -136,6 +136,13 @@ public:
         return _rev;
     }
 
+    friend bool operator==(
+      const topic_mount_manifest_path& lhs,
+      const topic_mount_manifest_path& rhs) {
+        return lhs._cluster_uuid == rhs._cluster_uuid
+               && lhs._tp_ns == rhs._tp_ns && lhs._rev == rhs._rev;
+    }
+
 private:
     model::cluster_uuid _cluster_uuid;
     model::topic_namespace _tp_ns;
