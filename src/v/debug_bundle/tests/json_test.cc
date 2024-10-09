@@ -59,7 +59,8 @@ using JsonTestTypes = ::testing::Types<
   debug_bundle_parameters,
   std::vector<int>,
   absl::btree_set<int>,
-  bool>;
+  bool,
+  label_selection>;
 TYPED_TEST_SUITE(JsonTypeTest, JsonTestTypes);
 
 TYPED_TEST(JsonTypeTest, BasicType) {
@@ -134,7 +135,11 @@ TYPED_TEST(JsonTypeTest, BasicType) {
    ],
   "tls_enabled": true,
   "tls_insecure_skip_verify": false,
-  "namespace": "k8s-namespace"
+  "namespace": "k8s-namespace",
+  "label_selector": [
+    {"key": "test/key1", "value": "value1"},
+    {"key": "key2", "value": "value2"}
+  ]
 })";
         const std::string_view test_time = "2024-09-05T14:34:02";
         std::istringstream ss(test_time.data());
@@ -158,7 +163,9 @@ TYPED_TEST(JsonTypeTest, BasicType) {
             .partition = std::vector<partition_selection>{{{model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}, model::partition_id{2}}}}, {{model::kafka_namespace, model::topic{"baz"}}, {{model::partition_id{1}, model::partition_id{2}, model::partition_id{3}}}}},
             .tls_enabled = true,
             .tls_insecure_skip_verify = false,
-            .k8s_namespace = "k8s-namespace"};
+            .k8s_namespace = "k8s-namespace",
+            .label_selector = std::vector<label_selection>{
+              {"test/key1", "value1"}, {"key2", "value2"}}};
     } else if constexpr (detail::
                            is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"([1,2,3])";
@@ -170,6 +177,9 @@ TYPED_TEST(JsonTypeTest, BasicType) {
     } else if constexpr (std::is_same_v<TypeParam, bool>) {
         this->json_input = R"(true)";
         this->expected = true;
+    } else if constexpr (std::is_same_v<TypeParam, label_selection>) {
+        this->json_input = R"({"key": "test/key1", "value": "value1"})";
+        this->expected = label_selection{.key = "test/key1", .value = "value1"};
     } else {
         static_assert(always_false_v<TypeParam>, "not implemented");
     }
@@ -253,6 +263,9 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
     } else if constexpr (std::is_same_v<TypeParam, bool>) {
         this->json_input = R"("blergh")";
         this->expected = true;
+    } else if constexpr (std::is_same_v<TypeParam, label_selection>) {
+        this->json_input = R"("key")";
+        this->expected = label_selection{.key = "test/key1", .value = "value1"};
     } else {
         static_assert(always_false_v<TypeParam>, "not implemented");
     }

@@ -297,6 +297,9 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
     bool tls_enabled = true;
     bool tls_insecure_skip_verify = false;
     ss::sstring k8s_namespace_name = "redpanda-namespace";
+    std::vector<debug_bundle::label_selection> label_select{
+      debug_bundle::label_selection{.key = "test/key1", .value = "value1"},
+      debug_bundle::label_selection{.key = "key2", .value = "value2"}};
 
     debug_bundle::debug_bundle_parameters params{
       .authn_options = debug_bundle::
@@ -310,7 +313,8 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       .partition = partition,
       .tls_enabled = tls_enabled,
       .tls_insecure_skip_verify = tls_insecure_skip_verify,
-      .k8s_namespace = k8s_namespace_name};
+      .k8s_namespace = k8s_namespace_name,
+      .label_selector = label_select};
 
     ss::sstring expected_params(fmt::format(
       "debug bundle --output {}/{}.zip --verbose -Xuser={} -Xpass={} "
@@ -318,7 +322,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       "--cpu-profiler-wait {}s --logs-since {} --logs-size-limit {}B "
       "--logs-until {} --metrics-interval {}s --partition {}/{}/1,2,3 "
       "{}/{}/4,5,6 -Xtls.enabled=true -Xtls.insecure_skip_verify=false "
-      "--namespace {}\n",
+      "--namespace {} --label-selector {}={},{}={}\n",
       (_data_dir / debug_bundle::service::debug_bundle_dir_name).native(),
       job_id,
       username,
@@ -334,7 +338,11 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       tn1.tp,
       tn2.ns,
       tn2.tp,
-      k8s_namespace_name));
+      k8s_namespace_name,
+      label_select[0].key,
+      label_select[0].value,
+      label_select[1].key,
+      label_select[1].value));
 
     auto res = co_await _service.local().initiate_rpk_debug_bundle_collection(
       job_id, std::move(params));

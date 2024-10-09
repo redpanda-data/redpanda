@@ -53,6 +53,11 @@ std::ostream& operator<<(std::ostream& o, const partition_selection& p) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const label_selection& l) {
+    fmt::print(o, "{}={}", l.key, l.value);
+    return o;
+}
+
 std::optional<partition_selection>
 partition_selection::from_string_view(std::string_view str) {
     try {

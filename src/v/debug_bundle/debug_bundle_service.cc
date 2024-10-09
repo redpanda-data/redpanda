@@ -62,6 +62,7 @@ constexpr std::string_view tls_enabled_variable = "-Xtls.enabled";
 constexpr std::string_view tls_insecure_skip_verify_variable
   = "-Xtls.insecure_skip_verify";
 constexpr std::string_view k8s_namespace_variable = "--namespace";
+constexpr std::string_view k8s_label_selector = "--label-selector";
 
 bool contains_sensitive_info(const ss::sstring& arg) {
     if (arg.find(password_variable) != ss::sstring::npos) {
@@ -657,6 +658,13 @@ result<std::vector<ss::sstring>> service::build_rpk_arguments(
     if (params.k8s_namespace.has_value()) {
         rv.emplace_back(k8s_namespace_variable);
         rv.emplace_back(*params.k8s_namespace);
+    }
+    if (
+      params.label_selector.has_value()
+      && !params.label_selector.value().empty()) {
+        rv.emplace_back(k8s_label_selector);
+        rv.emplace_back(
+          ssx::sformat("{}", fmt::join(params.label_selector.value(), ",")));
     }
 
     return rv;
