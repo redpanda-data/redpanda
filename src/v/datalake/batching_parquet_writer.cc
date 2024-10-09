@@ -106,7 +106,7 @@ ss::future<data_writer_error> batching_parquet_writer::add_data_struct(
     co_return data_writer_error::ok;
 }
 
-ss::future<result<data_writer_result, data_writer_error>>
+ss::future<result<data_file_result, data_writer_error>>
 batching_parquet_writer::finish() {
     auto write_result = co_await write_row_group();
     if (write_result != data_writer_error::ok) {

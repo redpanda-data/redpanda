@@ -50,7 +50,7 @@ public:
     ss::future<data_writer_error>
     add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
 
-    ss::future<result<data_writer_result, data_writer_error>> finish() override;
+    ss::future<result<data_file_result, data_writer_error>> finish() override;
 
     // Close the file handle, delete any temporary data and clean up any other
     // state.
@@ -73,7 +73,7 @@ private:
     std::filesystem::path _output_file_path;
     ss::file _output_file;
     ss::output_stream<char> _output_stream;
-    data_writer_result _result;
+    data_file_result _result;
 };
 
 class batching_parquet_writer_factory : public data_writer_factory {

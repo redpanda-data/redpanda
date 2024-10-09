@@ -31,7 +31,7 @@ struct translated_data_file_entry
     // translation
     model::term_id translator_term;
 
-    data_writer_result translation_result;
+    data_file_result translation_result;
 
     auto serde_fields() {
         return std::tie(

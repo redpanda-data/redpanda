@@ -69,14 +69,14 @@ record_multiplexer::operator()(model::record_batch batch) {
     co_return ss::stop_iteration::no;
 }
 
-ss::future<result<chunked_vector<data_writer_result>, data_writer_error>>
+ss::future<result<chunked_vector<data_file_result>, data_writer_error>>
 record_multiplexer::end_of_stream() {
     if (_writer_status != data_writer_error::ok) {
         co_return _writer_status;
     }
     // TODO: once we have multiple _writers this should be a loop
     if (_writer) {
-        chunked_vector<data_writer_result> ret;
+        chunked_vector<data_file_result> ret;
         auto res = co_await _writer->finish();
         if (res.has_value()) {
             ret.push_back(res.value());
@@ -85,7 +85,7 @@ record_multiplexer::end_of_stream() {
             co_return res.error();
         }
     } else {
-        co_return chunked_vector<data_writer_result>{};
+        co_return chunked_vector<data_file_result>{};
     }
 }
 

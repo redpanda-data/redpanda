@@ -25,9 +25,9 @@ enum class data_writer_error {
     file_io_error,
 };
 
-struct data_writer_result
+struct data_file_result
   : serde::envelope<
-      data_writer_result,
+      data_file_result,
       serde::version<0>,
       serde::compat_version<0>> {
     ss::sstring file_path = "";
@@ -69,7 +69,7 @@ public:
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<data_writer_result, data_writer_error>>
+    virtual ss::future<result<data_file_result, data_writer_error>>
     finish() = 0;
 };
 

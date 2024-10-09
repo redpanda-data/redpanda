@@ -42,7 +42,7 @@ public:
     explicit record_multiplexer(
       std::unique_ptr<data_writer_factory> writer_factory);
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-    ss::future<result<chunked_vector<data_writer_result>, data_writer_error>>
+    ss::future<result<chunked_vector<data_file_result>, data_writer_error>>
     end_of_stream();
 
 private:
