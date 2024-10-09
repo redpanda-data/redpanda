@@ -30,9 +30,11 @@ from rptest.clients.rpk import RpkTool
 from ducktape.mark import matrix, ok_to_fail
 from contextlib import nullcontext
 import requests
+import re
 
 MIGRATION_LOG_ALLOW_LIST = [
     'Error during log recovery: cloud_storage::missing_partition_exception',
+    re.compile("cloud_storage.*Failed to fetch manifest during finalize().*"),
 ] + Finjector.LOG_ALLOW_LIST
 
 
