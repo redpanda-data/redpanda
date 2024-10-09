@@ -2836,13 +2836,20 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
         co_return make_abort_tx_reply(cluster::tx::errc::stale);
     }
     auto it = _producers.find(pid.get_id());
-    if (it == _producers.end()) {
+    if (it == _producers.end() || it->second.transaction == nullptr) {
+        // It could be a replay request from the coordinator to roll back
+        // the transaction. It is possible that the state got cleaned up
+        // between the original and the current replay request. We assume
+        // aborted because this request confirms that the coordinator sees a
+        // tx abort in the log and the original request should have been a
+        // abort too.
         vlog(
-          _ctx_txlog.warn,
-          "do_abort_tx request: failed - producer {} not found, sequence: {}",
+          _ctx_txlog.info,
+          "do_abort_tx request:- producer/transaction {} not found, sequence: "
+          "{}, assuming already aborted.",
           pid,
           tx_seq);
-        co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
+        co_return make_abort_tx_reply(cluster::tx::errc::none);
     }
     auto& producer = it->second;
     if (pid.get_epoch() != producer.epoch) {
@@ -2945,12 +2952,20 @@ ss::future<cluster::commit_group_tx_reply> group::do_commit(
         co_return make_commit_tx_reply(cluster::tx::errc::stale);
     }
     auto it = _producers.find(pid.get_id());
-    if (it == _producers.end()) {
+    if (it == _producers.end() || it->second.transaction == nullptr) {
+        // It could be a replay request from the coordinator to roll forward
+        // the transaction. It is possible that the state got cleaned up
+        // between the original and the current replay request. We assume
+        // committed because this request confirms that the coordinator sees a
+        // tx commit in the log and the original request should have been a
+        // commit too.
         vlog(
-          _ctx_txlog.warn,
-          "do_commit_tx request: {} failed - producer not found",
-          pid);
-        co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
+          _ctx_txlog.info,
+          "do_commit_tx request:- producer/transaction {} not found, sequence: "
+          "{}, assuming already committed.",
+          pid,
+          sequence);
+        co_return make_commit_tx_reply(cluster::tx::errc::none);
     }
     auto& producer = it->second;
     if (pid.get_epoch() != producer.epoch) {
