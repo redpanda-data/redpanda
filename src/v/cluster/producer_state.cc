@@ -187,6 +187,17 @@ result<request_ptr> requests::try_emplace(
     // All invariants satisfied, enqueue the request.
     _inflight_requests.emplace_back(
       ss::make_lw_shared<request>(first, last, current, result_promise_t{}));
+    // if there are more than max cached requests inflight start dropping the
+    // oldest of them
+    while (_inflight_requests.size() > requests_cached_max
+           && _inflight_requests.front()->has_completed()) {
+        _inflight_requests.pop_front();
+        // clear finished requests as the producer will not be interested in
+        // them anymore
+        if (!_finished_requests.empty()) {
+            _finished_requests.clear();
+        }
+    }
 
     return _inflight_requests.back();
 }
