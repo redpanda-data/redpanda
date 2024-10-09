@@ -84,7 +84,11 @@ class DataMigrationsTestBase(RedpandaTest):
 
     log_segment_size = 10 * 1024
 
-    def __init__(self, test_context: TestContext, *args, **kwargs):
+    def __init__(self,
+                 test_context: TestContext,
+                 *args,
+                 transition_timeout: int = 90,
+                 **kwargs):
         kwargs['si_settings'] = SISettings(
             test_context=test_context,
             log_segment_size=self.log_segment_size,
@@ -93,6 +97,7 @@ class DataMigrationsTestBase(RedpandaTest):
             cloud_storage_enable_remote_write=True,
         )
         super().__init__(test_context=test_context, *args, **kwargs)
+        self.transition_timeout = transition_timeout
         self.flaky_admin = Admin(self.redpanda, retry_codes=[503, 504])
         self.admin = Admin(self.redpanda)
 
@@ -178,7 +183,7 @@ class DataMigrationsTestBase(RedpandaTest):
         self.logger.info(f'waiting for {" or ".join(states)}')
         wait_until(
             migration_in_one_of_states,
-            timeout_sec=90,
+            timeout_sec=self.transition_timeout,
             backoff_sec=1,
             err_msg=
             f"Failed waiting for migration {id} to reach one of {states} states"
@@ -212,7 +217,7 @@ class DataMigrationsTestBase(RedpandaTest):
 
         wait_until(
             lambda: migration_is_absent(migration_id),
-            timeout_sec=90,
+            timeout_sec=self.transition_timeout,
             backoff_sec=2,
             err_msg=f"Expected migration with id {migration_id} is absent")
 
