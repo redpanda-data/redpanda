@@ -95,6 +95,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/serde",
+        "//src/v/utils:named_type",
     ],
 )
 
