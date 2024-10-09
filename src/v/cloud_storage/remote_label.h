@@ -9,6 +9,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/uuid.h"
 
@@ -34,6 +35,26 @@ struct remote_label
         fmt::print(os, "{{cluster_uuid: {}}}", label.cluster_uuid);
         return os;
     }
+};
+
+struct labeled_namespaced_topic
+  : serde::envelope<
+      labeled_namespaced_topic,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    cloud_storage::remote_label label;
+    model::topic_namespace tp_ns;
+
+    auto serde_fields() { return std::tie(label, tp_ns); }
+
+    friend bool
+    operator==(const labeled_namespaced_topic&, const labeled_namespaced_topic&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const labeled_namespaced_topic&);
 };
 
 } // namespace cloud_storage
