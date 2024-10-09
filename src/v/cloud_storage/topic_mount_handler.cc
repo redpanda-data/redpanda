@@ -18,6 +18,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "utils/retry_chain_node.h"
 
 namespace cloud_storage {
 
@@ -176,6 +177,41 @@ ss::future<topic_unmount_result> topic_mount_handler::unmount_topic(
     }
 
     co_return topic_unmount_result::success;
+}
+
+ss::future<result<chunked_vector<topic_mount_manifest_path>>>
+topic_mount_handler::list_mountable_topics(retry_chain_node& parent) {
+    auto log = retry_chain_logger(cst_log, parent);
+
+    cloud_storage_clients::object_key prefix{
+      cloud_storage::topic_mount_manifest_path::prefix()};
+
+    vlog(log.debug, "listing mountable topics with prefix {}", prefix);
+
+    auto list_result = co_await _remote.list_objects(_bucket, parent, prefix);
+    if (!list_result) {
+        vlog(log.error, "failed to list objects: {}", list_result.error());
+        co_return list_result.error();
+    }
+
+    chunked_vector<topic_mount_manifest_path> ret;
+    for (const auto& item : list_result.assume_value().contents) {
+        vlog(log.trace, "parsing object {}", item.key);
+
+        auto path_parse_result
+          = cloud_storage::topic_mount_manifest_path::parse(
+            std::string(item.key));
+        if (!path_parse_result) {
+            vlog(log.error, "failed to parse object key {}", item.key);
+            continue;
+        }
+
+        ret.emplace_back(std::move(path_parse_result.value()));
+    }
+
+    vlog(log.trace, "found {} mountable topics", ret.size());
+
+    co_return ret;
 }
 
 ss::future<topic_mount_result> topic_mount_handler::prepare_mount_topic(

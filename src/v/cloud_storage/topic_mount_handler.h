@@ -10,10 +10,12 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "cloud_storage/fwd.h"
-#include "cloud_storage/remote_label.h"
+#include "cloud_storage/topic_mount_manifest_path.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/topic_configuration.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "utils/retry_chain_node.h"
 
@@ -68,6 +70,10 @@ public:
       const cluster::topic_configuration& topic_cfg,
       model::initial_revision_id rev,
       retry_chain_node& parent);
+
+    // List from cloud storage all topics that are not mounted.
+    ss::future<result<chunked_vector<topic_mount_manifest_path>>>
+    list_mountable_topics(retry_chain_node& parent);
 
 private:
     // Perform the mounting process by deleting the topic mount manifest.
