@@ -40,7 +40,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "flush_ms: {}, "
       "flush_bytes: {}, "
       "remote_label: {}, iceberg_enabled: {}, "
-      "leaders_preference: {}}}",
+      "leaders_preference: {}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -77,6 +77,13 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.iceberg_enabled,
       properties.leaders_preference);
 
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        fmt::print(
+          o, ", cloud_topic_enabled: {}", properties.cloud_topic_enabled);
+    }
+
+    o << "}";
+
     return o;
 }
 
@@ -90,7 +97,7 @@ bool topic_properties::is_compacted() const {
 }
 
 bool topic_properties::has_overrides() const {
-    return cleanup_policy_bitflags || compaction_strategy || segment_size
+    const auto overrides = cleanup_policy_bitflags || compaction_strategy || segment_size
            || retention_bytes.is_engaged() || retention_duration.is_engaged()
            || recovery.has_value() || shadow_indexing.has_value()
            || read_replica.has_value()
@@ -114,6 +121,12 @@ bool topic_properties::has_overrides() const {
            || flush_bytes.has_value() || remote_label.has_value()
            || (iceberg_enabled != storage::ntp_config::default_iceberg_enabled)
            || leaders_preference.has_value();
+
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        return overrides || (cloud_topic_enabled != storage::ntp_config::default_cloud_topic_enabled);
+    }
+
+    return overrides;
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -147,6 +160,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.flush_ms = flush_ms;
     ret.flush_bytes = flush_bytes;
     ret.iceberg_enabled = iceberg_enabled;
+    ret.cloud_topic_enabled = cloud_topic_enabled;
     return ret;
 }
 
@@ -236,7 +250,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       std::nullopt,
       false,
-      std::nullopt};
+      std::nullopt,
+      false};
 }
 
 } // namespace reflection
