@@ -33,6 +33,7 @@
 
 #include <array>
 #include <chrono>
+#include <iterator>
 #include <optional>
 #include <string_view>
 
@@ -365,7 +366,8 @@ ss::future<response_ptr> create_topics_handler::handle(
       });
     valid_range_end = quota_exceeded_it;
 
-    auto to_create = to_cluster_type(begin, valid_range_end);
+    auto to_create = to_cluster_type(
+      begin, valid_range_end, std::back_inserter(response.data.topics));
 
     // Create the topics with controller on core 0
     auto c_res = co_await ctx.topics_frontend().create_topics(
