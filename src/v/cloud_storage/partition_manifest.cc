@@ -173,10 +173,6 @@ ss::sstring partition_manifest::display_name() const {
 
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
-model::offset partition_manifest::get_last_offset() const {
-    return _last_offset;
-}
-
 std::optional<kafka::offset> partition_manifest::get_last_kafka_offset() const {
     const auto next_kafka_offset = get_next_kafka_offset();
     if (!next_kafka_offset || *next_kafka_offset == kafka::offset{0}) {
@@ -200,17 +196,6 @@ model::offset partition_manifest::get_insync_offset() const {
 
 void partition_manifest::advance_insync_offset(model::offset o) {
     _insync_offset = std::max(o, _insync_offset);
-}
-
-std::optional<model::offset> partition_manifest::get_start_offset() const {
-    if (_start_offset == model::offset{}) {
-        return std::nullopt;
-    }
-    return _start_offset;
-}
-
-kafka::offset partition_manifest::get_start_kafka_offset_override() const {
-    return _start_kafka_offset_override;
 }
 
 const partition_manifest::spillover_manifest_map&
@@ -399,8 +384,6 @@ std::optional<segment_meta> partition_manifest::last_segment() const {
 }
 
 bool partition_manifest::empty() const { return _segments.size() == 0; }
-
-size_t partition_manifest::size() const { return _segments.size(); }
 
 size_t partition_manifest::segments_metadata_bytes() const {
     return _segments.inflated_actual_size().second;

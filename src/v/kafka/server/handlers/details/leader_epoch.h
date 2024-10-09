@@ -17,8 +17,8 @@
 
 namespace kafka::details {
 
-inline kafka::error_code check_leader_epoch(
-  kafka::leader_epoch request_epoch, const kafka::partition_proxy& p) {
+inline kafka::error_code
+check_leader_epoch(kafka::leader_epoch request_epoch, const auto& p) {
     /**
      * no leader epoch provided, skip validation
      */

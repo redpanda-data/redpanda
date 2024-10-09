@@ -990,17 +990,6 @@ ss::future<> remote_partition::run_eviction_loop() {
     }
 }
 
-kafka::offset remote_partition::first_uploaded_offset() {
-    vassert(
-      _manifest_view->stm_manifest().size() > 0,
-      "The manifest for {} is not expected to be empty",
-      _ntp);
-    auto so
-      = _manifest_view->stm_manifest().full_log_start_kafka_offset().value();
-    vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
-    return so;
-}
-
 kafka::offset remote_partition::next_kafka_offset() {
     vassert(
       _manifest_view->stm_manifest().size() > 0,
@@ -1012,19 +1001,6 @@ kafka::offset remote_partition::next_kafka_offset() {
 }
 
 const model::ntp& remote_partition::get_ntp() const { return _ntp; }
-
-bool remote_partition::is_data_available() const {
-    const auto& stmm = _manifest_view->stm_manifest();
-    const auto start_offset = stmm.get_start_offset();
-
-    // If the start offset for the STM region is not set, then the cloud log is
-    // empty. There's one special case, where the start offset is set, and yet
-    // the cloud log should be considered emtpy: retention in the STM region
-    // advanced the start offset, but the garbage collection, and subsequent
-    // truncation, did not happen yet.
-    return start_offset.has_value()
-           && start_offset.value() <= stmm.get_last_offset();
-}
 
 uint64_t remote_partition::cloud_log_size() const {
     return _manifest_view->stm_manifest().cloud_log_size();

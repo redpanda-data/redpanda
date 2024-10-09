@@ -212,7 +212,9 @@ public:
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
     /// node has lost leadership. But it will contain segments successfully
     /// added with `add_segments`.
-    const cloud_storage::partition_manifest& manifest() const;
+    const cloud_storage::partition_manifest& manifest() const {
+        return *_manifest;
+    }
 
     ss::future<> stop() override;
 
