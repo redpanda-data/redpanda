@@ -25,6 +25,8 @@
 
 #include <seastar/core/abort_source.hh>
 
+#include <gtest/gtest.h>
+
 #include <chrono>
 
 using namespace cloud_storage;
@@ -54,9 +56,7 @@ get_topic_configuration(cluster::topic_properties topic_props) {
 
 } // namespace
 
-struct TopicMountHandlerFixture
-  : public s3_imposter_fixture
-  , public testing::TestWithParam<std::tuple<bool, bool>> {
+struct TopicMountHandlerFixture : public s3_imposter_fixture {
     TopicMountHandlerFixture() {
         pool.start(10, ss::sharded_parameter([this] { return conf; })).get();
         io.start(
@@ -81,7 +81,11 @@ struct TopicMountHandlerFixture
     ss::sharded<remote> remote;
 };
 
-TEST_P(TopicMountHandlerFixture, TestMountTopicManifestDoesNotExist) {
+struct TopicMountHandlerSuite
+  : public TopicMountHandlerFixture
+  , public testing::TestWithParam<std::tuple<bool, bool>> {};
+
+TEST_P(TopicMountHandlerSuite, TestMountTopicManifestDoesNotExist) {
     set_expectations_and_listen({});
 
     auto topic_props = cluster::topic_properties{};
@@ -107,7 +111,7 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestDoesNotExist) {
       confirm_result, topic_mount_result::mount_manifest_does_not_exist);
 }
 
-TEST_P(TopicMountHandlerFixture, TestMountTopicManifestNotDeleted) {
+TEST_P(TopicMountHandlerSuite, TestMountTopicManifestNotDeleted) {
     set_expectations_and_listen({});
     retry_chain_node rtc(never_abort, 10s, 20ms);
 
@@ -171,7 +175,7 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestNotDeleted) {
     ASSERT_EQ(exists_result, download_result::success);
 }
 
-TEST_P(TopicMountHandlerFixture, TestMountTopicSuccess) {
+TEST_P(TopicMountHandlerSuite, TestMountTopicSuccess) {
     set_expectations_and_listen({});
     retry_chain_node rtc(never_abort, 10s, 20ms);
 
@@ -219,7 +223,7 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicSuccess) {
     ASSERT_EQ(exists_result, download_result::notfound);
 }
 
-TEST_P(TopicMountHandlerFixture, TestUnmountTopicManifestNotCreated) {
+TEST_P(TopicMountHandlerSuite, TestUnmountTopicManifestNotCreated) {
     set_expectations_and_listen({});
     retry_chain_node rtc(never_abort, 10s, 20ms);
 
@@ -271,7 +275,7 @@ TEST_P(TopicMountHandlerFixture, TestUnmountTopicManifestNotCreated) {
     ASSERT_EQ(exists_result, download_result::notfound);
 }
 
-TEST_P(TopicMountHandlerFixture, TestUnmountTopicSuccess) {
+TEST_P(TopicMountHandlerSuite, TestUnmountTopicSuccess) {
     set_expectations_and_listen({});
     retry_chain_node rtc(never_abort, 10s, 20ms);
 
@@ -309,5 +313,5 @@ TEST_P(TopicMountHandlerFixture, TestUnmountTopicSuccess) {
 
 INSTANTIATE_TEST_SUITE_P(
   TopicMountHandlerOverride,
-  TopicMountHandlerFixture,
+  TopicMountHandlerSuite,
   testing::Combine(testing::Bool(), testing::Bool()));
