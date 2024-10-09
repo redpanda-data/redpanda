@@ -37,6 +37,14 @@ public:
     topic_mount_handler(
       const cloud_storage_clients::bucket_name& bucket, remote& remote);
 
+    topic_mount_handler(const topic_mount_handler&) = delete;
+    topic_mount_handler& operator=(const topic_mount_handler&) = delete;
+
+    topic_mount_handler(topic_mount_handler&&) = default;
+    topic_mount_handler& operator=(topic_mount_handler&&) = delete;
+
+    ~topic_mount_handler() = default;
+
     // Perform the first step of mounting process by checking the topic mount
     // manifest exists.
     ss::future<topic_mount_result> prepare_mount_topic(
