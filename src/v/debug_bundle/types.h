@@ -87,6 +87,16 @@ struct partition_selection {
 
 std::ostream& operator<<(std::ostream& o, const partition_selection& p);
 
+struct label_selection {
+    ss::sstring key;
+    ss::sstring value;
+
+    friend bool operator==(const label_selection&, const label_selection&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const label_selection& l);
+};
+
 /// Parameters used to spawn rpk debug bundle
 struct debug_bundle_parameters {
     std::optional<debug_bundle_authn_options> authn_options;
@@ -100,6 +110,7 @@ struct debug_bundle_parameters {
     std::optional<bool> tls_enabled;
     std::optional<bool> tls_insecure_skip_verify;
     std::optional<ss::sstring> k8s_namespace;
+    std::optional<std::vector<label_selection>> label_selector;
 
     friend bool
     operator==(const debug_bundle_parameters&, const debug_bundle_parameters&)

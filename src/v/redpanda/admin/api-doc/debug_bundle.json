@@ -81,6 +81,27 @@
                 },
                 "namespace": {
                   "type": "string"
+                },
+                "label_selector": {
+                  "description": "Label selection to filter k8s resources in the debug bundle response",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "value"
+                    ],
+                    "properties": {
+                      "key": {
+                        "description": "The resource label key",
+                        "type": "string"
+                      },
+                      "value": {
+                        "description": "The resource label value",
+                        "type": "string"
+                      }
+                    }
+                  }
                 }
               }
             }

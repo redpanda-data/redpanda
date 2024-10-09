@@ -408,6 +408,11 @@ class DebugBundleEncoder(json.JSONEncoder):
         return super().encode(self.default(o))
 
 
+class DebugBundleLabelSelection(NamedTuple):
+    key: str
+    value: str
+
+
 class DebugBundleStartConfigParams(NamedTuple):
     authentication: Optional[SaslCredentials] = None
     controller_logs_size_limit_bytes: Optional[int] = None
@@ -420,6 +425,7 @@ class DebugBundleStartConfigParams(NamedTuple):
     tls_enabled: Optional[bool] = None
     tls_insecure_skip_verify: Optional[bool] = None
     namespace: Optional[str] = None
+    label_selector: Optional[list[DebugBundleLabelSelection]] = None
 
 
 class DebugBundleStartConfig(NamedTuple):

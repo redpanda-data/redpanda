@@ -216,6 +216,25 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             return v.GetBool();
         }
         return parse_error(": expected bool");
+    } else if constexpr (std::is_same_v<T, label_selection>) {
+        if (v.IsObject()) {
+            auto o = v.GetObject();
+            label_selection ls;
+            if (auto r = from_json<decltype(ls.key)>(o, "key", true);
+                r.has_value()) {
+                ls.key = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(ls.value)>(o, "value", true);
+                r.has_value()) {
+                ls.value = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            return std::move(ls);
+        }
+        return parse_error(": expected object");
     } else if constexpr (std::is_same_v<T, debug_bundle_parameters>) {
         debug_bundle_parameters params;
         if (v.IsObject()) {
@@ -295,6 +314,13 @@ debug_bundle::result<T> from_json(const json::Value& v) {
                   obj, "namespace", false);
                 r.has_value()) {
                 params.k8s_namespace = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.label_selector)>(
+                  obj, "label_selector", false);
+                r.has_value()) {
+                params.label_selector = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
