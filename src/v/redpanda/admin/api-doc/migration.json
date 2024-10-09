@@ -90,6 +90,20 @@
         ]
     }
 },
+"/v1/topics/unmounted": {
+    "get": {
+        "operationId": "list_unmounted_topics",
+        "summary": "List all unmounted topics",
+        "responses": {
+            "200": {
+                "description": "List of unmounted topics",
+                "schema": {
+                    "$ref": "unmounted_topics_response"
+                }
+            }
+        }
+    }
+},
 "/v1/topics/mount": {
     "post": {
         "operationId": "mount_topics",

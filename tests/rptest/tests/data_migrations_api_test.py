@@ -799,3 +799,51 @@ class DataMigrationsApiTest(RedpandaTest):
                                            read_blocked=False,
                                            produce_blocked=False)
                 remounted = True
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_list_unmounted_topics(self):
+        topics = [TopicSpec(partition_count=3) for i in range(5)]
+
+        for t in topics:
+            self.client().create_topic(t)
+
+        admin = Admin(self.redpanda)
+        unmounted_response = admin.list_unmounted_topics().json()
+        assert len(unmounted_response["topics"]
+                   ) == 0, "There should be no unmounted topics"
+
+        outbound_topics = [make_namespaced_topic(t.name) for t in topics]
+        reply = self.admin.unmount_topics(outbound_topics).json()
+        self.logger.info(f"create migration reply: {reply}")
+
+        self.logger.info('waiting for partitions be deleted')
+        self.wait_partitions_disappear(topics)
+
+        unmounted_response = admin.list_unmounted_topics().json()
+        assert len(unmounted_response["topics"]) == len(
+            topics), "There should be unmounted topics"
+
+        # Mount 3 topics based on the unmounted topics response. This ensures
+        # that the response is correct/usable.
+        inbound_topics = [
+            InboundTopic(NamespacedTopic(topic=t["topic"], namespace=t["ns"]),
+                         alias=None) for t in unmounted_response["topics"][:3]
+        ]
+        mount_resp = self.admin.mount_topics(inbound_topics).json()
+
+        # Build expectations based on original topic specs that match the
+        # unmounted topics response.
+        expected_topic_specs = []
+        for t in unmounted_response["topics"][:3]:
+            expected_topic_specs.append(
+                TopicSpec(name=t["topic"], partition_count=3))
+
+        self.wait_partitions_appear(expected_topic_specs)
+
+        # Wait for the migration to complete. This guarantees that the mount manifests
+        # are deleted.
+        self.wait_migration_disappear(mount_resp["id"])
+
+        unmounted_response = admin.list_unmounted_topics().json()
+        assert len(unmounted_response["topics"]
+                   ) == 2, "There should be 2 unmounted topics"
