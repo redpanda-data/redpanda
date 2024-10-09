@@ -872,8 +872,10 @@ private:
       model::producer_identity pid,
       model::tx_seq tx_seq);
 
-    ss::future<cluster::commit_group_tx_reply>
-    do_commit(kafka::group_id group_id, model::producer_identity pid);
+    ss::future<cluster::commit_group_tx_reply> do_commit(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq sequence);
 
     void start_abort_timer() {
         _auto_abort_timer.set_callback([this] { abort_old_txes(); });
