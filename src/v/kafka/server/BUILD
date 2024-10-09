@@ -5,6 +5,7 @@ redpanda_cc_library(
     srcs = [
         "client_quota_translator.cc",
         "connection_context.cc",
+        "fetch_pid_controller.cc",
         "fetch_session_cache.cc",
         "group.cc",
         "group_manager.cc",
@@ -60,6 +61,7 @@ redpanda_cc_library(
         "coordinator_ntp_mapper.h",
         "errors.h",
         "fetch_metadata_cache.h",
+        "fetch_pid_controller.h",
         "fetch_session.h",
         "fetch_session_cache.h",
         "fwd.h",

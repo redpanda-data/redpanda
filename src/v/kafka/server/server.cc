@@ -154,6 +154,7 @@ server::server(
   , _usage_manager(usage_manager)
   , _shard_table(tbl)
   , _partition_manager(pm)
+  , _fetch_pid_controller(fetch_sg)
   , _fetch_session_cache(
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
   , _id_allocator_frontend(id_allocator_frontend)

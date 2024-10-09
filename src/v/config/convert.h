@@ -518,6 +518,7 @@ struct convert<model::fetch_read_strategy> {
       model::fetch_read_strategy_to_string(type::polling),
       model::fetch_read_strategy_to_string(type::non_polling),
       model::fetch_read_strategy_to_string(type::non_polling_with_debounce),
+      model::fetch_read_strategy_to_string(type::non_polling_with_pid),
     });
 
     static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
@@ -541,7 +542,11 @@ struct convert<model::fetch_read_strategy> {
                 .match(
                   model::fetch_read_strategy_to_string(
                     type::non_polling_with_debounce),
-                  type::non_polling_with_debounce);
+                  type::non_polling_with_debounce)
+                .match(
+                  model::fetch_read_strategy_to_string(
+                    type::non_polling_with_pid),
+                  type::non_polling_with_pid);
 
         return true;
     }

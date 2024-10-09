@@ -701,7 +701,44 @@ configuration::configuration()
         model::fetch_read_strategy::polling,
         model::fetch_read_strategy::non_polling,
         model::fetch_read_strategy::non_polling_with_debounce,
+        model::fetch_read_strategy::non_polling_with_pid,
       })
+  , fetch_pid_p_coeff(
+      *this,
+      "fetch_pid_p_coeff",
+      "Proportional coefficient for fetch PID controller.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100.0,
+      {.min = 0.0, .max = std::numeric_limits<double>::max()})
+  , fetch_pid_i_coeff(
+      *this,
+      "fetch_pid_i_coeff",
+      "Integral coefficient for fetch PID controller.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.01,
+      {.min = 0.0, .max = std::numeric_limits<double>::max()})
+  , fetch_pid_d_coeff(
+      *this,
+      "fetch_pid_d_coeff",
+      "Derivative coefficient for fetch PID controller.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.0,
+      {.min = 0.0, .max = std::numeric_limits<double>::max()})
+  , fetch_pid_target_utilization_fraction(
+      *this,
+      "fetch_pid_target_utilization_fraction",
+      "A fraction, between 0 and 1, for the target reactor utilization of the "
+      "fetch scheduling group.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.2,
+      {.min = 0.01, .max = 1.0})
+  , fetch_pid_max_debounce_ms(
+      *this,
+      "fetch_pid_max_debounce_ms",
+      "The maximum debounce time the fetch PID controller will apply, in "
+      "milliseconds.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100ms)
   , alter_topic_cfg_timeout_ms(
       *this,
       "alter_topic_cfg_timeout_ms",
