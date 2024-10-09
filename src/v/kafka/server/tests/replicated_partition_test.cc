@@ -36,7 +36,7 @@ FIXTURE_TEST(test_replicated_partition_end_offset, redpanda_thread_fixture) {
         return app.partition_manager.invoke_on(
           *shard, [&ntp](cluster::partition_manager& pm) {
               auto p = pm.get(ntp);
-              return p->get_leader_id().has_value();
+              return p->is_leader();
           });
     }).get();
 
