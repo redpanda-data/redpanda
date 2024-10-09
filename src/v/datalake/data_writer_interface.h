@@ -24,8 +24,8 @@ enum class data_writer_error {
     ok = 0,
     parquet_conversion_error,
     file_io_error,
+    no_data,
 };
-
 
 struct data_writer_error_category : std::error_category {
     const char* name() const noexcept override { return "Data Writer Error"; }
@@ -38,6 +38,8 @@ struct data_writer_error_category : std::error_category {
             return "Parquet Conversion Error";
         case data_writer_error::file_io_error:
             return "File IO Error";
+        case data_writer_error::no_data:
+            return "No data";
         }
     }
 
