@@ -34,12 +34,11 @@ redpanda_cc_library(
     include_prefix = "datalake/coordinator",
     visibility = [":__subpackages__"],
     deps = [
-        "//src/v/serde",
-        "//src/v/serde:enum",
+        ":translated_offset_range",
         "//src/v/datalake:types",
         "//src/v/model",
-        # todo: split writer further once it evolves
-        "//src/v/datalake:writer",
+        "//src/v/serde",
+        "//src/v/serde:enum",
     ],
 )
 
