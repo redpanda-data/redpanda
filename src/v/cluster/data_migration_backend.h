@@ -42,6 +42,8 @@ public:
       shard_table& shard_table,
       std::optional<std::reference_wrapper<cloud_storage::remote>>
         _cloud_storage_api,
+      std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
+        _topic_mount_handler,
       ss::abort_source& as);
 
     ss::future<> start();
@@ -321,9 +323,9 @@ private:
     shard_table& _shard_table;
     std::optional<std::reference_wrapper<cloud_storage::remote>>
       _cloud_storage_api;
+    std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
+      _topic_mount_handler;
     ss::abort_source& _as;
-
-    std::unique_ptr<cloud_storage::topic_mount_handler> _topic_mount_handler;
 
     ss::gate _gate;
     ssx::semaphore _sem{0, "c/data-migration-be"};
