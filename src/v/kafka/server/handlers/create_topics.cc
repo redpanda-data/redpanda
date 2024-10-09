@@ -161,6 +161,27 @@ static void log_topic_status(const std::vector<cluster::topic_result>& c_res) {
     }
 }
 
+// To ensure that responses to `CreateTopics` requests are returned in the same
+// order as the topics were passed. This would be out of order in the case that
+// some topics were not successfully created (error response returned) while
+// others were.
+static void sort_topic_response(
+  const create_topics_request& req, create_topics_response& resp) {
+    absl::flat_hash_map<model::topic, size_t> topic_name_order_map;
+    for (size_t i = 0; i < req.data.topics.size(); ++i) {
+        topic_name_order_map[req.data.topics[i].name] = i;
+    }
+
+    std::sort(
+      resp.data.topics.begin(),
+      resp.data.topics.end(),
+      [&topic_name_order_map](
+        const creatable_topic_result& a, const creatable_topic_result& b) {
+          return topic_name_order_map.at(a.name)
+                 < topic_name_order_map.at(b.name);
+      });
+}
+
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
@@ -362,6 +383,7 @@ ss::future<response_ptr> create_topics_handler::handle(
     }
 
     log_topic_status(c_res);
+    sort_topic_response(request, response);
     co_return co_await ctx.respond(std::move(response));
 }
 
