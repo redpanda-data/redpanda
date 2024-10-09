@@ -13,13 +13,27 @@
 #include "container/fragmented_vector.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/schemaless_translator.h"
+#include "model/fundamental.h"
 #include "model/record.h"
+#include "serde/envelope.h"
 
 #include <seastar/core/future.hh>
 
 #include <memory>
 
 namespace datalake {
+
+struct translated_offset_range
+  : serde::envelope<
+      translated_offset_range,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    kafka::offset start_offset;
+    kafka::offset last_offset;
+    chunked_vector<data_file_result> files;
+
+    auto serde_fields() { return std::tie(start_offset, last_offset, files); }
+};
 
 /*
 Consumes logs and sends records to the appropriate translator
@@ -42,7 +56,8 @@ public:
     explicit record_multiplexer(
       std::unique_ptr<data_writer_factory> writer_factory);
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-    ss::future<result<chunked_vector<data_file_result>, data_writer_error>>
+    // ss::future<result<chunked_vector<data_file_result>, data_writer_error>>
+    ss::future<result<translated_offset_range, data_writer_error>>
     end_of_stream();
 
 private:
@@ -58,6 +73,8 @@ private:
     ss::shared_ptr<data_writer> _writer;
 
     data_writer_error _writer_status = data_writer_error::ok;
+
+    std::optional<translated_offset_range> _result;
 };
 
 } // namespace datalake

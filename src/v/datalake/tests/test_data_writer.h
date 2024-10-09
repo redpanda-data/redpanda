@@ -36,8 +36,7 @@ public:
         return ss::make_ready_future<data_writer_error>(status);
     }
 
-    ss::future<result<data_file_result, data_writer_error>>
-    finish() override {
+    ss::future<result<data_file_result, data_writer_error>> finish() override {
         return ss::make_ready_future<
           result<data_file_result, data_writer_error>>(_result);
     }

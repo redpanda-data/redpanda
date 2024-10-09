@@ -10,6 +10,7 @@
 #include "datalake/batching_parquet_writer.h"
 #include "datalake/record_multiplexer.h"
 #include "datalake/tests/test_data_writer.h"
+#include "model/fundamental.h"
 #include "model/tests/random_batch.h"
 #include "test_utils/tmp_dir.h"
 
@@ -23,6 +24,7 @@
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     int record_count = 10;
     int batch_count = 10;
+    int start_offset = 1005;
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       false);
     datalake::record_multiplexer multiplexer(std::move(writer_factory));
@@ -30,6 +32,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
     batch_spec.count = batch_count;
+    batch_spec.offset = model::offset{start_offset};
     ss::circular_buffer<model::record_batch> batches
       = model::test::make_random_batches(batch_spec).get();
 
@@ -43,8 +46,13 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       = reader.consume(std::move(multiplexer), model::no_timeout).get();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].record_count, record_count * batch_count);
+    ASSERT_EQ(result.value().files.size(), 1);
+    EXPECT_EQ(result.value().files[0].record_count, record_count * batch_count);
+    EXPECT_EQ(result.value().start_offset(), start_offset);
+    // Subtract one since offsets end at 0, and this is an inclusive range.
+    EXPECT_EQ(
+      result.value().last_offset(),
+      start_offset + record_count * batch_count - 1);
 }
 TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     int record_count = 10;
@@ -79,6 +87,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
 
     int record_count = 50;
     int batch_count = 20;
+    int start_offset = 1005;
 
     auto writer_factory
       = std::make_unique<datalake::batching_parquet_writer_factory>(
@@ -88,6 +97,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
     batch_spec.count = batch_count;
+    batch_spec.offset = model::offset{start_offset};
     ss::circular_buffer<model::record_batch> batches
       = model::test::make_random_batches(batch_spec).get0();
 
@@ -101,8 +111,13 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       = reader.consume(std::move(multiplexer), model::no_timeout).get0();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].record_count, record_count * batch_count);
+    ASSERT_EQ(result.value().files.size(), 1);
+    EXPECT_EQ(result.value().files[0].record_count, record_count * batch_count);
+    EXPECT_EQ(result.value().start_offset(), start_offset);
+    // Subtract one since offsets end at 0, and this is an inclusive range.
+    EXPECT_EQ(
+      result.value().last_offset(),
+      start_offset + record_count * batch_count - 1);
 
     // Open the resulting file and check that it has data in it with the
     // appropriate counts.

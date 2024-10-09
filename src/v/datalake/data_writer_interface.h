@@ -23,18 +23,30 @@ enum class data_writer_error {
     ok = 0,
     parquet_conversion_error,
     file_io_error,
+    no_data,
 };
 
 struct data_file_result
-  : serde::envelope<
-      data_file_result,
-      serde::version<0>,
-      serde::compat_version<0>> {
+  : serde::
+      envelope<data_file_result, serde::version<0>, serde::compat_version<0>> {
     ss::sstring file_path = "";
     size_t record_count = 0;
     size_t file_size_bytes = 0;
 
-    auto serde_fields() { return std::tie(record_count); }
+    // TODO: add kafka schema id
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const data_file_result& r) {
+        // TODO: do we have a preferred format for printing structures?
+        o << "data_file_result{file_path:" << r.file_path
+          << " record_count:" << r.record_count
+          << " file_size_bytes: " << r.file_size_bytes << " }";
+        return o;
+    }
+
+    auto serde_fields() {
+        return std::tie(file_path, record_count, file_size_bytes);
+    }
 };
 
 struct data_writer_error_category : std::error_category {
@@ -48,6 +60,8 @@ struct data_writer_error_category : std::error_category {
             return "Parquet Conversion Error";
         case data_writer_error::file_io_error:
             return "File IO Error";
+        case data_writer_error::no_data:
+            return "No data";
         }
     }
 
