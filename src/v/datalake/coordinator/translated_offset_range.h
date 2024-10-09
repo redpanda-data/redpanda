@@ -30,16 +30,8 @@ struct translated_offset_range
     // Last Kafka offset (inclusive) represented in this range.
     kafka::offset last_offset;
     chunked_vector<data_file> files;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const translated_offset_range& r) {
-        o << fmt::format(
-          "{{start_offset: {}, last_offset: {}, files: {}}}",
-          r.start_offset,
-          r.last_offset,
-          r.files);
-        return o;
-    }
 };
+
+std::ostream& operator<<(std::ostream& o, const translated_offset_range& r);
 
 } // namespace datalake::coordinator

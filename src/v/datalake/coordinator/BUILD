@@ -11,6 +11,9 @@ redpanda_cc_rpc_library(
 
 redpanda_cc_library(
     name = "data_file",
+    srcs = [
+        "data_file.cc",
+    ],
     hdrs = [
         "data_file.h",
     ],
@@ -98,6 +101,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "translated_offset_range",
+    srcs = [
+        "translated_offset_range.cc",
+    ],
     hdrs = [
         "translated_offset_range.h",
     ],
@@ -106,6 +112,7 @@ redpanda_cc_library(
         ":data_file",
         "//src/v/base",
         "//src/v/container:fragmented_vector",
+        "//src/v/model",
         "//src/v/serde",
         "@fmt",
     ],

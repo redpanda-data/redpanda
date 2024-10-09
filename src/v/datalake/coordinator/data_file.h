@@ -28,14 +28,8 @@ struct data_file
     size_t row_count = 0;
     size_t file_size_bytes = 0;
     // TODO: add kafka schema id
-
-    friend std::ostream& operator<<(std::ostream& o, const data_file& f) {
-        o << fmt::format(
-          "{{remote_path: {}, row_count: {}, file_size_bytes: {}}}",
-          f.remote_path,
-          f.row_count,
-          f.file_size_bytes);
-        return o;
-    }
 };
+
+std::ostream& operator<<(std::ostream& o, const data_file& f);
+
 } // namespace datalake::coordinator
