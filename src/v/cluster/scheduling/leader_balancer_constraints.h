@@ -112,7 +112,9 @@ class even_topic_distribution_constraint final
 
 public:
     even_topic_distribution_constraint(
-      group_id_to_topic_id, const shard_index& si, const muted_index& mi);
+      const group_id_to_topic_id&,
+      const shard_index& si,
+      const muted_index& mi);
 
     even_topic_distribution_constraint(
       even_topic_distribution_constraint&&) noexcept
@@ -151,7 +153,7 @@ public:
 private:
     std::reference_wrapper<const shard_index> _si;
     std::reference_wrapper<const muted_index> _mi;
-    group_id_to_topic_id _group_to_topic_id;
+    std::reference_wrapper<const group_id_to_topic_id> _group_to_topic_id;
     double _error{0};
 
     // Stores the number of leaders on a given node per topic.
@@ -164,7 +166,7 @@ private:
     const shard_index& si() const { return _si.get(); }
     const muted_index& mi() const { return _mi.get(); }
     const group_id_to_topic_id& group_to_topic_id() const {
-        return _group_to_topic_id;
+        return _group_to_topic_id.get();
     }
 
     void calc_topic_skew();

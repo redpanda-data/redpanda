@@ -16,12 +16,12 @@
 namespace cluster::leader_balancer_types {
 
 even_topic_distribution_constraint::even_topic_distribution_constraint(
-  group_id_to_topic_id group_to_topic_id,
+  const group_id_to_topic_id& group_to_topic_id,
   const shard_index& si,
   const muted_index& mi)
   : _si(si)
   , _mi(mi)
-  , _group_to_topic_id(std::move(group_to_topic_id)) {
+  , _group_to_topic_id(group_to_topic_id) {
     rebuild_indexes();
     calc_topic_skew();
     calculate_error();
