@@ -942,3 +942,69 @@ class DataMigrationsApiTest(RedpandaTest):
                                            read_blocked=False,
                                            produce_blocked=False)
                 remounted = True
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_list_mountable_topics(self):
+        topics = [TopicSpec(partition_count=3) for i in range(5)]
+
+        for t in topics:
+            self.client().create_topic(t)
+
+        admin = Admin(self.redpanda)
+        list_mountable_res = admin.list_mountable_topics().json()
+        assert len(list_mountable_res["topics"]
+                   ) == 0, "There should be no mountable topics"
+
+        outbound_topics = [make_namespaced_topic(t.name) for t in topics]
+        reply = self.admin.unmount_topics(outbound_topics).json()
+        self.logger.info(f"create migration reply: {reply}")
+
+        self.logger.info('waiting for partitions be deleted')
+        self.wait_partitions_disappear(topics)
+
+        list_mountable_res = admin.list_mountable_topics().json()
+        assert len(list_mountable_res["topics"]) == len(
+            topics), "There should be mountable topics"
+
+        initial_names = [t.name for t in topics]
+        mountable_topic_names = [
+            t["topic"] for t in list_mountable_res["topics"]
+        ]
+        assert set(initial_names) == set(mountable_topic_names), \
+            f"Initial topics: {initial_names} should match mountable topics: {mountable_topic_names}"
+
+        for t in list_mountable_res["topics"]:
+            assert t["ns"] == "kafka", f"namespace is not set correctly: {t}"
+            assert t["topic_location"] != t["topic"] and "/" in t[
+                "topic_location"], f"topic location is not set correctly: {t}"
+
+        # Mount 3 topics based on the mountable topics response. This ensures
+        # that the response is correct/usable.
+        # The first 2 are mounted by name, the third by location.
+        inbound_topics = [
+            InboundTopic(NamespacedTopic(topic=t["topic"], namespace=t["ns"]))
+            for t in list_mountable_res["topics"][:2]
+        ] + [
+            InboundTopic(
+                NamespacedTopic(
+                    topic=list_mountable_res["topics"][2]["topic_location"],
+                    namespace=list_mountable_res["topics"][2]["ns"]))
+        ]
+        mount_resp = self.admin.mount_topics(inbound_topics).json()
+
+        # Build expectations based on original topic specs that match the
+        # mountable topics response.
+        expected_topic_specs = []
+        for t in list_mountable_res["topics"][:3]:
+            expected_topic_specs.append(
+                TopicSpec(name=t["topic"], partition_count=3))
+
+        self.wait_partitions_appear(expected_topic_specs)
+
+        # Wait for the migration to complete. This guarantees that the mount manifests
+        # are deleted.
+        self.wait_migration_disappear(mount_resp["id"])
+
+        list_mountable_res = admin.list_mountable_topics().json()
+        assert len(list_mountable_res["topics"]
+                   ) == 2, "There should be 2 mountable topics"

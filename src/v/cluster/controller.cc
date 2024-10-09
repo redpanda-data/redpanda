@@ -321,6 +321,15 @@ ss::future<> controller::start(
       std::ref(_stm),
       std::ref(_partition_leaders),
       std::ref(_connections),
+      ss::sharded_parameter(
+        [this]() -> std::optional<
+                   std::reference_wrapper<cloud_storage::topic_mount_handler>> {
+            if (_topic_mount_handler.local_is_initialized()) {
+                return std::ref(_topic_mount_handler.local());
+            } else {
+                return {};
+            }
+        }),
       std::ref(_as));
 
     co_await _data_migration_worker.start(

@@ -1782,6 +1782,10 @@ class Admin:
         path = f"migrations/{migration_id}"
         return self._request("DELETE", path, node=node)
 
+    def list_mountable_topics(self, node: Optional[ClusterNode] = None):
+        path = "topics/mountable"
+        return self._request("GET", path, node=node)
+
     def unmount_topics(self,
                        topics: list[NamespacedTopic],
                        node: Optional[ClusterNode] = None):

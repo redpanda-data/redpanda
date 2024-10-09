@@ -631,6 +631,7 @@ redpanda_cc_library(
         "//src/v/bytes:streambuf",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:remote_label",
+        "//src/v/cloud_storage:topic_mount_manifest_path",
         "//src/v/cloud_storage_clients",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",

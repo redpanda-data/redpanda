@@ -10,7 +10,35 @@
         },
         "ns": {
             "type": "string",
-            "description": "Topic namespace, if not present it is assumed that topic is in kafka namespace"
+            "description": "Topic namespace. If not present it is assumed that topic is in the \"kafka\" namespace"
+        }
+    }
+},
+"mountable_topic": {
+    "type": "object",
+    "properties": {
+        "topic_location": {
+            "type": "string",
+            "description": "Unique topic location in cloud storage with the format <topic name>/<cluster_uuid>/<initial_revision>"
+        },
+        "topic": {
+            "type": "string",
+            "description": "Topic name"
+        },
+        "ns": {
+            "type": "string",
+            "description": "Topic namespace. If not present it is assumed that topic is in the \"kafka\" namespace"
+        }
+    }
+},
+"list_mountable_topics_response": {
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "$ref": "mountable_topic"
+            }
         }
     }
 },
