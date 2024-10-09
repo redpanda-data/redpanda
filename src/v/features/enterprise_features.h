@@ -42,6 +42,7 @@ class enterprise_feature_report {
 
 public:
     void set(license_required_feature feat, bool enabled);
+    bool test(license_required_feature);
     range enabled() const { return _enabled; }
     range disabled() const { return _disabled; }
     bool any() const { return !_enabled.empty(); }
