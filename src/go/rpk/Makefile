@@ -10,7 +10,14 @@
 GOCMD=go
 GOLANGCILINTCMD=golangci-lint
 GOFUMPTCMD=gofumpt
-BAZELCMD=bazel
+
+ifeq ($(shell uname),Darwin)
+    BAZELCMD := bazelisk
+    BAZEL_GAZELLE_CMD := run --config system-clang //:gazelle
+else
+	BAZELCMD := bazel
+    BAZEL_GAZELLE_CMD := run //:gazelle
+endif
 
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
@@ -29,6 +36,7 @@ all: help
 
 ready: build test fmt lint bazel check_diff ## Runs all. Ensures commit is ready.
 
+.PHONY: build
 build: ## Build rpk.
 	$(shell mkdir -p $(OUTDIR))
 	$(GOCMD) build -ldflags '$(LDFLAGS)' -o $(OUTDIR) ./...
@@ -65,7 +73,7 @@ install_bazelisk:
 	@$(GOCMD) install github.com/bazelbuild/bazelisk@latest
 
 bazel_generate_build: install_bazelisk
-	@$(BAZELCMD) run //:gazelle
+	@$(BAZELCMD) $(BAZEL_GAZELLE_CMD)
 
 bazel_tidy: install_bazelisk
 	@$(BAZELCMD) mod tidy
