@@ -936,16 +936,8 @@ leader_balancer::index_type leader_balancer::build_index(
             }
 
             if (needs_mute) {
-                auto it = _muted.find(partition.group);
-                if (
-                  it == _muted.end()
-                  || (it->second - clock_type::now())
-                       < leader_activation_delay) {
-                    _muted.insert_or_assign(
-                      it,
-                      partition.group,
-                      clock_type::now() + leader_activation_delay);
-                }
+                // mute just for this iteration
+                _muted.try_emplace(partition.group, clock_type::now());
             }
 
             index[*leader_core][partition.group] = std::move(replicas);
