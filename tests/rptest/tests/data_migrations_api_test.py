@@ -298,6 +298,46 @@ class DataMigrationsApiTest(RedpandaTest):
                                          expect_restart=True)
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_mount_inexistent(self):
+        topic = TopicSpec(partition_count=3)
+        admin = Admin(self.redpanda)
+
+        with Finjector(self.redpanda, self.scale).finj_thread():
+            in_migration = InboundDataMigration(topics=[
+                InboundTopic(make_namespaced_topic(topic.name), alias=None)
+            ],
+                                                consumer_groups=[])
+            in_migration_id = self.create_and_wait(in_migration)
+
+            migrations_map = self.get_migrations_map()
+            self.logger.info(f"migrations: {migrations_map}")
+            assert len(
+                migrations_map) == 1, "There should be one data migration"
+
+            assert len(migrations_map[in_migration_id]['migration']
+                       ['topics']) == 1, "migration should contain one topic"
+
+            admin.execute_data_migration_action(in_migration_id,
+                                                MigrationAction.prepare)
+            self.wait_for_migration_states(in_migration_id, ['preparing'])
+            time.sleep(10)
+            # still preparing, i.e. stuck
+            self.wait_for_migration_states(in_migration_id, ['preparing'])
+            # and the topic is not there
+            self.wait_partitions_disappear([topic])
+
+            admin.execute_data_migration_action(in_migration_id,
+                                                MigrationAction.cancel)
+            self.wait_for_migration_states(in_migration_id,
+                                           ['canceling', 'cancelled'])
+            self.wait_for_migration_states(in_migration_id, ['cancelled'])
+            # still not there
+            self.wait_partitions_disappear([topic])
+
+            admin.delete_data_migration(in_migration_id)
+            self.wait_migration_disappear(in_migration_id)
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
         topics = [TopicSpec(partition_count=3) for i in range(5)]
 
