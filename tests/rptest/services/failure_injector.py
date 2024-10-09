@@ -99,7 +99,13 @@ class FailureInjectorBase:
 
                     def cleanup():
                         try:
+                            self.redpanda.logger.debug(
+                                f"Timed cleanup started, _in_flight={self._in_flight}"
+                            )
                             self._in_flight.remove(spec)
+                            self.redpanda.logger.debug(
+                                f"Timed cleanup dequeued, spec={spec}, _in_flight={self._in_flight}"
+                            )
                         except KeyError:
                             # The stop timers may outlive the test, handle case
                             # where they run after we already had a heal_all call.
@@ -108,11 +114,17 @@ class FailureInjectorBase:
                             )
                         else:
                             self._stop_func(spec.type)(spec.node)
+                            self.redpanda.logger.debug(
+                                f"Timed cleanup complete spec={spec}, _in_flight={self._in_flight}"
+                            )
 
                     stop_timer = threading.Timer(function=cleanup,
                                                  args=[],
                                                  interval=spec.length)
                     self._in_flight.add(spec)
+                    self.redpanda.logger.debug(
+                        f"Timed cleanup scheduled spec={spec}, _in_flight={self._in_flight}"
+                    )
                     stop_timer.start()
 
     def _start_func(self, tp):
@@ -255,31 +267,45 @@ class FailureInjector(FailureInjectorBase):
                     # Cleanups can fail, e.g. rule does not exist
                     self.redpanda.logger.warn(f"_heal_all: {e}")
 
+        self.redpanda.logger.debug(
+            f"before _heal_all _in_flight={self._in_flight}")
         self._in_flight = {
             spec
             for spec in self._in_flight
             if spec.type != FailureSpec.FAILURE_ISOLATE
         }
+        self.redpanda.logger.debug(
+            f"after _heal_all _in_flight={self._in_flight}")
 
     def _continue_all(self):
         self.redpanda.logger.info(f"continuing execution on all nodes")
         for n in self.redpanda.nodes:
             if self.redpanda.check_node(n):
                 self._continue(n)
+        self.redpanda.logger.debug(
+            f"before _continue_all _in_flight={self._in_flight}")
         self._in_flight = {
             spec
             for spec in self._in_flight
             if spec.type != FailureSpec.FAILURE_SUSPEND
         }
+        self.redpanda.logger.debug(
+            f"after _continue_all _in_flight={self._in_flight}")
 
     def _undo_all(self):
         self.redpanda.logger.info(f"running scheduled undos earlier")
+        self.redpanda.logger.debug(
+            f"before _undo_all _in_flight={self._in_flight}")
         while self._in_flight:
             try:
                 spec = self._in_flight.pop()
+                self.redpanda.logger.debug(
+                    f"_undo_all popped spec={spec}, _in_flight={self._in_flight}"
+                )
             except KeyError:
                 pass  # timer just emptied the set: GIL off???
             else:
+                self.redpanda.logger.debug(f"_undo_all stopping spec={spec}")
                 self._stop_func(spec.type)(spec.node)
 
     def _suspend(self, node):
