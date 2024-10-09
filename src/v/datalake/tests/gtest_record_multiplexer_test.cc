@@ -44,7 +44,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].record_count, record_count * batch_count);
+    EXPECT_EQ(result.value()[0].row_count, record_count * batch_count);
 }
 TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     int record_count = 10;
@@ -102,7 +102,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
-    EXPECT_EQ(result.value()[0].record_count, record_count * batch_count);
+    EXPECT_EQ(result.value()[0].row_count, record_count * batch_count);
 
     // Open the resulting file and check that it has data in it with the
     // appropriate counts.

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "coordinator/data_file.h"
 #include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
@@ -25,17 +26,6 @@ enum class data_writer_error {
     file_io_error,
 };
 
-struct data_writer_result
-  : serde::envelope<
-      data_writer_result,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    ss::sstring file_path = "";
-    size_t record_count = 0;
-    size_t file_size_bytes = 0;
-
-    auto serde_fields() { return std::tie(record_count); }
-};
 
 struct data_writer_error_category : std::error_category {
     const char* name() const noexcept override { return "Data Writer Error"; }
@@ -69,7 +59,7 @@ public:
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<data_writer_result, data_writer_error>>
+    virtual ss::future<result<coordinator::data_file, data_writer_error>>
     finish() = 0;
 };
 
