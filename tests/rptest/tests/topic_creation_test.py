@@ -369,6 +369,17 @@ class CreateTopicsTest(RedpandaTest):
             "Topic {kafka-topic3} has a replication factor")
         assert num_found == 0, f'Expected to find 0 messages about topic-3, but found {num_found}'
 
+    @cluster(num_nodes=3)
+    def test_invalid_boolean_property(self):
+        """
+        Validates that an invalid boolean property results in an invalid configuration response.
+        """
+        rpk = RpkTool(self.redpanda)
+        with expect_exception(RpkException,
+                              lambda e: 'Configuration is invalid' in str(e)):
+            rpk.create_topic('topic-1',
+                             config={'redpanda.remote.read': 'affirmative'})
+
 
 class CreateTopicsResponseTest(RedpandaTest):
     SUCCESS_EC = 0

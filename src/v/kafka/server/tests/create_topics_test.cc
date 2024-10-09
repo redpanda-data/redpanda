@@ -409,3 +409,22 @@ FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
     BOOST_CHECK(
       resp.data.topics[2].error_code == kafka::error_code::invalid_config);
 }
+
+FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
+    auto topic = make_topic(
+      "topic1",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "affirmative"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK(
+      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK(
+      resp.data.topics[0].error_message == "Configuration is invalid");
+    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+}

@@ -225,7 +225,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
 
     @cluster(num_nodes=1)
     @matrix(cluster_remote_write=[True, False],
-            topic_remote_write=["true", "false", "-1"],
+            topic_remote_write=["true", "false", None],
             cloud_storage_type=get_cloud_storage_type())
     def test_shadow_indexing_default_local_retention(self,
                                                      cluster_remote_write,
@@ -247,15 +247,18 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
             {"cloud_storage_enable_remote_write": cluster_remote_write},
             expect_restart=True)
 
+        config = {"cleanup.policy": TopicSpec.CLEANUP_DELETE}
+
+        # None case means use cluster default for topic creation.
+        if topic_remote_write is not None:
+            config |= {"redpanda.remote.write": topic_remote_write}
+
         self.rpk.create_topic(topic=self.topic_name,
                               partitions=1,
                               replicas=1,
-                              config={
-                                  "cleanup.policy": TopicSpec.CLEANUP_DELETE,
-                                  "redpanda.remote.write": topic_remote_write
-                              })
+                              config=config)
 
-        if topic_remote_write != "-1":
+        if topic_remote_write is not None:
             expect_deletion = topic_remote_write == "true"
         else:
             expect_deletion = cluster_remote_write
