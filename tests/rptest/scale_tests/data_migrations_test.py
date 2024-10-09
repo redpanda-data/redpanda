@@ -20,6 +20,7 @@ class DataMigrationsScaleTest(Base):
     def __init__(self, *args, **kwargs):
         super().__init__(*args,
                          **kwargs,
+                         transition_timeout=600,
                          extra_rp_conf={
                              'topic_partitions_per_shard':
                              PARTITIONS_PER_SHARD,
