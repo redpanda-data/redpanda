@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/logger.h"
 #include "kafka/protocol/timeout.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -314,6 +315,18 @@ ss::future<response_ptr> create_topics_handler::handle(
               if (ctx.metadata_cache().contains(model::topic_namespace_view{
                     model::kafka_namespace, t.name})) {
                   result.error_code = error_code::topic_already_exists;
+                  return result;
+              }
+              try {
+                  // Try parsing all the config parameters.
+                  std::ignore = to_cluster_type(t);
+              } catch (...) {
+                  auto e = std::current_exception();
+                  vlog(
+                    klog.warn,
+                    "Invalid config for topic creation generated error: {}",
+                    e);
+                  result.error_code = error_code::invalid_config;
                   return result;
               }
               result.num_partitions = t.num_partitions;
