@@ -46,6 +46,19 @@ record_multiplexer::operator()(model::record_batch batch) {
                          + record.offset_delta();
         int64_t estimated_size = key.size_bytes() + val.size_bytes() + 16;
 
+        // TODO: we want to ensure we're using an offset translating reader so
+        // that these will be Kafka offsets, not Raft offsets.
+        if (!_result.has_value()) {
+            _result = coordinator::translated_offset_range{};
+            _result.value().start_offset = kafka::offset(offset);
+        }
+        if (offset < _result.value().start_offset()) {
+            _result.value().start_offset = kafka::offset(offset);
+        }
+        if (offset > _result.value().start_offset()) {
+            _result.value().last_offset = kafka::offset(offset);
+        }
+
         // Translate the record
         auto& translator = get_translator();
         iceberg::struct_value data = translator.translate_event(
@@ -69,23 +82,25 @@ record_multiplexer::operator()(model::record_batch batch) {
     co_return ss::stop_iteration::no;
 }
 
-ss::future<result<chunked_vector<coordinator::data_file>, data_writer_error>>
+ss::future<result<coordinator::translated_offset_range, data_writer_error>>
 record_multiplexer::end_of_stream() {
     if (_writer_status != data_writer_error::ok) {
         co_return _writer_status;
     }
     // TODO: once we have multiple _writers this should be a loop
     if (_writer) {
-        chunked_vector<coordinator::data_file> ret;
-        auto res = co_await _writer->finish();
-        if (res.has_value()) {
-            ret.push_back(res.value());
-            co_return ret;
+        if (!_result.has_value()) {
+            co_return data_writer_error::no_data;
+        }
+        auto result_files = co_await _writer->finish();
+        if (result_files.has_value()) {
+            _result.value().files.push_back(result_files.value());
+            co_return std::move(_result.value());
         } else {
-            co_return res.error();
+            co_return result_files.error();
         }
     } else {
-        co_return chunked_vector<coordinator::data_file>{};
+        co_return data_writer_error::no_data;
     }
 }
 

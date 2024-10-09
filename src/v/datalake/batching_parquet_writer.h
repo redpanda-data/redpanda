@@ -50,7 +50,8 @@ public:
     ss::future<data_writer_error>
     add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
 
-    ss::future<result<coordinator::data_file, data_writer_error>> finish() override;
+    ss::future<result<coordinator::data_file, data_writer_error>>
+    finish() override;
 
     // Close the file handle, delete any temporary data and clean up any other
     // state.
