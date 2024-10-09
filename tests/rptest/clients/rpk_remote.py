@@ -7,6 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
+from rptest.clients.rpk import RpkException
+
 
 class RpkRemoteTool:
     """
@@ -173,3 +176,52 @@ class RpkRemoteTool:
                 raise
 
             yield (int(offset), int(ts))
+
+    def plugin_list(self):
+        cmd = [self._rpk_binary(), "plugin", "list", "--local"]
+
+        return self._execute(cmd)
+
+    def _run_connect(self, cmd, timeout=None):
+        cmd = [self._rpk_binary(), "connect"] + cmd
+        return self._execute(cmd, timeout=timeout)
+
+    def install_connect(self, version="", force=False):
+        cmd = ["install"]
+        if version != "":
+            cmd += ["--connect-version", version]
+
+        if force:
+            cmd += ["--force"]
+
+        # This command has a higher timeout than normal rpk
+        # commands as it downloads and install the RP Connect
+        # binary.
+        return self._run_connect(cmd, timeout=60)
+
+    def uninstall_connect(self):
+        cmd = ["uninstall"]
+
+        return self._run_connect(cmd)
+
+    def upgrade_connect(self):
+        cmd = ["upgrade", "--no-confirm"]
+        return self._run_connect(cmd)
+
+    def connect_version(self):
+        cmd = ["--version"]
+        out = self._run_connect(cmd)
+        """
+        Example output of rpk connect --version:
+        Version: 4.33.0
+        Date: 2024-08-13T21:40:38Z
+        """
+        pattern = r"Version:\s*([\d.]+)"
+        match = re.search(pattern, out)
+        if match:
+            return match.group(1)  # The version.
+        else:
+            raise RpkException(f"unable to parse connect version from {out}")
+
+    def run_connect_arbitrary(self, cmd):
+        return self._run_connect(cmd)
