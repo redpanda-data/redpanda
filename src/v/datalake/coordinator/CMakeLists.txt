@@ -9,11 +9,13 @@ rpcgen(TARGET generated_datalake_coordinator_rpc
 v_cc_library(
     NAME datalake_coordinator
     SRCS
+        data_file.cc
         frontend.cc
         service.cc
         state.cc
         state_machine.cc
         state_update.cc
+        translated_offset_range.cc
     DEPS
         generated_datalake_coordinator_rpc
         v::cluster

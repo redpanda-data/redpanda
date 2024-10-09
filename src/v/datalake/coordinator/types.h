@@ -10,7 +10,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
-#include "datalake/data_writer_interface.h"
+#include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/errors.h"
 #include "model/fundamental.h"
 #include "serde/rw/enum.h"
@@ -24,19 +24,12 @@ struct translated_data_file_entry
       serde::version<0>,
       serde::compat_version<0>> {
     model::topic_partition tp;
-    // inclusive offset range
-    model::offset begin_offset;
-    model::offset end_offset;
-    // term of the leader that performed this
-    // translation
-    model::term_id translator_term;
 
-    data_writer_result translation_result;
+    // Translated data files, expected to be contiguous, with no gaps or
+    // overlaps, ordered in increasing offset order.
+    chunked_vector<translated_offset_range> translated_ranges;
 
-    auto serde_fields() {
-        return std::tie(
-          tp, begin_offset, end_offset, translator_term, translation_result);
-    }
+    auto serde_fields() { return std::tie(tp, translated_ranges); }
 };
 
 struct add_translated_data_files_reply
@@ -84,12 +77,13 @@ struct fetch_latest_data_file_reply
     explicit fetch_latest_data_file_reply(coordinator_errc err)
       : errc(err) {}
 
-    std::optional<translated_data_file_entry> entry;
+    // The offset of the latest data file added to the coordinator.
+    std::optional<kafka::offset> last_added_offset;
 
     // If not ok, the request processing has a problem.
     coordinator_errc errc;
 
-    auto serde_fields() { return std::tie(entry, errc); }
+    auto serde_fields() { return std::tie(last_added_offset, errc); }
 };
 
 struct fetch_latest_data_file_request
