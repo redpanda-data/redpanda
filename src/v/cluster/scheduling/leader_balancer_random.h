@@ -102,12 +102,22 @@ private:
 class random_hill_climbing_strategy final : public leader_balancer_strategy {
 public:
     random_hill_climbing_strategy(
-      index_type index, group_id_to_topic_revision_t g_to_ntp, muted_index mi)
+      index_type index,
+      group_id_to_topic_id g_to_topic,
+      muted_index mi,
+      std::optional<preference_index> preference_idx)
       : _mi(std::make_unique<muted_index>(std::move(mi)))
+      , _group2topic(
+          std::make_unique<group_id_to_topic_id>(std::move(g_to_topic)))
       , _si(std::make_unique<shard_index>(std::move(index)))
       , _reassignments(_si->shards())
-      , _etdc(std::move(g_to_ntp), *_si, *_mi)
-      , _eslc(*_si, *_mi) {}
+      , _etdc(*_group2topic, *_si, *_mi)
+      , _eslc(*_si, *_mi) {
+        if (preference_idx) {
+            _pinning_constr.emplace(
+              *_group2topic, std::move(preference_idx.value()));
+        }
+    }
 
     double error() const override { return _eslc.error() + _etdc.error(); }
 
@@ -131,10 +141,24 @@ public:
                 continue;
             }
 
-            auto eval = _etdc.evaluate(reassignment)
-                        + _eslc.evaluate(reassignment);
+            // Hierarchical optimization: first check if the proposed
+            // reassignment improves the pinning objective (makes the leaders
+            // distribution better conform to the provided pinning
+            // configuration). If the pinning objective remains at the same
+            // level, check balancing objectives.
 
-            if (eval <= error_jitter) {
+            if (_pinning_constr) {
+                auto pinning_diff = _pinning_constr->evaluate(reassignment);
+                if (pinning_diff < -error_jitter) {
+                    continue;
+                } else if (pinning_diff > error_jitter) {
+                    return reassignment_opt;
+                }
+            }
+
+            auto balancing_diff = _etdc.evaluate(reassignment)
+                                  + _eslc.evaluate(reassignment);
+            if (balancing_diff <= error_jitter) {
                 continue;
             }
 
@@ -161,10 +185,12 @@ private:
     static constexpr double error_jitter = 0.000001;
 
     std::unique_ptr<muted_index> _mi;
+    std::unique_ptr<group_id_to_topic_id> _group2topic;
     std::unique_ptr<shard_index> _si;
     random_reassignments _reassignments;
 
-    even_topic_distributon_constraint _etdc;
+    std::optional<pinning_constraint> _pinning_constr;
+    even_topic_distribution_constraint _etdc;
     even_shard_load_constraint _eslc;
 };
 

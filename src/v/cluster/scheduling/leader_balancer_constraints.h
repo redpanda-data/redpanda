@@ -99,7 +99,7 @@ private:
  * given cluster. Providing a way to evaluate a given reassignment of
  * leadership and a recommendation of reassignments to improve error.
  */
-class even_topic_distributon_constraint final
+class even_topic_distribution_constraint final
   : public soft_constraint
   , public index {
     // Avoid rounding errors when determining if a move improves balance by
@@ -107,31 +107,27 @@ class even_topic_distributon_constraint final
     // more than this value.
     static constexpr double error_jitter = 0.000001;
 
-    using topic_id_t = model::revision_id::type;
-
-    template<typename ValueType>
-    using topic_map = chunked_hash_map<topic_id_t, ValueType>;
-
 public:
-    even_topic_distributon_constraint(
-      group_id_to_topic_revision_t group_to_topic_rev,
+    even_topic_distribution_constraint(
+      const group_id_to_topic_id&,
       const shard_index& si,
       const muted_index& mi);
 
-    even_topic_distributon_constraint(
-      even_topic_distributon_constraint&&) noexcept
+    even_topic_distribution_constraint(
+      even_topic_distribution_constraint&&) noexcept
       = default;
-    even_topic_distributon_constraint&
-    operator=(even_topic_distributon_constraint&&) noexcept
+    even_topic_distribution_constraint&
+    operator=(even_topic_distribution_constraint&&) noexcept
       = default;
 
-    even_topic_distributon_constraint(const even_topic_distributon_constraint&)
+    even_topic_distribution_constraint(
+      const even_topic_distribution_constraint&)
       = delete;
-    even_topic_distributon_constraint&
-    operator=(const even_topic_distributon_constraint&)
+    even_topic_distribution_constraint&
+    operator=(const even_topic_distribution_constraint&)
       = delete;
 
-    ~even_topic_distributon_constraint() override = default;
+    ~even_topic_distribution_constraint() override = default;
 
     double error() const { return _error; }
 
@@ -154,7 +150,7 @@ public:
 private:
     std::reference_wrapper<const shard_index> _si;
     std::reference_wrapper<const muted_index> _mi;
-    group_id_to_topic_revision_t _group_to_topic_rev;
+    std::reference_wrapper<const group_id_to_topic_id> _group_to_topic_id;
     double _error{0};
 
     // Stores the number of leaders on a given node per topic.
@@ -166,8 +162,8 @@ private:
 
     const shard_index& si() const { return _si.get(); }
     const muted_index& mi() const { return _mi.get(); }
-    const group_id_to_topic_revision_t& group_to_topic_id() const {
-        return _group_to_topic_rev;
+    const group_id_to_topic_id& group_to_topic_id() const {
+        return _group_to_topic_id.get();
     }
 
     void calc_topic_skew();
@@ -304,6 +300,25 @@ private:
      * number of groups having their leader on a given core.
      */
     std::pair<load_t, load_map_t> build_load_indexes() const;
+};
+
+// Constraint implementing leaders pinning preference objective.
+class pinning_constraint final : public soft_constraint {
+public:
+    pinning_constraint(
+      const group_id_to_topic_id& group2topic,
+      preference_index&& preference_idx)
+      : _group2topic(group2topic)
+      , _preference_idx(std::move(preference_idx)) {}
+
+private:
+    double evaluate_internal(const reassignment& r) override;
+
+    std::optional<reassignment> recommended_reassignment() override;
+
+private:
+    std::reference_wrapper<const group_id_to_topic_id> _group2topic;
+    preference_index _preference_idx;
 };
 
 } // namespace cluster::leader_balancer_types

@@ -114,7 +114,7 @@ static auto from_spec(
 using group_to_ntp_spec
   = std::vector<std::pair<model::revision_id::type, std::vector<int>>>;
 inline auto group_to_topic_from_spec(const group_to_ntp_spec& spec) {
-    lbt::group_id_to_topic_revision_t group_to_topic;
+    lbt::group_id_to_topic_id group_to_topic;
 
     for (const auto& [topic, groups] : spec) {
         for (const auto& group : groups) {

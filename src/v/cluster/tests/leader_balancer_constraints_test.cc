@@ -217,7 +217,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distribution_empty) {
     auto gntp_i = group_to_topic_from_spec({});
     auto [shard_index, muted_index] = from_spec({});
 
-    auto even_topic_con = lbt::even_topic_distributon_constraint(
+    auto even_topic_con = lbt::even_topic_distribution_constraint(
       std::move(gntp_i), shard_index, muted_index);
 
     BOOST_REQUIRE(even_topic_con.error() == 0);
@@ -240,7 +240,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distribution_constraint_no_error) {
     auto [index_cl, gbs] = from_spec(spec);
     auto mute_i = lbt::muted_index({}, {});
 
-    auto topic_constraint = lbt::even_topic_distributon_constraint(
+    auto topic_constraint = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), index_cl, mute_i);
 
     BOOST_REQUIRE(topic_constraint.error() == 0);
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distributon_constraint_uniform_move) {
 
     auto mute_i = lbt::muted_index({}, {});
 
-    auto topic_constraint = lbt::even_topic_distributon_constraint(
+    auto topic_constraint = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), index_cl, mute_i);
     auto reassignment = re(1, 0, 1);
 
@@ -296,7 +296,7 @@ BOOST_AUTO_TEST_CASE(even_topic_constraint_too_many_replicas) {
 
     auto mute_i = lbt::muted_index({}, {});
 
-    auto topic_constraint = lbt::even_topic_distributon_constraint(
+    auto topic_constraint = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), index_cl, mute_i);
 }
 
@@ -319,7 +319,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distributon_constraint_find_reassignment) {
 
     auto mute_i = lbt::muted_index({}, {});
 
-    auto topic_constraint = lbt::even_topic_distributon_constraint(
+    auto topic_constraint = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), index_cl, mute_i);
     auto reassignment = re(1, 0, 1);
 
@@ -356,7 +356,7 @@ BOOST_AUTO_TEST_CASE(even_shard_no_error_even_topic_error) {
 
     auto even_shard_con = lbt::even_shard_load_constraint(
       shard_index, muted_index);
-    auto even_topic_con = lbt::even_topic_distributon_constraint(
+    auto even_topic_con = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() == 0);
@@ -393,7 +393,7 @@ BOOST_AUTO_TEST_CASE(even_topic_no_error_even_shard_error) {
 
     auto even_shard_con = lbt::even_shard_load_constraint(
       shard_index, muted_index);
-    auto even_topic_con = lbt::even_topic_distributon_constraint(
+    auto even_topic_con = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() > 0);
@@ -475,7 +475,7 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
     auto [shard_index, muted_index] = std::move(o);
     auto even_shard_con = lbt::even_shard_load_constraint(
       shard_index, muted_index);
-    auto even_topic_con = lbt::even_topic_distributon_constraint(
+    auto even_topic_con = lbt::even_topic_distribution_constraint(
       std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() == 0);
@@ -486,7 +486,8 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
     auto rhc = lbt::random_hill_climbing_strategy(
       leader_balancer_test_utils::copy_cluster_index(shard_index1.shards()),
       std::move(g_id_to_t_id1),
-      std::move(muted_index1));
+      std::move(muted_index1),
+      std::nullopt);
 
     cluster::leader_balancer_types::muted_groups_t muted_groups{};
 

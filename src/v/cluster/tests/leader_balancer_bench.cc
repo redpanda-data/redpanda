@@ -25,14 +25,13 @@ constexpr int shards_per_node = 16;  // i.e., cores per node
 constexpr int groups_per_shard = 80; // group == partition in this context
 constexpr int replicas = 3;          // number of replicas
 
-cluster::leader_balancer_types::group_id_to_topic_revision_t
-make_gid_to_topic_index(
+cluster::leader_balancer_types::group_id_to_topic_id make_gid_to_topic_index(
   const cluster::leader_balancer_types::index_type& index) {
-    cluster::leader_balancer_types::group_id_to_topic_revision_t ret;
+    cluster::leader_balancer_types::group_id_to_topic_id ret;
 
     for (const auto& [bs, leaders] : index) {
         for (const auto& [group, replicas] : leaders) {
-            ret[group] = model::revision_id(0);
+            ret.emplace(group, 0);
         }
     }
 
@@ -62,7 +61,7 @@ void random_search_eval_bench(bool measure_all) {
     }
 
     random_t rt{index};
-    cluster::leader_balancer_types::even_topic_distributon_constraint tdc(
+    cluster::leader_balancer_types::even_topic_distribution_constraint tdc(
       std::move(gid_topic), si, mi);
     cluster::leader_balancer_types::even_shard_load_constraint slc(si, mi);
 
