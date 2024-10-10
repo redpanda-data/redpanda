@@ -1845,6 +1845,9 @@ tx_gateway_frontend::handle_commit_tx(
           "[tx_id={}] transaction is {} already committed",
           tx.id,
           tx);
+        if (!outcome->available()) {
+            outcome->set_value(tx::errc::none);
+        }
         co_return tx::errc::none;
     }
 
