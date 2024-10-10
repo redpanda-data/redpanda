@@ -93,20 +93,16 @@ Now you should be able to connect to `redpanda` (kafka-api) running at `localhos
 
 ## Build Manually
 
-We provide a very simple build system that uses your system libraries. We recommend
-users leverage our pre-built stable releases which are vetted, tested, and reproducible with exact
-versions of the entire transitive dependency graph, including exact compilers
-all built from source. The only thing we do not build yet is the Linux Kernel, but soon!
-
-Currently `clang 16` is required. We test the open-source build nightly using Fedora 38.
+We use [Bazel](https://bazel.build/) as our build system. Bazel automatically manages most of the toolchains and third-party dependencies,
+but there are a few system libraries and preinstalled tools our build assumes are available locally. You can bootstrap and build Redpanda
+along with all its tests using:
 
 ```bash
-sudo ./install-dependencies.sh
-cmake --preset release
-cmake --build --preset release
+sudo ./bazel/install-deps.sh
+bazel build --config=release //...
 ```
 
-For quicker dev setup, we provide a [docker image](tools/docker/README.md) with the toolchain installed.
+For more build configurations check out `.bazelrc`.
 
 # Release candidate builds
 
