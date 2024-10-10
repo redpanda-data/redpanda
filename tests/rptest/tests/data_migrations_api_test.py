@@ -48,7 +48,7 @@ class TransferLeadersBackgroundThread:
         self.logger = redpanda.logger
         self.stop_ev = threading.Event()
         self.topic = topic
-        self.admin = Admin(self.redpanda)
+        self.admin = Admin(self.redpanda, retry_codes=[503, 504])
         self.thread = threading.Thread(target=lambda: self._loop())
         self.thread.daemon = True
 
