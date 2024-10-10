@@ -215,7 +215,7 @@ public:
 
     ss::future<result<tx::partition_transactions>> get_transactions();
 
-    ss::future<std::error_code> mark_expired(model::producer_identity pid);
+    ss::future<tx::errc> mark_expired(model::producer_identity pid);
 
     ss::future<> remove_persistent_state() override;
 
@@ -224,6 +224,8 @@ public:
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
     const producers_t& get_producers() const { return _producers; }
+
+    ss::future<tx::errc> abort_all_txes();
 
 protected:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
@@ -326,7 +328,7 @@ private:
 
     void abort_old_txes();
     ss::future<std::chrono::milliseconds> do_abort_old_txes();
-    ss::future<> try_abort_old_tx(tx::producer_ptr);
+    ss::future<tx::errc> try_abort_old_tx(tx::producer_ptr);
     ss::future<tx::errc> do_try_abort_old_tx(tx::producer_ptr);
     void maybe_rearm_autoabort_timer(tx::time_point_type);
 

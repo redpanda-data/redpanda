@@ -25,6 +25,7 @@
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -343,10 +344,13 @@ public:
     ss::shared_ptr<cloud_storage::async_manifest_view>
     get_cloud_storage_manifest_view();
 
-    ss::future<std::error_code> disable_writes();
-    ss::future<std::error_code> enable_writes();
+    ss::future<std::error_code> set_writes_disabled(
+      partition_properties_stm::writes_disabled disable,
+      model::timeout_clock::time_point deadline);
 
 private:
+    ss::future<result<ssx::rwlock_unit>> hold_writes_enabled();
+
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
 
@@ -401,6 +405,10 @@ private:
     // Used in `sync_kafka_start_offset_override` to avoid having to re-sync the
     // `archival_meta_stm`.
     bool _has_synced_archival_for_start_override{false};
+
+    // acquire shared ("read") for produce,
+    // exclusive ("write") for enabling/disabling writes
+    ssx::rwlock _produce_lock;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

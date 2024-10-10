@@ -84,6 +84,9 @@ private:
       state sought_state,
       const outbound_partition_work_info&);
 
+    ss::future<errc> block(ss::lw_shared_ptr<partition> partition, bool block);
+    ss::future<errc> flush(ss::lw_shared_ptr<partition> partition);
+
     model::node_id _self;
     partition_leaders_table& _leaders_table;
     partition_manager& _partition_manager;

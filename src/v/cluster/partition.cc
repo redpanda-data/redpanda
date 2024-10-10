@@ -32,6 +32,7 @@
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "storage/ntp_config.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -337,7 +338,13 @@ ss::future<storage::translating_reader> partition::make_cloud_reader(
 ss::future<result<kafka_result>> partition::replicate(
   model::record_batch_reader&& r, raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
-    auto res = co_await _raft->replicate(std::move(r), opts);
+    auto reader = std::move(r);
+
+    auto maybe_units = co_await hold_writes_enabled();
+    if (!maybe_units) {
+        co_return ret_t(maybe_units.error());
+    }
+    auto res = co_await _raft->replicate(std::move(reader), opts);
     if (!res) {
         co_return ret_t(res.error());
     }
@@ -356,11 +363,43 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     return _rm_stm;
 }
 
+namespace {
+template<class Units, class StagesFutureFunc>
+ss::future<result<kafka_result>> stages_with_units_helper(
+  ss::future<result<Units>> maybe_units_f,
+  ss::promise<> enqueued_promise,
+  StagesFutureFunc stages_future_func) {
+    auto maybe_units = co_await std::move(maybe_units_f);
+    if (!maybe_units.has_value()) {
+        enqueued_promise.set_value();
+        co_return maybe_units.error();
+    }
+    kafka_stages orig_stages = stages_future_func();
+    co_await std::move(orig_stages.request_enqueued);
+    enqueued_promise.set_value();
+    co_return co_await std::move(orig_stages.replicate_finished);
+}
+
+template<class Units, class StagesFutureFunc>
+kafka_stages stages_with_units(
+  ss::future<result<Units>> maybe_units_f,
+  StagesFutureFunc stages_future_func) {
+    ss::promise<> enqueued_promise;
+    auto enqueued_f = enqueued_promise.get_future();
+    auto replicated_f = stages_with_units_helper(
+      std::move(maybe_units_f),
+      std::move(enqueued_promise),
+      std::move(stages_future_func));
+    return {std::move(enqueued_f), std::move(replicated_f)};
+}
+} // namespace
+
 kafka_stages partition::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
+
     if (bid.is_transactional) {
         if (!_rm_stm) {
             vlog(
@@ -381,22 +420,29 @@ kafka_stages partition::replicate_in_stages(
         }
     }
 
-    if (_rm_stm) {
-        return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
-    }
-
-    auto res = _raft->replicate_in_stages(std::move(r), opts);
-    auto replicate_finished = res.replicate_finished.then(
-      [this](result<raft::replicate_result> r) {
-          if (!r) {
-              return ret_t(r.error());
+    return stages_with_units(
+      hold_writes_enabled(),
+      [this,
+       bid = std::move(bid),
+       r = std::move(r),
+       opts = std::move(opts)]() mutable {
+          if (_rm_stm) {
+              return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
           }
-          auto old_offset = r.value().last_offset;
-          auto new_offset = kafka::offset(log()->from_log_offset(old_offset)());
-          return ret_t(kafka_result{new_offset});
+          auto res = _raft->replicate_in_stages(std::move(r), opts);
+          auto replicate_finished = res.replicate_finished.then(
+            [this](result<raft::replicate_result> r) {
+                if (!r) {
+                    return ret_t(r.error());
+                }
+                auto old_offset = r.value().last_offset;
+                auto new_offset = kafka::offset(
+                  log()->from_log_offset(old_offset)());
+                return ret_t(kafka_result{new_offset});
+            });
+          return kafka_stages(
+            std::move(res.request_enqueued), std::move(replicate_finished));
       });
-    return kafka_stages(
-      std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
 raft::group_id partition::group() const { return _raft->group(); }
@@ -1578,26 +1624,54 @@ partition::force_abort_replica_set_update(model::revision_id rev) {
 }
 consensus_ptr partition::raft() const { return _raft; }
 
-ss::future<std::error_code> partition::disable_writes() {
+ss::future<std::error_code> partition::set_writes_disabled(
+  partition_properties_stm::writes_disabled disable,
+  model::timeout_clock::time_point deadline) {
+    ssx::rwlock::holder holder;
+    auto lock_deadline = ss::semaphore::clock::now()
+                         + ss::semaphore::clock::duration(
+                           deadline - model::timeout_clock::now());
+    try {
+        holder = co_await _produce_lock.hold_write_lock(lock_deadline);
+    } catch (ss::semaphore_timed_out&) {
+        co_return errc::timeout;
+    }
     if (!_feature_table.local().is_active(
           features::feature::partition_properties_stm)) {
-        return ssx::now<std::error_code>(errc::feature_disabled);
+        co_return errc::feature_disabled;
     }
     if (_partition_properties_stm == nullptr) {
-        return ssx::now<std::error_code>(errc::invalid_partition_operation);
+        co_return errc::invalid_partition_operation;
     }
-    return _partition_properties_stm->disable_writes();
+    if (disable && _rm_stm) {
+        auto res = co_await _rm_stm->abort_all_txes();
+        if (res != tx::errc::none) {
+            co_return res;
+        }
+    }
+    auto method = disable ? &partition_properties_stm::disable_writes
+                          : &partition_properties_stm::enable_writes;
+    co_return co_await (*_partition_properties_stm.*method)();
 }
 
-ss::future<std::error_code> partition::enable_writes() {
-    if (!_feature_table.local().is_active(
-          features::feature::partition_properties_stm)) {
-        return ssx::now<std::error_code>(errc::feature_disabled);
+ss::future<result<ssx::rwlock_unit>> partition::hold_writes_enabled() {
+    auto maybe_units = _produce_lock.attempt_read_lock();
+    if (!maybe_units) {
+        co_return errc::resource_is_being_migrated;
     }
-    if (_partition_properties_stm == nullptr) {
-        return ssx::now<std::error_code>(errc::invalid_partition_operation);
+
+    auto are_disabled
+      = _partition_properties_stm
+          ? co_await _partition_properties_stm->sync_writes_disabled()
+          : partition_properties_stm::writes_disabled::no;
+    if (!are_disabled.has_value()) {
+        co_return are_disabled.error();
     }
-    return _partition_properties_stm->enable_writes();
+    if (are_disabled.value()) {
+        co_return errc::resource_is_being_migrated;
+    }
+
+    co_return *std::move(maybe_units);
 }
 
 } // namespace cluster

@@ -1549,7 +1549,7 @@ backend::work_scope backend::get_work_scope(
     case state::cut_over:
         return {state::finished, false, true};
     case state::canceling:
-        return {state::cancelled, false, true};
+        return {state::cancelled, true, true};
     default:
         return {{}, false, false};
     };

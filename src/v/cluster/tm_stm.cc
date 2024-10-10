@@ -102,18 +102,18 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
-    if (!_raft->is_leader()) {
-        return ss::make_ready_future<
-          checked<model::term_id, tm_stm::op_status>>(
-          tm_stm::op_status::not_leader);
+    auto sync_result = co_await sync();
+    if (!sync_result.has_value()) {
+        vlog(
+          txlog.info,
+          "error syncing state machine for barrier - {}",
+          sync_result.error());
+        co_return sync_result.error();
     }
-    if (_insync_term != _raft->term()) {
-        return ss::make_ready_future<
-          checked<model::term_id, tm_stm::op_status>>(
-          tm_stm::op_status::not_leader);
-    }
+
     auto term = _insync_term;
-    return quorum_write_empty_batch(model::timeout_clock::now() + _sync_timeout)
+    co_return co_await quorum_write_empty_batch(
+      model::timeout_clock::now() + _sync_timeout)
       .then_wrapped(
         [this, term](ss::future<result<raft::replicate_result>> f)
           -> checked<model::term_id, tm_stm::op_status> {
@@ -148,6 +148,7 @@ tm_stm::quorum_write_empty_batch(model::timeout_clock::time_point timeout) {
     // replicate checkpoint batch
     return _raft
       ->replicate(
+        _insync_term,
         make_checkpoint(),
         raft::replicate_options(raft::consistency_level::quorum_ack))
       .then([this, timeout](ret_t r) {
