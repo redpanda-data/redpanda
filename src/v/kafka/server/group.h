@@ -396,13 +396,24 @@ public:
      * \returns join response promise set at the end of the join phase.
      */
     ss::future<join_group_response> update_member(
-      member_ptr member, chunked_vector<member_protocol>&& new_protocols);
+      member_ptr member,
+      chunked_vector<member_protocol>&& new_protocols,
+      const std::optional<kafka::client_id>& new_client_id,
+      const kafka::client_host& new_client_host,
+      std::chrono::milliseconds new_session_timeout,
+      std::chrono::milliseconds new_rebalance_timeout);
+
     /**
      * Same as update_member but without returning the join promise. Used when
      * reverting member state after failed group checkpoint
      */
     void update_member_no_join(
-      member_ptr member, chunked_vector<member_protocol>&& new_protocols);
+      member_ptr member,
+      chunked_vector<member_protocol>&& new_protocols,
+      const std::optional<kafka::client_id>& new_client_id,
+      const kafka::client_host& new_client_host,
+      std::chrono::milliseconds new_session_timeout,
+      std::chrono::milliseconds new_rebalance_timeout);
 
     /**
      * \brief Get the timeout duration for rebalancing.
