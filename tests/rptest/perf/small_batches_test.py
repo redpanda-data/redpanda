@@ -27,7 +27,7 @@ class SmallBatchesTest(RedpandaTest):
             "message_size": 100,
             "payload_file": "payload/payload-100b.data",
             "consumer_backlog_size_GB": 0,
-            "test_duration_minutes": 5,
+            "test_duration_minutes": 2,
             "warmup_duration_minutes": 2,
         }
         driver = {

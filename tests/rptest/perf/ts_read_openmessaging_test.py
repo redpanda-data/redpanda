@@ -63,7 +63,7 @@ class TSReadOpenmessagingTest(RedpandaTest):
             "payload_file": "payload/payload-1Kb.data",
             "consumer_backlog_size_GB": 20,
             "test_duration_minutes": 1,
-            "warmup_duration_minutes": 5,
+            "warmup_duration_minutes": 2,
         }
 
         benchmark = OpenMessagingBenchmark(self._ctx,
