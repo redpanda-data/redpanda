@@ -33,12 +33,16 @@ struct manifest_metadata {
 
     friend bool operator==(const manifest_metadata&, const manifest_metadata&)
       = default;
+
+    manifest_metadata copy() const;
 };
 
 struct manifest {
     manifest_metadata metadata;
     chunked_vector<manifest_entry> entries;
     friend bool operator==(const manifest&, const manifest&) = default;
+
+    manifest copy() const;
 };
 
 } // namespace iceberg
