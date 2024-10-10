@@ -32,3 +32,22 @@ redpanda_cc_library(
         "//src/v/serde",
     ],
 )
+
+redpanda_cc_library(
+    name = "overlay_collection",
+    srcs = [
+        "overlay_collection.cc",
+    ],
+    hdrs = [
+        "overlay_collection.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        ":sorted_run",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
