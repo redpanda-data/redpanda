@@ -17525,7 +17525,7 @@
     "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "y9h5L2NtWbogyWSOJgqnUaU50MTPWAW+waelXSirMVg=",
-        "usagesDigest": "otnZzy/tdlkror2DrmgP+0frvo+lLjFyiaXLR70GJD8=",
+        "usagesDigest": "ZnkeaOCkAcOsvzuR2apwEJhwy1HyxPq22JpiBydVcIk=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -17604,7 +17604,7 @@
               "netrc": "",
               "sha256": {
                 "linux-aarch64": "95223a9fd35a2cfea2582b34519bbf65ff6bed498a378eb545a9d4fb8ee5a832",
-                "linux-x86_64": "f79565afd6f5d270c10a11cbe4d4b59ecf807df29051af2b479daf4524aa9c73"
+                "linux-x86_64": "ca33f2b189bf56a3266101b6ed267739cf10d311b5c3fbdd2c05a306574f6f70"
               },
               "strip_prefix": {},
               "urls": {
@@ -17612,7 +17612,7 @@
                   "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18.1.8-ubuntu-22.04-aarch64.tar.gz"
                 ],
                 "linux-x86_64": [
-                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18.1.8-ubuntu-22.04-x86_64.tar.gz"
+                  "http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-18.1.8-ubuntu-22.04-x86_64.tar.gz"
                 ]
               }
             }
