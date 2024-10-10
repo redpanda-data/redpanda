@@ -29,7 +29,7 @@ func Test_licenseFeatureChecks(t *testing.T) {
 		},
 		{
 			name: "license ok, cache valid",
-			prof: &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().AddDate(0, 0, -1).Unix()}},
+			prof: &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().Add(20 * time.Minute).Unix()}},
 			checkCache: func(t *testing.T, before int64, after int64) {
 				// If the cache was valid, last update shouldn't have changed.
 				require.Equal(t, before, after)
@@ -39,7 +39,7 @@ func Test_licenseFeatureChecks(t *testing.T) {
 		},
 		{
 			name: "license ok, old cache",
-			prof: &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().AddDate(0, 0, -20).Unix()}}, // Limit is 15 days
+			prof: &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().AddDate(0, 0, -20).Unix()}}, // Limit is 1 hour
 			checkCache: func(t *testing.T, before int64, after int64) {
 				// Date should be updated.
 				afterT := time.Unix(after, 0)
@@ -52,19 +52,19 @@ func Test_licenseFeatureChecks(t *testing.T) {
 			name:         "inViolation, first time call",
 			prof:         &config.RpkProfile{},
 			responseCase: "inViolation",
-			expContain:   "A Redpanda Enterprise Edition license is required",
+			expContain:   "These features require a license",
 		},
 		{
 			name:         "inViolation, expired last check",
 			prof:         &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().AddDate(0, 0, -20).Unix()}},
 			responseCase: "inViolation",
-			expContain:   "A Redpanda Enterprise Edition license is required t",
+			expContain:   "These features require a license",
 		},
 		{
 			// Edge case when the license expires but the last check was less
-			// than 15 days ago.
+			// than 1 hour ago.
 			name:         "inViolation, cache still valid",
-			prof:         &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().AddDate(0, 0, -1).Unix()}},
+			prof:         &config.RpkProfile{LicenseCheck: &config.LicenseStatusCache{LastUpdate: time.Now().Add(30 * time.Minute).Unix()}},
 			responseCase: "inViolation",
 			// In this case, even if the license is in violation, rpk won't
 			// reach the Admin API because the last check was under 15 days.
