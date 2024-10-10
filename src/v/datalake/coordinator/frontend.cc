@@ -14,12 +14,65 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "datalake/coordinator/coordinator_manager.h"
 #include "datalake/coordinator/state_machine.h"
+#include "datalake/coordinator/translated_offset_range.h"
+#include "datalake/coordinator/types.h"
 #include "datalake/logger.h"
 #include "raft/group_manager.h"
 #include "rpc/connection_cache.h"
 
 namespace datalake::coordinator {
+
+namespace {
+coordinator_errc to_rpc_errc(coordinator::errc e) {
+    switch (e) {
+    case coordinator::errc::shutting_down:
+    case coordinator::errc::not_leader:
+        return coordinator_errc::not_leader;
+    case coordinator::errc::stm_apply_error:
+        return coordinator_errc::stale;
+    case coordinator::errc::timedout:
+        return coordinator_errc::timeout;
+    }
+}
+ss::future<add_translated_data_files_reply> add_files(
+  coordinator_manager& mgr,
+  model::ntp coordinator_ntp,
+  add_translated_data_files_request req) {
+    auto crd = mgr.get(coordinator_ntp);
+    if (!crd) {
+        co_return add_translated_data_files_reply{coordinator_errc::not_leader};
+    }
+    chunked_vector<translated_offset_range> files;
+    for (auto& fs : req.files) {
+        // XXX: does each file need to be a vector?
+        std::move(
+          fs.translated_ranges.begin(),
+          fs.translated_ranges.end(),
+          std::back_inserter(files));
+    }
+    auto ret = co_await crd->sync_add_files(req.tp, std::move(files));
+    if (ret.has_error()) {
+        co_return to_rpc_errc(ret.error());
+    }
+    co_return add_translated_data_files_reply{coordinator_errc::ok};
+}
+ss::future<fetch_latest_data_file_reply> fetch_latest_offset(
+  coordinator_manager& mgr,
+  model::ntp coordinator_ntp,
+  fetch_latest_data_file_request req) {
+    auto crd = mgr.get(coordinator_ntp);
+    if (!crd) {
+        co_return fetch_latest_data_file_reply{coordinator_errc::not_leader};
+    }
+    auto ret = co_await crd->sync_get_last_added_offset(req.tp);
+    if (ret.has_error()) {
+        co_return to_rpc_errc(ret.error());
+    }
+    co_return fetch_latest_data_file_reply{ret.value()};
+}
+} // namespace
 
 template<auto Func, typename req_t>
 requires requires(frontend::proto_t f, req_t req, ::rpc::client_opts opts) {
@@ -108,6 +161,7 @@ template auto frontend::process<
 
 frontend::frontend(
   model::node_id self,
+  ss::sharded<coordinator_manager>* coordinator_mgr,
   ss::sharded<raft::group_manager>* group_mgr,
   ss::sharded<cluster::partition_manager>* partition_mgr,
   ss::sharded<cluster::topics_frontend>* topics_frontend,
@@ -115,6 +169,7 @@ frontend::frontend(
   ss::sharded<cluster::partition_leaders_table>* leaders,
   ss::sharded<cluster::shard_table>* shards)
   : _self(self)
+  , _coordinator_mgr(coordinator_mgr)
   , _group_mgr(group_mgr)
   , _partition_mgr(partition_mgr)
   , _topics_frontend(topics_frontend)
@@ -205,17 +260,11 @@ frontend::add_translated_data_files_locally(
   add_translated_data_files_request request,
   const model::ntp& coordinator_partition,
   ss::shard_id shard) {
-    co_return co_await _partition_mgr->invoke_on(
+    co_return co_await _coordinator_mgr->invoke_on(
       shard,
       [&coordinator_partition,
-       req = std::move(request)](cluster::partition_manager& mgr) mutable {
-          auto partition = mgr.get(coordinator_partition);
-          if (!partition) {
-              return ssx::now(
-                add_translated_data_files_reply{coordinator_errc::not_leader});
-          }
-          auto stm = partition->raft()->stm_manager()->get<coordinator_stm>();
-          return stm->add_translated_data_file(std::move(req));
+       req = std::move(request)](coordinator_manager& mgr) mutable {
+          return add_files(mgr, coordinator_partition, std::move(req));
       });
 }
 
@@ -233,17 +282,17 @@ frontend::fetch_latest_data_file_locally(
   fetch_latest_data_file_request request,
   const model::ntp& coordinator_partition,
   ss::shard_id shard) {
-    co_return co_await _partition_mgr->invoke_on(
+    co_return co_await _coordinator_mgr->invoke_on(
       shard,
       [&coordinator_partition,
-       req = std::move(request)](cluster::partition_manager& mgr) mutable {
+       req = std::move(request)](coordinator_manager& mgr) mutable {
           auto partition = mgr.get(coordinator_partition);
           if (!partition) {
               return ssx::now(
                 fetch_latest_data_file_reply{coordinator_errc::not_leader});
           }
-          auto stm = partition->raft()->stm_manager()->get<coordinator_stm>();
-          return stm->fetch_latest_data_file(std::move(req));
+          return fetch_latest_offset(
+            mgr, coordinator_partition, std::move(req));
       });
 }
 

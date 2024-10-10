@@ -86,6 +86,7 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/coordinator/coordinator_manager.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/service.h"
 #include "datalake/coordinator/state_machine.h"
@@ -1418,8 +1419,15 @@ void application::wire_up_runtime_services(
     if (datalake_enabled()) {
         syschecks::systemd_message("Starting datalake services").get();
         construct_service(
+          _datalake_coordinator_mgr,
+          node_id,
+          std::ref(raft_group_manager),
+          std::ref(partition_manager))
+          .get();
+        construct_service(
           _datalake_coordinator_fe,
           node_id,
+          &_datalake_coordinator_mgr,
           &raft_group_manager,
           &partition_manager,
           &controller->get_topics_frontend(),

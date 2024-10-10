@@ -45,12 +45,6 @@ public:
 
     const topics_state& state() const { return state_; }
 
-    // XXX: remove once there is a higher level coordinator abstraction.
-    ss::future<add_translated_data_files_reply>
-      add_translated_data_file(add_translated_data_files_request);
-    ss::future<fetch_latest_data_file_reply>
-      fetch_latest_data_file(fetch_latest_data_file_request);
-
 protected:
     ss::future<> do_apply(const model::record_batch&) override;
 
