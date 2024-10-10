@@ -123,6 +123,18 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
   std::optional<cloud_storage::remote_label> remote_label,
   std::optional<model::topic_namespace> topic_namespace_override) {
+    vlog(
+      clusterlog.trace,
+      "Creating partition with configuration: {}, raft group_id: {}, "
+      "initial_nodes: {}, remote topic properties: {}, remote label: {}, "
+      "topic_namespace_override: {}",
+      ntp_cfg,
+      group,
+      initial_nodes,
+      rtp,
+      remote_label,
+      topic_namespace_override);
+
     auto guard = _gate.hold();
     // topic_namespace_override is used in case of a cluster migration.
     // The original ("source") topic name must be used in the tiered

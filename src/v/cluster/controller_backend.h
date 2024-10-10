@@ -247,6 +247,8 @@ public:
 
 private:
     struct ntp_reconciliation_state;
+    using force_reconfiguration
+      = ss::bool_class<struct force_reconfiguration_tag>;
 
     // Topics
     ss::future<> bootstrap_controller_backend();
@@ -292,7 +294,8 @@ private:
       model::ntp,
       raft::group_id,
       model::revision_id log_revision,
-      replicas_t initial_replicas);
+      replicas_t initial_replicas,
+      force_reconfiguration is_force_reconfigured);
 
     ss::future<> add_to_shard_table(
       model::ntp,
