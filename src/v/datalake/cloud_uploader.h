@@ -32,6 +32,17 @@ public:
       retry_chain_node& rtc_parent,
       lazy_abort_source& lazy_abort_source);
 
+    // Upload multiple data files.
+    // so that, in case of error, we know which files failed to upload.
+    // On success all files are uploaded and local files are removed.
+    // On failure, all files are removed.
+    ss::future<
+      result<chunked_vector<coordinator::data_file>, data_writer_error>>
+    upload_multiple(
+      chunked_vector<local_data_file> local_files,
+      retry_chain_node& rtc_parent,
+      lazy_abort_source& lazy_abort_source);
+
 private:
     cloud_io::remote& _cloud_io;
     cloud_storage_clients::bucket_name _bucket;

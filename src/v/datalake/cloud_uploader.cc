@@ -110,4 +110,22 @@ cloud_uploader::upload_data_file(
         co_return data_writer_error::cloud_io_error;
     }
 }
+ss::future<result<chunked_vector<coordinator::data_file>, data_writer_error>>
+cloud_uploader::upload_multiple(
+  chunked_vector<local_data_file> local_files,
+  retry_chain_node& rtc_parent,
+  lazy_abort_source& lazy_abort_source) {
+    chunked_vector<coordinator::data_file> results;
+    // TODO: check lazy_abort_source when needed
+    for (const auto& file : local_files) {
+        auto res = co_await upload_data_file(
+          file, file.file_path.string(), rtc_parent, lazy_abort_source);
+        if (!res.has_value()) {
+            // FIXME: call cleanup function before exiting
+            co_return res.error();
+        }
+        results.push_back(res.value());
+    }
+    co_return results;
+}
 } // namespace datalake
