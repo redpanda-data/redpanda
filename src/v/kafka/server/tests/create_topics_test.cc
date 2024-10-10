@@ -335,3 +335,112 @@ FIXTURE_TEST(test_v5_validate_configs_resp, create_topic_fixture) {
         false),
       kafka::api_version(5));
 }
+
+FIXTURE_TEST(create_multiple_topics_mixed_invalid, create_topic_fixture) {
+    auto topic_a = make_topic(
+      "topic_a",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{{"redpanda.remote.write", "true"}});
+
+    auto topic_b = make_topic(
+      "topic_b",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"retention.bytes", "this_should_be_an_integer"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client
+                  .dispatch(make_req({topic_a, topic_b}), kafka::api_version(5))
+                  .get();
+
+    BOOST_CHECK(resp.data.topics.size() == 2);
+
+    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
+    BOOST_CHECK(resp.data.topics[0].name == "topic_a");
+
+    BOOST_CHECK(
+      resp.data.topics[1].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK(resp.data.topics[1].name == "topic_b");
+}
+
+FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
+    auto topic_a = make_topic(
+      "topic_a",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "yes_this_is_true"}});
+
+    auto topic_b = make_topic(
+      "topic_b",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"retention.bytes", "this_should_be_an_integer"}});
+
+    auto topic_c = make_topic(
+      "topic_c",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{{"segment.ms", "0x2A"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client
+                  .dispatch(
+                    make_req({topic_a, topic_b, topic_c}),
+                    kafka::api_version(5))
+                  .get();
+
+    BOOST_CHECK(resp.data.topics.size() == 3);
+
+    BOOST_CHECK(resp.data.topics[0].name == "topic_a");
+    BOOST_CHECK(
+      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
+
+    BOOST_CHECK(resp.data.topics[1].name == "topic_b");
+    BOOST_CHECK(
+      resp.data.topics[1].error_code == kafka::error_code::invalid_config);
+
+    BOOST_CHECK(resp.data.topics[2].name == "topic_c");
+    BOOST_CHECK(
+      resp.data.topics[2].error_code == kafka::error_code::invalid_config);
+}
+
+FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
+    auto topic = make_topic(
+      "topic1",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "affirmative"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK(
+      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK(
+      resp.data.topics[0].error_message == "Configuration is invalid");
+    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+}
+
+FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
+    auto topic = make_topic(
+      "topic1",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "tRuE"}, {"redpanda.remote.read", "FALSE"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
+    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+}

@@ -26,6 +26,7 @@
 
 #include <bits/stdint-intn.h>
 #include <bits/stdint-uintn.h>
+#include <boost/lexical_cast/bad_lexical_cast.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -109,10 +110,20 @@ get_string_value(const config_map_t& config, std::string_view key) {
 static std::optional<bool>
 get_bool_value(const config_map_t& config, std::string_view key) {
     if (auto it = config.find(key); it != config.end()) {
-        return string_switch<std::optional<bool>>(it->second)
-          .match("true", true)
-          .match("false", false)
-          .default_match(std::nullopt);
+        try {
+            // Ignore case.
+            auto str_value = it->second;
+            std::transform(
+              str_value.begin(),
+              str_value.end(),
+              str_value.begin(),
+              [](const auto& c) { return std::tolower(c); });
+            return string_switch<std::optional<bool>>(str_value)
+              .match("true", true)
+              .match("false", false);
+        } catch (const std::runtime_error&) {
+            throw boost::bad_lexical_cast();
+        };
     }
     return std::nullopt;
 }

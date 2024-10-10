@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/logger.h"
 #include "kafka/protocol/timeout.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -33,6 +34,7 @@
 
 #include <array>
 #include <chrono>
+#include <iterator>
 #include <optional>
 #include <string_view>
 
@@ -160,6 +162,27 @@ static void log_topic_status(const std::vector<cluster::topic_result>& c_res) {
           fmt::join(err.second, ", "),
           err.first);
     }
+}
+
+// To ensure that responses to `CreateTopics` requests are returned in the same
+// order as the topics were passed. This would be out of order in the case that
+// some topics were not successfully created (error response returned) while
+// others were.
+static void sort_topic_response(
+  const create_topics_request& req, create_topics_response& resp) {
+    absl::flat_hash_map<model::topic, size_t> topic_name_order_map;
+    for (size_t i = 0; i < req.data.topics.size(); ++i) {
+        topic_name_order_map[req.data.topics[i].name] = i;
+    }
+
+    std::sort(
+      resp.data.topics.begin(),
+      resp.data.topics.end(),
+      [&topic_name_order_map](
+        const creatable_topic_result& a, const creatable_topic_result& b) {
+          return topic_name_order_map.at(a.name)
+                 < topic_name_order_map.at(b.name);
+      });
 }
 
 template<>
@@ -295,6 +318,18 @@ ss::future<response_ptr> create_topics_handler::handle(
                   result.error_code = error_code::topic_already_exists;
                   return result;
               }
+              try {
+                  // Try parsing all the config parameters.
+                  std::ignore = to_cluster_type(t);
+              } catch (...) {
+                  auto e = std::current_exception();
+                  vlog(
+                    klog.warn,
+                    "Invalid config for topic creation generated error: {}",
+                    e);
+                  result.error_code = error_code::invalid_config;
+                  return result;
+              }
               result.num_partitions = t.num_partitions;
               result.replication_factor = t.replication_factor;
               if (ctx.header().version >= api_version(5)) {
@@ -345,7 +380,8 @@ ss::future<response_ptr> create_topics_handler::handle(
       });
     valid_range_end = quota_exceeded_it;
 
-    auto to_create = to_cluster_type(begin, valid_range_end);
+    auto to_create = to_cluster_type(
+      begin, valid_range_end, std::back_inserter(response.data.topics));
 
     // Create the topics with controller on core 0
     auto c_res = co_await ctx.topics_frontend().create_topics(
@@ -363,6 +399,7 @@ ss::future<response_ptr> create_topics_handler::handle(
     }
 
     log_topic_status(c_res);
+    sort_topic_response(request, response);
     co_return co_await ctx.respond(std::move(response));
 }
 

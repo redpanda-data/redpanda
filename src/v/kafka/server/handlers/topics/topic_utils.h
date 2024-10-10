@@ -14,6 +14,8 @@
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "container/fragmented_vector.h"
+#include "kafka/protocol/errors.h"
+#include "kafka/protocol/logger.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/handlers/topics/validators.h"
 #include "model/timeout_clock.h"
@@ -116,23 +118,32 @@ void append_cluster_results(
 // Converts objects representing KafkaAPI message to objects consumed
 // by cluster::controller API
 // clang-format off
-template<typename KafkaApiTypeIter>
+template<typename KafkaApiTypeIter, typename ErrIter>
 requires TopicRequestItem<typename KafkaApiTypeIter::value_type> &&
+         TopicResultIterator<ErrIter> &&
 requires(KafkaApiTypeIter it) {
     to_cluster_type(*it);
 }
 // clang-format on
-auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
-  -> chunked_vector<decltype(to_cluster_type(*begin))> {
-    chunked_vector<decltype(to_cluster_type(*begin))> cluster_types;
+auto to_cluster_type(
+  KafkaApiTypeIter begin, KafkaApiTypeIter end, ErrIter out_it)
+  -> chunked_vector<cluster::custom_assignable_topic_configuration> {
+    chunked_vector<cluster::custom_assignable_topic_configuration>
+      cluster_types;
     cluster_types.reserve(std::distance(begin, end));
-    std::transform(
-      begin,
-      end,
-      std::back_inserter(cluster_types),
-      [](const typename KafkaApiTypeIter::value_type& kafka_type) {
-          return to_cluster_type(kafka_type);
-      });
+    for (auto it = begin; it != end; ++it) {
+        try {
+            cluster_types.emplace_back(to_cluster_type(*it));
+        } catch (...) {
+            auto e = std::current_exception();
+            vlog(
+              klog.warn,
+              "Invalid config for topic creation generated error: {}",
+              e);
+            out_it = generate_error(
+              *it, error_code::invalid_config, "Configuration is invalid");
+        }
+    }
     return cluster_types;
 }
 
