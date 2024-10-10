@@ -547,6 +547,8 @@ cc_library(
         "include/seastar/websocket/server.hh",
     ],
     copts = [
+        "-Wno-unused-variable",
+        "-Wno-unused-result",
         "-Wno-unused-but-set-variable",
     ] + select({
         ":use_stack_guards": ["-fstack-clash-protection"],

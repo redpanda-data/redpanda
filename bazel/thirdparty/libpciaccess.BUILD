@@ -27,7 +27,6 @@ cc_library(
         "include/pciaccess.h",
     ],
     copts = [
-        "-Wno-unused-result",
         "-Wpointer-arith",
         "-Wmissing-declarations",
         "-Wformat=2",
@@ -55,6 +54,10 @@ cc_library(
         "-Werror=write-strings",
         "-Werror=address",
         "-Werror=int-to-pointer-cast",
+
+        # Quiet some build warnings
+        "-Wno-unused-result",
+        "-Wno-tautological-constant-out-of-range-compare",
     ],
     # This is only consumed by a make library that produces a static library,
     # so this library only needs to produce a static library. Doing this means
