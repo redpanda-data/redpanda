@@ -18,6 +18,8 @@
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
 
+#include <ranges>
+
 namespace datalake {
 namespace {
 namespace pb = google::protobuf;
@@ -42,11 +44,19 @@ struct_outcome struct_from_protobuf(
   const pb::Descriptor& msg, proto_descriptors_stack& stack) {
     if (is_recursive_type(msg, stack)) {
         return schema_conversion_exception(fmt::format(
-          "Protocol buffer field {} not supported", msg.DebugString()));
+          "Protocol buffer field not supported - recursive type detected, type "
+          "hierarchy: {}, current type: {}",
+          fmt::join(
+            std::ranges::views::transform(stack, &pb::Descriptor::full_name),
+            ", "),
+          msg.DebugString()));
     }
     if (stack.size() > max_recursion_depth) {
         return schema_conversion_exception(fmt::format(
-          "Protocol buffer field {} not supported", msg.DebugString()));
+          "Protocol buffer field {} not supported - max nested depth of {} "
+          "reached",
+          msg.DebugString(),
+          max_recursion_depth));
     }
     stack.push_back(&msg);
     iceberg::struct_type struct_t;
