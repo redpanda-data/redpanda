@@ -36,7 +36,7 @@ class Finjector:
     # we cannot guarantee start idempotency
     LOG_ALLOW_LIST = ["failed to lock pidfile. already locked"]
 
-    def __init__(self, redpanda, scale):
+    def __init__(self, redpanda, scale, **kwargs):
         self.redpanda = redpanda
         self.enable_manual = False
         self.enable_loop = False
@@ -47,6 +47,7 @@ class Finjector:
         self.allowed_failures = FailureSpec.FAILURE_TYPES
         self.custom_failures = []
         self.max_concurrent_failures = sys.maxsize
+        self.configure_finjector(**kwargs)
 
     def add_failure_spec(self, fspec):
         self.custom_failures.append(fspec)
