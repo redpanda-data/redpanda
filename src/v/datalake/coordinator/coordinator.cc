@@ -78,13 +78,13 @@ coordinator::sync_add_files(
       entries.begin()->start_offset,
       entries.back().last_offset,
       entries.size());
-    auto sync_res = co_await stm_.sync(10s);
+    auto sync_res = co_await stm_->sync(10s);
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
     auto added_last_offset = entries.back().last_offset;
     auto update_res = add_files_update::build(
-      stm_.state(), tp, std::move(entries));
+      stm_->state(), tp, std::move(entries));
     if (update_res.has_error()) {
         // NOTE: rejection here is just an optimization -- the operation would
         // fail to be applied to the STM anyway.
@@ -100,7 +100,7 @@ coordinator::sync_add_files(
     builder.add_raw_kv(
       serde::to_iobuf(add_files_update::key),
       serde::to_iobuf(std::move(update_res.value())));
-    auto repl_res = co_await stm_.replicate_and_wait(
+    auto repl_res = co_await stm_->replicate_and_wait(
       sync_res.value(), std::move(builder).build(), as_);
     if (repl_res.has_error()) {
         co_return convert_stm_errc(repl_res.error());
@@ -110,7 +110,7 @@ coordinator::sync_add_files(
     // NOTE: a mismatch here just means there was a race to update the STM, and
     // this should be handled by callers.
     // TODO: would be nice to encapsulate this in some update validator.
-    auto prt_opt = stm_.state().partition_state(tp);
+    auto prt_opt = stm_->state().partition_state(tp);
     if (
       !prt_opt.has_value() || prt_opt->get().pending_entries.empty()
       || prt_opt->get().pending_entries.back().last_offset
@@ -131,11 +131,11 @@ coordinator::sync_get_last_added_offset(model::topic_partition tp) {
     if (gate.has_error()) {
         co_return gate.error();
     }
-    auto sync_res = co_await stm_.sync(10s);
+    auto sync_res = co_await stm_->sync(10s);
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
-    auto prt_state_opt = stm_.state().partition_state(tp);
+    auto prt_state_opt = stm_->state().partition_state(tp);
     if (!prt_state_opt.has_value()) {
         co_return std::nullopt;
     }

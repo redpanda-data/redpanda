@@ -86,7 +86,7 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     if (stm == nullptr) {
         return;
     }
-    auto crd = ss::make_lw_shared<coordinator>(*stm);
+    auto crd = ss::make_lw_shared<coordinator>(std::move(stm));
     if (p.is_leader()) {
         crd->notify_leadership(self_);
     }

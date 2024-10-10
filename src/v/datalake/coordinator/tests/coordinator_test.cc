@@ -31,8 +31,8 @@ model::topic_partition tp(int t, int pid) {
       model::partition_id(pid));
 }
 struct coordinator_node {
-    explicit coordinator_node(coordinator_stm& stm)
-      : stm(stm)
+    explicit coordinator_node(ss::shared_ptr<coordinator_stm> stm)
+      : stm(*stm)
       , crd(stm) {}
 
     coordinator_stm& stm;
@@ -127,7 +127,7 @@ public:
             auto stm = builder.create_stm<coordinator_stm>(
               datalake::datalake_log, raft);
             node->start(std::move(builder)).get();
-            crds.at(id()) = std::make_unique<coordinator_node>(*stm);
+            crds.at(id()) = std::make_unique<coordinator_node>(std::move(stm));
         }
     }
     // Returns the coordinator on the current leader.
