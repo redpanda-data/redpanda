@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import socket
 import tempfile
 import json
@@ -274,7 +275,9 @@ class CertificateRevocationTest(RedpandaTest):
                    backoff_sec=0.2,
                    err_msg="Cluster did not become unhealthy")
 
-    @cluster(num_nodes=3)
+    # Ignore all logs since we can expect a variety of errors with noncogent certs, eg:
+    # kafka - server.cc:159 - Error[applying protocol] remote address: 172.31.37.188:59640 - seastar::timed_out_error (timedout)
+    @cluster(num_nodes=3, log_allow_list=[re.compile(".*")])
     def test_noncogent(self):
         node = self.redpanda.nodes[0]
         self.rpk.list_schemas()
