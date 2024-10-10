@@ -95,7 +95,7 @@ Now you should be able to connect to `redpanda` (kafka-api) running at `localhos
 
 We use [Bazel](https://bazel.build/) as our build system. Bazel automatically manages most of the toolchains and third-party dependencies,
 but there are a few system libraries and preinstalled tools our build assumes are available locally. You can bootstrap and build Redpanda
-along with all it's tests using:
+along with all its tests using:
 
 ```bash
 sudo ./bazel/install-deps.sh
