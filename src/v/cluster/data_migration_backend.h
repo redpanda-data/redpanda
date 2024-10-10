@@ -191,6 +191,7 @@ private:
       migration_reconciliation_state& rs, const model::topic_namespace& nt);
     ss::future<> drop_migration_reconciliation_rstate(
       migration_reconciliation_states_t::const_iterator rs_it);
+    ss::future<> clear_tstate(const topic_map_t::value_type& topic_map_entry);
     void clear_tstate_belongings(
       const model::topic_namespace& nt,
       const topic_reconciliation_state& tstate);

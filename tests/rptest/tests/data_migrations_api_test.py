@@ -30,9 +30,11 @@ from rptest.clients.rpk import RpkTool
 from ducktape.mark import matrix, ok_to_fail
 from contextlib import nullcontext
 import requests
+import re
 
 MIGRATION_LOG_ALLOW_LIST = [
     'Error during log recovery: cloud_storage::missing_partition_exception',
+    re.compile("cloud_storage.*Failed to fetch manifest during finalize().*"),
 ] + Finjector.LOG_ALLOW_LIST
 
 
@@ -77,6 +79,10 @@ class CancellationStage(NamedTuple):
     dir: Literal['in', 'out']
     stage: Literal['preparing', 'prepared', 'executing', 'executed']
 
+    @classmethod
+    def options(cls, member):
+        return typing.get_args(cls.__annotations__[member])
+
 
 class TmtpdiParams(NamedTuple):
     """parameters for test_migrated_topic_data_integrity"""
@@ -87,8 +93,8 @@ class TmtpdiParams(NamedTuple):
 def generate_tmptpdi_params() -> List[TmtpdiParams]:
     cancellation_stages = [
         CancellationStage(dir, stage)
-        for dir in typing.get_args(CancellationStage.dir)
-        for stage in typing.get_args(CancellationStage.stage)
+        for dir in CancellationStage.options('dir')
+        for stage in CancellationStage.options('stage')
     ]
     return [
         TmtpdiParams(cancellation, use_alias)
@@ -290,6 +296,46 @@ class DataMigrationsApiTest(RedpandaTest):
         # for scrubbing to complete
         self.redpanda.set_cluster_config({param_to_disable: True},
                                          expect_restart=True)
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_mount_inexistent(self):
+        topic = TopicSpec(partition_count=3)
+        admin = Admin(self.redpanda)
+
+        with Finjector(self.redpanda, self.scale).finj_thread():
+            in_migration = InboundDataMigration(topics=[
+                InboundTopic(make_namespaced_topic(topic.name), alias=None)
+            ],
+                                                consumer_groups=[])
+            in_migration_id = self.create_and_wait(in_migration)
+
+            migrations_map = self.get_migrations_map()
+            self.logger.info(f"migrations: {migrations_map}")
+            assert len(
+                migrations_map) == 1, "There should be one data migration"
+
+            assert len(migrations_map[in_migration_id]['migration']
+                       ['topics']) == 1, "migration should contain one topic"
+
+            admin.execute_data_migration_action(in_migration_id,
+                                                MigrationAction.prepare)
+            self.wait_for_migration_states(in_migration_id, ['preparing'])
+            time.sleep(10)
+            # still preparing, i.e. stuck
+            self.wait_for_migration_states(in_migration_id, ['preparing'])
+            # and the topic is not there
+            self.wait_partitions_disappear([topic])
+
+            admin.execute_data_migration_action(in_migration_id,
+                                                MigrationAction.cancel)
+            self.wait_for_migration_states(in_migration_id,
+                                           ['canceling', 'cancelled'])
+            self.wait_for_migration_states(in_migration_id, ['cancelled'])
+            # still not there
+            self.wait_partitions_disappear([topic])
+
+            admin.delete_data_migration(in_migration_id)
+            self.wait_migration_disappear(in_migration_id)
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
@@ -610,6 +656,7 @@ class DataMigrationsApiTest(RedpandaTest):
             params=generate_tmptpdi_params())
     def test_migrated_topic_data_integrity(self, transfer_leadership: bool,
                                            params: TmtpdiParams):
+        cancellation = params.cancellation
         rpk = RpkTool(self.redpanda)
         self.redpanda.si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "missing_segments"})
@@ -632,7 +679,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.prepare)
-            if params.cancellation == CancellationStage('out', 'preparing'):
+            if cancellation == CancellationStage('out', 'preparing'):
                 self.wait_for_migration_states(out_migration_id,
                                                ['preparing', 'prepared'])
                 return self.cancel_outbound(out_migration_id,
@@ -649,13 +696,13 @@ class DataMigrationsApiTest(RedpandaTest):
                                        metadata_locked=True,
                                        read_blocked=False,
                                        produce_blocked=False)
-            if params.cancellation == CancellationStage('out', 'prepared'):
+            if cancellation == CancellationStage('out', 'prepared'):
                 return self.cancel_outbound(out_migration_id,
                                             workload_topic.name, producer)
 
             admin.execute_data_migration_action(out_migration_id,
                                                 MigrationAction.execute)
-            if params.cancellation == CancellationStage('out', 'executing'):
+            if cancellation == CancellationStage('out', 'executing'):
                 self.wait_for_migration_states(out_migration_id,
                                                ['executing', 'executed'])
                 return self.cancel_outbound(out_migration_id,
@@ -671,7 +718,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                        metadata_locked=True,
                                        read_blocked=False,
                                        produce_blocked=True)
-            if params.cancellation == CancellationStage('out', 'executed'):
+            if cancellation == CancellationStage('out', 'executed'):
                 return self.cancel_outbound(out_migration_id,
                                             workload_topic.name, producer)
 
@@ -730,7 +777,7 @@ class DataMigrationsApiTest(RedpandaTest):
                 admin.execute_data_migration_action(in_migration_id,
                                                     MigrationAction.prepare)
 
-                if params.cancellation == CancellationStage('in', 'preparing'):
+                if cancellation == CancellationStage('in', 'preparing'):
                     cancellation = None
                     self.wait_for_migration_states(in_migration_id,
                                                    ['preparing', 'prepared'])
@@ -750,7 +797,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                            read_blocked=True,
                                            produce_blocked=True)
 
-                if params.cancellation == CancellationStage('in', 'prepared'):
+                if cancellation == CancellationStage('in', 'prepared'):
                     cancellation = None
                     self.cancel_inbound(in_migration_id, inbound_topic_name)
                     continue
@@ -763,7 +810,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
                 admin.execute_data_migration_action(in_migration_id,
                                                     MigrationAction.execute)
-                if params.cancellation == CancellationStage('in', 'executing'):
+                if cancellation == CancellationStage('in', 'executing'):
                     cancellation = None
                     self.wait_for_migration_states(in_migration_id,
                                                    ['executing', 'executed'])
@@ -781,7 +828,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                            metadata_locked=True,
                                            read_blocked=True,
                                            produce_blocked=True)
-                if params.cancellation == CancellationStage('in', 'executed'):
+                if cancellation == CancellationStage('in', 'executed'):
                     cancellation = None
                     self.cancel_inbound(in_migration_id, inbound_topic_name)
                     continue

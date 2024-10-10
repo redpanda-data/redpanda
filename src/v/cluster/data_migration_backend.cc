@@ -1130,27 +1130,36 @@ void backend::clear_tstate_belongings(
 ss::future<> backend::drop_migration_reconciliation_rstate(
   migration_reconciliation_states_t::const_iterator rs_it) {
     const auto& topics = rs_it->second.outstanding_topics;
-    for (const auto& [nt, tstate] : topics) {
-        clear_tstate_belongings(nt, tstate);
-        auto topic_work_it = _local_work_states.find(nt);
-        if (topic_work_it != _local_work_states.end()) {
-            auto& topic_work_state = topic_work_it->second;
-            co_await ssx::async_for_each(
-              topic_work_state, [this, &nt](auto& partition_local_work_entry) {
-                  auto& [partition_id, rwstate] = partition_local_work_entry;
-                  if (rwstate.shard) {
-                      stop_partition_work(nt, partition_id, rwstate);
-                  }
-              });
-        }
-        auto it = _active_topic_work_states.find(nt);
-        if (it != _active_topic_work_states.end()) {
-            it->second->rcn().request_abort();
-        }
 
-        _topic_migration_map.erase(nt);
-    }
+    co_await ss::parallel_for_each(
+      topics, [this](const topic_map_t::value_type& topic_map_entry) {
+          return clear_tstate(topic_map_entry);
+      });
     _migration_states.erase(rs_it);
+}
+
+ss::future<>
+backend::clear_tstate(const topic_map_t::value_type& topic_map_entry) {
+    const auto& [nt, tstate] = topic_map_entry;
+    clear_tstate_belongings(nt, tstate);
+    auto topic_work_it = _local_work_states.find(nt);
+    if (topic_work_it != _local_work_states.end()) {
+        auto& topic_work_state = topic_work_it->second;
+        co_await ssx::async_for_each(
+          topic_work_state, [this, &nt](auto& partition_local_work_entry) {
+              auto& [partition_id, rwstate] = partition_local_work_entry;
+              if (rwstate.shard) {
+                  stop_partition_work(nt, partition_id, rwstate);
+              }
+          });
+    }
+    auto it = _active_topic_work_states.find(nt);
+    if (it != _active_topic_work_states.end()) {
+        it->second->rcn().request_abort();
+        co_await it->second->future();
+    }
+
+    _topic_migration_map.erase(nt);
 }
 
 ss::future<> backend::reconcile_existing_topic(
