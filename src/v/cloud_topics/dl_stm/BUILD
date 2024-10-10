@@ -15,3 +15,20 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
     ],
 )
+
+redpanda_cc_library(
+    name = "sorted_run",
+    srcs = [
+        "sorted_run.cc",
+    ],
+    hdrs = [
+        "sorted_run.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
