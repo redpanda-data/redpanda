@@ -10,6 +10,7 @@ v_cc_library(
     NAME datalake_coordinator
     SRCS
         coordinator.cc
+        coordinator_manager.cc
         data_file.cc
         frontend.cc
         service.cc

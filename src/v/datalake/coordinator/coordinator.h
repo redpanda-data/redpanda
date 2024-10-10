@@ -36,6 +36,7 @@ public:
       model::topic_partition tp, chunked_vector<translated_offset_range>);
     ss::future<checked<std::optional<kafka::offset>, errc>>
     sync_get_last_added_offset(model::topic_partition tp);
+    void notify_leadership(std::optional<model::node_id>) {}
 
 private:
     checked<ss::gate::holder, errc> maybe_gate();
