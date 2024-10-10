@@ -76,6 +76,9 @@ struct fetch_latest_data_file_reply
     fetch_latest_data_file_reply() = default;
     explicit fetch_latest_data_file_reply(coordinator_errc err)
       : errc(err) {}
+    explicit fetch_latest_data_file_reply(std::optional<kafka::offset> o)
+      : last_added_offset(o)
+      , errc(coordinator_errc::ok) {}
 
     // The offset of the latest data file added to the coordinator.
     std::optional<kafka::offset> last_added_offset;

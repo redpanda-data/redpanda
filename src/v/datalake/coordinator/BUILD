@@ -46,6 +46,7 @@ redpanda_cc_library(
         "//src/v/storage:record_batch_builder",
     ],
     include_prefix = "datalake/coordinator",
+    visibility = ["//visibility:public"],
     deps = [
         ":coordinator",
         ":state_update",
@@ -185,9 +186,12 @@ redpanda_cc_library(
     include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
+        ":coordinator",
+        ":coordinator_manager",
         ":generated_datalake_coordinator_rpc",
         ":model",
         ":stm",
+        ":translated_offset_range",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/container:fragmented_vector",
