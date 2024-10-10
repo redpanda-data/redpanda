@@ -147,9 +147,25 @@ ss::future<topic_unmount_result> topic_mount_handler::unmount_topic(
       remote_tp_ns,
       rev);
 
+    const auto manifest_path = manifest.get_manifest_path(path_provider);
+
+    // Check if manifest already exists: this means a topic of the same name and
+    // initial revision id has been unmounted previously.
+    const auto exists_result = co_await _remote.object_exists(
+      _bucket,
+      cloud_storage_clients::object_key{manifest_path},
+      parent,
+      existence_check_type::manifest);
+    if (exists_result == download_result::success) {
+        vlog(
+          cst_log.warn,
+          "Existing topic mount manifest during the unmount process: {}",
+          manifest_path);
+    }
+
     // Upload manifest to cloud storage to mark it as mountable.
     const auto upload_result = co_await _remote.upload_manifest(
-      _bucket, manifest, manifest.get_manifest_path(path_provider), parent);
+      _bucket, manifest, manifest_path, parent);
 
     if (upload_result != upload_result::success) {
         vlog(
