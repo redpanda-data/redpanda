@@ -210,7 +210,18 @@ ss::future<log_recovery_result> partition_downloader::maybe_download_log() {
         //
         // The only possible solution here is to discard the exception and
         // continue with normal partition creation process.
-        vlog(_ctxlog.error, "Error during log recovery: {}", err);
+        //
+        // This may or may not indicate a failed log recovery - if new
+        // partitions have been added to a topic post recovery, this warning can
+        // be safely ignored.
+        //
+        // TODO: add partition aware mechanism to avoid triggering this log line
+        // for partitions created post recovery that do not need to attempt
+        // download_log().
+        vlog(
+          _ctxlog.warn,
+          "Warning encountered for a partition with log recovery enabled: {}.",
+          err);
     } catch (...) {
         // We can get here in case of transient download error.
         // The controller will retry recovery after some time.
