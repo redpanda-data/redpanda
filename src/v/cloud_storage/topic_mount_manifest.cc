@@ -23,14 +23,15 @@ namespace {
 struct topic_mount_manifest_state
   : public serde::envelope<
       topic_mount_manifest_state,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(label, tp_ns); }
+    auto serde_fields() { return std::tie(label, tp_ns, rev); }
 
     bool operator==(const topic_mount_manifest_state&) const = default;
 
     cloud_storage::remote_label label;
     model::topic_namespace tp_ns;
+    model::initial_revision_id rev;
 };
 
 } // namespace
@@ -38,9 +39,12 @@ struct topic_mount_manifest_state
 namespace cloud_storage {
 
 topic_mount_manifest::topic_mount_manifest(
-  const remote_label& label, const model::topic_namespace& tp_ns)
+  const remote_label& label,
+  const model::topic_namespace& tp_ns,
+  model::initial_revision_id rev)
   : _source_label(label)
-  , _tp_ns(tp_ns) {}
+  , _tp_ns(tp_ns)
+  , _rev(rev) {}
 
 ss::future<> topic_mount_manifest::update(ss::input_stream<char> is) {
     iobuf result;
@@ -55,14 +59,16 @@ void topic_mount_manifest::from_iobuf(iobuf in) {
     auto m_state = serde::from_iobuf<topic_mount_manifest_state>(std::move(in));
     _source_label = std::move(m_state.label);
     _tp_ns = std::move(m_state.tp_ns);
+    _rev = m_state.rev;
 }
 
 /// Serialize manifest object
 ///
 /// \return asynchronous input_stream with the serialized json
 ss::future<iobuf> topic_mount_manifest::serialize_buf() const {
-    return ss::make_ready_future<iobuf>(serde::to_iobuf(
-      topic_mount_manifest_state{.label = _source_label, .tp_ns = _tp_ns}));
+    return ss::make_ready_future<iobuf>(
+      serde::to_iobuf(topic_mount_manifest_state{
+        .label = _source_label, .tp_ns = _tp_ns, .rev = _rev}));
 }
 
 /// Manifest object name in S3

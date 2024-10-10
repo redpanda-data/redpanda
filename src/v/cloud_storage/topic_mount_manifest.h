@@ -26,7 +26,9 @@ namespace cloud_storage {
 class topic_mount_manifest final : public base_manifest {
 public:
     topic_mount_manifest(
-      const remote_label& label, const model::topic_namespace& tp_ns);
+      const remote_label& label,
+      const model::topic_namespace& tp_ns,
+      model::initial_revision_id rev);
 
     ss::future<> update(ss::input_stream<char> is) override;
 
@@ -35,6 +37,8 @@ public:
     const remote_label& get_source_label() const { return _source_label; }
 
     const model::topic_namespace& get_tp_ns() const { return _tp_ns; }
+
+    model::initial_revision_id get_revision_id() const { return _rev; }
 
     /// Manifest object name in S3
     remote_manifest_path
@@ -49,5 +53,6 @@ private:
     // mounted/unmounted.
     remote_label _source_label;
     model::topic_namespace _tp_ns;
+    model::initial_revision_id _rev;
 };
 } // namespace cloud_storage

@@ -28,14 +28,15 @@ const model::cluster_uuid test_uuid{uuid_t::from_string(test_uuid_str)};
 const remote_label test_label{test_uuid};
 const model::topic_namespace test_tp_ns{
   model::ns{"test_ns"}, model::topic{"test_tp"}};
+const model::initial_revision_id rev_id{123};
 
 TEST(topic_mount_manifest, manifest_type) {
-    topic_mount_manifest m(test_label, test_tp_ns);
+    topic_mount_manifest m(test_label, test_tp_ns, rev_id);
     ASSERT_TRUE(m.get_manifest_type() == manifest_type::topic_mount);
 }
 
 TEST(topic_mount_manifest, serde) {
-    topic_mount_manifest m(test_label, test_tp_ns);
+    topic_mount_manifest m(test_label, test_tp_ns, rev_id);
     auto serialized_manifest = m.serialize().get().stream;
 
     // Sanity check that the manifest contains the test label and
@@ -44,7 +45,7 @@ TEST(topic_mount_manifest, serde) {
     ASSERT_EQ(m.get_tp_ns(), test_tp_ns);
 
     topic_mount_manifest reconstructed_m(
-      remote_label{}, model::topic_namespace{});
+      remote_label{}, model::topic_namespace{}, model::initial_revision_id{});
 
     // Sanity check that the manifests differ.
     ASSERT_NE(reconstructed_m.get_source_label(), m.get_source_label());
@@ -58,6 +59,7 @@ TEST(topic_mount_manifest, serde) {
     // Manifests should be identical after deserialization.
     ASSERT_EQ(reconstructed_m.get_source_label(), m.get_source_label());
     ASSERT_EQ(reconstructed_m.get_tp_ns(), m.get_tp_ns());
+    ASSERT_EQ(reconstructed_m.get_revision_id(), m.get_revision_id());
     ASSERT_EQ(
       reconstructed_m.get_manifest_path(path_provider),
       m.get_manifest_path(path_provider));
