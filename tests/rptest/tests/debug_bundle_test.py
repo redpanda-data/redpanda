@@ -10,6 +10,7 @@
 import hashlib
 import random
 import time
+from typing import Optional
 from uuid import uuid4, UUID
 import requests
 from ducktape.cluster.cluster import ClusterNode
@@ -42,7 +43,7 @@ log_config = LoggingConfig('info',
                            })
 
 
-class DebugBundleTest(RedpandaTest):
+class DebugBundleTestBase(RedpandaTest):
     debug_bundle_dir_config = "debug_bundle_storage_dir"
     metrics = [
         "last_successful_bundle_timestamp_seconds",
@@ -50,15 +51,16 @@ class DebugBundleTest(RedpandaTest):
         "successful_generation_count",
         "failed_generation_count",
     ]
-    """
-    Smoke test for debug bundle admin API
-    """
-    def __init__(self, context, num_brokers=1, **kwargs) -> None:
-        super(DebugBundleTest, self).__init__(context,
-                                              num_brokers=num_brokers,
-                                              log_config=log_config,
-                                              **kwargs)
 
+    def __init__(self,
+                 context,
+                 log_config=log_config,
+                 num_brokers=1,
+                 **kwargs) -> None:
+        super(DebugBundleTestBase, self).__init__(context,
+                                                  num_brokers=num_brokers,
+                                                  log_config=log_config,
+                                                  **kwargs)
         self.admin = Admin(self.redpanda)
 
     def _get_sha256sum(self, node, file):
@@ -97,6 +99,64 @@ class DebugBundleTest(RedpandaTest):
             json = e.response.json()
             assert e.response.status_code == expected_status_code, json
             assert json["code"] == expected_error_code, json
+
+    def _run_debug_bundle(self,
+                          job_id: UUID,
+                          node: ClusterNode,
+                          cancel_after_start: bool = False,
+                          config: Optional[DebugBundleStartConfig] = None,
+                          admin: Optional[Admin] = None):
+
+        admin = admin or self.admin
+        res = admin.post_debug_bundle(DebugBundleStartConfig(job_id=job_id,
+                                                             config=config),
+                                      node=node)
+        assert res.status_code == requests.codes.ok, f"Failed to start debug bundle: {res.json()}"
+
+        # Wait until the debug bundle is running
+        try:
+            wait_until(
+                lambda: admin.get_debug_bundle(node=node).json()[
+                    'status'] == 'running',
+                timeout_sec=120,
+                backoff_sec=1,
+                err_msg="Timed out waiting for debug bundle process to start")
+        except Exception as e:
+            self.redpanda.logger.warning(
+                f"response: {admin.get_debug_bundle(node=node).json()}")
+            raise e
+
+        if cancel_after_start:
+            res = admin.delete_debug_bundle(job_id=job_id, node=node)
+            assert res.status_code == requests.codes.no_content, f"Failed to cancel debug bundle: {res.json()}"
+
+        expected_status = 'error' if cancel_after_start else 'success'
+
+        # Wait until the debug bundle has completed
+        try:
+            wait_until(
+                lambda: admin.get_debug_bundle(node=node).json()[
+                    'status'] == expected_status,
+                timeout_sec=120,
+                backoff_sec=1,
+                err_msg=
+                f"Timed out waiting for debug bundle process to enter {expected_status} state"
+            )
+        except Exception as e:
+            self.redpanda.logger.warning(
+                f"response: {admin.get_debug_bundle(node=node).json()}")
+            raise e
+
+
+class DebugBundleTest(DebugBundleTestBase):
+    """
+    Smoke test for debug bundle admin API
+    """
+    def __init__(self, context, **kwargs) -> None:
+        super(DebugBundleTest, self).__init__(context,
+                                              num_brokers=1,
+                                              log_config=log_config,
+                                              **kwargs)
 
     @cluster(num_nodes=1)
     @matrix(ignore_none=[True, False])
@@ -215,46 +275,6 @@ class DebugBundleTest(RedpandaTest):
             self.admin.delete_debug_bundle_file,
             filename=filename,
             node=node)
-
-    def _run_debug_bundle(self, job_id: UUID, node: ClusterNode,
-                          cancel_after_start: bool):
-        res = self.admin.post_debug_bundle(
-            DebugBundleStartConfig(job_id=job_id), node=node)
-        assert res.status_code == requests.codes.ok, f"Failed to start debug bundle: {res.json()}"
-
-        # Wait until the debug bundle is running
-        try:
-            wait_until(
-                lambda: self.admin.get_debug_bundle(node=node).json()[
-                    'status'] == 'running',
-                timeout_sec=120,
-                backoff_sec=1,
-                err_msg="Timed out waiting for debug bundle process to start")
-        except Exception as e:
-            self.redpanda.logger.warning(
-                f"response: {self.admin.get_debug_bundle(node=node).json()}")
-            raise e
-
-        if cancel_after_start:
-            res = self.admin.delete_debug_bundle(job_id=job_id, node=node)
-            assert res.status_code == requests.codes.no_content, f"Failed to cancel debug bundle: {res.json()}"
-
-        expected_status = 'error' if cancel_after_start else 'success'
-
-        # Wait until the debug bundle has completed
-        try:
-            wait_until(
-                lambda: self.admin.get_debug_bundle(node=node).json()[
-                    'status'] == expected_status,
-                timeout_sec=120,
-                backoff_sec=1,
-                err_msg=
-                f"Timed out waiting for debug bundle process to enter {expected_status} state"
-            )
-        except Exception as e:
-            self.redpanda.logger.warning(
-                f"response: {self.admin.get_debug_bundle(node=node).json()}")
-            raise e
 
     @cluster(num_nodes=1)
     def test_debug_bundle_metrics(self):
