@@ -25,7 +25,10 @@ jobs:
       - name: install dependencies
         env:
           SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
-        run: pip install -r ${SCRIPT_DIR}/requirements.txt
+        run: |
+          python3 -mvenv /tmp/venv/jira
+          source /tmp/venv/jira/bin/activate
+          pip install -r ${SCRIPT_DIR}/requirements.txt
       - name: install pandoc
         run: sudo apt-get update && sudo apt-get install -y pandoc
       - uses: aws-actions/configure-aws-credentials@v4
@@ -49,4 +52,4 @@ jobs:
           ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name) }}
           ISSUE_STATE: ${{ github.event.issue.state }}
           EVENT_NAME: ${{ github.event.action }}
-        run: python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose -p CORE
+        run: /tmp/venv/jira/bin/python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose -p CORE

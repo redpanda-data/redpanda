@@ -20,6 +20,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Install yapf
-        run: pip install yapf==0.40.1
+        run: |
+          python3 -mvenv /tmp/venv/yapf
+          source /tmp/venv/yapf/bin/activate
+          pip install yapf==0.40.1
       - name: Run yapf
-        run: find . -type f -name '*.py' | xargs -n8 yapf -d
+        run: |
+          python3 -mvenv /tmp/env/yapf
+          source /tmp/venv/yapf/bin/activate
+          find . -type f -name '*.py' | xargs -n8 yapf -d
