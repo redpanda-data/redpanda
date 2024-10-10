@@ -421,6 +421,7 @@ class DebugBundleStartConfigParams(NamedTuple):
     logs_size_limit_bytes: Optional[int] = None
     logs_until: Optional[str] = None
     metrics_interval_seconds: Optional[int] = None
+    metrics_samples: Optional[int] = None
     partition: Optional[str] = None
     tls_enabled: Optional[bool] = None
     tls_insecure_skip_verify: Optional[bool] = None

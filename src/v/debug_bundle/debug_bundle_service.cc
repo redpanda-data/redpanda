@@ -57,6 +57,7 @@ constexpr std::string_view logs_since_variable = "--logs-since";
 constexpr std::string_view logs_size_limit_variable = "--logs-size-limit";
 constexpr std::string_view logs_until_variable = "--logs-until";
 constexpr std::string_view metrics_interval_variable = "--metrics-interval";
+constexpr std::string_view metrics_samples_variable = "--metrics-samples";
 constexpr std::string_view partition_variable = "--partition";
 constexpr std::string_view tls_enabled_variable = "-Xtls.enabled";
 constexpr std::string_view tls_insecure_skip_verify_variable
@@ -639,6 +640,10 @@ result<std::vector<ss::sstring>> service::build_rpk_arguments(
         rv.emplace_back(metrics_interval_variable);
         rv.emplace_back(
           ssx::sformat("{}s", params.metrics_interval_seconds.value().count()));
+    }
+    if (params.metrics_samples.has_value()) {
+        rv.emplace_back(metrics_samples_variable);
+        rv.emplace_back(ssx::sformat("{}", params.metrics_samples.value()));
     }
     if (params.partition.has_value()) {
         rv.emplace_back(partition_variable);

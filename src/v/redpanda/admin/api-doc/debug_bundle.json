@@ -70,6 +70,9 @@
                 "metrics_interval_seconds": {
                   "type": "integer"
                 },
+                "metrics_samples": {
+                  "type": "integer"
+                },
                 "partition": {
                   "type": "string"
                 },

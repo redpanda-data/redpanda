@@ -106,6 +106,7 @@ struct debug_bundle_parameters {
     std::optional<uint64_t> logs_size_limit_bytes;
     std::optional<time_variant> logs_until;
     std::optional<std::chrono::seconds> metrics_interval_seconds;
+    std::optional<uint64_t> metrics_samples;
     std::optional<std::vector<partition_selection>> partition;
     std::optional<bool> tls_enabled;
     std::optional<bool> tls_insecure_skip_verify;
