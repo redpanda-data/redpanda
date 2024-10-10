@@ -65,7 +65,8 @@ class LicenseEnforcementTest(RedpandaTest):
                                  err_msg="The cluster hasn't stabilized")
 
         self.logger.info(f"Enabling an enterprise feature")
-        self.rpk.create_role("XYZ")
+        self.redpanda.set_cluster_config(
+            {"partition_autobalancing_mode": "continuous"})
 
         first_upgraded = self.redpanda.nodes[0]
         self.logger.info(
@@ -124,7 +125,8 @@ class LicenseEnforcementTest(RedpandaTest):
                                  err_msg="The cluster hasn't stabilized")
 
         self.logger.info(f"Enabling an enterprise feature")
-        self.rpk.create_role("XYZ")
+        self.redpanda.set_cluster_config(
+            {"partition_autobalancing_mode": "continuous"})
 
         first_upgraded = self.redpanda.nodes[0]
         self.logger.info(
