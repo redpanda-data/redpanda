@@ -15,3 +15,22 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
     ],
 )
+
+redpanda_cc_library(
+    name = "dl_stm_state",
+    srcs = [
+        "dl_stm_state.cc",
+    ],
+    hdrs = [
+        "dl_stm_state.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
