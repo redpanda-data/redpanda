@@ -44,14 +44,13 @@ public:
       size_t row_count_threshold,
       size_t byte_count_threshold);
 
-    ss::future<data_writer_error>
-    initialize(std::filesystem::path output_file_path);
+    ss::future<data_writer_error> initialize(
+      std::filesystem::path base_path, std::filesystem::path output_file_path);
 
     ss::future<data_writer_error>
     add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
 
-    ss::future<result<coordinator::data_file, data_writer_error>>
-    finish() override;
+    ss::future<result<local_data_file, data_writer_error>> finish() override;
 
     // Close the file handle, delete any temporary data and clean up any other
     // state.
@@ -71,10 +70,9 @@ private:
     size_t _byte_count = 0;
 
     // Output
-    std::filesystem::path _output_file_path;
     ss::file _output_file;
     ss::output_stream<char> _output_stream;
-    coordinator::data_file _result;
+    local_data_file _result;
 };
 
 class batching_parquet_writer_factory : public data_writer_factory {

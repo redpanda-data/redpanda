@@ -52,7 +52,7 @@ struct one_time_stream_provider : public stream_provider {
 // Modeled after cloud_storage::remote::upload_controller_snapshot
 ss::future<result<coordinator::data_file, data_writer_error>>
 cloud_uploader::upload_data_file(
-  coordinator::data_file local_file,
+  datalake::local_data_file local_file,
   std::filesystem::path remote_filename,
   retry_chain_node& rtc_parent,
   lazy_abort_source& lazy_abort_source) {
@@ -62,18 +62,18 @@ cloud_uploader::upload_data_file(
     vlog(
       datalake_log.info,
       "Uploading {} to {}",
-      local_file.remote_path,
+      local_file.local_path(),
       remote_uri);
 
     ss::file file;
     try {
         file = co_await ss::open_file_dma(
-          local_file.remote_path, ss::open_flags::ro);
+          local_file.local_path().string(), ss::open_flags::ro);
     } catch (...) {
         vlog(
           datalake_log.error,
           "Failed to open file for upload {}: {}",
-          local_file.remote_path,
+          local_file.local_path(),
           std::current_exception());
         co_return data_writer_error::file_io_error;
     }

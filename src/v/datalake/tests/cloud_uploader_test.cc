@@ -39,9 +39,9 @@ TEST_F(DatalakeCloudUploaderTest, UploadsData) {
 
     // Write out a test file
     temporary_dir tmp_dir("datalake_cloud_uploader_test");
-    std::filesystem::path file_path = tmp_dir.get_path() / "test_file";
+    std::string file_name = "test_file";
     std::string contents = "Hello world!";
-    std::ofstream ofile(file_path);
+    std::ofstream ofile(tmp_dir.get_path() / file_name);
     ofile << contents;
     ofile.close();
 
@@ -54,8 +54,9 @@ TEST_F(DatalakeCloudUploaderTest, UploadsData) {
     retry_chain_node retry(never_abort, 10s, 1s);
     lazy_abort_source always_continue{[]() { return std::nullopt; }};
 
-    datalake::coordinator::data_file local_file{
-      .remote_path = file_path.c_str(),
+    datalake::local_data_file local_file{
+      .base_path = tmp_dir.get_path().c_str(),
+      .file_path = file_name,
       .row_count = 1,
       .file_size_bytes = contents.size(),
     };
@@ -91,8 +92,9 @@ TEST_F(DatalakeCloudUploaderTest, HandlesMissingFiles) {
     retry_chain_node retry(never_abort, 10s, 1s);
     lazy_abort_source always_continue{[]() { return std::nullopt; }};
 
-    datalake::coordinator::data_file local_file{
-      .remote_path = file_path.c_str(),
+    datalake::local_data_file local_file{
+      .base_path = tmp_dir.get_path(),
+      .file_path = "test_file",
       .row_count = 1,
       .file_size_bytes = 100,
     };

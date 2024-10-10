@@ -27,7 +27,7 @@ public:
 
     ss::future<result<coordinator::data_file, data_writer_error>>
     upload_data_file(
-      coordinator::data_file local_file,
+      datalake::local_data_file local_file,
       std::filesystem::path remote_filename,
       retry_chain_node& rtc_parent,
       lazy_abort_source& lazy_abort_source);

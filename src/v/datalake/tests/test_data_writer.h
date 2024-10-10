@@ -36,15 +36,14 @@ public:
         return ss::make_ready_future<data_writer_error>(status);
     }
 
-    ss::future<result<coordinator::data_file, data_writer_error>>
-    finish() override {
+    ss::future<result<local_data_file, data_writer_error>> finish() override {
         return ss::make_ready_future<
-          result<coordinator::data_file, data_writer_error>>(_result);
+          result<local_data_file, data_writer_error>>(_result);
     }
 
 private:
     iceberg::struct_type _schema;
-    coordinator::data_file _result;
+    local_data_file _result;
     bool _return_error;
 };
 class test_data_writer_factory : public data_writer_factory {

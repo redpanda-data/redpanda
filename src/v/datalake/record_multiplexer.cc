@@ -9,6 +9,7 @@
  */
 #include "datalake/record_multiplexer.h"
 
+#include "data_file.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/logger.h"
 #include "datalake/schemaless_translator.h"
@@ -16,6 +17,8 @@
 #include "iceberg/values.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
+
+#include <boost/smart_ptr/detail/local_counted_base.hpp>
 
 #include <ios>
 #include <stdexcept>
@@ -94,7 +97,15 @@ record_multiplexer::end_of_stream() {
         }
         auto result_files = co_await _writer->finish();
         if (result_files.has_value()) {
-            _result.value().files.push_back(result_files.value());
+            // TODO: call the uploader here to upload to a remote file
+            auto& local_file = result_files.value();
+            coordinator::data_file remote_file{
+              .remote_path = local_file.local_path().string(),
+              .row_count = local_file.row_count,
+              .file_size_bytes = local_file.file_size_bytes,
+              .hour = local_file.hour,
+            };
+            _result.value().files.push_back(remote_file);
             co_return std::move(_result.value());
         } else {
             co_return result_files.error();

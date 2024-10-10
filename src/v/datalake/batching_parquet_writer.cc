@@ -39,19 +39,21 @@ batching_parquet_writer::batching_parquet_writer(
   , _row_count_threshold{row_count_threshold}
   , _byte_count_threshold{byte_count_threshold} {}
 
-ss::future<data_writer_error>
-batching_parquet_writer::initialize(std::filesystem::path output_file_path) {
-    _output_file_path = std::move(output_file_path);
+ss::future<data_writer_error> batching_parquet_writer::initialize(
+  std::filesystem::path base_path, std::filesystem::path output_file_path) {
+    _result.base_path = base_path;
+    _result.file_path = output_file_path;
+    vlog(datalake_log.info, "Writing Parquet file to {}", _result.local_path());
     try {
         _output_file = co_await ss::open_file_dma(
-          _output_file_path.string(),
+          _result.local_path().string(),
           ss::open_flags::create | ss::open_flags::truncate
             | ss::open_flags::wo);
     } catch (...) {
         vlog(
           datalake_log.error,
           "Error opening output file {}: {}",
-          _output_file_path,
+          _result.local_path(),
           std::current_exception());
         co_return data_writer_error::file_io_error;
     }
@@ -62,7 +64,7 @@ batching_parquet_writer::initialize(std::filesystem::path output_file_path) {
         vlog(
           datalake_log.error,
           "Error making output stream for file {}: {}",
-          _output_file_path,
+          _result.local_path(),
           std::current_exception());
         error = true;
     }
@@ -71,7 +73,6 @@ batching_parquet_writer::initialize(std::filesystem::path output_file_path) {
         co_return data_writer_error::file_io_error;
     }
 
-    _result.remote_path = _output_file_path.string();
     co_return data_writer_error::ok;
 }
 
@@ -102,7 +103,7 @@ ss::future<data_writer_error> batching_parquet_writer::add_data_struct(
     co_return data_writer_error::ok;
 }
 
-ss::future<result<coordinator::data_file, data_writer_error>>
+ss::future<result<local_data_file, data_writer_error>>
 batching_parquet_writer::finish() {
     auto write_result = co_await write_row_group();
     if (write_result != data_writer_error::ok) {
@@ -188,9 +189,9 @@ ss::future<data_writer_error> batching_parquet_writer::write_row_group() {
 
 ss::future<> batching_parquet_writer::abort() {
     co_await _output_stream.close();
-    auto exists = co_await ss::file_exists(_output_file_path.c_str());
+    auto exists = co_await ss::file_exists(_result.local_path().c_str());
     if (exists) {
-        co_await ss::remove_file(_output_file_path.c_str());
+        co_await ss::remove_file(_result.local_path().c_str());
     }
 }
 
@@ -210,8 +211,7 @@ batching_parquet_writer_factory::create_writer(iceberg::struct_type schema) {
       std::move(schema), _row_count_threshold, _byte_count_treshold);
     std::string filename = fmt::format(
       "{}-{}.parquet", _file_name_prefix, uuid_t::create());
-    std::filesystem::path file_path = _local_directory / filename;
-    auto err = co_await ret->initialize(file_path);
+    auto err = co_await ret->initialize(_local_directory, filename);
     if (err != data_writer_error::ok) {
         co_return err;
     }

@@ -28,6 +28,34 @@ enum class data_writer_error {
     cloud_io_error,
 };
 
+struct local_data_file {
+    // base_path is common to all temporary local files. It is not included in
+    // the uploaded path.
+    std::filesystem::path base_path = "";
+    // file_path is used in the upload. The uploader transforms file names like
+    // this:
+    // <base_path>/<file_path> -> s3://<bucket>/<remote_base_path>/<file_path>
+    std::filesystem::path file_path = "";
+    size_t row_count = 0;
+    size_t file_size_bytes = 0;
+    int hour = 0;
+
+    friend std::ostream& operator<<(std::ostream& o, const local_data_file& r) {
+        fmt::print(
+          o,
+          "local_data_file(base_path: {} file_path: {} row_count: {} "
+          "file_size_bytes: {} hour: {})",
+          r.base_path,
+          r.file_path,
+          r.row_count,
+          r.file_size_bytes,
+          r.hour);
+        return o;
+    }
+
+    std::filesystem::path local_path() { return base_path / file_path; }
+};
+
 struct data_writer_error_category : std::error_category {
     const char* name() const noexcept override { return "Data Writer Error"; }
 
@@ -64,8 +92,7 @@ public:
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<coordinator::data_file, data_writer_error>>
-    finish() = 0;
+    virtual ss::future<result<local_data_file, data_writer_error>> finish() = 0;
 };
 
 class data_writer_factory {
