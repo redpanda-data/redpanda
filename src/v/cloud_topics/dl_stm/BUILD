@@ -34,3 +34,28 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
     ],
 )
+
+redpanda_cc_library(
+    name = "command_builder",
+    srcs = [
+        "command_builder.cc",
+    ],
+    hdrs = [
+        "command_builder.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        "//src/v/base",
+        "//src/v/cloud_topics:types",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/serde:map",
+        "//src/v/serde:named_type",
+        "//src/v/serde:uuid",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
