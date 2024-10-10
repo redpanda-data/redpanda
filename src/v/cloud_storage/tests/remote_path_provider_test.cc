@@ -382,10 +382,10 @@ TEST_P(
 
 TEST(RemotePathProviderTest, TestTopicMountManifestPath) {
     remote_path_provider path_provider(test_label, std::nullopt);
-    topic_mount_manifest manifest(test_label, test_tp_ns);
+    topic_mount_manifest manifest(test_label, test_tp_ns, test_rev);
     EXPECT_STREQ(
       path_provider.topic_mount_manifest_path(manifest).c_str(),
-      "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp");
+      "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/21");
 }
 
 INSTANTIATE_TEST_SUITE_P(

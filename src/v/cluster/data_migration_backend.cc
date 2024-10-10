@@ -698,9 +698,19 @@ ss::future<errc> backend::prepare_mount_topic(
     if (!cfg) {
         co_return errc::topic_not_exists;
     }
-    vlog(dm_log.info, "trying to prepare mount topic, cfg={}", *cfg);
+
+    auto rev_id = _topic_table.get_initial_revision(nt);
+    if (!rev_id) {
+        co_return errc::topic_not_exists;
+    }
+
+    vlog(
+      dm_log.info,
+      "trying to prepare mount topic, cfg={}, rev_id={}",
+      *cfg,
+      *rev_id);
     auto mnt_res = co_await _topic_mount_handler->prepare_mount_topic(
-      *cfg, rcn);
+      *cfg, *rev_id, rcn);
     if (mnt_res == cloud_storage::topic_mount_result::mount_manifest_exists) {
         co_return errc::success;
     }
@@ -714,9 +724,19 @@ ss::future<errc> backend::confirm_mount_topic(
     if (!cfg) {
         co_return errc::topic_not_exists;
     }
-    vlog(dm_log.info, "trying to confirm mount topic, cfg={}", *cfg);
+
+    auto rev_id = _topic_table.get_initial_revision(nt);
+    if (!rev_id) {
+        co_return errc::topic_not_exists;
+    }
+
+    vlog(
+      dm_log.info,
+      "trying to confirm mount topic, cfg={}, rev_id={}",
+      *cfg,
+      *rev_id);
     auto mnt_res = co_await _topic_mount_handler->confirm_mount_topic(
-      *cfg, rcn);
+      *cfg, *rev_id, rcn);
     if (
       mnt_res
       != cloud_storage::topic_mount_result::mount_manifest_not_deleted) {
@@ -754,7 +774,15 @@ ss::future<errc> backend::do_unmount_topic(
         vlog(dm_log.warn, "topic {} missing, ignoring", nt);
         co_return errc::success;
     }
-    auto umnt_res = co_await _topic_mount_handler->unmount_topic(*cfg, rcn);
+
+    auto rev_id = _topic_table.get_initial_revision(nt);
+    if (!rev_id) {
+        vlog(dm_log.warn, "topic {} missing, ignoring", nt);
+        co_return errc::success;
+    }
+
+    auto umnt_res = co_await _topic_mount_handler->unmount_topic(
+      *cfg, *rev_id, rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
         co_return errc::success;
     }
