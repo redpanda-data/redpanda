@@ -289,6 +289,13 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             } else {
                 return std::move(r).assume_error();
             }
+            if (auto r = from_json<decltype(params.metrics_samples)>(
+                  obj, "metrics_samples", false);
+                r.has_value()) {
+                params.metrics_samples = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
             if (auto r = from_json<decltype(params.partition)>(
                   obj, "partition", false);
                 r.has_value()) {

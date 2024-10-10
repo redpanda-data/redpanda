@@ -281,6 +281,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
         logs_until_tp = debug_bundle::clock::from_time_t(tt);
     }
     std::chrono::seconds metrics_interval_seconds{54};
+    uint64_t metrics_samples = 3;
     model::topic_namespace tn1(model::ns{"kafka"}, model::topic{"t1"});
     model::topic_namespace tn2(model::ns{"internal"}, model::topic{"t2"});
     std::vector<debug_bundle::partition_selection> partition{
@@ -310,6 +311,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       .logs_size_limit_bytes = logs_size_limit,
       .logs_until = logs_until_tp,
       .metrics_interval_seconds = metrics_interval_seconds,
+      .metrics_samples = metrics_samples,
       .partition = partition,
       .tls_enabled = tls_enabled,
       .tls_insecure_skip_verify = tls_insecure_skip_verify,
@@ -320,9 +322,10 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       "debug bundle --output {}/{}.zip --verbose -Xuser={} -Xpass={} "
       "-Xsasl.mechanism={} --controller-logs-size-limit {}B "
       "--cpu-profiler-wait {}s --logs-since {} --logs-size-limit {}B "
-      "--logs-until {} --metrics-interval {}s --partition {}/{}/1,2,3 "
-      "{}/{}/4,5,6 -Xtls.enabled=true -Xtls.insecure_skip_verify=false "
-      "--namespace {} --label-selector {}={},{}={}\n",
+      "--logs-until {} --metrics-interval {}s --metrics-samples {} --partition "
+      "{}/{}/1,2,3 {}/{}/4,5,6 -Xtls.enabled=true "
+      "-Xtls.insecure_skip_verify=false --namespace {} --label-selector "
+      "{}={},{}={}\n",
       (_data_dir / debug_bundle::service::debug_bundle_dir_name).native(),
       job_id,
       username,
@@ -334,6 +337,7 @@ TEST_F_CORO(debug_bundle_service_started_fixture, test_all_parameters) {
       logs_size_limit,
       logs_until,
       metrics_interval_seconds.count(),
+      metrics_samples,
       tn1.ns,
       tn1.tp,
       tn2.ns,
