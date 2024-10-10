@@ -9,6 +9,7 @@ rpcgen(TARGET generated_datalake_coordinator_rpc
 v_cc_library(
     NAME datalake_coordinator
     SRCS
+        coordinator.cc
         data_file.cc
         frontend.cc
         service.cc

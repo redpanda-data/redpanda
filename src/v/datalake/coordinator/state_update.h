@@ -15,6 +15,7 @@
 #include "datalake/coordinator/translated_offset_range.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
+#include "utils/named_type.h"
 
 namespace datalake::coordinator {
 
@@ -24,10 +25,9 @@ enum class update_key : uint8_t {
     add_files = 0,
     mark_files_committed = 1,
 };
+std::ostream& operator<<(std::ostream&, const update_key&);
 
-enum class stm_update_error {
-    failed,
-};
+using stm_update_error = named_type<ss::sstring, struct update_error_tag>;
 
 // An update to add files for a given Kafka partition.
 struct add_files_update
@@ -40,7 +40,7 @@ struct add_files_update
       chunked_vector<translated_offset_range>);
     auto serde_fields() { return std::tie(tp, entries); }
 
-    bool can_apply(const topics_state&);
+    checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error> apply(topics_state&);
 
     model::topic_partition tp;
@@ -60,7 +60,7 @@ struct mark_files_committed_update
     build(const topics_state&, const model::topic_partition&, kafka::offset);
     auto serde_fields() { return std::tie(tp, new_committed); }
 
-    bool can_apply(const topics_state&);
+    checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error> apply(topics_state&);
 
     model::topic_partition tp;

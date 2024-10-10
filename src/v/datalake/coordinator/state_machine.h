@@ -9,6 +9,7 @@
  */
 #pragma once
 #include "cluster/state_machine_registry.h"
+#include "datalake/coordinator/state.h"
 #include "datalake/coordinator/types.h"
 #include "raft/persisted_stm.h"
 
@@ -17,9 +18,40 @@ namespace datalake::coordinator {
 class coordinator_stm final : public raft::persisted_stm<> {
 public:
     static constexpr std::string_view name = "datalake_coordinator_stm";
+    enum class errc {
+        not_leader,
+        apply_error,
+        raft_error,
+        shutting_down,
+    };
 
     explicit coordinator_stm(ss::logger&, raft::consensus*);
+    raft::consensus* raft() { return _raft; }
 
+    // Syncs the STM such that we're guaranteed that it has applied all records
+    // from the previous terms. Calling does _not_ ensure that all records from
+    // the current term have been applied. But it does establish for new
+    // leaders that they are up-to-date.
+    //
+    // Returns the current term.
+    ss::future<checked<model::term_id, errc>>
+    sync(model::timeout_clock::duration timeout);
+
+    // Replicates the given batch and waits for it to finish replicating.
+    // Success here does not guarantee that the replicated operation succeeded
+    // in updating the STM -- only that the apply was attempted.
+    ss::future<checked<std::nullopt_t, errc>> replicate_and_wait(
+      model::term_id, model::record_batch batch, ss::abort_source&);
+
+    const topics_state& state() const { return state_; }
+
+    // XXX: remove once there is a higher level coordinator abstraction.
+    ss::future<add_translated_data_files_reply>
+      add_translated_data_file(add_translated_data_files_request);
+    ss::future<fetch_latest_data_file_reply>
+      fetch_latest_data_file(fetch_latest_data_file_request);
+
+protected:
     ss::future<> do_apply(const model::record_batch&) override;
 
     model::offset max_collectible_offset() override;
@@ -34,13 +66,9 @@ public:
 
     ss::future<iobuf> take_snapshot(model::offset) final;
 
-    ss::future<add_translated_data_files_reply>
-      add_translated_data_file(add_translated_data_files_request);
-
-    ss::future<fetch_latest_data_file_reply>
-      fetch_latest_data_file(fetch_latest_data_file_request);
-
 private:
+    // The deterministic state managed by this STM.
+    topics_state state_;
 };
 class stm_factory : public cluster::state_machine_factory {
 public:

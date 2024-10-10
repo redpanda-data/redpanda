@@ -16,6 +16,15 @@
 
 namespace datalake::coordinator {
 
+std::ostream& operator<<(std::ostream& o, const update_key& u) {
+    switch (u) {
+    case update_key::add_files:
+        return o << "update_key::add_files";
+    case update_key::mark_files_committed:
+        return o << "update_key::mark_files_committed";
+    }
+}
+
 checked<add_files_update, stm_update_error> add_files_update::build(
   const topics_state& state,
   const model::topic_partition& tp,
@@ -24,27 +33,29 @@ checked<add_files_update, stm_update_error> add_files_update::build(
       .tp = tp,
       .entries = std::move(entries),
     };
-    if (!update.can_apply(state)) {
-        return stm_update_error::failed;
+    auto allowed = update.can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
     }
     return update;
 }
 
-bool add_files_update::can_apply(const topics_state& state) {
+checked<std::nullopt_t, stm_update_error>
+add_files_update::can_apply(const topics_state& state) {
     if (entries.empty()) {
-        return false;
+        return stm_update_error{"No entries requested"};
     }
     auto prt_state_opt = state.partition_state(tp);
     if (!prt_state_opt.has_value()) {
         // No entries at all, this partition hasn't ever added any files.
-        return true;
+        return std::nullopt;
     }
     const auto& prt_state = prt_state_opt.value().get();
     if (
       prt_state.pending_entries.empty()
       && !prt_state.last_committed.has_value()) {
         // No entries at all, this partition hasn't ever added any files.
-        return true;
+        return std::nullopt;
     }
     auto last_added_offset
       = prt_state.pending_entries.empty()
@@ -54,20 +65,21 @@ bool add_files_update::can_apply(const topics_state& state) {
     if (kafka::next_offset(last_added_offset) == update_range_start_offset) {
         // The last offset for the partition aligns exactly with where we're
         // adding new data.
-        return true;
+        return std::nullopt;
     }
     // Misalignment, likely because the current `state` doesn't match the state
     // the update was built with.
-    return false;
+    return stm_update_error{fmt::format(
+      "Last added offset {} is not contiguous with requested next offset {}",
+      last_added_offset,
+      update_range_start_offset)};
 }
 
 checked<std::nullopt_t, stm_update_error>
 add_files_update::apply(topics_state& state) {
-    if (!can_apply(state)) {
-        return stm_update_error::failed;
-    }
-    if (entries.empty()) {
-        return std::nullopt;
+    auto allowed = can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
     }
     const auto& topic = tp.topic;
     const auto& pid = tp.partition;
@@ -89,38 +101,46 @@ mark_files_committed_update::build(
       .tp = tp,
       .new_committed = o,
     };
-    if (!update.can_apply(state)) {
-        return stm_update_error::failed;
+    auto allowed = update.can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
     }
     return update;
 }
 
-bool mark_files_committed_update::can_apply(const topics_state& state) {
+checked<std::nullopt_t, stm_update_error>
+mark_files_committed_update::can_apply(const topics_state& state) {
     auto prt_state = state.partition_state(tp);
     if (!prt_state.has_value() || prt_state->get().pending_entries.empty()) {
         // Can't mark files committed if there are no files.
-        return false;
+        return stm_update_error{
+          "Can't mark files committed if there are no files"};
     }
     if (
       prt_state->get().last_committed.has_value()
       && prt_state->get().last_committed.value() >= new_committed) {
         // The state already has committed up to the given offset.
-        return false;
+        return stm_update_error{fmt::format(
+          "The state has committed up to {} >= requested offset {}",
+          prt_state->get().last_committed.value(),
+          new_committed)};
     }
     // At this point, the desired offset looks okay. Examine the entries to
     // make sure the new committed offset corresponds to one of them.
     for (const auto& entry_state : prt_state->get().pending_entries) {
         if (entry_state.last_offset == new_committed) {
-            return true;
+            return std::nullopt;
         }
     }
-    return false;
+    return stm_update_error{fmt::format(
+      "The state does not have an entry ending in offset {}", new_committed)};
 }
 
 checked<std::nullopt_t, stm_update_error>
 mark_files_committed_update::apply(topics_state& state) {
-    if (!can_apply(state)) {
-        return stm_update_error::failed;
+    auto allowed = can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
     }
     const auto& topic = tp.topic;
     const auto& pid = tp.partition;
