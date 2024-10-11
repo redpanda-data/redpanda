@@ -14,6 +14,9 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:algorithm",
         "@seastar",
     ],
 )
@@ -35,6 +38,7 @@ redpanda_cc_library(
     ],
     include_prefix = "http",
     deps = [
+        ":utils",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

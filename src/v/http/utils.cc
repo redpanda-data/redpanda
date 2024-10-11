@@ -13,6 +13,8 @@
 
 #include "bytes/bytes.h"
 
+#include <boost/algorithm/string/join.hpp>
+
 namespace {
 
 inline void append_hex_utf8(ss::sstring& result, char ch) {
@@ -47,6 +49,18 @@ ss::sstring uri_encode(std::string_view input, uri_encode_slash encode_slash) {
         }
     }
     return result;
+}
+
+iobuf form_encode_data(
+  const absl::flat_hash_map<ss::sstring, ss::sstring>& data) {
+    std::vector<ss::sstring> pairs;
+    for (const auto& [k, v] : data) {
+        pairs.emplace_back(fmt::format(
+          "{}={}",
+          uri_encode(k, uri_encode_slash::yes),
+          uri_encode(v, uri_encode_slash::yes)));
+    }
+    return iobuf::from(boost::algorithm::join(pairs, "&"));
 }
 
 } // namespace http
