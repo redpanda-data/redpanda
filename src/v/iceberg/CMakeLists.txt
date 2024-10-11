@@ -29,6 +29,7 @@ v_cc_library(
   SRCS
     ${avro_hdrs}
     action.cc
+    catalog.cc
     datatypes.cc
     datatypes_json.cc
     filesystem_catalog.cc
