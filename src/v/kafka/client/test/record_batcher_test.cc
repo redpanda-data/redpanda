@@ -10,17 +10,17 @@
  */
 
 #include "base/units.h"
-#include "transform/logging/record_batcher.h"
-#include "transform/logging/tests/utils.h"
+#include "kafka/client/record_batcher.h"
+#include "kafka/client/test/utils.h"
 
 #include <gtest/gtest.h>
 
-namespace transform::logging {
+namespace kafka::client {
 
 TEST(TransformLoggingRecordBatcherTest, TestMaxBytes) {
     constexpr size_t batch_max_bytes = 1_KiB;
     constexpr size_t total_bytes = batch_max_bytes * 10;
-    record_batcher batcher{batch_max_bytes};
+    kafka::client::record_batcher batcher{batch_max_bytes};
 
     // General goal here is to generate enough data that we'll need several
     // batches.
@@ -46,7 +46,7 @@ TEST(TransformLoggingRecordBatcherTest, TestMaxBytes) {
 
 TEST(TransformLoggingRecordBatcherTest, TestReuseBatcher) {
     constexpr size_t batch_max_bytes = 1_KiB;
-    record_batcher batcher{batch_max_bytes};
+    kafka::client::record_batcher batcher{batch_max_bytes};
 
     for (int i = 0; i < 4; ++i) {
         auto k = testing::random_length_iobuf(batch_max_bytes / 4);
@@ -64,4 +64,4 @@ TEST(TransformLoggingRecordBatcherTest, TestReuseBatcher) {
     }
 }
 
-} // namespace transform::logging
+} // namespace kafka::client

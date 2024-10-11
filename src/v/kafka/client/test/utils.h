@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 
@@ -22,3 +23,7 @@ inline model::record_batch make_batch(model::offset offset, size_t count) {
     }
     return std::move(builder).build();
 }
+
+namespace kafka::client::testing {
+iobuf random_length_iobuf(size_t data_max);
+} // namespace kafka::client::testing

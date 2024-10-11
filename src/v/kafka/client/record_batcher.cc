@@ -12,12 +12,12 @@
 #include "record_batcher.h"
 
 #include "absl/algorithm/container.h"
-#include "logger.h"
+#include "kafka/client/logger.h"
 #include "model/record.h"
 #include "storage/record_batch_builder.h"
 #include "utils/human.h"
 
-namespace transform::logging {
+namespace kafka::client {
 
 namespace detail {
 class batcher_impl {
@@ -47,7 +47,7 @@ public:
         size_t record_size = record.size_bytes();
         if (record_size > max_records_bytes()) {
             vlog(
-              tlg_log.info,
+              kclog.info,
               "Dropped record: size exceeds configured batch max "
               "size: {} > {}",
               human::bytes{static_cast<double>(record_size)},
@@ -92,14 +92,14 @@ private:
                     - static_cast<int64_t>(batch.size_bytes());
         if (diff < 0) {
             vlog(
-              tlg_log.debug,
+              kclog.debug,
               "Underestimaged batch size {} - {} = {}",
               human::bytes{static_cast<double>(batch_size_bytes())},
               human::bytes{static_cast<double>(batch.size_bytes())},
               diff);
         } else {
             vlog(
-              tlg_log.trace,
+              kclog.trace,
               "Building record batch. Actual size: {} (estimated: {}, err:{})",
               human::bytes{static_cast<double>(batch.size_bytes())},
               human::bytes{static_cast<double>(batch_size_bytes())},
@@ -140,4 +140,4 @@ ss::chunked_fifo<model::record_batch> record_batcher::finish() {
     return _impl->finish();
 }
 
-} // namespace transform::logging
+} // namespace kafka::client
