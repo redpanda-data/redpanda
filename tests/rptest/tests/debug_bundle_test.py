@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import random
+import socket
 import time
 import zipfile
 from typing import Optional
@@ -18,12 +19,14 @@ from uuid import uuid4, UUID
 import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
+from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin, DebugBundleStartConfig, DebugBundleStartConfigParams
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, SecurityConfig
+from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, RpkNodeConfig, SecurityConfig, TLSProvider
 from rptest.services.redpanda_types import SaslCredentials
+from rptest.services.tls import Certificate, CertificateAuthority, TLSCertManager
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
@@ -166,8 +169,12 @@ class DebugBundleTestBase(RedpandaTest):
 
         return res.content
 
-    def _validate_topic_name_in_response(self, response: bytes,
-                                         topic_name: str, expected: bool):
+    def _validate_topic_name_in_response(
+            self,
+            response: bytes,
+            topic_name: str,
+            expected: bool,
+            expect_populated_topic_response: bool = True):
         zip_file = io.BytesIO(response)
         with zipfile.ZipFile(zip_file, 'r') as zip_ref:
             self.logger.debug(f"zip file contents: {zip_ref.namelist()}")
@@ -184,6 +191,10 @@ class DebugBundleTestBase(RedpandaTest):
                     if entry['Name'] == 'metadata'
                 ]
                 assert metadata_obj, f"Expected to find metadata object in kafka.json"
+                if not expect_populated_topic_response:
+                    assert metadata_obj[0]['Response'][
+                        'Topics'] is None, f"Expected to not find 'Topics' in kafka resonse: {metadata_obj[0]['Response']['Topics']}"
+                    return
                 if expected:
                     assert topic_name in metadata_obj[0]['Response'][
                         'Topics'], f"Expected to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
@@ -503,3 +514,57 @@ class DebugBundleSCRAMAuthn(DebugBundleTestBase):
         self._validate_topic_name_in_response(content,
                                               self.user_non_accessible_topic,
                                               use_superuser)
+
+
+class DebugBundleTLSProvider(TLSProvider):
+    def __init__(self, tls: TLSCertManager):
+        self._tls = tls
+
+    @property
+    def ca(self) -> CertificateAuthority:
+        return self._tls.ca
+
+    def create_broker_cert(self, service: Service,
+                           node: ClusterNode) -> Certificate:
+        assert node in service.nodes
+        return self._tls.create_cert(node.name)
+
+    def create_service_client_cert(self, _: Service, name: str) -> Certificate:
+        return self._tls.create_cert(socket.gethostname(), name=name)
+
+
+class DebugBundleTLS(DebugBundleTestBase):
+    """
+    Tests to validate rpk debug bundle when TLS is enabled
+    """
+    topic_name = "test_topic"
+
+    def __init__(self, context):
+        super(DebugBundleTLS, self).__init__(context,
+                                             num_brokers=1,
+                                             rpk_node_config=RpkNodeConfig())
+        self.security = SecurityConfig()
+        self.tls = TLSCertManager(self.logger)
+        self.security.tls_provider = DebugBundleTLSProvider(self.tls)
+        self.security.require_client_auth = False
+        self.rpk = RpkTool(self.redpanda, tls_cert=self.tls.create_cert("rpk"))
+
+    def setUp(self):
+        self.redpanda.set_security_settings(self.security)
+        super().setUp()
+
+        self.rpk.create_topic(self.topic_name)
+
+    @cluster(num_nodes=1)
+    def test_validate_tls(self):
+        """
+        Smoke test to ensure that debug bundle generation can happen
+        when TLS is enabled
+        """
+        node = random.choice(self.redpanda.started_nodes())
+        job_id = uuid4()
+        self._run_debug_bundle(job_id=job_id,
+                               node=node,
+                               config=DebugBundleStartConfigParams())
+        content = self._retrieve_file(node=node)
+        self._validate_topic_name_in_response(content, self.topic_name, True)
