@@ -3,6 +3,7 @@ import json
 from enum import IntEnum
 
 from rptest.utils.rpenv import sample_license
+from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin, EnterpriseLicenseStatus, RolesList, RoleDescription
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SecurityConfig, SchemaRegistryConfig
 from rptest.tests.redpanda_test import RedpandaTest
@@ -38,6 +39,7 @@ class Features(IntEnum):
     rbac = 7
     fips = 8
     datalake_iceberg = 9
+    leadership_pinning = 10
 
 
 SKIP_FEATURES = [
@@ -191,6 +193,12 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         elif feature == Features.datalake_iceberg:
             self.redpanda.set_cluster_config({'iceberg_enabled': 'true'},
                                              expect_restart=True)
+        elif feature == Features.leadership_pinning:
+            RpkTool(self.redpanda).create_topic(
+                "foo",
+                partitions=1,
+                replicas=1,
+                config={"redpanda.leaders.preference": "racks:rack1"})
         else:
             assert False, f"Unexpected feature={feature}"
 
