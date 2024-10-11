@@ -11,9 +11,10 @@
 
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "model/record.h"
 
-namespace transform::logging {
+namespace kafka::client {
 
 namespace detail {
 class batcher_impl;
@@ -59,4 +60,4 @@ public:
 private:
     std::unique_ptr<detail::batcher_impl> _impl;
 };
-} // namespace transform::logging
+} // namespace kafka::client
