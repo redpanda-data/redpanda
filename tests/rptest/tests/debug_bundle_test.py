@@ -8,17 +8,23 @@
 # by the Apache License, Version 2.0
 
 import hashlib
+import io
+import json
 import random
 import time
+import zipfile
 from typing import Optional
 from uuid import uuid4, UUID
 import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin, DebugBundleStartConfig, DebugBundleStartConfigParams
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint
+from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, SecurityConfig
+from rptest.services.redpanda_types import SaslCredentials
+from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 
@@ -146,6 +152,44 @@ class DebugBundleTestBase(RedpandaTest):
             self.redpanda.logger.warning(
                 f"response: {admin.get_debug_bundle(node=node).json()}")
             raise e
+
+    def _retrieve_file(self,
+                       node: ClusterNode,
+                       admin: Optional[Admin] = None) -> bytes:
+        admin = admin or self.admin
+        res = admin.get_debug_bundle(node=node)
+        assert res.status_code == requests.codes.ok, res.json()
+        filename = res.json()['filename']
+        res = admin.get_debug_bundle_file(filename=filename, node=node)
+        assert res.status_code == requests.codes.ok, res.json()
+        assert res.headers['Content-Type'] == 'application/zip', res.json()
+
+        return res.content
+
+    def _validate_topic_name_in_response(self, response: bytes,
+                                         topic_name: str, expected: bool):
+        zip_file = io.BytesIO(response)
+        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            self.logger.debug(f"zip file contents: {zip_ref.namelist()}")
+            kafka_file = [
+                entry for entry in zip_ref.namelist()
+                if entry.endswith('kafka.json')
+            ]
+            assert kafka_file, f"Expected to find kafka.json in the zip file"
+            with zip_ref.open(kafka_file[0]) as f:
+                kafka_json = json.loads(f.read().decode('utf-8'))
+                self.logger.debug(f"kafka_json: {kafka_json}")
+                metadata_obj = [
+                    entry for entry in kafka_json
+                    if entry['Name'] == 'metadata'
+                ]
+                assert metadata_obj, f"Expected to find metadata object in kafka.json"
+                if expected:
+                    assert topic_name in metadata_obj[0]['Response'][
+                        'Topics'], f"Expected to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
+                else:
+                    assert not topic_name in metadata_obj[0]['Response'][
+                        'Topics'], f"Expected not to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
 
 
 class DebugBundleTest(DebugBundleTestBase):
@@ -380,3 +424,82 @@ class DebugBundleTest(DebugBundleTestBase):
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.get_debug_bundle,
             node=node)
+
+
+class DebugBundleSCRAMAuthn(DebugBundleTestBase):
+    """
+    Tests to verify that debug bundle works with SCRAM authentication
+    """
+    test_user = SaslCredentials(username="test",
+                                password="test1234",
+                                algorithm="SCRAM-SHA-256")
+
+    user_accessible_topic = "user_topic"
+    user_non_accessible_topic = "private_topic"
+
+    def __init__(self, context):
+        self.security_config = SecurityConfig()
+        self.security_config.enable_sasl = True
+        self.security_config.kafka_enable_authorization = True
+        self.security_config.endpoint_authn_method = "sasl"
+
+        super(DebugBundleSCRAMAuthn,
+              self).__init__(context,
+                             num_brokers=1,
+                             security=self.security_config)
+
+        self.super_admin = Admin(
+            self.redpanda,
+            auth=(self.redpanda.SUPERUSER_CREDENTIALS.username,
+                  self.redpanda.SUPERUSER_CREDENTIALS.password))
+        self.rpk = RpkTool(
+            self.redpanda,
+            username=self.redpanda.SUPERUSER_CREDENTIALS.username,
+            password=self.redpanda.SUPERUSER_CREDENTIALS.password,
+            sasl_mechanism=self.redpanda.SUPERUSER_CREDENTIALS.algorithm)
+
+    def _enable_http_authn(self):
+        self.redpanda.set_cluster_config(
+            values={'admin_api_require_auth': True},
+            admin_client=self.super_admin)
+
+    def setUp(self):
+        super().setUp()
+        self.rpk.sasl_create_user(self.test_user.username,
+                                  self.test_user.password,
+                                  self.test_user.algorithm)
+        self.rpk.sasl_allow_principal(principal=self.test_user.username,
+                                      operations=['all'],
+                                      resource='topic',
+                                      resource_name=self.user_accessible_topic)
+        self.rpk.create_topic(self.user_accessible_topic)
+        self.rpk.create_topic(self.user_non_accessible_topic)
+        self._enable_http_authn()
+
+    @cluster(num_nodes=1)
+    @matrix(use_superuser=[True, False])
+    def test_use_root_user(self, use_superuser: bool):
+        """
+        Test verifies that the root user can access both topics and generate debug bundle
+        """
+        node = random.choice(self.redpanda.started_nodes())
+
+        if use_superuser:
+            creds = self.redpanda.SUPERUSER_CREDENTIALS
+        else:
+            creds = self.test_user
+
+        job_id = uuid4()
+        config = DebugBundleStartConfigParams(authentication=creds)
+
+        self._run_debug_bundle(job_id=job_id,
+                               node=node,
+                               config=config,
+                               admin=self.super_admin)
+
+        content = self._retrieve_file(node=node, admin=self.super_admin)
+        self._validate_topic_name_in_response(content,
+                                              self.user_accessible_topic, True)
+        self._validate_topic_name_in_response(content,
+                                              self.user_non_accessible_topic,
+                                              use_superuser)
