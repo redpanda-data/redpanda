@@ -11,6 +11,7 @@ v_cc_library(
     v::bytes
     v::utils
     v::config
+    v::cluster
 )
 
 add_subdirectory(schemas)
