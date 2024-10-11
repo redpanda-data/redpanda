@@ -228,6 +228,12 @@ private:
       const security::acl_principal&,
       const model::topic&) const;
 
+    /**
+     * Compute an output partition for some audit record batch by per-shard
+     * round-robin, biased toward partitions with a locally hosted leader.
+     */
+    model::partition_id compute_partition_id();
+
     ss::future<> drain();
     ss::future<> pause();
     ss::future<> resume();
