@@ -36,7 +36,6 @@
 
 #include <boost/algorithm/string/join.hpp>
 #include <fmt/format.h>
-#include <re2/re2.h>
 
 #include <variant>
 
@@ -63,6 +62,7 @@ constexpr std::string_view tls_enabled_variable = "-Xtls.enabled";
 constexpr std::string_view tls_insecure_skip_verify_variable
   = "-Xtls.insecure_skip_verify";
 constexpr std::string_view k8s_namespace_variable = "--namespace";
+constexpr std::string_view k8s_label_selector = "--label-selector";
 
 bool contains_sensitive_info(const ss::sstring& arg) {
     if (arg.find(password_variable) != ss::sstring::npos) {
@@ -93,20 +93,6 @@ std::filesystem::path form_debug_bundle_file_path(
 std::filesystem::path form_process_output_file_path(
   const std::filesystem::path& base_path, job_id_t job_id) {
     return base_path / form_process_output_file_name(job_id);
-}
-
-bool is_valid_rfc1123(std::string_view ns) {
-    // Regular expression for RFC1123 hostname validation
-    constexpr std::string_view rfc1123_pattern
-      = R"(^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))";
-
-    // Validate the hostname against the regular expression using RE2
-    return RE2::FullMatch(ns, RE2(rfc1123_pattern));
-}
-
-bool is_valid_k8s_namespace(std::string_view ns) {
-    constexpr auto max_ns_length = 63;
-    return !ns.empty() && ns.size() <= max_ns_length && is_valid_rfc1123(ns);
 }
 
 std::filesystem::path form_debug_bundle_storage_directory() {
@@ -670,12 +656,15 @@ result<std::vector<ss::sstring>> service::build_rpk_arguments(
           *params.tls_insecure_skip_verify));
     }
     if (params.k8s_namespace.has_value()) {
-        if (!is_valid_k8s_namespace(params.k8s_namespace.value()())) {
-            return error_info(
-              error_code::invalid_parameters, "Invalid k8s namespace name");
-        }
         rv.emplace_back(k8s_namespace_variable);
         rv.emplace_back(*params.k8s_namespace);
+    }
+    if (
+      params.label_selector.has_value()
+      && !params.label_selector.value().empty()) {
+        rv.emplace_back(k8s_label_selector);
+        rv.emplace_back(
+          ssx::sformat("{}", fmt::join(params.label_selector.value(), ",")));
     }
 
     return rv;

@@ -18,6 +18,7 @@
 #include "json/types.h"
 #include "reflection/type_traits.h"
 #include "security/types.h"
+#include "strings/utf8.h"
 #include "utils/functional.h"
 #include "utils/uuid.h"
 
@@ -83,7 +84,14 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         return std::move(r).assume_error();
     } else if constexpr (std::is_same_v<T, ss::sstring>) {
         if (v.IsString()) {
-            return T{as_string_view(v)};
+            auto vv = as_string_view(v);
+            try {
+                validate_no_control(vv);
+            } catch (const std::runtime_error& e) {
+                return parse_error(
+                  fmt::format(": invalid control character: {}", e.what()));
+            }
+            return T{vv};
         }
         return parse_error(": expected string");
     } else if constexpr (std::is_same_v<T, uuid_t>) {
@@ -208,6 +216,25 @@ debug_bundle::result<T> from_json(const json::Value& v) {
             return v.GetBool();
         }
         return parse_error(": expected bool");
+    } else if constexpr (std::is_same_v<T, label_selection>) {
+        if (v.IsObject()) {
+            auto o = v.GetObject();
+            label_selection ls;
+            if (auto r = from_json<decltype(ls.key)>(o, "key", true);
+                r.has_value()) {
+                ls.key = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(ls.value)>(o, "value", true);
+                r.has_value()) {
+                ls.value = std::move(r).assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            return std::move(ls);
+        }
+        return parse_error(": expected object");
     } else if constexpr (std::is_same_v<T, debug_bundle_parameters>) {
         debug_bundle_parameters params;
         if (v.IsObject()) {
@@ -287,6 +314,13 @@ debug_bundle::result<T> from_json(const json::Value& v) {
                   obj, "namespace", false);
                 r.has_value()) {
                 params.k8s_namespace = r.assume_value();
+            } else {
+                return std::move(r).assume_error();
+            }
+            if (auto r = from_json<decltype(params.label_selector)>(
+                  obj, "label_selector", false);
+                r.has_value()) {
+                params.label_selector = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
