@@ -24,3 +24,22 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME coordinator_iceberg
+  SOURCES
+    iceberg_file_committer_test.cc
+  LIBRARIES
+    Boost::iostreams
+    v::cloud_io
+    v::cloud_io_utils
+    v::datalake_coordinator
+    v::datalake_coordinator_test_utils
+    v::gtest_main
+    v::iceberg
+    v::raft_fixture
+    v::s3_imposter
+  LABELS datalake
+  ARGS "-- -c 1"
+)

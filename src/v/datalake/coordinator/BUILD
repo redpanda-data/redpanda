@@ -50,6 +50,51 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "file_committer",
+    hdrs = [
+        "file_committer.h",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        ":state_update",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "iceberg_file_committer",
+    srcs = [
+        "iceberg_file_committer.cc",
+    ],
+    hdrs = [
+        "iceberg_file_committer.h",
+    ],
+    implementation_deps = [
+        ":state",
+        "//src/v/base",
+        "//src/v/datalake:logger",
+        "//src/v/datalake:table_definition",
+        "//src/v/iceberg:manifest_entry",
+        "//src/v/iceberg:partition_key",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:transaction",
+        "//src/v/iceberg:values",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        ":file_committer",
+        ":state_update",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:manifest_io",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "model",
     hdrs = [
         "types.h",
