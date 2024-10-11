@@ -56,6 +56,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/cluster:notification",
         "//src/v/iceberg:catalog",
+        "//src/v/iceberg:manifest_io",
         "//src/v/model",
         "//src/v/raft",
         "@seastar",

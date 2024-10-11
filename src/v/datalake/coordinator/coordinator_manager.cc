@@ -13,6 +13,7 @@
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/state_machine.h"
 #include "iceberg/filesystem_catalog.h"
+#include "iceberg/manifest_io.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -32,8 +33,9 @@ coordinator_manager::coordinator_manager(
   : self_(self)
   , gm_(gm.local())
   , pm_(pm.local())
+  , manifest_io_(io.local(), bucket)
   , catalog_(std::make_unique<iceberg::filesystem_catalog>(
-      io.local(), std::move(bucket), base_location)) {}
+      io.local(), bucket, base_location)) {}
 
 ss::future<> coordinator_manager::start() {
     manage_notifications_ = pm_.register_manage_notification(

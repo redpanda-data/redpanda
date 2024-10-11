@@ -55,6 +55,7 @@ private:
     cluster::partition_manager& pm_;
 
     // Underlying IO is expected to outlive this class.
+    iceberg::manifest_io manifest_io_;
     std::unique_ptr<iceberg::catalog> catalog_;
 
     std::optional<cluster::notification_id_type> manage_notifications_;
