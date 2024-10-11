@@ -4244,6 +4244,9 @@ class RedpandaService(RedpandaServiceBase):
 
         self._node_configs[node] = yaml.full_load(conf)
 
+    def find_path_to_rpk(self) -> str:
+        return f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
+
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
 
@@ -4306,7 +4309,7 @@ class RedpandaService(RedpandaServiceBase):
         if (cur_ver == RedpandaInstaller.HEAD
                 or cur_ver >= (24, 3, 1)) and 'rpk_path' not in conf:
             # Introduced rpk_path to v24.3
-            rpk_path = f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
+            rpk_path = self.find_path_to_rpk()
             conf.update(dict(rpk_path=rpk_path))
 
         conf_yaml = yaml.dump(conf)
