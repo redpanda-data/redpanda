@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <optional>
+#include <string>
 #include <type_traits>
 
 using namespace debug_bundle;
@@ -277,5 +278,46 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
     ASSERT_FALSE(res.has_exception());
     EXPECT_EQ(res.assume_error().code(), error_code::invalid_parameters);
     EXPECT_TRUE(res.assume_error().message().starts_with("Failed to parse"))
+      << res.assume_error().message();
+}
+
+TYPED_TEST(JsonTypeTest, ValidateControlCharacters) {
+    if constexpr (std::is_same_v<TypeParam, ss::sstring>) {
+        this->json_input = R"("foo\nbar")";
+        this->expected = "foo\nbar";
+    } else if constexpr (std::is_same_v<TypeParam, scram_creds>) {
+        this->json_input
+          = R"({"username": "user\r", "password": "pass", "mechanism": "SCRAM-SHA-256"})";
+        this->expected = scram_creds{
+          .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}};
+    } else if constexpr (std::
+                           is_same_v<TypeParam, debug_bundle_authn_options>) {
+        this->json_input
+          = R"({"username": "user", "password": "\fpass", "mechanism": "SCRAM-SHA-256"})";
+        this->expected = TypeParam{scram_creds{
+          .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}}};
+    } else if constexpr (std::is_same_v<TypeParam, k8s_namespace>) {
+        this->json_input = R"("k8s-nam\tespace")";
+        this->expected = k8s_namespace("k8s-namespace");
+    } else {
+        return;
+    }
+
+    json::Document doc;
+    ASSERT_NO_THROW(doc.Parse(this->json_input));
+    ASSERT_FALSE(doc.HasParseError()) << fmt::format(
+      "Malformed json schema: {} at offset {}",
+      rapidjson::GetParseError_En(doc.GetParseError()),
+      doc.GetErrorOffset());
+
+    debug_bundle::result<TypeParam> res{outcome::success()};
+
+    ASSERT_NO_THROW(res = from_json<TypeParam>(doc));
+    ASSERT_TRUE(res.has_error());
+    ASSERT_FALSE(res.has_exception());
+    EXPECT_EQ(res.assume_error().code(), error_code::invalid_parameters);
+    EXPECT_TRUE(
+      res.assume_error().message().find("invalid control character")
+      != std::string::npos)
       << res.assume_error().message();
 }

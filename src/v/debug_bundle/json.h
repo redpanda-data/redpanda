@@ -18,6 +18,7 @@
 #include "json/types.h"
 #include "reflection/type_traits.h"
 #include "security/types.h"
+#include "strings/utf8.h"
 #include "utils/functional.h"
 #include "utils/uuid.h"
 
@@ -83,7 +84,14 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         return std::move(r).assume_error();
     } else if constexpr (std::is_same_v<T, ss::sstring>) {
         if (v.IsString()) {
-            return T{as_string_view(v)};
+            auto vv = as_string_view(v);
+            try {
+                validate_no_control(vv);
+            } catch (const std::runtime_error& e) {
+                return parse_error(
+                  fmt::format(": invalid control character: {}", e.what()));
+            }
+            return T{vv};
         }
         return parse_error(": expected string");
     } else if constexpr (std::is_same_v<T, uuid_t>) {
