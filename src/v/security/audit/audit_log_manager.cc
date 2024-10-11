@@ -12,6 +12,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/security_frontend.h"
 #include "config/configuration.h"
 #include "kafka/client/client.h"
@@ -19,6 +20,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_response.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "model/fundamental.h"
 #include "model/namespace.h"
 #include "security/acl.h"
 #include "security/audit/client_probe.h"
@@ -674,7 +676,10 @@ bool audit_log_manager::recovery_mode_enabled() noexcept {
 }
 
 audit_log_manager::audit_log_manager(
-  cluster::controller* controller, kafka::client::configuration& client_config)
+  model::node_id self,
+  cluster::controller* controller,
+  kafka::client::configuration& client_config,
+  ss::sharded<cluster::metadata_cache>* metadata_cache)
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
   , _queue_drain_interval_ms(
       config::shard_local_cfg().audit_queue_drain_interval_ms.bind())
@@ -687,8 +692,10 @@ audit_log_manager::audit_log_manager(
   , _audit_excluded_principals_binding(
       config::shard_local_cfg().audit_excluded_principals.bind())
   , _queue_bytes_sem(_max_queue_size_bytes, "s/audit/buffer")
+  , _self(self)
   , _controller(controller)
-  , _config(client_config) {
+  , _config(client_config)
+  , _metadata_cache(metadata_cache) {
     if (ss::this_shard_id() == client_shard_id) {
         _sink = std::make_unique<audit_sink>(this, controller, client_config);
     }
