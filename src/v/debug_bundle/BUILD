@@ -18,7 +18,6 @@ redpanda_cc_library(
         "//src/v/ssx:future_util",
         "//src/v/utils:external_process",
         "@boost//:algorithm",
-        "@re2",
     ],
     include_prefix = "debug_bundle",
     visibility = ["//visibility:public"],
