@@ -2,6 +2,7 @@ v_cc_library(
   NAME cloud_io
   SRCS
     auth_refresh_bg_op.cc
+    basic_cache_service_api.cc
     io_resources.cc
     io_result.cc
     remote.cc

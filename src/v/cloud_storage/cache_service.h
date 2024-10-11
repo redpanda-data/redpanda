@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "base/units.h"
+#include "cloud_io/basic_cache_service_api.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
 #include "cloud_storage/recursive_directory_walker.h"
@@ -25,6 +26,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/thread.hh>
 
 #include <filesystem>
@@ -34,9 +36,6 @@
 #include <string_view>
 
 namespace cloud_storage {
-
-static constexpr size_t default_write_buffer_size = 128_KiB;
-static constexpr unsigned default_writebehind = 10;
 
 // These timeout/backoff settings are for S3 requests
 using namespace std::chrono_literals;
@@ -49,59 +48,20 @@ inline const ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
 
 class cache_test_fixture;
 
-struct [[nodiscard]] cache_item {
-    ss::file body;
-    size_t size;
-};
+using cache_item = cloud_io::cache_item;
 
-enum class [[nodiscard]] cache_element_status {
-    available,
-    not_available,
-    in_progress
-};
-std::ostream& operator<<(std::ostream& o, cache_element_status);
+using cache_element_status = cloud_io::cache_element_status;
 
 class cache;
 
 /// RAII guard for bytes reserved in the cache: constructed prior to a call
 /// to cache::put, and may be destroyed afterwards.
-class space_reservation_guard {
-public:
-    space_reservation_guard(
-      cache& cache, uint64_t bytes, size_t objects) noexcept
-      : _cache(cache)
-      , _bytes(bytes)
-      , _objects(objects) {}
+using space_reservation_guard
+  = cloud_io::basic_space_reservation_guard<ss::lowres_clock>;
 
-    space_reservation_guard(const space_reservation_guard&) = delete;
-    space_reservation_guard() = delete;
-    space_reservation_guard(space_reservation_guard&& rhs) noexcept
-      : _cache(rhs._cache)
-      , _bytes(rhs._bytes)
-      , _objects(rhs._objects) {
-        rhs._bytes = 0;
-        rhs._objects = 0;
-    }
-
-    ~space_reservation_guard();
-
-    /// After completing the write operation that this space reservation
-    /// protected, indicate how many bytes were really written: this is used to
-    /// atomically update cache usage stats to free the reservation and update
-    /// the bytes used stats together.
-    ///
-    /// May only be called once per reservation.
-    void wrote_data(uint64_t, size_t);
-
-private:
-    cache& _cache;
-
-    // Size acquired at time of reservation
-    uint64_t _bytes{0};
-    size_t _objects{0};
-};
-
-class cache : public ss::peering_sharded_service<cache> {
+class cache
+  : public cloud_io::basic_cache_service_api<ss::lowres_clock>
+  , public ss::peering_sharded_service<cache> {
 public:
     /// C-tor.
     ///
@@ -126,6 +86,12 @@ public:
     /// \param key is a cache key
     ss::future<std::optional<cache_item>> get(std::filesystem::path key);
 
+    ss::future<std::optional<cloud_io::cache_item_str>> get(
+      std::filesystem::path key,
+      ss::io_priority_class io_priority,
+      size_t read_buffer_size = cloud_io::default_read_buffer_size,
+      unsigned int read_ahead = cloud_io::default_read_ahead) override;
+
     /// Add new value to the cache, overwrite if it's already exist
     ///
     /// \param key is a cache key
@@ -141,8 +107,8 @@ public:
       space_reservation_guard& reservation,
       ss::io_priority_class io_priority
       = priority_manager::local().shadow_indexing_priority(),
-      size_t write_buffer_size = default_write_buffer_size,
-      unsigned int write_behind = default_writebehind);
+      size_t write_buffer_size = cloud_io::default_write_buffer_size,
+      unsigned int write_behind = cloud_io::default_write_behind) override;
 
     /// \brief Checks if the value is cached
     ///
@@ -153,7 +119,7 @@ public:
     /// \c cache_element_status::in_progress can be used as a hint since ntp are
     /// stored on the same shard most of the time.
     ss::future<cache_element_status>
-    is_cached(const std::filesystem::path& key);
+    is_cached(const std::filesystem::path& key) override;
 
     /// Remove element from cache by key
     ss::future<> invalidate(const std::filesystem::path& key);
@@ -163,11 +129,12 @@ public:
 
     // Call this before starting a download, to trim the cache if necessary
     // and wait until enough free space is available.
-    ss::future<space_reservation_guard> reserve_space(uint64_t, size_t);
+    ss::future<space_reservation_guard>
+      reserve_space(uint64_t, size_t) override;
 
     // Release capacity acquired via `reserve_space`.  This spawns
     // a background fiber in order to be callable from the guard destructor.
-    void reserve_space_release(uint64_t, size_t, uint64_t, size_t);
+    void reserve_space_release(uint64_t, size_t, uint64_t, size_t) override;
 
     static ss::future<> initialize(std::filesystem::path);
 
