@@ -53,7 +53,7 @@ struct local_data_file {
         return o;
     }
 
-    std::filesystem::path local_path() { return base_path / file_path; }
+    std::filesystem::path local_path() const { return base_path / file_path; }
 };
 
 struct data_writer_error_category : std::error_category {

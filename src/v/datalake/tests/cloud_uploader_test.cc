@@ -10,6 +10,8 @@
 
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "data_file.h"
 #include "datalake/cloud_uploader.h"
 #include "datalake/data_writer_interface.h"
@@ -92,6 +94,16 @@ TEST_F(DatalakeCloudUploaderTest, UploadsData) {
       "s3://test-bucket/remote_test/remote_directory/remote_test_file");
     EXPECT_EQ(cloud_result.value().file_size_bytes, local_file.file_size_bytes);
     EXPECT_EQ(cloud_result.value().row_count, local_file.row_count);
+
+    auto exists = remote()
+                    .object_exists(
+                      cloud_storage_clients::bucket_name{"test-bucket"},
+                      cloud_storage_clients::object_key{
+                        "remote_test/remote_directory/remote_test_file"},
+                      retry,
+                      "parquet")
+                    .get();
+    EXPECT_EQ(exists, cloud_storage::download_result::success);
 }
 
 TEST_F(DatalakeCloudUploaderTest, HandlesMissingFiles) {
@@ -153,13 +165,29 @@ TEST_F(DatalakeCloudUploaderTest, UploadsMultiple) {
     EXPECT_EQ(remote_files.size(), local_file_count);
     for (int i = 0; i < remote_files.size(); i++) {
         const auto& cloud_result = remote_files[i];
+        std::filesystem::path remote_key = std::filesystem::path("remote_test")
+                                           / "remote_directory"
+                                           / fmt::format("data-{}", i);
         std::filesystem::path expected_path
-          = std::filesystem::path("s3://test-bucket/") / "remote_test"
-            / "remote_directory" / fmt::format("data-{}", i);
+          = std::filesystem::path("s3://test-bucket/") / remote_key;
         EXPECT_EQ(cloud_result.remote_path, expected_path.string());
         // We constructed the files so file i will have size i
         EXPECT_EQ(cloud_result.file_size_bytes, i);
         EXPECT_EQ(cloud_result.row_count, 1);
+
+        // Expect that local files are deleted after uploading
+        std::filesystem::path local_path = tmp_dir.get_path()
+                                           / fmt::format("data-{}", i);
+        EXPECT_FALSE(std::filesystem::exists(local_path));
+        auto exists = remote()
+                        .object_exists(
+                          cloud_storage_clients::bucket_name{"test-bucket"},
+                          cloud_storage_clients::object_key{
+                            remote_key.string()},
+                          retry,
+                          "parquet")
+                        .get();
+        EXPECT_EQ(exists, cloud_storage::download_result::success);
     }
 }
 
@@ -198,4 +226,21 @@ TEST_F(DatalakeCloudUploaderTest, CleansUpOnFailure) {
           .get0();
 
     EXPECT_FALSE(remote_files_result.has_value());
+    for (int i = 0; i < local_file_count; i++) {
+        std::filesystem::path local_path = tmp_dir.get_path()
+                                           / fmt::format("data-{}", i);
+        std::filesystem::path remote_key = std::filesystem::path("remote_test")
+                                           / "remote_directory"
+                                           / fmt::format("data-{}", i);
+        EXPECT_FALSE(std::filesystem::exists(local_path));
+        auto exists = remote()
+                        .object_exists(
+                          cloud_storage_clients::bucket_name{"test-bucket"},
+                          cloud_storage_clients::object_key{
+                            remote_key.string()},
+                          retry,
+                          "parquet")
+                        .get();
+        EXPECT_EQ(exists, cloud_storage::download_result::notfound);
+    }
 }

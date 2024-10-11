@@ -121,11 +121,58 @@ cloud_uploader::upload_multiple(
         auto res = co_await upload_data_file(
           file, file.file_path.string(), rtc_parent, lazy_abort_source);
         if (!res.has_value()) {
-            // FIXME: call cleanup function before exiting
+            co_await cleanup_local_files(std::move(local_files));
+            co_await cleanup_remote_files(std::move(results), rtc_parent);
             co_return res.error();
         }
         results.push_back(res.value());
     }
+    co_await cleanup_local_files(std::move(local_files));
     co_return results;
+}
+ss::future<> cloud_uploader::cleanup_local_files(
+  chunked_vector<local_data_file> local_files) {
+    for (const auto& file : local_files) {
+        try {
+            vlog(
+              datalake_log.debug, "Removing local file {}", file.local_path());
+            co_await ss::remove_file(file.local_path().string());
+        } catch (...) {
+            vlog(
+              datalake_log.error,
+              "Error removing local file {}: {}",
+              file.local_path(),
+              std::current_exception());
+        }
+    }
+}
+ss::future<> cloud_uploader::cleanup_remote_files(
+  chunked_vector<coordinator::data_file> remote_files,
+  retry_chain_node& rtc_parent) {
+    std::deque<cloud_storage_clients::object_key> keys;
+    std::filesystem::path bucket_path(fmt::format("s3://{}", _bucket));
+    for (const auto& file : remote_files) {
+        // TODO: should this use the same rtc and abort_source?
+        // It seems like we want to clean up even if an abort was issued?
+        std::filesystem::path remote_path(file.remote_path);
+        ss::sstring key_string
+          = remote_path.lexically_relative(bucket_path).string();
+        keys.emplace_back(key_string);
+        vlog(
+          datalake_log.info, "Deleting remote file {} {}", _bucket, key_string);
+    }
+
+    auto result = co_await _cloud_io.delete_objects(
+      cloud_storage_clients::bucket_name{_bucket},
+      std::move(keys),
+      rtc_parent,
+      [](size_t) {});
+
+    if (result == cloud_storage::upload_result::success) {
+        vlog(
+          datalake_log.debug, "Successfully cleaned up remote files on error");
+    } else {
+        vlog(datalake_log.error, "Error cleaning up remote files: {}", result);
+    }
 }
 } // namespace datalake
