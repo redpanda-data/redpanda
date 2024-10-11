@@ -21,7 +21,7 @@
 #include <vector>
 namespace cluster {
 
-static ss::future<consensus_ptr> create_raft0(
+inline ss::future<consensus_ptr> create_raft0(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   const ss::sstring& data_directory,
