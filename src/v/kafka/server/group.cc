@@ -1804,70 +1804,7 @@ void group::insert_ongoing_tx(
 ss::future<cluster::commit_group_tx_reply>
 group::commit_tx(cluster::commit_group_tx_request r) {
     vlog(_ctx_txlog.trace, "processing commit_tx request: {}", r);
-    if (_partition->term() != _term) {
-        vlog(
-          _ctx_txlog.warn,
-          "commit_tx request: {} failed - leadership_changed, expected term: "
-          "{}, current_term: {}",
-          r,
-          _term,
-          _partition->term());
-        co_return make_commit_tx_reply(cluster::tx::errc::stale);
-    }
-
-    auto it = _producers.find(r.pid.get_id());
-    if (it == _producers.end()) {
-        vlog(
-          _ctx_txlog.warn,
-          "commit_tx request: {} failed - producer not found",
-          r);
-        co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
-    }
-    auto& producer = it->second;
-    if (r.pid.get_epoch() != producer.epoch) {
-        vlog(
-          _ctx_txlog.warn,
-          "commit_tx request: {} failed - fenced, stored producer epoch: {}",
-          r,
-          producer.epoch);
-        co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
-    }
-
-    if (producer.transaction == nullptr) {
-        vlog(
-          _ctx_txlog.trace,
-          "commit_tx request: {} - can not find ongoing transaction, it was "
-          "most likely already committed",
-          r);
-        co_return make_commit_tx_reply(cluster::tx::errc::none);
-    }
-    auto& producer_tx = *producer.transaction;
-    if (producer_tx.tx_seq > r.tx_seq) {
-        // rare situation:
-        //   * tm_stm begins (tx_seq+1)
-        //   * request on this group passes but then tm_stm fails and forgets
-        //   about this tx
-        //   * during recovery tm_stm recommits previous tx (tx_seq)
-        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
-        vlog(
-          _ctx_txlog.trace,
-          "Already commited pid: {} tx_seq: {} - a higher tx_seq: {} was "
-          "observed",
-          r.pid,
-          r.tx_seq,
-          producer_tx.tx_seq);
-        co_return make_commit_tx_reply(cluster::tx::errc::none);
-    }
-    if (producer_tx.tx_seq != r.tx_seq) {
-        vlog(
-          _ctx_txlog.warn,
-          "commit_tx request: {} failed - tx_seq mismatch. Expected seq: {}",
-          r,
-          producer_tx.tx_seq);
-        co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
-    }
-
-    co_return co_await do_commit(r.group_id, r.pid);
+    co_return co_await do_commit(r.group_id, r.pid, r.tx_seq);
 }
 
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx::errc ec) {
@@ -2006,74 +1943,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 
 ss::future<cluster::abort_group_tx_reply>
 group::abort_tx(cluster::abort_group_tx_request r) {
-    // doesn't make sense to fence off an abort because transaction
-    // manager has already decided to abort and acked to a client
     vlog(_ctxlog.trace, "processing abort_tx request: {}", r);
-    if (_partition->term() != _term) {
-        vlog(
-          _ctxlog.debug,
-          "abort_tx request: {} failed - leadership changed, expected term: "
-          "{}, current term: {}",
-          r,
-          _term,
-          _partition->term());
-        co_return make_abort_tx_reply(cluster::tx::errc::stale);
-    }
-
-    auto it = _producers.find(r.pid.get_id());
-    if (it == _producers.end()) {
-        vlog(
-          _ctx_txlog.warn,
-          "abort_tx request: {} failed - producer not found",
-          r);
-        co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
-    }
-    auto& producer = it->second;
-    if (r.pid.get_epoch() != producer.epoch) {
-        vlog(
-          _ctx_txlog.warn,
-          "abort_tx request: {} failed - fence epoch mismatch. Fence epoch: {}",
-          r.pid,
-          producer.epoch);
-        co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
-    }
-
-    if (producer.transaction == nullptr) {
-        vlog(
-          _ctx_txlog.trace,
-          "unable to find transaction for {}, probably already aborted",
-          r.pid);
-        co_return make_abort_tx_reply(cluster::tx::errc::none);
-    }
-    auto& producer_tx = *producer.transaction;
-    if (producer_tx.tx_seq > r.tx_seq) {
-        // rare situation:
-        //   * tm_stm begins (tx_seq+1)
-        //   * request on this group passes but then tm_stm fails and forgets
-        //   about this tx
-        //   * during recovery tm_stm reaborts previous tx (tx_seq)
-        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is aborted
-        vlog(
-          _ctx_txlog.trace,
-          "producer transaction {} already aborted, ongoing tx sequence: {}, "
-          "request tx sequence: {}",
-          r.pid,
-          producer_tx.tx_seq,
-          r.tx_seq);
-        co_return make_abort_tx_reply(cluster::tx::errc::none);
-    }
-
-    if (producer_tx.tx_seq != r.tx_seq) {
-        vlog(
-          _ctx_txlog.warn,
-          "abort_tx request: {} failed - tx sequence mismatch. Ongoing tx "
-          "sequence: {}, request tx sequence: {}",
-          r.pid,
-          producer_tx.tx_seq,
-          r.tx_seq);
-        co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
-    }
-
     co_return co_await do_abort(r.group_id, r.pid, r.tx_seq);
 }
 
@@ -3003,6 +2873,85 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
   kafka::group_id group_id,
   model::producer_identity pid,
   model::tx_seq tx_seq) {
+    vlog(
+      _ctxlog.trace,
+      "processing do_abort_tx request: producer: {}, sequence: {}",
+      group_id,
+      pid,
+      tx_seq);
+    if (_partition->term() != _term) {
+        vlog(
+          _ctxlog.debug,
+          "do_abort_tx request: failed - leadership changed, expected term: "
+          "{}, current term: {}, pid: {}, sequence: {}",
+          _term,
+          _partition->term(),
+          pid,
+          tx_seq);
+        co_return make_abort_tx_reply(cluster::tx::errc::stale);
+    }
+    auto it = _producers.find(pid.get_id());
+    if (it == _producers.end() || it->second.transaction == nullptr) {
+        // It could be a replay request from the coordinator to roll back
+        // the transaction. It is possible that the state got cleaned up
+        // between the original and the current replay request. We assume
+        // aborted because this request confirms that the coordinator sees a
+        // tx abort in the log and the original request should have been a
+        // abort too.
+        vlog(
+          _ctx_txlog.info,
+          "do_abort_tx request:- producer/transaction {} not found, sequence: "
+          "{}, assuming already aborted.",
+          pid,
+          tx_seq);
+        co_return make_abort_tx_reply(cluster::tx::errc::none);
+    }
+    auto& producer = it->second;
+    if (pid.get_epoch() != producer.epoch) {
+        vlog(
+          _ctx_txlog.warn,
+          "do_abort_tx request: {} failed - fence epoch mismatch. Fence epoch: "
+          "{}",
+          pid,
+          producer.epoch);
+        co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
+    }
+
+    if (producer.transaction == nullptr) {
+        vlog(
+          _ctx_txlog.trace,
+          "unable to find transaction for {}, probably already aborted",
+          pid);
+        co_return make_abort_tx_reply(cluster::tx::errc::none);
+    }
+    auto& producer_tx = *producer.transaction;
+    if (producer_tx.tx_seq > tx_seq) {
+        // rare situation:
+        //   * tm_stm begins (tx_seq+1)
+        //   * request on this group passes but then tm_stm fails and forgets
+        //   about this tx
+        //   * during recovery tm_stm reaborts previous tx (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is aborted
+        vlog(
+          _ctx_txlog.trace,
+          "producer transaction {} already aborted, ongoing tx sequence: {}, "
+          "request tx sequence: {}",
+          pid,
+          producer_tx.tx_seq,
+          tx_seq);
+        co_return make_abort_tx_reply(cluster::tx::errc::none);
+    }
+
+    if (producer_tx.tx_seq != tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "do_abort_tx request: {} failed - tx sequence mismatch. Ongoing tx "
+          "sequence: {}, request tx sequence: {}",
+          pid,
+          producer_tx.tx_seq,
+          tx_seq);
+        co_return make_abort_tx_reply(cluster::tx::errc::request_rejected);
+    }
     auto tx = group_tx::abort_metadata{.group_id = group_id, .tx_seq = tx_seq};
 
     auto batch = make_tx_batch(
@@ -3030,23 +2979,95 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
         }
         co_return map_tx_replication_error(result.error());
     }
-    auto it = _producers.find(pid.get_id());
+    it = _producers.find(pid.get_id());
     if (it != _producers.end()) {
         it->second.transaction.reset();
     }
     co_return make_abort_tx_reply(cluster::tx::errc::none);
 }
 
-ss::future<cluster::commit_group_tx_reply>
-group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
+ss::future<cluster::commit_group_tx_reply> group::do_commit(
+  kafka::group_id group_id,
+  model::producer_identity pid,
+  model::tx_seq sequence) {
+    vlog(
+      _ctx_txlog.trace,
+      "processing do_commit_tx request: pid: {}",
+      group_id,
+      pid);
+    if (_partition->term() != _term) {
+        vlog(
+          _ctx_txlog.warn,
+          "do_commit_tx request: pid: {} failed - "
+          "leadership_changed, expected term: "
+          "{}, current_term: {}",
+          pid,
+          _term,
+          _partition->term());
+        co_return make_commit_tx_reply(cluster::tx::errc::stale);
+    }
     auto it = _producers.find(pid.get_id());
     if (it == _producers.end() || it->second.transaction == nullptr) {
-        // Impossible situation
+        // It could be a replay request from the coordinator to roll forward
+        // the transaction. It is possible that the state got cleaned up
+        // between the original and the current replay request. We assume
+        // committed because this request confirms that the coordinator sees a
+        // tx commit in the log and the original request should have been a
+        // commit too.
         vlog(
-          _ctx_txlog.error,
-          "Unable to find an ongoing transaction for producer: {}",
+          _ctx_txlog.info,
+          "do_commit_tx request:- producer/transaction {} not found, sequence: "
+          "{}, assuming already committed.",
+          pid,
+          sequence);
+        co_return make_commit_tx_reply(cluster::tx::errc::none);
+    }
+    auto& producer = it->second;
+    if (pid.get_epoch() != producer.epoch) {
+        vlog(
+          _ctx_txlog.warn,
+          "do_commit_tx request: pid: {} failed - fenced, stored "
+          "producer epoch: {}",
+          pid,
+          producer.epoch);
+        co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
+    }
+
+    if (producer.transaction == nullptr) {
+        vlog(
+          _ctx_txlog.trace,
+          "do_commit_tx request: producer: {} - can not find "
+          "ongoing transaction, it was "
+          "most likely already committed",
           pid);
-        co_return make_commit_tx_reply(cluster::tx::errc::unknown_server_error);
+        co_return make_commit_tx_reply(cluster::tx::errc::none);
+    }
+    auto& producer_tx = *producer.transaction;
+    if (producer_tx.tx_seq > sequence) {
+        // rare situation:
+        //   * tm_stm begins (tx_seq+1)
+        //   * request on this group passes but then tm_stm fails and forgets
+        //   about this tx
+        //   * during recovery tm_stm recommits previous tx (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
+        vlog(
+          _ctx_txlog.trace,
+          "Already commited pid: {} tx_seq: {} - a higher tx_seq: {} was "
+          "observed",
+          pid,
+          sequence,
+          producer_tx.tx_seq);
+        co_return make_commit_tx_reply(cluster::tx::errc::none);
+    }
+    if (producer_tx.tx_seq != sequence) {
+        vlog(
+          _ctx_txlog.warn,
+          "commit_tx request: pid: {}, sequence: {} failed - tx_seq mismatch. "
+          "Expected seq: {}",
+          pid,
+          sequence,
+          producer_tx.tx_seq);
+        co_return make_commit_tx_reply(cluster::tx::errc::request_rejected);
     }
     auto& ongoing_tx = *it->second.transaction;
     // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
@@ -3243,6 +3264,7 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
       pid,
       producer_tx.tx_seq,
       producer_tx.coordinator_partition);
+    auto tx_seq = producer_tx.tx_seq;
     auto r = co_await _tx_frontend.local().route_globally(
       cluster::try_abort_request(
         producer_tx.coordinator_partition,
@@ -3261,7 +3283,7 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
       r.aborted);
 
     if (r.commited) {
-        auto res = co_await do_commit(_id, pid);
+        auto res = co_await do_commit(_id, pid, tx_seq);
         if (res.ec != cluster::tx::errc::none) {
             vlog(
               _ctxlog.warn,
