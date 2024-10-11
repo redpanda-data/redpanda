@@ -34,6 +34,7 @@ public:
     static constexpr bool default_remote_delete{true};
     static constexpr bool legacy_remote_delete{false};
     static constexpr bool default_iceberg_enabled{false};
+    static constexpr bool default_cloud_topic_enabled{false};
 
     static constexpr std::chrono::milliseconds read_replica_retention{3600000};
 
@@ -78,6 +79,7 @@ public:
         std::optional<std::chrono::milliseconds> flush_ms;
         std::optional<size_t> flush_bytes;
         bool iceberg_enabled{default_iceberg_enabled};
+        bool cloud_topic_enabled{default_cloud_topic_enabled};
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -307,6 +309,14 @@ public:
         }
         return _overrides ? _overrides->iceberg_enabled
                           : default_iceberg_enabled;
+    }
+
+    bool cloud_topic_enabled() const {
+        if (!config::shard_local_cfg().development_enable_cloud_topics()) {
+            return false;
+        }
+        return _overrides ? _overrides->cloud_topic_enabled
+                          : default_cloud_topic_enabled;
     }
 
 private:

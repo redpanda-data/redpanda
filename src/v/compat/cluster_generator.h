@@ -651,7 +651,8 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_optional(
             [] { return random_generators::get_int<size_t>(); }),
           false,
-          std::nullopt};
+          std::nullopt,
+          false};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

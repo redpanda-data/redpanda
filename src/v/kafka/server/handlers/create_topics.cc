@@ -40,45 +40,62 @@
 
 namespace kafka {
 
-static constexpr auto supported_configs = std::to_array(
-  {topic_property_compression,
-   topic_property_cleanup_policy,
-   topic_property_timestamp_type,
-   topic_property_segment_size,
-   topic_property_compaction_strategy,
-   topic_property_retention_bytes,
-   topic_property_retention_duration,
-   topic_property_recovery,
-   topic_property_remote_write,
-   topic_property_remote_read,
-   topic_property_remote_delete,
-   topic_property_read_replica,
-   topic_property_max_message_bytes,
-   topic_property_retention_local_target_bytes,
-   topic_property_retention_local_target_ms,
-   topic_property_segment_ms,
-   topic_property_record_key_schema_id_validation,
-   topic_property_record_key_schema_id_validation_compat,
-   topic_property_record_key_subject_name_strategy,
-   topic_property_record_key_subject_name_strategy_compat,
-   topic_property_record_value_schema_id_validation,
-   topic_property_record_value_schema_id_validation_compat,
-   topic_property_record_value_subject_name_strategy,
-   topic_property_record_value_subject_name_strategy_compat,
-   topic_property_initial_retention_local_target_bytes,
-   topic_property_initial_retention_local_target_ms,
-   topic_property_write_caching,
-   topic_property_flush_ms,
-   topic_property_flush_bytes,
-   topic_property_iceberg_enabled,
-   topic_property_leaders_preference});
-
+namespace {
 bool is_supported(std::string_view name) {
-    return std::any_of(
-      supported_configs.begin(),
-      supported_configs.end(),
-      [name](std::string_view p) { return name == p; });
+    static constexpr auto supported_configs = std::to_array(
+      {topic_property_compression,
+       topic_property_cleanup_policy,
+       topic_property_timestamp_type,
+       topic_property_segment_size,
+       topic_property_compaction_strategy,
+       topic_property_retention_bytes,
+       topic_property_retention_duration,
+       topic_property_recovery,
+       topic_property_remote_write,
+       topic_property_remote_read,
+       topic_property_remote_delete,
+       topic_property_read_replica,
+       topic_property_max_message_bytes,
+       topic_property_retention_local_target_bytes,
+       topic_property_retention_local_target_ms,
+       topic_property_segment_ms,
+       topic_property_record_key_schema_id_validation,
+       topic_property_record_key_schema_id_validation_compat,
+       topic_property_record_key_subject_name_strategy,
+       topic_property_record_key_subject_name_strategy_compat,
+       topic_property_record_value_schema_id_validation,
+       topic_property_record_value_schema_id_validation_compat,
+       topic_property_record_value_subject_name_strategy,
+       topic_property_record_value_subject_name_strategy_compat,
+       topic_property_initial_retention_local_target_bytes,
+       topic_property_initial_retention_local_target_ms,
+       topic_property_write_caching,
+       topic_property_flush_ms,
+       topic_property_flush_bytes,
+       topic_property_iceberg_enabled,
+       topic_property_leaders_preference});
+
+    if (std::any_of(
+          supported_configs.begin(),
+          supported_configs.end(),
+          [name](std::string_view p) { return name == p; })) {
+        return true;
+    }
+
+    /*
+     * check development features below. if a development feature is not
+     * enabled, the system should behave as if the feature does not exist.
+     */
+
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        if (name == topic_property_cloud_topic_enabled) {
+            return true;
+        }
+    }
+
+    return false;
 }
+} // namespace
 
 using validators = make_validator_types<
   creatable_topic,
@@ -97,7 +114,8 @@ using validators = make_validator_types<
   replication_factor_must_be_greater_or_equal_to_minimum,
   vcluster_id_validator,
   write_caching_configs_validator,
-  iceberg_config_validator>;
+  iceberg_config_validator,
+  cloud_topic_config_validator>;
 
 static void
 append_topic_configs(request_context& ctx, create_topics_response& response) {
