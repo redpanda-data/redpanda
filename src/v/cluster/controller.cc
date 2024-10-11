@@ -625,6 +625,7 @@ ss::future<> controller::start(
       std::ref(_feature_table),
       std::ref(_connections),
       std::ref(_roles),
+      std::ref(_tp_state),
       _raft0->group());
 
     co_await _health_manager.start_single(

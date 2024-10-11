@@ -29,6 +29,7 @@ enum class license_required_feature {
     rbac,
     fips,
     datalake_iceberg,
+    leadership_pinning,
 };
 
 std::ostream& operator<<(std::ostream&, license_required_feature);

@@ -52,6 +52,7 @@ feature_manager::feature_manager(
   ss::sharded<features::feature_table>& table,
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<security::role_store>& role_store,
+  ss::sharded<topic_table>& topic_table,
   raft::group_id raft0_group)
   : _stm(stm)
   , _as(as)
@@ -62,6 +63,7 @@ feature_manager::feature_manager(
   , _feature_table(table)
   , _connection_cache(connection_cache)
   , _role_store(role_store)
+  , _topic_table(topic_table)
   , _raft0_group(raft0_group)
   , _barrier_state(
       *config::node().node_id(),
@@ -225,6 +227,18 @@ feature_manager::report_enterprise_features() const {
     auto has_non_default_roles
       = n_roles >= 2
         || (n_roles == 1 && !_role_store.local().contains(security::default_role));
+    auto leadership_pinning_enabled = [&cfg, this]() {
+        if (cfg.default_leaders_preference() != config::leaders_preference{}) {
+            return true;
+        }
+        for (const auto& topic : _topic_table.local().topics_map()) {
+            if (topic.second.get_configuration()
+                  .properties.leaders_preference) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     features::enterprise_feature_report report;
     report.set(
@@ -249,6 +263,9 @@ feature_manager::report_enterprise_features() const {
     report.set(
       features::license_required_feature::datalake_iceberg,
       cfg.iceberg_enabled());
+    report.set(
+      features::license_required_feature::leadership_pinning,
+      leadership_pinning_enabled());
     return report;
 }
 
