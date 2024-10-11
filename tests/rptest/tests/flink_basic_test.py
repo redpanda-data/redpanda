@@ -11,7 +11,7 @@ import csv
 import io
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec

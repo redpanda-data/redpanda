@@ -29,7 +29,7 @@ from ducktape.tests.test import TestContext
 from rptest.clients.types import TopicSpec
 from rptest.tests.e2e_finjector import Finjector
 from rptest.clients.rpk import RpkTool, RpkException
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix
 from contextlib import nullcontext
 import requests
 import re
@@ -687,7 +687,6 @@ class DataMigrationsApiTest(RedpandaTest):
         self.cancel(migration_id, topic_name)
         self.assert_no_topics()
 
-    @ok_to_fail
     @cluster(num_nodes=4, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     @matrix(transfer_leadership=[True, False],
             params=generate_tmptpdi_params())

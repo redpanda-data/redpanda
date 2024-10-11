@@ -11,7 +11,7 @@ import subprocess
 import os
 
 from rptest.services.cluster import cluster
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix
 
 from rptest.services.librdkafka_test_case import LibrdkafkaTestcase
 from rptest.tests.redpanda_test import RedpandaTest
@@ -79,7 +79,6 @@ class LibrdkafkaTest(RedpandaTest):
                                                  "default_topic_partitions": 4
                                              })
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/7148
     @cluster(num_nodes=4)
     @matrix(test_num=tests_to_run())
     @skip_debug_mode

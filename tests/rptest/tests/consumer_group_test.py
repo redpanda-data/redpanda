@@ -30,7 +30,7 @@ from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize, ok_to_fail
+from ducktape.mark import parametrize
 from kafka import KafkaConsumer, TopicPartition
 from kafka import errors as kerr
 from kafka.admin import KafkaAdminClient
@@ -1027,7 +1027,6 @@ class ConsumerGroupStaticMembersRebalance(RedpandaTest):
     #this test fails as the consumer are fenced when Redpanda is
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @ok_to_fail
     def test_force_kill_all_redpanda_nodes(self):
         def restart_then_stop_consumer():
             self.logger.info("stopping redpanda")

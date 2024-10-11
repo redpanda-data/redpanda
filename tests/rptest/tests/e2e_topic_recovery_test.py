@@ -17,7 +17,6 @@ from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 from rptest.utils.mode_checks import skip_debug_mode
-from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.utils.si_utils import BucketView, NTP
 import time
