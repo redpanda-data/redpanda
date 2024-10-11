@@ -40,25 +40,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "record_batcher",
-    srcs = ["record_batcher.cc"],
-    hdrs = ["record_batcher.h"],
-    implementation_deps = [
-        ":logger",
-        "//src/v/storage:record_batch_builder",
-        "//src/v/utils:human",
-        "@abseil-cpp//absl/algorithm:container",
-    ],
-    include_prefix = "transform/logging",
-    deps = [
-        "//src/v/base",
-        "//src/v/bytes:iobuf",
-        "//src/v/model",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
     name = "event",
     srcs = ["event.cc"],
     hdrs = ["event.h"],
@@ -94,13 +75,13 @@ redpanda_cc_library(
         ":event",
         ":logger",
         ":probes",
-        ":record_batcher",
         "//src/v/base",
         "//src/v/bytes:streambuf",
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/hashing:murmur",
         "//src/v/json",
+        "//src/v/kafka/client:record_batcher",
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/random:time_jitter",

@@ -38,16 +38,4 @@ model::transform_name random_transform_name(size_t len) {
     return model::transform_name{random_generators::gen_alphanum_string(len)};
 }
 
-iobuf random_length_iobuf(size_t data_max) {
-    assert(data_max > 0);
-    std::random_device dev;
-    std::mt19937 rng(dev());
-    std::uniform_int_distribution<std::mt19937::result_type> dist(1, data_max);
-
-    auto data = random_generators::gen_alphanum_string(dist(rng));
-    iobuf b;
-    b.append(data.data(), data.size());
-    return b;
-}
-
 } // namespace transform::logging::testing
