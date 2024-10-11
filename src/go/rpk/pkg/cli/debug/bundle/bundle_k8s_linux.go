@@ -72,6 +72,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveConfig(ps, bp.yActual),
 		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveDataDirStructure(ps, bp.y),
+		saveDf(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.y),
 		saveInterrupts(ps),
 		saveKafkaMetadata(ctx, ps, bp.cl),

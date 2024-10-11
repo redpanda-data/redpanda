@@ -136,6 +136,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveDNSData(ctx, ps),
 		saveDataDirStructure(ps, bp.y),
+		saveDf(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.y),
 		saveDmidecode(ctx, ps),
 		saveFree(ctx, ps),
@@ -550,6 +551,13 @@ func saveMountedFilesystems(ps *stepParams) step {
 			return err
 		}
 		return writeFileToZip(ps, "proc/mounts", bs)
+	}
+}
+
+// Saves the output of `df -aT`.
+func saveDf(ctx context.Context, ps *stepParams) step {
+	return func() error {
+		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "df.txt"), "df", "-aT")
 	}
 }
 
