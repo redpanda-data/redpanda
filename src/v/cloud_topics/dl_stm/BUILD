@@ -59,3 +59,32 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
     ],
 )
+
+redpanda_cc_library(
+    name = "dl_stm",
+    srcs = [
+        "dl_stm.cc",
+    ],
+    hdrs = [
+        "dl_stm.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":command_builder",
+        ":commands",
+        ":dl_stm_state",
+        "//src/v/base",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:types",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/serde",
+        "//src/v/serde:uuid",
+        "//src/v/storage",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:btree",
+        "@seastar",
+    ],
+)
