@@ -634,8 +634,6 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, model::cloud_storage_backend>) {
         return "string";
-    } else if constexpr (std::is_same_v<type, model::leader_balancer_mode>) {
-        return "string";
     } else if constexpr (std::is_same_v<type, std::filesystem::path>) {
         return "string";
     } else if constexpr (std::is_same_v<

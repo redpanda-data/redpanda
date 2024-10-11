@@ -574,7 +574,7 @@ struct configuration final : public config_store {
     property<bool> partition_autobalancing_topic_aware;
 
     property<bool> enable_leader_balancer;
-    enum_property<model::leader_balancer_mode> leader_balancer_mode;
+    deprecated_property leader_balancer_mode;
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
