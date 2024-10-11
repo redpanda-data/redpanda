@@ -39,6 +39,8 @@ std::ostream& operator<<(std::ostream& os, license_required_feature f) {
         return os << "fips";
     case license_required_feature::datalake_iceberg:
         return os << "datalake_iceberg";
+    case license_required_feature::leadership_pinning:
+        return os << "leadership_pinning";
     }
     __builtin_unreachable();
 }

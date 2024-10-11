@@ -67,6 +67,7 @@ public:
       ss::sharded<features::feature_table>& table,
       ss::sharded<rpc::connection_cache>& connection_cache,
       ss::sharded<security::role_store>& role_store,
+      ss::sharded<topic_table>&,
       raft::group_id raft0_group);
 
     /**
@@ -165,6 +166,7 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<security::role_store>& _role_store;
+    ss::sharded<topic_table>& _topic_table;
     raft::group_id _raft0_group;
 
     version_map _updates;
