@@ -149,17 +149,10 @@ sharded_store::get_schema_version(subject_schema schema) {
 
     // Determine if a provided schema id is appropriate
     if (schema.id != invalid_schema_id) {
-        if (s_id.has_value() && s_id != schema.id) {
-            co_return ss::coroutine::return_exception(exception(
-              error_code::subject_version_schema_id_already_exists,
-              fmt::format(
-                "Schema already registered with id {} instead of input id {}",
-                s_id.value()(),
-                schema.id())));
-        } else if (co_await has_schema(schema.id)) {
+        if (!s_id.has_value() && co_await has_schema(schema.id)) {
             // The supplied id already exists, but the schema is different
             co_return ss::coroutine::return_exception(exception(
-              error_code::subject_version_schema_id_already_exists,
+              error_code::subject_version_operation_not_permitted,
               fmt::format(
                 "Overwrite new schema with id {} is not permitted.",
                 schema.id())));
