@@ -723,7 +723,8 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                     True), lambda record_count: record_count == 3,
             "Single redpanda start event per node")
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/16198
+    # NOTE(oren): pretty sure this won't fail any more
+    # @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/16198
     @ok_to_fail_fips
     @cluster(num_nodes=5)
     def test_drain_on_audit_disabled(self):

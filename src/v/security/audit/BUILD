@@ -35,6 +35,9 @@ redpanda_cc_library(
         "schemas/utils.h",
         "types.h",
     ],
+    implementation_deps = [
+        "@abseil-cpp//absl/algorithm:container",
+    ],
     include_prefix = "security/audit",
     visibility = ["//visibility:public"],
     deps = [
@@ -45,6 +48,7 @@ redpanda_cc_library(
         "//src/v/hashing:combine",
         "//src/v/json",
         "//src/v/kafka/client",
+        "//src/v/kafka/client:record_batcher",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:produce",
         "//src/v/kafka/protocol/schemata:add_offsets_to_txn_request",
