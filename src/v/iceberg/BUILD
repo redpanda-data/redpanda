@@ -78,8 +78,14 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "catalog",
+    srcs = [
+        "catalog.cc",
+    ],
     hdrs = [
         "catalog.h",
+    ],
+    implementation_deps = [
+        "@fmt",
     ],
     include_prefix = "iceberg",
     visibility = ["//visibility:public"],

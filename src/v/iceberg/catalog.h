@@ -22,6 +22,7 @@ struct table_identifier {
     chunked_vector<ss::sstring> ns;
     ss::sstring table;
 };
+std::ostream& operator<<(std::ostream& o, const table_identifier& id);
 
 class catalog {
 public:
@@ -78,5 +79,6 @@ public:
     virtual ss::future<checked<std::nullopt_t, errc>>
     commit_txn(const table_identifier& table_ident, transaction) = 0;
 };
+std::ostream& operator<<(std::ostream&, catalog::errc);
 
 } // namespace iceberg
