@@ -19,7 +19,7 @@ namespace cluster {
 // with log_eviction_stm to allow other listeners on this key type (e.g.
 // archival_metadata_stm).
 
-static constexpr uint8_t prefix_truncate_key = 0;
+inline constexpr uint8_t prefix_truncate_key = 0;
 
 // Record data to be used in model::record_batch_type::prefix_truncate batches
 // (e.g. during DeleteRecords API calls).

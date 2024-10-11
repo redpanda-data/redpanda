@@ -17,8 +17,8 @@
 
 namespace cluster {
 
-constexpr const char* cluster_uuid_key = "cluster_uuid";
-constexpr storage::kvstore::key_space cluster_uuid_key_space
+inline constexpr const char* cluster_uuid_key = "cluster_uuid";
+inline constexpr storage::kvstore::key_space cluster_uuid_key_space
   = storage::kvstore::key_space::controller;
 
 } // namespace cluster

@@ -87,67 +87,67 @@ struct controller_command {
 };
 
 // topic commands
-static constexpr int8_t create_topic_cmd_type = 0;
-static constexpr int8_t delete_topic_cmd_type = 1;
-static constexpr int8_t move_partition_replicas_cmd_type = 2;
-static constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
-static constexpr int8_t update_topic_properties_cmd_type = 4;
-static constexpr int8_t create_partition_cmd_type = 5;
-static constexpr int8_t create_non_replicable_topic_cmd_type = 6;
-static constexpr int8_t cancel_moving_partition_replicas_cmd_type = 7;
-static constexpr int8_t move_topic_replicas_cmd_type = 8;
-static constexpr int8_t revert_cancel_partition_move_cmd_type = 9;
-static constexpr int8_t topic_lifecycle_transition_cmd_type = 10;
-static constexpr int8_t force_partition_reconfiguration_type = 11;
-static constexpr int8_t update_partition_replicas_cmd_type = 12;
-static constexpr int8_t set_topic_partitions_disabled_cmd_type = 13;
-static constexpr int8_t bulk_force_reconfiguration_cmd_type = 14;
+inline constexpr int8_t create_topic_cmd_type = 0;
+inline constexpr int8_t delete_topic_cmd_type = 1;
+inline constexpr int8_t move_partition_replicas_cmd_type = 2;
+inline constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
+inline constexpr int8_t update_topic_properties_cmd_type = 4;
+inline constexpr int8_t create_partition_cmd_type = 5;
+inline constexpr int8_t create_non_replicable_topic_cmd_type = 6;
+inline constexpr int8_t cancel_moving_partition_replicas_cmd_type = 7;
+inline constexpr int8_t move_topic_replicas_cmd_type = 8;
+inline constexpr int8_t revert_cancel_partition_move_cmd_type = 9;
+inline constexpr int8_t topic_lifecycle_transition_cmd_type = 10;
+inline constexpr int8_t force_partition_reconfiguration_type = 11;
+inline constexpr int8_t update_partition_replicas_cmd_type = 12;
+inline constexpr int8_t set_topic_partitions_disabled_cmd_type = 13;
+inline constexpr int8_t bulk_force_reconfiguration_cmd_type = 14;
 
-static constexpr int8_t create_user_cmd_type = 5;
-static constexpr int8_t delete_user_cmd_type = 6;
-static constexpr int8_t update_user_cmd_type = 7;
-static constexpr int8_t create_acls_cmd_type = 8;
-static constexpr int8_t delete_acls_cmd_type = 9;
-static constexpr int8_t create_role_cmd_type = 10;
-static constexpr int8_t delete_role_cmd_type = 11;
-static constexpr int8_t update_role_cmd_type = 12;
+inline constexpr int8_t create_user_cmd_type = 5;
+inline constexpr int8_t delete_user_cmd_type = 6;
+inline constexpr int8_t update_user_cmd_type = 7;
+inline constexpr int8_t create_acls_cmd_type = 8;
+inline constexpr int8_t delete_acls_cmd_type = 9;
+inline constexpr int8_t create_role_cmd_type = 10;
+inline constexpr int8_t delete_role_cmd_type = 11;
+inline constexpr int8_t update_role_cmd_type = 12;
 
 // node management commands
-static constexpr int8_t decommission_node_cmd_type = 0;
-static constexpr int8_t recommission_node_cmd_type = 1;
-static constexpr int8_t finish_reallocations_cmd_type = 2;
-static constexpr int8_t maintenance_mode_cmd_type = 3;
-static constexpr int8_t register_node_uuid_cmd_type = 4;
-static constexpr int8_t add_node_cmd_type = 5;
-static constexpr int8_t update_node_cmd_type = 6;
-static constexpr int8_t remove_node_cmd_type = 7;
+inline constexpr int8_t decommission_node_cmd_type = 0;
+inline constexpr int8_t recommission_node_cmd_type = 1;
+inline constexpr int8_t finish_reallocations_cmd_type = 2;
+inline constexpr int8_t maintenance_mode_cmd_type = 3;
+inline constexpr int8_t register_node_uuid_cmd_type = 4;
+inline constexpr int8_t add_node_cmd_type = 5;
+inline constexpr int8_t update_node_cmd_type = 6;
+inline constexpr int8_t remove_node_cmd_type = 7;
 
 // cluster config commands
-static constexpr int8_t cluster_config_delta_cmd_type = 0;
-static constexpr int8_t cluster_config_status_cmd_type = 1;
+inline constexpr int8_t cluster_config_delta_cmd_type = 0;
+inline constexpr int8_t cluster_config_status_cmd_type = 1;
 
 // feature_manager command types
-static constexpr int8_t feature_update_cmd_type = 0;
-static constexpr int8_t feature_update_license_update_cmd_type = 1;
+inline constexpr int8_t feature_update_cmd_type = 0;
+inline constexpr int8_t feature_update_license_update_cmd_type = 1;
 
 // cluster bootstrap commands
-static constexpr int8_t bootstrap_cluster_cmd_type = 0;
+inline constexpr int8_t bootstrap_cluster_cmd_type = 0;
 
 // plugin command types
-static constexpr int8_t transform_update_cmd_type = 0;
-static constexpr int8_t transform_remove_cmd_type = 1;
+inline constexpr int8_t transform_update_cmd_type = 0;
+inline constexpr int8_t transform_remove_cmd_type = 1;
 
 // cluster recovery commands
-static constexpr int8_t cluster_recovery_init_cmd_type = 0;
-static constexpr int8_t cluster_recovery_update_cmd_type = 1;
+inline constexpr int8_t cluster_recovery_init_cmd_type = 0;
+inline constexpr int8_t cluster_recovery_update_cmd_type = 1;
 
 // client quota commands
-static constexpr int8_t alter_quotas_delta_cmd_type = 0;
+inline constexpr int8_t alter_quotas_delta_cmd_type = 0;
 
 // data migration commands
-static constexpr int8_t create_data_migration_cmd_type = 0;
-static constexpr int8_t update_data_migration_state_cmd_type = 1;
-static constexpr int8_t remove_data_migration_cmd_type = 2;
+inline constexpr int8_t create_data_migration_cmd_type = 0;
+inline constexpr int8_t update_data_migration_state_cmd_type = 1;
+inline constexpr int8_t remove_data_migration_cmd_type = 2;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,

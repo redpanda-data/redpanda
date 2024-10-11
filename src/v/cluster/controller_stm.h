@@ -99,6 +99,6 @@ private:
     ss::timer<ss::lowres_clock> _snapshot_debounce_timer;
 };
 
-static constexpr ss::shard_id controller_stm_shard = 0;
+inline constexpr ss::shard_id controller_stm_shard = 0;
 
 } // namespace cluster
