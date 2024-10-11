@@ -11,9 +11,12 @@
 
 #include "base/outcome.h"
 #include "container/fragmented_vector.h"
+#include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/schemaless_translator.h"
+#include "model/fundamental.h"
 #include "model/record.h"
+#include "serde/envelope.h"
 
 #include <seastar/core/future.hh>
 
@@ -42,21 +45,24 @@ public:
     explicit record_multiplexer(
       std::unique_ptr<data_writer_factory> writer_factory);
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-    ss::future<result<chunked_vector<data_writer_result>, data_writer_error>>
+    ss::future<result<coordinator::translated_offset_range, data_writer_error>>
     end_of_stream();
 
 private:
     schemaless_translator& get_translator();
-    data_writer& get_writer();
+    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+    get_writer();
 
     // TODO: in a future PR this will be a map of translators keyed by schema_id
     schemaless_translator _translator;
     std::unique_ptr<data_writer_factory> _writer_factory;
 
     // TODO: similarly this will be a map keyed by schema_id
-    std::unique_ptr<data_writer> _writer;
+    ss::shared_ptr<data_writer> _writer;
 
     data_writer_error _writer_status = data_writer_error::ok;
+
+    std::optional<coordinator::translated_offset_range> _result;
 };
 
 } // namespace datalake

@@ -29,22 +29,22 @@ public:
 
     ss::future<data_writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) override {
-        _result.record_count++;
+        _result.row_count++;
         data_writer_error status
           = _return_error ? data_writer_error::parquet_conversion_error
                           : data_writer_error::ok;
         return ss::make_ready_future<data_writer_error>(status);
     }
 
-    ss::future<result<data_writer_result, data_writer_error>>
+    ss::future<result<coordinator::data_file, data_writer_error>>
     finish() override {
         return ss::make_ready_future<
-          result<data_writer_result, data_writer_error>>(_result);
+          result<coordinator::data_file, data_writer_error>>(_result);
     }
 
 private:
     iceberg::struct_type _schema;
-    data_writer_result _result;
+    coordinator::data_file _result;
     bool _return_error;
 };
 class test_data_writer_factory : public data_writer_factory {
@@ -52,9 +52,9 @@ public:
     explicit test_data_writer_factory(bool return_error)
       : _return_error{return_error} {}
 
-    std::unique_ptr<data_writer>
+    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
     create_writer(iceberg::struct_type schema) override {
-        return std::make_unique<test_data_writer>(
+        co_return ss::make_shared<test_data_writer>(
           std::move(schema), _return_error);
     }
 
