@@ -286,6 +286,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 		var grp multierror.Group
 		reqFuncs := []func() error{
 			func() error { return requestAndSave(ctx, ps, "admin/brokers.json", cl.Brokers) },
+			func() error { return requestAndSave(ctx, ps, "admin/broker_uuids.json", cl.GetBrokerUuids) },
 			func() error { return requestAndSave(ctx, ps, "admin/health_overview.json", cl.GetHealthOverview) },
 			func() error { return requestAndSave(ctx, ps, "admin/license.json", cl.GetLicenseInfo) },
 			func() error { return requestAndSave(ctx, ps, "admin/reconfigurations.json", cl.Reconfigurations) },
