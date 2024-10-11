@@ -146,6 +146,7 @@ redpanda_cc_library(
         ":manifest_entry",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":catalog",
         ":datatypes",
@@ -225,6 +226,7 @@ redpanda_cc_library(
         "manifest_entry.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":partition_key",
         ":values",
@@ -301,6 +303,7 @@ redpanda_cc_library(
         "//src/v/ssx:future_util",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":manifest",
         ":manifest_list",
@@ -444,6 +447,7 @@ redpanda_cc_library(
         "partition_key.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":partition",
         ":struct_accessor",
@@ -622,6 +626,7 @@ redpanda_cc_library(
         "table_metadata.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":manifest",
         ":manifest_entry",
@@ -756,6 +761,7 @@ redpanda_cc_library(
         ":update_schema_action",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":action",
         ":manifest_io",
@@ -894,6 +900,7 @@ redpanda_cc_library(
         "//src/v/utils:uuid",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         ":values",
@@ -914,6 +921,7 @@ redpanda_cc_library(
         "//src/v/utils:uuid",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":manifest_io",
         ":schema",
