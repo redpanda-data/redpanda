@@ -26,12 +26,16 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pip'
-      - run: pip3 install -r ./rpchangelog/requirements.txt
+      - run: |
+          python3 -mvenv /tmp/venv/rpcl
+          source /tmp/venv/rpcl/bin/activate
+          pip3 install -r ./rpchangelog/requirements.txt
       - name: Render PR body release notes to job summary
         env:
           PR_NUM: ${{ github.event.number }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          source /tmp/venv/rpcl/bin/activate
           ./rpchangelog/rpchangelog.py --log-level=DEBUG --github-owner="$GITHUB_REPOSITORY_OWNER" pr "$PR_NUM" >> "$GITHUB_STEP_SUMMARY"
           LINK_TO_SUMMARY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           FINAL_MSG="View rendered release notes of PR #$PR_NUM in the job summary: $LINK_TO_SUMMARY"
