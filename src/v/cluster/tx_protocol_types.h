@@ -16,6 +16,10 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "serde/rw/bool_class.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/vector.h"
 
 namespace cluster {
 

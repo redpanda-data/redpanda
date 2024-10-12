@@ -15,11 +15,11 @@
 
 namespace cluster::tx {
 
-static constexpr const int8_t abort_snapshot_version = 0;
-static constexpr int8_t prepare_control_record_version{0};
-static constexpr int8_t fence_control_record_v0_version{0};
-static constexpr int8_t fence_control_record_v1_version{1};
-static constexpr int8_t fence_control_record_version{2};
+inline constexpr const int8_t abort_snapshot_version = 0;
+inline constexpr int8_t prepare_control_record_version{0};
+inline constexpr int8_t fence_control_record_v0_version{0};
+inline constexpr int8_t fence_control_record_v1_version{1};
+inline constexpr int8_t fence_control_record_version{2};
 
 using tx_range = model::tx_range;
 using clock_type = ss::lowres_clock;

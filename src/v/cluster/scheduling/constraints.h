@@ -22,7 +22,7 @@ namespace cluster {
 
 class allocation_state;
 
-static constexpr std::string_view rack_label = "rack";
+inline constexpr std::string_view rack_label = "rack";
 
 hard_constraint not_fully_allocated();
 hard_constraint is_active();
