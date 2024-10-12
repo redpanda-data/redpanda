@@ -229,8 +229,8 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
               table_cur_snap_id);
             co_return action::errc::unexpected_state;
         }
-        auto mlist_res = co_await io_.download_manifest_list(
-          manifest_list_path{snap_it->manifest_list_path});
+        auto mlist_res = co_await io_.download_manifest_list_uri(
+          snap_it->manifest_list_path);
         if (mlist_res.has_error()) {
             co_return to_action_errc(mlist_res.error());
         }
@@ -294,7 +294,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
           .operation = snapshot_operation::append,
           .other = {},
       },
-      .manifest_list_path = new_mlist_path().native(),
+      .manifest_list_path = io_.to_uri(new_mlist_path()),
       .schema_id = schema.schema_id,
     };
     updates_and_reqs ret;
@@ -382,7 +382,7 @@ merge_append_action::maybe_merge_mfiles_and_new_data(
         // Since this bin was too small to merge, we won't do anything else to
         // its manifests, just add them back to the returned container.
         ret.emplace_back(manifest_file{
-          .manifest_path = new_manifest_path().native(),
+          .manifest_path = io_.to_uri(new_manifest_path()),
           .manifest_length = mfile_up_res.value(),
           .partition_spec_id = ctx.pspec.spec_id,
           .content = manifest_file_content::data,
@@ -437,8 +437,8 @@ merge_append_action::merge_mfiles(
     for (const auto& mfile : to_merge) {
         // Download the manifest file and collect the entries into the merged
         // container.
-        auto mfile_res = co_await io_.download_manifest(
-          manifest_path{mfile.manifest_path}, ctx.pk_type);
+        auto mfile_res = co_await io_.download_manifest_uri(
+          mfile.manifest_path, ctx.pk_type);
         if (mfile_res.has_error()) {
             co_return mfile_res.error();
         }
@@ -473,7 +473,7 @@ merge_append_action::merge_mfiles(
         co_return mfile_up_res.error();
     }
     manifest_file merged_file{
-      .manifest_path = merged_manifest_path().native(),
+      .manifest_path = io_.to_uri(merged_manifest_path()),
       .manifest_length = mfile_up_res.value(),
       .partition_spec_id = ctx.pspec.spec_id,
       .content = manifest_file_content::data,

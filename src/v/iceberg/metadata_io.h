@@ -179,7 +179,7 @@ protected:
         }
     }
 
-private:
+protected:
     cloud_io::remote& io_;
     const cloud_storage_clients::bucket_name bucket_;
 };

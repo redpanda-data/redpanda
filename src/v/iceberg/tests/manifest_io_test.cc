@@ -32,17 +32,13 @@ public:
         set_expectations_and_listen({});
     }
     auto& remote() { return sr->remote.local(); }
-
-    std::unique_ptr<cloud_io::scoped_remote> sr;
-};
-
-TEST_F(ManifestIOTest, TestManifestRoundtrip) {
-    schema s{
-      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
-      .schema_id = schema::id_t{12},
-      .identifier_field_ids = {nested_field::id_t{1}},
-    };
-    partition_spec p{
+    manifest make_manifest() const {
+        schema s{
+          .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+          .schema_id = schema::id_t{12},
+          .identifier_field_ids = {nested_field::id_t{1}},
+        };
+        partition_spec p{
       .spec_id = partition_spec::id_t{8},
         .fields = {
             partition_field{
@@ -53,17 +49,44 @@ TEST_F(ManifestIOTest, TestManifestRoundtrip) {
             },
         },
     };
-    manifest_metadata meta{
-      .schema = std::move(s),
-      .partition_spec = std::move(p),
-      .format_version = format_version::v1,
-      .manifest_content_type = manifest_content_type::data,
-    };
-    manifest m{
-      .metadata = std::move(meta),
-      .entries = {},
-    };
+        manifest_metadata meta{
+          .schema = std::move(s),
+          .partition_spec = std::move(p),
+          .format_version = format_version::v1,
+          .manifest_content_type = manifest_content_type::data,
+        };
+        return manifest{
+          .metadata = std::move(meta),
+          .entries = {},
+        };
+    }
 
+    manifest_list make_manifest_list() const {
+        manifest_list m;
+        for (int i = 0; i < 1024; i++) {
+            manifest_file file;
+            file.manifest_path = "path/to/file";
+            file.partition_spec_id = partition_spec::id_t{1};
+            file.content = manifest_file_content::data;
+            file.seq_number = sequence_number{3};
+            file.min_seq_number = sequence_number{4};
+            file.added_snapshot_id = snapshot_id{5};
+            file.added_files_count = 6;
+            file.existing_files_count = 7;
+            file.deleted_files_count = 8;
+            file.added_rows_count = 9;
+            file.existing_rows_count = 10;
+            file.deleted_rows_count = 11;
+            m.files.emplace_back(std::move(file));
+        }
+        return m;
+    }
+
+    std::unique_ptr<cloud_io::scoped_remote> sr;
+};
+
+TEST_F(ManifestIOTest, TestManifestRoundtrip) {
+    auto m = make_manifest();
     // Missing manifest.
     auto io = manifest_io(remote(), bucket_name);
     auto test_path = manifest_path{"foo/bar/baz"};
@@ -83,23 +106,7 @@ TEST_F(ManifestIOTest, TestManifestRoundtrip) {
 }
 
 TEST_F(ManifestIOTest, TestManifestListRoundtrip) {
-    manifest_list m;
-    for (int i = 0; i < 1024; i++) {
-        manifest_file file;
-        file.manifest_path = "path/to/file";
-        file.partition_spec_id = partition_spec::id_t{1};
-        file.content = manifest_file_content::data;
-        file.seq_number = sequence_number{3};
-        file.min_seq_number = sequence_number{4};
-        file.added_snapshot_id = snapshot_id{5};
-        file.added_files_count = 6;
-        file.existing_files_count = 7;
-        file.deleted_files_count = 8;
-        file.added_rows_count = 9;
-        file.existing_rows_count = 10;
-        file.deleted_rows_count = 11;
-        m.files.emplace_back(std::move(file));
-    }
+    manifest_list m = make_manifest_list();
 
     // Missing manifest list.
     auto io = manifest_io(remote(), bucket_name);
@@ -116,6 +123,48 @@ TEST_F(ManifestIOTest, TestManifestListRoundtrip) {
     ASSERT_FALSE(dl_res.has_error());
     const auto& m_roundtrip = dl_res.value();
     ASSERT_EQ(m, m_roundtrip);
+}
+
+TEST_F(ManifestIOTest, TestManifestRoundtripURIs) {
+    auto m = make_manifest();
+    auto io = manifest_io(remote(), bucket_name);
+    auto path = manifest_path{"foo/bar/baz"};
+    auto test_uri = io.to_uri(path);
+    ASSERT_TRUE(test_uri.starts_with("s3://"));
+
+    auto up_res = io.upload_manifest(path, m).get();
+    ASSERT_FALSE(up_res.has_error());
+
+    // Use the URI string.
+    auto dl_res = io.download_manifest_uri(test_uri, empty_pk_type()).get();
+    ASSERT_FALSE(dl_res.has_error());
+    ASSERT_EQ(m, dl_res.value());
+
+    // As a safety measure, we'll still parse the raw path if given.
+    dl_res = io.download_manifest_uri(path().native(), empty_pk_type()).get();
+    ASSERT_FALSE(dl_res.has_error());
+    ASSERT_EQ(m, dl_res.value());
+}
+
+TEST_F(ManifestIOTest, TestManifestListRoundtripURIs) {
+    auto m = make_manifest_list();
+    auto io = manifest_io(remote(), bucket_name);
+    auto path = manifest_list_path{"foo/bar/baz"};
+    auto test_uri = io.to_uri(path);
+    ASSERT_TRUE(test_uri.starts_with("s3://"));
+
+    auto up_res = io.upload_manifest_list(path, m).get();
+    ASSERT_FALSE(up_res.has_error());
+
+    // Use the URI string.
+    auto dl_res = io.download_manifest_list_uri(test_uri).get();
+    ASSERT_FALSE(dl_res.has_error());
+    ASSERT_EQ(m, dl_res.value());
+
+    // As a safety measure, we'll still parse the raw path if given.
+    dl_res = io.download_manifest_list_uri(path().native()).get();
+    ASSERT_FALSE(dl_res.has_error());
+    ASSERT_EQ(m, dl_res.value());
 }
 
 TEST_F(ManifestIOTest, TestShutdown) {

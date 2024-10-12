@@ -186,8 +186,8 @@ do_execute_query(
             collector.collect(s);
             continue;
         }
-        auto m_list_result = co_await io.download_manifest_list(
-          manifest_list_path{s.manifest_list_path});
+        auto m_list_result = co_await io.download_manifest_list_uri(
+          s.manifest_list_path);
 
         if (m_list_result.has_error()) {
             vlog(
@@ -217,9 +217,8 @@ do_execute_query(
             if (pk_result.has_error()) {
                 co_return pk_result.error();
             }
-            auto m_result = co_await io.download_manifest(
-              manifest_path(manifest_file.manifest_path),
-              std::move(pk_result.value()));
+            auto m_result = co_await io.download_manifest_uri(
+              manifest_file.manifest_path, std::move(pk_result.value()));
 
             if (m_result.has_error()) {
                 vlog(

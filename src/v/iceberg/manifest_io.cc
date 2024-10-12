@@ -23,6 +23,18 @@
 using namespace std::chrono_literals;
 
 namespace iceberg {
+ss::future<checked<manifest, metadata_io::errc>>
+manifest_io::download_manifest_uri(
+  const ss::sstring& uri, const partition_key_type& pk_type) {
+    auto path = manifest_path(from_uri(uri));
+    co_return co_await download_manifest(path, pk_type);
+}
+
+ss::future<checked<manifest_list, metadata_io::errc>>
+manifest_io::download_manifest_list_uri(const ss::sstring& uri) {
+    auto path = manifest_list_path(from_uri(uri));
+    co_return co_await download_manifest_list(path);
+}
 
 ss::future<checked<manifest, metadata_io::errc>> manifest_io::download_manifest(
   const manifest_path& path, const partition_key_type& pk_type) {
@@ -53,6 +65,22 @@ manifest_io::upload_manifest_list(
       path(), m, "iceberg::manifest_list", [](const manifest_list& m) {
           return serialize_avro(m);
       });
+}
+
+ss::sstring manifest_io::to_uri(const std::filesystem::path& p) const {
+    return fmt::format("{}{}", uri_base(), p.native());
+}
+
+std::filesystem::path manifest_io::from_uri(const ss::sstring& s) const {
+    const auto base = uri_base();
+    if (!s.starts_with(base)) {
+        return std::filesystem::path{s};
+    }
+    return std::filesystem::path{s.substr(base.size())};
+}
+
+ss::sstring manifest_io::uri_base() const {
+    return fmt::format("s3://{}/", bucket_);
 }
 
 } // namespace iceberg
