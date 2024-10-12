@@ -17,6 +17,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <optional>
+#include <string_view>
 
 namespace cloud_storage {
 
@@ -101,6 +102,37 @@ public:
 private:
     std::optional<remote_label> label_;
     std::optional<model::topic_namespace> _topic_namespace_override;
+};
+
+/// Encapsulates the logic for constructing and parsing the path of a topic
+/// mount manifest.
+class topic_mount_manifest_path {
+    static inline constexpr std::string_view path_prefix = "migration/";
+
+public:
+    explicit topic_mount_manifest_path(
+      model::cluster_uuid cluster_uuid, model::topic_namespace tp_ns);
+
+    explicit operator ss::sstring() const;
+
+    [[nodiscard]] static std::optional<topic_mount_manifest_path>
+    parse(const std::string_view);
+
+    [[nodiscard]] static constexpr inline std::string_view prefix() {
+        return path_prefix;
+    }
+
+    [[nodiscard]] const model::cluster_uuid& cluster_uuid() const noexcept {
+        return _cluster_uuid;
+    }
+
+    [[nodiscard]] const model::topic_namespace& tp_ns() const noexcept {
+        return _tp_ns;
+    }
+
+private:
+    model::cluster_uuid _cluster_uuid;
+    model::topic_namespace _tp_ns;
 };
 
 } // namespace cloud_storage

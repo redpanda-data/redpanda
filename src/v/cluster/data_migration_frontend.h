@@ -11,12 +11,17 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "cloud_storage/remote_label.h"
 #include "cluster/data_migration_types.h"
 #include "cluster/fwd.h"
 #include "features/fwd.h"
 #include "rpc/fwd.h"
 
 #include <seastar/core/sharded.hh>
+
+namespace cloud_storage {
+class topic_mount_handler;
+}
 
 namespace cluster::data_migrations {
 
@@ -32,6 +37,7 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<rpc::connection_cache>&,
+      std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>,
       ss::sharded<ss::abort_source>&);
 
     ss::future<result<id>> create_migration(
@@ -49,6 +55,10 @@ public:
 
     ss::future<result<migration_metadata>> get_migration(id);
     ss::future<chunked_vector<migration_metadata>> list_migrations();
+
+    using list_unmounted_topics_result
+      = result<chunked_vector<cloud_storage::labeled_namespaced_topic>>;
+    ss::future<list_unmounted_topics_result> list_unmounted_topics();
 
 private:
     /**
@@ -90,6 +100,8 @@ private:
     ss::sharded<controller_stm>& _controller;
     ss::sharded<partition_leaders_table>& _leaders_table;
     ss::sharded<rpc::connection_cache>& _connections;
+    std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
+      _topic_mount_handler;
     ss::sharded<ss::abort_source>& _as;
     std::chrono::milliseconds _operation_timeout;
 };

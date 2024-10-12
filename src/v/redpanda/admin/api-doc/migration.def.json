@@ -14,6 +14,37 @@
         }
     }
 },
+"labeled_namespaced_topic": {
+    "type": "object",
+    "required": [
+        "topic"
+    ],
+    "properties": {
+        "label": {
+            "type": "string",
+            "description": "Label of the topic"
+        },
+        "topic": {
+            "type": "string",
+            "description": "Topic name"
+        },
+        "ns": {
+            "type": "string",
+            "description": "Topic namespace, if not present it is assumed that topic is in kafka namespace"
+        }
+    }
+},
+"unmounted_topics_response": {
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "$ref": "labeled_namespaced_topic"
+            }
+        }
+    }
+},
 "outbound_migration": {
     "type": "object",
     "required": [

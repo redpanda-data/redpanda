@@ -10,10 +10,12 @@
  */
 #pragma once
 
+#include "base/outcome.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/remote_label.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/topic_configuration.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "utils/retry_chain_node.h"
 
@@ -62,6 +64,10 @@ public:
     // default uuid (all zeros) is used.
     ss::future<topic_unmount_result> unmount_topic(
       const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+
+    // List from cloud storage all topics that are not mounted.
+    ss::future<result<chunked_vector<labeled_namespaced_topic>>>
+    list_unmounted_topics(retry_chain_node& parent);
 
 private:
     // Perform the mounting process by deleting the topic mount manifest.
