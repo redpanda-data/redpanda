@@ -22,19 +22,30 @@
 #include <filesystem>
 
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
-    int record_count = 10;
-    int batch_count = 10;
-    int start_offset = 1005;
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       false);
     datalake::record_multiplexer multiplexer(std::move(writer_factory));
 
-    model::test::record_batch_spec batch_spec;
-    batch_spec.records = record_count;
-    batch_spec.count = batch_count;
-    batch_spec.offset = model::offset{start_offset};
-    ss::circular_buffer<model::record_batch> batches
-      = model::test::make_random_batches(batch_spec).get();
+    std::vector<int> hourly_partitions{1, 5, 9};
+    std::vector<model::test::record_batch_spec> batch_specs;
+    for (int hour : hourly_partitions) {
+        batch_specs.emplace_back(model::test::record_batch_spec{
+
+          .offset = model::offset{1005},
+          .count = 10,
+          .records = 10,
+          // Hour to millisecond timestamp
+          .timestamp = model::timestamp{hour * 60 * 60 * 1000},
+        });
+    }
+    ss::circular_buffer<model::record_batch> batches;
+
+    for (const auto& bs : batch_specs) {
+        auto new_batches = model::test::make_random_batches(bs).get();
+        for (auto& batch : new_batches) {
+            batches.push_back(std::move(batch));
+        }
+    }
 
     auto reader = model::make_generating_record_batch_reader(
       [batches = std::move(batches)]() mutable {
@@ -46,14 +57,26 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       = reader.consume(std::move(multiplexer), model::no_timeout).get();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().files.size(), 1);
-    EXPECT_EQ(result.value().files[0].row_count, record_count * batch_count);
-    EXPECT_EQ(result.value().start_offset(), start_offset);
+    ASSERT_EQ(result.value().files.size(), batch_specs.size());
+    const auto& first_spec = *batch_specs.cbegin();
+    const auto& last_spec = *(batch_specs.cend() - 1);
+    EXPECT_EQ(result.value().start_offset(), first_spec.offset);
     // Subtract one since offsets end at 0, and this is an inclusive range.
     EXPECT_EQ(
       result.value().last_offset(),
-      start_offset + record_count * batch_count - 1);
+      last_spec.offset() + last_spec.records.value() * last_spec.count - 1);
+
+    // Check each file result
+    for (int i = 0; i < batch_specs.size(); i++) {
+        const auto& batch_spec = batch_specs[i];
+
+        EXPECT_EQ(
+          result.value().files[i].row_count,
+          batch_spec.records.value() * batch_spec.count);
+        EXPECT_EQ(result.value().files[i].hour, hourly_partitions[i]);
+    }
 }
+
 TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     int record_count = 10;
     int batch_count = 10;
@@ -81,8 +104,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
 TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     // Almost an integration test:
     // Stitch together as many parts of the data path as is reasonable in a
-    // single test and make sure we can go from Kafka log to Parquet files on
-    // disk.
+    // single test and make sure we can go from Kafka log to Parquet files
+    // on disk.
     temporary_dir tmp_dir("datalake_multiplexer_test");
 
     int record_count = 50;

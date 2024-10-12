@@ -43,13 +43,13 @@ public:
       retry_chain_node& rtc_parent,
       lazy_abort_source& lazy_abort_source);
 
+    static ss::future<>
+    cleanup_local_files(chunked_vector<local_data_file> local_files);
 private:
     cloud_io::remote& _cloud_io;
     cloud_storage_clients::bucket_name _bucket;
     std::filesystem::path _remote_directory;
 
-    ss::future<>
-    cleanup_local_files(chunked_vector<local_data_file> local_files);
     ss::future<> cleanup_remote_files(
       chunked_vector<coordinator::data_file> remote_files,
       retry_chain_node& rtc_parent);

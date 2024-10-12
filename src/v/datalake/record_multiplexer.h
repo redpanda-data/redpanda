@@ -50,14 +50,17 @@ public:
 
 private:
     schemaless_translator& get_translator();
-    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
-    get_writer();
 
+    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+    get_writer(int hour);
+
+    
     // TODO: in a future PR this will be a map of translators keyed by schema_id
     schemaless_translator _translator;
     std::unique_ptr<data_writer_factory> _writer_factory;
 
     // TODO: similarly this will be a map keyed by schema_id
+    std::map<int, ss::shared_ptr<data_writer>> _hourly_writers;
     ss::shared_ptr<data_writer> _writer;
 
     data_writer_error _writer_status = data_writer_error::ok;

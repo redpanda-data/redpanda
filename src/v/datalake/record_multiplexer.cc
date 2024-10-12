@@ -9,7 +9,9 @@
  */
 #include "datalake/record_multiplexer.h"
 
+#include "container/fragmented_vector.h"
 #include "data_file.h"
+#include "datalake/cloud_uploader.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/logger.h"
 #include "datalake/schemaless_translator.h"
@@ -49,6 +51,9 @@ record_multiplexer::operator()(model::record_batch batch) {
                          + record.offset_delta();
         int64_t estimated_size = key.size_bytes() + val.size_bytes() + 16;
 
+        // microseconds to hours, rounded down.
+        int hourly_partition = int(timestamp / 1000 / 1000 / 60 / 60);
+
         // TODO: we want to ensure we're using an offset translating reader so
         // that these will be Kafka offsets, not Raft offsets.
         if (!_result.has_value()) {
@@ -68,7 +73,7 @@ record_multiplexer::operator()(model::record_batch batch) {
           std::move(key), std::move(val), timestamp, offset);
         // Send it to the writer
 
-        auto writer_result = co_await get_writer();
+        auto writer_result = co_await get_writer(hourly_partition);
         if (!writer_result.has_value()) {
             _writer_status = writer_result.error();
             co_return ss::stop_iteration::yes;
@@ -90,29 +95,33 @@ record_multiplexer::end_of_stream() {
     if (_writer_status != data_writer_error::ok) {
         co_return _writer_status;
     }
-    // TODO: once we have multiple _writers this should be a loop
-    if (_writer) {
-        if (!_result.has_value()) {
-            co_return data_writer_error::no_data;
-        }
-        auto result_files = co_await _writer->finish();
-        if (result_files.has_value()) {
-            // TODO: call the uploader here to upload to a remote file
-            auto& local_file = result_files.value();
-            coordinator::data_file remote_file{
-              .remote_path = local_file.local_path().string(),
-              .row_count = local_file.row_count,
-              .file_size_bytes = local_file.file_size_bytes,
-              .hour = local_file.hour,
-            };
-            _result.value().files.push_back(remote_file);
-            co_return std::move(_result.value());
-        } else {
-            co_return result_files.error();
-        }
-    } else {
+    if (!_result.has_value() || _hourly_writers.empty()) {
         co_return data_writer_error::no_data;
     }
+    chunked_vector<local_data_file> local_result_files;
+    for (auto& [hour, writer] : _hourly_writers) {
+        auto local_file_result = co_await writer->finish();
+        if (local_file_result.has_value()) {
+            local_file_result.value().hour = hour;
+            local_result_files.push_back(local_file_result.value());
+        } else {
+            co_await cloud_uploader::cleanup_local_files(
+              std::move(local_result_files));
+            co_return local_file_result.error();
+        }
+    }
+
+    // TODO: calling the uploader will translate local result files to remote
+    for (auto& local_file : local_result_files) {
+        coordinator::data_file remote_file{
+          .remote_path = local_file.local_path().string(),
+          .row_count = local_file.row_count,
+          .file_size_bytes = local_file.file_size_bytes,
+          .hour = local_file.hour,
+        };
+        _result.value().files.push_back(remote_file);
+    }
+    co_return std::move(_result.value());
 }
 
 schemaless_translator& record_multiplexer::get_translator() {
@@ -120,8 +129,8 @@ schemaless_translator& record_multiplexer::get_translator() {
 }
 
 ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
-record_multiplexer::get_writer() {
-    if (!_writer) {
+record_multiplexer::get_writer(int hour) {
+    if (!_hourly_writers.contains(hour)) {
         auto& translator = get_translator();
         auto schema = translator.get_schema();
         auto writer_result = co_await _writer_factory->create_writer(
@@ -129,9 +138,9 @@ record_multiplexer::get_writer() {
         if (!writer_result.has_value()) {
             co_return writer_result.error();
         }
-        _writer = writer_result.value();
-        co_return _writer;
+        _hourly_writers.emplace(hour, writer_result.value());
+        co_return writer_result.value();
     }
-    co_return _writer;
+    co_return _hourly_writers[hour];
 }
 } // namespace datalake
