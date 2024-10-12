@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "datalake/coordinator/rpc_service.h"
 #include "datalake/coordinator/types.h"
+#include "datalake/fwd.h"
 #include "model/namespace.h"
 #include "raft/fwd.h"
 #include "rpc/fwd.h"
@@ -34,6 +35,7 @@ public:
 
     frontend(
       model::node_id self,
+      ss::sharded<coordinator_manager>*,
       ss::sharded<raft::group_manager>*,
       ss::sharded<cluster::partition_manager>*,
       ss::sharded<cluster::topics_frontend>*,
@@ -89,6 +91,7 @@ private:
       ss::shard_id);
 
     model::node_id _self;
+    ss::sharded<coordinator_manager>* _coordinator_mgr;
     ss::sharded<raft::group_manager>* _group_mgr;
     ss::sharded<cluster::partition_manager>* _partition_mgr;
     ss::sharded<cluster::topics_frontend>* _topics_frontend;

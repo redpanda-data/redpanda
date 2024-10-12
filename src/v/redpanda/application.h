@@ -341,6 +341,8 @@ private:
     // Small helpers to execute one-time upgrade actions
     std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
 
+    ss::sharded<datalake::coordinator::coordinator_manager>
+      _datalake_coordinator_mgr;
     ss::sharded<datalake::coordinator::frontend> _datalake_coordinator_fe;
     ss::sharded<datalake::datalake_manager> _datalake_manager;
 

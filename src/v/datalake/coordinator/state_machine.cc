@@ -139,16 +139,6 @@ ss::future<iobuf> coordinator_stm::take_snapshot(model::offset) {
     co_return iobuf{};
 }
 
-ss::future<add_translated_data_files_reply>
-coordinator_stm::add_translated_data_file(add_translated_data_files_request) {
-    co_return add_translated_data_files_reply{coordinator_errc::ok};
-}
-
-ss::future<fetch_latest_data_file_reply>
-coordinator_stm::fetch_latest_data_file(fetch_latest_data_file_request) {
-    co_return fetch_latest_data_file_reply{coordinator_errc::ok};
-}
-
 bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
     const auto& ntp = config.ntp();
     return (ntp.ns == model::datalake_coordinator_nt.ns)

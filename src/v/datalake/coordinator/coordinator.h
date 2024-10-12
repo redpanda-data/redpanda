@@ -28,19 +28,20 @@ public:
         timedout,
         shutting_down,
     };
-    explicit coordinator(coordinator_stm& stm)
-      : stm_(stm) {}
+    explicit coordinator(ss::shared_ptr<coordinator_stm> stm)
+      : stm_(std::move(stm)) {}
 
     ss::future<> stop_and_wait();
     ss::future<checked<std::nullopt_t, errc>> sync_add_files(
       model::topic_partition tp, chunked_vector<translated_offset_range>);
     ss::future<checked<std::optional<kafka::offset>, errc>>
     sync_get_last_added_offset(model::topic_partition tp);
+    void notify_leadership(std::optional<model::node_id>) {}
 
 private:
     checked<ss::gate::holder, errc> maybe_gate();
 
-    coordinator_stm& stm_;
+    ss::shared_ptr<coordinator_stm> stm_;
 
     ss::gate gate_;
     ss::abort_source as_;

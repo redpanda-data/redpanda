@@ -33,6 +33,33 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "coordinator_manager",
+    srcs = [
+        "coordinator_manager.cc",
+    ],
+    hdrs = [
+        "coordinator_manager.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/datalake:logger",
+        "//src/v/storage:record_batch_builder",
+    ],
+    include_prefix = "datalake/coordinator",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coordinator",
+        ":state_update",
+        ":stm",
+        "//src/v/cluster",
+        "//src/v/cluster:notification",
+        "//src/v/model",
+        "//src/v/raft",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "data_file",
     srcs = [
         "data_file.cc",
@@ -159,9 +186,12 @@ redpanda_cc_library(
     include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
+        ":coordinator",
+        ":coordinator_manager",
         ":generated_datalake_coordinator_rpc",
         ":model",
         ":stm",
+        ":translated_offset_range",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/container:fragmented_vector",

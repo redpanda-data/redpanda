@@ -12,7 +12,8 @@
 
 namespace datalake {
 namespace coordinator {
+class coordinator_manager;
 class frontend;
-};
+}; // namespace coordinator
 class datalake_manager;
 } // namespace datalake
