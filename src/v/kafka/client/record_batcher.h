@@ -14,6 +14,8 @@
 #include "bytes/iobuf.h"
 #include "model/record.h"
 
+#include <optional>
+
 namespace kafka::client {
 
 namespace detail {
@@ -40,10 +42,16 @@ public:
     record_batcher& operator=(record_batcher&&) = delete;
 
     /**
+     * Construct a batch from a single record
+     */
+    model::record_batch
+    make_batch_of_one(std::optional<iobuf> k, std::optional<iobuf> v);
+
+    /**
      * Add a record to the current batch, possibly rolling over to a
      * new batch if the serialized record would exceed batch_max_bytes.
      */
-    void append(iobuf k, iobuf v);
+    void append(std::optional<iobuf> k, std::optional<iobuf> v);
 
     /**
      * Return the total size in bytes of all record_batches, exclusive of any
