@@ -31,18 +31,19 @@ public:
     batcher_impl(batcher_impl&&) = delete;
     batcher_impl& operator=(batcher_impl&&) = delete;
 
-    model::record_batch make_batch_of_one(iobuf k, iobuf v) {
+    model::record_batch
+    make_batch_of_one(std::optional<iobuf> k, std::optional<iobuf> v) {
         return std::move(bb_init().add_raw_kv(std::move(k), std::move(v)))
           .build();
     }
 
-    void append(iobuf k, iobuf v) {
+    void append(std::optional<iobuf> k, std::optional<iobuf> v) {
         auto record = model::record(
           /*attributes*/ {},
           /*ts_delta*/ 0,
           /*offset_delta*/ std::numeric_limits<int32_t>::max(),
-          std::move(k),
-          std::move(v),
+          std::move(k).value_or(iobuf{}),
+          std::move(v).value_or(iobuf{}),
           /*headers*/ {});
         size_t record_size = record.size_bytes();
         if (record_size > max_records_bytes()) {
@@ -131,7 +132,12 @@ record_batcher::record_batcher(size_t max_batch_size)
 
 record_batcher::~record_batcher() = default;
 
-void record_batcher::append(iobuf k, iobuf v) {
+model::record_batch record_batcher::make_batch_of_one(
+  std::optional<iobuf> k, std::optional<iobuf> v) {
+    return _impl->make_batch_of_one(std::move(k), std::move(v));
+}
+
+void record_batcher::append(std::optional<iobuf> k, std::optional<iobuf> v) {
     _impl->append(std::move(k), std::move(v));
 }
 size_t record_batcher::total_size_bytes() { return _impl->total_size_bytes(); }
