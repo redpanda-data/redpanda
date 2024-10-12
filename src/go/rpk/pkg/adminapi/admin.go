@@ -701,9 +701,11 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *AdminAPI, p *con
 		}
 		if exists && y != nil {
 			actProfile := y.Profile(p.Name)
-			actProfile.LicenseCheck = licenseCheck
-			if err := y.Write(fs); err != nil {
-				zap.L().Sugar().Warnf("unable to save licensed enterprise features check cache to profile: %v", err)
+			if actProfile != nil {
+				actProfile.LicenseCheck = licenseCheck
+				if err := y.Write(fs); err != nil {
+					zap.L().Sugar().Warnf("unable to save licensed enterprise features check cache to profile: %v", err)
+				}
 			}
 		}
 	}
