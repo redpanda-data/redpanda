@@ -12,6 +12,7 @@ v_cc_library(
         coordinator.cc
         coordinator_manager.cc
         data_file.cc
+        iceberg_file_committer.cc
         frontend.cc
         service.cc
         state.cc
@@ -21,6 +22,7 @@ v_cc_library(
     DEPS
         generated_datalake_coordinator_rpc
         v::cluster
+        v::datalake_common
         v::model
         v::rpc
         Seastar::seastar

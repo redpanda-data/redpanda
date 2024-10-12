@@ -5,6 +5,14 @@ find_package(Protobuf REQUIRED)
 add_subdirectory(coordinator)
 
 v_cc_library(
+  NAME datalake_common
+  SRCS
+    table_definition.cc
+  DEPS
+    v::iceberg
+)
+
+v_cc_library(
   NAME datalake
   SRCS
     arrow_translator.cc
@@ -18,6 +26,7 @@ v_cc_library(
     protobuf_utils.cc
     values_protobuf.cc
   DEPS
+    v::datalake_common
     v::datalake_coordinator
     v::storage
     Seastar::seastar
