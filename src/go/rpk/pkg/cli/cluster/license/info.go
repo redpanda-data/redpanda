@@ -133,7 +133,6 @@ func printTextLicenseInfo(resp infoResponse) {
 		if *resp.Expired {
 			tw.Print("License expired:", *resp.Expired)
 		}
-		// need to defer as we flush the table below.
 		checkLicenseExpiry(resp.ExpiresUnix)
 	}
 	out.Section("LICENSE INFORMATION")
