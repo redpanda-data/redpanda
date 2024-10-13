@@ -69,6 +69,9 @@ redpanda_cc_library(
     ],
     include_prefix = "container",
     visibility = ["//visibility:public"],
+    deps = [
+        "@boost//:iterator",
+    ],
 )
 
 redpanda_cc_library(

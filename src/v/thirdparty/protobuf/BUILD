@@ -13,4 +13,7 @@ cc_library(
     ],
     include_prefix = "thirdparty/protobuf",
     visibility = ["//visibility:public"],
+    deps = [
+        "@protobuf",
+    ],
 )
