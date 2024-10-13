@@ -13,13 +13,9 @@ git_override(
 bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
 archive_override(
     module_name = "rules_boost",
-    integrity = "sha256-11a92WLh9/4kJKqJMVFMXNseylj1Yo9Tm2p7j+aqZO4=",
-    patch_strip = 1,
-    patches = [
-        "//bazel/thirdparty:boost_iterator_fusion_pr_583.patch",
-    ],
-    strip_prefix = "rules_boost-f30f047db172fec6049fb8453845d76ff8916512",
-    urls = "https://github.com/nelhage/rules_boost/archive/f30f047db172fec6049fb8453845d76ff8916512.tar.gz",
+    integrity = "sha256-ICuTlyfxD3u1tr12YyeT5qPcA/ZkEUvtMDA2ZRzz1zc=",
+    strip_prefix = "rules_boost-e23cc59f87d5049618472d6ce0ca0ed5ef0c23dc",
+    urls = "https://github.com/nelhage/rules_boost/archive/e23cc59f87d5049618472d6ce0ca0ed5ef0c23dc.tar.gz",
 )
 
 non_module_boost_repositories = use_extension("@com_github_nelhage_rules_boost//:boost/repositories.bzl", "non_module_dependencies")
