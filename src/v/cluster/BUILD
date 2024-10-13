@@ -202,6 +202,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
+        "//src/v/kafka/server:partition_proxy",
         "//src/v/model",
         "//src/v/rpc",
         "//src/v/serde",

@@ -10,6 +10,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/kafka/server",
+        "//src/v/kafka/server:partition_proxy",
         "//src/v/storage",
         "@abseil-cpp//absl/container:btree",
         "@fmt",

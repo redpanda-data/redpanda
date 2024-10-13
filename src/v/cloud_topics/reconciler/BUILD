@@ -27,6 +27,9 @@ redpanda_cc_library(
     hdrs = [
         "reconciler.h",
     ],
+    implementation_deps = [
+        "//src/v/kafka/server:partition_proxy",
+    ],
     include_prefix = "cloud_topics/reconciler",
     visibility = ["//visibility:public"],
     deps = [
@@ -36,7 +39,6 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/cluster:notification",
         "//src/v/container:fragmented_vector",
-        "//src/v/kafka/server",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/model",
         "//src/v/random:generators",
