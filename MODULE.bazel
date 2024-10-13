@@ -14,6 +14,10 @@ bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
 archive_override(
     module_name = "rules_boost",
     integrity = "sha256-11a92WLh9/4kJKqJMVFMXNseylj1Yo9Tm2p7j+aqZO4=",
+    patch_strip = 1,
+    patches = [
+        "//bazel/thirdparty:boost_iterator_fusion_pr_583.patch",
+    ],
     strip_prefix = "rules_boost-f30f047db172fec6049fb8453845d76ff8916512",
     urls = "https://github.com/nelhage/rules_boost/archive/f30f047db172fec6049fb8453845d76ff8916512.tar.gz",
 )
