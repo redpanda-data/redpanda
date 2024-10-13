@@ -124,6 +124,24 @@ json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
         .string()};
 }
 
+// helper to parse a json pointer with rapidjson. throws if there is an error
+// parsing it
+json::Pointer to_json_pointer(std::string_view sv) {
+    auto candidate = json::Pointer{sv.data(), sv.size()};
+    if (auto ec = candidate.GetParseErrorCode();
+        ec != rapidjson::kPointerParseErrorNone) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "invalid fragment '{}' error {} at {}",
+            sv,
+            ec,
+            candidate.GetParseErrorOffset())});
+    }
+
+    return candidate;
+}
+
 struct document_context {
     json::Document doc;
     json_schema_dialect dialect;
@@ -740,24 +758,6 @@ merge_references(std::span<json::Value::ConstObject> references_objects) {
     }
 
     return res;
-}
-
-// helper to parse a json pointer with rapidjson. throws if there is an error
-// parsing it
-json::Pointer to_json_pointer(std::string_view sv) {
-    auto candidate = json::Pointer{sv.data(), sv.size()};
-    if (auto ec = candidate.GetParseErrorCode();
-        ec != rapidjson::kPointerParseErrorNone) {
-        throw as_exception(error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "invalid fragment '{}' error {} at {}",
-            sv,
-            ec,
-            candidate.GetParseErrorOffset())});
-    }
-
-    return candidate;
 }
 
 // helper to resolve a pointer in a json object. throws if the object can't be
