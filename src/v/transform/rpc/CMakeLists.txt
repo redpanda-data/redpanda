@@ -20,7 +20,7 @@ v_cc_library(
     v::cluster
     v::model
     v::rpc
-    v::kafka
+    v::kafka_partition_proxy
     v::transform_stm
     Seastar::seastar
 )
