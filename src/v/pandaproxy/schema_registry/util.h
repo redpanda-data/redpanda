@@ -19,8 +19,9 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "utils/absl_sstring_hash.h"
 
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/flat_hash_map.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <rapidjson/error/en.h>
@@ -62,34 +63,44 @@ ss::sstring to_string(named_type<iobuf, Tag> def) {
 }
 class collected_schema {
 public:
-    bool contains(const ss::sstring& name) const {
-        return _names.contains(name);
+    using map_t = absl::flat_hash_map<
+      ss::sstring,
+      canonical_schema_definition::raw_string,
+      sstring_hash,
+      sstring_eq>;
+
+    bool contains(std::string_view name) const {
+        return _schemas.contains(name);
     }
+
     bool insert(ss::sstring name, canonical_schema_definition def) {
-        bool inserted = _names.insert(std::move(name)).second;
-        if (inserted) {
-            _schemas.push_back(std::move(def).raw());
-        }
-        return inserted;
+        return _schemas.emplace(std::move(name), std::move(def).raw()).second;
     }
+
     canonical_schema_definition::raw_string flatten() && {
         iobuf out;
-        for (auto& s : _schemas) {
+        for (auto& [_, s] : _schemas) {
             out.append(std::move(s));
             out.append("\n", 1);
         }
         return canonical_schema_definition::raw_string{std::move(out)};
     }
 
+    map_t get() && { return std::exchange(_schemas, {}); }
+
 private:
-    absl::flat_hash_set<ss::sstring> _names;
-    std::vector<canonical_schema_definition::raw_string> _schemas;
+    map_t _schemas;
 };
 
 ss::future<collected_schema> collect_schema(
   schema_getter& store,
   collected_schema collected,
-  ss::sstring name,
+  ss::sstring opt_name,
   canonical_schema schema);
+
+ss::future<collected_schema> collect_schema(
+  schema_getter& store,
+  collected_schema collected,
+  canonical_schema_definition::references refs);
 
 } // namespace pandaproxy::schema_registry

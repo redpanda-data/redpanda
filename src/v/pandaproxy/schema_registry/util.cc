@@ -11,14 +11,15 @@
 
 #include "pandaproxy/schema_registry/util.h"
 
+#include "pandaproxy/schema_registry/schema_getter.h"
+
 namespace pandaproxy::schema_registry {
 
 ss::future<collected_schema> collect_schema(
   schema_getter& store,
   collected_schema collected,
-  ss::sstring name,
-  canonical_schema schema) {
-    for (const auto& ref : schema.def().refs()) {
+  canonical_schema_definition::references refs) {
+    for (const auto& ref : refs) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
               ref.sub, ref.version, include_deleted::no);
@@ -26,6 +27,17 @@ ss::future<collected_schema> collect_schema(
               store, std::move(collected), ref.name, std::move(ss.schema));
         }
     }
+
+    co_return std::move(collected);
+}
+
+ss::future<collected_schema> collect_schema(
+  schema_getter& store,
+  collected_schema collected,
+  ss::sstring name,
+  canonical_schema schema) {
+    collected = co_await collect_schema(
+      store, std::move(collected), schema.def().refs());
     collected.insert(std::move(name), std::move(schema).def());
 
     co_return std::move(collected);
