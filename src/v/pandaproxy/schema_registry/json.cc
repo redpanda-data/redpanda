@@ -136,6 +136,24 @@ json::Pointer to_json_pointer(std::string_view sv) {
     return candidate;
 }
 
+// helper to convert a jsoncons::ojson to a rapidjson::Document
+json::Document to_json_document(const jsoncons::ojson& oj) {
+    // serialize the input in a iobuf and parse it again
+    auto iobuf_os = iobuf_ostream{};
+    oj.dump(iobuf_os.ostream());
+    auto schema_stream = json::chunked_input_stream{std::move(iobuf_os).buf()};
+    auto json = json::Document{};
+    if (json.ParseStream(schema_stream).HasParseError()) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Malformed json: {} at offset {}",
+            rapidjson::GetParseError_En(json.GetParseError()),
+            json.GetErrorOffset())});
+    }
+    return json;
+}
+
 // document_context contains the json document, the dialect, an index to resolve
 // $ref and the external schemas
 template<typename JDocT, typename JPtrT>
@@ -492,7 +510,7 @@ result<document_context::local_schemas_index_t>
 collect_bundled_schema_and_fix_refs(
   jsoncons::ojson& doc, json_schema_dialect dialect);
 
-result<document_context> parse_json(iobuf buf) {
+ss::future<document_context> parse_json(iobuf buf) {
     // parse string in json document, check it's a valid json
     iobuf_istream is{buf.share(0, buf.size_bytes())};
 
@@ -502,13 +520,13 @@ result<document_context> parse_json(iobuf buf) {
     reader.read(ec);
     if (ec || !decoder.is_valid()) {
         // not a valid json document, return error
-        return error_info{
+        throw as_exception(error_info{
           error_code::schema_invalid,
           fmt::format(
             "Malformed json schema: {} at line {} column {}",
             ec ? ec.message() : "Invalid document",
             reader.line(),
-            reader.column())};
+            reader.column())});
     }
     auto schema = decoder.get_result();
 
@@ -529,11 +547,11 @@ result<document_context> parse_json(iobuf buf) {
               it->value().is_string() == false || !maybe_dialect.has_value()) {
                 // if present, "$schema" have to be a string, and it has to be
                 // one the implemented dialects. If not, return an error
-                return error_info{
+                throw as_exception(error_info{
                   error_code::schema_invalid,
                   fmt::format(
                     "Unsupported json schema dialect: '{}'",
-                    jsoncons::print(it->value()))};
+                    jsoncons::print(it->value()))});
             }
         }
     }
@@ -541,48 +559,21 @@ result<document_context> parse_json(iobuf buf) {
     // We use jsoncons for validating the schema against the metaschema as
     // currently rapidjson doesn't support validating schemas newer than
     // draft 5.
-    auto validation_res = maybe_dialect.has_value()
-                            ? validate_json_schema(
-                                maybe_dialect.value(), schema)
-                            : try_validate_json_schema(schema);
-    if (validation_res.has_error()) {
-        return validation_res.as_failure();
-    }
-    auto dialect = validation_res.assume_value();
+    auto dialect
+      = maybe_dialect.has_value()
+          ? validate_json_schema(maybe_dialect.value(), schema).value()
+          : try_validate_json_schema(schema).value();
 
     // this function will resolve al local ref against their respective baseuri.
-    auto bundled_schemas_map = collect_bundled_schema_and_fix_refs(
-      schema, dialect);
-    if (bundled_schemas_map.has_error()) {
-        return bundled_schemas_map.as_failure();
-    }
+    auto bundled_schemas_map
+      = collect_bundled_schema_and_fix_refs(schema, dialect).value();
 
     auto schemas_index = document_context::schemas_index_t{
-      std::move_iterator(bundled_schemas_map.assume_value().begin()),
-      std::move_iterator(bundled_schemas_map.assume_value().end())};
+      std::move_iterator(bundled_schemas_map.begin()),
+      std::move_iterator(bundled_schemas_map.end())};
 
-    // to use rapidjson we need to serialized schema again
-    // We take a copy of the jsoncons schema here because it has the fixed-up
-    // references that we want to use for compatibility checks
-    auto iobuf_os = iobuf_ostream{};
-    schema.dump(iobuf_os.ostream());
-
-    auto schema_stream = json::chunked_input_stream{std::move(iobuf_os).buf()};
-    auto rapidjson_schema = json::Document{};
-    if (rapidjson_schema.ParseStream(schema_stream).HasParseError()) {
-        // not a valid json document, return error
-        // this is unlikely to happen, since we already parsed this stream with
-        // jsoncons, but the possibility of a bug exists
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Malformed json schema: {} at offset {}",
-            rapidjson::GetParseError_En(rapidjson_schema.GetParseError()),
-            rapidjson_schema.GetErrorOffset())};
-    }
-
-    return document_context{
-      .doc = std::move(rapidjson_schema),
+    co_return document_context{
+      .doc = to_json_document(schema),
       .dialect = dialect,
       .schemas_index = std::move(schemas_index),
     };
@@ -2440,8 +2431,7 @@ collect_bundled_schema_and_fix_refs(
 
 ss::future<json_schema_definition>
 make_json_schema_definition(schema_getter&, canonical_schema schema) {
-    auto doc
-      = parse_json(schema.def().shared_raw()()).value(); // throws on error
+    auto doc = co_await parse_json(schema.def().shared_raw()());
     std::string_view name = schema.sub()();
     auto refs = std::move(schema).def().refs();
     co_return json_schema_definition{
@@ -2454,7 +2444,7 @@ ss::future<canonical_schema> make_canonical_json_schema(
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
     auto [def, type, refs] = std::move(unparsed).destructure();
 
-    auto ctx = parse_json(std::move(def)).value(); // throws on error
+    auto ctx = co_await parse_json(std::move(def));
     if (norm) {
         sort(ctx.doc);
         std::sort(refs.begin(), refs.end());
