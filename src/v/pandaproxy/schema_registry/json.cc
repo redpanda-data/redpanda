@@ -111,12 +111,6 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
 // info, etc)
 using json_id_uri = named_type<ss::sstring, struct json_id_uri_tag>;
 
-// mapping of $id to jsonpointer to the parent object
-// it contains at least the root $id for doc. If the root $id is not
-// present, then the default value "" is used
-using id_to_schema_pointer = absl::
-  flat_hash_map<json_id_uri, std::pair<json::Pointer, json_schema_dialect>>;
-
 json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
     // ensure that only scheme, host and path are used
     return json_id_uri{
@@ -164,11 +158,46 @@ json::Document to_json_document(const jsoncons::ojson& oj) {
     return json;
 }
 
-struct document_context {
-    json::Document doc;
+// document_context contains the json document, the dialect, an index to resolve
+// $ref and the external schemas
+template<typename JDocT, typename JPtrT>
+struct document_context_base {
+    struct external_ptr {
+        json_id_uri external_schema_name;
+        JPtrT ptr;
+    };
+
+    struct local_ptr {
+        JPtrT ptr;
+        json_schema_dialect dialect;
+    };
+
+    struct external_document_ctx {
+        JDocT doc;
+        json_schema_dialect dialect;
+    };
+
+    using schemas_index_t
+      = absl::flat_hash_map<json_id_uri, std::variant<local_ptr, external_ptr>>;
+    using local_schemas_index_t = absl::flat_hash_map<json_id_uri, local_ptr>;
+    using external_schemas_map_t
+      = absl::flat_hash_map<json_id_uri, external_document_ctx>;
+
+    // root schema
+    JDocT doc;
     json_schema_dialect dialect;
-    id_to_schema_pointer bundled_schemas;
+    // mapping of ($id|external_schema) -> (local_ptr|external_ptr).
+    // local_ptr resolves against `doc`, external_ptr resolves against one value
+    // in `external_schema`. it contains at least the root $id for doc. If the
+    // root $id is not present, then the default value "" is used
+    schemas_index_t schemas_index;
+    // store for the external schemas )
+    external_schemas_map_t external_schemas;
 };
+
+using document_context = document_context_base<json::Document, json::Pointer>;
+using document_context_jsoncons
+  = document_context_base<jsoncons::ojson, jsoncons::jsonpointer::json_pointer>;
 
 // Passed into is_superset_* methods where the path and the generated verbose
 // incompatibilities don't matter, only whether they are compatible or not
@@ -311,13 +340,14 @@ public:
     json_schema_dialect dialect() const { return _schema.ctx.dialect; }
     const json::Value& doc() const { return _schema.ctx.doc; }
 
-    const id_to_schema_pointer::mapped_type*
+    const document_context::local_ptr*
     find_bundled(const json_id_uri id) const {
-        auto it = _schema.ctx.bundled_schemas.find(id);
-        if (it == _schema.ctx.bundled_schemas.end()) {
+        auto it = _schema.ctx.schemas_index.find(id);
+        if (it == _schema.ctx.schemas_index.end()) {
             return nullptr;
         }
-        return &(it->second);
+
+        return std::get_if<document_context::local_ptr>(&it->second);
     }
 
     int remaining_ref_units() const { return _ref_units; }
@@ -428,7 +458,8 @@ try_validate_json_schema(const jsoncons::ojson& schema) {
 }
 
 // forward declaration
-result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
+result<document_context::local_schemas_index_t>
+collect_bundled_schema_and_fix_refs(
   jsoncons::ojson& doc, json_schema_dialect dialect);
 
 result<document_context> parse_json(iobuf buf) {
@@ -496,6 +527,10 @@ result<document_context> parse_json(iobuf buf) {
         return bundled_schemas_map.as_failure();
     }
 
+    auto schemas_index = document_context::schemas_index_t{
+      std::move_iterator(bundled_schemas_map.assume_value().begin()),
+      std::move_iterator(bundled_schemas_map.assume_value().end())};
+
     // to use rapidjson we need to serialized schema again
     // We take a copy of the jsoncons schema here because it has the fixed-up
     // references that we want to use for compatibility checks
@@ -516,10 +551,11 @@ result<document_context> parse_json(iobuf buf) {
             rapidjson_schema.GetErrorOffset())};
     }
 
-    return {
-      std::move(rapidjson_schema),
-      dialect,
-      std::move(bundled_schemas_map).assume_value()};
+    return document_context{
+      .doc = std::move(rapidjson_schema),
+      .dialect = dialect,
+      .schemas_index = std::move(schemas_index),
+    };
 }
 
 /// is_superset section
@@ -2228,7 +2264,7 @@ void sort(json::Value& val) {
 }
 
 void collect_bundled_schemas_and_fix_refs(
-  id_to_schema_pointer& bundled_schemas,
+  document_context::local_schemas_index_t& bundled_schemas,
   jsoncons::uri base_uri,
   jsoncons::jsonpointer::json_pointer this_obj_ptr,
   jsoncons::ojson& this_obj,
@@ -2322,7 +2358,10 @@ void collect_bundled_schemas_and_fix_refs(
         dialect = maybe_new_dialect.value();
         bundled_schemas.insert_or_assign(
           to_json_id_uri(base_uri),
-          std::pair{json::Pointer{this_obj_ptr.to_string()}, dialect});
+          document_context::local_ptr{
+            .ptr = json::Pointer{this_obj_ptr.to_string()},
+            .dialect = dialect,
+          });
     }
 
     if (auto ref_it = this_obj.find("$ref");
@@ -2355,7 +2394,8 @@ void collect_bundled_schemas_and_fix_refs(
     }
 }
 
-result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
+result<document_context::local_schemas_index_t>
+collect_bundled_schema_and_fix_refs(
   jsoncons::ojson& doc, json_schema_dialect dialect) {
     // entry point to collect all bundled schemas
     // fetch the root id, if it exists
@@ -2377,8 +2417,13 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
     }();
 
     // insert the root schema as a bundled schema
-    auto bundled_schemas = id_to_schema_pointer{
-      {root_id, std::pair{json::Pointer{}, dialect}}};
+    auto bundled_schemas = document_context::local_schemas_index_t{
+      {root_id,
+       document_context::local_ptr{
+         .ptr = json::Pointer{},
+         .dialect = dialect,
+       }},
+    };
 
     if (doc.is_object()) {
         // note: current implementation is overly strict and reject any bundled
@@ -2394,7 +2439,7 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
         }
     }
 
-    return bundled_schemas;
+    return std::move(bundled_schemas);
 }
 
 } // namespace
