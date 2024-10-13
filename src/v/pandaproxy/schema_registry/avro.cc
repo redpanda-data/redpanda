@@ -22,6 +22,7 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/util.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/coroutine.hh>
@@ -516,49 +517,6 @@ canonical_schema_definition::raw_string avro_schema_definition::raw() const {
 ss::sstring avro_schema_definition::name() const {
     return _impl.root()->name().fullname();
 };
-
-class collected_schema {
-public:
-    bool contains(const ss::sstring& name) const {
-        return _names.contains(name);
-    }
-    bool insert(ss::sstring name, canonical_schema_definition def) {
-        bool inserted = _names.insert(std::move(name)).second;
-        if (inserted) {
-            _schemas.push_back(std::move(def).raw());
-        }
-        return inserted;
-    }
-    canonical_schema_definition::raw_string flatten() && {
-        iobuf out;
-        for (auto& s : _schemas) {
-            out.append(std::move(s));
-            out.append("\n", 1);
-        }
-        return canonical_schema_definition::raw_string{std::move(out)};
-    }
-
-private:
-    absl::flat_hash_set<ss::sstring> _names;
-    std::vector<canonical_schema_definition::raw_string> _schemas;
-};
-
-ss::future<collected_schema> collect_schema(
-  sharded_store& store,
-  collected_schema collected,
-  ss::sstring name,
-  canonical_schema schema) {
-    for (const auto& ref : schema.def().refs()) {
-        if (!collected.contains(ref.name)) {
-            auto ss = co_await store.get_subject_schema(
-              ref.sub, ref.version, include_deleted::no);
-            collected = co_await collect_schema(
-              store, std::move(collected), ref.name, std::move(ss.schema));
-        }
-    }
-    collected.insert(std::move(name), std::move(schema).def());
-    co_return std::move(collected);
-}
 
 ss::future<avro_schema_definition>
 make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
