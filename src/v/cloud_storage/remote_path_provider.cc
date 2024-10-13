@@ -122,9 +122,10 @@ ss::sstring remote_path_provider::spillover_manifest_path(
 ss::sstring remote_path_provider::topic_mount_manifest_path(
   const topic_mount_manifest& manifest) const {
     return fmt::format(
-      "migration/{}/{}",
+      "migration/{}/{}/{}",
       manifest.get_source_label().cluster_uuid,
-      manifest.get_tp_ns().path());
+      manifest.get_tp_ns().path(),
+      manifest.get_revision_id());
 }
 
 ss::sstring remote_path_provider::segment_path(

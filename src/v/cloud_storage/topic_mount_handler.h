@@ -48,12 +48,16 @@ public:
     // Perform the first step of mounting process by checking the topic mount
     // manifest exists.
     ss::future<topic_mount_result> prepare_mount_topic(
-      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+      const cluster::topic_configuration& topic_cfg,
+      model::initial_revision_id rev,
+      retry_chain_node& parent);
 
     // Perform the second step of mounting process by deleting the topic mount
     // manifest.
     ss::future<topic_mount_result> confirm_mount_topic(
-      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+      const cluster::topic_configuration& topic_cfg,
+      model::initial_revision_id rev,
+      retry_chain_node& parent);
 
     // Perform the unmounting process by creating the topic mount manifest.
     // topic_cfg should be the recovered topic configuration from a topic
@@ -61,7 +65,9 @@ public:
     // the topic properties is used as the "source" label. Otherwise, the
     // default uuid (all zeros) is used.
     ss::future<topic_unmount_result> unmount_topic(
-      const cluster::topic_configuration& topic_cfg, retry_chain_node& parent);
+      const cluster::topic_configuration& topic_cfg,
+      model::initial_revision_id rev,
+      retry_chain_node& parent);
 
 private:
     // Perform the mounting process by deleting the topic mount manifest.
@@ -71,6 +77,7 @@ private:
     // default uuid (all zeros) is used.
     ss::future<topic_mount_result> mount_topic(
       const cluster::topic_configuration& topic_cfg,
+      model::initial_revision_id rev,
       bool prepare_only,
       retry_chain_node& parent);
 

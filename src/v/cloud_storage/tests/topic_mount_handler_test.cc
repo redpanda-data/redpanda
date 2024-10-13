@@ -41,6 +41,7 @@ static const model::topic_namespace test_tp_ns_override{
 static ss::abort_source never_abort;
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
+static const model::initial_revision_id rev_id{123};
 
 static cluster::topic_configuration
 get_topic_configuration(cluster::topic_properties topic_props) {
@@ -97,10 +98,12 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestDoesNotExist) {
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
     retry_chain_node rtc(never_abort, 10s, 20ms);
-    auto prepare_result = handler.prepare_mount_topic(topic_cfg, rtc).get();
+    auto prepare_result
+      = handler.prepare_mount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(
       prepare_result, topic_mount_result::mount_manifest_does_not_exist);
-    auto confirm_result = handler.confirm_mount_topic(topic_cfg, rtc).get();
+    auto confirm_result
+      = handler.confirm_mount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(
       confirm_result, topic_mount_result::mount_manifest_does_not_exist);
 }
@@ -117,8 +120,9 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestNotDeleted) {
                                   : test_tp_ns.path();
     const auto expected_label = remote_label_param ? test_uuid_str
                                                    : default_uuid_str;
-    const auto path = cloud_storage_clients::object_key{
-      fmt::format("migration/{}/{}", expected_label, expected_tp_ns)};
+    const auto expected_rev_id = rev_id;
+    const auto path = cloud_storage_clients::object_key{fmt::format(
+      "migration/{}/{}/{}", expected_label, expected_tp_ns, expected_rev_id)};
     {
         auto result
           = remote.local()
@@ -157,9 +161,11 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicManifestNotDeleted) {
 
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
-    auto prepare_result = handler.prepare_mount_topic(topic_cfg, rtc).get();
+    auto prepare_result
+      = handler.prepare_mount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(prepare_result, topic_mount_result::mount_manifest_exists);
-    auto confirm_result = handler.confirm_mount_topic(topic_cfg, rtc).get();
+    auto confirm_result
+      = handler.confirm_mount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(confirm_result, topic_mount_result::mount_manifest_not_deleted);
 
     const auto exists_result
@@ -181,8 +187,9 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicSuccess) {
                                   : test_tp_ns.path();
     const auto expected_label = remote_label_param ? test_uuid_str
                                                    : default_uuid_str;
-    const auto path = cloud_storage_clients::object_key{
-      fmt::format("migration/{}/{}", expected_label, expected_tp_ns)};
+    const auto expected_rev_id = rev_id;
+    const auto path = cloud_storage_clients::object_key{fmt::format(
+      "migration/{}/{}/{}", expected_label, expected_tp_ns, expected_rev_id)};
     {
         auto result
           = remote.local()
@@ -205,9 +212,11 @@ TEST_P(TopicMountHandlerFixture, TestMountTopicSuccess) {
 
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
-    auto prepare_result = handler.prepare_mount_topic(topic_cfg, rtc).get();
+    auto prepare_result
+      = handler.prepare_mount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(prepare_result, topic_mount_result::mount_manifest_exists);
-    auto confirm_result = handler.confirm_mount_topic(topic_cfg, rtc).get();
+    auto confirm_result
+      = handler.confirm_mount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(confirm_result, topic_mount_result::success);
 
     const auto exists_result
@@ -229,8 +238,9 @@ TEST_P(TopicMountHandlerFixture, TestUnmountTopicManifestNotCreated) {
                                   : test_tp_ns.path();
     const auto expected_label = remote_label_param ? test_uuid_str
                                                    : default_uuid_str;
-    const auto path = cloud_storage_clients::object_key{
-      fmt::format("migration/{}/{}", expected_label, expected_tp_ns)};
+    const auto expected_rev_id = rev_id;
+    const auto path = cloud_storage_clients::object_key{fmt::format(
+      "migration/{}/{}/{}", expected_label, expected_tp_ns, expected_rev_id)};
 
     auto topic_props = cluster::topic_properties{};
     if (tp_ns_override_param) {
@@ -259,7 +269,7 @@ TEST_P(TopicMountHandlerFixture, TestUnmountTopicManifestNotCreated) {
 
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
-    auto unmount_result = handler.unmount_topic(topic_cfg, rtc).get();
+    auto unmount_result = handler.unmount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(unmount_result, topic_unmount_result::mount_manifest_not_created);
 
     const auto exists_result
@@ -281,8 +291,9 @@ TEST_P(TopicMountHandlerFixture, TestUnmountTopicSuccess) {
                                   : test_tp_ns.path();
     const auto expected_label = remote_label_param ? test_uuid_str
                                                    : default_uuid_str;
-    const auto path = cloud_storage_clients::object_key{
-      fmt::format("migration/{}/{}", expected_label, expected_tp_ns)};
+    const auto expected_rev_id = rev_id;
+    const auto path = cloud_storage_clients::object_key{fmt::format(
+      "migration/{}/{}/{}", expected_label, expected_tp_ns, expected_rev_id)};
 
     auto topic_props = cluster::topic_properties{};
     if (tp_ns_override_param) {
@@ -295,7 +306,7 @@ TEST_P(TopicMountHandlerFixture, TestUnmountTopicSuccess) {
 
     auto handler = topic_mount_handler(bucket_name, remote.local());
 
-    auto unmount_result = handler.unmount_topic(topic_cfg, rtc).get();
+    auto unmount_result = handler.unmount_topic(topic_cfg, rev_id, rtc).get();
     ASSERT_EQ(unmount_result, topic_unmount_result::success);
 
     const auto exists_result
