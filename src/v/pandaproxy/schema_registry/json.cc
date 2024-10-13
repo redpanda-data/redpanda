@@ -2483,14 +2483,18 @@ void collect_bundled_schemas_and_fix_refs(
               to_uri(maybe_new_dialect.value()))));
         }
 
-        // run validation since we are not a guaranteed to be in proper schema
-        if (auto validation = validate_json_schema(
-              maybe_new_dialect.value(), this_obj);
-            validation.has_error()) {
-            // stop exploring this branch, the schema is invalid
-            throw as_exception(invalid_schema(fmt::format(
-              "bundled schema is invalid. {}",
-              validation.assume_error().message())));
+        // only for non-root objects, since root is already validated:
+        if (!this_obj_ptr.empty()) {
+            // run validation since we are not a guaranteed to be in proper
+            // schema
+            if (auto validation = validate_json_schema(
+                  maybe_new_dialect.value(), this_obj);
+                validation.has_error()) {
+                // stop exploring this branch, the schema is invalid
+                throw as_exception(invalid_schema(fmt::format(
+                  "bundled schema is invalid. {}",
+                  validation.assume_error().message())));
+            }
         }
 
         // base uri keyword agrees with the dialect, it's a validated schema, we
@@ -2498,12 +2502,23 @@ void collect_bundled_schemas_and_fix_refs(
         // (run resolve because it could be relative to the parent schema).
         base_uri = jsoncons::uri{id_it->value().as_string()}.resolve(base_uri);
         dialect = maybe_new_dialect.value();
-        bundled_schemas.insert_or_assign(
-          to_json_id_uri(base_uri),
-          document_context_jsoncons::local_ptr{
-            .ptr = this_obj_ptr,
-            .dialect = dialect,
-          });
+        auto inserted = bundled_schemas
+                          .emplace(
+                            to_json_id_uri(base_uri),
+                            document_context_jsoncons::local_ptr{
+                              .ptr = this_obj_ptr,
+                              .dialect = dialect,
+                            })
+                          .second;
+        if (!this_obj_ptr.empty() && !inserted) {
+            // last check, only for bundled schemas: ensure the $id is unique
+            // for this object the root id might already be in the map, but it's
+            // just an artifact
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema with duplicate id '{}' at '{}'",
+              base_uri.string(),
+              this_obj_ptr.string())));
+        }
     }
 
     if (auto ref_it = this_obj.find("$ref");
