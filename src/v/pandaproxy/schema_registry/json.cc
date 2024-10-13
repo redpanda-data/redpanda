@@ -332,6 +332,25 @@ struct pjp {
     }
 };
 
+// helper to resolve a pointer in a json object. throws if the object can't be
+// retrieved
+const json::Value&
+resolve_pointer(const json::Pointer& p, const json::Value& root) {
+    auto unresolved_token = size_t{0};
+    auto* value = p.Get(root, &unresolved_token);
+    if (value == nullptr) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "object not found for pointer '{}' unresolved token at index "
+            "{}",
+            pjp{p},
+            unresolved_token)});
+    }
+
+    return *value;
+}
+
 class schema_context {
 public:
     explicit schema_context(const json_schema_definition::impl& schema)
@@ -340,14 +359,47 @@ public:
     json_schema_dialect dialect() const { return _schema.ctx.dialect; }
     const json::Value& doc() const { return _schema.ctx.doc; }
 
-    const document_context::local_ptr*
-    find_bundled(const json_id_uri id) const {
-        auto it = _schema.ctx.schemas_index.find(id);
-        if (it == _schema.ctx.schemas_index.end()) {
-            return nullptr;
-        }
+    // resolves a reference to a json object. throws if the reference can't be
+    // resolved. supports local, bundled and external references
+    std::pair<json::Value::ConstObject, json_schema_dialect>
+    resolve_reference(jsoncons::uri uri) const {
+        // split uri into schema id and fragment
+        auto id_uri = to_json_id_uri(uri);
+        auto fragment_p = to_json_pointer(uri.fragment());
 
-        return std::get_if<document_context::local_ptr>(&it->second);
+        // try to find the referenced schema,
+        auto it = _schema.ctx.schemas_index.find(id_uri);
+        if (it == _schema.ctx.schemas_index.end()) {
+            throw as_exception(error_info{
+              error_code::schema_invalid,
+              fmt::format("schema pointer not found for uri '{}'", id_uri)});
+        }
+        // step 1: get the schema object
+        const auto& [doc, ptr, dialect] = ss::visit(
+          it->second,
+          [&](const document_context::local_ptr& lp) {
+              // bundled schema, return the root doc and the ptr
+              return std::tie(_schema.ctx.doc, lp.ptr, lp.dialect);
+          },
+          [&](const document_context::external_ptr& ep) {
+              // external schema, get the external doc and return the ptr into
+              // it
+              auto external_it = _schema.ctx.external_schemas.find(
+                ep.external_schema_name);
+              if (external_it == _schema.ctx.external_schemas.end()) {
+                  throw as_exception(error_info{
+                    error_code::schema_invalid,
+                    fmt::format(
+                      "external schema pointer not found for uri '{}'",
+                      id_uri)});
+              }
+              return std::tie(
+                external_it->second.doc, ep.ptr, external_it->second.dialect);
+          });
+
+        // step 2: get the referenced object inside the schema
+        const auto& schema = resolve_pointer(ptr, doc);
+        return {resolve_pointer(fragment_p, schema).GetObject(), dialect};
     }
 
     int remaining_ref_units() const { return _ref_units; }
@@ -818,25 +870,6 @@ merge_references(std::span<json::Value::ConstObject> references_objects) {
     return res;
 }
 
-// helper to resolve a pointer in a json object. throws if the object can't be
-// retrieved
-const json::Value&
-resolve_pointer(const json::Pointer& p, const json::Value& root) {
-    auto unresolved_token = size_t{0};
-    auto* value = p.Get(root, &unresolved_token);
-    if (value == nullptr) {
-        throw as_exception(error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "object not found for pointer '{}' unresolved token at index "
-            "{}",
-            pjp{p},
-            unresolved_token)});
-    }
-
-    return *value;
-}
-
 // iteratively resolve a reference, following the $ref field until the end or
 // the max_allowed_depth is reached. throws if the max depth is reached or if
 // the reference can't be resolved
@@ -847,13 +880,7 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
         return candidate.GetObject();
     }
 
-    auto get_uri_fragment = [](std::string uri_s) {
-        // split into host and fragment
-        auto uri = jsoncons::uri{uri_s};
-        return std::pair{to_json_id_uri(uri), to_json_pointer(uri.fragment())};
-    };
-
-    auto [id_uri, fragment_p] = get_uri_fragment(ref_it->value.GetString());
+    auto ref_uri = jsoncons::uri{ref_it->value.GetString()};
 
     // store the reference chains here, to merge them later, start with base
     auto references_objects = absl::InlinedVector<json::Value::ConstObject, 4>{
@@ -861,29 +888,16 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
 
     // resolve the reference:
     while (ctx.consume_ref_units() > 0) {
-        // try to find the bundled schema, get a pointer to it
-        auto* lookup_p = ctx.find_bundled(id_uri);
-        if (lookup_p == nullptr) {
-            // TODO use a better error code
-            throw as_exception(error_info{
-              error_code::schema_invalid,
-              fmt::format("schema pointer not found for uri '{}'", id_uri)});
-        }
-        const auto& [schema_pointer, dialect] = *lookup_p;
-
-        // step 1: get the schema object
-        const auto& schema = resolve_pointer(schema_pointer, ctx.doc());
-        // step 2: get the referenced object inside the schema
-        const auto& referenced_obj = resolve_pointer(fragment_p, schema);
-        // step 2.5: store referenced_obj for merging later
-        references_objects.push_back(referenced_obj.GetObject());
+        // step 1 get the referenced schema
+        auto [referenced_obj, dialect] = ctx.resolve_reference(ref_uri);
+        // step 2: store referenced_obj for merging later
+        references_objects.push_back(referenced_obj);
 
         // step 3: check if the referenced object has a $ref field, and if so
         // resolve it
         if (auto next_ref_it = referenced_obj.FindMember("$ref");
             next_ref_it != referenced_obj.MemberEnd()) {
-            std::tie(id_uri, fragment_p) = get_uri_fragment(
-              next_ref_it->value.GetString());
+            ref_uri = jsoncons::uri{next_ref_it->value.GetString()};
         } else {
             // if this is the final target, return it.
 
@@ -893,14 +907,16 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
             if (dialect != ctx.dialect()) {
                 throw as_exception(error_info{
                   error_code::schema_invalid,
-                  fmt::format("schema dialect mismatch for uri '{}'", id_uri)});
+                  fmt::format(
+                    "schema dialect mismatch for uri '{}'", ref_uri.string())});
             }
 
             return merge_references(references_objects);
         }
     }
-    throw std::runtime_error(fmt::format(
-      "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p}));
+
+    throw std::runtime_error(
+      fmt::format("max traversals reached for uri '{}'", ref_uri.string()));
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
