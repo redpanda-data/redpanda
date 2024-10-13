@@ -17,8 +17,10 @@
 #include "json/document.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 
+#include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <rapidjson/error/en.h>
@@ -58,5 +60,36 @@ ss::sstring to_string(named_type<iobuf, Tag> def) {
     iobuf_parser p{std::move(def)};
     return p.read_string(p.bytes_left());
 }
+class collected_schema {
+public:
+    bool contains(const ss::sstring& name) const {
+        return _names.contains(name);
+    }
+    bool insert(ss::sstring name, canonical_schema_definition def) {
+        bool inserted = _names.insert(std::move(name)).second;
+        if (inserted) {
+            _schemas.push_back(std::move(def).raw());
+        }
+        return inserted;
+    }
+    canonical_schema_definition::raw_string flatten() && {
+        iobuf out;
+        for (auto& s : _schemas) {
+            out.append(std::move(s));
+            out.append("\n", 1);
+        }
+        return canonical_schema_definition::raw_string{std::move(out)};
+    }
+
+private:
+    absl::flat_hash_set<ss::sstring> _names;
+    std::vector<canonical_schema_definition::raw_string> _schemas;
+};
+
+ss::future<collected_schema> collect_schema(
+  schema_getter& store,
+  collected_schema collected,
+  ss::sstring name,
+  canonical_schema schema);
 
 } // namespace pandaproxy::schema_registry
