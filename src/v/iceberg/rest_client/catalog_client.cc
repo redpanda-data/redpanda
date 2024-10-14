@@ -13,6 +13,7 @@
 #include "bytes/iobuf_parser.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
+#include "iceberg/rest_client/entities.h"
 #include "iceberg/rest_client/parsers.h"
 
 #include <seastar/core/sleep.hh>
@@ -29,6 +30,15 @@ T trim_slashes(std::optional<T> input, typename T::type default_value) {
         return T{default_value};
     }
     return T{absl::StripSuffix(absl::StripPrefix(input.value()(), "/"), "/")};
+}
+
+template<typename T>
+checked<T, iceberg::catalog::errc>
+unwrap(iceberg::rest_client::expected<T> e, std::string_view context) {
+    if (e.has_value()) {
+        return std::move(e.value());
+    }
+    return map_error(std::move(e.error()), context);
 }
 
 } // namespace
@@ -70,6 +80,33 @@ catalog_client::catalog_client(
   , _retry_policy{
       retry_policy ? std::move(retry_policy)
                    : std::make_unique<default_retry_policy>()} {}
+
+ss::future<checked<table_metadata, catalog::errc>> catalog_client::create_table(
+  const table_identifier&, const schema&, const partition_spec&) {
+    co_return catalog::errc::unexpected_state;
+}
+
+ss::future<checked<table_metadata, catalog::errc>>
+catalog_client::load_table(const table_identifier& ident) {
+    retry_chain_node rtc{_as, 60s, 1s};
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return map_error(token.error(), "load_table");
+    }
+    auto http_request = table{_path_components.root_path(), ident.ns}
+                          .get(ident.table)
+                          .with_bearer_auth(token.value());
+    co_return unwrap(
+      (co_await perform_request(rtc, http_request))
+        .and_then(parse_json)
+        .and_then(parse_table_metadata),
+      "load_table");
+}
+
+ss::future<checked<std::nullopt_t, catalog::errc>>
+catalog_client::commit_txn(const table_identifier&, transaction) {
+    co_return catalog::errc::unexpected_state;
+}
 
 ss::future<expected<oauth_token>>
 catalog_client::acquire_token(retry_chain_node& rtc) {

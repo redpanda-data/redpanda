@@ -83,6 +83,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
+        ":entities",
         ":rest_client_parsers",
         ":rest_client_types",
         ":retry_policy",
@@ -91,6 +92,10 @@ redpanda_cc_library(
         "//src/v/http",
         "//src/v/http:request_builder",
         "//src/v/http:utils",
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:json_writer",
+        "//src/v/iceberg:table_requests",
+        "//src/v/iceberg:table_requests_json",
         "//src/v/json",
         "//src/v/utils:named_type",
         "//src/v/utils:retry_chain_node",

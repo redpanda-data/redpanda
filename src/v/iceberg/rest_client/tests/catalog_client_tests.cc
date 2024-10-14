@@ -19,6 +19,7 @@
 namespace r = iceberg::rest_client;
 namespace t = ::testing;
 namespace bh = boost::beast::http;
+namespace i = iceberg;
 
 using namespace std::chrono_literals;
 
@@ -31,6 +32,9 @@ void assert_type_and_value(Outer input, Variant expected) {
     EXPECT_TRUE(std::holds_alternative<Variant>(input));
     EXPECT_EQ(std::get<Variant>(input), expected);
 }
+
+i::table_identifier missing{{"n1", "n2"}, "missing"};
+i::table_identifier exists{{"n1", "n2"}, "t"};
 
 } // namespace
 
@@ -292,4 +296,90 @@ TEST(token_tests, handle_retries_exhausted) {
       t::VariantWith<r::retries_exhausted>(t::Field(
         &r::retries_exhausted::errors,
         t::Each(t::VariantWith<bh::status>(bh::status::gateway_timeout)))));
+}
+
+ss::future<http::downloaded_response> validate_load_table_request(
+  bh::request_header<>&& r, std::optional<iobuf> payload) {
+    EXPECT_EQ(r.target(), "/v1/namespaces/n1%1Fn2/tables/t");
+    EXPECT_EQ(r.method_string(), "GET");
+
+    EXPECT_FALSE(payload.has_value());
+
+    const auto metadata =
+      R"J({"metadata":{
+    "format-version": 2,
+    "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+    "location": "s3://foo/bar/baz",
+    "last-sequence-number": 34,
+    "last-updated-ms": 1602638573590,
+    "last-column-id": 3,
+    "current-schema-id": 1,
+    "schemas":[{"type":"struct","schema-id":0,"fields":[{"id":1,"name":"x","required":true,"type":"long"}]}],
+    "default-spec-id": 0,
+    "partition-specs": [{"spec-id":0,"fields":[{"name":"x","transform":"identity","source-id":1,"field-id":1000}]}],
+    "last-partition-id": 1000,
+    "default-sort-order-id": 3,
+    "sort-orders":[{"order-id":3,"fields":[{"transform":"identity","source-ids":[2],"direction":"asc","null-order":"nulls-first"}]}],
+    "properties":{"read.split.target.size":"134217728"},
+    "current-snapshot-id": 3055729675574597004}})J";
+
+    co_return http::downloaded_response{
+      .status = boost::beast::http::status::ok, .body = iobuf::from(metadata)};
+}
+
+ss::future<http::downloaded_response> validate_request(
+  bh::request_header<>&& r,
+  std::optional<iobuf> payload,
+  ss::lowres_clock::duration timeout) {
+    if (r.target().ends_with("/oauth/tokens")) {
+        co_return co_await validate_token_request(
+          std::move(r), std::move(payload), timeout);
+    }
+
+    if (r.target().ends_with(fmt::format("/tables/{}", exists.table))) {
+        co_return co_await validate_load_table_request(
+          std::move(r), std::move(payload));
+    }
+
+    if (r.target().ends_with(fmt::format("/tables/{}", missing.table))) {
+        co_return http::downloaded_response{
+          .status = boost::beast::http::status::not_found, .body = iobuf()};
+    }
+
+    co_return http::downloaded_response{
+      .status = boost::beast::http::status::bad_request, .body = iobuf()};
+}
+
+TEST(catalog_ops, load_table) {
+    client_source cs{[](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+          .WillOnce(validate_request);
+    }};
+
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
+    r::catalog_client_tester t{cc};
+
+    auto tmeta = cc.load_table(exists).get();
+    EXPECT_FALSE(tmeta.has_error());
+    EXPECT_FALSE(tmeta.has_exception());
+    EXPECT_EQ(
+      ss::sstring{tmeta.value().table_uuid},
+      ss::sstring{"9c12d441-03fe-4693-9a96-a0705ddf69c1"});
+}
+
+TEST(catalog_ops, load_table_missing) {
+    client_source cs{[](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+          .WillOnce(validate_request);
+    }};
+
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
+    r::catalog_client_tester t{cc};
+
+    auto tmeta = cc.load_table(missing).get();
+    EXPECT_TRUE(tmeta.has_error());
+    EXPECT_FALSE(tmeta.has_exception());
+    EXPECT_EQ(tmeta.error(), i::catalog::errc::not_found);
 }
