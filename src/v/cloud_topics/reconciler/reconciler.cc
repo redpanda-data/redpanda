@@ -11,6 +11,7 @@
 #include "cloud_topics/reconciler/reconciler.h"
 
 #include "base/vlog.h"
+#include "cloud_storage/configuration.h"
 #include "cluster/partition.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/utils/txn_reader.h"
@@ -38,10 +39,16 @@ namespace experimental::cloud_topics::reconciler {
 reconciler::reconciler(
   ss::sharded<cluster::partition_manager>* pm,
   ss::sharded<cloud_io::remote>* cloud_io,
-  cloud_storage_clients::bucket_name bucket)
+  std::optional<cloud_storage_clients::bucket_name> bucket)
   : _partition_manager(pm)
-  , _cloud_io(cloud_io)
-  , _bucket(std::move(bucket)) {}
+  , _cloud_io(cloud_io) {
+    if (bucket.has_value()) {
+        _bucket = std::move(bucket.value());
+    } else {
+        _bucket = cloud_storage_clients::bucket_name(
+          cloud_storage::configuration::get_bucket_config().value().value());
+    }
+}
 
 ss::future<> reconciler::start() {
     _manage_notify_handle
