@@ -351,10 +351,6 @@ operator<<(std::ostream& o, const std::optional<segment_index::entry>& e) {
     }
     return o << "{empty segment_index::entry}";
 }
-std::ostream& operator<<(std::ostream& o, const segment_index::entry& e) {
-    return o << "{offset:" << e.offset << ", time:" << e.timestamp
-             << ", filepos:" << e.filepos << "}";
-}
 
 ss::future<size_t> segment_index::disk_usage() {
     if (!_disk_usage_size.has_value()) {

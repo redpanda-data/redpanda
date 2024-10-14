@@ -65,6 +65,11 @@ index_state index_state::make_empty_index(offset_delta_time with_offset) {
     return idx;
 }
 
+std::ostream& operator<<(std::ostream& o, const index_state::entry& e) {
+    return o << "{offset:" << e.offset << ", time:" << e.timestamp
+             << ", filepos:" << e.filepos << "}";
+}
+
 bool index_state::maybe_index(
   size_t accumulator,
   size_t step,

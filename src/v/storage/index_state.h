@@ -83,6 +83,13 @@ struct index_state
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
+    struct entry {
+        model::offset offset;
+        model::timestamp timestamp;
+        size_t filepos;
+        friend std::ostream& operator<<(std::ostream&, const entry&);
+    };
+
     index_state() = default;
 
     index_state(index_state&&) noexcept = default;
