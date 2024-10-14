@@ -110,6 +110,7 @@ redpanda_cc_btest(
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:to_string",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@boost//:test",

@@ -25,19 +25,6 @@ constexpr int shards_per_node = 16;  // i.e., cores per node
 constexpr int groups_per_shard = 80; // group == partition in this context
 constexpr int replicas = 3;          // number of replicas
 
-cluster::leader_balancer_types::group_id_to_topic_id make_gid_to_topic_index(
-  const cluster::leader_balancer_types::index_type& index) {
-    cluster::leader_balancer_types::group_id_to_topic_id ret;
-
-    for (const auto& [bs, leaders] : index) {
-        for (const auto& [group, replicas] : leaders) {
-            ret.emplace(group, 0);
-        }
-    }
-
-    return ret;
-}
-
 /*
  * Measures the time it takes to randomly generate and evaluate every possible
  * reassignment for a given cluster. The reassignments are evaluated by the
@@ -54,7 +41,8 @@ void random_search_eval_bench(bool measure_all) {
     cluster::leader_balancer_types::muted_index mi{{}, {}};
     cluster::leader_balancer_types::shard_index si(
       leader_balancer_test_utils::copy_cluster_index(index));
-    auto gid_topic = make_gid_to_topic_index(si.shards());
+    auto gid_topic = leader_balancer_test_utils::make_gid_to_topic_index(
+      si.shards());
 
     if (measure_all) {
         perf_tests::start_measuring_time();
