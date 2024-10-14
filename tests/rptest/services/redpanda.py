@@ -3423,14 +3423,8 @@ class RedpandaService(RedpandaServiceBase):
 
         return result
 
-    def set_cluster_config_to_null(self,
-                                   name: str,
-                                   expect_restart: bool = False,
-                                   admin_client: Optional[Admin] = None,
-                                   timeout: int = 10,
-                                   tolerate_stopped_nodes=False):
-        def set_cluster_config_to_null(self, *args, **kwargs):
-            self.set_cluster_config(*args, values={name: None}, *kwargs)
+    def set_cluster_config_to_null(self, name: str, **kwargs):
+        self.set_cluster_config(values={name: None}, **kwargs)
 
     def set_cluster_config(self,
                            values: dict,
