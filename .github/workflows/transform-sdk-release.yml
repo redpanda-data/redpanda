@@ -66,6 +66,8 @@ jobs:
       - name: Publish
         working-directory: src/transform-sdk/rust
         run: |
+          python3 -m venv /tmp/venv/publish
+          source /tmp/venv/publish/bin/activate
           pip install tomlkit
           ./scripts/publish.py --version ${{github.ref_name}}
         env:
