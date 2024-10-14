@@ -13,8 +13,11 @@
 #include "bytes/iobuf_parser.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
+#include "iceberg/json_writer.h"
 #include "iceberg/rest_client/entities.h"
 #include "iceberg/rest_client/parsers.h"
+#include "iceberg/table_requests.h"
+#include "iceberg/table_requests_json.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -82,8 +85,33 @@ catalog_client::catalog_client(
                    : std::make_unique<default_retry_policy>()} {}
 
 ss::future<checked<table_metadata, catalog::errc>> catalog_client::create_table(
-  const table_identifier&, const schema&, const partition_spec&) {
-    co_return catalog::errc::unexpected_state;
+  const table_identifier& table_ident,
+  const schema& schema,
+  const partition_spec& spec) {
+    retry_chain_node rtc{_as, 60s, 1s};
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return map_error(token.error(), "create_table");
+    }
+    if (auto does_table_exist = co_await load_table(table_ident);
+        does_table_exist.has_error()
+        && does_table_exist.error() == catalog::errc::not_found) {
+        create_table_request ctr_payload{
+          .name = table_ident.table,
+          .schema = schema.copy(),
+          .partition_spec = spec.copy()};
+        auto http_request = table{_path_components.root_path(), table_ident.ns}
+                              .create()
+                              .with_bearer_auth(token.value())
+                              .with_content_type("application/json");
+        co_return unwrap(
+          (co_await perform_request(
+             rtc, http_request, iobuf::from(to_json_str(ctr_payload))))
+            .and_then(parse_json)
+            .and_then(parse_table_metadata),
+          "create_table");
+    }
+    co_return catalog::errc::already_exists;
 }
 
 ss::future<checked<table_metadata, catalog::errc>>
