@@ -99,6 +99,10 @@ struct index_state
 
     index_state copy() const;
 
+    std::optional<entry> find_nearest(model::offset o);
+
+    std::optional<entry> find_nearest(model::timestamp);
+
     /// \brief unused
     uint32_t bitflags{0};
     // the batch's base_offset of the first batch
@@ -190,6 +194,8 @@ struct index_state
 
 private:
     index_state(const index_state& o) noexcept;
+    entry translate_index_entry(
+      std::tuple<uint32_t, offset_time_index, uint64_t> entry);
 };
 
 namespace serde_compat {

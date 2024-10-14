@@ -509,4 +509,58 @@ iobuf index_state_serde::encode(const index_state& st) {
 }
 } // namespace serde_compat
 
+index_state::entry index_state::translate_index_entry(
+  std::tuple<uint32_t, offset_time_index, uint64_t> input) {
+    auto [relative_offset, relative_time, filepos] = input;
+    return entry{
+      .offset = model::offset(relative_offset + base_offset()),
+      .timestamp = model::timestamp(relative_time() + base_timestamp()),
+      .filepos = filepos,
+    };
+}
+
+std::optional<index_state::entry> index_state::find_nearest(model::offset o) {
+    if (o < base_offset || empty()) {
+        return std::nullopt;
+    }
+    const uint32_t needle = o() - base_offset();
+    auto it = std::lower_bound(
+      std::begin(relative_offset_index),
+      std::end(relative_offset_index),
+      needle,
+      std::less<uint32_t>{});
+
+    if (it == relative_offset_index.end()) {
+        it = std::prev(it);
+    }
+
+    // make it signed so it can be negative
+    int i = std::distance(relative_offset_index.begin(), it);
+    do {
+        if (relative_offset_index[i] <= needle) {
+            return translate_index_entry(get_entry(i));
+        }
+    } while (i-- > 0);
+
+    return std::nullopt;
+}
+
+std::optional<index_state::entry>
+index_state::find_nearest(model::timestamp t) {
+    if (t < base_timestamp) {
+        return std::nullopt;
+    }
+    if (empty()) {
+        return std::nullopt;
+    }
+
+    const auto delta = t - base_timestamp;
+    const auto entry = find_entry(delta);
+    if (!entry) {
+        return std::nullopt;
+    }
+
+    return translate_index_entry(*entry);
+}
+
 } // namespace storage

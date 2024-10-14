@@ -155,20 +155,7 @@ void segment_index::maybe_track(
 
 std::optional<segment_index::entry>
 segment_index::find_nearest(model::timestamp t) {
-    if (t < _state.base_timestamp) {
-        return std::nullopt;
-    }
-    if (_state.empty()) {
-        return std::nullopt;
-    }
-
-    const auto delta = t - _state.base_timestamp;
-    const auto entry = _state.find_entry(delta);
-    if (!entry) {
-        return std::nullopt;
-    }
-
-    return translate_index_entry(_state, *entry);
+    return _state.find_nearest(t);
 }
 
 std::optional<segment_index::entry>
@@ -210,27 +197,7 @@ segment_index::find_below_size_bytes(size_t distance) {
 
 std::optional<segment_index::entry>
 segment_index::find_nearest(model::offset o) {
-    if (o < _state.base_offset || _state.empty()) {
-        return std::nullopt;
-    }
-    const uint32_t needle = o() - _state.base_offset();
-    auto it = std::lower_bound(
-      std::begin(_state.relative_offset_index),
-      std::end(_state.relative_offset_index),
-      needle,
-      std::less<uint32_t>{});
-    if (it == _state.relative_offset_index.end()) {
-        it = std::prev(it);
-    }
-    // make it signed so it can be negative
-    int i = std::distance(_state.relative_offset_index.begin(), it);
-    do {
-        if (_state.relative_offset_index[i] <= needle) {
-            return translate_index_entry(_state, _state.get_entry(i));
-        }
-    } while (i-- > 0);
-
-    return std::nullopt;
+    return _state.find_nearest(o);
 }
 
 ss::future<> segment_index::truncate(
