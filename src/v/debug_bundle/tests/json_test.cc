@@ -129,6 +129,7 @@ TYPED_TEST(JsonTypeTest, BasicType) {
   "logs_size_limit_bytes": 42,
   "logs_until": "2024-09-05T14:34:02",
   "metrics_interval_seconds": 42,
+  "metrics_samples": 2,
   "partition": [
     "foo/bar/1,2",
     "baz/1,2,3"
@@ -160,6 +161,7 @@ TYPED_TEST(JsonTypeTest, BasicType) {
             .logs_size_limit_bytes = 42,
             .logs_until = clock::from_time_t(tt),
             .metrics_interval_seconds = 42s,
+            .metrics_samples = 2,
             .partition = std::vector<partition_selection>{{{model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}, model::partition_id{2}}}}, {{model::kafka_namespace, model::topic{"baz"}}, {{model::partition_id{1}, model::partition_id{2}, model::partition_id{3}}}}},
             .tls_enabled = true,
             .tls_insecure_skip_verify = false,
