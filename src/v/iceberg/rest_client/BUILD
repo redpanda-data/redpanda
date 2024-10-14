@@ -51,6 +51,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "entities",
+    srcs = [
+        "entities.cc",
+    ],
+    hdrs = [
+        "entities.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/http:rest_entity",
+        "//src/v/ssx:sformat",
+    ],
+)
+
+redpanda_cc_library(
     name = "rest_catalog_client",
     srcs = [
         "catalog_client.cc",
