@@ -596,4 +596,38 @@ index_state::find_below_size_bytes(size_t distance) {
     return translate_index_entry(get_entry(i));
 }
 
+bool index_state::truncate(
+  model::offset new_max_offset, model::timestamp new_max_timestamp) {
+    bool needs_persistence = false;
+    if (new_max_offset < base_offset) {
+        return needs_persistence;
+    }
+    const uint32_t i = new_max_offset() - base_offset();
+    auto it = std::lower_bound(
+      std::begin(relative_offset_index),
+      std::end(relative_offset_index),
+      i,
+      std::less<uint32_t>{});
+
+    if (it != relative_offset_index.end()) {
+        needs_persistence = true;
+        int remove_back_elems = std::distance(it, relative_offset_index.end());
+        while (remove_back_elems-- > 0) {
+            pop_back();
+        }
+    }
+
+    if (new_max_offset < max_offset) {
+        needs_persistence = true;
+        if (empty()) {
+            max_timestamp = base_timestamp;
+            max_offset = base_offset;
+        } else {
+            max_timestamp = new_max_timestamp;
+            max_offset = new_max_offset;
+        }
+    }
+    return needs_persistence;
+}
+
 } // namespace storage

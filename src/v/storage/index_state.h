@@ -107,6 +107,9 @@ struct index_state
 
     std::optional<entry> find_below_size_bytes(size_t distance);
 
+    bool
+    truncate(model::offset new_max_offset, model::timestamp new_max_timestamp);
+
     /// \brief unused
     uint32_t bitflags{0};
     // the batch's base_offset of the first batch
