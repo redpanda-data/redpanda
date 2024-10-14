@@ -148,7 +148,9 @@ class MetricsReporterTest(RedpandaTest):
         assert last['original_logical_version'] == features[
             'original_cluster_version']
         assert last['has_valid_license']
-        assert last['has_enterprise_features'] == False
+        # NOTE: value will vary depending on FIPS mode. we're confident that
+        # the source of the value is sound, so assert on presence instead.
+        assert 'has_enterprise_features' in last
         nodes_meta = last['nodes']
 
         assert len(last['nodes']) == len(self.redpanda.nodes)
