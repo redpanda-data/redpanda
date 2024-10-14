@@ -716,6 +716,20 @@ config_response_container_t make_topic_configs(
     add_topic_config_if_requested(
       config_keys,
       result,
+      topic_property_iceberg_translation_interval_ms,
+      config::shard_local_cfg().iceberg_translation_interval_ms_default(),
+      topic_property_iceberg_translation_interval_ms,
+      topic_properties.iceberg_translation_interval_ms,
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        "Controls how often iceberg translation is attempted on the topic "
+        "partitions."),
+      &describe_as_string<std::chrono::milliseconds>);
+
+    add_topic_config_if_requested(
+      config_keys,
+      result,
       topic_property_segment_ms,
       metadata_cache.get_default_segment_ms(),
       topic_property_segment_ms,

@@ -138,9 +138,14 @@ def read_topic_properties_serde(rdr: Reader, version):
         }
     if version >= 10:
         topic_properties |= {
-            'iceberg_enabled': rdr.read_bool(),
-            'leaders_preference': rdr.read_optional(read_leaders_preference),
-            'cloud_topic_enabled': rdr.read_bool(),
+            'iceberg_enabled':
+            rdr.read_bool(),
+            'leaders_preference':
+            rdr.read_optional(read_leaders_preference),
+            'cloud_topic_enabled':
+            rdr.read_bool(),
+            'iceberg_translation_interval_ms':
+            rdr.read_optional(Reader.read_int64),
         }
 
     return topic_properties

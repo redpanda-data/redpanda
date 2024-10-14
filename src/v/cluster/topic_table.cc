@@ -1025,6 +1025,9 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       storage::ntp_config::default_iceberg_enabled);
     incremental_update(
       updated_properties.leaders_preference, overrides.leaders_preference);
+    incremental_update(
+      updated_properties.iceberg_translation_interval_ms,
+      overrides.iceberg_translation_interval_ms);
 
     auto& properties = tp->second.get_configuration().properties;
     // no configuration change, no need to generate delta
