@@ -361,6 +361,13 @@ create_topic_properties_update(
                 }
                 throw validation_error("Cloud topics is not enabled");
             }
+            if (cfg.name == topic_property_iceberg_translation_interval_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.iceberg_translation_interval_ms,
+                  cfg.value,
+                  op);
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(

@@ -3707,6 +3707,15 @@ configuration::configuration()
       "topic-level settings.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
+  , iceberg_translation_interval_ms_default(
+      *this,
+      "iceberg_translation_interval_ms_default",
+      "Controls how often an iceberg enabled topic is checked for new data to "
+      "translate. redpanda.iceberg.translation.interval.ms is the topic level "
+      "override.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::milliseconds(1min),
+      {.min = 10ms})
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
