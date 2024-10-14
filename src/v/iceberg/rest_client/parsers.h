@@ -11,6 +11,7 @@
 #pragma once
 
 #include "iceberg/rest_client/types.h"
+#include "iceberg/table_metadata.h"
 #include "json/document.h"
 #include "json/schema.h"
 
@@ -22,5 +23,7 @@ parse_error_msg get_schema_validation_error(const json::SchemaValidator& v);
 
 // Parses oauth token from a JSON response sent from catalog server
 expected<oauth_token> parse_oauth_token(json::Document&& doc);
+
+expected<table_metadata> parse_table_metadata(json::Document&& doc);
 
 } // namespace iceberg::rest_client

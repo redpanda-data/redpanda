@@ -10,6 +10,7 @@
 
 #include "iceberg/rest_client/parsers.h"
 
+#include "iceberg/table_metadata_json.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 
@@ -36,7 +37,25 @@ constexpr auto oauth_token_schema = R"JSON({
         "expires_in"
     ]
 })JSON";
-}
+
+constexpr auto create_table_response_schema = R"JSON({
+    "type": "object",
+    "properties": {
+        "metadata": {
+            "type": "object"
+        },
+        "metadata-location": {
+            "type": "string"
+        },
+        "config": {
+            "type": "object"
+        }
+    },
+    "required": [
+        "metadata"
+    ]
+})JSON";
+} // namespace
 
 namespace iceberg::rest_client {
 
@@ -67,6 +86,24 @@ expected<oauth_token> parse_oauth_token(json::Document&& doc) {
     return oauth_token{
       .token = doc["access_token"].GetString(),
       .expires_at = ss::lowres_clock::now() + expires_in_sec};
+}
+
+expected<table_metadata> parse_table_metadata(json::Document&& doc) {
+    json::Document schema;
+    if (schema.Parse(create_table_response_schema).HasParseError()) {
+        return tl::unexpected(json_parse_error{
+          .context = "parse_metadata::invalid_schema_validator_input",
+          .error = parse_error_msg{GetParseError_En(schema.GetParseError())}});
+    }
+
+    json::SchemaDocument schema_doc{schema};
+
+    if (json::SchemaValidator v{schema_doc}; !doc.Accept(v)) {
+        return tl::unexpected(json_parse_error{
+          .context = "parse_metadata::response_does_not_match_schema",
+          .error = get_schema_validation_error(v)});
+    }
+    return parse_table_meta(doc["metadata"].GetObject());
 }
 
 } // namespace iceberg::rest_client

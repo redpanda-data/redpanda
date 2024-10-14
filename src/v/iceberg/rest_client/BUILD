@@ -29,6 +29,8 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     deps = [
         ":rest_client_types",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
         "//src/v/json",
         "//src/v/utils:named_type",
     ],
