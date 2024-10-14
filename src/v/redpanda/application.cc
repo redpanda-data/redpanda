@@ -733,10 +733,13 @@ void application::setup_public_metrics() {
             "cpu",
             {sm::make_gauge(
               "busy_seconds_total",
-              [] {
-                  return std::chrono::duration<double>(
-                           ss::engine().total_busy_time())
-                    .count();
+              [max_seen = ss::make_lw_shared<double>(0.)]() {
+                  auto sample = std::chrono::duration<double>(
+                                  ss::engine().total_busy_time())
+                                  .count();
+                  // CORE-7909: clamp below by the max sample, to ensure
+                  // monotonic progression per the prometheus counter contract
+                  return *max_seen = std::max(*max_seen, sample);
               },
               sm::description("Total CPU busy time in seconds"))});
       })
