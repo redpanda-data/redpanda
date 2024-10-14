@@ -102,6 +102,9 @@ inline constexpr std::string_view topic_property_leaders_preference
 inline constexpr std::string_view topic_property_cloud_topic_enabled
   = "redpanda.cloud_topic.enabled";
 
+inline constexpr std::string_view topic_property_iceberg_translation_interval_ms
+  = "redpanda.iceberg.translation.interval.ms";
+
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
 inline constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
