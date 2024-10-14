@@ -29,17 +29,6 @@
 
 namespace storage {
 
-static inline segment_index::entry translate_index_entry(
-  const index_state& s,
-  std::tuple<uint32_t, offset_time_index, uint64_t> entry) {
-    auto [relative_offset, relative_time, filepos] = entry;
-    return segment_index::entry{
-      .offset = model::offset(relative_offset + s.base_offset()),
-      .timestamp = model::timestamp(relative_time() + s.base_timestamp()),
-      .filepos = filepos,
-    };
-}
-
 segment_index::segment_index(
   segment_full_path path,
   model::offset base,
@@ -160,39 +149,12 @@ segment_index::find_nearest(model::timestamp t) {
 
 std::optional<segment_index::entry>
 segment_index::find_above_size_bytes(size_t distance) {
-    if (_state.empty()) {
-        return std::nullopt;
-    }
-    auto it = std::upper_bound(
-      std::begin(_state.position_index),
-      std::end(_state.position_index),
-      distance);
-
-    if (it == _state.position_index.end()) {
-        return std::nullopt;
-    }
-    int i = std::distance(_state.position_index.begin(), it);
-    return translate_index_entry(_state, _state.get_entry(i));
+    return _state.find_above_size_bytes(distance);
 }
 
 std::optional<segment_index::entry>
 segment_index::find_below_size_bytes(size_t distance) {
-    if (_state.empty()) {
-        return std::nullopt;
-    }
-    auto it = std::upper_bound(
-      std::begin(_state.position_index),
-      std::end(_state.position_index),
-      distance);
-
-    if (it != _state.position_index.begin()) {
-        it = std::prev(it);
-    } else {
-        return std::nullopt;
-    }
-
-    int i = std::distance(_state.position_index.begin(), it);
-    return translate_index_entry(_state, _state.get_entry(i));
+    return _state.find_below_size_bytes(distance);
 }
 
 std::optional<segment_index::entry>

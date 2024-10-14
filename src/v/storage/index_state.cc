@@ -563,4 +563,37 @@ index_state::find_nearest(model::timestamp t) {
     return translate_index_entry(*entry);
 }
 
+std::optional<index_state::entry>
+index_state::find_above_size_bytes(size_t distance) {
+    if (empty()) {
+        return std::nullopt;
+    }
+    auto it = std::upper_bound(
+      std::begin(position_index), std::end(position_index), distance);
+
+    if (it == position_index.end()) {
+        return std::nullopt;
+    }
+    int i = std::distance(position_index.begin(), it);
+    return translate_index_entry(get_entry(i));
+}
+
+std::optional<index_state::entry>
+index_state::find_below_size_bytes(size_t distance) {
+    if (empty()) {
+        return std::nullopt;
+    }
+    auto it = std::upper_bound(
+      std::begin(position_index), std::end(position_index), distance);
+
+    if (it != position_index.begin()) {
+        it = std::prev(it);
+    } else {
+        return std::nullopt;
+    }
+
+    int i = std::distance(position_index.begin(), it);
+    return translate_index_entry(get_entry(i));
+}
+
 } // namespace storage

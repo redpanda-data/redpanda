@@ -103,6 +103,10 @@ struct index_state
 
     std::optional<entry> find_nearest(model::timestamp);
 
+    std::optional<entry> find_above_size_bytes(size_t distance);
+
+    std::optional<entry> find_below_size_bytes(size_t distance);
+
     /// \brief unused
     uint32_t bitflags{0};
     // the batch's base_offset of the first batch
