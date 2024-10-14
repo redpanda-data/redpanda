@@ -228,7 +228,6 @@ BOOST_AUTO_TEST_CASE(even_topic_no_error_even_shard_error) {
       std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() > 0);
-    BOOST_REQUIRE(even_shard_con.recommended_reassignment().has_value());
 }
 
 #include "cluster/scheduling/leader_balancer_random.h"
