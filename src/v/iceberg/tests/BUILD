@@ -538,3 +538,23 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "table_requests_json_test",
+    timeout = "short",
+    srcs = [
+        "table_requests_json_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:json_writer",
+        "//src/v/iceberg:partition_json",
+        "//src/v/iceberg:schema_json",
+        "//src/v/iceberg:table_requests",
+        "//src/v/iceberg:table_requests_json",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
