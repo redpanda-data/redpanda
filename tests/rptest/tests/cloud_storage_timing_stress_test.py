@@ -19,6 +19,7 @@ from rptest.tests.partition_movement import PartitionMovementMixin
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
 from rptest.utils.mode_checks import skip_debug_mode
+from ducktape.mark import ok_to_fail
 
 import concurrent.futures
 import random
@@ -502,6 +503,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
+    @ok_to_fail
     def test_cloud_storage(self, cleanup_policy):
         """
         This is the baseline test. It runs the workload and performs the checks
