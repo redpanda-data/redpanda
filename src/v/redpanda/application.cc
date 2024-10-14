@@ -1424,6 +1424,9 @@ void application::wire_up_runtime_services(
           std::ref(raft_group_manager),
           std::ref(partition_manager))
           .get();
+        _datalake_coordinator_mgr
+          .invoke_on_all(&datalake::coordinator::coordinator_manager::start)
+          .get();
         construct_service(
           _datalake_coordinator_fe,
           node_id,

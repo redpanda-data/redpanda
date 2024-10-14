@@ -295,9 +295,9 @@ ss::future<consensus_ptr> partition_manager::manage(
         p->block_new_leadership();
     }
 
-    _manage_watchers.notify(p->ntp(), p);
-
     co_await p->start(_stm_registry, xst_state);
+
+    _manage_watchers.notify(p->ntp(), p);
 
     co_return c;
 }
