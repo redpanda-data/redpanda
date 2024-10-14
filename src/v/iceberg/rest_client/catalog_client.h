@@ -90,6 +90,7 @@ public:
       client_source& client_source,
       ss::sstring endpoint,
       credentials credentials,
+      ss::abort_source& as,
       std::optional<base_path> base_path = std::nullopt,
       std::optional<prefix_path> prefix = std::nullopt,
       std::optional<api_version> api_version = std::nullopt,
@@ -121,6 +122,7 @@ private:
     std::reference_wrapper<client_source> _client_source;
     ss::sstring _endpoint;
     credentials _credentials;
+    ss::abort_source& _as;
     path_components _path_components;
     std::optional<oauth_token> _oauth_token{std::nullopt};
     std::unique_ptr<retry_policy> _retry_policy;

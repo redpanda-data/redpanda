@@ -110,10 +110,12 @@ TEST(path_components, path_with_prefix) {
 
 TEST(client, root_url_computed) {
     client_source cs{[](mock_client&) {}};
+    ss::abort_source as;
     r::catalog_client cc{
       cs,
       endpoint,
       credentials,
+      as,
       r::base_path{"api/catalog/"},
       r::prefix_path{"x"},
       r::api_version{"v2"}};
@@ -150,7 +152,8 @@ TEST(token_tests, acquire_token) {
         EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
           .WillOnce(validate_token_request);
     }};
-    r::catalog_client cc{cs, endpoint, credentials};
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
     r::catalog_client_tester t{cc};
     auto token = t.get_current_token().get();
     ASSERT_TRUE(token.has_value());
@@ -163,10 +166,12 @@ TEST(token_tests, supplied_token_used) {
     }};
     const r::oauth_token supplied_token{
       .token = "t", .expires_at = ss::lowres_clock::now() + 1h};
+    ss::abort_source as;
     r::catalog_client cc{
       cs,
       endpoint,
       credentials,
+      as,
       std::nullopt,
       std::nullopt,
       r::api_version{"v1"},
@@ -185,10 +190,12 @@ TEST(token_tests, supplied_token_expired) {
     }};
     const r::oauth_token expired_token{
       .token = "t", .expires_at = ss::lowres_clock::now()};
+    ss::abort_source as;
     r::catalog_client cc{
       cs,
       endpoint,
       credentials,
+      as,
       std::nullopt,
       std::nullopt,
       r::api_version{"v1"},
@@ -208,7 +215,8 @@ TEST(token_tests, handle_bad_json) {
             http::downloaded_response{
               .status = bh::status::ok, .body = iobuf::from(R"J({)J")})));
     }};
-    r::catalog_client cc{cs, endpoint, credentials};
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
     r::catalog_client_tester t{cc};
     auto token = t.get_current_token().get();
     ASSERT_FALSE(token.has_value());
@@ -226,7 +234,8 @@ TEST(token_tests, handle_non_retriable_http_status) {
               .status = bh::status::bad_request, .body = iobuf()})));
     }};
 
-    r::catalog_client cc{cs, endpoint, credentials};
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
     r::catalog_client_tester t{cc};
 
     auto token = t.get_current_token().get();
@@ -249,7 +258,8 @@ TEST(token_tests, handle_retriable_http_status) {
               .body = iobuf::from(
                 R"J({"access_token": "token", "expires_in": 1})J")})));
     }};
-    r::catalog_client cc{cs, endpoint, credentials};
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
     r::catalog_client_tester t{cc};
 
     auto token = t.get_current_token().get();
@@ -271,7 +281,8 @@ TEST(token_tests, handle_retries_exhausted) {
           .WillRepeatedly(ret);
     }};
 
-    r::catalog_client cc{cs, endpoint, credentials};
+    ss::abort_source as;
+    r::catalog_client cc{cs, endpoint, credentials, as};
     r::catalog_client_tester t{cc};
 
     auto token = t.get_current_token().get();

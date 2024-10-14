@@ -55,6 +55,7 @@ catalog_client::catalog_client(
   client_source& client_source,
   ss::sstring endpoint,
   credentials credentials,
+  ss::abort_source& as,
   std::optional<base_path> base_path,
   std::optional<prefix_path> prefix,
   std::optional<api_version> api_version,
@@ -63,6 +64,7 @@ catalog_client::catalog_client(
   : _client_source{client_source}
   , _endpoint{std::move(endpoint)}
   , _credentials{std::move(credentials)}
+  , _as{as}
   , _path_components{std::move(base_path), std::move(prefix), std::move(api_version)}
   , _oauth_token{std::move(token)}
   , _retry_policy{
