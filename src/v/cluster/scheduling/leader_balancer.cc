@@ -17,7 +17,6 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
-#include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_random.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"

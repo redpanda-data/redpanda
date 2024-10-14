@@ -550,7 +550,6 @@ redpanda_cc_library(
         "scheduling/constraints.h",
         "scheduling/leader_balancer.h",
         "scheduling/leader_balancer_constraints.h",
-        "scheduling/leader_balancer_greedy.h",
         "scheduling/leader_balancer_probe.h",
         "scheduling/leader_balancer_random.h",
         "scheduling/leader_balancer_strategy.h",

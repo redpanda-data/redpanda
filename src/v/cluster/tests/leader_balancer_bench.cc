@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 #include "cluster/scheduling/leader_balancer_constraints.h"
-#include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_random.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "leader_balancer_test_utils.h"
@@ -103,33 +102,7 @@ void random_bench() {
     perf_tests::stop_measuring_time();
 }
 
-void balancer_bench(bool measure_all) {
-    cluster::leader_balancer_strategy::index_type index
-      = leader_balancer_test_utils::make_cluster_index(
-        node_count, shards_per_node, groups_per_shard, replicas);
-
-    if (measure_all) {
-        perf_tests::start_measuring_time();
-    }
-
-    auto greed = cluster::greedy_balanced_shards(std::move(index), {});
-    vassert(greed.error() == 0, "");
-    vassert(greed.error() == 0, "e > 0");
-
-    // movement should be _from_ the overloaded shard
-    if (!measure_all) {
-        perf_tests::start_measuring_time();
-    }
-    auto movement = greed.find_movement({});
-    vassert(!movement, "movemement ");
-    perf_tests::do_not_optimize(movement);
-    perf_tests::stop_measuring_time();
-}
-
 } // namespace
-
-PERF_TEST(lb, even_shard_load_movement) { balancer_bench(false); }
-PERF_TEST(lb, even_shard_load_all) { balancer_bench(true); }
 
 PERF_TEST(lb, random_eval_movement) {
     random_search_eval_bench<
