@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include "config/configuration.h"
 #include "container/fragmented_vector.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -19,6 +22,8 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
 #include <absl/container/node_hash_map.h>
+
+#include <ranges>
 
 namespace pandaproxy::schema_registry {
 
@@ -58,10 +63,13 @@ class store {
 public:
     using schema_id_set = absl::btree_set<schema_id>;
 
-    explicit store() = default;
+    explicit store()
+      : store(is_mutable::no) {}
 
     explicit store(is_mutable mut)
-      : _mutable(mut) {}
+      : _mutable(mut) {
+        setup_metrics();
+    }
 
     struct insert_result {
         schema_version version;
@@ -705,6 +713,67 @@ public:
         return outcome::success();
     }
 
+    void setup_metrics() {
+        namespace sm = ss::metrics;
+        const auto make_schema_count = [this]() {
+            return sm::make_gauge(
+              "schema_count",
+              [this] { return _schemas.size(); },
+              sm::description("The number of schemas in the store"));
+        };
+        const auto make_subject_count = [this](is_deleted deleted) {
+            return sm::make_gauge(
+              "subject_count",
+              [this, deleted] {
+                  return std::ranges::count_if(
+                    _subjects, [deleted](const auto& entry) {
+                        return entry.second.deleted == deleted;
+                    });
+              },
+              sm::description("The number of subjects in the store"),
+              {sm::label{"deleted"}(deleted)});
+        };
+        const auto make_schema_bytes = [this]() {
+            return sm::make_gauge(
+              "schema_memory_bytes",
+              [this] {
+                  return absl::c_accumulate(
+                    _schemas | std::views::transform([](const auto& s) {
+                        return s.second.definition.raw()().size_bytes();
+                    }),
+                    size_t{0});
+              },
+              sm::description("The memory usage of schemas in the store"));
+        };
+        auto group_name = prometheus_sanitize::metrics_name(
+          "schema_registry_cache");
+        const std::vector<sm::label> agg{{sm::shard_label}};
+
+        if (!config::shard_local_cfg().disable_metrics()) {
+            _metrics.add_group(
+              group_name,
+              {
+                make_schema_count(),
+                make_schema_bytes(),
+                make_subject_count(is_deleted::no),
+                make_subject_count(is_deleted::yes),
+              },
+              {},
+              agg);
+        }
+
+        if (!config::shard_local_cfg().disable_public_metrics()) {
+            _public_metrics.add_group(
+              group_name,
+              {
+                make_schema_count().aggregate(agg),
+                make_schema_bytes().aggregate(agg),
+                make_subject_count(is_deleted::no).aggregate(agg),
+                make_subject_count(is_deleted::yes).aggregate(agg),
+              });
+        }
+    };
+
 private:
     struct schema_entry {
         explicit schema_entry(canonical_schema_definition definition)
@@ -781,7 +850,9 @@ private:
     subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::backward};
     mode _mode{mode::read_write};
-    is_mutable _mutable{is_mutable::no};
+    is_mutable _mutable;
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace pandaproxy::schema_registry
