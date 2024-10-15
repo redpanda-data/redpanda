@@ -1603,12 +1603,15 @@ void rm_stm::apply_control(
         auto it = _active_tx_producers.iterator_to(*producer);
         if (it != _active_tx_producers.end()) {
             _active_tx_producers.erase(it);
+            vlog(_ctx_log.trace, "Erased link for producer: {}", *producer);
         } else {
             vlog(
               _ctx_log.error,
               "[{}] not tracked under active transactions list",
               *producer);
         }
+    } else {
+        vlog(_ctx_log.warn, "No link for producer: {}", *producer);
     }
     _highest_producer_id = std::max(_highest_producer_id, pid.get_id());
 }
