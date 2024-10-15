@@ -29,7 +29,7 @@ from ducktape.tests.test import TestContext
 from rptest.clients.types import TopicSpec
 from rptest.tests.e2e_finjector import Finjector
 from rptest.clients.rpk import RpkTool, RpkException
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix
 from contextlib import nullcontext
 import requests
 import re
@@ -649,12 +649,19 @@ class DataMigrationsApiTest(RedpandaTest):
             timeout_sec=180,
             backoff_sec=0.5,
             err_msg=
-            f"Error waiting for consumer to see all {expected_records} produced messages",
+            f"Error waiting for consumer to see all {expected_records} "
+            f"produced messages, seeing only "
+            f"{consumer._status.validator.valid_reads}",
         )
+        # make sure there's no excessive data
+        #time.sleep(1)
+        #self.logger.info(
+        #    f"expecting {expected_records}, got {consumer._status.validator.valid_reads}"
+        #)
+        #assert consumer._status.validator.valid_reads == expected_records
+
         consumer.wait()
         consumer.stop()
-        #self.redpanda.si_settings.set_expected_damage(
-        #    {"ntr_no_topic_manifest", "missing_segments"})
 
     def cancel(self, migration_id, topic_name):
         admin = Admin(self.redpanda)
@@ -687,8 +694,13 @@ class DataMigrationsApiTest(RedpandaTest):
         self.cancel(migration_id, topic_name)
         self.assert_no_topics()
 
-    @ok_to_fail
-    @cluster(num_nodes=4, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    @cluster(
+        num_nodes=4,
+        log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
+            # dropping a topic while transferring its leadership
+            '/transfer_leadership] reason - seastar::broken_named_semaphore (Semaphore broken: uploads_active)',
+            '/transfer_leadership] reason - seastar::gate_closed_exception (gate closed)',
+        ])
     @matrix(transfer_leadership=[True, False],
             params=generate_tmptpdi_params())
     def test_migrated_topic_data_integrity(self, transfer_leadership: bool,
