@@ -83,6 +83,7 @@ enum class feature : std::uint64_t {
     remote_labels = 1ULL << 51U,
     partition_properties_stm = 1ULL << 52U,
     shadow_indexing_split_topic_property_update = 1ULL << 53U,
+    datalake_iceberg = 1ULL << 54U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -487,6 +488,12 @@ inline constexpr std::array feature_schema{
     release_version::v24_3_1,
     "shadow_indexing_split_topic_property_update",
     feature::shadow_indexing_split_topic_property_update,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v24_3_1,
+    "datalake_iceberg",
+    feature::datalake_iceberg,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

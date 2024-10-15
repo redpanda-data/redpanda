@@ -277,6 +277,10 @@ to_cluster_type(const creatable_topic& t) {
 
     cfg.properties.leaders_preference = get_leaders_preference(config_entries);
 
+    cfg.properties.iceberg_translation_interval_ms
+      = get_duration_value<std::chrono::milliseconds>(
+        config_entries, topic_property_iceberg_translation_interval_ms, true);
+
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 

@@ -91,6 +91,7 @@
 #include "datalake/coordinator/service.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/datalake_manager.h"
+#include "datalake/translation/state_machine.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
@@ -1436,7 +1437,8 @@ void application::wire_up_runtime_services(
           &controller->get_topics_frontend(),
           &metadata_cache,
           &controller->get_partition_leaders(),
-          &controller->get_shard_table())
+          &controller->get_shard_table(),
+          &_connection_cache)
           .get();
 
         construct_service(
@@ -1448,6 +1450,7 @@ void application::wire_up_runtime_services(
           &controller->get_topics_frontend(),
           &controller->get_partition_leaders(),
           &controller->get_shard_table(),
+          &feature_table,
           &_datalake_coordinator_fe,
           &_as,
           sched_groups.datalake_sg(),
@@ -2912,6 +2915,7 @@ void application::start_runtime_services(
             storage.local().kvs(),
             config::shard_local_cfg().rm_sync_timeout_ms.bind());
           pm.register_factory<datalake::coordinator::stm_factory>();
+          pm.register_factory<datalake::translation::stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

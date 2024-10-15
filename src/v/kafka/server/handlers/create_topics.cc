@@ -73,7 +73,8 @@ bool is_supported(std::string_view name) {
        topic_property_flush_ms,
        topic_property_flush_bytes,
        topic_property_iceberg_enabled,
-       topic_property_leaders_preference});
+       topic_property_leaders_preference,
+       topic_property_iceberg_translation_interval_ms});
 
     if (std::any_of(
           supported_configs.begin(),

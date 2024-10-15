@@ -288,6 +288,13 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Preferred location (e.g. rack) for partition leaders of this topic."
             ),
+            "redpanda.iceberg.translation.interval.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="60000",
+                doc_string=
+                "Controls how often iceberg translation is attempted on the topic partitions."
+            ),
         }
 
         tp_spec = TopicSpec()

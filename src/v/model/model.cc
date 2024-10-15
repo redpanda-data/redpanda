@@ -390,6 +390,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::partition_properties_update";
     case record_batch_type::datalake_coordinator:
         return o << "batch_type::datalake_coordinator";
+    case record_batch_type::datalake_translation_state:
+        return o << "datalake_translation_state";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

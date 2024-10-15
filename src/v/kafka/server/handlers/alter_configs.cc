@@ -83,7 +83,7 @@ create_topic_properties_update(
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 30,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 31,
       "If you added a property, please decide on it's default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -348,6 +348,14 @@ create_topic_properties_update(
                       "Cloud topics property cannot be changed");
                 }
                 throw validation_error("Cloud topics is not enabled");
+            }
+
+            if (cfg.name == topic_property_iceberg_translation_interval_ms) {
+                parse_and_set_optional_duration(
+                  update.properties.iceberg_translation_interval_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
             }
 
         } catch (const validation_error& e) {

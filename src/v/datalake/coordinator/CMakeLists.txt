@@ -19,6 +19,7 @@ v_cc_library(
         state_machine.cc
         state_update.cc
         translated_offset_range.cc
+        types.cc
     DEPS
         generated_datalake_coordinator_rpc
         v::cluster

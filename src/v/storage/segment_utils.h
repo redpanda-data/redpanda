@@ -238,6 +238,13 @@ is_compactible_control_batch(const model::record_batch_type batch_type) {
            || batch_type == model::record_batch_type::group_commit_tx;
 }
 
+inline bool
+compactible_offset_translator_batch(const model::record_batch_type batch_type) {
+    // certain batches not contributing to the kafka offset space are
+    // compactible
+    return batch_type == model::record_batch_type::datalake_translation_state;
+}
+
 inline bool is_compactible(const model::record_batch_header& h) {
     if (
       (h.attrs.is_control() && !is_compactible_control_batch(h.type))
@@ -247,8 +254,10 @@ inline bool is_compactible(const model::record_batch_header& h) {
         return false;
     }
     static const auto filtered_types = model::offset_translator_batch_types();
-    auto n = std::count(filtered_types.begin(), filtered_types.end(), h.type);
-    return n == 0;
+    auto offset_translator_batch
+      = std::count(filtered_types.begin(), filtered_types.end(), h.type) != 0;
+    return !offset_translator_batch
+           || compactible_offset_translator_batch(h.type);
 }
 
 inline bool is_compactible(const model::record_batch& b) {
