@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
 
 redpanda_cc_btest(
     name = "future-util_test",
@@ -59,5 +59,23 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "when_all_test",
+    timeout = "short",
+    srcs = [
+        "when_all_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/ssx:when_all",
+        "//src/v/test_utils:gtest",
+        "@boost//:container",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
