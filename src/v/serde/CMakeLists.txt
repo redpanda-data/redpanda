@@ -10,4 +10,5 @@ v_cc_library(
     v::compression
   )
 add_subdirectory(protobuf)
+add_subdirectory(avro)
 add_subdirectory(test)
