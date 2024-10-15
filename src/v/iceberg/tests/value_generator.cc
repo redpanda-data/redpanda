@@ -78,6 +78,9 @@ struct generating_primitive_value_visitor {
           spec_.forced_num_val.value_or(generate_numeric_val())};
     }
     value operator()(const string_type&) {
+        if (spec_.forced_string_val) {
+            return string_value{iobuf::from(spec_.forced_string_val.value())};
+        }
         switch (spec_.pattern) {
         case value_pattern::zeros:
             return string_value{iobuf{}};
@@ -162,7 +165,7 @@ struct generating_value_visitor {
               should_null(t.element_field)
                 ? std::nullopt
                 : std::make_optional<value>(
-                    make_value(spec_, t.element_field->type)));
+                  make_value(spec_, t.element_field->type)));
         }
         return ret;
     }
@@ -173,7 +176,7 @@ struct generating_value_visitor {
               make_value(spec_, t.key_field->type),
               should_null(t.value_field) ? std::nullopt
                                          : std::make_optional<value>(make_value(
-                                             spec_, t.value_field->type))};
+                                           spec_, t.value_field->type))};
             ret->kvs.emplace_back(std::move(kv));
         }
         return ret;

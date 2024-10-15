@@ -34,6 +34,8 @@ struct value_spec {
     std::optional<int64_t> forced_num_val = std::nullopt;
 
     std::optional<iobuf> forced_fixed_val = std::nullopt;
+
+    std::optional<std::string> forced_string_val = std::nullopt;
 };
 
 // Creates an Iceberg value in accordance to the provided specification.

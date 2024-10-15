@@ -71,6 +71,7 @@ rp_test(
   BINARY_NAME datalake_protobuf
   SOURCES 
     datalake_protobuf_tests.cc
+    protobuf_translator_test.cc
   LIBRARIES
     v::gtest_main
     v::datalake
