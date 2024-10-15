@@ -466,6 +466,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             done, not_done = concurrent.futures.wait(
                 futs, timeout=self.check_interval)
 
+            failed = []
+            incomplete = []
             failure_count = 0
             for f in done:
                 check_name = futs[f].name
@@ -473,6 +475,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                     self.logger.error(
                         f"Check {check_name} threw an exception: {ex}")
                     failure_count += 1
+                    failed.append(check_name)
                 else:
                     self.logger.info(
                         f"Check {check_name} completed successfuly")
@@ -482,10 +485,11 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                 self.logger.error(
                     f"Check {check_name} did not complete within the check interval"
                 )
+                incomplete.append(check_name)
 
             if failure_count > 0 or len(not_done) > 0:
                 raise RuntimeError(
-                    f"Failed checks: {failure_count}; Incomplete checks: {len(not_done)}"
+                    f"Failed checks: {failure_count} ({failed}); Incomplete checks: {len(not_done)} ({incomplete})"
                 )
 
             self.logger.info(f"All checks completed successfuly")
