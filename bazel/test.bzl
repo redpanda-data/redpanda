@@ -64,7 +64,8 @@ def _redpanda_cc_test(
         tags = [],
         env = {},
         target_compatible_with = [],
-        data = []):
+        data = [],
+        local_defines = []):
     """
     Helper to define a Redpanda C++ test.
 
@@ -82,6 +83,7 @@ def _redpanda_cc_test(
       env: environment variables
       target_compatible_with: constraints
       data: data file dependencies
+      local_defines: list of defines
     """
     common_args = [
         "--blocked-reactor-notify-ms 2000000",
@@ -122,6 +124,7 @@ def _redpanda_cc_test(
         env = env,
         target_compatible_with = target_compatible_with,
         data = data,
+        local_defines = local_defines,
     )
 
 def _redpanda_cc_unit_test(cpu, memory, **kwargs):
@@ -161,6 +164,7 @@ def redpanda_cc_gtest(
         custom_args = args,
         env = env,
         data = data,
+        local_defines = ["IS_GTEST"],
     )
 
 def redpanda_cc_btest(
