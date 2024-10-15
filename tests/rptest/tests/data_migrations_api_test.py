@@ -305,7 +305,8 @@ class DataMigrationsApiTest(RedpandaTest):
         topic = TopicSpec(partition_count=3)
         admin = Admin(self.redpanda)
 
-        with Finjector(self.redpanda, self.scale).finj_thread():
+        with Finjector(self.redpanda, self.scale,
+                       max_concurrent_failures=1).finj_thread():
             in_migration = InboundDataMigration(topics=[
                 InboundTopic(make_namespaced_topic(topic.name), alias=None)
             ],
@@ -352,7 +353,8 @@ class DataMigrationsApiTest(RedpandaTest):
 
         assert len(migrations_map) == 0, "There should be no data migrations"
 
-        with Finjector(self.redpanda, self.scale).finj_thread():
+        with Finjector(self.redpanda, self.scale,
+                       max_concurrent_failures=1).finj_thread():
             # out
             outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             out_migration = OutboundDataMigration(outbound_topics,
@@ -463,7 +465,8 @@ class DataMigrationsApiTest(RedpandaTest):
         producer.begin_transaction()
         producer.produce(topics[0].name, key="key2", value="value2")
 
-        with Finjector(self.redpanda, self.scale).finj_thread():
+        with Finjector(self.redpanda, self.scale,
+                       max_concurrent_failures=1).finj_thread():
             # out
             outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             reply = self.admin.unmount_topics(outbound_topics).json()
