@@ -239,6 +239,7 @@ class KgoVerifierService(Service):
                 last_error = e
                 self._redpanda.logger.warning(
                     f"{self.who_am_i()} remote call failed, {e}")
+                time.sleep(3)
         if last_error:
             raise last_error
 
