@@ -239,6 +239,13 @@ RUN /ocsf-server && rm /ocsf-server
 FROM base AS polaris
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/polaris /
 RUN /polaris && rm /polaris
+#################################
+
+FROM base as iceberg_rest
+RUN mkdir -p /usr/lib/iceberg-rest/hadoop
+RUN curl https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.6/hadoop-aws-3.3.6.jar  -o /usr/lib/iceberg-rest/hadoop/s3-hadoop-aws.jar
+RUN curl https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar -o /usr/lib/iceberg-rest/hadoop/s3-java-sdk.jar
+COPY --from=tabulario/iceberg-rest:1.6.0 /usr/lib/iceberg-rest/iceberg-rest-image-all.jar /usr/lib/iceberg-rest/
 
 #################################
 
@@ -333,6 +340,7 @@ COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
 COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
 COPY --from=polaris /opt/polaris/ /opt/polaris/
 COPY --from=flink /opt/flink/ /opt/flink/
+COPY --chown=0:0 --chmod=0755 --from=iceberg_rest /usr/lib/iceberg-rest/ /usr/lib/iceberg-rest/
 
 RUN ldconfig
 
