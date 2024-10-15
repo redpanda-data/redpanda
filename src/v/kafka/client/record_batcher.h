@@ -14,6 +14,8 @@
 #include "bytes/iobuf.h"
 #include "model/record.h"
 
+#include <seastar/util/log.hh>
+
 #include <optional>
 
 namespace kafka::client {
@@ -34,7 +36,8 @@ class batcher_impl;
 class record_batcher {
 public:
     record_batcher() = delete;
-    explicit record_batcher(size_t batch_max_bytes);
+    explicit record_batcher(
+      size_t batch_max_bytes, std::optional<ss::logger*> log = std::nullopt);
     ~record_batcher();
     record_batcher(const record_batcher&) = delete;
     record_batcher& operator=(const record_batcher&) = delete;
