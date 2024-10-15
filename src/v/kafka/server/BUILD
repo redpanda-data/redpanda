@@ -274,6 +274,7 @@ redpanda_cc_library(
         "//src/v/ssx:sharded_ptr",
         "//src/v/ssx:sharded_value",
         "//src/v/ssx:thread_worker",
+        "//src/v/ssx:when_all",
         "//src/v/storage",
         "//src/v/storage:parser_utils",
         "//src/v/storage:record_batch_builder",
