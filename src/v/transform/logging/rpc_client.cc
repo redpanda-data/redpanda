@@ -41,7 +41,7 @@ rpc_client::write(model::partition_id pid, io::json_batches batches) {
     auto max_batch_size = cfg->properties.batch_max_bytes.value_or(
       config::shard_local_cfg().kafka_batch_max_bytes());
 
-    kafka::client::record_batcher batcher{max_batch_size};
+    kafka::client::record_batcher batcher{max_batch_size, &tlg_log};
 
     while (!batches.empty()) {
         auto json_batch = std::move(batches.front());
