@@ -1,6 +1,17 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "logger",
+    srcs = ["logger.cc"],
+    hdrs = ["logger.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition_proxy",
     srcs = [
         "partition_proxy.cc",
@@ -11,6 +22,7 @@ redpanda_cc_library(
         "replicated_partition.h",
     ],
     implementation_deps = [
+        ":logger",
         "//src/v/cluster",
         "@boost//:numeric_conversion",
     ],

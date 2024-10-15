@@ -1,6 +1,7 @@
 v_cc_library(
   NAME kafka_partition_proxy
   SRCS
+    logger.cc
     partition_proxy.cc
     replicated_partition.cc
   DEPS
