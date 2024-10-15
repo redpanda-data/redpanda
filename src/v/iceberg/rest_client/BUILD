@@ -10,6 +10,7 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     deps = [
         "//src/v/base",
+        "//src/v/http:request_builder",
         "//src/v/thirdparty/ada",
         "//src/v/utils:named_type",
         "@boost//:beast",
