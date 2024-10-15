@@ -1,4 +1,5 @@
 add_subdirectory(protocol)
+add_subdirectory(data)
 
 set(handlers_srcs
   server/handlers/api_versions.cc
@@ -28,19 +29,6 @@ set(handlers_srcs
   server/handlers/describe_transactions.cc
   server/handlers/handler_probe.cc
   server/handlers/client_quotas.cc
-)
-
-v_cc_library(
-  NAME kafka_partition_proxy
-  SRCS
-    server/partition_proxy.cc
-    server/replicated_partition.cc
-  DEPS
-    Seastar::seastar
-    v::cloud_storage
-    v::cluster
-    v::kafka_protocol
-    v::model
 )
 
 v_cc_library(

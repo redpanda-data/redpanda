@@ -12,7 +12,7 @@
 #include "partition_proxy.h"
 
 #include "cluster/partition_manager.h"
-#include "kafka/server/replicated_partition.h"
+#include "kafka/data/replicated_partition.h"
 
 namespace kafka {
 

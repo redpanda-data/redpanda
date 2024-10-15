@@ -148,7 +148,6 @@ redpanda_cc_library(
     include_prefix = "kafka/server",
     visibility = ["//visibility:public"],
     deps = [
-        ":partition_proxy",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
@@ -164,6 +163,7 @@ redpanda_cc_library(
         "//src/v/features",
         "//src/v/hashing:jump_consistent",
         "//src/v/hashing:xx",
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:add_offsets_to_txn",
         "//src/v/kafka/protocol:add_partitions_to_txn",
@@ -308,32 +308,14 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "partition_proxy",
-    srcs = [
-        "errors.h",
-        "logger.h",
-        "partition_proxy.cc",
-        "replicated_partition.cc",
-    ],
+    name = "errors",
     hdrs = [
-        "partition_proxy.h",
-        "replicated_partition.h",
-    ],
-    implementation_deps = [
-        "//src/v/cluster",
-        "@boost//:numeric_conversion",
+        "errors.h",
     ],
     include_prefix = "kafka/server",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/base",
-        "//src/v/cloud_storage",
+        "//src/v/cluster",
         "//src/v/kafka/protocol",
-        "//src/v/model",
-        "//src/v/raft",
-        "//src/v/storage",
-        "//src/v/utils:truncating_logger",
-        "@boost//:outcome",
-        "@seastar",
     ],
 )

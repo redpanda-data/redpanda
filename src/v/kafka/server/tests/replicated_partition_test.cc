@@ -9,8 +9,8 @@
 
 #include "cluster/fwd.h"
 #include "cluster/types.h"
-#include "kafka/server/partition_proxy.h"
-#include "kafka/server/replicated_partition.h"
+#include "kafka/data/partition_proxy.h"
+#include "kafka/data/replicated_partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"

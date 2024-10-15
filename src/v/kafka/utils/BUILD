@@ -9,8 +9,8 @@ redpanda_cc_library(
         "txn_reader.h",
     ],
     implementation_deps = [
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/server",
-        "//src/v/kafka/server:partition_proxy",
         "//src/v/storage",
         "@abseil-cpp//absl/container:btree",
         "@fmt",

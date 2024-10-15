@@ -15,7 +15,7 @@
 #include "config/mock_property.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"

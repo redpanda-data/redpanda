@@ -8,14 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "kafka/server/replicated_partition.h"
+#include "kafka/data/replicated_partition.h"
 
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
 #include "cluster/rm_stm.h"
-#include "errors.h"
 #include "kafka/protocol/errors.h"
-#include "logger.h"
+#include "kafka/protocol/logger.h"
+#include "kafka/server/errors.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"

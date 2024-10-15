@@ -12,7 +12,7 @@
 #include "transform/rpc/service.h"
 
 #include "cluster/types.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
