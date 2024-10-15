@@ -11,16 +11,17 @@ from rptest.services.cluster import cluster
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import SISettings, CloudStorageType
+from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 
 
 class CloudTopicsTest(RedpandaTest):
     def __init__(self, test_context):
-        super(CloudTopicsTest,
-              self).__init__(test_context=test_context,
-                             si_settings=SISettings(test_context=test_context))
+        si_settings = SISettings(test_context=test_context)
+        super(CloudTopicsTest, self).__init__(test_context=test_context,
+                                              si_settings=si_settings)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
 
     def __create_initial_topics(self):
         """
@@ -42,7 +43,7 @@ class CloudTopicsTest(RedpandaTest):
                              config={"redpanda.cloud_topic.enabled": "true"})
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=[CloudStorageType.S3])
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_reconciler_uploads(self, cloud_storage_type):
         def count_l1_objects():
             objects = self.redpanda.get_objects_from_si()

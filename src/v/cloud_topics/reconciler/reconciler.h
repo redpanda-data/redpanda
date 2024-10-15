@@ -24,6 +24,8 @@
 
 #include <absl/container/node_hash_map.h>
 
+#include <optional>
+
 namespace experimental::cloud_topics::reconciler {
 
 /*
@@ -37,7 +39,7 @@ public:
     reconciler(
       ss::sharded<cluster::partition_manager>*,
       ss::sharded<cloud_io::remote>*,
-      cloud_storage_clients::bucket_name);
+      std::optional<cloud_storage_clients::bucket_name> = std::nullopt);
 
     reconciler(const reconciler&) = delete;
     reconciler& operator=(const reconciler&) = delete;

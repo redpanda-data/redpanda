@@ -33,6 +33,7 @@ redpanda_cc_library(
         ":range_batch_consumer",
         "//src/v/base",
         "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage",
         "//src/v/cluster",
         "//src/v/cluster:notification",
         "//src/v/container:fragmented_vector",
