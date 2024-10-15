@@ -1,3 +1,5 @@
+---
+version: 2
 project_name: rpk
 builds:
   # rpk-windows-and-linux is deprecated; will be replaced by rpk-windows, rpk-linux, rpk-linux-microsoft-go
