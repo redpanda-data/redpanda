@@ -36,6 +36,7 @@ class KgoVerifierService(Service):
     Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
     """
     _status_thread: Optional[StatusThread]
+    _stopped: bool
 
     def __init__(self,
                  context,
@@ -88,6 +89,7 @@ class KgoVerifierService(Service):
                 node.kgo_verifier_ports = {}
 
         self._status_thread = None
+        self._stopped = False
 
     def __del__(self):
         self._release_port()
@@ -200,6 +202,12 @@ class KgoVerifierService(Service):
         if self._status_thread:
             self._status_thread.stop()
             self._status_thread = None
+            # Record that we just stopped, so that we can't wait() after.
+            # This is done inside this if statement because stop_node() is also
+            # called during the start of the service to potentially stop a previous
+            # instance of the service. Here, we know that we are stopping the service
+            # that we started because it was us who initialized the _status_thread.
+            self._stopped = True
 
         if self._pid is None:
             return
@@ -248,6 +256,13 @@ class KgoVerifierService(Service):
         Wrapper to catch timeouts on wait, and send a `/print_stack` to the remote
         process in case it is experiencing a hang bug.
         """
+
+        if self._stopped:
+            raise RuntimeError(
+                f"Can't wait {self.who_am_i()}. It was already stopped."
+                f" You can either stop() a service or wait() and then stop() it"
+                f" but not the other way around.")
+
         try:
             return self._do_wait_node(node, timeout_sec)
         except:
