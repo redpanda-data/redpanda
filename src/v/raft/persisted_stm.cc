@@ -520,6 +520,13 @@ ss::future<bool> persisted_stm_base<BaseT, T>::wait_no_throw(
 }
 
 template<typename BaseT, supported_stm_snapshot T>
+ss::future<> persisted_stm_base<BaseT, T>::apply(const model::record_batch& b) {
+    auto u = co_await _apply_lock.get_units();
+    co_await do_apply(b);
+    BaseT::set_next(model::next_offset(b.last_offset()));
+}
+
+template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::start() {
     if (_raft->dirty_offset() == model::offset{}) {
         co_await _snapshot_backend.perform_initial_cleanup();
