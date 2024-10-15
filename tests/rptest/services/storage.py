@@ -23,7 +23,7 @@ class Segment:
         self.compaction_index = None
 
         # Size of data_file, if caller chooses to populate it via set_size
-        self.size = None
+        self.size: Optional[int] = None
 
         m = re.match(r"^(\d+)\-\d+\-v\d+$", name)
         assert m, f"Unexpected segment name {name}"
@@ -68,7 +68,7 @@ class Partition:
         self.node = node
         self.path = path
         self.files = set()
-        self.segments = dict()
+        self.segments: dict[str, Segment] = dict()
 
     def add_files(self, files):
         self.files = set(files)
@@ -90,6 +90,10 @@ class Partition:
         if not (re.match(r"^\d+\-\d+\-v\d+$", seg) and ext == ".log"):
             return
         self.segments[seg].set_size(size)
+
+    @property
+    def total_size(self):
+        return sum(s.size or 0 for s in self.segments.values())
 
     def delete_segment(self, segment_name: str):
         try:
@@ -124,7 +128,7 @@ class Topic:
     def __init__(self, name, path):
         self.name = name
         self.path = path
-        self.partitions = dict()
+        self.partitions: dict[int, Partition] = dict()
 
     def add_partition(self, num, node_id, path):
         (idx, rev) = num.split("_")
@@ -140,7 +144,7 @@ class Namespace:
     def __init__(self, name, path):
         self.name = name
         self.path = path
-        self.topics = dict()
+        self.topics: dict[str, Topic] = dict()
 
     def add_topic(self, topic, path):
         t = Topic(topic, path)
@@ -172,7 +176,7 @@ class NodeStorage:
     def __init__(self, name: str, data_dir: str, cache_dir: str):
         self.data_dir = data_dir
         self.cache_dir = cache_dir
-        self.ns = dict()
+        self.ns: dict[str, Namespace] = dict()
         self.name = name
         self.cache = None
 
@@ -181,7 +185,7 @@ class NodeStorage:
         self.ns[ns] = n
         return n
 
-    def partitions(self, ns, topic):
+    def partitions(self, ns, topic) -> list[Partition]:
         if ns in self.ns:
             if topic in self.ns[ns].topics:
                 parts = self.ns[ns].topics[topic].partitions
@@ -189,15 +193,15 @@ class NodeStorage:
         return []
 
     def segments(self, ns: str, topic: str,
-                 partition_idx: int) -> Optional[list[Segment]]:
+                 partition_idx: int) -> list[Segment]:
         partitions = self.partitions(ns, topic)
         if len(partitions) <= partition_idx:
-            # Segments for unkown partition requested
+            # Segments for unknown partition requested
             raise PartitionNotFoundError(
                 f"Partition {partition_idx} of topic {topic} is not present on node {self.name}"
             )
 
-        return partitions[partition_idx].segments.values()
+        return list(partitions[partition_idx].segments.values())
 
     def set_cache_stats(self, stats: NodeCacheStorage):
         self.cache = stats
@@ -205,7 +209,7 @@ class NodeStorage:
 
 class ClusterStorage:
     def __init__(self):
-        self.nodes = []
+        self.nodes: list[NodeStorage] = []
 
     def add_node(self, node_storage):
         self.nodes.append(node_storage)
