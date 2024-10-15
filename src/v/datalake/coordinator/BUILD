@@ -166,6 +166,9 @@ redpanda_cc_library(
     hdrs = [
         "state_machine.h",
     ],
+    implementation_deps = [
+        "//src/v/utils:prefix_logger",
+    ],
     include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
