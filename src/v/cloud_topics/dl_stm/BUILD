@@ -1,0 +1,128 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
+
+redpanda_cc_library(
+    name = "commands",
+    hdrs = [
+        "commands.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_topics:types",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/serde:uuid",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
+
+redpanda_cc_library(
+    name = "sorted_run",
+    srcs = [
+        "sorted_run.cc",
+    ],
+    hdrs = [
+        "sorted_run.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "overlay_collection",
+    srcs = [
+        "overlay_collection.cc",
+    ],
+    hdrs = [
+        "overlay_collection.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        ":sorted_run",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "dl_stm_state",
+    srcs = [
+        "dl_stm_state.cc",
+    ],
+    hdrs = [
+        "dl_stm_state.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        ":overlay_collection",
+        ":sorted_run",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/serde",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
+
+redpanda_cc_library(
+    name = "command_builder",
+    srcs = [
+        "command_builder.cc",
+    ],
+    hdrs = [
+        "command_builder.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands",
+        "//src/v/base",
+        "//src/v/cloud_topics:types",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/serde:map",
+        "//src/v/serde:named_type",
+        "//src/v/serde:uuid",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
+
+redpanda_cc_library(
+    name = "dl_stm",
+    srcs = [
+        "dl_stm.cc",
+    ],
+    hdrs = [
+        "dl_stm.h",
+    ],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":command_builder",
+        ":commands",
+        ":dl_stm_state",
+        "//src/v/base",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:types",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/serde",
+        "//src/v/serde:uuid",
+        "//src/v/storage",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:btree",
+        "@seastar",
+    ],
+)
