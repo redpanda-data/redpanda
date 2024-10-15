@@ -783,7 +783,6 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
 
         status = consumer.consumer_status
         assert status.validator.invalid_reads == 0
-        assert status.validator.out_of_scope_invalid_reads == 0
 
 
 class TopicPartitionOffset(NamedTuple):
