@@ -1,0 +1,101 @@
+{
+    "type": "record",
+    "doc": "Top level Doc.",
+    "name": "RootRecord",
+    "fields": [
+        {
+            "name": "big_union",
+            "doc": "A large union containing the primitive types, a array, a map and records.",
+            "type": [
+                "null",
+                "boolean",
+                "int",
+                "long",
+                "float",
+                "double",
+                {
+                    "type": "fixed",
+                    "size": 16,
+                    "name": "MD5"
+                },
+                "string",
+                {
+                    "type": "record",
+                    "name": "Vec2",
+                    "fields": [
+                        {
+                            "name": "x",
+                            "type": "long"
+                        },
+                        {
+                            "name": "y",
+                            "type": "long"
+                        }
+                    ]
+                },
+                {
+                    "type": "record",
+                    "name": "Vec3",
+                    "fields": [
+                        {
+                            "name": "x",
+                            "type": "long"
+                        },
+                        {
+                            "name": "y",
+                            "type": "long"
+                        },
+                        {
+                            "name": "z",
+                            "type": "long"
+                        }
+                    ]
+                },
+                {
+                    "type": "enum",
+                    "name": "Suit",
+                    "symbols": [
+                        "SPADES",
+                        "HEARTS",
+                        "DIAMONDS",
+                        "CLUBS"
+                    ]
+                },
+                {
+                    "type": "array",
+                    "items": "string",
+                    "default": []
+                },
+                {
+                    "type": "map",
+                    "values": "long",
+                    "default": {}
+                },
+                {
+                    "type": "record",
+                    "name": "int_",
+                    "doc": "try to force a collision with int",
+                    "fields": []
+                },
+                {
+                    "type": "record",
+                    "name": "int__",
+                    "doc": "try to force a collision with int",
+                    "fields": []
+                },
+                {
+                    "type": "record",
+                    "name": "Int",
+                    "doc": "name similar to primitive name",
+                    "fields": []
+                },
+                {
+                    "type": "record",
+                    "name": "_Int",
+                    "doc": "name with underscore as prefix",
+                    "fields": []
+                }
+            ]
+        }
+    ]
+}

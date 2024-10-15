@@ -1,0 +1,25 @@
+{
+  "type": "record",
+  "name": "StackCalculator",
+  "fields": [
+    {
+      "name": "stack",
+      "type": {
+        "type": "array",
+        "items": [
+          "int",
+          {
+            "type": "record",
+            "name": "Dup",
+            "fields": []
+          },
+          {
+            "type": "record",
+            "name": "Add",
+            "fields": []
+          }
+        ]
+      }
+    }
+  ]
+}
