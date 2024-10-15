@@ -4,6 +4,9 @@ package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 redpanda_cc_library(
     name = "rest_client_types",
+    srcs = [
+        "types.cc",
+    ],
     hdrs = [
         "types.h",
     ],
@@ -11,6 +14,8 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/http:request_builder",
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:logger",
         "//src/v/thirdparty/ada",
         "//src/v/utils:named_type",
         "@boost//:beast",
