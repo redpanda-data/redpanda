@@ -573,7 +573,8 @@ class DataMigrationsApiTest(RedpandaTest):
                                                     topic,
                                                     self.msg_size,
                                                     readers=3,
-                                                    group_name="test-group")
+                                                    group_name="test-group",
+                                                    trace_logs=True)
 
         consumer.start(clean=False)
         return consumer
