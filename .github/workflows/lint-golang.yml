@@ -1,5 +1,5 @@
 ---
-name: Lint golang
+name: lint-golang
 on:
   push:
     branches: [dev]
@@ -13,19 +13,15 @@ on:
       - 'src/go/**'
       - '.github/workflows/lint-golang.yml'
 jobs:
-  go:
-    name: Lint go files
+  lint-go-files:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: stable
           cache-dependency-path: src/go/rpk/go.mod
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --timeout 10m --verbose
@@ -41,7 +37,7 @@ jobs:
         run: |
           find src/go -type f  -not -name '*.connect.go' -not -name '*.pb.go' -not -name 'zz*' -name '*.go' | xargs -n1 "$HOME/.local/bin/gofumpt" -w -lang=1.20
           git diff --exit-code
-      - name: go mod tidy (rpk)
+      - name: Run go mod tidy (rpk)
         working-directory: src/go/rpk
         run: |
           go mod tidy
