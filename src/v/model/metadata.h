@@ -494,26 +494,6 @@ inline std::ostream& operator<<(std::ostream& os, cloud_storage_backend csb) {
     }
 }
 
-enum class leader_balancer_mode : uint8_t {
-    greedy_balanced_shards = 0,
-    random_hill_climbing = 1,
-};
-
-constexpr const char*
-leader_balancer_mode_to_string(leader_balancer_mode mode) {
-    switch (mode) {
-    case leader_balancer_mode::greedy_balanced_shards:
-        return "greedy_balanced_shards";
-    case leader_balancer_mode::random_hill_climbing:
-        return "random_hill_climbing";
-    default:
-        throw std::invalid_argument("unknown leader_balancer_mode");
-    }
-}
-
-std::ostream& operator<<(std::ostream&, leader_balancer_mode);
-std::istream& operator>>(std::istream&, leader_balancer_mode&);
-
 enum class cloud_storage_chunk_eviction_strategy {
     eager = 0,
     capped = 1,

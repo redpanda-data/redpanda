@@ -462,26 +462,6 @@ std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, leader_balancer_mode lbt) {
-    o << leader_balancer_mode_to_string(lbt);
-    return o;
-}
-
-std::istream& operator>>(std::istream& i, leader_balancer_mode& lbt) {
-    ss::sstring s;
-    i >> s;
-    lbt = string_switch<leader_balancer_mode>(s)
-            .match(
-              leader_balancer_mode_to_string(
-                leader_balancer_mode::random_hill_climbing),
-              leader_balancer_mode::random_hill_climbing)
-            .match(
-              leader_balancer_mode_to_string(
-                leader_balancer_mode::greedy_balanced_shards),
-              leader_balancer_mode::greedy_balanced_shards);
-    return i;
-}
-
 std::ostream& operator<<(std::ostream& o, const control_record_type& crt) {
     switch (crt) {
     case control_record_type::tx_abort:

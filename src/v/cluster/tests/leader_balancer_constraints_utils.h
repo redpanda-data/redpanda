@@ -14,7 +14,6 @@
 #include "base/vassert.h"
 #include "cluster/scheduling/leader_balancer.h"
 #include "cluster/scheduling/leader_balancer_constraints.h"
-#include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
@@ -41,7 +40,7 @@ using reassignment = lbt::reassignment;
 /**
  * @brief Create a greedy balancer from a cluster_spec and set of muted nodes.
  */
-static auto from_spec(
+inline auto from_spec(
   const cluster_spec& spec, const absl::flat_hash_set<int>& muted = {}) {
     index_type index;
 
@@ -123,94 +122,4 @@ inline auto group_to_topic_from_spec(const group_to_ntp_spec& spec) {
     }
 
     return group_to_topic;
-}
-
-/**
- * @brief Basic validity checks on a reassignment.
- */
-static void check_valid(const index_type& index, const reassignment& movement) {
-    // from == to is not valid (error should not decrease)
-    vassert(movement.from != movement.to, "");
-
-    auto& from_groups = index.at(movement.from);
-    // check that the from shard was the leader
-    vassert(from_groups.contains(movement.group), "");
-
-    // check that the to shard is in the replica set
-    auto& replicas = from_groups.at(movement.group);
-    vassert(std::count(replicas.begin(), replicas.end(), movement.to) == 1, "");
-}
-
-/**
- * @brief returns true iff the passed spec had no movement on balance
- */
-inline bool no_movement(
-  const cluster_spec& spec,
-  const absl::flat_hash_set<int>& muted = {},
-  const absl::flat_hash_set<raft::group_id>& skip = {}) {
-    auto [shard_index, muted_index] = from_spec(spec, muted);
-    cluster::leader_balancer_types::muted_groups_t skip_typed;
-    for (auto& s : skip) {
-        skip_typed.add(static_cast<uint64_t>(s));
-    }
-    muted_index.update_muted_groups(skip_typed);
-    auto balancer = lbt::even_shard_load_constraint(shard_index, muted_index);
-
-    return !balancer.recommended_reassignment();
-}
-
-static bool operator==(const lbt::reassignment& l, const lbt::reassignment& r) {
-    return l.group == r.group && l.from == r.from && l.to == r.to;
-}
-
-static ss::sstring to_string(const reassignment& r) {
-    return fmt::format("{{group: {} from: {} to: {}}}", r.group, r.from, r.to);
-}
-
-/**
- * @brief Test helper which checks that the given spec and other parameters
- * result in the expected resassignment.
- */
-inline ss::sstring expect_movement(
-  const cluster_spec& spec,
-  const reassignment& expected_reassignment,
-  const absl::flat_hash_set<int>& muted = {},
-  const absl::flat_hash_set<int>& skip = {}) {
-    auto [shard_index, mute_index] = from_spec(spec, muted);
-
-    cluster::leader_balancer_types::muted_groups_t skip_typed;
-    for (auto& s : skip) {
-        skip_typed.add(static_cast<uint64_t>(s));
-    }
-
-    mute_index.update_muted_groups(std::move(skip_typed));
-    auto balancer = lbt::even_shard_load_constraint(shard_index, mute_index);
-
-    auto reassignment = balancer.recommended_reassignment();
-
-    if (!reassignment) {
-        return "no reassignment occurred";
-    }
-
-    check_valid(shard_index.shards(), *reassignment);
-
-    if (!(*reassignment == expected_reassignment)) {
-        return fmt::format(
-          "Reassignment not as expected.\nExpected: {}\nActual:   {}\n",
-          to_string(expected_reassignment),
-          to_string(*reassignment));
-    }
-
-    return "";
-}
-
-/**
- * @brief Helper to create a reassignment from group, from and to passed as
- * integers.
- */
-inline reassignment re(unsigned group, int from, int to) {
-    return {
-      raft::group_id(group),
-      model::broker_shard{model::node_id(from)},
-      model::broker_shard{model::node_id(to)}};
 }

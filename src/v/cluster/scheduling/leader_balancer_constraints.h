@@ -133,20 +133,6 @@ public:
 
     void update_index(const reassignment& r) override;
 
-    /*
-     * Uses a greedy algorithm to generate a recommended reassignment
-     * that will reduce error for this constraint.
-     *
-     * The gist is that it searches topics in order of how skewed they are.
-     * Then for each topic it finds a partiton on the node with the most
-     * leadership and tries to move it to one of its replica nodes. If this
-     * reassignment reduces error its returned.
-     *
-     * If no reassignment can reduce error for this constraint std::nullopt is
-     * returned.
-     */
-    std::optional<reassignment> recommended_reassignment() override;
-
 private:
     std::reference_wrapper<const shard_index> _si;
     std::reference_wrapper<const muted_index> _mi;
@@ -233,23 +219,6 @@ public:
         _error = adjusted_error(_error, r.from, r.to);
     }
 
-    /*
-     * Find a group reassignment that improves overall error. The general
-     * approach is to select a group from the highest loaded shard and move
-     * leadership for that group to the least loaded shard that the group is
-     * compatible with.
-     *
-     * Clearly this is a costly method in terms of runtime complexity.
-     * Measurements for clusters with several thousand partitions indicate a
-     * real time execution cost of at most a couple hundred micros. Other
-     * strategies are sure to improve this as we tackle larger configurations.
-     *
-     * Muted nodes are nodes that should be treated as if they have no available
-     * capacity. So do not move leadership to a muted node, but any leaders on a
-     * muted node should not be touched in case the mute is temporary.
-     */
-    std::optional<reassignment> recommended_reassignment() override;
-
     std::vector<shard_load> stats() const;
 
     double calc_target_load() const;
@@ -313,8 +282,6 @@ public:
 
 private:
     double evaluate_internal(const reassignment& r) override;
-
-    std::optional<reassignment> recommended_reassignment() override;
 
 private:
     std::reference_wrapper<const group_id_to_topic_id> _group2topic;

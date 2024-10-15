@@ -97,8 +97,6 @@ public:
         auto ret = evaluate_internal(r);
         return ret;
     }
-
-    virtual std::optional<reassignment> recommended_reassignment() = 0;
 };
 
 } // namespace cluster::leader_balancer_types

@@ -17,7 +17,6 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
-#include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_random.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
@@ -578,30 +577,12 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
     auto muted_nodes = collect_muted_nodes(health_report.value());
 
-    auto mode = config::shard_local_cfg().leader_balancer_mode();
-    std::unique_ptr<leader_balancer_strategy> strategy;
-
-    switch (mode) {
-    case model::leader_balancer_mode::random_hill_climbing: {
-        vlog(clusterlog.debug, "using random_hill_climbing");
-
-        strategy = std::make_unique<
-          leader_balancer_types::random_hill_climbing_strategy>(
-          std::move(index),
-          std::move(group_id_to_topic),
-          leader_balancer_types::muted_index{std::move(muted_nodes), {}},
-          std::move(preference_index));
-        break;
-    }
-    case model::leader_balancer_mode::greedy_balanced_shards:
-        vlog(clusterlog.debug, "using greedy_balanced_shards");
-        strategy = std::make_unique<greedy_balanced_shards>(
-          std::move(index), std::move(muted_nodes));
-        break;
-    default:
-        vlog(clusterlog.error, "unexpected mode value: {}", mode);
-        co_return ss::stop_iteration::no;
-    }
+    std::unique_ptr<leader_balancer_strategy> strategy
+      = std::make_unique<leader_balancer_types::random_hill_climbing_strategy>(
+        std::move(index),
+        std::move(group_id_to_topic),
+        leader_balancer_types::muted_index{std::move(muted_nodes), {}},
+        std::move(preference_index));
 
     auto cores = strategy->stats();
 
