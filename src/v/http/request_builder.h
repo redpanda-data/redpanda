@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "thirdparty/ada/ada.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -22,15 +23,16 @@
 
 namespace http {
 
+using url_build_error = named_type<ss::sstring, struct url_build_error_t>;
+
 // Builds a request using the builder pattern. Allows setting the host, target
 // (path), method, headers and query params.
 class request_builder {
 public:
-    using error_type = ss::sstring;
     static constexpr auto default_state{"host not set"};
 
     using expected
-      = tl::expected<boost::beast::http::request_header<>, error_type>;
+      = tl::expected<boost::beast::http::request_header<>, url_build_error>;
 
     // The host supplied here is parsed and stored as a result. When the request
     // is finally built this is added as a host header. If the parse failed then
@@ -81,7 +83,7 @@ private:
     boost::beast::http::request_header<> _request;
     absl::flat_hash_map<ss::sstring, ss::sstring> _query_params_kv;
     absl::flat_hash_set<ss::sstring> _query_params;
-    std::optional<error_type> _error{default_state};
+    std::optional<url_build_error> _error{default_state};
 };
 
 } // namespace http
