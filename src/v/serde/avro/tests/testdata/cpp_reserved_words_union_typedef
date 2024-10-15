@@ -1,0 +1,13 @@
+{
+  "type": "record",
+  "name": "Record",
+  "fields": [
+    {
+      "name": "void",
+      "type": [
+        "int",
+        "double"
+      ]
+    }
+  ]
+}
