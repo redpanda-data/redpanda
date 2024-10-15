@@ -237,7 +237,7 @@ class KgoVerifierService(Service):
                 return
             except Exception as e:
                 last_error = e
-                self._redpanda.logger.warn(
+                self._redpanda.logger.warning(
                     f"{self.who_am_i()} remote call failed, {e}")
         if last_error:
             raise last_error
@@ -253,7 +253,7 @@ class KgoVerifierService(Service):
             try:
                 self._remote(node, "print_stack")
             except Exception as e:
-                self._redpanda.logger.warn(
+                self._redpanda.logger.warning(
                     f"{self.who_am_i()} failed to print stacks during wait failure: {e}"
                 )
 
@@ -599,7 +599,7 @@ class KgoVerifierProducer(KgoVerifierService):
             # idempotency: producer records should always land at the next offset
             # after the last record they wrote.
             if self._tolerate_data_loss:
-                self._redpanda.logger.warn(
+                self._redpanda.logger.warning(
                     f"{self.who_am_i()} observed data loss: {self._status}")
             else:
                 raise RuntimeError(
