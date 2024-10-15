@@ -114,8 +114,8 @@ public:
         chunked_vector<iceberg::manifest_file> files;
 
         for (auto& s : *table.snapshots) {
-            auto m_list = co_await io.download_manifest_list(
-              manifest_list_path(s.manifest_list_path));
+            auto m_list = co_await io.download_manifest_list_uri(
+              s.manifest_list_path);
             for (auto& f : m_list.assume_value().files) {
                 if (!paths.contains(f.manifest_path)) {
                     paths.emplace(f.manifest_path);
@@ -136,8 +136,8 @@ public:
         chunked_vector<iceberg::manifest> manifests;
         auto files = co_await collect_all_manifest_files(table);
         for (auto& f : files) {
-            auto m = co_await io.download_manifest(
-              manifest_path(f.manifest_path), make_partition_key_type(table));
+            auto m = co_await io.download_manifest_uri(
+              f.manifest_path, make_partition_key_type(table));
             manifests.push_back(std::move(m.assume_value()));
         }
         co_return manifests;
