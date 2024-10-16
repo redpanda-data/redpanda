@@ -80,7 +80,7 @@ v_cc_library(
     v::transform
     v::version 
     v::wasm
-    v::cloud_topics_reconciler
+    v::cloud_topics_app
   )
 
 add_subdirectory(tests)

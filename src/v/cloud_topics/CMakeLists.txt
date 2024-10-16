@@ -7,6 +7,15 @@ v_cc_library(
   DEPS
     v::model
     v::serde
+    v::cloud_topics_reconciler
+)
+
+v_cc_library(
+  NAME cloud_topics_app
+  SRCS
+    app.cc
+  DEPS
+    v::cloud_topics
 )
 
 add_subdirectory(reconciler)

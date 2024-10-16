@@ -54,3 +54,21 @@ redpanda_cc_library(
         "//src/v/utils:uuid",
     ],
 )
+
+redpanda_cc_library(
+    name = "app",
+    srcs = [
+        "app.cc",
+    ],
+    hdrs = [
+        "app.h",
+    ],
+    implementation_deps = [
+        "//src/v/cloud_topics/reconciler",
+    ],
+    include_prefix = "cloud_topics",
+    visibility = ["//src/v/redpanda:__pkg__"],
+    deps = [
+        "@seastar",
+    ],
+)
