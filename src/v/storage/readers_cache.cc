@@ -271,6 +271,10 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
             return _underlying->do_load_slice(tout);
         }
 
+        virtual std::optional<private_flags> get_flags() const final {
+            return _underlying->get_flags();
+        }
+
         ss::future<> finally() noexcept final { return ss::now(); }
 
         void print(std::ostream& o) final { return _underlying->print(o); };

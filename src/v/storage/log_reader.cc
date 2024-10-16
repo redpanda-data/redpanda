@@ -516,6 +516,15 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     }
 }
 
+std::optional<log_reader::private_flags> log_reader::get_flags() const {
+    return private_flags{
+      .is_reusable = is_reusable(),
+      // log_reader objects which are cached are contained inside a reader_cache
+      // entry object which overrides this to return true (if we had a cache
+      // hit)
+      .was_cached = _was_cached};
+};
+
 static inline bool is_finished_offset(segment_set& s, model::offset o) {
     if (s.empty()) {
         return true;

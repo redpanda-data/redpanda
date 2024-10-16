@@ -151,6 +151,8 @@ public:
 
     ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
 
+    virtual std::optional<private_flags> get_flags() const final;
+
     ss::future<> finally() noexcept final { return _iterator.close(); }
 
     void print(std::ostream& os) final {
@@ -167,6 +169,8 @@ public:
      * 1. read batches with offsets [0,100]
      * 2. reset configuration with start_offset = 101
      * 3. read next chunk of batches
+     *
+     * Resetting a reader also sets its "was cached" attribute to true.
      */
     void reset_config(log_reader_config cfg) {
         _config = cfg;
@@ -174,6 +178,8 @@ public:
         _expected_next = _config.fill_gaps ? std::make_optional<model::offset>(
                                                _config.start_offset)
                                            : std::nullopt;
+        // reset_config is only called in the context of a reader cache hit
+        _was_cached = true;
     };
 
     /**
@@ -249,6 +255,9 @@ private:
 
     // The base offset of the previous batch processed.
     model::offset _last_base;
+
+    // true if this reader was returned as a hit from the readers cache
+    bool _was_cached{};
 
     // The expected next offset to be processed, used to detect and fill gaps.
     std::optional<model::offset> _expected_next;
