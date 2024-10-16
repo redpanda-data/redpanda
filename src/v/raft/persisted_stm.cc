@@ -67,8 +67,9 @@ persisted_stm_base<BaseT, T>::persisted_stm_base(
 }
 
 template<typename BaseT, supported_stm_snapshot T>
-ss::future<> persisted_stm_base<BaseT, T>::apply(const model::record_batch& b) {
-    return BaseT::_apply_lock.with([this, &b] { return do_apply(b); });
+ss::future<> persisted_stm_base<BaseT, T>::apply(
+  const model::record_batch& b, const ssx::semaphore_units&) {
+    return do_apply(b);
 }
 
 template<typename BaseT, supported_stm_snapshot T>

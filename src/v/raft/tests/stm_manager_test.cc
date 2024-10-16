@@ -22,7 +22,9 @@ struct throwing_kv : public simple_kv {
     explicit throwing_kv(raft_node_instance& rn)
       : simple_kv(rn) {}
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply(
+      const model::record_batch& batch,
+      const ssx::semaphore_units& units) override {
         if (tests::random_bool()) {
             throw std::runtime_error("runtime error from throwing stm");
         }
@@ -32,7 +34,7 @@ struct throwing_kv : public simple_kv {
           "offset: {}",
           batch.header(),
           next());
-        co_await simple_kv::apply(batch);
+        co_await simple_kv::apply(batch, units);
         co_return;
     }
 
@@ -55,14 +57,16 @@ struct local_snapshot_stm : public simple_kv {
     explicit local_snapshot_stm(raft_node_instance& rn)
       : simple_kv(rn) {}
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply(
+      const model::record_batch& batch,
+      const ssx::semaphore_units& units) override {
         vassert(
           batch.base_offset() == next(),
           "batch {} base offset is not the next to apply, expected base "
           "offset: {}",
           batch.header(),
           next());
-        co_await simple_kv::apply(batch);
+        co_await simple_kv::apply(batch, units);
     }
 
     ss::future<> apply_raft_snapshot(const iobuf& buffer) override {
@@ -85,9 +89,11 @@ public:
     explicit slow_kv(raft_node_instance& rn)
       : simple_kv(rn) {}
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply(
+      const model::record_batch& batch,
+      const ssx::semaphore_units& apply_units) override {
         co_await ss::sleep(5ms);
-        co_return co_await simple_kv::apply(batch);
+        co_return co_await simple_kv::apply(batch, apply_units);
     }
 
     ss::future<> apply_raft_snapshot(const iobuf&) override {
@@ -104,13 +110,15 @@ public:
     explicit bg_only_kv(raft_node_instance& rn)
       : slow_kv(rn) {}
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply(
+      const model::record_batch& batch,
+      const ssx::semaphore_units& apply_units) override {
         if (_first_apply) {
             _first_apply = false;
             throw std::runtime_error("induced failure");
         }
         co_await ss::sleep(5ms);
-        co_return co_await slow_kv::apply(batch);
+        co_return co_await slow_kv::apply(batch, apply_units);
     }
 
 private:
@@ -434,7 +442,9 @@ struct controllable_throwing_kv : public simple_kv {
     explicit controllable_throwing_kv(raft_node_instance& rn)
       : simple_kv(rn) {}
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply(
+      const model::record_batch& batch,
+      const ssx::semaphore_units& apply_units) override {
         if (batch.last_offset() > _allow_apply) {
             throw std::runtime_error(fmt::format(
               "not allowed to apply batches with last offset greater than {}. "
@@ -448,7 +458,7 @@ struct controllable_throwing_kv : public simple_kv {
           "offset: {}",
           batch.header(),
           next());
-        co_await simple_kv::apply(batch);
+        co_await simple_kv::apply(batch, apply_units);
         co_return;
     }
 
