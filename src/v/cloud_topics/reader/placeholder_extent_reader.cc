@@ -51,7 +51,7 @@ size_t get_extent_size(const model::record_batch& placeholder) {
     return p.size_bytes;
 }
 
-inline ss::future<result<ss::circular_buffer<placeholder_extent>>>
+ss::future<result<ss::circular_buffer<placeholder_extent>>>
 materialize_sorted_run(
   ss::circular_buffer<model::record_batch> placeholders,
   cloud_storage_clients::bucket_name bucket,
