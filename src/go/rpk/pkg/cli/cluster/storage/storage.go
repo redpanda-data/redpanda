@@ -23,6 +23,11 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 	cmd.AddCommand(
 		recovery.NewCommand(fs, p),
+		newMountCommand(fs, p),
+		newUnmountCommand(fs, p),
+		newMountList(fs, p),
+		newMountStatus(fs, p),
+		newMountCancel(fs, p),
 	)
 	return cmd
 }
