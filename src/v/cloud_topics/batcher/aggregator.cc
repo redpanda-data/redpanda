@@ -64,9 +64,7 @@ void make_dl_placeholder_batches(
         };
 
         storage::record_batch_builder builder(
-          model::record_batch_type::
-            version_fence /*TODO: use dl_placeholder batch type*/,
-          b.base);
+          model::record_batch_type::dl_placeholder, b.base);
 
         // TX data (producer id, control flag) are not copied from 'src' yet.
 
