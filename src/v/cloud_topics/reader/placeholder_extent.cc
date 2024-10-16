@@ -80,29 +80,31 @@ result<T> result_convert(result<T>&& res) {
     return res.value();
 }
 
-placeholder_extent::placeholder_extent(model::record_batch batch) {
-    base_offset = batch.base_offset();
+placeholder_extent make_placeholder_extent(model::record_batch batch) {
+    placeholder_extent e;
+    e.base_offset = batch.base_offset();
     iobuf payload = std::move(batch).release_data();
     iobuf_parser parser(std::move(payload));
     auto record = model::parse_one_record_from_buffer(parser);
     iobuf value = std::move(record).release_value();
-    placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
+    e.placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
 
-    L0_object = ss::make_lw_shared<hydrated_L0_object>({
-      .id = placeholder.id,
+    e.L0_object = ss::make_lw_shared<hydrated_L0_object>({
+      .id = e.placeholder.id,
     });
+    return e;
 }
 
-model::record_batch placeholder_extent::make_raft_data_batch() {
-    auto offset = placeholder.offset;
-    auto size = placeholder.size_bytes;
+model::record_batch make_raft_data_batch(placeholder_extent ext) {
+    auto offset = ext.placeholder.offset;
+    auto size = ext.placeholder.size_bytes;
     vassert(
       size() > model::packed_record_batch_header_size,
       "L0 object is smaller ({}) than the batch header",
       size());
-    auto header_bytes = L0_object->payload.share(
+    auto header_bytes = ext.L0_object->payload.share(
       offset(), model::packed_record_batch_header_size);
-    auto records_bytes = L0_object->payload.share(
+    auto records_bytes = ext.L0_object->payload.share(
       offset() + model::packed_record_batch_header_size,
       size() - model::packed_record_batch_header_size);
     auto header = storage::batch_header_from_disk_iobuf(
@@ -110,7 +112,7 @@ model::record_batch placeholder_extent::make_raft_data_batch() {
     // NOTE: the serialized raft_data batch doesn't have the offset set
     // so we need to populate it from the placeholder batch. We also need
     // to make sure that crc is correct.
-    header.base_offset = base_offset;
+    header.base_offset = ext.base_offset;
     header.crc = model::crc_record_batch(header, records_bytes);
     crc::crc32c crc;
     model::crc_record_batch_header(crc, header);
@@ -122,7 +124,19 @@ model::record_batch placeholder_extent::make_raft_data_batch() {
     return batch;
 }
 
-ss::future<result<bool>> placeholder_extent::materialize(
+ss::future<result<iobuf>> materialize_from_cache(
+  std::filesystem::path cache_file_name,
+  cloud_io::basic_cache_service_api<>* cache);
+
+ss::future<result<iobuf>> materialize_from_cloud_storage(
+  std::filesystem::path cache_file_name,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc);
+
+ss::future<result<bool>> materialize(
+  placeholder_extent* ext,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
   cloud_io::basic_cache_service_api<>* cache,
@@ -136,7 +150,7 @@ ss::future<result<bool>> placeholder_extent::materialize(
 
     // 2. download object from S3
     auto cache_file_name = std::filesystem::path(
-      ssx::sformat("{}", placeholder.id()));
+      ssx::sformat("{}", ext->placeholder.id()));
     // TODO: replace this with proper object name
     // currently this value is used as both cloud storage name
     // and cache name. This shouldn't necessary be the case in the
@@ -183,19 +197,19 @@ ss::future<result<bool>> placeholder_extent::materialize(
         if (res.has_error()) {
             co_return res.error();
         }
-        L0_object->payload = std::move(res.value());
+        ext->L0_object->payload = std::move(res.value());
     } else {
         auto res = co_await materialize_from_cloud_storage(
           cache_file_name, bucket, api, cache, rtc);
         if (res.has_error()) {
             co_return res.error();
         }
-        L0_object->payload = std::move(res.value());
+        ext->L0_object->payload = std::move(res.value());
     }
     co_return hydrated;
 }
 
-ss::future<result<iobuf>> placeholder_extent::materialize_from_cache(
+ss::future<result<iobuf>> materialize_from_cache(
   std::filesystem::path cache_file_name,
   cloud_io::basic_cache_service_api<>* cache) {
     iobuf result_buf;
@@ -221,7 +235,7 @@ ss::future<result<iobuf>> placeholder_extent::materialize_from_cache(
     co_return result_buf;
 }
 
-ss::future<result<iobuf>> placeholder_extent::materialize_from_cloud_storage(
+ss::future<result<iobuf>> materialize_from_cloud_storage(
   std::filesystem::path cache_file_name,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
