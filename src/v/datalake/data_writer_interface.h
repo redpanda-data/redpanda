@@ -16,6 +16,14 @@
 #include <cstddef>
 
 namespace datalake {
+/**
+ * Definitions of local and remote paths, as the name indicates the local path
+ * is always pointing to the location on local disk wheras the remote path is a
+ * path of the object in the object store.
+ */
+using local_path = named_type<std::filesystem::path, struct local_path_tag>;
+using remote_path = named_type<std::filesystem::path, struct remote_path_tag>;
+
 enum class data_writer_error {
     ok = 0,
     parquet_conversion_error,
