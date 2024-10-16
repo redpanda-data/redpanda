@@ -10,14 +10,10 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "coordinator/data_file.h"
-#include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
-#include "serde/envelope.h"
 
 #include <cstddef>
-#include <memory>
 
 namespace datalake {
 enum class data_writer_error {
