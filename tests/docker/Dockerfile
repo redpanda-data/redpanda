@@ -239,6 +239,11 @@ RUN /ocsf-server && rm /ocsf-server
 FROM base AS polaris
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/polaris /
 RUN /polaris && rm /polaris
+#################################
+
+FROM base as iceberg-rest
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/iceberg-rest-catalog /
+RUN /iceberg-rest-catalog && rm /iceberg-rest-catalog
 
 #################################
 
@@ -333,6 +338,7 @@ COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
 COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
 COPY --from=polaris /opt/polaris/ /opt/polaris/
 COPY --from=flink /opt/flink/ /opt/flink/
+COPY --from=iceberg-rest /opt/iceberg-rest-image /opt/iceberg-rest-image
 
 RUN ldconfig
 

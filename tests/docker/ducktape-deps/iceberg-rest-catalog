@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+
+git -C /opt clone https://github.com/tabular-io/iceberg-rest-image.git
+cd /opt/iceberg-rest-image
+git reset --hard 62a5078032e0675d34b377d2ead2eea814c1da48
+ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
+JAVA_HOME="/usr/lib/jvm/java-17-openjdk-${ARCH}" ./gradlew --no-daemon --info shadowJar
