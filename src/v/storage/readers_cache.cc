@@ -16,7 +16,6 @@
 #include "ssx/future-util.h"
 #include "storage/logger.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
