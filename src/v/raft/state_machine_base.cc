@@ -27,6 +27,7 @@ void state_machine_base::set_next(model::offset offset) {
 }
 
 ss::future<> state_machine_base::stop() {
+    _apply_lock.broken();
     _waiters.stop();
     co_return;
 }

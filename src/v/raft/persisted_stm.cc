@@ -68,7 +68,7 @@ persisted_stm_base<BaseT, T>::persisted_stm_base(
 
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::apply(const model::record_batch& b) {
-    return _apply_lock.with([this, &b] { return do_apply(b); });
+    return BaseT::_apply_lock.with([this, &b] { return do_apply(b); });
 }
 
 template<typename BaseT, supported_stm_snapshot T>
@@ -78,7 +78,6 @@ persisted_stm_base<BaseT, T>::load_local_snapshot() {
 }
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::stop() {
-    _apply_lock.broken();
     co_await raft::state_machine_base::stop();
     co_await _gate.close();
 }
@@ -295,7 +294,7 @@ ss::future<> persisted_stm_base<BaseT, T>::wait_for_snapshot_hydrated() {
 
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::do_write_local_snapshot() {
-    auto u = co_await _apply_lock.get_units();
+    auto u = co_await BaseT::_apply_lock.get_units();
     auto snapshot = co_await take_local_snapshot(std::move(u));
     auto offset = snapshot.header.offset;
 
