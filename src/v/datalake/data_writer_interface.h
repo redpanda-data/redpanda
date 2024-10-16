@@ -24,6 +24,20 @@ namespace datalake {
 using local_path = named_type<std::filesystem::path, struct local_path_tag>;
 using remote_path = named_type<std::filesystem::path, struct remote_path_tag>;
 
+/**
+ * Simple type describing local parquet file metadata with its path and basic
+ * statistics
+ */
+struct local_file_metadata {
+    local_path path;
+    size_t row_count = 0;
+    size_t size_bytes = 0;
+    int hour = 0;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const local_file_metadata& r);
+};
+
 enum class data_writer_error {
     ok = 0,
     parquet_conversion_error,
