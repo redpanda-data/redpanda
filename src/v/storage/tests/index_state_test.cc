@@ -52,7 +52,7 @@ static storage::index_state make_random_index_state(
             time_index.push_back(random_generators::get_int<uint32_t>());
         }
 
-        std::swap(st.relative_time_index, time_index);
+        st.index.assign_relative_time_index(std::move(time_index));
     }
 
     return st;
@@ -281,7 +281,7 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
     expected_state.clean_compact_timestamp = model::timestamp();
     expected_state.bitflags = 123;
 
-    expected_state.relative_offset_index = {
+    chunked_vector<uint32_t> relative_offset_index = {
       10202204,
       10202500,
       10202833,
@@ -293,8 +293,10 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
       10205184,
       10205911,
     };
+    expected_state.index.assign_relative_offset_index(
+      std::move(relative_offset_index));
 
-    expected_state.relative_time_index = {
+    chunked_vector<uint32_t> relative_time_index = {
       4294967295,
       4294967295,
       4294967295,
@@ -306,8 +308,10 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
       4294967295,
       4294967295,
     };
+    expected_state.index.assign_relative_time_index(
+      std::move(relative_time_index));
 
-    expected_state.position_index = {
+    chunked_vector<uint64_t> position_index = {
       8178448512,
       8178485376,
       8179080251,
@@ -319,6 +323,7 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
       8181765071,
       8182211059,
     };
+    expected_state.index.assign_position_index(std::move(position_index));
 
     bytes serde_serialized = {
       0x04, 0x04, 0xf7, 0x00, 0x00, 0x00, 0xef, 0x00, 0x00, 0x00, 0x7b, 0x00,

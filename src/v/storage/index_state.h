@@ -27,6 +27,63 @@ class iobuf_parser;
 
 namespace storage {
 
+class index_columns {
+public:
+    // Accessors
+    uint32_t get_relative_offset_index(int ix) const noexcept;
+    uint32_t get_relative_time_index(int ix) const noexcept;
+    uint64_t get_position_index(int ix) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> offset_lower_bound(uint32_t needle) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> position_upper_bound(uint64_t needle) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> time_lower_bound(uint32_t needle) const noexcept;
+
+    /// If the size() ==  1 reset the time column with the
+    /// provided value.
+    /// If the relative_time_index column is empty or size() > 1
+    /// the operation fails and method returns 'false'.
+    bool try_reset_relative_time_index(uint32_t);
+
+    bool empty() const noexcept;
+    size_t size() const noexcept;
+
+    // These methods are used by serialization
+    chunked_vector<uint32_t> copy_relative_offset_index() const noexcept;
+    chunked_vector<uint32_t> copy_relative_time_index() const noexcept;
+    chunked_vector<uint64_t> copy_position_index() const noexcept;
+    void assign_relative_offset_index(chunked_vector<uint32_t>) noexcept;
+    void assign_relative_time_index(chunked_vector<uint32_t>) noexcept;
+    void assign_position_index(chunked_vector<uint64_t>) noexcept;
+
+    void
+    add_entry(uint32_t relative_offset, uint32_t relative_time, uint64_t pos);
+
+    /// Pop back one element. This is ineffective with columnar format but
+    /// it's not invoked often and when it is invoked it usually invoked not
+    /// that many times.
+    void pop_back(int n = 1);
+
+    void shrink_to_fit();
+
+    /// Make deep copy
+    index_columns copy() const;
+
+    friend bool operator==(const index_columns&, const index_columns&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream&, const index_columns&);
+
+private:
+    chunked_vector<uint32_t> _relative_offset_index;
+    chunked_vector<uint32_t> _relative_time_index;
+    chunked_vector<uint64_t> _position_index;
+};
+
 using offset_delta_time = ss::bool_class<struct offset_delta_time_tag>;
 
 /*
@@ -121,10 +178,7 @@ struct index_state
     // the batch's max_timestamp of the last batch
     model::timestamp max_timestamp{0};
 
-    /// breaking indexes into their own has a 6x latency reduction
-    chunked_vector<uint32_t> relative_offset_index;
-    chunked_vector<uint32_t> relative_time_index;
-    chunked_vector<uint64_t> position_index;
+    index_columns index;
 
     // flag indicating whether the maximum timestamp on the batches
     // of this segment are monontonically increasing.
@@ -169,7 +223,7 @@ struct index_state
     void add_entry(
       uint32_t relative_offset, offset_time_index relative_time, uint64_t pos);
 
-    void pop_back();
+    void pop_back(size_t n = 1);
 
     std::tuple<uint32_t, offset_time_index, uint64_t> get_entry(size_t i) const;
 
