@@ -225,7 +225,12 @@ class RpkClusterTest(RedpandaTest):
 
         internal_val = get_metrics_value(MetricsEndpoint.METRICS)
         public_val = get_metrics_value(MetricsEndpoint.PUBLIC_METRICS)
-        assert internal_val == public_val, f"Mismatch: {internal_val} != {public_val}"
+        # generous slop. only a very large difference here would suggest a
+        # logic error on the backend (e.g. approaching a calendar day).
+        threshold_s = 30
+        assert abs(
+            internal_val - public_val
+        ) <= threshold_s, f"Mismatch: abs({internal_val} - {public_val}) > {threshold_s}"
         return internal_val
 
     @cluster(num_nodes=3)
