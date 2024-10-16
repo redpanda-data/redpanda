@@ -201,6 +201,7 @@ class KgoVerifierService(Service):
     def stop_node(self, node, **kwargs):
         if self._status_thread:
             self._status_thread.stop()
+            self._status_thread.raise_on_error()
             self._status_thread = None
             # Record that we just stopped, so that we can't wait() after.
             # This is done inside this if statement because stop_node() is also
