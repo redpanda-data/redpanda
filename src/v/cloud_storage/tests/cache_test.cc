@@ -350,7 +350,7 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
         cm.add(names[i], timestamps[i], i);
     }
 
-    for (int i = 0; i < 10; i++) {
+    for (unsigned i = 0; i < 10; i++) {
         auto ts = cm.get(names[i]);
         BOOST_REQUIRE(ts.has_value());
         BOOST_REQUIRE(ts->time_point() == timestamps[i]);
@@ -416,7 +416,7 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
 
     auto out = serde_roundtrip(in);
 
-    for (int i = 0; i < timestamps.size(); i++) {
+    for (unsigned i = 0; i < timestamps.size(); i++) {
         auto ts = out.get(names[i]);
         BOOST_REQUIRE(ts.has_value());
         BOOST_REQUIRE(ts->time_point() == timestamps[i]);
@@ -693,7 +693,7 @@ FIXTURE_TEST(test_background_maybe_trim, cache_test_fixture) {
       write_buf.data(), write_buf.size());
     size_t num_objects = 100;
     std::vector<std::filesystem::path> object_keys;
-    for (int i = 0; i < num_objects; i++) {
+    for (unsigned i = 0; i < num_objects; i++) {
         object_keys.emplace_back(fmt::format("test_{}.log.1", i));
         std::ofstream segment{CACHE_DIR / object_keys.back()};
         segment.write(
