@@ -13,6 +13,7 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/broker_compat.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "serde/rw/rw.h"

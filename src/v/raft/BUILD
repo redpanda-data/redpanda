@@ -1,6 +1,8 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 
+package(default_visibility = ["//src/v/raft:__subpackages__"])
+
 redpanda_cc_rpc_library(
     name = "raft_rpc",
     src = "raftgen.json",
@@ -18,6 +20,19 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/model",
         "//src/v/utils:named_type",
+    ],
+)
+
+redpanda_cc_library(
+    name = "broker_compat",
+    hdrs = [
+        "broker_compat.h",
+    ],
+    include_prefix = "raft",
+    deps = [
+        "//src/v/model",
+        "//src/v/reflection:adl",
+        "//src/v/utils:unresolved_address",
     ],
 )
 
@@ -99,6 +114,7 @@ redpanda_cc_library(
     include_prefix = "raft",
     visibility = ["//visibility:public"],
     deps = [
+        ":broker_compat",
         ":fundamental",
         ":raft_rpc",
         "//src/v/base",

@@ -574,25 +574,6 @@ std::optional<write_caching_mode>
 std::ostream& operator<<(std::ostream&, write_caching_mode);
 std::istream& operator>>(std::istream&, write_caching_mode&);
 
-namespace internal {
-/*
- * Old version for use in backwards compatibility serialization /
- * deserialization helpers.
- */
-struct broker_v0 {
-    model::node_id id;
-    net::unresolved_address kafka_address;
-    net::unresolved_address rpc_address;
-    std::optional<rack_id> rack;
-    model::broker_properties properties;
-
-    model::broker to_v3() const {
-        return model::broker(id, kafka_address, rpc_address, rack, properties);
-    }
-};
-
-} // namespace internal
-
 enum class recovery_validation_mode : std::uint16_t {
     // ensure that either the manifest is in TS or that no manifest is present.
     // download issues will fail the validation
