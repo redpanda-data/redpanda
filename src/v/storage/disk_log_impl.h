@@ -33,6 +33,15 @@
 
 namespace storage {
 
+/// \brief offset boundary type
+///
+/// indicate whether or not the offset that encodes the end of the offset
+/// range belongs to the offset range
+enum class boundary_type {
+    exclusive,
+    inclusive,
+};
+
 class disk_log_impl final : public log {
 public:
     using failure_probes = storage::log_failure_probes;
@@ -246,7 +255,7 @@ private:
       ss::lw_shared_ptr<segment> s,
       std::optional<segment_index::entry> index_entry,
       model::offset target,
-      model::boundary_type boundary,
+      boundary_type boundary,
       ss::io_priority_class priority);
 
     ss::future<model::record_batch_reader>
