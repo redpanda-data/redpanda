@@ -51,18 +51,28 @@ inline std::error_code make_error_code(data_writer_error e) noexcept {
 
 class data_writer {
 public:
+    data_writer() = default;
+    data_writer(const data_writer&) = delete;
+    data_writer(data_writer&&) = default;
+    data_writer& operator=(const data_writer&) = delete;
+    data_writer& operator=(data_writer&&) = delete;
+
     virtual ~data_writer() = default;
 
     virtual ss::future<data_writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<coordinator::data_file, data_writer_error>>
-    finish() = 0;
+    virtual ss::future<result<local_data_file, data_writer_error>> finish() = 0;
 };
 
 class data_writer_factory {
 public:
+    data_writer_factory() = default;
+    data_writer_factory(const data_writer_factory&) = delete;
+    data_writer_factory(data_writer_factory&&) = default;
+    data_writer_factory& operator=(const data_writer_factory&) = delete;
+    data_writer_factory& operator=(data_writer_factory&&) = default;
     virtual ~data_writer_factory() = default;
 
     virtual ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
