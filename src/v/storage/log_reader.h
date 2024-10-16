@@ -130,6 +130,8 @@ private:
 };
 
 class log_reader final : public model::record_batch_reader::impl {
+    friend struct fmt::formatter<log_reader>;
+
 public:
     using data_t = model::record_batch_reader::data_t;
     using foreign_data_t = model::record_batch_reader::foreign_data_t;

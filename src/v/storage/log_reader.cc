@@ -79,6 +79,20 @@ std::vector<model::record_batch> make_ghost_batches(
 
 } // anonymous namespace
 
+template<>
+struct fmt::formatter<storage::log_reader> : fmt::formatter<std::string_view> {
+    auto format(const storage::log_reader& r, auto& ctx) const {
+        auto str = fmt::format(
+          "{{eos: {}, lb: {}, lsd: {}, config: {}}}",
+          r.is_end_of_stream(),
+          r._last_base,
+          r._load_slice_depth,
+          r._config);
+
+        return fmt::formatter<std::string_view>::format(str, ctx);
+    }
+};
+
 namespace storage {
 using records_t = ss::circular_buffer<model::record_batch>;
 
