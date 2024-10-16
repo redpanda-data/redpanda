@@ -2039,11 +2039,7 @@ disk_log_impl::offset_range_size(
           segments.front()->offsets());
     }
     auto left_scan_bytes = co_await get_file_offset(
-      segments.front(),
-      ix_left,
-      first,
-      boundary_type::exclusive,
-      io_priority);
+      segments.front(), ix_left, first, boundary_type::exclusive, io_priority);
 
     // Right subscan
     auto ix_right = segments.back()->index().find_nearest(last);
@@ -2063,11 +2059,7 @@ disk_log_impl::offset_range_size(
           segments.back()->offsets());
     }
     auto right_scan_bytes = co_await get_file_offset(
-      segments.back(),
-      ix_right,
-      last,
-      boundary_type::inclusive,
-      io_priority);
+      segments.back(), ix_right, last, boundary_type::inclusive, io_priority);
 
     // compute size
     size_t total_size = 0;
@@ -2199,11 +2191,7 @@ disk_log_impl::offset_range_size(
         auto ix_res = first_segment->index().find_nearest(first);
 
         first_segment_file_pos = co_await get_file_offset(
-          first_segment,
-          ix_res,
-          first,
-          boundary_type::exclusive,
-          io_priority);
+          first_segment, ix_res, first, boundary_type::exclusive, io_priority);
     } else {
         // We expect to find first offset inside the first segment.
         // If this is not the case the log was likely truncated concurrently.
