@@ -27,10 +27,10 @@
 
 namespace cloud_io {
 
-static constexpr size_t default_write_buffer_size = 128_KiB;
-static constexpr unsigned default_write_behind = 10;
-static constexpr size_t default_read_buffer_size = 128_KiB;
-static constexpr unsigned default_read_ahead = 10;
+inline constexpr size_t default_write_buffer_size = 128_KiB;
+inline constexpr unsigned default_write_behind = 10;
+inline constexpr size_t default_read_buffer_size = 128_KiB;
+inline constexpr unsigned default_read_ahead = 10;
 
 struct [[nodiscard]] cache_item {
     ss::file body;
