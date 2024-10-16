@@ -9,7 +9,6 @@
  */
 
 #include "cloud_topics/batcher/serializer.h"
-#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 
@@ -18,19 +17,6 @@
 #include <gtest/gtest.h>
 
 namespace cloud_topics = experimental::cloud_topics;
-
-model::record_batch_reader
-get_random_batches(int num_batches, int num_records_per_batch) { // NOLINT
-    ss::circular_buffer<model::record_batch> batches;
-    model::offset o{0};
-    for (int ix_batch = 0; ix_batch < num_batches; ix_batch++) {
-        auto batch = model::test::make_random_batch(
-          o, num_records_per_batch, false);
-        o = model::next_offset(batch.last_offset());
-        batches.push_back(std::move(batch));
-    }
-    return model::make_memory_record_batch_reader(std::move(batches));
-}
 
 TEST(SerializerTest, EmptyReader) {
     auto res = cloud_topics::details::serialize_in_memory_record_batch_reader(
@@ -46,7 +32,10 @@ class SerializerFixture
 TEST_P(SerializerFixture, Consume) {
     auto num_batches = std::get<0>(GetParam());
     auto num_records = std::get<1>(GetParam());
-    auto test_data = get_random_batches(num_batches, num_records);
+    auto test_data = model::make_memory_record_batch_reader(
+      model::test::make_random_batches(
+        {.count = num_batches, .records = num_records})
+        .get());
     auto res = cloud_topics::details::serialize_in_memory_record_batch_reader(
                  std::move(test_data))
                  .get();
