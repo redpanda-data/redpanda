@@ -67,6 +67,11 @@ persisted_stm_base<BaseT, T>::persisted_stm_base(
 }
 
 template<typename BaseT, supported_stm_snapshot T>
+ss::future<> persisted_stm_base<BaseT, T>::apply(const model::record_batch& b) {
+    return _apply_lock.with([this, &b] { return do_apply(b); });
+}
+
+template<typename BaseT, supported_stm_snapshot T>
 ss::future<std::optional<stm_snapshot>>
 persisted_stm_base<BaseT, T>::load_local_snapshot() {
     return _snapshot_backend.load_snapshot();
