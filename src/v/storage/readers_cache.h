@@ -20,6 +20,7 @@
 #include "storage/log_reader.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/types.h"
+#include "strings/static_str.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -144,7 +145,10 @@ private:
             if (_e->reader->is_reusable() && _e->valid) {
                 _cache->_readers.push_back(*_e);
             } else {
-                _cache->dispose_in_background(_e);
+                auto msg = _e->reader->is_reusable()
+                             ? static_str{"not valid in ~entry_guard"}
+                             : static_str{"not reusable in ~entry_guard"};
+                _cache->dispose_in_background(_e, msg);
             }
             _cache->_in_use_reader_destroyed.broadcast();
         }
@@ -155,10 +159,11 @@ private:
     };
 
     ss::future<> maybe_evict();
-    ss::future<>
-      dispose_entries(uncounted_intrusive_list<entry, &entry::_hook>);
-    void dispose_in_background(uncounted_intrusive_list<entry, &entry::_hook>);
-    void dispose_in_background(entry* e);
+    ss::future<> dispose_entries(
+      uncounted_intrusive_list<entry, &entry::_hook>, static_str reason);
+    void dispose_in_background(
+      uncounted_intrusive_list<entry, &entry::_hook>, static_str reason);
+    void dispose_in_background(entry* e, static_str reason);
     ss::future<> wait_for_no_inuse_readers();
     template<typename Predicate>
     ss::future<> evict_if(Predicate predicate) {
@@ -181,10 +186,15 @@ private:
                 r.valid = false;
             }
         }
-        co_await dispose_entries(std::move(to_evict));
+        co_await dispose_entries(std::move(to_evict), "evict_if");
     }
     inline bool over_size_limit() const;
     void maybe_evict_size();
+
+    /**
+     * @brief Remove the given entry from the cache.
+     */
+    void remove_entry(entry* e, static_str reason);
 
     bool intersects_with_locked_range(model::offset, model::offset) const;
 
