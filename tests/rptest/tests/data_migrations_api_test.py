@@ -651,8 +651,7 @@ class DataMigrationsApiTest(RedpandaTest):
             backoff_sec=0.5,
             err_msg=
             f"Error waiting for consumer to see all {expected_records} "
-            f"produced messages, seeing only "
-            f"{consumer._status.validator.valid_reads}",
+            f"produced messages, seeing {consumer._status}",
         )
         # make sure there's no excessive data
         #time.sleep(1)
