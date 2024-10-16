@@ -120,7 +120,7 @@ def read_broker(rdr: Reader):
     br['rpc_address'] = rdr.read_envelope(read_unresolved_address)
     br['rack'] = rdr.read_optional(lambda r: r.read_string())
     br['properties'] = rdr.read_envelope(type_read=read_broker_properties,
-                                         max_version=1)
+                                         reader_version=1)
     return br
 
 
@@ -160,7 +160,7 @@ def decode_configuration_update(rdr: Reader, version: int):
 
 
 def read_configuration_update_serde(rdr: Reader):
-    return rdr.read_envelope(decode_configuration_update, max_version=1)
+    return rdr.read_envelope(decode_configuration_update, reader_version=1)
 
 
 def read_raft_config(rdr):
@@ -177,7 +177,7 @@ def read_raft_config(rdr):
             "revision":
             rdr.read_int64()
         },
-                                 max_version=6)
+                                 reader_version=6)
 
     else:
         cfg['version'] = rdr.read_int8()
