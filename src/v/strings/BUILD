@@ -24,3 +24,12 @@ redpanda_cc_library(
     include_prefix = "strings",
     visibility = ["//visibility:public"],
 )
+
+redpanda_cc_library(
+    name = "static_str",
+    hdrs = [
+        "static_str.h",
+    ],
+    include_prefix = "strings",
+    visibility = ["//visibility:public"],
+)

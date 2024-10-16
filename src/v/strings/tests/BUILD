@@ -5,10 +5,12 @@ redpanda_cc_btest_no_seastar(
     timeout = "short",
     srcs = [
         "constexpr_string_switch.cc",
+        "static_str_test.cc",
         "string_switch_test.cc",
         "utf8_control_chars.cc",
     ],
     deps = [
+        "//src/v/strings:static_str",
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
     ],
