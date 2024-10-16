@@ -123,7 +123,6 @@ persisted_stm<T>::load_local_snapshot() {
 }
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::stop() {
-    _apply_lock.broken();
     co_await raft::state_machine_base::stop();
     co_await _gate.close();
 }

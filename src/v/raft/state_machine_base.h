@@ -16,6 +16,7 @@
 #include "model/record.h"
 #include "raft/fwd.h"
 #include "raft/offset_monitor.h"
+#include "utils/mutex.h"
 
 namespace raft {
 
@@ -95,6 +96,8 @@ protected:
 
     model::offset next() const { return _next; }
     void set_next(model::offset offset);
+
+    mutex _apply_lock{"state_machine_base::apply_lock"};
 
     friend class batch_applicator;
     friend class state_machine_manager;
