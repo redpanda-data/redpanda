@@ -117,11 +117,9 @@ class HighThroughputTestTrafficGenerator:
     def stop(self):
         self._logger.info("Stopping all traffic generation")
         self._producer.stop()
-        self._consumer.stop()
-        self._producer.wait()
         self._logger.info("Producer stopped")
         self._producer_stop_time = time.time()
-        self._consumer.wait()
+        self._consumer.stop()
         self._logger.info("Consumer stopped")
         self._consumer_stop_time = time.time()
 
