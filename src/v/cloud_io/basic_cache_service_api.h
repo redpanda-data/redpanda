@@ -34,7 +34,7 @@ struct [[nodiscard]] cache_item {
     size_t size;
 };
 
-struct [[nodiscard]] cache_item_str {
+struct [[nodiscard]] cache_item_stream {
     ss::input_stream<char> body;
     size_t size;
 };
@@ -108,7 +108,7 @@ public:
     /// \param key is a cache key
     /// \param read_buffer_size is a read buffer size for the iostream
     /// \param readahead number of pages that can be read asynchronously
-    virtual ss::future<std::optional<cache_item_str>> get(
+    virtual ss::future<std::optional<cache_item_stream>> get(
       std::filesystem::path key,
       ss::io_priority_class io_priority,
       size_t read_buffer_size = default_read_buffer_size,

@@ -190,7 +190,7 @@ void placeholder_extent_fixture::produce_placeholders(
                 continue;
             };
 
-            cloud_io::cache_item_str s{
+            cloud_io::cache_item_stream s{
               .body = make_iobuf_input_stream(kv.second.copy()),
               .size = sz,
             };

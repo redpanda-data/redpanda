@@ -119,7 +119,7 @@ public:
 class cache_mock : public cloud_io::basic_cache_service_api<ss::lowres_clock> {
 public:
     MOCK_METHOD(
-      ss::future<std::optional<cloud_io::cache_item_str>>,
+      ss::future<std::optional<cloud_io::cache_item_stream>>,
       get,
       (std::filesystem::path key,
        ss::io_priority_class io_priority,
@@ -181,9 +181,10 @@ public:
     }
 
     void expect_get(
-      std::filesystem::path p, std::optional<cloud_io::cache_item_str> item) {
+      std::filesystem::path p,
+      std::optional<cloud_io::cache_item_stream> item) {
         auto fut
-          = ss::make_ready_future<std::optional<cloud_io::cache_item_str>>(
+          = ss::make_ready_future<std::optional<cloud_io::cache_item_stream>>(
             std::move(item));
         EXPECT_CALL(*this, get(p, ::testing::_, ::testing::_, ::testing::_))
           .Times(1)
@@ -191,9 +192,8 @@ public:
     }
 
     void expect_get_throws(std::filesystem::path p, std::exception_ptr e) {
-        auto fut
-          = ss::make_exception_future<std::optional<cloud_io::cache_item_str>>(
-            e);
+        auto fut = ss::make_exception_future<
+          std::optional<cloud_io::cache_item_stream>>(e);
         EXPECT_CALL(*this, get(p, ::testing::_, ::testing::_, ::testing::_))
           .Times(1)
           .WillOnce(::testing::Return(std::move(fut)));
