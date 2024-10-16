@@ -9,14 +9,12 @@
  */
 
 #include "base/units.h"
-#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cache_test_fixture.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"
 #include "random/generators.h"
-#include "ssx/sformat.h"
 #include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
 #include "utils/file_io.h"
@@ -64,6 +62,22 @@ FIXTURE_TEST(get_after_put, cache_test_fixture) {
       std::string_view(read_buf.get(), read_buf.size()), data_string);
     BOOST_CHECK(!stream.read().get().get());
     stream.close().get();
+}
+
+FIXTURE_TEST(stremaing_get_after_put, cache_test_fixture) {
+    auto data_string = create_data_string('a', 1_MiB + 1_KiB);
+    put_into_cache(data_string, KEY);
+
+    auto stream
+      = sharded_cache.local().get(KEY, seastar::default_priority_class()).get();
+    BOOST_REQUIRE(stream);
+    BOOST_CHECK_EQUAL(stream->size, data_string.length());
+
+    auto read_buf = stream->body.read_exactly(data_string.length()).get();
+    BOOST_CHECK_EQUAL(
+      std::string_view(read_buf.get(), read_buf.size()), data_string);
+    BOOST_CHECK(!stream->body.read().get().get());
+    stream->body.close().get();
 }
 
 FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {

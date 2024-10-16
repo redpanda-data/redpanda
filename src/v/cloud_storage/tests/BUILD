@@ -238,3 +238,27 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "cache_test",
+    timeout = "short",
+    srcs = [
+        "cache_test.cc",
+        "cache_test_fixture.h",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/config",
+        "//src/v/random:generators",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:file_io",
+        "//src/v/utils:human",
+        "@boost//:filesystem",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
