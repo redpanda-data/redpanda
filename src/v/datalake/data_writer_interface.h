@@ -74,7 +74,8 @@ public:
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<local_data_file, data_writer_error>> finish() = 0;
+    virtual ss::future<result<local_file_metadata, data_writer_error>>
+    finish() = 0;
 };
 
 class data_writer_factory {

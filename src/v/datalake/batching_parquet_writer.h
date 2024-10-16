@@ -42,15 +42,15 @@ public:
     batching_parquet_writer(
       iceberg::struct_type schema,
       size_t row_count_threshold,
-      size_t byte_count_threshold);
+      size_t byte_count_threshold,
+      local_path output_file_path);
 
-    ss::future<data_writer_error>
-    initialize(std::filesystem::path output_file_path);
+    ss::future<checked<std::nullopt_t, data_writer_error>> initialize();
 
     ss::future<data_writer_error>
     add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
 
-    ss::future<result<coordinator::data_file, data_writer_error>>
+    ss::future<result<local_file_metadata, data_writer_error>>
     finish() override;
 
     // Close the file handle, delete any temporary data and clean up any other
@@ -69,18 +69,19 @@ private:
     size_t _byte_count_threshold;
     size_t _row_count = 0;
     size_t _byte_count = 0;
+    size_t _total_row_count = 0;
+    size_t _total_bytes = 0;
 
     // Output
-    std::filesystem::path _output_file_path;
+    local_path _output_file_path;
     ss::file _output_file;
     ss::output_stream<char> _output_stream;
-    coordinator::data_file _result;
 };
 
 class batching_parquet_writer_factory : public data_writer_factory {
 public:
     batching_parquet_writer_factory(
-      std::filesystem::path local_directory,
+      local_path base_directory,
       ss::sstring file_name_prefix,
       size_t row_count_threshold,
       size_t byte_count_threshold);
@@ -89,10 +90,12 @@ public:
     create_writer(iceberg::struct_type schema) override;
 
 private:
-    std::filesystem::path _local_directory;
+    local_path create_filename() const;
+
+    local_path _base_directory;
     ss::sstring _file_name_prefix;
     size_t _row_count_threshold;
-    size_t _byte_count_treshold;
+    size_t _byte_count_threshold;
 };
 
 } // namespace datalake

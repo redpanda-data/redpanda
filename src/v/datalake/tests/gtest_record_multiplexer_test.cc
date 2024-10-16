@@ -91,7 +91,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
 
     auto writer_factory
       = std::make_unique<datalake::batching_parquet_writer_factory>(
-        tmp_dir.get_path(), "data", 100, 10000);
+        datalake::local_path(tmp_dir.get_path()), "data", 100, 10000);
     datalake::record_multiplexer multiplexer(std::move(writer_factory));
 
     model::test::record_batch_spec batch_spec;
