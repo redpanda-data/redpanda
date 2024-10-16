@@ -10,7 +10,9 @@
 #include "datalake/coordinator/coordinator_manager.h"
 
 #include "cluster/partition_manager.h"
+#include "config/mock_property.h"
 #include "datalake/coordinator/coordinator.h"
+#include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/state_machine.h"
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/manifest_io.h"
@@ -22,6 +24,7 @@ namespace datalake::coordinator {
 namespace {
 // TODO: make this configurable.
 const ss::sstring base_location = "redpanda-iceberg-catalog";
+config::mock_property<std::chrono::milliseconds> commit_interval{5min};
 } // namespace
 
 coordinator_manager::coordinator_manager(
@@ -35,7 +38,9 @@ coordinator_manager::coordinator_manager(
   , pm_(pm.local())
   , manifest_io_(io.local(), bucket)
   , catalog_(std::make_unique<iceberg::filesystem_catalog>(
-      io.local(), bucket, base_location)) {}
+      io.local(), bucket, base_location))
+  , file_committer_(
+      std::make_unique<iceberg_file_committer>(*catalog_, manifest_io_)) {}
 
 ss::future<> coordinator_manager::start() {
     manage_notifications_ = pm_.register_manage_notification(
@@ -97,10 +102,12 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     if (stm == nullptr) {
         return;
     }
-    auto crd = ss::make_lw_shared<coordinator>(std::move(stm));
+    auto crd = ss::make_lw_shared<coordinator>(
+      std::move(stm), *file_committer_, commit_interval.bind());
     if (p.is_leader()) {
         crd->notify_leadership(self_);
     }
+    crd->start();
     coordinators_.emplace(ntp, std::move(crd));
 }
 

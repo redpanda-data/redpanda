@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/notification.h"
 #include "datalake/coordinator/coordinator.h"
+#include "datalake/coordinator/file_committer.h"
 #include "iceberg/catalog.h"
 #include "model/fundamental.h"
 #include "raft/fwd.h"
@@ -57,6 +58,7 @@ private:
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;
     std::unique_ptr<iceberg::catalog> catalog_;
+    std::unique_ptr<file_committer> file_committer_;
 
     std::optional<cluster::notification_id_type> manage_notifications_;
     std::optional<cluster::notification_id_type> unmanage_notifications_;

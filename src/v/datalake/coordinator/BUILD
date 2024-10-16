@@ -20,12 +20,16 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/base",
         "//src/v/datalake:logger",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:sleep_abortable",
         "//src/v/storage:record_batch_builder",
     ],
     include_prefix = "datalake/coordinator",
     deps = [
+        ":file_committer",
         ":state_update",
         ":stm",
+        "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "@seastar",
@@ -41,7 +45,9 @@ redpanda_cc_library(
         "coordinator_manager.h",
     ],
     implementation_deps = [
+        ":iceberg_file_committer",
         "//src/v/base",
+        "//src/v/config",
         "//src/v/datalake:logger",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/storage:record_batch_builder",
@@ -50,6 +56,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":coordinator",
+        ":file_committer",
         ":state_update",
         ":stm",
         "//src/v/cloud_io:remote",
