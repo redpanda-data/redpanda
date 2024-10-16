@@ -20,24 +20,21 @@
 #include <seastar/core/lowres_clock.hh>
 
 #include <filesystem>
-#include <iterator>
 #include <optional>
-#include <set>
-#include <string_view>
 
 namespace cloud_io {
 
-static constexpr size_t default_write_buffer_size = 128_KiB;
-static constexpr unsigned default_write_behind = 10;
-static constexpr size_t default_read_buffer_size = 128_KiB;
-static constexpr unsigned default_read_ahead = 10;
+inline constexpr size_t default_write_buffer_size = 128_KiB;
+inline constexpr unsigned default_write_behind = 10;
+inline constexpr size_t default_read_buffer_size = 128_KiB;
+inline constexpr unsigned default_read_ahead = 10;
 
 struct [[nodiscard]] cache_item {
     ss::file body;
     size_t size;
 };
 
-struct [[nodiscard]] cache_item_str {
+struct [[nodiscard]] cache_item_stream {
     ss::input_stream<char> body;
     size_t size;
 };
@@ -111,7 +108,7 @@ public:
     /// \param key is a cache key
     /// \param read_buffer_size is a read buffer size for the iostream
     /// \param readahead number of pages that can be read asynchronously
-    virtual ss::future<std::optional<cache_item_str>> get(
+    virtual ss::future<std::optional<cache_item_stream>> get(
       std::filesystem::path key,
       ss::io_priority_class io_priority,
       size_t read_buffer_size = default_read_buffer_size,

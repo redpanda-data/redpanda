@@ -1137,7 +1137,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     co_return std::move(result);
 }
 
-ss::future<std::optional<cloud_io::cache_item_str>> cache::get(
+ss::future<std::optional<cloud_io::cache_item_stream>> cache::get(
   std::filesystem::path key,
   ss::io_priority_class io_priority,
   size_t read_buffer_size,
@@ -1153,7 +1153,7 @@ ss::future<std::optional<cloud_io::cache_item_str>> cache::get(
     options.io_priority_class = io_priority;
     auto stream = ss::make_file_input_stream(
       std::move(get_res->body), 0, std::move(options));
-    co_return cloud_io::cache_item_str{
+    co_return cloud_io::cache_item_stream{
       .body = std::move(stream),
       .size = get_res->size,
     };

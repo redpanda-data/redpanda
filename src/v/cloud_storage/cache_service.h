@@ -86,7 +86,7 @@ public:
     /// \param key is a cache key
     ss::future<std::optional<cache_item>> get(std::filesystem::path key);
 
-    ss::future<std::optional<cloud_io::cache_item_str>> get(
+    ss::future<std::optional<cloud_io::cache_item_stream>> get(
       std::filesystem::path key,
       ss::io_priority_class io_priority,
       size_t read_buffer_size = cloud_io::default_read_buffer_size,
