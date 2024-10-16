@@ -216,9 +216,7 @@ public:
     ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
 
-    ss::future<> apply(const model::record_batch& b) final {
-        return _apply_lock.with([this, &b] { return do_apply(b); });
-    }
+    ss::future<> apply(const model::record_batch&) final;
 
 protected:
     ss::future<> start() override;

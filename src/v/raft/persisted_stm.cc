@@ -112,6 +112,11 @@ persisted_stm<T>::persisted_stm(
 }
 
 template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::apply(const model::record_batch& b) {
+    return _apply_lock.with([this, &b] { return do_apply(b); });
+}
+
+template<supported_stm_snapshot T>
 ss::future<std::optional<stm_snapshot>>
 persisted_stm<T>::load_local_snapshot() {
     return _snapshot_backend.load_snapshot();
