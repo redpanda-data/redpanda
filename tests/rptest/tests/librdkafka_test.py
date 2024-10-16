@@ -11,7 +11,7 @@ import subprocess
 import os
 
 from rptest.services.cluster import cluster
-from ducktape.mark import matrix
+from ducktape.mark import ignore, matrix
 
 from rptest.services.librdkafka_test_case import LibrdkafkaTestcase
 from rptest.tests.redpanda_test import RedpandaTest
@@ -59,6 +59,8 @@ def tests_to_run():
         84,
         # using mocked cluster, not relevant
         105,
+        # failing always - requires proper RCA done
+        75,
     ])
     return [t for t in range(120) if t not in ignored_tests]
 

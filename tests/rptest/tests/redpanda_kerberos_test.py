@@ -14,7 +14,7 @@ import time
 from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccountSSHConfig
 from ducktape.cluster.windows_remoteaccount import WindowsRemoteAccount
 from ducktape.errors import TimeoutError
-from ducktape.mark import env, parametrize
+from ducktape.mark import env, ignore, parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
@@ -375,6 +375,7 @@ class RedpandaKerberosExternalActiveDirectoryTest(RedpandaKerberosTestBase):
     def setUp(self):
         super(RedpandaKerberosExternalActiveDirectoryTest, self).setUp()
 
+    @ignore  # Not all CI builders have access to an ADDS - let's find out which ones - ignoring for now
     @env(ACTIVE_DIRECTORY_REALM=IsCIOrNotEmpty())
     @cluster(num_nodes=2)
     def test_metadata(self):

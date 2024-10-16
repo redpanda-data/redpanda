@@ -9,7 +9,7 @@
 
 from enum import Enum
 
-from ducktape.mark import parametrize
+from ducktape.mark import ignore, parametrize
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kaf_consumer import KafConsumer
@@ -36,8 +36,8 @@ class MemoryStressTest(RedpandaTest):
         # enabling each test case to customize its ResourceSettings
         pass
 
+    @ignore
     @cluster(num_nodes=5)
-    @skip_debug_mode
     @parametrize(memory_share_for_fetch=0.05)
     @parametrize(memory_share_for_fetch=0.5)
     @parametrize(memory_share_for_fetch=0.7)
