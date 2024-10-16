@@ -178,9 +178,7 @@ ss::future<result<bool>> placeholder_extent::materialize(
         co_return errc::timeout;
     }
 
-    if (
-      !status.has_value()
-      || status.value() == cloud_io::cache_element_status::available) {
+    if (status.value() == cloud_io::cache_element_status::available) {
         auto res = co_await materialize_from_cache(cache_file_name, cache);
         if (res.has_error()) {
             co_return res.error();
