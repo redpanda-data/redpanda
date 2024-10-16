@@ -218,23 +218,16 @@ struct append_entries_request
       vnode src,
       protocol_metadata m,
       model::record_batch_reader r,
-      flush_after_append f = flush_after_append::yes) noexcept
-      : _source_node(src)
-      , _meta(m)
-      , _flush(f)
-      , _batches(std::move(r)) {}
+      size_t batches_size,
+      flush_after_append f = flush_after_append::yes) noexcept;
 
     append_entries_request(
       vnode src,
       vnode target,
       protocol_metadata m,
       model::record_batch_reader r,
-      flush_after_append f = flush_after_append::yes) noexcept
-      : _source_node(src)
-      , _target_node_id(target)
-      , _meta(m)
-      , _flush(f)
-      , _batches(std::move(r)) {}
+      size_t batches_size,
+      flush_after_append f = flush_after_append::yes) noexcept;
 
     ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
@@ -267,6 +260,11 @@ struct append_entries_request
 
     static ss::future<append_entries_request>
     serde_async_direct_read(iobuf_parser&, serde::header);
+    /// Returns a size of batches and append entries request metadata
+    size_t total_size() const { return _total_size; }
+    /// Returns a size of batches only. This does not include the size of append
+    /// entries metadata
+    size_t batches_size() const;
 
 private:
     vnode _source_node;
@@ -274,6 +272,9 @@ private:
     protocol_metadata _meta;
     flush_after_append _flush;
     model::record_batch_reader _batches;
+
+    // not serialized field used for accounting in raft internals
+    size_t _total_size;
 };
 
 class append_entries_request_serde_wrapper

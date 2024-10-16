@@ -14,6 +14,7 @@
 #include "features/feature_table.h"
 #include "metrics/prometheus_sanitize.h"
 #include "model/metadata.h"
+#include "raft/buffered_protocol.h"
 #include "raft/group_configuration.h"
 #include "raft/rpc_client_protocol.h"
 #include "resource_mgmt/io_priority.h"
@@ -35,11 +36,14 @@ group_manager::group_manager(
   ss::sharded<features::feature_table>& feature_table)
   : _self(self)
   , _raft_sg(raft_sg)
-  , _client(make_rpc_client_protocol(self, clients))
   , _configuration(cfg())
+  , _buffered_protocol(ss::make_shared<buffered_protocol>(
+      make_rpc_client_protocol(self, clients),
+      _configuration.max_inflight_requests_per_node,
+      _configuration.max_buffered_bytes_per_node))
   , _heartbeats(
       _configuration.heartbeat_interval,
-      _client,
+      consensus_client_protocol(_buffered_protocol),
       _self,
       _configuration.heartbeat_timeout,
       _configuration.enable_lw_heartbeat,
@@ -94,12 +98,14 @@ ss::future<> group_manager::stop() {
         f = f.then([this] { return _heartbeats.stop(); });
     }
 
-    return f.then([this] {
-        return ss::parallel_for_each(
-          _groups, [](ss::lw_shared_ptr<consensus> raft) {
-              return raft->stop().discard_result();
-          });
-    });
+    return f
+      .then([this] {
+          return ss::parallel_for_each(
+            _groups, [](ss::lw_shared_ptr<consensus> raft) {
+                return raft->stop().discard_result();
+            });
+      })
+      .then([this] { return _buffered_protocol->stop(); });
 }
 void group_manager::set_ready() {
     _is_ready = true;
@@ -129,7 +135,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       scheduling_config(_raft_sg, raft_priority()),
       _configuration.raft_io_timeout_ms,
       _configuration.enable_longest_log_detection,
-      _client,
+      consensus_client_protocol(_buffered_protocol),
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
       },

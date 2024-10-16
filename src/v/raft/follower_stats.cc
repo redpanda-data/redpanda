@@ -47,23 +47,6 @@ void follower_stats::update_with_configuration(const group_configuration& cfg) {
     }
 }
 
-ss::future<ssx::semaphore_units>
-follower_stats::get_append_entries_unit(vnode id) {
-    if (auto it = _queues.find(id); it != _queues.end()) {
-        return it->second.get_append_entries_unit();
-    }
-    auto [it, _] = _queues.emplace(id, _max_concurrent_append_entries);
-
-    return it->second.get_append_entries_unit();
-}
-
-void follower_stats::return_append_entries_units(vnode id) {
-    if (auto it = _queues.find(id);
-        it != _queues.end() && it->second.is_idle()) {
-        _queues.erase(it);
-    }
-}
-
 std::ostream& operator<<(std::ostream& o, const follower_stats& s) {
     o << "{followers:" << s._followers.size() << ", [";
     for (auto& f : s) {

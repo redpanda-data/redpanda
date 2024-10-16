@@ -89,7 +89,12 @@ struct simple_raft_fixture {
                   .write_caching_flush_bytes
                   = config::mock_binding<std::optional<size_t>>(std::nullopt),
                   .enable_longest_log_detection = config::mock_binding<bool>(
-                    true)};
+                    true),
+                  .max_buffered_bytes_per_node = config::mock_binding<size_t>(
+                    512_KiB),
+                  .max_inflight_requests_per_node
+                  = config::mock_binding<size_t>(10),
+                };
             },
             [] {
                 return raft::recovery_memory_quota::configuration{

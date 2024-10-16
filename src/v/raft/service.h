@@ -368,6 +368,7 @@ private:
           hb.meta,
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
+          0,
           flush_after_append::no};
     }
     static append_entries_request make_append_entries_request(
@@ -389,6 +390,7 @@ private:
           },
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
+          0,
           flush_after_append::no};
     }
 

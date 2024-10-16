@@ -517,7 +517,7 @@ compat_copy(raft::append_entries_request r) {
     auto target_node = r.target_node();
     auto source_node = r.source_node();
     auto flush = r.is_flush_required();
-
+    auto sz = r.batches_size();
     auto a_batches = model::consume_reader_to_memory(
                        std::move(r).release_batches(), model::no_timeout)
                        .get();
@@ -532,6 +532,7 @@ compat_copy(raft::append_entries_request r) {
       target_node,
       metadata,
       model::make_memory_record_batch_reader(std::move(a_batches)),
+      sz,
       flush);
 
     raft::append_entries_request b(
@@ -539,6 +540,7 @@ compat_copy(raft::append_entries_request r) {
       target_node,
       metadata,
       model::make_memory_record_batch_reader(std::move(b_batches)),
+      sz,
       flush);
 
     return {std::move(a), std::move(b)};
@@ -585,6 +587,7 @@ struct compat_check<raft::append_entries_request> {
           target,
           meta,
           model::make_memory_record_batch_reader(std::move(batches)),
+          0,
           flush};
     }
 
