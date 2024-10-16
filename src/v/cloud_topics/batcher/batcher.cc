@@ -306,12 +306,6 @@ batcher<Clock>::write_and_debounce(
   std::chrono::milliseconds timeout) {
     auto h = _gate.hold();
     auto index = _index++;
-    auto layout = maybe_get_data_layout(reader);
-    if (!layout.has_value()) {
-        // We expect to get in-memory record batch reader here so
-        // we will be able to estimate the size.
-        co_return errc::timeout;
-    }
     // The write request is stored on the stack of the
     // fiber until the 'response' promise is set. The
     // promise can be set by any fiber that uploaded the
