@@ -274,22 +274,6 @@ debug_bundle::result<debug_bundle::job_id_t> get_debug_bundle_job_id(
         return std::move(status_res).assume_error();
     }
 
-    switch (status_res.assume_value().status) {
-    case debug_bundle::debug_bundle_status::running:
-        return debug_bundle::error_info{
-          debug_bundle::error_code::debug_bundle_process_running,
-          "Process still running"};
-    case debug_bundle::debug_bundle_status::error:
-        return debug_bundle::error_info{
-          debug_bundle::error_code::internal_error, "Process errored out"};
-    case debug_bundle::debug_bundle_status::expired:
-        return debug_bundle::error_info{
-          debug_bundle::error_code::debug_bundle_expired,
-          "Debug bundle expired"};
-    case debug_bundle::debug_bundle_status::success:
-        break;
-    }
-
     if (status_res.assume_value().file_name != filename) {
         return debug_bundle::error_info{
           debug_bundle::error_code::job_id_not_recognized, "File Not Found"};

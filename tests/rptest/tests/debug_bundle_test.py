@@ -101,6 +101,10 @@ class DebugBundleTest(RedpandaTest):
     @cluster(num_nodes=1)
     @matrix(ignore_none=[True, False])
     def test_post_debug_bundle(self, ignore_none: bool):
+        """
+        Smoke test for the debug bundle.  Verifies behavior of endpoints depending
+        on certain states of the bundle service.
+        """
         node = random.choice(self.redpanda.started_nodes())
 
         job_id = uuid4()
@@ -333,3 +337,26 @@ class DebugBundleTest(RedpandaTest):
         assert expected_last_successful_bundle_timestamp - 2 <= samples[
             'last_successful_bundle_timestamp_seconds'].samples[
                 0].value <= expected_last_successful_bundle_timestamp + 2, f"Expected to see generation time {samples['last_successful_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {expected_last_successful_bundle_timestamp}"
+
+    @cluster(num_nodes=1)
+    def test_delete_cancelled_job(self):
+        """
+        This test verifies that after a bundle job has been cancelled,
+        it can be cleaned up by deleting the file and subsequent requests
+        to get the debug bundle status will return a 409
+        """
+        node = random.choice(self.redpanda.started_nodes())
+        job_id = uuid4()
+
+        self._run_debug_bundle(job_id=job_id,
+                               node=node,
+                               cancel_after_start=True)
+
+        filename = f'{str(job_id)}.zip'
+        # Delete the debug bundle after it has been cancelled
+        self.admin.delete_debug_bundle_file(filename=filename, node=node)
+        self._assert_http_error(
+            requests.codes.conflict,
+            DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
+            self.admin.get_debug_bundle,
+            node=node)
