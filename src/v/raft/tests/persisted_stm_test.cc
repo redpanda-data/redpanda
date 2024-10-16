@@ -487,9 +487,17 @@ public:
         ASSERT_EQ_CORO(before, _last_stm_applied);
     }
 
+    ss::future<> validate_snapshot_on_latest_offset() {
+        ASSERT_EQ_CORO(_last_stm_applied, last_applied_offset());
+    }
+
     ss::future<stm_snapshot> take_local_snapshot(
       [[maybe_unused]] ssx::semaphore_units apply_units) override {
+        co_await validate_snapshot_on_latest_offset();
         auto applied_offset_before = _last_stm_applied;
+        co_await validate_applied_offsets(applied_offset_before);
+        // sleep a bit to ensure _last_applied_offset doesn't move
+        // as we are holding the units.
         co_await ss::sleep(2ms);
         co_await validate_applied_offsets(applied_offset_before);
         co_return stm_snapshot::create(
