@@ -22,7 +22,7 @@ from ducktape.mark import matrix
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin, DebugBundleStartConfig, DebugBundleStartConfigParams
+from rptest.services.admin import Admin, DebugBundleLabelSelection, DebugBundleStartConfig, DebugBundleStartConfigParams
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, RpkNodeConfig, SecurityConfig, TLSProvider
 from rptest.services.redpanda_types import SaslCredentials
@@ -122,11 +122,19 @@ class DebugBundleTestBase(RedpandaTest):
                                       node=node)
         assert res.status_code == requests.codes.ok, f"Failed to start debug bundle: {res.json()}"
 
+        def get_bundle_status(expected_status: str) -> bool:
+            res = admin.get_debug_bundle(node=node).json()
+            self.logger.debug(f"Status: {res}")
+            status = res['status']
+            if status == 'error' and expected_status != 'error':
+                assert False, f"Debug bundle failed: {res}"
+
+            return res['status'] == expected_status
+
         # Wait until the debug bundle is running
         try:
             wait_until(
-                lambda: admin.get_debug_bundle(node=node).json()[
-                    'status'] == 'running',
+                lambda: get_bundle_status('running'),
                 timeout_sec=120,
                 backoff_sec=1,
                 err_msg="Timed out waiting for debug bundle process to start")
@@ -144,8 +152,7 @@ class DebugBundleTestBase(RedpandaTest):
         # Wait until the debug bundle has completed
         try:
             wait_until(
-                lambda: admin.get_debug_bundle(node=node).json()[
-                    'status'] == expected_status,
+                lambda: get_bundle_status(expected_status),
                 timeout_sec=120,
                 backoff_sec=1,
                 err_msg=
@@ -435,6 +442,65 @@ class DebugBundleTest(DebugBundleTestBase):
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.get_debug_bundle,
             node=node)
+
+    @cluster(num_nodes=1)
+    def test_debug_bundle_parameters(self):
+        """
+        This test will verify that the debug bundle parameters are
+        correctly parsed and passed to rpk
+        """
+        topic_name = "test_topic"
+
+        controller_logs_size_limit_bytes = 300 * 1024 * 1024
+        cpu_profiler_wait_seconds = 15
+        logs_since = "yesterday"
+        logs_size_limit_bytes = 150 * 1024
+        logs_until = "now"
+        metrics_interval_seconds = 5
+        metrics_samples = 3
+        partition = [f"{topic_name}/1,2"]
+        namespace = "redpanda"
+        label_selector = [
+            DebugBundleLabelSelection(key="app", value="redpanda")
+        ]
+
+        params = DebugBundleStartConfigParams(
+            controller_logs_size_limit_bytes=controller_logs_size_limit_bytes,
+            cpu_profiler_wait_seconds=cpu_profiler_wait_seconds,
+            logs_since=logs_since,
+            logs_size_limit_bytes=logs_size_limit_bytes,
+            logs_until=logs_until,
+            metrics_interval_seconds=metrics_interval_seconds,
+            metrics_samples=metrics_samples,
+            partition=partition,
+            namespace=namespace,
+            label_selector=label_selector)
+
+        RpkTool(self.redpanda).create_topic(topic_name,
+                                            partitions=16,
+                                            replicas=1)
+
+        node = random.choice(self.redpanda.started_nodes())
+
+        job_id = uuid4()
+
+        self._run_debug_bundle(job_id=job_id, node=node, config=params)
+
+        search_str = f'Starting RPK debug bundle: {self.redpanda.find_path_to_rpk()} debug bundle'
+        search_str += f' --output /var/lib/redpanda/data/debug-bundle/{str(job_id)}.zip'
+        search_str += f' --verbose'
+        search_str += f' --controller-logs-size-limit {controller_logs_size_limit_bytes}B'
+        search_str += f' --cpu-profiler-wait {cpu_profiler_wait_seconds}s'
+        search_str += f' --logs-since {logs_since}'
+        search_str += f' --logs-size-limit {logs_size_limit_bytes}B'
+        search_str += f' --logs-until {logs_until}'
+        search_str += f' --metrics-interval {metrics_interval_seconds}s'
+        search_str += f' --metrics-samples {metrics_samples}'
+        search_str += f' --partition kafka/{topic_name}/1,2'
+        search_str += f' --namespace {namespace}'
+        search_str += f' --label-selector {label_selector[0].key}={label_selector[0].value}'
+        assert self.redpanda.search_log_node(
+            node, search_str), f"Failed to find {search_str}"
 
 
 class DebugBundleSCRAMAuthn(DebugBundleTestBase):
