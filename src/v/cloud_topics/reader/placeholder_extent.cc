@@ -80,9 +80,7 @@ result<T> result_convert(result<T>&& res) {
     return res.value();
 }
 
-template<class Clock>
-basic_placeholder_extent<Clock>::basic_placeholder_extent(
-  model::record_batch batch) {
+placeholder_extent::placeholder_extent(model::record_batch batch) {
     base_offset = batch.base_offset();
     iobuf payload = std::move(batch).release_data();
     iobuf_parser parser(std::move(payload));
@@ -95,8 +93,7 @@ basic_placeholder_extent<Clock>::basic_placeholder_extent(
     });
 }
 
-template<class Clock>
-model::record_batch basic_placeholder_extent<Clock>::make_raft_data_batch() {
+model::record_batch placeholder_extent::make_raft_data_batch() {
     auto offset = placeholder.offset;
     auto size = placeholder.size_bytes;
     vassert(
@@ -125,12 +122,11 @@ model::record_batch basic_placeholder_extent<Clock>::make_raft_data_batch() {
     return batch;
 }
 
-template<class Clock>
-ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
+ss::future<result<bool>> placeholder_extent::materialize(
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<Clock>* api,
-  cloud_io::basic_cache_service_api<Clock>* cache,
-  basic_retry_chain_node<Clock>* rtc) {
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc) {
     bool hydrated = false;
     // This iobuf contains the record batch replaced by the placeholder. It
     // might potentially contain data that belongs to other placeholder
@@ -147,7 +143,7 @@ ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
     // future.
 
     std::optional<cloud_io::cache_element_status> status = std::nullopt;
-    basic_retry_chain_node<Clock> is_cached_rtc(retry_strategy::backoff, rtc);
+    basic_retry_chain_node<> is_cached_rtc(retry_strategy::backoff, rtc);
     retry_permit rp = is_cached_rtc.retry();
     while (rp.is_allowed && !status.has_value()) {
         auto is_cached_result
@@ -171,7 +167,7 @@ ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
             if (rp.abort_source != nullptr) {
                 co_await ss::sleep_abortable(rp.delay, *rp.abort_source);
             } else {
-                co_await ss::sleep<Clock>(rp.delay);
+                co_await ss::sleep(rp.delay);
             }
             rp = is_cached_rtc.retry();
             continue;
@@ -201,11 +197,9 @@ ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
     co_return hydrated;
 }
 
-template<class Clock>
-ss::future<result<iobuf>>
-basic_placeholder_extent<Clock>::materialize_from_cache(
+ss::future<result<iobuf>> placeholder_extent::materialize_from_cache(
   std::filesystem::path cache_file_name,
-  cloud_io::basic_cache_service_api<Clock>* cache) {
+  cloud_io::basic_cache_service_api<>* cache) {
     iobuf result_buf;
 
     auto buffer_size = config::shard_local_cfg().storage_read_buffer_size();
@@ -229,17 +223,15 @@ basic_placeholder_extent<Clock>::materialize_from_cache(
     co_return result_buf;
 }
 
-template<class Clock>
-ss::future<result<iobuf>>
-basic_placeholder_extent<Clock>::materialize_from_cloud_storage(
+ss::future<result<iobuf>> placeholder_extent::materialize_from_cloud_storage(
   std::filesystem::path cache_file_name,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<Clock>* api,
-  cloud_io::basic_cache_service_api<Clock>* cache,
-  basic_retry_chain_node<Clock>* rtc) {
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc) {
     // Populate the cache
     iobuf payload;
-    cloud_io::basic_download_request<Clock> req{
+    cloud_io::download_request req{
                 .transfer_details = {
                     .bucket = bucket, 
                     .key = cloud_storage_clients::object_key(cache_file_name), 
@@ -308,8 +300,5 @@ basic_placeholder_extent<Clock>::materialize_from_cloud_storage(
 
     co_return std::move(payload);
 }
-
-template struct basic_placeholder_extent<ss::lowres_clock>;
-template struct basic_placeholder_extent<ss::manual_clock>;
 
 } // namespace experimental::cloud_topics
