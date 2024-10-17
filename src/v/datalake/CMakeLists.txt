@@ -26,6 +26,7 @@ v_cc_library(
     schema_protobuf.cc
     protobuf_utils.cc
     values_protobuf.cc
+    base_types.cc
   DEPS
     v::datalake_common
     v::datalake_coordinator

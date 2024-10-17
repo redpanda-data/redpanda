@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#include "datalake/base_types.h"
 #include "datalake/batching_parquet_writer.h"
 #include "datalake/record_multiplexer.h"
 #include "datalake/tests/test_data_writer.h"

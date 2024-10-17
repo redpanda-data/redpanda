@@ -10,33 +10,13 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "datalake/base_types.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 
 #include <cstddef>
 
 namespace datalake {
-/**
- * Definitions of local and remote paths, as the name indicates the local path
- * is always pointing to the location on local disk wheras the remote path is a
- * path of the object in the object store.
- */
-using local_path = named_type<std::filesystem::path, struct local_path_tag>;
-using remote_path = named_type<std::filesystem::path, struct remote_path_tag>;
-
-/**
- * Simple type describing local parquet file metadata with its path and basic
- * statistics
- */
-struct local_file_metadata {
-    local_path path;
-    size_t row_count = 0;
-    size_t size_bytes = 0;
-    int hour = 0;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const local_file_metadata& r);
-};
 
 enum class data_writer_error {
     ok = 0,
