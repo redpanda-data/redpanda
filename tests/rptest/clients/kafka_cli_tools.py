@@ -320,7 +320,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                 record_size: int,
                 acks: int = -1,
                 throughput: int = -1,
-                batch_size: int = 81960):
+                batch_size: int = 81960,
+                linger_ms: int = 0):
         self._redpanda.logger.debug("Producing to topic: %s", topic)
         cmd = [self._script("kafka-producer-perf-test.sh")]
         cmd += ["--topic", topic]
@@ -329,9 +330,11 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         cmd += ["--throughput", str(throughput)]
         cmd += [
             "--producer-props",
-            "acks=%d" % acks, "client.id=ducktape",
+            "acks=%d" % acks,
+            "client.id=ducktape",
             "batch.size=%d" % batch_size,
-            "bootstrap.servers=%s" % self._redpanda.brokers()
+            "bootstrap.servers=%s" % self._redpanda.brokers(),
+            "linger.ms=%d" % linger_ms,
         ]
         if self._command_config:
             cmd += ["--producer.config", self._command_config.name]
