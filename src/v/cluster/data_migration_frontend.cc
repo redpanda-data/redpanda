@@ -25,6 +25,7 @@
 #include "partition_leaders_table.h"
 #include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
+#include "ssx/single_sharded.h"
 
 #include <fmt/ostream.h>
 
@@ -33,7 +34,7 @@ namespace cluster::data_migrations {
 frontend::frontend(
   model::node_id self,
   bool cloud_storage_api_initialized,
-  migrations_table& table,
+  ssx::single_sharded<migrations_table>& table,
   ss::sharded<features::feature_table>& features,
   ss::sharded<controller_stm>& stm,
   ss::sharded<partition_leaders_table>& leaders,
@@ -259,7 +260,8 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
         co_return make_error_code(errc::data_migration_invalid_resources);
     }
 
-    auto v_err = _table.validate_migrated_resources(migration);
+    auto v_err = _table.local().validate_migrated_resources(migration);
+
     if (v_err) {
         vlog(
           dm_log.warn,
@@ -269,7 +271,7 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
         co_return make_error_code(errc::data_migration_invalid_resources);
     }
 
-    auto id = _table.get_next_id();
+    auto id = _table.local().get_next_id();
     ec = co_await replicate_and_wait(
       _controller,
       _as,
@@ -285,7 +287,7 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
 
 ss::future<chunked_vector<migration_metadata>> frontend::list_migrations() {
     return container().invoke_on(data_migrations_shard, [](frontend& local) {
-        return local._table.list_migrations();
+        return local._table.local().list_migrations();
     });
 }
 
@@ -293,7 +295,8 @@ ss::future<result<migration_metadata>>
 frontend::get_migration(id migration_id) {
     return container().invoke_on(
       data_migrations_shard, [migration_id](frontend& local) {
-          auto maybe_migration = local._table.get_migration(migration_id);
+          auto maybe_migration = local._table.local().get_migration(
+            migration_id);
           return maybe_migration
                    ? result<migration_metadata>(maybe_migration->get().copy())
                    : errc::data_migration_not_exists;
@@ -335,7 +338,7 @@ frontend::do_update_migration_state(id id, state state) {
     /**
      * preliminary validation of migration state transition
      */
-    auto migration = _table.get_migration(id);
+    auto migration = _table.local().get_migration(id);
     if (!migration) {
         vlog(dm_log.warn, "migration {} id not found", id);
         co_return errc::data_migration_not_exists;
@@ -383,7 +386,7 @@ ss::future<std::error_code> frontend::do_remove_migration(id id) {
     /**
      * preliminary validation of migration existence
      */
-    auto migration = _table.get_migration(id);
+    auto migration = _table.local().get_migration(id);
     if (!migration) {
         vlog(dm_log.warn, "migration {} id not found", id);
         co_return errc::data_migration_not_exists;

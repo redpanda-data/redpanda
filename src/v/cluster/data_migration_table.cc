@@ -32,6 +32,8 @@ migrations_table::migrations_table(
   , _topics(topics)
   , _enabled(enabled) {}
 
+ss::future<> migrations_table::stop() { return ss::now(); }
+
 bool migrations_table::is_valid_state_transition(state current, state target) {
     switch (current) {
     case state::planned:

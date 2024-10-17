@@ -164,13 +164,13 @@ ss::future<> controller::wire_up() {
       .then([this] { return _roles.start(); })
       .then([this] { return _data_migrated_resources.start(); })
       .then([this] {
-          _data_migration_table
-            = std::make_unique<data_migrations::migrations_table>(
-              _data_migrated_resources,
-              std::ref(_tp_state),
-              config::shard_local_cfg().cloud_storage_enabled()
-                && config::shard_local_cfg()
-                     .cloud_storage_disable_archiver_manager());
+          return _data_migration_table.start_on(
+            data_migrations::data_migrations_shard,
+            std::ref(_data_migrated_resources),
+            std::ref(_tp_state),
+            config::shard_local_cfg().cloud_storage_enabled()
+              && config::shard_local_cfg()
+                   .cloud_storage_disable_archiver_manager());
       })
       .then([this] {
           return _authorizer.start(
@@ -308,7 +308,7 @@ ss::future<> controller::start(
     co_await _data_migration_frontend.start(
       _raft0->self().id(),
       _cloud_storage_api.local_is_initialized(),
-      std::ref(*_data_migration_table),
+      std::ref(_data_migration_table),
       std::ref(_feature_table),
       std::ref(_stm),
       std::ref(_partition_leaders),
@@ -364,7 +364,7 @@ ss::future<> controller::start(
           std::ref(_plugin_backend),
           std::ref(_recovery_manager),
           std::ref(_quota_backend),
-          std::ref(*_data_migration_table));
+          std::ref(_data_migration_table.local()));
     }
 
     co_await _members_frontend.start(
@@ -776,7 +776,7 @@ ss::future<> controller::start(
 
     co_await _data_migration_backend.start_on(
       data_migrations::data_migrations_shard,
-      std::ref(*_data_migration_table),
+      std::ref(_data_migration_table.local()),
       std::ref(_data_migration_frontend.local()),
       std::ref(_data_migration_worker),
       std::ref(_partition_leaders.local()),
@@ -866,6 +866,7 @@ ss::future<> controller::stop() {
     co_await _oidc_service.stop();
     co_await _authorizer.stop();
     co_await _ephemeral_credentials.stop();
+    co_await _data_migration_table.stop();
     co_await _data_migrated_resources.stop();
     co_await _roles.stop();
     co_await _credentials.stop();

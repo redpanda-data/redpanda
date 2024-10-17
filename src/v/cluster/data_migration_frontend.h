@@ -15,6 +15,7 @@
 #include "cluster/fwd.h"
 #include "features/fwd.h"
 #include "rpc/fwd.h"
+#include "ssx/single_sharded.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -27,7 +28,7 @@ public:
     frontend(
       model::node_id,
       bool,
-      migrations_table&,
+      ssx::single_sharded<migrations_table>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<controller_stm>&,
       ss::sharded<partition_leaders_table>&,
@@ -85,7 +86,7 @@ private:
 private:
     model::node_id _self;
     bool _cloud_storage_api_initialized;
-    migrations_table& _table;
+    ssx::single_sharded<migrations_table>& _table;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<controller_stm>& _controller;
     ss::sharded<partition_leaders_table>& _leaders_table;
