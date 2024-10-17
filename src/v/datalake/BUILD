@@ -85,6 +85,7 @@ redpanda_cc_library(
     include_prefix = "datalake",
     visibility = [":__subpackages__"],
     deps = [
+        ":base_types",
         ":table_definition",
         "//src/v/base",
         "//src/v/datalake/coordinator:data_file",
@@ -159,5 +160,21 @@ redpanda_cc_library(
         "@fmt",
         "@protobuf",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "base_types",
+    srcs = [
+        "base_types.cc",
+    ],
+    hdrs = [
+        "base_types.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/utils:named_type",
+        "@fmt",
     ],
 )

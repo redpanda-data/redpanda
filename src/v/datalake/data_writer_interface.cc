@@ -25,14 +25,4 @@ std::string data_writer_error_category::message(int ev) const {
     }
 }
 
-std::ostream& operator<<(std::ostream& o, const local_file_metadata& f_meta) {
-    fmt::print(
-      o,
-      "{{relative_path: {}, size_bytes: {}, row_count: {}, hour: {}}}",
-      f_meta.path,
-      f_meta.size_bytes,
-      f_meta.row_count,
-      f_meta.hour);
-    return o;
-}
 } // namespace datalake

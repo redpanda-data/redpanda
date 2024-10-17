@@ -9,14 +9,9 @@
  */
 #pragma once
 
-#include "base/outcome.h"
-#include "container/fragmented_vector.h"
-#include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/schemaless_translator.h"
-#include "model/fundamental.h"
 #include "model/record.h"
-#include "serde/envelope.h"
 
 #include <seastar/core/future.hh>
 
@@ -40,17 +35,27 @@ for each record {
     w.record(d);
 }
 */
+// TODO: add cleanup of files that were already written while translation
+// failed.
 class record_multiplexer {
 public:
-    explicit record_multiplexer(
-      std::unique_ptr<data_writer_factory> writer_factory);
+    struct write_result {
+        // base offset of the first translated batch
+        kafka::offset start_offset;
+        // last offset of the last translated batch (inclusive)
+        kafka::offset last_offset;
+        // vector containing a list of files that were written during
+        // translation.
+        chunked_vector<local_file_metadata> data_files;
+    };
+    explicit record_multiplexer(std::unique_ptr<data_writer_factory> writer);
+
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-    ss::future<result<coordinator::translated_offset_range, data_writer_error>>
-    end_of_stream();
+    ss::future<result<write_result, data_writer_error>> end_of_stream();
 
 private:
     schemaless_translator& get_translator();
-    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+    ss::future<result<std::reference_wrapper<data_writer>, data_writer_error>>
     get_writer();
 
     // TODO: in a future PR this will be a map of translators keyed by schema_id
@@ -58,11 +63,10 @@ private:
     std::unique_ptr<data_writer_factory> _writer_factory;
 
     // TODO: similarly this will be a map keyed by schema_id
-    ss::shared_ptr<data_writer> _writer;
+    std::unique_ptr<data_writer> _writer;
 
-    data_writer_error _writer_status = data_writer_error::ok;
-
-    std::optional<coordinator::translated_offset_range> _result;
+    std::optional<data_writer_error> _error;
+    std::optional<write_result> _result;
 };
 
 } // namespace datalake
