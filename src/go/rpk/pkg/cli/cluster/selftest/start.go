@@ -87,7 +87,7 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 			}
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Using cmd line args, assemble self_test_start_request body

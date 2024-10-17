@@ -91,6 +91,7 @@ Admin API hosts via flags, profile, or environment variables.`,
 				return
 			}
 			cl, err := adminapi.NewClient(
+				cmd.Context(),
 				fs,
 				p,
 				rpadmin.ClientTimeout(3*time.Second),

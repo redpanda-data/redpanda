@@ -42,7 +42,7 @@ To resume a paused transform, use 'rpk transform resume'.
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitServerlessAdmin(p)
-			api, err := adminapi.NewClient(fs, p)
+			api, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 			functionName := args[0]
 			err = api.PauseTransform(cmd.Context(), functionName)
@@ -71,7 +71,7 @@ Subsequent 'rpk transform list' operations will show transform processors as
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitServerlessAdmin(p)
-			api, err := adminapi.NewClient(fs, p)
+			api, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 			functionName := args[0]
 			err = api.ResumeTransform(cmd.Context(), functionName)
