@@ -28,6 +28,7 @@ v_cc_library(
     values_protobuf.cc
     base_types.cc
     cloud_data_io.cc
+    translation_task.cc
   DEPS
     v::cloud_io
     v::datalake_common
