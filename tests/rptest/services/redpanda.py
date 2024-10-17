@@ -2874,6 +2874,9 @@ class RedpandaService(RedpandaServiceBase):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
+        if first_start and in_fips_environment():
+            self.install_license()
+
     def write_crl_file(self, node: ClusterNode, ca: tls.CertificateAuthority):
         self.logger.info(
             f"Writing Redpanda node tls ca CRL file: {RedpandaService.TLS_CA_CRL_FILE}"
