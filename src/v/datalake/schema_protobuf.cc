@@ -120,10 +120,12 @@ field_outcome from_protobuf(
     /**
      * We support 32 bits unsigned integers by casting them to the iceberg long
      * type, the long type can hold the max value of uint32_t without an
-     * overflow. This isn't true for 64 bit unsigned integers and this is why we
-     * return a validation error in this case.
+     * overflow.
      * This the original behavior of Parquet as in:
      * https://github.com/apache/iceberg/blob/79fd977f67592a16579cff31478e7ea98ef126e4/parquet/src/main/java/org/apache/iceberg/parquet/MessageTypeToType.java#L223
+     *
+     * For a better experience for users using uint64_t types that are not
+     * normally supported in iceberg, we fallback to encoding them as strings.
      *
      */
     case pb::FieldDescriptor::TYPE_UINT32:
@@ -131,11 +133,7 @@ field_outcome from_protobuf(
         return success(fd, iceberg::long_type{});
     case pb::FieldDescriptor::TYPE_UINT64:
     case pb::FieldDescriptor::TYPE_FIXED64:
-        return schema_conversion_exception(fmt::format(
-          "Protocol buffer field {} type {} not supported, iceberg only "
-          "supports signed integers",
-          fd.DebugString(),
-          fd.type_name()));
+        return success(fd, iceberg::string_type{});
     case pb::FieldDescriptor::TYPE_INT32:
         return success(fd, iceberg::int_type{});
     case pb::FieldDescriptor::TYPE_STRING:

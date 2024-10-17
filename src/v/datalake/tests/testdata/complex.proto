@@ -35,3 +35,13 @@ message TopLevel {
     }
     NestedLevelOne nested_level_one = 1;
 }
+
+message StructWithUnsignedInt {
+    int64 valid = 1;
+    uint64 invalid = 2;
+}
+
+message StructWithUnsignedFixed {
+    int64 valid = 1;
+    fixed64 invalid = 2;
+}

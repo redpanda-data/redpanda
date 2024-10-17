@@ -161,9 +161,7 @@ TEST_CORO(SchemaProtobuf, TestProtoTestMessages) {
 
 TEST(SchemaProtobuf, TestInvalidSchema) {
     for (auto desc :
-         {StructWithUnsignedInt::GetDescriptor(),
-          StructWithUnsignedFixed::GetDescriptor(),
-          RecursiveMessage::GetDescriptor(),
+         {RecursiveMessage::GetDescriptor(),
           RecursiveMessageNested::GetDescriptor()}) {
         auto result = datalake::type_to_iceberg(*desc);
         ASSERT_TRUE(result.has_error());
@@ -504,13 +502,34 @@ TEST_CORO(values_protobuf, TestSettingDeeplyNestedMessages) {
     EXPECT_THAT(field, IcebergStruct(Eq(std::nullopt)));
 }
 
-TEST_CORO(values_protobuf, TestNotSupportedMessageType) {
+TEST(values_protobuf, TestUInt64Fallback) {
     StructWithUnsignedInt uint;
     uint.set_valid(-123);
     uint.set_invalid(123);
     StructWithUnsignedFixed ufixed;
     ufixed.set_valid(-123);
     ufixed.set_invalid(123);
+    std::vector<google::protobuf::Message*> messages;
+    messages.push_back(static_cast<google::protobuf::Message*>(&uint));
+    messages.push_back(static_cast<google::protobuf::Message*>(&ufixed));
+    for (auto& m : messages) {
+        auto result = serialize_and_convert(*m).get();
+
+        ASSERT_TRUE(result.has_value());
+        auto r_opt = std::move(result.value());
+        ASSERT_TRUE(r_opt.has_value());
+        auto struct_v = std::get<std::unique_ptr<iceberg::struct_value>>(
+          std::move(r_opt.value()));
+
+        ASSERT_THAT(
+          struct_v->fields,
+          ElementsAre(
+            OptionalIcebergPrimitive<long_value>(-123),
+            OptionalIcebergPrimitive<string_value>("123")));
+    }
+}
+
+TEST_CORO(values_protobuf, TestNotSupportedMessageType) {
     RecursiveMessage recursive;
     recursive.set_field(10);
     recursive.mutable_recursive()->set_field(12);
@@ -519,8 +538,6 @@ TEST_CORO(values_protobuf, TestNotSupportedMessageType) {
     recursive_nested.mutable_corecursive()->add_foo();
     recursive_nested.mutable_corecursive()->add_foo();
     std::vector<google::protobuf::Message*> messages;
-    messages.push_back(static_cast<google::protobuf::Message*>(&uint));
-    messages.push_back(static_cast<google::protobuf::Message*>(&ufixed));
     messages.push_back(static_cast<google::protobuf::Message*>(&recursive));
     messages.push_back(
       static_cast<google::protobuf::Message*>(&recursive_nested));
