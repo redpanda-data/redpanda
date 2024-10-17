@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
-#include "kafka/client/test/utils.h"
+#include "kafka/data/test/utils.h"
 
 #include "random/generators.h"
 
-namespace kafka::client::testing {
+namespace kafka::data::testing {
 
 iobuf random_length_iobuf(size_t data_max) {
     assert(data_max > 0);
@@ -24,4 +24,4 @@ iobuf random_length_iobuf(size_t data_max) {
     return b;
 }
 
-} // namespace kafka::client::testing
+} // namespace kafka::data::testing

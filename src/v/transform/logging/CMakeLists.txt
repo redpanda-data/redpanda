@@ -11,7 +11,7 @@ v_cc_library(
     v::cluster
     v::model
     v::transform_rpc
-    v::kc_record_batcher
+    v::kd_record_batcher
 )
 
 add_subdirectory(tests)
