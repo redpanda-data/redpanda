@@ -143,6 +143,7 @@ FIXTURE_TEST(
 })"};
 
     const pps::subject subject{"test-key"};
+    const pps::subject subject2{"test2-key"};
     put_config(client, subject, pps::compatibility_level::none);
 
     {
@@ -162,7 +163,31 @@ FIXTURE_TEST(
     }
 
     {
-        info("Post schema 4 as key with id 2 (expect error 42205)");
+        info("Repost schema 4 with same id and version");
+        auto res = post_schema(client, subject, schema_4);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":4})");
+    }
+
+    {
+        info("Post schema 4 as key on a different subject, with same id");
+        auto res = post_schema(client, subject2, schema_4);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":4})");
+
+        res = get_subject_versions(client, subject2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{1}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema 2 as key with id 4 (expect error 42205)");
         auto res = post_schema(client, subject, schema_2_as_4);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(),
@@ -170,7 +195,7 @@ FIXTURE_TEST(
         auto eb = get_error_body(res.body);
         BOOST_REQUIRE(
           eb.ec
-          == pp::reply_error_code::subject_version_schema_id_already_exists);
+          == pp::reply_error_code::subject_version_operation_not_permitted);
         BOOST_REQUIRE_EQUAL(
           eb.message, R"(Overwrite new schema with id 4 is not permitted.)");
     }
@@ -196,15 +221,7 @@ FIXTURE_TEST(
         info("Post schema 4 as key with id 2 (expect error 42207)");
         auto res = post_schema(client, subject, schema_4_as_2);
         BOOST_REQUIRE_EQUAL(
-          res.headers.result(),
-          boost::beast::http::status::unprocessable_entity);
-        auto eb = get_error_body(res.body);
-        BOOST_REQUIRE(
-          eb.ec
-          == pp::reply_error_code::subject_version_schema_id_already_exists);
-        BOOST_REQUIRE_EQUAL(
-          eb.message,
-          R"(Schema already registered with id 4 instead of input id 2)");
+          res.headers.result(), boost::beast::http::status::ok);
     }
 }
 
