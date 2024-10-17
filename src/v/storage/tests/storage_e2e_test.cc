@@ -36,7 +36,6 @@
 #include "test_utils/async.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/directory_walker.h"
-#include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>

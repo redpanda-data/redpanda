@@ -12,7 +12,6 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "model/limits.h"
 #include "model/record_batch_reader.h"
 #include "storage/lock_manager.h"
 #include "storage/offset_translator_state.h"
