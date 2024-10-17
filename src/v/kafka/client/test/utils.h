@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 

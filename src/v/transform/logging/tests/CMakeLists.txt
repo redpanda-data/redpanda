@@ -15,9 +15,9 @@ rp_test(
   SOURCES
     model_test.cc
     log_manager_test.cc
-    record_batcher_test.cc
   LIBRARIES
     v::transform_logging
     v::transform_logging_test_utils
     v::gtest_main
+    v::kd_record_batcher
 )

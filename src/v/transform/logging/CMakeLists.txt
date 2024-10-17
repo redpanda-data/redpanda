@@ -1,7 +1,6 @@
 v_cc_library(
   NAME transform_logging
   SRCS
-    record_batcher.cc
     event.cc
     log_manager.cc
     logger.cc
@@ -12,6 +11,7 @@ v_cc_library(
     v::cluster
     v::model
     v::transform_rpc
+    v::kd_record_batcher
 )
 
 add_subdirectory(tests)
