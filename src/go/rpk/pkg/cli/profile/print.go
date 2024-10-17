@@ -46,7 +46,11 @@ in the rpk.yaml file.
 			if p == nil {
 				out.Die("profile %s does not exist", args[0])
 			}
-
+			// We hide the license check and the SASL password.
+			p.LicenseCheck = nil
+			if p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Password != "" {
+				p.KafkaAPI.SASL.Password = "[REDACTED]"
+			}
 			m, err := yaml.Marshal(p)
 			out.MaybeDie(err, "unable to encode profile: %v", err)
 			fmt.Println(string(m))

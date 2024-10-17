@@ -68,7 +68,7 @@ func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudA
 			return Token{}, false, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
-			fmt.Println("Your existing auth token is still valid, avoiding re-authentication.")
+			zap.L().Sugar().Debug("Your existing auth token is still valid, avoiding re-authentication.")
 			return Token{AccessToken: auth.AuthToken}, false, nil
 		}
 		fmt.Println("Your existing authorization token has expired.")
@@ -95,7 +95,7 @@ func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth, noUI,
 			return Token{}, false, fmt.Errorf("unable to validate your authorization token: %v", err)
 		}
 		if !expired {
-			fmt.Println("Your existing auth token is still valid, avoiding re-authentication.")
+			zap.L().Sugar().Debug("Your existing auth token is still valid, avoiding re-authentication.")
 			return Token{AccessToken: auth.AuthToken}, false, nil
 		}
 		fmt.Println("Your existing authorization token has expired.")

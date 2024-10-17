@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package namespace
+package resourcegroup
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -17,12 +17,12 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:        "namespace",
-		Aliases:    []string{"ns"},
-		SuggestFor: []string{"namespaces"},
+		Use:        "resource-group",
+		Aliases:    []string{"namespace", "ns"},
+		SuggestFor: []string{"resource-group"},
 		Args:       cobra.ExactArgs(0),
 		Hidden:     true,
-		Short:      "Interact with Namespaces in Redpanda Cloud",
+		Short:      "Interact with resource groups in Redpanda Cloud",
 	}
 	cmd.AddCommand(
 		createCommand(fs, p),

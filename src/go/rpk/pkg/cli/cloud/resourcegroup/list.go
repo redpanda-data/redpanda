@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package namespace
+package resourcegroup
 
 import (
 	"context"
@@ -15,7 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	controlplanev1beta1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta1"
+	controlplanev1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta2"
+
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -35,7 +36,7 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Args:  cobra.ExactArgs(0),
-		Short: "List Namespaces in Redpanda Cloud",
+		Short: "List resource groups in Redpanda Cloud",
 		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]listResponse{}); ok {
@@ -53,36 +54,36 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			out.MaybeDie(err, "unable to create the public api client: %v", err)
 
-			namespaces, err := listAllNamespaces(cmd.Context(), cl)
-			out.MaybeDie(err, "unable to list namespaces: %v", err)
+			resourceGroups, err := listAllResourceGroups(cmd.Context(), cl)
+			out.MaybeDie(err, "unable to list resource groups: %v", err)
 
-			if isText, _, s, err := f.Format(namespaces); !isText {
+			if isText, _, s, err := f.Format(resourceGroups); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				fmt.Println(s)
 				return
 			}
 			tw := out.NewTable("name", "id")
 			defer tw.Flush()
-			for _, n := range namespaces {
+			for _, n := range resourceGroups {
 				tw.PrintStructFields(n)
 			}
 		},
 	}
 }
 
-// listAllNamespaces uses the pagination feature to traverse all pages of the
-// list request and return all namespaces.
-func listAllNamespaces(ctx context.Context, cl *publicapi.ControlPlaneClientSet) ([]listResponse, error) {
+// listAllResourceGroups uses the pagination feature to traverse all pages of the
+// list request and return all resource groups.
+func listAllResourceGroups(ctx context.Context, cl *publicapi.ControlPlaneClientSet) ([]listResponse, error) {
 	var (
 		pageToken string
-		listed    []*controlplanev1beta1.Namespace
+		listed    []*controlplanev1beta2.ResourceGroup
 	)
 	for {
-		l, err := cl.Namespace.ListNamespaces(ctx, connect.NewRequest(&controlplanev1beta1.ListNamespacesRequest{PageToken: pageToken}))
+		l, err := cl.ResourceGroup.ListResourceGroups(ctx, connect.NewRequest(&controlplanev1beta2.ListResourceGroupsRequest{PageToken: pageToken}))
 		if err != nil {
 			return nil, err
 		}
-		listed = append(listed, l.Msg.Namespaces...)
+		listed = append(listed, l.Msg.ResourceGroups...)
 		if pageToken = l.Msg.NextPageToken; pageToken == "" {
 			break
 		}
