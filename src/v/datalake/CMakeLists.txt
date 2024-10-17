@@ -18,6 +18,7 @@ v_cc_library(
     arrow_translator.cc
     datalake_manager.cc
     batching_parquet_writer.cc
+    data_writer_interface.cc
     parquet_writer.cc
     record_multiplexer.cc
     schema_registry.cc

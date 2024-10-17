@@ -26,31 +26,35 @@ namespace datalake {
 
 TEST(BatchingParquetWriterTest, WritesParquetFiles) {
     temporary_dir tmp_dir("batching_parquet_writer");
-    std::filesystem::path file_path = tmp_dir.get_path() / "test_file.parquet";
+    std::filesystem::path file_path = "test_file.parquet";
+    std::filesystem::path full_path = tmp_dir.get_path() / file_path;
     int num_rows = 1000;
 
     datalake::batching_parquet_writer writer(
-      test_schema(iceberg::field_required::no), 500, 1000000);
+      test_schema(iceberg::field_required::no),
+      500,
+      1000000,
+      local_path(full_path));
 
-    writer.initialize(file_path).get0();
+    writer.initialize().get();
 
     for (int i = 0; i < num_rows; i++) {
         auto data = iceberg::tests::make_struct_value(
           iceberg::tests::value_spec{
             .forced_fixed_val = iobuf::from("Hello world")},
           test_schema(iceberg::field_required::no));
-        writer.add_data_struct(std::move(data), 1000).get0();
+        writer.add_data_struct(std::move(data), 1000).get();
     }
 
     auto result = writer.finish().get0();
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().remote_path, file_path);
+    EXPECT_EQ(result.value().path, full_path);
     EXPECT_EQ(result.value().row_count, num_rows);
-    auto true_file_size = std::filesystem::file_size(file_path);
-    EXPECT_EQ(result.value().file_size_bytes, true_file_size);
+    auto true_file_size = std::filesystem::file_size(full_path);
+    EXPECT_EQ(result.value().size_bytes, true_file_size);
 
     // Read the file and check the contents
-    auto reader = arrow::io::ReadableFile::Open(file_path).ValueUnsafe();
+    auto reader = arrow::io::ReadableFile::Open(full_path).ValueUnsafe();
 
     // Open Parquet file reader
     std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
@@ -69,13 +73,16 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
 
 TEST(BatchingParquetWriterTest, DeletesFileOnAbort) {
     temporary_dir tmp_dir("batching_parquet_writer");
-    std::filesystem::path file_path = tmp_dir.get_path() / "test_file.parquet";
+    std::filesystem::path file_path = "test_file.parquet";
     int num_rows = 1000;
 
     datalake::batching_parquet_writer writer(
-      test_schema(iceberg::field_required::no), 500, 1000000);
+      test_schema(iceberg::field_required::no),
+      500,
+      1000000,
+      local_path(tmp_dir.get_path() / file_path));
 
-    writer.initialize(file_path).get0();
+    writer.initialize().get();
 
     for (int i = 0; i < num_rows; i++) {
         auto data = iceberg::tests::make_struct_value(

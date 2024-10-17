@@ -10,16 +10,34 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "coordinator/data_file.h"
-#include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
-#include "serde/envelope.h"
 
 #include <cstddef>
-#include <memory>
 
 namespace datalake {
+/**
+ * Definitions of local and remote paths, as the name indicates the local path
+ * is always pointing to the location on local disk wheras the remote path is a
+ * path of the object in the object store.
+ */
+using local_path = named_type<std::filesystem::path, struct local_path_tag>;
+using remote_path = named_type<std::filesystem::path, struct remote_path_tag>;
+
+/**
+ * Simple type describing local parquet file metadata with its path and basic
+ * statistics
+ */
+struct local_file_metadata {
+    local_path path;
+    size_t row_count = 0;
+    size_t size_bytes = 0;
+    int hour = 0;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const local_file_metadata& r);
+};
+
 enum class data_writer_error {
     ok = 0,
     parquet_conversion_error,
@@ -28,20 +46,9 @@ enum class data_writer_error {
 };
 
 struct data_writer_error_category : std::error_category {
-    const char* name() const noexcept override { return "Data Writer Error"; }
+    const char* name() const noexcept final { return "Data Writer Error"; }
 
-    std::string message(int ev) const override {
-        switch (static_cast<data_writer_error>(ev)) {
-        case data_writer_error::ok:
-            return "Ok";
-        case data_writer_error::parquet_conversion_error:
-            return "Parquet Conversion Error";
-        case data_writer_error::file_io_error:
-            return "File IO Error";
-        case data_writer_error::no_data:
-            return "No data";
-        }
-    }
+    std::string message(int ev) const final;
 
     static const std::error_category& error_category() {
         static data_writer_error_category e;
@@ -55,18 +62,29 @@ inline std::error_code make_error_code(data_writer_error e) noexcept {
 
 class data_writer {
 public:
+    data_writer() = default;
+    data_writer(const data_writer&) = delete;
+    data_writer(data_writer&&) = default;
+    data_writer& operator=(const data_writer&) = delete;
+    data_writer& operator=(data_writer&&) = delete;
+
     virtual ~data_writer() = default;
 
     virtual ss::future<data_writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<coordinator::data_file, data_writer_error>>
+    virtual ss::future<result<local_file_metadata, data_writer_error>>
     finish() = 0;
 };
 
 class data_writer_factory {
 public:
+    data_writer_factory() = default;
+    data_writer_factory(const data_writer_factory&) = delete;
+    data_writer_factory(data_writer_factory&&) = default;
+    data_writer_factory& operator=(const data_writer_factory&) = delete;
+    data_writer_factory& operator=(data_writer_factory&&) = default;
     virtual ~data_writer_factory() = default;
 
     virtual ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>

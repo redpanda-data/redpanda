@@ -94,7 +94,15 @@ record_multiplexer::end_of_stream() {
         }
         auto result_files = co_await _writer->finish();
         if (result_files.has_value()) {
-            _result.value().files.push_back(result_files.value());
+            auto local_file = result_files.value();
+            // TODO: upload files to cloud here, and fill necessary details
+            coordinator::data_file remote_file{
+              .remote_path = "",
+              .row_count = local_file.row_count,
+              .file_size_bytes = local_file.size_bytes,
+              .hour = local_file.hour,
+            };
+            _result.value().files.push_back(remote_file);
             co_return std::move(_result.value());
         } else {
             co_return result_files.error();
