@@ -609,7 +609,12 @@ class DataMigrationsApiTest(RedpandaTest):
 
             def stop_if_running(self):
                 if self.producer:
-                    self.producer.stop()
+                    try:
+                        self.producer.stop()
+                    except requests.exceptions.ConnectionError:
+                        # producer is so fragile that it dies
+                        # from an INVALID_TOPIC_EXCEPTION
+                        pass
                     self.acked_records = self.producer.produce_status.acked
                     self.producer.free()
                     self.producer = None
