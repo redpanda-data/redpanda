@@ -408,16 +408,11 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
             co_await _iterator.close();
             co_return log_reader::storage_t{};
         }
-        if (_last_base == _config.start_offset) {
-            set_end_of_stream();
-            co_await _iterator.close();
-            co_return log_reader::storage_t{};
-        }
-        /**
-         * We do not want to close the reader if we stopped because requested
-         * range was read. This way we make it possible to reset configuration
-         * and reuse underlying file input stream.
-         */
+
+        // We do not want to close the reader if we stopped because requested
+        // range was read. This way we make it possible to reset configuration
+        // and reuse underlying file input stream.
+
         if (
           _config.start_offset > _config.max_offset
           || _config.bytes_consumed > _config.max_bytes
@@ -425,6 +420,13 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
             set_end_of_stream();
             co_return log_reader::storage_t{};
         }
+
+        if (_last_base == _config.start_offset) {
+            set_end_of_stream();
+            co_await _iterator.close();
+            co_return log_reader::storage_t{};
+        }
+
         maybe_log_load_slice_depth_warning("reading more");
         _last_base = _config.start_offset;
         ss::future<> fut = find_next_valid_iterator();
