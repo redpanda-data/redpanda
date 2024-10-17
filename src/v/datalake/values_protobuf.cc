@@ -53,6 +53,25 @@ std::optional<IcebergT> convert(
     }
 }
 
+template<typename DefaultF>
+std::optional<iceberg::string_value> convert_u64_as_string(
+  std::optional<parsed::message::field> f,
+  const pb::FieldDescriptor& fd,
+  DefaultF get_default) {
+    if (f.has_value()) {
+        auto n = std::get<uint64_t>(std::move(f.value()));
+        return iceberg::string_value(iobuf::from(std::to_string(n)));
+    }
+    // When field has presence and it has no value it must explicitly be set to
+    // nullopt
+    if (fd.has_presence() && !fd.has_default_value()) {
+        return std::nullopt;
+    }
+
+    return iceberg::string_value(
+      iobuf::from(std::to_string(std::invoke(get_default, &fd))));
+}
+
 // converts a struct to an iceberg value
 ss::future<optional_value_outcome> message_to_value(
   std::unique_ptr<parsed::message> message,
@@ -228,10 +247,13 @@ ss::future<optional_value_outcome> single_field_to_value(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_int64);
-    // unsigned 64 bit integers are not supported
+    // unsigned 64 bit integers fallback to strings
     case pb::FieldDescriptor::TYPE_UINT64:
     case pb::FieldDescriptor::TYPE_FIXED64:
-        co_return type_conversion_error(field_descriptor);
+        co_return convert_u64_as_string(
+          std::move(field),
+          field_descriptor,
+          &pb::FieldDescriptor::default_value_uint64);
     case pb::FieldDescriptor::TYPE_INT32:
     case pb::FieldDescriptor::TYPE_SFIXED32:
     case pb::FieldDescriptor::TYPE_SINT32:
