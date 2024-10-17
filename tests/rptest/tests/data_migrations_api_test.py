@@ -518,6 +518,8 @@ class DataMigrationsApiTest(RedpandaTest):
             consumer.subscribe([topics[0].name])
             records = consumer.consume(2, 10)
             self.logger.debug(f"consumed: {records}")
+            records2 = consumer.consume(2, 10)
+            self.logger.debug(f"consumed2: {records2}")
             assert len(records) == 1
         finally:
             consumer.close()
