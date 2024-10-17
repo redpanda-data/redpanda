@@ -260,6 +260,12 @@ class RoleMemberUpdateResponse:
         return cls.from_json(rsp.content)
 
 
+class EnterpriseLicenseStatus(Enum):
+    valid = "valid"
+    expired = "expired"
+    not_present = "not_present"
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -697,6 +703,9 @@ class Admin:
     def put_license(self, license):
         return self._request("PUT", "features/license", data=license)
 
+    def get_enterprise_features(self):
+        return self._request("GET", "features/enterprise")
+
     def get_loggers(self, node):
         """
         Get the names of all loggers.
@@ -1042,7 +1051,8 @@ class Admin:
     def list_roles(self,
                    filter: Optional[str] = None,
                    principal: Optional[str] = None,
-                   principal_type: Optional[str] = None):
+                   principal_type: Optional[str] = None,
+                   node=None):
         params = {}
         if filter is not None:
             params['filter'] = filter
@@ -1050,7 +1060,7 @@ class Admin:
             params['principal'] = principal
         if principal_type is not None:
             params['principal_type'] = principal_type
-        return self._request("get", "security/roles", params=params)
+        return self._request("get", "security/roles", params=params, node=node)
 
     def update_role_members(self,
                             role: str,

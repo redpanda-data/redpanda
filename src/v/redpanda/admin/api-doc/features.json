@@ -90,6 +90,21 @@
                     }
                 }
             ]
+        },
+        {
+            "path": "/v1/features/enterprise",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Report license status and enterprise features in use",
+                    "nickname": "get_enterprise",
+                    "type": "enterprise_response",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
@@ -175,6 +190,37 @@
                     "type": "license_contents",
                     "nullable": "true",
                     "description": "Contents of a valid, signed license if loaded"
+                }
+            }
+        },
+        "enterprise_feature": {
+            "id": "enterprise_feature",
+            "description": "One enterprise feature by name, and whether it is in use",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "enterprise_response": {
+            "id": "enterprise_response",
+            "description": "Describe the license status and enterprise features in use.",
+            "properties": {
+                "license_status": {
+                    "type": "string",
+                    "enum": ["valid", "expired", "not_present"]
+                },
+                "violation": {
+                    "type": "boolean",
+                    "description": "true if license_status is not 'valid' AND one or more enterprise features are enabled"
+                },
+                "features": {
+                    "type": "array",
+                    "items": { "type": "enterprise_feature" },
+                    "description": "List of enterprise features (name and whether in use)"
                 }
             }
         }

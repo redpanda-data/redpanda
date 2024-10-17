@@ -192,6 +192,50 @@ ss::future<> feature_manager::stop() {
     co_await _gate.close();
 }
 
+bool feature_manager::license_required_feature_enabled() const {
+    return report_enterprise_features().any();
+}
+
+features::enterprise_feature_report
+feature_manager::report_enterprise_features() const {
+    const auto& cfg = config::shard_local_cfg();
+    auto has_gssapi = [&cfg]() {
+        return absl::c_any_of(
+          cfg.sasl_mechanisms(), [](const auto& m) { return m == "GSSAPI"; });
+    };
+    auto has_oidc = []() {
+        return config::oidc_is_enabled_kafka()
+               || config::oidc_is_enabled_http();
+    };
+
+    auto has_schema_id_validation = [&cfg]() {
+        return cfg.enable_schema_id_validation()
+               != pandaproxy::schema_registry::schema_id_validation_mode::none;
+    };
+    auto n_roles = _role_store.local().size();
+    auto has_non_default_roles
+      = n_roles >= 2
+        || (n_roles == 1 && !_role_store.local().contains(security::default_role));
+
+    features::enterprise_feature_report report;
+    report.set(
+      features::license_required_feature::audit_logging, cfg.audit_enabled());
+    report.set(
+      features::license_required_feature::cloud_storage,
+      cfg.cloud_storage_enabled());
+    report.set(
+      features::license_required_feature::partition_auto_balancing_continuous,
+      cfg.partition_autobalancing_mode()
+        == model::partition_autobalancing_mode::continuous);
+    report.set(features::license_required_feature::gssapi, has_gssapi());
+    report.set(features::license_required_feature::oidc, has_oidc());
+    report.set(
+      features::license_required_feature::schema_id_validation,
+      has_schema_id_validation());
+    report.set(features::license_required_feature::rbac, has_non_default_roles);
+    return report;
+}
+
 ss::future<> feature_manager::maybe_log_license_check_info() {
     auto license_check_retry = std::chrono::seconds(60 * 5);
     auto interval_override = std::getenv(
@@ -213,32 +257,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         }
     }
     if (_feature_table.local().is_active(features::feature::license)) {
-        const auto& cfg = config::shard_local_cfg();
-        auto has_gssapi = [&cfg]() {
-            return absl::c_any_of(cfg.sasl_mechanisms(), [](const auto& m) {
-                return m == "GSSAPI";
-            });
-        };
-        auto has_oidc = []() {
-            return config::oidc_is_enabled_kafka()
-                   || config::oidc_is_enabled_http();
-        };
-        auto has_schma_id_validation = [&cfg]() {
-            return cfg.enable_schema_id_validation()
-                   != pandaproxy::schema_registry::schema_id_validation_mode::
-                     none;
-        };
-        auto n_roles = _role_store.local().size();
-        auto has_non_default_roles
-          = n_roles >= 2
-            || (n_roles == 1 && !_role_store.local().contains(security::default_role));
-
-        if (
-          cfg.audit_enabled || cfg.cloud_storage_enabled
-          || cfg.partition_autobalancing_mode
-               == model::partition_autobalancing_mode::continuous
-          || has_gssapi() || has_oidc() || has_schma_id_validation()
-          || has_non_default_roles) {
+        if (license_required_feature_enabled()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
