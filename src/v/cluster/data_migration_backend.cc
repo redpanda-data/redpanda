@@ -522,6 +522,10 @@ ss::future<errc> backend::do_topic_work(
   state sought_state,
   const inbound_topic_work_info& itwi,
   tsws_lwptr_t tsws) {
+    vlog(
+      dm_log.trace,
+      "itwi.cloud_storage_location = {}",
+      itwi.cloud_storage_location);
     auto& rcn = tsws->rcn();
     // this switch should be in accordance to the logic in get_work_scope
     switch (sought_state) {
@@ -636,8 +640,9 @@ ss::future<errc> backend::create_topic(
            != cloud_storage::find_topic_manifest_outcome::success) {
         vlog(
           dm_log.warn,
-          "failed to download manifest for topic {}: {}",
+          "failed to download manifest for topic {} (storage_location {}): {}",
           original_nt.value_or(local_nt),
+          storage_location,
           download_res);
         co_return errc::topic_operation_error;
     }
