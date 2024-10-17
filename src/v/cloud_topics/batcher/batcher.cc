@@ -302,22 +302,16 @@ template<class Clock>
 ss::future<result<model::record_batch_reader>>
 batcher<Clock>::write_and_debounce(
   model::ntp ntp,
-  model::record_batch_reader r,
+  model::record_batch_reader reader,
   std::chrono::milliseconds timeout) {
     auto h = _gate.hold();
     auto index = _index++;
-    auto layout = maybe_get_data_layout(r);
-    if (!layout.has_value()) {
-        // We expect to get in-memory record batch reader here so
-        // we will be able to estimate the size.
-        co_return errc::timeout;
-    }
     // The write request is stored on the stack of the
     // fiber until the 'response' promise is set. The
     // promise can be set by any fiber that uploaded the
     // data from the write request.
     auto data_chunk = co_await details::serialize_in_memory_record_batch_reader(
-      std::move(r));
+      std::move(reader));
     _current_size += data_chunk.payload.size_bytes();
     details::write_request<Clock> request(
       std::move(ntp), index, std::move(data_chunk), timeout);
