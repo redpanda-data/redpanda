@@ -1994,7 +1994,9 @@ void application::wire_up_redpanda_services(
           _datalake_coordinator_mgr,
           node_id,
           std::ref(raft_group_manager),
-          std::ref(partition_manager))
+          std::ref(partition_manager),
+          std::ref(cloud_io),
+          cloud_configs.local().bucket_name)
           .get();
         construct_service(
           _datalake_coordinator_fe,

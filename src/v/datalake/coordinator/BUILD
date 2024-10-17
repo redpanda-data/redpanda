@@ -43,6 +43,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/base",
         "//src/v/datalake:logger",
+        "//src/v/iceberg:filesystem_catalog",
         "//src/v/storage:record_batch_builder",
     ],
     include_prefix = "datalake/coordinator",
@@ -51,8 +52,10 @@ redpanda_cc_library(
         ":coordinator",
         ":state_update",
         ":stm",
+        "//src/v/cloud_io:remote",
         "//src/v/cluster",
         "//src/v/cluster:notification",
+        "//src/v/iceberg:catalog",
         "//src/v/model",
         "//src/v/raft",
         "@seastar",

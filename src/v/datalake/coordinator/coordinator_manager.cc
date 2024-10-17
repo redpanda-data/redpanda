@@ -10,21 +10,30 @@
 #include "datalake/coordinator/coordinator_manager.h"
 
 #include "cluster/partition_manager.h"
-#include "coordinator.h"
+#include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/state_machine.h"
+#include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/shared_ptr.hh>
 
 namespace datalake::coordinator {
+namespace {
+// TODO: make this configurable.
+const ss::sstring base_location = "redpanda-iceberg-catalog";
+} // namespace
 
 coordinator_manager::coordinator_manager(
   model::node_id self,
   ss::sharded<raft::group_manager>& gm,
-  ss::sharded<cluster::partition_manager>& pm)
+  ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<cloud_io::remote>& io,
+  cloud_storage_clients::bucket_name bucket)
   : self_(self)
   , gm_(gm.local())
-  , pm_(pm.local()) {}
+  , pm_(pm.local())
+  , catalog_(std::make_unique<iceberg::filesystem_catalog>(
+      io.local(), std::move(bucket), base_location)) {}
 
 ss::future<> coordinator_manager::start() {
     manage_notifications_ = pm_.register_manage_notification(
