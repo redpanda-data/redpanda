@@ -100,7 +100,7 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::cleanup_policy_bitflags> ||
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
-        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
+        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> ||
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode> ||
         std::is_same_v<T, config::leaders_preference>;
@@ -310,6 +310,36 @@ override_if_not_default(const std::optional<T>& override, const T& def) {
     } else {
         return std::nullopt;
     }
+}
+
+// The cases in which the override is considered equivalent to the default are:
+// 1. `tristate` is empty (`std::nullopt`) and the optional default is also
+// empty (`std::nullopt`)
+// 2. `tristate` is disabled (`disable_tristate`) and the optional default is
+// empty (`std::nullopt`).
+// 3. `tristate` holds a value and the optional default holds the same value.
+template<typename T>
+tristate<T> override_if_not_default(
+  const tristate<T>& overrides, const std::optional<T>& def) {
+    // Overrides is {disabled}, cluster default is {value}
+    if (overrides.is_disabled() && def.has_value()) {
+        return overrides;
+    }
+    // Overrides is {std::nullopt}, cluster default is {value}
+    if (overrides.is_empty() && def.has_value()) {
+        return overrides;
+    }
+    if (overrides.has_optional_value()) {
+        // Overrides is {value}, cluster default is {std::nullopt}
+        if (!def.has_value()) {
+            return overrides;
+        }
+        // Overrides is {value}, cluster default is {diff_value}
+        if (def.has_value() && overrides.value() != def.value()) {
+            return overrides;
+        }
+    }
+    return tristate<T>{std::nullopt};
 }
 
 template<typename T, typename Func>
@@ -779,6 +809,20 @@ config_response_container_t make_topic_configs(
               [](const bool& b) { return b ? "true" : "false"; });
         }
     }
+
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      topic_property_delete_retention_ms,
+      metadata_cache.get_default_delete_retention_ms(),
+      topic_property_delete_retention_ms,
+      override_if_not_default(
+        topic_properties.delete_retention_ms,
+        metadata_cache.get_default_delete_retention_ms()),
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().tombstone_retention_ms.desc()));
 
     constexpr std::string_view key_validation
       = "Enable validation of the schema id for keys on a record";
