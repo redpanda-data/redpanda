@@ -450,11 +450,13 @@ class KubeNodeShell():
     def __init__(self,
                  kubectl: KubectlTool,
                  node_name: str,
+                 namespace: str = 'redpanda-node-setup',
                  clean=False) -> None:
         self.kubectl = kubectl
         self.node_name = node_name
         # It is bad, but it works
         self.logger = self.kubectl._redpanda.logger
+        self.namespace = namespace
         self.current_context = self.kubectl.cmd(
             f"config current-context").strip()
         # Make sure that name is not longer that 63 chars
@@ -528,6 +530,7 @@ class KubeNodeShell():
             # Feel free to uncomment
             _out = self.kubectl.cmd([
                 f"--context={self.current_context}",
+                f"--namespace={self.namespace}",
                 "run",
                 "--image docker.io/library/alpine",
                 "--restart=Never",
@@ -541,7 +544,8 @@ class KubeNodeShell():
     def destroy_nodeshell(self):
         if self._is_shell_running():
             try:
-                self.kubectl.cmd(f"delete pod {self.pod_name}")
+                self.kubectl.cmd(
+                    f"-n {self.namespace} delete pod {self.pod_name}")
             except Exception as e:
                 self.logger.warning("Failed to delete node shell pod "
                                     f"'{self.pod_name}': {e}")
@@ -558,7 +562,7 @@ class KubeNodeShell():
     def __call__(self, cmd: list[str] | str, capture=False):
         self.logger.info(f"Running command inside node '{self.node_name}'")
         # Prefix for running inside proper pod
-        _kcmd = ["exec", self.pod_name, "--"]
+        _kcmd = ["-n", f"{self.namespace}", "exec", self.pod_name, "--"]
         # Universal for list and str
         _cmd = cmd if isinstance(cmd, list) else cmd.split()
         _kcmd += _cmd
