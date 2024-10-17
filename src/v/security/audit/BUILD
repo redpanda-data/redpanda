@@ -35,6 +35,10 @@ redpanda_cc_library(
         "schemas/utils.h",
         "types.h",
     ],
+    implementation_deps = [
+        "//src/v/kafka/client:record_batcher",
+        "@abseil-cpp//absl/algorithm:container",
+    ],
     include_prefix = "security/audit",
     visibility = ["//visibility:public"],
     deps = [
