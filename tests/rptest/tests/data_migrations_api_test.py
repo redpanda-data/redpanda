@@ -307,10 +307,9 @@ class DataMigrationsApiTest(RedpandaTest):
 
         with Finjector(self.redpanda, self.scale,
                        max_concurrent_failures=1).finj_thread():
-            in_migration = InboundDataMigration(topics=[
-                InboundTopic(make_namespaced_topic(topic.name), alias=None)
-            ],
-                                                consumer_groups=[])
+            in_migration = InboundDataMigration(
+                topics=[InboundTopic(make_namespaced_topic(topic.name))],
+                consumer_groups=[])
             in_migration_id = self.create_and_wait(in_migration)
 
             migrations_map = self.get_migrations_map()
