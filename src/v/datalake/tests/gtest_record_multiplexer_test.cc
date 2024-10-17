@@ -46,8 +46,9 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       = reader.consume(std::move(multiplexer), model::no_timeout).get();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().files.size(), 1);
-    EXPECT_EQ(result.value().files[0].row_count, record_count * batch_count);
+    ASSERT_EQ(result.value().data_files.size(), 1);
+    EXPECT_EQ(
+      result.value().data_files[0].row_count, record_count * batch_count);
     EXPECT_EQ(result.value().start_offset(), start_offset);
     // Subtract one since offsets end at 0, and this is an inclusive range.
     EXPECT_EQ(
@@ -111,8 +112,9 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       = reader.consume(std::move(multiplexer), model::no_timeout).get0();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().files.size(), 1);
-    EXPECT_EQ(result.value().files[0].row_count, record_count * batch_count);
+    ASSERT_EQ(result.value().data_files.size(), 1);
+    EXPECT_EQ(
+      result.value().data_files[0].row_count, record_count * batch_count);
     EXPECT_EQ(result.value().start_offset(), start_offset);
     // Subtract one since offsets end at 0, and this is an inclusive range.
     EXPECT_EQ(
