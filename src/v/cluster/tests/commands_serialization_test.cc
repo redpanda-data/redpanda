@@ -194,7 +194,7 @@ FIXTURE_TEST(test_move_partition_replicass_command, cmd_test_fixture) {
 
     ss::visit(deser, [&cmd](cluster::move_partition_replicas_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key, cmd.key);
-        for (int i = 0; i < cmd.value.size(); ++i) {
+        for (size_t i = 0; i < cmd.value.size(); ++i) {
             BOOST_REQUIRE_EQUAL(c.value[i].node_id, cmd.value[i].node_id);
             BOOST_REQUIRE_EQUAL(c.value[i].shard, cmd.value[i].shard);
         }
