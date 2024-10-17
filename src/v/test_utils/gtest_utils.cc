@@ -26,6 +26,13 @@ void rp_test_listener::OnTestIterationStart(
     gtest_iteration = iteration;
 }
 
+void rp_test_listener::OnTestPartResult(
+  const ::testing::TestPartResult& result) {
+    if (result.type() == testing::TestPartResult::kFatalFailure) {
+        throw testing::AssertionException(result);
+    }
+}
+
 ss::sstring get_test_directory() {
     const auto* test_info
       = ::testing::UnitTest::GetInstance()->current_test_info();
