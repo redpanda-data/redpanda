@@ -179,6 +179,8 @@ public:
         _expected_next = _config.fill_gaps ? std::make_optional<model::offset>(
                                                _config.start_offset)
                                            : std::nullopt;
+        _last_base = {};
+
         // reset_config is only called in the context of a reader cache hit
         _was_cached = true;
     };
