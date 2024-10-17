@@ -9,9 +9,9 @@
 
 #include "base/vlog.h"
 #include "cluster/controller_snapshot.h"
+#include "cluster/data_migrated_resources.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
-#include "data_migrated_resources.h"
 #include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/testing/thread_test_case.hh>

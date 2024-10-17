@@ -14,8 +14,6 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-#include <bits/stdint-uintn.h>
-
 #include <cstdint>
 using namespace std::chrono_literals;
 
