@@ -86,7 +86,7 @@ public:
       size_t row_count_threshold,
       size_t byte_count_threshold);
 
-    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+    ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
     create_writer(iceberg::struct_type schema) override;
 
 private:

@@ -70,8 +70,8 @@ record_multiplexer::operator()(model::record_batch batch) {
             _writer_status = writer_result.error();
             co_return ss::stop_iteration::yes;
         }
-        auto writer = std::move(writer_result.value());
-        _writer_status = co_await writer->add_data_struct(
+        auto& writer = writer_result.value().get();
+        _writer_status = co_await writer.add_data_struct(
           std::move(data), estimated_size);
         if (_writer_status != data_writer_error::ok) {
             // If a write fails, the writer is left in an indeterminate state,
@@ -116,7 +116,7 @@ schemaless_translator& record_multiplexer::get_translator() {
     return _translator;
 }
 
-ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+ss::future<result<std::reference_wrapper<data_writer>, data_writer_error>>
 record_multiplexer::get_writer() {
     if (!_writer) {
         auto& translator = get_translator();
@@ -126,9 +126,8 @@ record_multiplexer::get_writer() {
         if (!writer_result.has_value()) {
             co_return writer_result.error();
         }
-        _writer = writer_result.value();
-        co_return _writer;
+        _writer = std::move(writer_result.value());
     }
-    co_return _writer;
+    co_return *_writer;
 }
 } // namespace datalake

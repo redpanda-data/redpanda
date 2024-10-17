@@ -52,9 +52,9 @@ public:
     explicit test_data_writer_factory(bool return_error)
       : _return_error{return_error} {}
 
-    ss::future<result<ss::shared_ptr<data_writer>, data_writer_error>>
+    ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
     create_writer(iceberg::struct_type schema) override {
-        co_return ss::make_shared<test_data_writer>(
+        co_return std::make_unique<test_data_writer>(
           std::move(schema), _return_error);
     }
 

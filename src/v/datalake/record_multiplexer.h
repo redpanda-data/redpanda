@@ -58,7 +58,7 @@ private:
     std::unique_ptr<data_writer_factory> _writer_factory;
 
     // TODO: similarly this will be a map keyed by schema_id
-    ss::shared_ptr<data_writer> _writer;
+    std::unique_ptr<data_writer> _writer;
 
     data_writer_error _writer_status = data_writer_error::ok;
 
