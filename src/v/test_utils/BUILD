@@ -9,6 +9,7 @@ redpanda_test_cc_library(
     hdrs = [
         "async.h",
         "gtest_utils.h",
+        "logs.h",
         "test.h",
         "test_macros.h",
     ],
@@ -32,6 +33,7 @@ redpanda_test_cc_library(
     hdrs = [
         "async.h",
         "fixture.h",
+        "logs.h",
         "test_macros.h",
         "tmp_dir.h",
     ],
