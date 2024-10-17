@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "http/client.h"
 #include "http/request_builder.h"
+#include "iceberg/catalog.h"
 #include "iceberg/rest_client/retry_policy.h"
 #include "iceberg/rest_client/types.h"
 #include "json/document.h"
@@ -68,7 +69,7 @@ expected<json::Document> parse_json(iobuf&& raw_response);
 // It also ensures that a token is available before making calls. A client is
 // lightweight and expected to be created for single operations or closely
 // related operations.
-class catalog_client {
+class catalog_client : public catalog {
 public:
     /// \brief Construct a catalog client
     /// \param client_source returns unique ptrs to clients for making API calls
@@ -90,17 +91,29 @@ public:
       client_source& client_source,
       ss::sstring endpoint,
       credentials credentials,
+      ss::abort_source& as,
       std::optional<base_path> base_path = std::nullopt,
       std::optional<prefix_path> prefix = std::nullopt,
       std::optional<api_version> api_version = std::nullopt,
       std::optional<oauth_token> token = std::nullopt,
       std::unique_ptr<retry_policy> retry_policy = nullptr);
 
+    ss::future<checked<table_metadata, errc>> create_table(
+      const table_identifier& table_ident,
+      const schema& schema,
+      const partition_spec& spec) override;
+
+    ss::future<checked<table_metadata, errc>>
+    load_table(const table_identifier& table_ident) override;
+
+    ss::future<checked<std::nullopt_t, errc>>
+    commit_txn(const table_identifier& table_ident, transaction) override;
+
 private:
     // The root url calculated from base url, prefix and api version. Given a
-    // base url of "/b", an api version "v2" and a prefix of "x/y", the root url
-    // is "/b/v2/x/y/". The root url is prefixed before rest entities used when
-    // making calls to the catalog service
+    // base url of "/b", an api version "v2" and a prefix of "x/y", the root
+    // url is "/b/v2/x/y/". The root url is prefixed before rest entities used
+    // when making calls to the catalog service
     ss::sstring root_path() const;
 
     // Acquires token from catalog API by exchanging credentials
@@ -121,6 +134,7 @@ private:
     std::reference_wrapper<client_source> _client_source;
     ss::sstring _endpoint;
     credentials _credentials;
+    ss::abort_source& _as;
     path_components _path_components;
     std::optional<oauth_token> _oauth_token{std::nullopt};
     std::unique_ptr<retry_policy> _retry_policy;

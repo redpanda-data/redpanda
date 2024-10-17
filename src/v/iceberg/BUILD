@@ -933,3 +933,23 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "table_requests_json",
+    srcs = [
+        "table_requests_json.cc",
+    ],
+    hdrs = [
+        "table_requests_json.h",
+    ],
+    implementation_deps = [
+        ":partition_json",
+        ":schema_json",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":json_writer",
+        ":table_requests",
+        "//src/v/json",
+    ],
+)

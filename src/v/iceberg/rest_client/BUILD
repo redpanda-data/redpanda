@@ -4,12 +4,18 @@ package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 redpanda_cc_library(
     name = "rest_client_types",
+    srcs = [
+        "types.cc",
+    ],
     hdrs = [
         "types.h",
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
         "//src/v/base",
+        "//src/v/http:request_builder",
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:logger",
         "//src/v/thirdparty/ada",
         "//src/v/utils:named_type",
         "@boost//:beast",
@@ -28,6 +34,8 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     deps = [
         ":rest_client_types",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
         "//src/v/json",
         "//src/v/utils:named_type",
     ],
@@ -50,6 +58,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "entities",
+    srcs = [
+        "entities.cc",
+    ],
+    hdrs = [
+        "entities.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/http:rest_entity",
+        "@boost//:algorithm",
+    ],
+)
+
+redpanda_cc_library(
     name = "rest_catalog_client",
     srcs = [
         "catalog_client.cc",
@@ -59,6 +83,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
+        ":entities",
         ":rest_client_parsers",
         ":rest_client_types",
         ":retry_policy",
@@ -67,6 +92,10 @@ redpanda_cc_library(
         "//src/v/http",
         "//src/v/http:request_builder",
         "//src/v/http:utils",
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:json_writer",
+        "//src/v/iceberg:table_requests",
+        "//src/v/iceberg:table_requests_json",
         "//src/v/json",
         "//src/v/utils:named_type",
         "//src/v/utils:retry_chain_node",

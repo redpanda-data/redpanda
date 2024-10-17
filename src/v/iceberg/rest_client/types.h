@@ -11,12 +11,14 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "http/request_builder.h"
+#include "iceberg/catalog.h"
+#include "thirdparty/ada/ada.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 
-#include <ada/expected.h>
 #include <boost/beast/http/status.hpp>
 
 namespace iceberg::rest_client {
@@ -41,8 +43,25 @@ struct retries_exhausted {
 
 // Represents the sum of all error types which can be encountered during
 // rest-client operations.
-using domain_error
-  = std::variant<json_parse_error, http_call_error, retries_exhausted>;
+using domain_error = std::variant<
+  http::url_build_error,
+  json_parse_error,
+  http_call_error,
+  retries_exhausted>;
+
+std::ostream& operator<<(std::ostream&, domain_error);
+
+struct domain_error_printer {
+    std::ostream& os;
+
+    std::ostream& operator()(http::url_build_error) const;
+
+    std::ostream& operator()(json_parse_error) const;
+
+    std::ostream& operator()(http_call_error) const;
+
+    std::ostream& operator()(retries_exhausted) const;
+};
 
 // The core result type used by all operations in the iceberg/rest-client which
 // can fail. Allows chaining of operations together and short-circuiting when an
@@ -62,5 +81,23 @@ struct credentials {
     ss::sstring client_id;
     ss::sstring client_secret;
 };
+
+// Converts a domain error to catalog::errc, a rough equivalence is used,
+// favoring unexpected_state where a one to one mapping is not present.
+struct domain_error_mapper {
+    catalog::errc operator()(boost::beast::http::status status) const;
+
+    catalog::errc operator()(http_call_error err) const;
+
+    catalog::errc operator()(ss::sstring) const;
+
+    catalog::errc operator()(json_parse_error) const;
+
+    catalog::errc operator()(retries_exhausted) const;
+
+    catalog::errc operator()(http::url_build_error) const;
+};
+
+catalog::errc map_error(const domain_error& error, std::string_view);
 
 } // namespace iceberg::rest_client
