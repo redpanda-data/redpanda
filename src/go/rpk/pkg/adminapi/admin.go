@@ -135,8 +135,8 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *rpadmin.AdminAPI
 	// We only do a check if:
 	//   1. LicenseCheck == nil: never checked before OR last check was in
 	//      violation. (we only save successful responses).
-	//   2. LicenseStatus was last checked more than 7 days ago.
-	if p.LicenseCheck == nil || p.LicenseCheck != nil && time.Unix(p.LicenseCheck.LastUpdate, 0).AddDate(0, 0, 7).Before(time.Now()) {
+	//   2. LicenseStatus was last checked more than 1 hour ago.
+	if p.LicenseCheck == nil || p.LicenseCheck != nil && time.Unix(p.LicenseCheck.LastUpdate, 0).Add(1*time.Hour).Before(time.Now()) {
 		resp, err := cl.GetEnterpriseFeatures(ctx)
 		if err != nil {
 			zap.L().Sugar().Warnf("unable to check licensed enterprise features in the cluster: %v", err)
@@ -152,7 +152,7 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *rpadmin.AdminAPI
 					features = append(features, f.Name)
 				}
 			}
-			msg = fmt.Sprintf("A Redpanda Enterprise Edition license is required to use enterprise features: %v. For more information, see https://docs.redpanda.com/current/get-started/licenses.", features)
+			msg = fmt.Sprintf("\nWARNING: The following Enterprise features are being used in your Redpanda cluster: %v. These features require a license. To get a license, contact us at https://www.redpanda.com/contact. For more information, see https://docs.redpanda.com/current/get-started/licenses/#redpanda-enterprise-edition\n", features)
 		} else {
 			licenseCheck = &config.LicenseStatusCache{
 				LastUpdate: time.Now().Unix(),
@@ -160,9 +160,11 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *rpadmin.AdminAPI
 		}
 		if exists && y != nil {
 			actProfile := y.Profile(p.Name)
-			actProfile.LicenseCheck = licenseCheck
-			if err := y.Write(fs); err != nil {
-				zap.L().Sugar().Warnf("unable to save licensed enterprise features check cache to profile: %v", err)
+			if actProfile != nil {
+				actProfile.LicenseCheck = licenseCheck
+				if err := y.Write(fs); err != nil {
+					zap.L().Sugar().Warnf("unable to save licensed enterprise features check cache to profile: %v", err)
+				}
 			}
 		}
 	}

@@ -284,6 +284,9 @@ class RpkClusterTest(RedpandaTest):
             '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf',
             'expires_unix': 4813252273,
             'license_expired': False,
+            'license_status': 'valid',
+            'license_violation': False,
+            'enterprise_features_in_use': [],
         }
         result = json.loads(rp_license)
         assert expected_license == result, result
