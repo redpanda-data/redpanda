@@ -9,6 +9,7 @@
 import random
 import threading
 import time
+from contextlib import contextmanager
 from enum import Enum
 from typing import Callable, NamedTuple, Literal, List
 import typing
@@ -120,6 +121,38 @@ class DataMigrationsApiTest(RedpandaTest):
         )
         super().__init__(test_context=test_context, *args, **kwargs)
         self.admin = Admin(self.redpanda)
+        self.last_producer_id = 0
+        self.last_consumer_id = 0
+
+    def get_topic_initial_revision(self, topic_name):
+        anomalies = self.admin.get_cloud_storage_anomalies(namespace="kafka",
+                                                           topic=topic_name,
+                                                           partition=1)
+        return anomalies['revision_id']
+
+    def get_ck_producer(self, use_transactional=False):
+        self.last_producer_id += 1
+        return ck.Producer(
+            {'bootstrap.servers': self.redpanda.brokers()} |
+            ({
+                'transactional.id': f"tx-id-{self.last_producer_id}"
+            } if use_transactional else {}),
+            logger=self.logger,
+            debug='all')
+
+    @contextmanager
+    def ck_consumer(self):
+        self.last_consumer_id += 1
+        consumer = ck.Consumer({
+            'group.id': f'group-{self.last_consumer_id}',
+            'bootstrap.servers': self.redpanda.brokers(),
+            'auto.offset.reset': 'earliest',
+            'isolation.level': 'read_committed',
+        })
+        try:
+            yield consumer
+        finally:
+            consumer.close()
 
     def get_migrations_map(self, node=None):
         migrations = self.admin.list_data_migrations(node).json()
@@ -448,13 +481,7 @@ class DataMigrationsApiTest(RedpandaTest):
         for t in topics:
             self.client().create_topic(t)
 
-        producer = ck.Producer(
-            {
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': "tx-id-1",
-            },
-            logger=self.logger,
-            debug='all')
+        producer = self.get_ck_producer(use_transactional=True)
         producer.init_transactions()
         # commit one message
         producer.begin_transaction()
@@ -507,19 +534,11 @@ class DataMigrationsApiTest(RedpandaTest):
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
 
-        consumer = ck.Consumer({
-            'group.id': 'group-1',
-            'bootstrap.servers': self.redpanda.brokers(),
-            'auto.offset.reset': 'earliest',
-            'isolation.level': 'read_committed',
-        })
-        try:
+        with self.ck_consumer() as consumer:
             consumer.subscribe([topics[0].name])
             records = consumer.consume(2, 10)
             self.logger.debug(f"consumed: {records}")
             assert len(records) == 1
-        finally:
-            consumer.close()
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(
