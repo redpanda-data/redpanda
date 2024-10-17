@@ -21,6 +21,7 @@ redpanda_test_cc_library(
         "//src/v/base",
         "//src/v/model/tests:random",
         "//src/v/schema:registry",
+        "//src/v/schema/tests:fake_registry",
         "//src/v/test_utils:gtest",
         "//src/v/wasm:api",
         "//src/v/wasm:wasmtime",
