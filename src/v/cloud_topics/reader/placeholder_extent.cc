@@ -80,32 +80,31 @@ result<T> result_convert(result<T>&& res) {
     return res.value();
 }
 
-template<class Clock>
-basic_placeholder_extent<Clock>::basic_placeholder_extent(
-  model::record_batch batch) {
-    base_offset = batch.base_offset();
+placeholder_extent make_placeholder_extent(model::record_batch batch) {
+    placeholder_extent e;
+    e.base_offset = batch.base_offset();
     iobuf payload = std::move(batch).release_data();
     iobuf_parser parser(std::move(payload));
     auto record = model::parse_one_record_from_buffer(parser);
     iobuf value = std::move(record).release_value();
-    placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
+    e.placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
 
-    L0_object = ss::make_lw_shared<hydrated_L0_object>({
-      .id = placeholder.id,
+    e.L0_object = ss::make_lw_shared<hydrated_L0_object>({
+      .id = e.placeholder.id,
     });
+    return e;
 }
 
-template<class Clock>
-model::record_batch basic_placeholder_extent<Clock>::make_raft_data_batch() {
-    auto offset = placeholder.offset;
-    auto size = placeholder.size_bytes;
+model::record_batch make_raft_data_batch(placeholder_extent ext) {
+    auto offset = ext.placeholder.offset;
+    auto size = ext.placeholder.size_bytes;
     vassert(
       size() > model::packed_record_batch_header_size,
       "L0 object is smaller ({}) than the batch header",
       size());
-    auto header_bytes = L0_object->payload.share(
+    auto header_bytes = ext.L0_object->payload.share(
       offset(), model::packed_record_batch_header_size);
-    auto records_bytes = L0_object->payload.share(
+    auto records_bytes = ext.L0_object->payload.share(
       offset() + model::packed_record_batch_header_size,
       size() - model::packed_record_batch_header_size);
     auto header = storage::batch_header_from_disk_iobuf(
@@ -113,7 +112,7 @@ model::record_batch basic_placeholder_extent<Clock>::make_raft_data_batch() {
     // NOTE: the serialized raft_data batch doesn't have the offset set
     // so we need to populate it from the placeholder batch. We also need
     // to make sure that crc is correct.
-    header.base_offset = base_offset;
+    header.base_offset = ext.base_offset;
     header.crc = model::crc_record_batch(header, records_bytes);
     crc::crc32c crc;
     model::crc_record_batch_header(crc, header);
@@ -125,12 +124,23 @@ model::record_batch basic_placeholder_extent<Clock>::make_raft_data_batch() {
     return batch;
 }
 
-template<class Clock>
-ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
+ss::future<result<iobuf>> materialize_from_cache(
+  std::filesystem::path cache_file_name,
+  cloud_io::basic_cache_service_api<>* cache);
+
+ss::future<result<iobuf>> materialize_from_cloud_storage(
+  std::filesystem::path cache_file_name,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<Clock>* api,
-  cloud_io::basic_cache_service_api<Clock>* cache,
-  basic_retry_chain_node<Clock>* rtc) {
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc);
+
+ss::future<result<bool>> materialize(
+  placeholder_extent* ext,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc) {
     bool hydrated = false;
     // This iobuf contains the record batch replaced by the placeholder. It
     // might potentially contain data that belongs to other placeholder
@@ -140,14 +150,14 @@ ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
 
     // 2. download object from S3
     auto cache_file_name = std::filesystem::path(
-      ssx::sformat("{}", placeholder.id()));
+      ssx::sformat("{}", ext->placeholder.id()));
     // TODO: replace this with proper object name
     // currently this value is used as both cloud storage name
     // and cache name. This shouldn't necessary be the case in the
     // future.
 
     std::optional<cloud_io::cache_element_status> status = std::nullopt;
-    basic_retry_chain_node<Clock> is_cached_rtc(retry_strategy::backoff, rtc);
+    basic_retry_chain_node<> is_cached_rtc(retry_strategy::backoff, rtc);
     retry_permit rp = is_cached_rtc.retry();
     while (rp.is_allowed && !status.has_value()) {
         auto is_cached_result
@@ -171,7 +181,7 @@ ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
             if (rp.abort_source != nullptr) {
                 co_await ss::sleep_abortable(rp.delay, *rp.abort_source);
             } else {
-                co_await ss::sleep<Clock>(rp.delay);
+                co_await ss::sleep(rp.delay);
             }
             rp = is_cached_rtc.retry();
             continue;
@@ -182,30 +192,26 @@ ss::future<result<bool>> basic_placeholder_extent<Clock>::materialize(
         co_return errc::timeout;
     }
 
-    if (
-      !status.has_value()
-      || status.value() == cloud_io::cache_element_status::available) {
+    if (status.value() == cloud_io::cache_element_status::available) {
         auto res = co_await materialize_from_cache(cache_file_name, cache);
         if (res.has_error()) {
             co_return res.error();
         }
-        L0_object->payload = std::move(res.value());
+        ext->L0_object->payload = std::move(res.value());
     } else {
         auto res = co_await materialize_from_cloud_storage(
           cache_file_name, bucket, api, cache, rtc);
         if (res.has_error()) {
             co_return res.error();
         }
-        L0_object->payload = std::move(res.value());
+        ext->L0_object->payload = std::move(res.value());
     }
     co_return hydrated;
 }
 
-template<class Clock>
-ss::future<result<iobuf>>
-basic_placeholder_extent<Clock>::materialize_from_cache(
+ss::future<result<iobuf>> materialize_from_cache(
   std::filesystem::path cache_file_name,
-  cloud_io::basic_cache_service_api<Clock>* cache) {
+  cloud_io::basic_cache_service_api<>* cache) {
     iobuf result_buf;
 
     auto buffer_size = config::shard_local_cfg().storage_read_buffer_size();
@@ -229,17 +235,15 @@ basic_placeholder_extent<Clock>::materialize_from_cache(
     co_return result_buf;
 }
 
-template<class Clock>
-ss::future<result<iobuf>>
-basic_placeholder_extent<Clock>::materialize_from_cloud_storage(
+ss::future<result<iobuf>> materialize_from_cloud_storage(
   std::filesystem::path cache_file_name,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<Clock>* api,
-  cloud_io::basic_cache_service_api<Clock>* cache,
-  basic_retry_chain_node<Clock>* rtc) {
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc) {
     // Populate the cache
     iobuf payload;
-    cloud_io::basic_download_request<Clock> req{
+    cloud_io::download_request req{
                 .transfer_details = {
                     .bucket = bucket, 
                     .key = cloud_storage_clients::object_key(cache_file_name), 
@@ -308,8 +312,5 @@ basic_placeholder_extent<Clock>::materialize_from_cloud_storage(
 
     co_return std::move(payload);
 }
-
-template struct basic_placeholder_extent<ss::lowres_clock>;
-template struct basic_placeholder_extent<ss::manual_clock>;
 
 } // namespace experimental::cloud_topics

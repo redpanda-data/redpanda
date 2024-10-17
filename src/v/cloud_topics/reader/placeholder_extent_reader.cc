@@ -51,7 +51,7 @@ size_t get_extent_size(const model::record_batch& placeholder) {
     return p.size_bytes;
 }
 
-inline ss::future<result<ss::circular_buffer<placeholder_extent>>>
+ss::future<result<ss::circular_buffer<placeholder_extent>>>
 materialize_sorted_run(
   ss::circular_buffer<model::record_batch> placeholders,
   cloud_storage_clients::bucket_name bucket,
@@ -61,7 +61,7 @@ materialize_sorted_run(
     absl::node_hash_map<uuid_t, ss::lw_shared_ptr<hydrated_L0_object>> hydrated;
     ss::circular_buffer<placeholder_extent> extents;
     for (auto&& p : placeholders) {
-        auto extent = placeholder_extent(std::move(p));
+        auto extent = make_placeholder_extent(std::move(p));
 
         extents.push_back(extent);
         // reuse hydrated objects if possible
@@ -71,7 +71,7 @@ materialize_sorted_run(
             // TODO: check that id of the payload matches
             extent.L0_object->payload = payload.share(0, payload.size_bytes());
         } else {
-            auto res = co_await extent.materialize(bucket, api, cache, rtc);
+            auto res = co_await materialize(&extent, bucket, api, cache, rtc);
             if (res.has_error()) {
                 co_return res.error();
             }
@@ -159,7 +159,7 @@ public:
 
         ss::circular_buffer<model::record_batch> slice;
         for (auto& e : extents.value()) {
-            slice.push_back(e.make_raft_data_batch());
+            slice.push_back(make_raft_data_batch(std::move(e)));
         }
 
         co_return std::move(slice);

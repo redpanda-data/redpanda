@@ -36,57 +36,42 @@ using namespace std::chrono_literals;
 
 namespace experimental::cloud_topics {
 
-// Extent represents dl_placeholder with the data
-// that it represents stored in cloud storage cache or
-// main memory.
-// The extent can be hydrated (the data is moved from the cloud
-// storage to disk) or materialized (data is moved to the main
-// memory).
-
 struct hydrated_L0_object {
     object_id id;
     iobuf payload;
 };
 
 // Materialized placeholder extent
-template<class Clock>
-struct basic_placeholder_extent {
+//
+// Extent represents dl_placeholder with the data
+// that it represents stored in cloud storage cache or
+// main memory.
+// The extent can be hydrated (the data is moved from the cloud
+// storage to disk) or materialized (data is moved to the main
+// memory).
+struct placeholder_extent {
     model::offset base_offset;
     dl_placeholder placeholder;
     ss::lw_shared_ptr<hydrated_L0_object> L0_object;
-
-    /// Convert record batch to dl_placeholder value and return an empty
-    /// extent which later has to be hydrated.
-    explicit basic_placeholder_extent(model::record_batch batch);
-
-    /// Fetch data referenced by the placeholder batch and the content of the
-    /// dl_placeholder.
-    /// Return 'true' if the object was downloaded from the cloud storage.
-    /// Otherwise, if the object was populated from the cache, return 'false'.
-    ss::future<result<bool>> materialize(
-      cloud_storage_clients::bucket_name bucket,
-      cloud_io::remote_api<Clock>* api,
-      cloud_io::basic_cache_service_api<Clock>* cache,
-      basic_retry_chain_node<Clock>* rtc);
-
-    // Get dl_placeholder and the payload of the object and generate a record
-    // batch
-    model::record_batch make_raft_data_batch();
-
-private:
-    ss::future<result<iobuf>> materialize_from_cache(
-      std::filesystem::path cache_file_name,
-      cloud_io::basic_cache_service_api<Clock>* cache);
-
-    ss::future<result<iobuf>> materialize_from_cloud_storage(
-      std::filesystem::path cache_file_name,
-      cloud_storage_clients::bucket_name bucket,
-      cloud_io::remote_api<Clock>* api,
-      cloud_io::basic_cache_service_api<Clock>* cache,
-      basic_retry_chain_node<Clock>* rtc);
 };
 
-// Materialized placeholder extent
-using placeholder_extent = basic_placeholder_extent<ss::lowres_clock>;
+/// Convert record batch to dl_placeholder value and return an empty
+/// extent which later has to be hydrated.
+placeholder_extent make_placeholder_extent(model::record_batch batch);
+
+/// Fetch data referenced by the placeholder batch and the content of the
+/// dl_placeholder.
+/// Return 'true' if the object was downloaded from the cloud storage.
+/// Otherwise, if the object was populated from the cache, return 'false'.
+ss::future<result<bool>> materialize(
+  placeholder_extent* extent,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_io::remote_api<>* api,
+  cloud_io::basic_cache_service_api<>* cache,
+  basic_retry_chain_node<>* rtc);
+
+// Get dl_placeholder and the payload of the object and generate a record
+// batch
+model::record_batch make_raft_data_batch(placeholder_extent extent);
 
 } // namespace experimental::cloud_topics
