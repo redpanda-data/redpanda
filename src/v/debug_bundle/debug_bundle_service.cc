@@ -650,7 +650,9 @@ result<std::vector<ss::sstring>> service::build_rpk_arguments(
         rv.emplace_back(
           ssx::sformat("{}", fmt::join(params.partition.value(), " ")));
     }
-    if (params.tls_enabled.has_value()) {
+    if (params.tls_enabled.has_value() && *params.tls_enabled) {
+        // Only add `-Xtls.enabled=true` if it's selected.  RPK ignores
+        // the boolean value and will enable TLS if the option is present
         rv.emplace_back(
           ssx::sformat("{}={}", tls_enabled_variable, *params.tls_enabled));
     }

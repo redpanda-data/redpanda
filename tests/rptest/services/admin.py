@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from dataclasses import dataclass
 from enum import Enum
 from logging import Logger
 import random
@@ -402,13 +403,20 @@ class DebugBundleEncoder(json.JSONEncoder):
         if isinstance(o,
                       (dict, list, tuple, str, int, float, bool)) or o is None:
             return o
+        if hasattr(o, '__dataclass_fields__'):  # assume SaslCredentials
+            creds = o.__dict__
+            if isinstance(o, SaslCredentials):
+                # Swap algorithm for mechansim
+                creds['mechanism'] = creds.pop('algorithm')
+            return creds
         return super().default(o)
 
     def encode(self, o: Any) -> str:
         return super().encode(self.default(o))
 
 
-class DebugBundleLabelSelection(NamedTuple):
+@dataclass
+class DebugBundleLabelSelection:
     key: str
     value: str
 
@@ -422,7 +430,7 @@ class DebugBundleStartConfigParams(NamedTuple):
     logs_until: Optional[str] = None
     metrics_interval_seconds: Optional[int] = None
     metrics_samples: Optional[int] = None
-    partition: Optional[str] = None
+    partition: Optional[list[str]] = None
     tls_enabled: Optional[bool] = None
     tls_insecure_skip_verify: Optional[bool] = None
     namespace: Optional[str] = None
@@ -1799,6 +1807,7 @@ class Admin:
         body = json.dumps(config,
                           cls=DebugBundleEncoder,
                           ignore_none=ignore_none)
+        self.redpanda.logger.debug(f"Posting debug bundle: {body}")
         return self._request("POST", path, data=body, node=node)
 
     def get_debug_bundle(self, node: MaybeNode = None):

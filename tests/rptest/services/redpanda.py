@@ -1034,6 +1034,11 @@ class AuditLogConfig(TlsConfig):
         self.listener_authn_method = listener_authn_method
 
 
+class RpkNodeConfig:
+    def __init__(self):
+        self.ca_file = None
+
+
 class RedpandaServiceConstants:
     SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
         "admin", "admin", "SCRAM-SHA-256")
@@ -2456,7 +2461,8 @@ class RedpandaService(RedpandaServiceBase):
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
                  audit_log_config: Optional[AuditLogConfig] = None,
                  disable_cloud_storage_diagnostics=False,
-                 cloud_storage_scrub_timeout_s=None):
+                 cloud_storage_scrub_timeout_s=None,
+                 rpk_node_config: Optional[RpkNodeConfig] = None):
         super(RedpandaService, self).__init__(
             context,
             num_brokers,
@@ -2474,6 +2480,7 @@ class RedpandaService(RedpandaServiceBase):
         self._audit_log_config = audit_log_config
         self._failure_injection_enabled = False
         self._tolerate_crashes = False
+        self._rpk_node_config = rpk_node_config
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
@@ -4165,6 +4172,9 @@ class RedpandaService(RedpandaServiceBase):
         except:
             cur_ver = None
 
+        if self._security.tls_provider and self._rpk_node_config is not None:
+            self._rpk_node_config.ca_file = RedpandaService.TLS_CA_CRT_FILE
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
@@ -4183,7 +4193,8 @@ class RedpandaService(RedpandaServiceBase):
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),
-                           auto_auth=self._security.auto_auth)
+                           auto_auth=self._security.auto_auth,
+                           rpk_node_config=self._rpk_node_config)
 
         def is_fips_capable(node) -> bool:
             cur_ver = self._installer.installed_version(node)
@@ -4243,6 +4254,9 @@ class RedpandaService(RedpandaServiceBase):
         node.account.create_file(RedpandaService.NODE_CONFIG_FILE, conf)
 
         self._node_configs[node] = yaml.full_load(conf)
+
+    def find_path_to_rpk(self) -> str:
+        return f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
 
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
@@ -4306,7 +4320,7 @@ class RedpandaService(RedpandaServiceBase):
         if (cur_ver == RedpandaInstaller.HEAD
                 or cur_ver >= (24, 3, 1)) and 'rpk_path' not in conf:
             # Introduced rpk_path to v24.3
-            rpk_path = f'{self._context.globals.get("rp_install_path_root", None)}/bin/rpk'
+            rpk_path = self.find_path_to_rpk()
             conf.update(dict(rpk_path=rpk_path))
 
         conf_yaml = yaml.dump(conf)

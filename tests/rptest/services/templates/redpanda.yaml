@@ -210,3 +210,16 @@ rpk:
   enable_memory_locking: false
   tune_coredump: false
   coredump_dir: "/var/lib/redpanda/coredump"
+
+  {% if rpk_node_config is not none %}
+  kafka_api:
+    brokers:
+      {% for node in nodes.values() %}
+      - {{node.account.hostname}}:9092
+      {% endfor %}
+    {% if rpk_node_config.ca_file is not none %}
+    tls:
+      ca_file: {{ rpk_node_config.ca_file}}
+    {% endif %}
+
+  {% endif %}
