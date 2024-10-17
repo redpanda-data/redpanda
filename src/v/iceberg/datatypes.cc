@@ -172,8 +172,15 @@ std::ostream& operator<<(std::ostream& o, const binary_type&) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const struct_type&) {
-    o << "struct";
+std::ostream& operator<<(std::ostream& o, const struct_type& s) {
+    // FIXME: Put this back how it started
+    o << "struct{\n";
+    for (const auto& field : s.fields) {
+        o << field->name << " : " << field->required << " "
+
+          << field->type << " (" << field->id << ")\n";
+    }
+    o << "}";
     return o;
 }
 
