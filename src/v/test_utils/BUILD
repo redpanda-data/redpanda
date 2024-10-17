@@ -18,6 +18,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/model",
+        "//src/v/storage",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
@@ -42,6 +43,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/model",
+        "//src/v/storage",
         "@seastar//:testing",
     ],
 )
