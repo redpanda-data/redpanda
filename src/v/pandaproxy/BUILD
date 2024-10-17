@@ -152,6 +152,7 @@ redpanda_cc_library(
         "schema_registry/sharded_store.cc",
         "schema_registry/types.cc",
         "schema_registry/validation.cc",
+        "schema_registry/util.cc",
         "server.cc",
     ],
     hdrs = [
