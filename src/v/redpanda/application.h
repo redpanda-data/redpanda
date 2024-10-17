@@ -245,6 +245,8 @@ private:
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
 
+    bool requires_cloud_io();
+
     bool archival_storage_enabled();
 
     bool wasm_data_transforms_enabled();

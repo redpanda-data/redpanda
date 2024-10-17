@@ -1416,45 +1416,6 @@ void application::wire_up_runtime_services(
           .get();
     }
 
-    if (datalake_enabled()) {
-        syschecks::systemd_message("Starting datalake services").get();
-        construct_service(
-          _datalake_coordinator_mgr,
-          node_id,
-          std::ref(raft_group_manager),
-          std::ref(partition_manager))
-          .get();
-        _datalake_coordinator_mgr
-          .invoke_on_all(&datalake::coordinator::coordinator_manager::start)
-          .get();
-        construct_service(
-          _datalake_coordinator_fe,
-          node_id,
-          &_datalake_coordinator_mgr,
-          &raft_group_manager,
-          &partition_manager,
-          &controller->get_topics_frontend(),
-          &metadata_cache,
-          &controller->get_partition_leaders(),
-          &controller->get_shard_table())
-          .get();
-
-        construct_service(
-          _datalake_manager,
-          node_id,
-          &raft_group_manager,
-          &partition_manager,
-          &controller->get_topics_state(),
-          &controller->get_topics_frontend(),
-          &controller->get_partition_leaders(),
-          &controller->get_shard_table(),
-          &_datalake_coordinator_fe,
-          &_as,
-          sched_groups.datalake_sg(),
-          memory_groups().datalake_max_memory())
-          .get();
-    }
-
     construct_single_service(_monitor_unsafe, std::ref(feature_table));
 
     construct_service(_debug_bundle_service, &storage.local().kvs()).get();
@@ -1555,12 +1516,12 @@ void application::wire_up_redpanda_services(
 
     model::cloud_storage_backend backend{model::cloud_storage_backend::unknown};
     cloud_storage_clients::bucket_name bucket{};
-    if (archival_storage_enabled()) {
-        syschecks::systemd_message("Starting cloud storage api").get();
-        ss::sharded<cloud_storage::configuration> cloud_configs;
+    ss::sharded<cloud_storage::configuration> cloud_configs;
+    auto stop_config = ss::defer(
+      [&cloud_configs] { cloud_configs.stop().get(); });
+    if (requires_cloud_io()) {
+        syschecks::systemd_message("Starting cloud IO").get();
         cloud_configs.start().get();
-        auto stop_config = ss::defer(
-          [&cloud_configs] { cloud_configs.stop().get(); });
         cloud_configs
           .invoke_on_all([](cloud_storage::configuration& c) {
               return cloud_storage::configuration::get_config().then(
@@ -1599,6 +1560,10 @@ void application::wire_up_redpanda_services(
           }))
           .get();
         cloud_io.invoke_on_all(&cloud_io::remote::start).get();
+    }
+
+    if (archival_storage_enabled()) {
+        syschecks::systemd_message("Starting cloud storage api").get();
         construct_service(
           cloud_storage_api,
           std::ref(cloud_io),
@@ -2015,6 +1980,45 @@ void application::wire_up_redpanda_services(
           "cloud topics currently requires archival storage to be enabled");
         construct_service(_reconciler, &partition_manager, &cloud_io).get();
     }
+    if (datalake_enabled()) {
+        // Construct datalake subsystems, now that dependencies are
+        // already constructed.
+        syschecks::systemd_message("Starting datalake services").get();
+        construct_service(
+          _datalake_coordinator_mgr,
+          node_id,
+          std::ref(raft_group_manager),
+          std::ref(partition_manager),
+          std::ref(cloud_io),
+          cloud_configs.local().bucket_name)
+          .get();
+        construct_service(
+          _datalake_coordinator_fe,
+          node_id,
+          &_datalake_coordinator_mgr,
+          &raft_group_manager,
+          &partition_manager,
+          &controller->get_topics_frontend(),
+          &metadata_cache,
+          &controller->get_partition_leaders(),
+          &controller->get_shard_table())
+          .get();
+
+        construct_service(
+          _datalake_manager,
+          node_id,
+          &raft_group_manager,
+          &partition_manager,
+          &controller->get_topics_state(),
+          &controller->get_topics_frontend(),
+          &controller->get_partition_leaders(),
+          &controller->get_shard_table(),
+          &_datalake_coordinator_fe,
+          &_as,
+          sched_groups.datalake_sg(),
+          memory_groups().datalake_max_memory())
+          .get();
+    }
 
     // group membership
     syschecks::systemd_message("Creating kafka group manager").get();
@@ -2339,6 +2343,10 @@ void application::wire_up_redpanda_services(
 
 ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
     return _proxy->set_config(std::move(name), std::move(val));
+}
+
+bool application::requires_cloud_io() {
+    return archival_storage_enabled() || datalake_enabled();
 }
 
 bool application::archival_storage_enabled() {
@@ -2954,6 +2962,13 @@ void application::start_runtime_services(
       offsets_recovery_requestor;
     if (offsets_recovery_router.local_is_initialized()) {
         offsets_recovery_requestor = offsets_recovery_manager;
+    }
+    if (_datalake_coordinator_mgr.local_is_initialized()) {
+        // Before starting the controller, start the coordinator manager so we
+        // don't miss any partition/leadership notifications.
+        _datalake_coordinator_mgr
+          .invoke_on_all(&datalake::coordinator::coordinator_manager::start)
+          .get();
     }
     controller
       ->start(

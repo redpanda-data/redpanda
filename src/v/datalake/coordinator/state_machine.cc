@@ -16,6 +16,7 @@
 #include "model/record_batch_types.h"
 #include "serde/async.h"
 #include "ssx/future-util.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/coroutine/as_future.hh>
 
@@ -23,6 +24,7 @@ namespace datalake::coordinator {
 
 namespace {
 void maybe_log_update_error(
+  prefix_logger& log,
   update_key key,
   model::offset o,
   const checked<std::nullopt_t, stm_update_error>& r) {
@@ -34,7 +36,7 @@ void maybe_log_update_error(
     // invariant required to apply update. Expectation is that this update's
     // caller constructs a new update and tries again if needed.
     vlog(
-      datalake_log.debug,
+      log.debug,
       "Coordinator STM {} update at offset {} didn't apply: {}",
       key,
       o,
@@ -96,24 +98,29 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
         auto key = co_await serde::read_async<update_key>(key_p);
 
         iobuf_parser val_p{r.release_value()};
-        auto offset = b.base_offset() + model::offset_delta{r.offset_delta()};
+        auto o = b.base_offset() + model::offset_delta{r.offset_delta()};
         switch (key) {
+        // TODO: make updates a variant so we can share code more easily?
         case update_key::add_files: {
             auto update = co_await serde::read_async<add_files_update>(val_p);
+            vlog(
+              _log.debug, "Applying {} from offset {}: {}", key, o, update.tp);
             auto res = update.apply(state_);
-            maybe_log_update_error(key, offset, res);
+            maybe_log_update_error(_log, key, o, res);
             continue;
         }
         case update_key::mark_files_committed: {
             auto update
               = co_await serde::read_async<mark_files_committed_update>(val_p);
+            vlog(
+              _log.debug, "Applying {} from offset {}: {}", key, o, update.tp);
             auto res = update.apply(state_);
-            maybe_log_update_error(key, offset, res);
+            maybe_log_update_error(_log, key, o, res);
             continue;
         }
         }
         vlog(
-          datalake_log.error,
+          _log.error,
           "Unknown datalake coordinator STM record type: {}",
           key,
           b.header());

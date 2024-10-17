@@ -9,9 +9,12 @@
  */
 #pragma once
 
+#include "cloud_io/remote.h"
 #include "cluster/fwd.h"
 #include "cluster/notification.h"
 #include "datalake/coordinator/coordinator.h"
+#include "datalake/coordinator/file_committer.h"
+#include "iceberg/catalog.h"
 #include "model/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/notification.h"
@@ -30,7 +33,9 @@ public:
     coordinator_manager(
       model::node_id self,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<cluster::partition_manager>&);
+      ss::sharded<cluster::partition_manager>&,
+      ss::sharded<cloud_io::remote>&,
+      cloud_storage_clients::bucket_name);
 
     ss::future<> start();
     ss::future<> stop();
@@ -49,6 +54,11 @@ private:
     model::node_id self_;
     raft::group_manager& gm_;
     cluster::partition_manager& pm_;
+
+    // Underlying IO is expected to outlive this class.
+    iceberg::manifest_io manifest_io_;
+    std::unique_ptr<iceberg::catalog> catalog_;
+    std::unique_ptr<file_committer> file_committer_;
 
     std::optional<cluster::notification_id_type> manage_notifications_;
     std::optional<cluster::notification_id_type> unmanage_notifications_;

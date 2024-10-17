@@ -9,7 +9,9 @@
  */
 #pragma once
 
+#include "config/property.h"
 #include "container/fragmented_vector.h"
+#include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/state_update.h"
 #include "model/fundamental.h"
@@ -28,23 +30,49 @@ public:
         timedout,
         shutting_down,
     };
-    explicit coordinator(ss::shared_ptr<coordinator_stm> stm)
-      : stm_(std::move(stm)) {}
+    coordinator(
+      ss::shared_ptr<coordinator_stm> stm,
+      file_committer& file_committer,
+      config::binding<std::chrono::milliseconds> commit_interval)
+      : stm_(std::move(stm))
+      , file_committer_(file_committer)
+      , commit_interval_(std::move(commit_interval)) {}
 
+    void start();
     ss::future<> stop_and_wait();
     ss::future<checked<std::nullopt_t, errc>> sync_add_files(
       model::topic_partition tp, chunked_vector<translated_offset_range>);
     ss::future<checked<std::optional<kafka::offset>, errc>>
     sync_get_last_added_offset(model::topic_partition tp);
-    void notify_leadership(std::optional<model::node_id>) {}
+    void notify_leadership(std::optional<model::node_id>);
+
+    bool leader_loop_running() const { return term_as_.has_value(); }
 
 private:
     checked<ss::gate::holder, errc> maybe_gate();
 
+    // Waits for leadership, and then reconciles STM state with external state
+    // (e.g. table state in the Iceberg catalog) while leader. Repeats until
+    // aborted.
+    ss::future<> run_until_abort();
+
+    // Repeatedly reconciles the STM state with external state (e.g. table
+    // state in the Iceberg catalog). Exits when leadership in the given term
+    // has been lost.
+    ss::future<checked<std::nullopt_t, errc>>
+      run_until_term_change(model::term_id);
+
     ss::shared_ptr<coordinator_stm> stm_;
+    file_committer& file_committer_;
+    config::binding<std::chrono::milliseconds> commit_interval_;
 
     ss::gate gate_;
     ss::abort_source as_;
+    ss::condition_variable leader_cond_;
+
+    // Abort source that can be used to stop work in a given term.
+    // Is only set if there is an on-going call to run_until_term_change().
+    std::optional<std::reference_wrapper<ss::abort_source>> term_as_;
 };
 std::ostream& operator<<(std::ostream&, coordinator::errc);
 
