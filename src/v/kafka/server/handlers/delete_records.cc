@@ -15,7 +15,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "container/fragmented_vector.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 

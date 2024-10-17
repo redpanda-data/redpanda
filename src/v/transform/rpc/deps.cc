@@ -19,7 +19,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"

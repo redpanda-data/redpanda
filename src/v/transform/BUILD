@@ -98,7 +98,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/features",
-        "//src/v/kafka/server",
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/metrics",
         "//src/v/model",

@@ -20,7 +20,7 @@
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "io.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "kafka/utils/txn_reader.h"
 #include "logger.h"
 #include "model/fundamental.h"

@@ -8,14 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "kafka/server/replicated_partition.h"
+#include "kafka/data/replicated_partition.h"
 
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
 #include "cluster/rm_stm.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
-#include "kafka/server/logger.h"
+#include "logger.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
@@ -431,7 +431,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     const auto is_read_replica = _partition->is_read_replica_mode_enabled();
 
     vlog(
-      klog.debug,
+      kdlog.debug,
       "{} get_leader_epoch_last_offset_unbounded, term {}, first local offset "
       "{}, "
       "first local term {}, last local term {}, is read replica {}",
@@ -519,12 +519,14 @@ ss::future<error_code> replicated_partition::prefix_truncate(
             co_return kafka::error_code::request_timed_out;
         default:
             vlog(
-              klog.error, "Unhandled raft error encountered: {}", errc.value());
+              kdlog.error,
+              "Unhandled raft error encountered: {}",
+              errc.value());
             co_return error_code::unknown_server_error;
         }
     } else if (errc.category() != cluster::error_category()) {
         vlog(
-          klog.error,
+          kdlog.error,
           "Unhandled error_category encountered: {}",
           errc.category().name());
         co_return error_code::unknown_server_error;
@@ -567,7 +569,7 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
 
         if (ec != error_code::none) {
             vlog(
-              klog.warn,
+              kdlog.warn,
               "ntp {}: fetch offset out of range on follower, requested: {}, "
               "partition start offset: {}, high watermark: {}, leader high "
               "watermark: {}, log end offset: {}, ec: {}",
@@ -589,7 +591,7 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
       [this, fetch_offset](auto start_offset) {
           if (!start_offset) {
               vlog(
-                klog.warn,
+                kdlog.warn,
                 "ntp {}: error obtaining latest start offset - {}",
                 ntp(),
                 start_offset.error());
@@ -600,7 +602,7 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
             fetch_offset < start_offset.value()
             || fetch_offset > log_end_offset()) {
               vlog(
-                klog.warn,
+                kdlog.warn,
                 "ntp {}: fetch offset_out_of_range on leader, requested: {}, "
                 "partition start offset: {}, high watermark: {}, log end "
                 "offset: {}",

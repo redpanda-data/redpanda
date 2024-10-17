@@ -10,7 +10,7 @@ redpanda_cc_gtest(
         "//src/v/bytes",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/kafka/server",
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/net",

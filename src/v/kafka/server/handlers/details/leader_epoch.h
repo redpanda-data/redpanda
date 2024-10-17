@@ -10,8 +10,8 @@
  */
 #pragma once
 
+#include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/server/partition_proxy.h"
 
 #include <compare>
 

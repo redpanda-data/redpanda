@@ -43,10 +43,8 @@ redpanda_cc_library(
         "handlers/txn_offset_commit.cc",
         "logger.cc",
         "member.cc",
-        "partition_proxy.cc",
         "protocol_utils.cc",
         "quota_manager.cc",
-        "replicated_partition.cc",
         "requests.cc",
         "rm_group_frontend.cc",
         "server.cc",
@@ -134,12 +132,10 @@ redpanda_cc_library(
         "latency_probe.h",
         "logger.h",
         "member.h",
-        "partition_proxy.h",
         "protocol_utils.h",
         "queue_depth_monitor.h",
         "quota_manager.h",
         "read_distribution_probe.h",
-        "replicated_partition.h",
         "request_context.h",
         "response.h",
         "rm_group_frontend.h",
@@ -167,6 +163,7 @@ redpanda_cc_library(
         "//src/v/features",
         "//src/v/hashing:jump_consistent",
         "//src/v/hashing:xx",
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:add_offsets_to_txn",
         "//src/v/kafka/protocol:add_partitions_to_txn",
@@ -307,5 +304,18 @@ redpanda_cc_library(
         "@boost//:uuid",
         "@fmt",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "errors",
+    hdrs = [
+        "errors.h",
+    ],
+    include_prefix = "kafka/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/kafka/protocol",
     ],
 )

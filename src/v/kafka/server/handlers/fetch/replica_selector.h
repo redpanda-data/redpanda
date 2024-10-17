@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 

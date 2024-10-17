@@ -1,4 +1,5 @@
 add_subdirectory(protocol)
+add_subdirectory(data)
 
 set(handlers_srcs
   server/handlers/api_versions.cc
@@ -51,8 +52,6 @@ v_cc_library(
     server/snc_quota_manager.cc
     server/fetch_pid_controller.cc
     server/fetch_session_cache.cc
-    server/replicated_partition.cc
-    server/partition_proxy.cc
     server/group_recovery_consumer.cc
     server/group_metadata.cc
     server/group_tx_tracker_stm.cc
@@ -62,6 +61,7 @@ v_cc_library(
     v::bytes
     v::rpc
     v::cluster
+    v::kafka_partition_proxy
     v::kafka_protocol
     v::security
     v::security_audit

@@ -13,7 +13,7 @@
 #include "base/vlog.h"
 #include "cloud_storage/configuration.h"
 #include "cluster/partition.h"
-#include "kafka/server/partition_proxy.h"
+#include "kafka/data/partition_proxy.h"
 #include "kafka/utils/txn_reader.h"
 #include "model/namespace.h"
 #include "random/generators.h"
