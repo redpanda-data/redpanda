@@ -3787,25 +3787,26 @@ struct batch_summary {
     model::offset last;
     size_t batch_size;
 };
+
 struct batch_summary_accumulator {
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        size_t sz = summaries->empty() ? 0 : acc_size->back();
+        size_t sz = summaries.empty() ? 0 : acc_size.back();
         batch_summary summary{
           .base = b.base_offset(),
           .last = b.last_offset(),
           .batch_size = b.data().size_bytes()
                         + model::packed_record_batch_header_size,
         };
-        summaries->push_back(summary);
-        acc_size->push_back(sz + summary.batch_size);
-        prev_size->push_back(sz);
+        summaries.push_back(summary);
+        acc_size.push_back(sz + summary.batch_size);
+        prev_size.push_back(sz);
         co_return ss::stop_iteration::no;
     }
-    bool end_of_stream() const { return false; }
+    auto end_of_stream() { return std::move(*this); }
 
-    std::vector<batch_summary>* summaries;
-    std::vector<size_t>* acc_size;
-    std::vector<size_t>* prev_size;
+    std::vector<batch_summary> summaries;
+    std::vector<size_t> acc_size;
+    std::vector<size_t> prev_size;
 };
 
 struct batch_size_accumulator {
@@ -3855,28 +3856,22 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
         log->force_roll(ss::default_priority_class()).get();
     }
 
-    std::vector<batch_summary> summaries;
-    std::vector<size_t> acc_size;
-    std::vector<size_t> prev_size;
-
     storage::log_reader_config reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto reader = log->make_reader(reader_cfg).get();
 
-    batch_summary_accumulator acc{
-      .summaries = &summaries,
-      .acc_size = &acc_size,
-      .prev_size = &prev_size,
-    };
-    std::move(reader).consume(acc, model::no_timeout).get();
+    auto acc = std::move(reader)
+                 .consume(batch_summary_accumulator{}, model::no_timeout)
+                 .get();
 
     for (size_t i = 0; i < num_test_cases; i++) {
+        auto& summaries = acc.summaries;
         auto ix_base = model::test::get_int((size_t)0, summaries.size() - 1);
         auto ix_last = model::test::get_int(ix_base, summaries.size() - 1);
         auto base = summaries[ix_base].base;
         auto last = summaries[ix_last].last;
 
-        auto expected_size = acc_size[ix_last] - prev_size[ix_base];
+        auto expected_size = acc.acc_size[ix_last] - acc.prev_size[ix_base];
         auto result
           = log->offset_range_size(base, last, ss::default_priority_class())
               .get();
@@ -3974,20 +3969,13 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
         log->force_roll(ss::default_priority_class()).get();
     }
 
-    std::vector<batch_summary> summaries;
-    std::vector<size_t> acc_size;
-    std::vector<size_t> prev_size;
-
     storage::log_reader_config reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto reader = log->make_reader(reader_cfg).get();
-
-    batch_summary_accumulator acc{
-      .summaries = &summaries,
-      .acc_size = &acc_size,
-      .prev_size = &prev_size,
-    };
-    std::move(reader).consume(acc, model::no_timeout).get();
+    auto acc = std::move(reader)
+                 .consume(batch_summary_accumulator{}, model::no_timeout)
+                 .get();
+    auto& summaries = acc.summaries;
 
     for (size_t i = 0; i < num_test_cases; i++) {
         // - pick 'base' randomly
@@ -3998,7 +3986,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
         // - compare it to on_disk_size field of the result
         auto base_ix = model::test::get_int((size_t)0, summaries.size() - 1);
         auto base = summaries[base_ix].base;
-        auto max_size = acc_size.back() - prev_size[base_ix];
+        auto max_size = acc.acc_size.back() - acc.prev_size[base_ix];
         auto min_size = storage::segment_index::default_data_buffer_step;
         auto target_size = model::test::get_int(min_size, max_size);
         auto result = log
@@ -4020,7 +4008,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
             }
             result_ix++;
         }
-        auto expected_size = acc_size[result_ix] - prev_size[base_ix];
+        auto expected_size = acc.acc_size[result_ix] - acc.prev_size[base_ix];
         BOOST_REQUIRE_EQUAL(expected_size, result->on_disk_size);
 
         // Validate using the segment reader
@@ -4102,7 +4090,8 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
 
     // Only one batch is returned
     BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
-    BOOST_REQUIRE_EQUAL(res->on_disk_size, acc_size.back() - prev_size.back());
+    BOOST_REQUIRE_EQUAL(
+      res->on_disk_size, acc.acc_size.back() - acc.prev_size.back());
 
     // Check that we can measure the size of the log tail. This is needed for
     // timed uploads.
@@ -4122,7 +4111,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
 
         BOOST_REQUIRE_EQUAL(res->last_offset, lstat.committed_offset);
         BOOST_REQUIRE_EQUAL(
-          res->on_disk_size, acc_size.back() - prev_size.at(ix_batch));
+          res->on_disk_size, acc.acc_size.back() - acc.prev_size.at(ix_batch));
     }
 
     // Check that the min_size is respected
@@ -4183,24 +4172,18 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
 
     // Build the maps before and after compaction (nc_ vs c_) to reflect the
     // changes
-    std::vector<batch_summary> nc_summaries;
-    std::vector<size_t> nc_acc_size;
-    std::vector<size_t> nc_prev_size;
-
-    std::vector<batch_summary> c_summaries;
-    std::vector<size_t> c_acc_size;
-    std::vector<size_t> c_prev_size;
 
     // Read non-compacted version
     storage::log_reader_config nc_reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto nc_reader = log->make_reader(nc_reader_cfg).get();
-    batch_summary_accumulator nc_acc{
-      .summaries = &nc_summaries,
-      .acc_size = &nc_acc_size,
-      .prev_size = &nc_prev_size,
-    };
-    std::move(nc_reader).consume(nc_acc, model::no_timeout).get();
+
+    auto nc_summary = std::move(nc_reader)
+                        .consume(batch_summary_accumulator{}, model::no_timeout)
+                        .get();
+
+    auto& nc_summaries = nc_summary.summaries;
+    auto& nc_acc_size = nc_summary.acc_size;
 
     // Compact topic
     vlog(e2e_test_log.info, "Starting compaction");
@@ -4217,12 +4200,13 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
     storage::log_reader_config c_reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto c_reader = log->make_reader(c_reader_cfg).get();
-    batch_summary_accumulator c_acc{
-      .summaries = &c_summaries,
-      .acc_size = &c_acc_size,
-      .prev_size = &c_prev_size,
-    };
-    std::move(c_reader).consume(c_acc, model::no_timeout).get();
+    auto c_acc = std::move(c_reader)
+                   .consume(batch_summary_accumulator{}, model::no_timeout)
+                   .get();
+
+    auto& c_summaries = c_acc.summaries;
+    auto& c_acc_size = c_acc.acc_size;
+    auto& c_prev_size = c_acc.prev_size;
 
     auto num_compacted = nc_summaries.size() - c_summaries.size();
     vlog(
@@ -4387,24 +4371,18 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 
     // Build the maps before and after compaction (nc_ vs c_) to reflect the
     // changes
-    std::vector<batch_summary> nc_summaries;
-    std::vector<size_t> nc_acc_size;
-    std::vector<size_t> nc_prev_size;
-
-    std::vector<batch_summary> c_summaries;
-    std::vector<size_t> c_acc_size;
-    std::vector<size_t> c_prev_size;
 
     // Read non-compacted version
     storage::log_reader_config nc_reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto nc_reader = log->make_reader(nc_reader_cfg).get();
-    batch_summary_accumulator nc_acc{
-      .summaries = &nc_summaries,
-      .acc_size = &nc_acc_size,
-      .prev_size = &nc_prev_size,
-    };
-    std::move(nc_reader).consume(nc_acc, model::no_timeout).get();
+
+    auto nc_summary = std::move(nc_reader)
+                        .consume(batch_summary_accumulator{}, model::no_timeout)
+                        .get();
+
+    auto& nc_summaries = nc_summary.summaries;
+    auto& nc_acc_size = nc_summary.acc_size;
 
     // Compact topic
     vlog(e2e_test_log.info, "Starting compaction");
@@ -4421,12 +4399,14 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
     storage::log_reader_config c_reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto c_reader = log->make_reader(c_reader_cfg).get();
-    batch_summary_accumulator c_acc{
-      .summaries = &c_summaries,
-      .acc_size = &c_acc_size,
-      .prev_size = &c_prev_size,
-    };
-    std::move(c_reader).consume(c_acc, model::no_timeout).get();
+
+    auto c_acc = std::move(c_reader)
+                   .consume(batch_summary_accumulator{}, model::no_timeout)
+                   .get();
+
+    auto& c_summaries = c_acc.summaries;
+    auto& c_acc_size = c_acc.acc_size;
+    auto& c_prev_size = c_acc.prev_size;
 
     auto num_compacted = nc_summaries.size() - c_summaries.size();
     vlog(
@@ -4720,23 +4700,16 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
         sc.max_size += max_step_size + sc.target;
     }
 
-    std::vector<batch_summary> summaries;
-    std::vector<size_t> acc_size;
-    std::vector<size_t> prev_size;
-
     storage::log_reader_config reader_cfg(
       model::offset(0), model::offset::max(), ss::default_priority_class());
     auto reader = log->make_reader(reader_cfg).get();
 
-    batch_summary_accumulator acc{
-      .summaries = &summaries,
-      .acc_size = &acc_size,
-      .prev_size = &prev_size,
-    };
-    std::move(reader).consume(acc, model::no_timeout).get();
+    auto acc = std::move(reader)
+                 .consume(batch_summary_accumulator{}, model::no_timeout)
+                 .get();
 
     // Total log size in bytes
-    auto full_log_size = acc_size.back();
+    auto full_log_size = acc.acc_size.back();
 
     BOOST_REQUIRE_EQUAL(log->size_bytes(), full_log_size);
 
