@@ -31,6 +31,8 @@
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <fmt/core.h>
+
 using admin::apply_validator;
 
 namespace {
@@ -40,6 +42,19 @@ to_admin_type(const model::topic_namespace& tp_ns) {
     ss::httpd::migration_json::namespaced_topic ret;
     ret.ns = tp_ns.ns;
     ret.topic = tp_ns.tp;
+    return ret;
+}
+
+ss::httpd::migration_json::namespaced_topic to_admin_type(
+  const model::topic_namespace& tp_ns,
+  const std::optional<cluster::data_migrations::cloud_storage_location>&
+    cloud_storage_location) {
+    ss::httpd::migration_json::namespaced_topic ret;
+    ret.ns = tp_ns.ns;
+    ret.topic = cloud_storage_location
+                  ? ss::sstring(fmt::format(
+                      "{}/{}", tp_ns.tp, cloud_storage_location->hint))
+                  : tp_ns.tp;
     return ret;
 }
 
@@ -57,7 +72,8 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
     migration.migration_type = migration_type_enum::inbound;
     for (auto& inbound_t : idm.topics) {
         ss::httpd::migration_json::inbound_topic inbound_tp;
-        inbound_tp.source_topic = to_admin_type(inbound_t.source_topic_name);
+        inbound_tp.source_topic = to_admin_type(
+          inbound_t.source_topic_name, inbound_t.cloud_storage_location);
         if (inbound_t.alias) {
             inbound_tp.alias = to_admin_type(*inbound_t.alias);
         }

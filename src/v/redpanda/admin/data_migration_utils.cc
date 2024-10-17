@@ -12,6 +12,8 @@
 
 #include "model/namespace.h"
 
+#include <seastar/core/sstring.hh>
+
 model::topic_namespace parse_topic_namespace(json::Value& json) {
     if (json.HasMember("ns")) {
         return {
@@ -26,6 +28,18 @@ model::topic_namespace parse_topic_namespace(json::Value& json) {
 cluster::data_migrations::inbound_topic parse_inbound_topic(json::Value& json) {
     cluster::data_migrations::inbound_topic ret;
     ret.source_topic_name = parse_topic_namespace(json["source_topic"]);
+
+    // extract location hint from topic name
+    ss::sstring tp_hinted = ret.source_topic_name.tp;
+    auto slash_pos = tp_hinted.find('/');
+    if (slash_pos != seastar::sstring::npos) {
+        ret.cloud_storage_location
+          = cluster::data_migrations::cloud_storage_location{
+            .hint = tp_hinted.substr(slash_pos + 1)};
+        ret.source_topic_name.tp = model::topic(
+          std::move(tp_hinted).substr(0, slash_pos));
+    }
+
     if (json.HasMember("alias")) {
         ret.alias = parse_topic_namespace(json["alias"]);
     }

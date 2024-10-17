@@ -112,8 +112,8 @@ std::ostream& operator<<(std::ostream& o, const inbound_topic& topic) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const cloud_storage_location&) {
-    fmt::print(o, "{{cloud_storage_location}}");
+std::ostream& operator<<(std::ostream& o, const cloud_storage_location& l) {
+    fmt::print(o, "{{hint: {}}}", l.hint);
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const copy_target& t) {
