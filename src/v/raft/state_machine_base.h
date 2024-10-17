@@ -16,6 +16,7 @@
 #include "model/record.h"
 #include "raft/fwd.h"
 #include "raft/offset_monitor.h"
+#include "utils/mutex.h"
 
 namespace raft {
 using snapshot_at_offset_supported
@@ -44,6 +45,8 @@ public:
       = std::nullopt);
 
     /**
+     * Applies the batch and updates the next offset to be applied.
+     *
      * This function accepts a batch reference, an implementer may copy a batch
      * with `model::record_batch::copy()` method, the interface design is a
      * consequence of having single apply fiber for all state machines built on
@@ -51,7 +54,8 @@ public:
      * whole record is applied or not. When exception is thrown from apply
      * method it will be retried with the same record batch.
      */
-    virtual ss::future<> apply(const model::record_batch&) = 0;
+    ss::future<> apply(const model::record_batch&);
+
     /**
      * This function will be called every time a snapshot is applied in apply
      * fiber. Snapshot will contain only a data specific for this state machine
@@ -95,6 +99,15 @@ public:
 
 protected:
     /**
+     * Must always be called under apply mutex scope and apply_units argument
+     * is in place to enforce that. It is const qualified to ensure the apply
+     * impelementors do not control their lifetime.
+     */
+    virtual ss::future<>
+    apply(const model::record_batch&, const ssx::semaphore_units& apply_units)
+      = 0;
+
+    /**
      *  Lifecycle is managed by state_machine_manager
      */
     virtual ss::future<> start() = 0;
@@ -106,6 +119,8 @@ protected:
 
     model::offset next() const { return _next; }
     void set_next(model::offset offset);
+
+    mutex _apply_lock{"state_machine_base::apply_lock"};
 
     friend class batch_applicator;
     friend class state_machine_manager;

@@ -209,9 +209,9 @@ public:
     ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
 
-    ss::future<> apply(const model::record_batch& b) final {
-        return _apply_lock.with([this, &b] { return do_apply(b); });
-    }
+    ss::future<> apply(
+      const model::record_batch&,
+      const ssx::semaphore_units& apply_units) final;
 
 protected:
     ss::future<> start() override;
@@ -254,7 +254,6 @@ private:
     ss::future<> wait_for_snapshot_hydrated();
 
     ss::future<> do_write_local_snapshot();
-    mutex _apply_lock{"persisted_stm::apply_lock"};
     mutex _op_lock{"persisted_stm::op_lock"};
     std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
     ss::condition_variable _on_snapshot_hydrated;
