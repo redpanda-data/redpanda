@@ -27,6 +27,7 @@
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/test.h"
+#include "tests/raft_group_fixture.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/loop.hh>
@@ -490,6 +491,7 @@ public:
                 .then([&state] { return state.result; });
           });
     }
+
     template<typename Func>
     auto
     retry_with_leader(model::timeout_clock::time_point deadline, Func&& f) {
@@ -516,6 +518,24 @@ public:
     }
     void set_heartbeat_interval(std::chrono::milliseconds timeout) {
         _heartbeat_interval.update(std::move(timeout));
+    }
+
+protected:
+    class raft_not_leader_exception : std::exception {};
+
+    template<std::derived_from<raft_fixture> Subclass>
+    ss::future<> test_with_leader(
+      model::timeout_clock::duration timeout,
+      ss::future<> (Subclass::*method)(raft_node_instance& leader)) {
+        co_await retry_with_leader(
+          model::timeout_clock::now() + timeout,
+          [this, method](raft_node_instance& leader) {
+              return ((static_cast<Subclass*>(this)->*method)(leader))
+                .then([] { return errc::success; })
+                .handle_exception_type([](const raft_not_leader_exception&) {
+                    return errc::not_leader;
+                });
+          });
     }
 
 private:
