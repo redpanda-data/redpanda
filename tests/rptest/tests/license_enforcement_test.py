@@ -16,6 +16,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import LoggingConfig
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpenv import sample_license
 
 
@@ -39,6 +40,7 @@ class LicenseEnforcementTest(RedpandaTest):
         # start the nodes manually
         pass
 
+    @skip_fips_mode
     @cluster(num_nodes=5, log_allow_list=LOG_ALLOW_LIST)
     @matrix(
         clean_node_before_recovery=[False, True],
@@ -103,6 +105,7 @@ class LicenseEnforcementTest(RedpandaTest):
                                  auto_assign_node_id=True,
                                  omit_seeds_on_idx_one=False)
 
+    @skip_fips_mode
     @cluster(num_nodes=5, log_allow_list=LOG_ALLOW_LIST)
     @matrix(clean_node_before_upgrade=[False, True])
     def test_escape_hatch_license_variable(self, clean_node_before_upgrade):

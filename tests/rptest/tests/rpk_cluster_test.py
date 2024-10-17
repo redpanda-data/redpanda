@@ -19,6 +19,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricSamples, Metr
 from rptest.util import expect_exception, get_cluster_license, get_second_cluster_license
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_fips_mode
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
@@ -233,6 +234,7 @@ class RpkClusterTest(RedpandaTest):
         ) <= threshold_s, f"Mismatch: abs({internal_val} - {public_val}) > {threshold_s}"
         return internal_val
 
+    @skip_fips_mode
     @cluster(num_nodes=3)
     def test_upload_and_query_cluster_license_rpk(self):
         """

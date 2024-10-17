@@ -19,6 +19,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.utils.mode_checks import skip_fips_mode
 
 LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
     # raft - [follower: {id: {1}, revision: {9}}] [group_id:1, {kafka/topic-xyeyqcbyxi/0}] - recovery_stm.cc:422 - recovery append entries error: rpc::errc::exponential_backoff
@@ -185,6 +186,7 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
                                          self.initial_version)
         super(PrefixTruncateRecoveryUpgradeTest, self).setUp()
 
+    @skip_fips_mode
     @cluster(num_nodes=3,
              log_allow_list=LOG_ALLOW_LIST +
              MixedVersionWorkloadRunner.ALLOWED_LOGS)
