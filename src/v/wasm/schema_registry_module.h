@@ -12,8 +12,8 @@
 #pragma once
 
 #include "pandaproxy/schema_registry/types.h"
+#include "schema/registry.h"
 #include "wasm/ffi.h"
-#include "wasm/schema_registry.h"
 
 namespace wasm {
 
@@ -24,7 +24,7 @@ namespace wasm {
  */
 class schema_registry_module {
 public:
-    explicit schema_registry_module(schema_registry*);
+    explicit schema_registry_module(schema::registry*);
     schema_registry_module(const schema_registry_module&) = delete;
     schema_registry_module& operator=(const schema_registry_module&) = delete;
     schema_registry_module(schema_registry_module&&) = default;
@@ -60,6 +60,6 @@ public:
     // End ABI exports
 
 private:
-    schema_registry* _sr;
+    schema::registry* _sr;
 };
 } // namespace wasm

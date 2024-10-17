@@ -11,31 +11,31 @@
 
 #pragma once
 
-#include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "pandaproxy/schema_registry/types.h"
 
-namespace wasm {
+namespace schema {
 /**
  * A wrapper around the schema registry implementation within Redpanda.
  *
- * Putting an interface behind schema registry within Wasm allows for testing
+ * Putting an interface in front of the schema registry allows for testing
  * schema registry without needing to stand up a full implementation (which
  * requires the kafka API), and since schema registry can be turned off, we
  * don't have to handle an explicit nullptr being passed around and can instead
  * create a dummy implementation for this case.
  *
  */
-class schema_registry {
+class registry {
 public:
-    static std::unique_ptr<schema_registry>
+    static std::unique_ptr<registry>
     make_default(pandaproxy::schema_registry::api*);
 
-    schema_registry() = default;
-    schema_registry(const schema_registry&) = delete;
-    schema_registry& operator=(const schema_registry&) = delete;
-    schema_registry(schema_registry&&) = default;
-    schema_registry& operator=(schema_registry&&) = default;
-    virtual ~schema_registry() = default;
+    registry() = default;
+    registry(const registry&) = delete;
+    registry& operator=(const registry&) = delete;
+    registry(registry&&) = default;
+    registry& operator=(registry&&) = default;
+    virtual ~registry() = default;
 
     virtual bool is_enabled() const = 0;
 
@@ -49,4 +49,4 @@ public:
     virtual ss::future<pandaproxy::schema_registry::schema_id>
       create_schema(pandaproxy::schema_registry::unparsed_schema) = 0;
 };
-} // namespace wasm
+} // namespace schema
