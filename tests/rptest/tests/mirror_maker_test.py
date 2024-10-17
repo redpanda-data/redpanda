@@ -220,8 +220,8 @@ class TestMirrorMakerService(MirrorMakerService):
         wait_until(group_state_is_valid, 30)
 
         source_group = src_rpk.group_describe(consumer_group)
-        consumer.stop()
         consumer.wait()
+        consumer.stop()
         self.logger.info(f"source topics: {list(src_rpk.list_topics())}")
         target_rpk = RpkTool(self.redpanda)
         self.logger.info(f"target topics: {list(target_rpk.list_topics())}")
