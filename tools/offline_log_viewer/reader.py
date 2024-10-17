@@ -127,32 +127,50 @@ class Reader:
             ret[key] = val
         return ret
 
-    def read_envelope(self, type_read=None, max_version=0):
+    def read_envelope(self, type_read=None, max_compat_version=0):
         header = self.read_bytes(SERDE_ENVELOPE_SIZE)
         envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
-        return self.read_envelope_inner(envelope, type_read, max_version)
+        return self.read_envelope_inner(envelope, type_read,
+                                        max_compat_version)
 
-    def read_checksum_envelope(self, type_read=None, max_version=0):
+    def read_checksum_envelope(self, type_read=None, max_compat_version=0):
         header = self.read_bytes(SERDE_CHECKSUM_ENVELOPE_SIZE)
         envelope = SerdeChecksumEnvelope(
             *struct.unpack(SERDE_CHECKSUM_ENVELOPE_FORMAT, header))
-        return self.read_envelope_inner(envelope, type_read, max_version)
+        return self.read_envelope_inner(envelope, type_read,
+                                        max_compat_version)
 
-    def read_envelope_inner(self, envelope, type_read, max_version):
+    def read_envelope_inner(self, envelope, type_read, max_compat_version):
+        bytes_left_in_envelope = envelope.size
+        envelope_start_pos = self.stream.tell()
+
         if type_read is not None:
-            if envelope.version <= max_version:
+            if envelope.version > max_compat_version:
+                logger.warning(
+                    f"Reading {type_read=} envelope with version {envelope.version}, but max compat version is {max_compat_version}."
+                    " The output is likely to be incomplete.")
+
+            if envelope.compat_version <= max_compat_version:
                 v = type_read(self, envelope.version)
+
+                # Skip the rest of the envelope.
+                bytes_left_in_envelope -= self.stream.tell(
+                ) - envelope_start_pos
+                self.stream.read(bytes_left_in_envelope)
+
                 if not self.include_envelope:
                     return v
                 else:
                     return {'envelope': envelope} | v
             else:
+                # Skip the the envelope.
+                self.stream.read(bytes_left_in_envelope)
                 logger.error(
-                    f"can't decode {envelope.version=}, check {type_read=} or {max_version=}"
+                    f"can't decode {envelope.version=}, check {envelope.compat_version=} > {max_compat_version=} for {type_read=}"
                 )
                 return {
                     'error': {
-                        'max_supported_version': max_version,
+                        'max_compat_version': max_compat_version,
                         'envelope': envelope
                     }
                 }
