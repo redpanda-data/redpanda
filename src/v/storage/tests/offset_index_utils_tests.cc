@@ -86,7 +86,7 @@ FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
       data.share(0, data.size_bytes()));
     info("verifying tracking info: {}", raw_idx);
     BOOST_REQUIRE_EQUAL(raw_idx.max_offset(), 1023);
-    BOOST_REQUIRE_EQUAL(raw_idx.relative_offset_index.size(), 1024);
+    BOOST_REQUIRE_EQUAL(raw_idx.index.size(), 1024);
 }
 
 FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {

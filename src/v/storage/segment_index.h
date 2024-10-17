@@ -113,12 +113,7 @@ struct time_based_retention_cfg {
 class segment_index {
 public:
     /// brief hydrated entry
-    struct entry {
-        model::offset offset;
-        model::timestamp timestamp;
-        size_t filepos;
-        friend std::ostream& operator<<(std::ostream&, const entry&);
-    };
+    using entry = index_state::entry;
 
     // 32KB - a well known number as a sweet spot for fetching data from disk
     static constexpr size_t default_data_buffer_step = 4096 * 8;
