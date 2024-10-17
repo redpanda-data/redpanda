@@ -9,7 +9,7 @@
 import socket
 import time
 from ducktape.errors import TimeoutError
-from ducktape.mark import parametrize, matrix, ok_to_fail
+from ducktape.mark import parametrize, matrix
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster

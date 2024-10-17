@@ -136,6 +136,9 @@ class KafkaCliConsumer(BackgroundThreadService):
                 f"{self._instance_name} running on {node.name} failed to stop after SIGKILL"
             )
 
+    def clean_node(self, node):
+        pass
+
     def _report_progress(self):
         while (not self._stopping.is_set()):
             with self._lock:

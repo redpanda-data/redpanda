@@ -8,14 +8,13 @@
 
 import time
 
-from ducktape.mark import ok_to_fail_fips
-
 from rptest.services.admin import Admin, Role, RoleMember
 from rptest.util import wait_until_result
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import wait_for_num_versions
+from rptest.utils.mode_checks import skip_fips_mode
 
 
 class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
@@ -45,7 +44,7 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
             "license is required to use enterprise features")
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @ok_to_fail_fips  # See NOTE below
+    @skip_fips_mode  # See NOTE below
     def test_rbac_migration(self):
         # Create some users to add to the default role
         self.admin.create_user("alice")

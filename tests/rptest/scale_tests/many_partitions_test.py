@@ -17,7 +17,7 @@ from collections import Counter
 
 from confluent_kafka import KafkaError, KafkaException
 from ducktape.cluster.cluster_spec import ClusterSpec
-from ducktape.mark import matrix, ok_to_fail, parametrize
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until, TimeoutError
 import numpy
 

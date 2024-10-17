@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 from packaging.version import Version
 
-from ducktape.mark import parametrize, matrix, ok_to_fail_fips
+from ducktape.mark import parametrize, matrix
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
@@ -27,6 +27,7 @@ from rptest.util import (
     produce_until_segments,
     wait_until_segments,
 )
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.si_utils import BucketView
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
@@ -387,7 +388,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         super().setUp()
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))

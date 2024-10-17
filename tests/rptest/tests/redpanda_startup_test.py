@@ -11,7 +11,6 @@ import os
 from time import sleep
 
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -72,7 +71,6 @@ class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
         super(RedpandaFIPSStartupTest,
               self).__init__(test_context=test_context)
 
-    @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
     def test_startup(self):
         """
@@ -124,7 +122,6 @@ class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
             expected_mode=RedpandaServiceBase.FIPSMode.permissive)
 
-    @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
     def test_non_homogenous(self):
         """
@@ -256,7 +253,6 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
             f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
         )
 
-    @ok_to_fail  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
     def test_fips_license_nag(self):
         wait_until(self._license_nag_is_set,

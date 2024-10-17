@@ -15,7 +15,7 @@ import traceback
 from collections import namedtuple, defaultdict
 from typing import DefaultDict, List, Optional
 
-from ducktape.mark import matrix, ok_to_fail_fips
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -31,6 +31,7 @@ from rptest.util import (
     wait_for_local_storage_truncate,
     firewall_blocked,
 )
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.si_utils import BucketView, NTPR
 from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
 from rptest.services.admin import Admin
@@ -234,7 +235,7 @@ class ArchivalTest(RedpandaTest):
                                         'true')
 
     # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=3)
     @matrix(
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(

@@ -10,7 +10,7 @@
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
-from ducktape.mark import ok_to_fail_fips
+from rptest.utils.mode_checks import skip_fips_mode
 
 
 class RpkPluginTest(RedpandaTest):
@@ -19,7 +19,7 @@ class RpkPluginTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=1)
     def test_managed_byoc(self):
         """
@@ -82,7 +82,7 @@ class RpkPluginTest(RedpandaTest):
         assert not find_flag(out["flags"], "-X", "brokers=127.0.0.1:9092")
         assert not find_flag(out["flags"], "--verbose", "")
 
-    @ok_to_fail_fips
+    @skip_fips_mode
     @cluster(num_nodes=1)
     def test_non_managed_plugin(self):
         assert ".rpk.ac-pluginmock" in self._rpk.plugin_list()

@@ -17,7 +17,7 @@ from ducktape.utils.util import wait_until
 
 import ducktape.errors
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize, ok_to_fail_fips
+from ducktape.mark import parametrize
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import (Admin, RedpandaNode, RoleMemberList,
                                    RoleUpdate, RoleErrorCode, RoleError,
@@ -29,6 +29,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.admin_api_auth_test import create_user_and_wait
 from rptest.tests.metrics_reporter_test import MetricsReporterServer
 from rptest.util import expect_exception, expect_http_error, wait_until_result
+from rptest.utils.mode_checks import skip_fips_mode
 
 ALICE = SaslCredentials("alice", "itsMeH0nest", "SCRAM-SHA-256")
 
@@ -641,7 +642,7 @@ class RBACLicenseTest(RBACTestBase):
         )
 
     @cluster(num_nodes=1)
-    @ok_to_fail_fips  # See NOTE below
+    @skip_fips_mode  # See NOTE below
     def test_license_nag(self):
         wait_until(self._license_nag_is_set,
                    timeout_sec=30,
