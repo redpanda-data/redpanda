@@ -91,13 +91,6 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.client().create_topic(spec)
         admin = Admin(self.redpanda)
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         # choose a random topic-partition
         self.logger.info(f"selected topic-partition: {topic}/{partition}")
 
@@ -119,7 +112,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             partition,
             assignments,
             admin=admin,
-            node_local_core_assignment=node_local_core_assignment)
+            node_local_core_assignment=not test_mixed_versions)
 
         def node_assignments_converged():
             info = admin.get_partitions(topic, partition)
@@ -170,16 +163,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         for spec in topics:
             self.client().create_topic(spec)
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         for _ in range(25):
             self._move_and_verify(
-                node_local_core_assignment=node_local_core_assignment)
+                node_local_core_assignment=not test_mixed_versions)
 
     @cluster(num_nodes=4,
              log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS +
@@ -224,16 +210,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             producer.free()
             self.logger.info(f"Producer stop complete.")
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         for _ in range(25):
             self._move_and_verify(
-                node_local_core_assignment=node_local_core_assignment)
+                node_local_core_assignment=not test_mixed_versions)
 
         for spec in topics:
             self.logger.info(f"Verifying records in {spec}")
@@ -307,19 +286,12 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.client().create_topic(spec)
         self.topic = spec.name
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
         self.await_startup()
         for _ in range(moves):
             self._move_and_verify(
-                node_local_core_assignment=node_local_core_assignment)
+                node_local_core_assignment=not test_mixed_versions)
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
@@ -353,13 +325,6 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         admin = Admin(self.redpanda)
         topic = "__consumer_offsets"
         partition = 0
@@ -374,7 +339,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 partition,
                 assignments,
                 admin=admin,
-                node_local_core_assignment=node_local_core_assignment)
+                node_local_core_assignment=not test_mixed_versions)
             self._wait_post_move(topic, partition, assignments, 360)
 
         self.run_validation(enable_idempotence=False,
@@ -401,16 +366,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         # execute single move
         self._move_and_verify(
-            node_local_core_assignment=node_local_core_assignment)
+            node_local_core_assignment=not test_mixed_versions)
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
         # snapshot offsets
@@ -483,12 +441,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             assert status_code == expected_sc, \
                 f"Expected {expected_sc} but got {status_code}"
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
+        node_local_core_assignment = not test_mixed_versions
 
         # A valid node but an invalid core
         assignments = [{"node_id": valid_dest, "core": invalid_shard}]
@@ -778,7 +731,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         ]
         selected = random.choice(to_select)
         # replace one of the assignments
-        assignments[0] = {'node_id': selected['node_id'], 'core': 0}
+        assignments[0] = {'node_id': selected['node_id']}
         self.logger.info(
             f"new assignment for {self.topic}/{partition_id}: {assignments}")
 
@@ -852,7 +805,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         selected = random.choice(to_select)
         # replace one of the assignments
         replaced = assignments[0]['node_id']
-        assignments[0] = {'node_id': selected['node_id'], 'core': 0}
+        assignments[0] = {'node_id': selected['node_id']}
         self.logger.info(
             f"target assignment for {self.topic}/{partition_id}: {assignments}"
         )
@@ -891,7 +844,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             "first movement done, scheduling second movement back")
 
         # bring replaced node back
-        assignments[0] = {'node_id': replaced, 'core': 0}
+        assignments[0] = {'node_id': replaced}
         self._set_partition_assignments(self.topic, partition_id, assignments,
                                         admin)
 
@@ -919,9 +872,6 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup(min_records=throughput * 10, timeout_sec=60)
 
-        self.redpanda.set_feature_active("node_local_core_assignment",
-                                         active=True)
-
         self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 1})
         brokers = admin.get_brokers()
         for partition in range(0, partition_count):
@@ -936,11 +886,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self.logger.info(
                 f"initial assignments for {self.topic}/{partition}: {prev_assignments}, new assignment: {assignments}"
             )
-            self._set_partition_assignments(self.topic,
-                                            partition,
-                                            assignments,
-                                            admin,
-                                            node_local_core_assignment=True)
+            self._set_partition_assignments(self.topic, partition, assignments,
+                                            admin)
 
         wait_until(
             lambda: len(admin.list_reconfigurations()) == partition_count, 30)
@@ -1047,13 +994,6 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         # We will start an upgrade halfway through the test: this ensures
         # that a single-version cluster existed for long enough to actually
         # upload some data to S3, before the upgrade potentially pauses
@@ -1065,7 +1005,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 self._partial_upgrade(num_to_upgrade)
 
             self._move_and_verify(
-                node_local_core_assignment=node_local_core_assignment)
+                node_local_core_assignment=not test_mixed_versions)
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
@@ -1101,13 +1041,6 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
 
-        if test_mixed_versions:
-            node_local_core_assignment = False
-        else:
-            self.redpanda.set_feature_active("node_local_core_assignment",
-                                             active=True)
-            node_local_core_assignment = True
-
         admin = Admin(self.redpanda)
         topic = self.topic
         partition = 0
@@ -1131,7 +1064,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 partition,
                 assignments,
                 admin=admin,
-                node_local_core_assignment=node_local_core_assignment)
+                node_local_core_assignment=not test_mixed_versions)
             self._wait_post_move(topic, partition, assignments, 360)
 
         self.run_validation(enable_idempotence=False,
