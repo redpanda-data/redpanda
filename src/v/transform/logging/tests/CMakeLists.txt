@@ -19,5 +19,5 @@ rp_test(
     v::transform_logging
     v::transform_logging_test_utils
     v::gtest_main
-    v::kc_record_batcher
+    v::kd_record_batcher
 )
