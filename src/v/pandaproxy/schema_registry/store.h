@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include "config/configuration.h"
 #include "container/fragmented_vector.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -19,6 +22,8 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
 #include <absl/container/node_hash_map.h>
+
+#include <ranges>
 
 namespace pandaproxy::schema_registry {
 
@@ -58,10 +63,13 @@ class store {
 public:
     using schema_id_set = absl::btree_set<schema_id>;
 
-    explicit store() = default;
+    explicit store()
+      : store(is_mutable::no) {}
 
     explicit store(is_mutable mut)
-      : _mutable(mut) {}
+      : _mutable(mut) {
+        setup_metrics();
+    }
 
     struct insert_result {
         schema_version version;
@@ -705,6 +713,55 @@ public:
         return outcome::success();
     }
 
+    void setup_metrics() {
+        namespace sm = ss::metrics;
+        auto setup_common = [this]<typename MetricDef>() {
+            std::vector<MetricDef> defs;
+            defs.reserve(3);
+            defs.emplace_back(
+              sm::make_gauge(
+                "schema_count",
+                [this] { return _schemas.size(); },
+                sm::description("The number of schemas in the store"))
+                .aggregate({}));
+            defs.emplace_back(
+              sm::make_gauge(
+                "schema_memory_bytes",
+                [this] {
+                    return absl::c_accumulate(
+                      _schemas | std::views::transform([](const auto& s) {
+                          return s.second.definition.raw()().size_bytes();
+                      }),
+                      size_t{0});
+                },
+                sm::description("The memory usage of schemas in the store"))
+                .aggregate({}));
+            defs.emplace_back(
+              sm::make_gauge(
+                "subject_count",
+                [this] { return _subjects.size(); },
+                sm::description("The number of subjects in the store"))
+                .aggregate({}));
+            return defs;
+        };
+        auto group_name = prometheus_sanitize::metrics_name("schema_registry");
+        if (!config::shard_local_cfg().disable_metrics()) {
+            _metrics.add_group(
+              group_name,
+              setup_common.template
+              operator()<ss::metrics::impl::metric_definition_impl>(),
+              {},
+              {});
+        }
+
+        if (!config::shard_local_cfg().disable_public_metrics()) {
+            _public_metrics.add_group(
+              group_name,
+              setup_common
+                .template operator()<ss::metrics::metric_definition>());
+        }
+    };
+
 private:
     struct schema_entry {
         explicit schema_entry(canonical_schema_definition definition)
@@ -781,7 +838,9 @@ private:
     subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::backward};
     mode _mode{mode::read_write};
-    is_mutable _mutable{is_mutable::no};
+    is_mutable _mutable;
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace pandaproxy::schema_registry
