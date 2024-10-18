@@ -543,6 +543,112 @@ const auto compat_data = std::to_array<compat_test_case>({
     .writer=schema_old,
     .expected=backward_expected,
   },
+  {
+    .reader=R"({
+        "type": "record",
+        "name": "car",
+        "fields": [
+            {
+                "name": "color",
+                "type": ["string", "null"]
+            }
+        ]
+    })",
+    .writer=R"({
+        "type": "record",
+        "name": "car",
+        "fields": []
+    })",
+    .expected={
+      {"/fields/0",
+       incompatibility::Type::reader_field_missing_default_value,
+       "color"},
+    },
+  },
+  {
+  .reader = R"({
+      "type": "record",
+      "name": "car",
+      "fields": [
+          {
+              "name": "color",
+              "type": ["null", "string"],
+              "default": null
+          }
+      ]
+  })",
+  .writer = R"({
+      "type": "record",
+      "name": "car",
+      "fields": []
+  })",
+  .expected = {},
+  },
+  {
+    .reader=R"({
+          "type": "record",
+          "name": "car",
+          "fields": [
+              {
+                  "name": "color",
+                  "type": "null"
+              }
+          ]
+      })",
+    .writer=R"({
+          "type": "record",
+          "name": "car",
+          "fields": []
+      })",
+  .expected={
+      {"/fields/0",
+       incompatibility::Type::reader_field_missing_default_value,
+       "color"},
+    },
+  },
+  {
+      .reader=R"({
+      "type": "record",
+      "name": "car",
+      "fields": [
+          {
+              "name": "color",
+              "type": "string",
+              "default": "somevalue"
+          }
+      ]
+  })",
+    .writer=R"({
+      "type": "record",
+      "name": "car",
+      "fields": []
+  })",
+  .expected={},
+  },{
+      .reader=R"({
+      "type": "record",
+      "name": "car",
+      "fields": [
+          {
+              "name": "color",
+              "type": "null",
+              "default": null
+          }
+      ]
+  })",
+    .writer=R"({
+      "type": "record",
+      "name": "car",
+      "fields": []
+  })",
+  .expected={
+      // Note: this is overly restrictive for null-type fields with null defaults.
+      // This is because the Avro API is not expressive enough to differentiate the two.
+      {"/fields/0",
+       incompatibility::Type::reader_field_missing_default_value,
+       "color"},
+    },
+  },
 });
 
 std::string format_set(const absl::flat_hash_set<ss::sstring>& d) {
