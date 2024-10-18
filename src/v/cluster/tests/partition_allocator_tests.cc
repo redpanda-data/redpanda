@@ -583,7 +583,7 @@ void check_allocated_counts(
   const std::vector<size_t>& expected) {
     std::vector<size_t> counts;
     for (const auto& [id, node] : allocator.state().allocation_nodes()) {
-        BOOST_REQUIRE(id() == counts.size());
+        BOOST_REQUIRE(id() == static_cast<int>(counts.size()));
         counts.push_back(node->allocated_partitions());
     }
     logger.debug("allocated counts: {}, expected: {}", counts, expected);
@@ -595,7 +595,7 @@ void check_final_counts(
   const std::vector<size_t>& expected) {
     std::vector<size_t> counts;
     for (const auto& [id, node] : allocator.state().allocation_nodes()) {
-        BOOST_REQUIRE(id() == counts.size());
+        BOOST_REQUIRE(id() == static_cast<int>(counts.size()));
         counts.push_back(node->final_partitions());
     }
     logger.debug("final counts: {}, expected: {}", counts, expected);

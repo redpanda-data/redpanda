@@ -6,12 +6,27 @@ redpanda_test_cc_library(
         "kvstore_fixture.h",
     ],
     include_prefix = "storage/tests",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/config",
         "//src/v/features",
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/test_utils:seastar_boost",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "random",
+    hdrs = [
+        "randoms.h",
+    ],
+    include_prefix = "storage/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/model/tests:random",
+        "//src/v/random:generators",
+        "//src/v/storage",
     ],
 )
 
