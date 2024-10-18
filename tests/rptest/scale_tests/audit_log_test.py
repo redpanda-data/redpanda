@@ -21,6 +21,7 @@ from rptest.services.redpanda import SaslCredentials, SecurityConfig, MetricsEnd
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.util import wait_until_result
 from ducktape.errors import TimeoutError
+from ducktape.mark import ignore
 
 # How much memory to assign to redpanda per partition. Redpanda will be started
 # with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory
@@ -301,6 +302,7 @@ class AuditLogTest(RedpandaTest):
             # to me able to assert on other properties of the test run.
             return make_result_set(t1, repeater)
 
+    @ignore  # https://github.com/redpanda-data/redpanda/issues/16199
     @cluster(num_nodes=5)
     def test_audit_log(self):
         """
