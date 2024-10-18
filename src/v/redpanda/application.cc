@@ -3188,10 +3188,7 @@ void application::start_runtime_services(
     space_manager->start().get();
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
-        _reconciler
-          .invoke_on_all(
-            &experimental::cloud_topics::reconciler::reconciler::start)
-          .get();
+        _reconciler.invoke_on_all([](auto& app) { return app.start(); }).get();
     }
 }
 
