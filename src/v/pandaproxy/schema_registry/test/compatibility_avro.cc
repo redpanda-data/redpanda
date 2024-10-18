@@ -550,6 +550,28 @@ const auto compat_data = std::to_array<compat_test_case>({
         "fields": [
             {
                 "name": "color",
+                "type": ["null", "string"]
+            }
+        ]
+    })",
+    .writer=R"({
+        "type": "record",
+        "name": "car",
+        "fields": []
+    })",
+    .expected={
+      {"/fields/0",
+       incompatibility::Type::reader_field_missing_default_value,
+       "color"},
+    },
+  },
+  {
+    .reader=R"({
+        "type": "record",
+        "name": "car",
+        "fields": [
+            {
+                "name": "color",
                 "type": ["string", "null"]
             }
         ]
@@ -564,6 +586,25 @@ const auto compat_data = std::to_array<compat_test_case>({
        incompatibility::Type::reader_field_missing_default_value,
        "color"},
     },
+  },
+  {
+    .reader=R"({
+    "type": "record",
+    "name": "car",
+    "fields": [
+        {
+            "name": "color",
+            "type": "null",
+            "default": null
+        }
+    ]
+})",
+    .writer=R"({
+    "type": "record",
+    "name": "car",
+    "fields": []
+})",
+    .expected = {},
   },
   {
     .reader=R"({
