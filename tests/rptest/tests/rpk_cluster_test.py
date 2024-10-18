@@ -257,17 +257,6 @@ class RpkClusterTest(RedpandaTest):
             output = self._rpk.license_set(tf.name)
             assert "Successfully uploaded license" in output
 
-        def obtain_license():
-            lic = self._rpk.license_info()
-            return (lic != "{}", lic)
-
-        rp_license = wait_until_result(
-            obtain_license,
-            timeout_sec=10,
-            backoff_sec=1,
-            retry_on_exc=True,
-            err_msg="unable to retrieve license information")
-
         wait_until(
             lambda: self._get_license_expiry() > 0,
             timeout_sec=10,
@@ -288,8 +277,19 @@ class RpkClusterTest(RedpandaTest):
             'license_violation': False,
             'enterprise_features_in_use': [],
         }
-        result = json.loads(rp_license)
-        assert expected_license == result, result
+
+        def compare_license():
+            license = self._rpk.license_info()
+            if license is None or license == "{}":
+                return False
+            return json.loads(license) == expected_license
+
+        wait_until(
+            compare_license,
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="unable to retrieve and compare license information")
 
         # Assert that a second put takes license
         license = get_second_cluster_license()
