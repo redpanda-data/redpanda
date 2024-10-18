@@ -433,18 +433,30 @@ protobuf_schema_definition::raw() const {
 
 ::result<ss::sstring, kafka::error_code>
 protobuf_schema_definition::name(const std::vector<int>& fields) const {
+    auto d = descriptor(*this, fields);
+    if (d.has_error()) {
+        return d.error();
+    }
+    return d.value().get().full_name();
+}
+
+::result<
+  std::reference_wrapper<const google::protobuf::Descriptor>,
+  kafka::error_code>
+descriptor(
+  const protobuf_schema_definition& def, const std::vector<int>& fields) {
     if (fields.empty()) {
         return kafka::error_code::invalid_record;
     }
     auto f = fields.begin();
-    auto d = _impl->fd->message_type(*f++);
+    auto d = def().fd->message_type(*f++);
     while (fields.end() != f && d) {
         d = d->nested_type(*f++);
     }
     if (!d) {
         return kafka::error_code::invalid_record;
     }
-    return d->full_name();
+    return *d;
 }
 
 bool operator==(

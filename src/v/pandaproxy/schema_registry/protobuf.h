@@ -14,6 +14,10 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "pandaproxy/schema_registry/types.h"
 
+namespace google::protobuf {
+class Descriptor;
+} // namespace google::protobuf
+
 namespace pandaproxy::schema_registry {
 
 ss::future<protobuf_schema_definition>
@@ -29,5 +33,10 @@ compatibility_result check_compatible(
   const protobuf_schema_definition& reader,
   const protobuf_schema_definition& writer,
   verbose is_verbose = verbose::no);
+
+::result<
+  std::reference_wrapper<const google::protobuf::Descriptor>,
+  kafka::error_code>
+descriptor(const protobuf_schema_definition&, const std::vector<int>& fields);
 
 } // namespace pandaproxy::schema_registry
