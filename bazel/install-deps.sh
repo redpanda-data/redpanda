@@ -36,6 +36,7 @@ deb_deps=(
   ragel
   valgrind
   xfslibs-dev
+  sudo
 )
 
 fedora_deps=(
@@ -50,6 +51,7 @@ fedora_deps=(
   valgrind-devel
   xfsprogs-devel
   xorg-x11-util-macros
+  sudo
 )
 
 case "$ID" in
