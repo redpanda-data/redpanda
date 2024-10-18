@@ -194,6 +194,7 @@ avro::Schema field_to_avro(const nested_field& field) {
 
 avro::Schema
 struct_type_to_avro(const struct_type& type, std::string_view name) {
+    static const std::optional<avro::GenericDatum> no_default = std::nullopt;
     avro::RecordSchema avro_schema(std::string{name});
     const auto& fields = type.fields;
     for (const auto& field_ptr : fields) {
@@ -203,10 +204,11 @@ struct_type_to_avro(const struct_type& type, std::string_view name) {
           field_to_avro(*field_ptr),
           field_attrs(field_ptr->id()),
           // Optional fields (unions types with null children) have
-          // defaults of GenericUnion(null), rather than no default.
+          // defaults of GenericUnion(null) with the same union type as the
+          // child_schema, rather than no default.
           // NOTE: no other union types are allowed by Iceberg.
           field_ptr->required
-            ? avro::GenericDatum()
+            ? no_default
             : avro::GenericDatum(
                 child_schema.root(), avro::GenericUnion(child_schema.root())));
     }
