@@ -2874,6 +2874,11 @@ class RedpandaService(RedpandaServiceBase):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
+        if in_fips_environment():
+            # We may have dropped the data directory of the node before the start,
+            # so install the license even when this is not the first start.
+            self.install_license()
+
     def write_crl_file(self, node: ClusterNode, ca: tls.CertificateAuthority):
         self.logger.info(
             f"Writing Redpanda node tls ca CRL file: {RedpandaService.TLS_CA_CRL_FILE}"
