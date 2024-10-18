@@ -176,7 +176,12 @@ public:
     raft_node_instance& operator=(const raft_node_instance&) = delete;
     ~raft_node_instance() = default;
 
-    ss::sstring base_directory() { return _base_directory; }
+    ss::sstring base_directory() const { return _base_directory; }
+
+    ss::sstring work_directory() const {
+        return ssx::sformat(
+          "{}/{}_{}", base_directory(), ntp().path(), _revision);
+    }
 
     ss::lw_shared_ptr<consensus> raft() { return _raft; }
 
@@ -203,7 +208,7 @@ public:
 
     void leadership_notification_callback(leadership_status);
 
-    model::ntp ntp() {
+    model::ntp ntp() const {
         return {
           model::kafka_namespace,
           model::topic_partition(
