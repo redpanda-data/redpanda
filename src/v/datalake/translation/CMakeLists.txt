@@ -5,6 +5,9 @@ v_cc_library(
         state_machine.cc
     DEPS
         v::cluster
+        v::datalake_writer
+        v::datalake_coordinator
+        v::kafka_utils
         v::model
         v::raft
         Seastar::seastar
