@@ -17,37 +17,42 @@
 #include "storage/record_batch_builder.h"
 #include "utils/human.h"
 
-namespace transform::logging {
+namespace kafka::client {
 
 namespace detail {
 class batcher_impl {
 public:
     batcher_impl() = delete;
-    explicit batcher_impl(size_t batch_max_bytes)
-      : _batch_max_bytes(batch_max_bytes) {}
+    explicit batcher_impl(
+      size_t batch_max_bytes, std::optional<ss::logger*> log)
+      : _batch_max_bytes(batch_max_bytes)
+      , _log(log.value_or(&kclog)) {
+        vassert(_log != nullptr, "Injected logger must not be nullptr");
+    }
     ~batcher_impl() = default;
     batcher_impl(const batcher_impl&) = delete;
     batcher_impl& operator=(const batcher_impl&) = delete;
     batcher_impl(batcher_impl&&) = delete;
     batcher_impl& operator=(batcher_impl&&) = delete;
 
-    model::record_batch make_batch_of_one(iobuf k, iobuf v) {
+    model::record_batch
+    make_batch_of_one(std::optional<iobuf> k, std::optional<iobuf> v) {
         return std::move(bb_init().add_raw_kv(std::move(k), std::move(v)))
           .build();
     }
 
-    void append(iobuf k, iobuf v) {
+    void append(std::optional<iobuf> k, std::optional<iobuf> v) {
         auto record = model::record(
           /*attributes*/ {},
           /*ts_delta*/ 0,
           /*offset_delta*/ std::numeric_limits<int32_t>::max(),
-          std::move(k),
-          std::move(v),
+          std::move(k).value_or(iobuf{}),
+          std::move(v).value_or(iobuf{}),
           /*headers*/ {});
         size_t record_size = record.size_bytes();
         if (record_size > max_records_bytes()) {
             vlog(
-              tlg_log.info,
+              _log->info,
               "Dropped record: size exceeds configured batch max "
               "size: {} > {}",
               human::bytes{static_cast<double>(record_size)},
@@ -92,14 +97,14 @@ private:
                     - static_cast<int64_t>(batch.size_bytes());
         if (diff < 0) {
             vlog(
-              tlg_log.debug,
+              _log->debug,
               "Underestimaged batch size {} - {} = {}",
               human::bytes{static_cast<double>(batch_size_bytes())},
               human::bytes{static_cast<double>(batch.size_bytes())},
               diff);
         } else {
             vlog(
-              tlg_log.trace,
+              _log->trace,
               "Building record batch. Actual size: {} (estimated: {}, err:{})",
               human::bytes{static_cast<double>(batch.size_bytes())},
               human::bytes{static_cast<double>(batch_size_bytes())},
@@ -119,6 +124,7 @@ private:
     }
 
     size_t _batch_max_bytes;
+    ss::logger* _log;
     storage::record_batch_builder _builder{bb_init()};
     ss::chunked_fifo<model::record_batch> _record_batches;
     size_t _curr_batch_size{0};
@@ -126,12 +132,18 @@ private:
 
 } // namespace detail
 
-record_batcher::record_batcher(size_t max_batch_size)
-  : _impl(std::make_unique<detail::batcher_impl>(max_batch_size)) {}
+record_batcher::record_batcher(
+  size_t max_batch_size, std::optional<ss::logger*> log)
+  : _impl(std::make_unique<detail::batcher_impl>(max_batch_size, log)) {}
 
 record_batcher::~record_batcher() = default;
 
-void record_batcher::append(iobuf k, iobuf v) {
+model::record_batch record_batcher::make_batch_of_one(
+  std::optional<iobuf> k, std::optional<iobuf> v) {
+    return _impl->make_batch_of_one(std::move(k), std::move(v));
+}
+
+void record_batcher::append(std::optional<iobuf> k, std::optional<iobuf> v) {
     _impl->append(std::move(k), std::move(v));
 }
 size_t record_batcher::total_size_bytes() { return _impl->total_size_bytes(); }
@@ -140,4 +152,4 @@ ss::chunked_fifo<model::record_batch> record_batcher::finish() {
     return _impl->finish();
 }
 
-} // namespace transform::logging
+} // namespace kafka::client
