@@ -81,6 +81,7 @@ class LibrdkafkaTest(RedpandaTest):
                                                  "default_topic_partitions": 4
                                              })
 
+    @ignore  # https://github.com/redpanda-data/redpanda/issues/7148
     @cluster(num_nodes=4)
     @matrix(test_num=tests_to_run())
     @skip_debug_mode

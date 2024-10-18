@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from keycloak import KeycloakOpenID
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
@@ -724,6 +724,7 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
                     True), lambda record_count: record_count == 3,
             "Single redpanda start event per node")
 
+    @ignore  # https://github.com/redpanda-data/redpanda/issues/16198
     @skip_fips_mode
     @cluster(num_nodes=5)
     def test_drain_on_audit_disabled(self):
