@@ -56,6 +56,7 @@ v_cc_library(
     server/group_metadata.cc
     server/group_tx_tracker_stm.cc
     server/logger.cc
+    server/app.cc
  DEPS
     Seastar::seastar
     v::bytes

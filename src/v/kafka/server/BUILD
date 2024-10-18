@@ -329,3 +329,22 @@ redpanda_cc_library(
         "//src/v/kafka/protocol",
     ],
 )
+
+redpanda_cc_library(
+    name = "app",
+    srcs = [
+        "app.cc",
+    ],
+    hdrs = [
+        "app.h",
+    ],
+    implementation_deps = [
+        ":server",
+    ],
+    include_prefix = "kafka/server",
+    visibility = ["//src/v/redpanda:__pkg__"],
+    deps = [
+        ":qdc_monitor_config",
+        "@seastar",
+    ],
+)
