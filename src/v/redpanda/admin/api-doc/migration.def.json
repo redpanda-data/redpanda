@@ -85,7 +85,7 @@
     "type": "object",
     "properties": {
         "source_topic": {
-            "description": "Name of the topic in the source cluster",
+            "description": "Name of the topic in object storage. To uniquely identify the topic, append the name with /cluster_uuid/initial_revision. ",
             "type": "namespaced_topic",
             "$ref": "namespaced_topic"
         },

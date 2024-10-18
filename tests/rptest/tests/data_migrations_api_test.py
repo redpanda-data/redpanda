@@ -9,6 +9,7 @@
 import random
 import threading
 import time
+from contextlib import contextmanager
 from enum import Enum
 from typing import Callable, NamedTuple, Literal, List
 import typing
@@ -120,6 +121,38 @@ class DataMigrationsApiTest(RedpandaTest):
         )
         super().__init__(test_context=test_context, *args, **kwargs)
         self.admin = Admin(self.redpanda)
+        self.last_producer_id = 0
+        self.last_consumer_id = 0
+
+    def get_topic_initial_revision(self, topic_name):
+        anomalies = self.admin.get_cloud_storage_anomalies(namespace="kafka",
+                                                           topic=topic_name,
+                                                           partition=1)
+        return anomalies['revision_id']
+
+    def get_ck_producer(self, use_transactional=False):
+        self.last_producer_id += 1
+        return ck.Producer(
+            {'bootstrap.servers': self.redpanda.brokers()} |
+            ({
+                'transactional.id': f"tx-id-{self.last_producer_id}"
+            } if use_transactional else {}),
+            logger=self.logger,
+            debug='all')
+
+    @contextmanager
+    def ck_consumer(self):
+        self.last_consumer_id += 1
+        consumer = ck.Consumer({
+            'group.id': f'group-{self.last_consumer_id}',
+            'bootstrap.servers': self.redpanda.brokers(),
+            'auto.offset.reset': 'earliest',
+            'isolation.level': 'read_committed',
+        })
+        try:
+            yield consumer
+        finally:
+            consumer.close()
 
     def get_migrations_map(self, node=None):
         migrations = self.admin.list_data_migrations(node).json()
@@ -307,10 +340,9 @@ class DataMigrationsApiTest(RedpandaTest):
 
         with Finjector(self.redpanda, self.scale,
                        max_concurrent_failures=1).finj_thread():
-            in_migration = InboundDataMigration(topics=[
-                InboundTopic(make_namespaced_topic(topic.name), alias=None)
-            ],
-                                                consumer_groups=[])
+            in_migration = InboundDataMigration(
+                topics=[InboundTopic(make_namespaced_topic(topic.name))],
+                consumer_groups=[])
             in_migration_id = self.create_and_wait(in_migration)
 
             migrations_map = self.get_migrations_map()
@@ -442,20 +474,55 @@ class DataMigrationsApiTest(RedpandaTest):
             {"ntr_no_topic_manifest", "missing_segments"})
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
-    def test_higher_level_migration_api(self):
-        rpk = RpkTool(self.redpanda)
+    def test_conflicting_names(self):
+        def make_msg(i: int):
+            return {
+                component: str.encode(f"{component}{i}")
+                for component in ('key', 'value')
+            }
 
+        topic = TopicSpec(partition_count=3)
+        ns_topic = make_namespaced_topic(topic.name)
+        producer = self.get_ck_producer()
+
+        # create, populate and unmount 3 topics
+        revisions = {}
+        for i in range(3):
+            self.client().create_topic(topic)
+            revisions[i] = self.get_topic_initial_revision(topic.name)
+            producer.produce(topic.name, **make_msg(i))
+
+            out_migr_id = self.admin.unmount_topics([ns_topic]).json()["id"]
+            self.wait_partitions_disappear([topic])
+            self.wait_migration_disappear(out_migr_id)
+
+        # mount and consume from them in random order
+        cluster_uuid = self.admin.get_cluster_uuid(self.redpanda.nodes[0])
+        for i in sorted(range(3), key=lambda element: random.random()):
+            hinted_ns_topic = make_namespaced_topic(
+                f"{ns_topic.topic}/{cluster_uuid}/{revisions[i]}")
+            in_topic = InboundTopic(hinted_ns_topic)
+            in_migr_id = self.admin.mount_topics([in_topic]).json()["id"]
+            self.wait_partitions_appear([topic])
+            self.wait_migration_disappear(in_migr_id)
+
+            with self.ck_consumer() as consumer:
+                consumer.subscribe([topic.name])
+                records = consumer.consume(1, 10)
+                assert len(records) == 1
+                assert {
+                    'key': records[0].key(),
+                    'value': records[0].value()
+                } == make_msg(i)
+            self.client().delete_topic(topic.name)
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_higher_level_migration_api(self):
         topics = [TopicSpec(partition_count=3) for i in range(5)]
         for t in topics:
             self.client().create_topic(t)
 
-        producer = ck.Producer(
-            {
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': "tx-id-1",
-            },
-            logger=self.logger,
-            debug='all')
+        producer = self.get_ck_producer(use_transactional=True)
         producer.init_transactions()
         # commit one message
         producer.begin_transaction()
@@ -508,19 +575,11 @@ class DataMigrationsApiTest(RedpandaTest):
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
 
-        consumer = ck.Consumer({
-            'group.id': 'group-1',
-            'bootstrap.servers': self.redpanda.brokers(),
-            'auto.offset.reset': 'earliest',
-            'isolation.level': 'read_committed',
-        })
-        try:
+        with self.ck_consumer() as consumer:
             consumer.subscribe([topics[0].name])
             records = consumer.consume(2, 10)
             self.logger.debug(f"consumed: {records}")
             assert len(records) == 1
-        finally:
-            consumer.close()
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(

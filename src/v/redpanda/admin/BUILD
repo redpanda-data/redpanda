@@ -138,6 +138,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/json",
         "//src/v/model",
+        "@abseil-cpp//absl/strings",
     ],
 )
 
@@ -180,6 +181,7 @@ redpanda_cc_library(
         "debug_bundle.h",
         "server.h",
         "util.h",
+        "@fmt",
     ],
     include_prefix = "redpanda/admin",
     visibility = ["//visibility:public"],

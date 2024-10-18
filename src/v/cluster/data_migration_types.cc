@@ -112,8 +112,8 @@ std::ostream& operator<<(std::ostream& o, const inbound_topic& topic) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const cloud_storage_location&) {
-    fmt::print(o, "{{cloud_storage_location}}");
+std::ostream& operator<<(std::ostream& o, const cloud_storage_location& l) {
+    fmt::print(o, "{{hint: {}}}", l.hint);
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const copy_target& t) {
@@ -139,6 +139,26 @@ std::ostream& operator<<(std::ostream& o, const outbound_migration& dm) {
       fmt::join(dm.groups, ", "),
       dm.copy_to,
       dm.auto_advance);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_work& tw) {
+    fmt::print(
+      o,
+      "{{migration: {}, sought_state: {}, info: {}}}",
+      tw.migration_id,
+      tw.sought_state,
+      ss::visit(
+        tw.info,
+        [&](const inbound_topic_work_info& itwi) {
+            return ssx::sformat(
+              "{{inbound; source: {}, cloud_storage_location: {}}}",
+              itwi.source,
+              itwi.cloud_storage_location);
+        },
+        [&](const outbound_topic_work_info& otwi) {
+            return ssx::sformat("{{outbound; copy_to: {}}}", otwi.copy_to);
+        }));
     return o;
 }
 

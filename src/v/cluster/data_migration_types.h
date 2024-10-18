@@ -286,6 +286,7 @@ struct topic_work {
     state sought_state;
     topic_work_info info;
 };
+std::ostream& operator<<(std::ostream& o, const topic_work& tw);
 
 /**
  * Data migration metadata containing a migration definition, its id and current

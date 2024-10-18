@@ -455,30 +455,21 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
         // waiting for existing work to complete and delete its entry
         vlog(
           dm_log.info,
-          "waiting for older topic work on migration {} nt {} towards state "
-          "{} to complete",
-          tw.migration_id,
-          nt,
-          tw.sought_state);
+          "waiting for older topic work {} on nt={} to complete",
+          tw,
+          nt);
         auto old_ec = co_await tsws->future();
         vlog(
           dm_log.info,
-          "older topic work on migration {} nt {} towards state {} completed "
-          "with {}",
-          tw.migration_id,
+          "older topic work {} on nt {} completed with {}",
+          tw,
           nt,
-          tw.sought_state,
           old_ec);
     }
 
     errc ec;
     try {
-        vlog(
-          dm_log.debug,
-          "doing topic work on migration {} nt {} towards state: {}",
-          tw.migration_id,
-          nt,
-          tw.sought_state);
+        vlog(dm_log.debug, "doing topic work {} on nt={}", tw, nt);
         ec = co_await std::visit(
           [this, &nt, &tw, tsws = std::move(tsws)](const auto& info) mutable {
               return do_topic_work(nt, tw.sought_state, info, std::move(tsws));
@@ -486,20 +477,16 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
           tw.info);
         vlog(
           dm_log.debug,
-          "completed topic work on migration {} nt {} towards state: {}, "
-          "result={}",
-          tw.migration_id,
+          "completed topic work {} on nt={}, result={}",
+          tw,
           nt,
-          tw.sought_state,
           ec);
     } catch (...) {
         vlog(
           dm_log.warn,
-          "exception occured during topic work on migration {} nt {} "
-          "towards state: {}",
-          tw.migration_id,
+          "exception occured during topic work {} on nt={}",
+          tw,
           nt,
-          tw.sought_state,
           std::current_exception());
         ec = errc::topic_operation_error;
     }
@@ -636,8 +623,9 @@ ss::future<errc> backend::create_topic(
            != cloud_storage::find_topic_manifest_outcome::success) {
         vlog(
           dm_log.warn,
-          "failed to download manifest for topic {}: {}",
+          "failed to download manifest for topic {} (storage_location {}): {}",
           original_nt.value_or(local_nt),
+          storage_location,
           download_res);
         co_return errc::topic_operation_error;
     }
