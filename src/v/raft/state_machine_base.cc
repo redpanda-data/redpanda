@@ -16,6 +16,12 @@
 
 namespace raft {
 
+ss::future<> state_machine_base::apply(const model::record_batch& b) {
+    auto units = co_await _apply_lock.get_units();
+    co_await apply(b, units);
+    set_next(model::next_offset(b.last_offset()));
+}
+
 void state_machine_base::set_next(model::offset offset) {
     vassert(
       offset >= _next,
@@ -27,6 +33,7 @@ void state_machine_base::set_next(model::offset offset) {
 }
 
 ss::future<> state_machine_base::stop() {
+    _apply_lock.broken();
     _waiters.stop();
     co_return;
 }

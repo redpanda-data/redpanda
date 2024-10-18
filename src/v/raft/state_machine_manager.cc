@@ -140,7 +140,6 @@ batch_applicator::apply_to_stm(
         }
 
         co_await state.stm_entry->stm->apply(batch);
-        state.stm_entry->stm->set_next(model::next_offset(last_offset));
         co_return applied_successfully::yes;
     } catch (...) {
         vlog(
