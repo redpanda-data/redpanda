@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Redpanda Data, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -12,16 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "json/document.h"
-#include "model/transform.h"
 
-#include <string>
-
-namespace transform::logging::testing {
-
-json::Document parse_json(iobuf resp);
-std::string get_message_body(iobuf);
-
-model::transform_name random_transform_name(size_t len = 12);
-
-} // namespace transform::logging::testing
+namespace kafka::data::testing {
+iobuf random_length_iobuf(size_t data_max);
+} // namespace kafka::data::testing

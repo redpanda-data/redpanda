@@ -11,3 +11,14 @@ v_cc_library(
     v::kafka_protocol
     v::model
 )
+
+v_cc_library(
+  NAME kd_record_batcher
+  HDRS
+    record_batcher.h
+  SRCS
+    record_batcher.cc
+  DEPS
+    v::model
+    v::storage
+)

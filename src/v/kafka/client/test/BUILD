@@ -1,9 +1,12 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "utils",
     hdrs = [
         "utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/random:generators",
     ],
     include_prefix = "kafka/client/test",
     deps = [
