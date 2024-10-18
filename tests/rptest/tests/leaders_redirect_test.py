@@ -15,6 +15,9 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 
+from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
+
 
 class LeadersRedirectTest(RedpandaTest):
     """
@@ -30,17 +33,18 @@ class LeadersRedirectTest(RedpandaTest):
         self.port = 9644
         self.admin = Admin(self.redpanda)
 
-    def make_request(self, url):
+    def make_request(self, url, method='GET'):
         kwargs = {'allow_redirects': False}
-        return self.admin._session.request(method='GET', url=url, **kwargs)
+        return self.admin._session.request(method=method, url=url, **kwargs)
 
     def check_redirect(self,
                        r,
                        leader,
                        num_redirects=1,
-                       expect_retry_after=False):
+                       expect_retry_after=False,
+                       subdomain=""):
         #Assert 307 response code
-        assert r.status_code == 307
+        assert r.status_code == 307, f"Unexpected code {r.status_code}"
 
         #Possibly expect Retry-After header.
         if expect_retry_after:
@@ -52,8 +56,9 @@ class LeadersRedirectTest(RedpandaTest):
 
         #Assert parsed net location is to the leader node, with port.
         parsed = urlparse(location_url)
-        expected_net_loc = f'{self.redpanda.nodes[leader - 1].name}:{self.port}'
-        assert parsed.netloc == expected_net_loc
+        expected_net_loc = f'{subdomain}{self.redpanda.nodes[leader - 1].name}:{self.port}'
+        assert parsed.netloc == expected_net_loc, \
+            f"Enexpected location: {parsed.netloc} != {expected_net_loc}"
 
         #Assert the number of redirects is what is expected.
         parsed_query_params = parse_qs(parsed.query)
@@ -87,3 +92,57 @@ class LeadersRedirectTest(RedpandaTest):
                                     leader,
                                     num_redirects=2,
                                     expect_retry_after=True)
+
+    @cluster(num_nodes=3)
+    @parametrize(subdomain="broker.")
+    @parametrize(subdomain="")
+    def test_subdomain_redirect(self, subdomain):
+        '''
+        Tests code paths in the Admin API which perform loose matching on
+        incoming requests host headers, redirecting to the hostname of a
+        matching advertised kafka listener.
+
+        Also verifies that original exact matching still works.
+        '''
+        path = f"security/users/cc-baxter"
+
+        def make_new_address(node, port, sub=""):
+            return dict(address=f"{sub}{node.name}", port=port)
+
+        self.logger.debug(
+            "Reconfigure advertised kafka API to some other DNS name & port.")
+        # NOTE(oren): port choice is arbitrary, but _changing_ it makes debugging
+        # the test a bit easier.
+        base_port = 10091
+        for i in range(len(self.redpanda.nodes)):
+            node = self.redpanda.nodes[i]
+            port = base_port + i
+            self.redpanda.restart_nodes(
+                [node],
+                override_cfg_params=dict(
+                    kafka_api=make_new_address(node, port),
+                    advertised_kafka_api=make_new_address(
+                        node, port, subdomain),
+                ),
+            )
+
+        wait_until(lambda: self.redpanda.healthy(),
+                   timeout_sec=30,
+                   backoff_sec=2)
+
+        leader = self.admin.await_stable_leader(topic="controller",
+                                                partition=0,
+                                                namespace="redpanda",
+                                                timeout_s=30,
+                                                backoff_s=1)
+
+        self.logger.debug(
+            "Redirects should point to the new advertised address")
+        for node in self.redpanda.nodes:
+            if self.redpanda.idx(node) == leader:
+                continue
+            self.logger.debug(
+                f"leader: {leader}, dest: {self.redpanda.idx(node)}")
+            url = self.admin._url(node, path)
+            r = self.make_request(url, 'DELETE')
+            self.check_redirect(r, leader, subdomain=subdomain)
