@@ -44,7 +44,7 @@ def read_cloud_storage_segment_meta(rdr):
             o["metadata_size_hint"] = 0
         return o
 
-    return rdr.read_envelope(spec, max_version=3)
+    return rdr.read_envelope(spec, reader_version=3)
 
 
 def get_control_record_type(key):
@@ -70,7 +70,7 @@ def decode_archival_metadata_command(kr, vr):
                 o['is_validated'] = False
             return o
 
-        return vr.read_envelope(spec, max_version=1)
+        return vr.read_envelope(spec, reader_version=1)
 
     elif key == ArchivalMetadataCommand.mark_clean:
         return dict(offset=vr.read_int64())

@@ -157,7 +157,7 @@ def read_topic_config(rdr: Reader, version):
         'replication_factor':
         rdr.read_int16(),
         'properties':
-        rdr.read_envelope(read_topic_properties_serde, max_version=10),
+        rdr.read_envelope(read_topic_properties_serde, reader_version=10),
     }
     if version < 1:
         # see https://github.com/redpanda-data/redpanda/pull/6613
@@ -308,7 +308,7 @@ def read_incremental_topic_update_serde(rdr: Reader):
 
         return incr_obj
 
-    return rdr.read_envelope(incr_topic_upd, max_version=7)
+    return rdr.read_envelope(incr_topic_upd, reader_version=7)
 
 
 def read_create_partitions_serde(rdr: Reader):
@@ -799,7 +799,7 @@ def decode_feature_command_serde(k_rdr: Reader, rdr: Reader):
         cmd |= k_rdr.read_envelope(
             lambda k_rdr, _: {
                 'redpanda_license':
-                k_rdr.read_envelope(decode_license_t, max_version=1)
+                k_rdr.read_envelope(decode_license_t, reader_version=1)
             })
     return cmd
 
@@ -895,7 +895,7 @@ def decode_cluster_bootstrap_command(k_rdr, rdr):
     if cmd['type'] == 0:
         cmd['type_name'] = 'bootstrap_cluster'
         cmd |= rdr.read_envelope(decode_bootstrap_cluster_cmd_data,
-                                 max_version=1)
+                                 reader_version=1)
 
     return cmd
 
@@ -1007,7 +1007,7 @@ def read_features_table_snapshot(rdr: Reader, version: int):
     ret |= {
         "license":
         rdr.read_optional(lambda rdr: rdr.read_envelope(type_read=read_license,
-                                                        max_version=1))
+                                                        reader_version=1))
     }
     ret |= {"original_version": rdr.read_int64()}
     return ret
@@ -1024,7 +1024,9 @@ def read_config_status(rdr: Reader, v: int):
 
 def read_topic_metadata_fields(rdr: Reader, v: int):
     v = {}
-    v |= {"configuration": rdr.read_envelope(read_topic_config, max_version=2)}
+    v |= {
+        "configuration": rdr.read_envelope(read_topic_config, reader_version=2)
+    }
     v |= {"src_topic": rdr.read_optional(Reader.read_string)}
     v |= {"revision": rdr.read_int64()}
     v |= {"remote_revision": rdr.read_optional(Reader.read_int64)}
@@ -1076,7 +1078,7 @@ class ControllerSnapshot():
 
     def read_features(self, rdr: Reader, version: int):
         return rdr.read_envelope(type_read=read_features_table_snapshot,
-                                 max_version=1)
+                                 reader_version=1)
 
     def read_members(self, rdr: Reader, version: int):
         def read_update_t(inner: Reader, v: int):
@@ -1098,7 +1100,8 @@ class ControllerSnapshot():
             ret |= {
                 "state":
                 inner.read_envelope(
-                    type_read=lambda r, _: read_broker_state(r), max_version=1)
+                    type_read=lambda r, _: read_broker_state(r),
+                    reader_version=1)
             }
             return ret
 
@@ -1207,7 +1210,7 @@ class ControllerSnapshot():
             rdr.read_serde_map(
                 read_tp_ns_to_str,
                 lambda r: r.read_envelope(type_read=read_topic_t,
-                                          max_version=1))
+                                          reader_version=1))
         }
         v |= {"highest_group_id": rdr.read_int64()}
 
@@ -1280,7 +1283,8 @@ class ControllerSnapshot():
     def read_plugins(self, rdr: Reader, version: int):
         return rdr.read_serde_map(
             Reader.read_int64,
-            lambda r: r.read_envelope(read_transform_metadata, max_version=1))
+            lambda r: r.read_envelope(read_transform_metadata,
+                                      reader_version=1))
 
     def read_cluster_recovery(self, rdr: Reader, version: int):
         def read_cluster_metadata_manifest(rdr: Reader, version: int):
@@ -1316,25 +1320,25 @@ class ControllerSnapshot():
     def read_snapshot(self, rdr: Reader):
         data = {}
         data['bootstrap'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_bootstrap(r, v), max_version=0)
+            type_read=lambda r, v: self.read_bootstrap(r, v), reader_version=0)
         data['features'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_features(r, v), max_version=0)
+            type_read=lambda r, v: self.read_features(r, v), reader_version=0)
         data['members'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_members(r, v), max_version=1)
+            type_read=lambda r, v: self.read_members(r, v), reader_version=1)
         data['config'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_config(r, v), max_version=0)
+            type_read=lambda r, v: self.read_config(r, v), reader_version=0)
         data['topics'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_topics(r, v), max_version=1)
+            type_read=lambda r, v: self.read_topics(r, v), reader_version=1)
         data['security'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_security(r, v), max_version=1)
+            type_read=lambda r, v: self.read_security(r, v), reader_version=1)
         data['metrics_reporter'] = rdr.read_envelope(
             type_read=lambda r, v: self.read_metrics_reporter(r, v),
-            max_version=0)
+            reader_version=0)
         data['plugins'] = rdr.read_envelope(
-            type_read=lambda r, v: self.read_plugins(r, v), max_version=0)
+            type_read=lambda r, v: self.read_plugins(r, v), reader_version=0)
         data['cluster_recovery'] = rdr.read_envelope(
             type_read=lambda r, v: self.read_cluster_recovery(r, v),
-            max_version=0)
+            reader_version=0)
         for _, v in data.items():
             if 'envelope' in v:
                 del v['envelope']
@@ -1355,7 +1359,7 @@ class ControllerSnapshot():
         meta['log_start_delta'] = reader.read_int64()
 
         data = reader.read_checksum_envelope(
-            type_read=lambda r, _: self.read_snapshot(r), max_version=2)
+            type_read=lambda r, _: self.read_snapshot(r), reader_version=2)
 
         return {'metadata': meta, 'data': data}
 
