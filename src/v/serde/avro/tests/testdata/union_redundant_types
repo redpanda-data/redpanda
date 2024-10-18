@@ -1,0 +1,22 @@
+{
+  "type": "record",
+  "name": "RedundantUnionSchema",
+  "doc": "Schema to test the generation of redundant union types in avrogencpp",
+  "fields" : [
+    {"name": "null_string_1", "type": ["null", "string"]},
+    {"name": "null_string_2", "type": ["null", "string"]},
+    {"name": "string_null_1", "type": ["string", "null"]},
+    {"name": "string_null_2", "type": ["string", "null"]},
+    {"name": "null_string_int", "type": ["string", "null", "int"]},
+    {"name": "null_Empty_1", "type": ["null", {"type": "record", "name": "Empty", "fields": []}]},
+    {"name": "null_Empty_2", "type": ["null", "Empty"]},
+    {"name": "null_namespace_record_1", "type": ["null", {"type": "record", "namespace": "example_namespace", "name": "Record", "fields": []}]},
+    {"name": "null_namespace_record_2", "type": ["null", "example_namespace.Record"]},
+    {"name": "null_fixed_8", "type": ["null", {"type": "fixed", "size": 8, "name": "fixed_8"}]},
+    {"name": "null_fixed_16", "type": ["null", {"type": "fixed", "size": 16, "name": "fixed_16"}]},
+    {"name": "fixed_8_fixed_16", "type": ["fixed_8", "fixed_16"]},
+    {"name": "null_int_map_1", "type": ["null", {"type": "map", "values": "int"}]},
+    {"name": "null_int_map_2", "type": ["null", {"type": "map", "values": "int"}]},
+    {"name": "null_long_map", "type": ["null", {"type": "map", "values": "long"}]}
+  ]
+}
