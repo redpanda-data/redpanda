@@ -4520,10 +4520,7 @@ admin_server::reset_scrubbing_metadata(std::unique_ptr<ss::http::request> req) {
           return archiver.value().get().reset_scrubbing_metadata();
       });
 
-    if (status != cluster::errc::success) {
-        throw ss::httpd::server_error_exception{
-          "Failed to replicate or apply scrubber metadata reset command"};
-    }
+    co_await throw_on_error(*req, status, ntp);
 
     co_return ss::json::json_return_type(ss::json::json_void());
 }
