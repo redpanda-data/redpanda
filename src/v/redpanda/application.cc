@@ -100,7 +100,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/group_tx_tracker_stm.h"
-#include "kafka/server/queue_depth_monitor.h"
+#include "kafka/server/queue_depth_monitor_config.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/server.h"
@@ -2286,9 +2286,9 @@ void application::wire_up_redpanda_services(
           });
       })
       .get();
-    std::optional<kafka::qdc_monitor::config> qdc_config;
+    std::optional<kafka::qdc_monitor_config> qdc_config;
     if (config::shard_local_cfg().kafka_qdc_enable()) {
-        qdc_config = kafka::qdc_monitor::config{
+        qdc_config = kafka::qdc_monitor_config{
           .latency_alpha = config::shard_local_cfg().kafka_qdc_latency_alpha(),
           .max_latency = config::shard_local_cfg().kafka_qdc_max_latency_ms(),
           .window_count = config::shard_local_cfg().kafka_qdc_window_count(),

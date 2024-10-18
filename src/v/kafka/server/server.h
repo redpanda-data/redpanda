@@ -24,6 +24,7 @@
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/latency_probe.h"
 #include "kafka/server/queue_depth_monitor.h"
+#include "kafka/server/queue_depth_monitor_config.h"
 #include "kafka/server/read_distribution_probe.h"
 #include "kafka/server/sasl_probe.h"
 #include "metrics/metrics.h"
@@ -75,7 +76,7 @@ public:
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      std::optional<qdc_monitor::config>,
+      std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
 
