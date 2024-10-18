@@ -431,6 +431,7 @@ FIXTURE_TEST(
       "flush.bytes",
       "redpanda.iceberg.enabled",
       "redpanda.leaders.preference",
+      "delete.retention.ms",
     };
 
     // All properties_request
@@ -519,6 +520,7 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     properties.emplace("write.caching", "true");
     properties.emplace("flush.ms", "225");
     properties.emplace("flush.bytes", "32468");
+    properties.emplace("delete.retention.ms", "-1");
 
     auto resp = alter_configs(
       make_alter_topic_config_resource_cv(test_tp, properties));
@@ -534,6 +536,7 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "cleanup.policy", "compact", describe_resp);
     assert_property_value(
       test_tp, "redpanda.remote.read", "true", describe_resp);
+    assert_property_value(test_tp, "delete.retention.ms", "-1", describe_resp);
 }
 
 FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
@@ -550,6 +553,7 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     properties_1.emplace("write.caching", "true");
     properties_1.emplace("flush.ms", "225");
     properties_1.emplace("flush.bytes", "32468");
+    properties_1.emplace("delete.retention.ms", "5678");
 
     absl::flat_hash_map<ss::sstring, ss::sstring> properties_2;
     properties_2.emplace("retention.bytes", "4096");
@@ -557,6 +561,7 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     properties_2.emplace("write.caching", "false");
     properties_2.emplace("flush.ms", "100");
     properties_2.emplace("flush.bytes", "990");
+    properties_2.emplace("delete.retention.ms", "8765");
 
     auto cv = make_alter_topic_config_resource_cv(topic_1, properties_1);
     cv.push_back(make_alter_topic_config_resource(topic_2, properties_2));
@@ -578,12 +583,16 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     assert_property_value(topic_1, "write.caching", "true", describe_resp_1);
     assert_property_value(topic_1, "flush.ms", "225", describe_resp_1);
     assert_property_value(topic_1, "flush.bytes", "32468", describe_resp_1);
+    assert_property_value(
+      topic_1, "delete.retention.ms", "5678", describe_resp_1);
 
     auto describe_resp_2 = describe_configs(topic_2);
     assert_property_value(topic_2, "retention.bytes", "4096", describe_resp_2);
     assert_property_value(topic_2, "write.caching", "false", describe_resp_2);
     assert_property_value(topic_2, "flush.ms", "100", describe_resp_2);
     assert_property_value(topic_2, "flush.bytes", "990", describe_resp_2);
+    assert_property_value(
+      topic_2, "delete.retention.ms", "8765", describe_resp_2);
 }
 
 FIXTURE_TEST(
@@ -645,6 +654,7 @@ FIXTURE_TEST(
     properties.emplace("write.caching", "true");
     properties.emplace("flush.ms", "225");
     properties.emplace("flush.bytes", "32468");
+    properties.emplace("delete.retention.ms", "5678");
 
     auto resp = alter_configs(
       make_alter_topic_config_resource_cv(test_tp, properties));
@@ -660,6 +670,8 @@ FIXTURE_TEST(
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "225", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "32468", describe_resp);
+    assert_property_value(
+      test_tp, "delete.retention.ms", "5678", describe_resp);
 
     /**
      * Set custom properties again, previous settings should be overriden
@@ -670,6 +682,7 @@ FIXTURE_TEST(
     new_properties.emplace("write.caching", "false");
     new_properties.emplace("flush.ms", "9999");
     new_properties.emplace("flush.bytes", "8888");
+    new_properties.emplace("delete.retention.ms", "7777");
 
     alter_configs(make_alter_topic_config_resource_cv(test_tp, new_properties));
 
@@ -686,6 +699,8 @@ FIXTURE_TEST(
     assert_property_value(test_tp, "write.caching", "false", new_describe_resp);
     assert_property_value(test_tp, "flush.ms", "9999", new_describe_resp);
     assert_property_value(test_tp, "flush.bytes", "8888", new_describe_resp);
+    assert_property_value(
+      test_tp, "delete.retention.ms", "7777", new_describe_resp);
 }
 
 FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
@@ -709,6 +724,9 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     properties.emplace(
       "flush.bytes",
       std::make_pair("5678", kafka::config_resource_operation::set));
+    properties.emplace(
+      "delete.retention.ms",
+      std::make_pair("5678", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
       make_incremental_alter_topic_config_resource_cv(test_tp, properties));
@@ -724,6 +742,8 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", describe_resp);
+    assert_property_value(
+      test_tp, "delete.retention.ms", "5678", describe_resp);
 
     /**
      * Set only few properties, only they should be updated
@@ -751,6 +771,8 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "false", new_describe_resp);
     assert_property_value(test_tp, "flush.ms", "1234", new_describe_resp);
     assert_property_value(test_tp, "flush.bytes", "5678", new_describe_resp);
+    assert_property_value(
+      test_tp, "delete.retention.ms", "5678", new_describe_resp);
 }
 
 FIXTURE_TEST(
@@ -796,6 +818,9 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
     properties.emplace(
       "flush.bytes",
       std::make_pair("8888", kafka::config_resource_operation::set));
+    properties.emplace(
+      "delete.retention.ms",
+      std::make_pair("7777", kafka::config_resource_operation::set));
 
     auto resp = incremental_alter_configs(
       make_incremental_alter_topic_config_resource_cv(test_tp, properties));
@@ -811,6 +836,8 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
     assert_property_value(test_tp, "write.caching", "true", describe_resp);
     assert_property_value(test_tp, "flush.ms", "9999", describe_resp);
     assert_property_value(test_tp, "flush.bytes", "8888", describe_resp);
+    assert_property_value(
+      test_tp, "delete.retention.ms", "7777", describe_resp);
 
     /**
      * Remove custom properties
@@ -830,6 +857,9 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
     new_properties.emplace(
       "flush.bytes",
+      std::pair{std::nullopt, kafka::config_resource_operation::remove});
+    new_properties.emplace(
+      "delete.retention.ms",
       std::pair{std::nullopt, kafka::config_resource_operation::remove});
 
     resp = incremental_alter_configs(
@@ -867,6 +897,13 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
         config::shard_local_cfg()
           .raft_replica_max_pending_flush_bytes()
           .value()),
+      new_describe_resp);
+    assert_property_value(
+      test_tp,
+      "delete.retention.ms",
+      fmt::format(
+        "{}",
+        config::shard_local_cfg().tombstone_retention_ms().value_or(-1ms)),
       new_describe_resp);
 }
 

@@ -74,7 +74,8 @@ struct topic_properties
       std::optional<size_t> flush_bytes,
       bool iceberg_enabled,
       std::optional<config::leaders_preference> leaders_preference,
-      bool cloud_topic_enabled)
+      bool cloud_topic_enabled,
+      tristate<std::chrono::milliseconds> delete_retention_ms)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -114,7 +115,8 @@ struct topic_properties
       , flush_bytes(flush_bytes)
       , iceberg_enabled(iceberg_enabled)
       , leaders_preference(std::move(leaders_preference))
-      , cloud_topic_enabled(cloud_topic_enabled) {}
+      , cloud_topic_enabled(cloud_topic_enabled)
+      , delete_retention_ms(delete_retention_ms) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -187,6 +189,8 @@ struct topic_properties
 
     bool cloud_topic_enabled{storage::ntp_config::default_cloud_topic_enabled};
 
+    tristate<std::chrono::milliseconds> delete_retention_ms{disable_tristate};
+
     bool is_compacted() const;
     bool has_overrides() const;
     bool requires_remote_erase() const;
@@ -231,7 +235,8 @@ struct topic_properties
           remote_topic_namespace_override,
           iceberg_enabled,
           leaders_preference,
-          cloud_topic_enabled);
+          cloud_topic_enabled,
+          delete_retention_ms);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)

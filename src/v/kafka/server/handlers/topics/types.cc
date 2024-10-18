@@ -21,6 +21,7 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "strings/string_switch.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -106,56 +107,6 @@ get_string_value(const config_map_t& config, std::string_view key) {
     return std::nullopt;
 }
 
-// Either parse configuration or return nullopt
-static std::optional<bool>
-get_bool_value(const config_map_t& config, std::string_view key) {
-    if (auto it = config.find(key); it != config.end()) {
-        try {
-            // Ignore case.
-            auto str_value = it->second;
-            std::transform(
-              str_value.begin(),
-              str_value.end(),
-              str_value.begin(),
-              [](const auto& c) { return std::tolower(c); });
-            return string_switch<std::optional<bool>>(str_value)
-              .match("true", true)
-              .match("false", false);
-        } catch (const std::runtime_error&) {
-            throw boost::bad_lexical_cast();
-        };
-    }
-    return std::nullopt;
-}
-
-static model::shadow_indexing_mode
-get_shadow_indexing_mode(const config_map_t& config) {
-    auto arch_enabled = get_bool_value(config, topic_property_remote_write);
-    auto si_enabled = get_bool_value(config, topic_property_remote_read);
-
-    // If topic properties are missing, patch them with the cluster config.
-    if (!arch_enabled) {
-        arch_enabled
-          = config::shard_local_cfg().cloud_storage_enable_remote_write();
-    }
-
-    if (!si_enabled) {
-        si_enabled
-          = config::shard_local_cfg().cloud_storage_enable_remote_read();
-    }
-
-    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
-    if (*arch_enabled) {
-        mode = model::shadow_indexing_mode::archival;
-    }
-    if (*si_enabled) {
-        mode = mode == model::shadow_indexing_mode::archival
-                 ? model::shadow_indexing_mode::full
-                 : model::shadow_indexing_mode::fetch;
-    }
-    return mode;
-}
-
 // Special case for options where Kafka allows -1
 // In redpanda the mapping is following
 //
@@ -201,6 +152,25 @@ get_leaders_preference(const config_map_t& config) {
         return config::leaders_preference::parse(it->second);
     }
     return std::nullopt;
+}
+
+static tristate<std::chrono::milliseconds>
+get_delete_retention_ms(const config_map_t& config) {
+    auto delete_retention_ms = get_tristate_value<std::chrono::milliseconds>(
+      config, topic_property_delete_retention_ms);
+
+    // If the config entry for delete.retention.ms is in the "empty" state, and
+    // the cluster default is also std::nullopt, ensure the option is disabled
+    // by default. DescribeConfigs calls should still return DEFAULT_CONFIG when
+    // describing this state, thanks to override_if_not_default in
+    // config_response_utils.cc.
+    if (
+      delete_retention_ms.is_empty()
+      && !config::shard_local_cfg().tombstone_retention_ms().has_value()) {
+        return tristate<std::chrono::milliseconds>{disable_tristate};
+    }
+
+    return delete_retention_ms;
 }
 
 cluster::custom_assignable_topic_configuration
@@ -276,6 +246,9 @@ to_cluster_type(const creatable_topic& t) {
           .value_or(storage::ntp_config::default_iceberg_enabled);
 
     cfg.properties.leaders_preference = get_leaders_preference(config_entries);
+
+    cfg.properties.delete_retention_ms = get_delete_retention_ms(
+      config_entries);
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};

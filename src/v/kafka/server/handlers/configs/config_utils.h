@@ -473,6 +473,23 @@ struct iceberg_config_validator {
     }
 };
 
+struct delete_retention_ms_validator {
+    std::optional<ss::sstring> operator()(
+      const ss::sstring&,
+      const tristate<std::chrono::milliseconds>& maybe_value) {
+        if (maybe_value.has_optional_value()) {
+            const auto& value = maybe_value.value();
+            if (value < 1ms || value > serde::max_serializable_ms) {
+                return fmt::format(
+                  "delete.retention.ms value invalid, expected to be in range "
+                  "[1, {}]",
+                  serde::max_serializable_ms);
+            }
+        }
+        return std::nullopt;
+    }
+};
+
 template<typename T, typename... ValidatorTypes>
 requires requires(
   model::topic_namespace_view tns,
@@ -666,11 +683,18 @@ inline void parse_and_set_bool(
     }
 }
 
-template<typename T>
+template<typename T, typename Validator = noop_validator<tristate<T>>>
+requires requires(
+  const tristate<T>& value, const ss::sstring& str, Validator validator) {
+    {
+        validator(str, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+}
 void parse_and_set_tristate(
   cluster::property_update<tristate<T>>& property,
   const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
+  config_resource_operation op,
+  Validator validator = noop_validator<tristate<T>>{}) {
     // remove property value
     if (op == config_resource_operation::remove) {
         property.op = cluster::incremental_update_operation::remove;
@@ -683,6 +707,11 @@ void parse_and_set_tristate(
             property.value = tristate<T>{};
         } else {
             property.value = tristate<T>(std::make_optional<T>(parsed));
+        }
+
+        auto v_error = validator(*value, property.value);
+        if (v_error) {
+            throw validation_error(*v_error);
         }
 
         property.op = cluster::incremental_update_operation::set;
