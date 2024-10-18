@@ -54,6 +54,7 @@ set(gsrcs
     persisted_stm_test.cc
     replication_monitor_tests.cc
     mux_state_machine_test.cc
+    snapshot_recovery_test.cc
 )
 
 rp_test(

@@ -1449,6 +1449,11 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
           lstats,
           st);
 
+        // if a snapshot contains a term update term with then one from snapshot
+        if (_last_snapshot_term > _term) {
+            _term = _last_snapshot_term;
+        }
+
         // if log term is newer than the one coming from voted_for
         // state, we reset voted_for state
         if (lstats.dirty_offset_term > _term) {

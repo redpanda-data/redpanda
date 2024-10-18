@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "simple_raft_fixture",
@@ -176,6 +176,29 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:unresolved_address",
         "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "snapshot_recovery_test",
+    timeout = "short",
+    srcs = [
+        "snapshot_recovery_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":raft_fixiture_retry_policy",
+        ":raft_fixture",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/resource_mgmt:io_priority",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:unresolved_address",
         "@fmt",
         "@seastar",
         "@seastar//:testing",
