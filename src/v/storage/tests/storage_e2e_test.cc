@@ -34,6 +34,7 @@
 #include "storage/tests/utils/log_gap_analysis.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
+#include "test_utils/randoms.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/directory_walker.h"
 #include "utils/to_string.h"
@@ -2891,6 +2892,166 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
     }
     BOOST_REQUIRE_EQUAL(false, ss::file_exists(dir_path).get());
 };
+
+// This test acts as a regression test to ensure that non raft data batches
+// that contribute to offset translator gaps are never compacted. Compacting
+// them away results in incorrect Kafka offsets upon offset translator state
+// rebuild (eg: partition movement).
+//
+// Note to the developer: If you are here because this test failed on
+// your patch, it usually means that you made a non raft data batch
+// compactible, which is not allowed for reason described above.
+// (unless the test itself is buggy, ofcourse :))
+FIXTURE_TEST(
+  compaction_non_raft_batches_regression_test, storage_test_fixture) {
+    class logging_consumer {
+    public:
+        ss::future<ss::stop_iteration> operator()(model::record_batch& b) {
+            vlog(
+              e2e_test_log.trace,
+              "batch type: {}, base offset: {}, records: {}",
+              b.header().type,
+              b.base_offset(),
+              b.record_count());
+            _total_batches += 1;
+            _total_records += b.header().record_count;
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        void end_of_stream() {
+            vlog(
+              e2e_test_log.trace,
+              "Total batches: {}, records: {}",
+              _total_batches,
+              _total_records);
+        }
+
+    private:
+        size_t _total_batches = 0;
+        size_t _total_records = 0;
+    };
+
+    auto print_batch_info = [](ss::shared_ptr<storage::log> log) {
+        storage::log_reader_config reader_cfg(
+          model::offset(0), model::offset::max(), ss::default_priority_class());
+        auto reader = log->make_reader(reader_cfg).get();
+        std::move(reader)
+          .for_each_ref(logging_consumer{}, model::no_timeout)
+          .discard_result()
+          .get();
+    };
+
+    auto cfg = default_log_config(test_dir);
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(
+                   storage::ntp_config(
+                     ntp,
+                     mgr.config().base_dir,
+                     std::make_unique<storage::ntp_config::default_overrides>(
+                       overrides)),
+                   raft::group_id{0},
+                   model::offset_translator_batch_types())
+                 .get();
+    log->start(std::nullopt).get();
+
+    storage::log_append_config appender_cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+      .io_priority = ss::default_priority_class(),
+      .timeout = model::no_timeout,
+    };
+
+    auto append_random_batch = [&](model::record_batch_type bt) {
+        storage::record_batch_builder builder(bt, model::offset(0));
+        auto num_records = random_generators::get_int(1, 5);
+        for (int i = 0; i < num_records; i++) {
+            builder.add_raw_kv(
+              reflection::to_iobuf(ssx::sformat("key-{}", i)),
+              bytes_to_iobuf(random_generators::get_bytes(5)));
+        }
+        auto reader = model::make_memory_record_batch_reader(
+          std::move(builder).build());
+        std::move(reader)
+          .for_each_ref(log->make_appender(appender_cfg), model::no_timeout)
+          .discard_result()
+          .then([&log] { return log->flush(); })
+          .get();
+    };
+
+    // populate some data, load duplicates of each batch type and
+    // sprinkle some raft batches around.
+    using enum_int_t = std::underlying_type_t<model::record_batch_type>;
+    auto max = static_cast<enum_int_t>(model::record_batch_type::MAX);
+    for (enum_int_t type = 2; type <= max; type++) {
+        auto bt = static_cast<model::record_batch_type>(type);
+        append_random_batch(bt);
+        if (tests::random_bool()) {
+            // some interleaved data batches
+            append_random_batch(model::record_batch_type::raft_data);
+        }
+        append_random_batch(bt);
+    }
+
+    print_batch_info(log);
+
+    // Save the translation map for comparison after compaction.
+    chunked_hash_map<model::offset, model::offset> log_to_kafka;
+    chunked_hash_map<model::offset, model::offset> kafka_to_log;
+    model::offset begin{0};
+    for (model::offset o = begin; o < log->offsets().dirty_offset;
+         o = model::next_offset(o)) {
+        log_to_kafka[o] = log->from_log_offset(o);
+        kafka_to_log[o] = log->to_log_offset(o);
+    }
+
+    // compact the log
+    log->force_roll(ss::default_priority_class()).get();
+    storage::housekeeping_config compaction_cfg(
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      std::nullopt,
+      ss::default_priority_class(),
+      as);
+    log->housekeeping(compaction_cfg).get();
+
+    print_batch_info(log); // debugging
+
+    // reset offset translation state to the compacted state of the log.
+    auto& disk_log = reinterpret_cast<storage::disk_log_impl&>(*log);
+    disk_log.offset_translator().remove_persistent_state().get();
+    mgr.shutdown(ntp).get();
+    log = mgr
+            .manage(
+              storage::ntp_config(
+                ntp,
+                mgr.config().base_dir,
+                std::make_unique<storage::ntp_config::default_overrides>(
+                  overrides)),
+              raft::group_id{0},
+              model::offset_translator_batch_types())
+            .get();
+    log->start(std::nullopt).get();
+
+    // validate the translation by comparing it with state before
+    // compaction.
+    for (model::offset o = begin; o < log->offsets().dirty_offset;
+         o = model::next_offset(o)) {
+        vlog(e2e_test_log.trace, "checking offset: {}", o);
+        BOOST_REQUIRE_EQUAL(log->from_log_offset(o), log_to_kafka[o]);
+        BOOST_REQUIRE_EQUAL(log->to_log_offset(o), kafka_to_log[o]);
+    }
+}
 
 FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
