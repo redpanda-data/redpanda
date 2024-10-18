@@ -63,7 +63,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 
-			adminCl, err := adminapi.NewClient(fs, p)
+			adminCl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			topic := args[0]

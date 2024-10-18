@@ -44,7 +44,7 @@ NOTE: The UUID column is hidden when the cluster doesn't expose the UUID in the 
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)
 
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			bs, err := cl.Brokers(cmd.Context())

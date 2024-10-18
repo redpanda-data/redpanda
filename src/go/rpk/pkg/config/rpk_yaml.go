@@ -39,7 +39,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
-		Version:      5,
+		Version:      6,
 		Profiles:     []RpkProfile{DefaultRpkProfile()},
 		CloudAuths:   []RpkCloudAuth{DefaultRpkCloudAuth()},
 	}
@@ -70,7 +70,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 
 func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
-		Version: 5,
+		Version: 6,
 	}
 }
 
@@ -142,6 +142,7 @@ type (
 		KafkaAPI     RpkKafkaAPI          `json:"kafka_api" yaml:"kafka_api"`
 		AdminAPI     RpkAdminAPI          `json:"admin_api" yaml:"admin_api"`
 		SR           RpkSchemaRegistryAPI `json:"schema_registry" yaml:"schema_registry"`
+		LicenseCheck *LicenseStatusCache  `json:"license_check,omitempty" yaml:"license_check,omitempty"`
 
 		// We stash the config struct itself so that we can provide
 		// the logger / dev overrides.
@@ -173,6 +174,10 @@ type (
 	}
 
 	Duration struct{ time.Duration }
+
+	LicenseStatusCache struct {
+		LastUpdate int64 `json:"last_update" yaml:"last_update"`
+	}
 )
 
 // Profile returns the given profile, or nil if it does not exist.
@@ -347,6 +352,13 @@ func (p *RpkProfile) VirtualAuth() *RpkCloudAuth {
 		return nil
 	}
 	return p.c.rpkYaml.LookupAuth(p.CloudCluster.AuthOrgID, p.CloudCluster.AuthKind)
+}
+
+func (p *RpkProfile) ActualConfig() (*RpkYaml, bool) {
+	if p.c == nil {
+		return nil, false
+	}
+	return p.c.ActualRpkYaml()
 }
 
 // HasClientCredentials returns if both ClientID and ClientSecret are non-empty.

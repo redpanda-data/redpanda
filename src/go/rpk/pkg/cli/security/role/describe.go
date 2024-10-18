@@ -78,7 +78,7 @@ Print only the ACL associated to the role 'red'
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitServerlessAdmin(p)
 
-			cl, err := adminapi.NewClient(fs, p)
+			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, p)
