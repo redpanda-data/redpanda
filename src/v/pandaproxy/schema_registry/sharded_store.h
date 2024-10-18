@@ -12,6 +12,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/sharded.hh>
@@ -22,8 +23,9 @@ class store;
 
 ///\brief Dispatch requests to shards based on a a hash of the
 /// subject or schema_id
-class sharded_store {
+class sharded_store final : public schema_getter {
 public:
+    ~sharded_store() override = default;
     ss::future<> start(is_mutable mut, ss::smp_service_group sg);
     ss::future<> stop();
 
@@ -69,7 +71,8 @@ public:
       canonical_schema schema, include_deleted inc_del = include_deleted::no);
 
     ///\brief Return a schema definition by id.
-    ss::future<canonical_schema_definition> get_schema_definition(schema_id id);
+    ss::future<canonical_schema_definition>
+    get_schema_definition(schema_id id) override;
 
     ///\brief Return a list of subject-versions for the shema id.
     ss::future<chunked_vector<subject_version>>
@@ -83,7 +86,7 @@ public:
     ss::future<subject_schema> get_subject_schema(
       subject sub,
       std::optional<schema_version> version,
-      include_deleted inc_dec);
+      include_deleted inc_dec) final;
 
     ///\brief Return a list of subjects.
     ss::future<chunked_vector<subject>> get_subjects(
