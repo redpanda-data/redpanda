@@ -804,6 +804,13 @@ remote::delete_objects<std::deque<cloud_storage_clients::object_key>>(
   retry_chain_node& parent,
   std::function<void(size_t)>);
 
+template ss::future<upload_result>
+remote::delete_objects<chunked_vector<cloud_storage_clients::object_key>>(
+  const cloud_storage_clients::bucket_name& bucket,
+  chunked_vector<cloud_storage_clients::object_key> keys,
+  retry_chain_node& parent,
+  std::function<void(size_t)>);
+
 template<typename R>
 requires std::ranges::range<R>
          && std::same_as<

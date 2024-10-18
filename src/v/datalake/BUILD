@@ -178,3 +178,30 @@ redpanda_cc_library(
         "@fmt",
     ],
 )
+
+redpanda_cc_library(
+    name = "cloud_data_io",
+    srcs = [
+        "cloud_data_io.cc",
+    ],
+    hdrs = [
+        "cloud_data_io.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":base_types",
+        ":logger",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/utils:lazy_abort_source",
+        "//src/v/utils:named_type",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/utils:stream_provider",
+        "@fmt",
+        "@seastar",
+    ],
+)
