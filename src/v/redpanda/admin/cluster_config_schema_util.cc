@@ -12,6 +12,8 @@
 
 #include "redpanda/admin/api-doc/cluster_config.json.hh"
 
+#include <seastar/json/json_elements.hh>
+
 // This is factored out to make it a separate binary that can generate schema
 // without bringing up a redpanda cluster. Down stream tools can make use of
 // this for config generation.
@@ -81,5 +83,5 @@ util::generate_json_schema(const config::configuration& conf) {
 
     std::map<ss::sstring, property_map> response = {
       {ss::sstring("properties"), std::move(properties)}};
-    return ss::json::json_return_type(std::move(response));
+    return ss::json::stream_object(std::move(response));
 }
