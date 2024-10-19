@@ -9,8 +9,11 @@
 
 #include "storage/index_state.h"
 
+#include "base/unreachable.h"
 #include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
+#include "config/configuration.h"
+#include "config/property.h"
 #include "container/fragmented_vector.h"
 #include "hashing/crc32c.h"
 #include "hashing/xx.h"
@@ -28,18 +31,323 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#include <exception>
+#include <optional>
+
 namespace storage {
 
-uint32_t index_columns::get_relative_offset_index(int ix) const noexcept {
-    return _relative_offset_index[ix];
+bool operator==(
+  const std::unique_ptr<index_columns_base>& lhs,
+  const std::unique_ptr<index_columns_base>& rhs) {
+    // This comparison operator is used only in tests.
+    // Since we're comparing objects using pointers to base abstract
+    // class we don't have direct access to columns. The naive way
+    // to compare them is to use `get_element` method iteratively.
+    // But this will lead to poor performance with column store and
+    // long test runs.
+    incremental_xxhash64 lhs_xx{};
+    incremental_xxhash64 rhs_xx{};
+    lhs->checksum(lhs_xx);
+    rhs->checksum(rhs_xx);
+    return lhs_xx.digest() == rhs_xx.digest();
 }
 
-uint32_t index_columns::get_relative_time_index(int ix) const noexcept {
-    return _relative_time_index[ix];
+uint32_t
+compressed_index_columns::get_relative_offset_index(int ix) const noexcept {
+    // This is relatively inefficient (at least compared to array access by
+    // index) but it is possible to optimize this by using iterators instead of
+    // indexes.
+    auto res = _relative_offset_index.at_index(ix);
+    vassert(
+      res != _relative_offset_index.end(), "Index lookup failed at {}", ix);
+    return static_cast<uint32_t>(*res);
 }
 
-uint64_t index_columns::get_position_index(int ix) const noexcept {
-    return _position_index[ix];
+uint32_t
+compressed_index_columns::get_relative_time_index(int ix) const noexcept {
+    auto res = _relative_time_index.at_index(ix);
+    vassert(res != _relative_time_index.end(), "Index lookup failed at {}", ix);
+    return static_cast<uint32_t>(*res);
+}
+
+uint64_t compressed_index_columns::get_position_index(int ix) const noexcept {
+    auto res = _position_index.at_index(ix);
+    vassert(res != _position_index.end(), "Index lookup failed at {}", ix);
+    return *res;
+}
+
+std::optional<int>
+compressed_index_columns::offset_lower_bound(uint32_t needle) const noexcept {
+    assert_column_sizes();
+    auto it = _relative_offset_index.lower_bound(needle);
+    if (it != _relative_offset_index.end()) {
+        return it.index();
+    }
+    return std::nullopt;
+}
+
+std::optional<int>
+compressed_index_columns::position_upper_bound(uint64_t needle) const noexcept {
+    assert_column_sizes();
+    auto it = _position_index.upper_bound(needle);
+    if (it != _position_index.end()) {
+        return it.index();
+    }
+    return std::nullopt;
+}
+
+std::optional<int>
+compressed_index_columns::time_lower_bound(uint32_t needle) const noexcept {
+    assert_column_sizes();
+    auto it = _relative_time_index.lower_bound(needle);
+    if (it != _relative_time_index.end()) {
+        return it.index();
+    }
+    return std::nullopt;
+}
+
+bool compressed_index_columns::try_reset_relative_time_index(
+  chunked_vector<uint32_t> input) {
+    if (_relative_time_index.size() != input.size() || input.empty()) {
+        return false;
+    }
+    _relative_time_index = {};
+    for (auto t : input) {
+        _relative_time_index.append(t);
+    }
+    return true;
+}
+
+size_t compressed_index_columns::size() const noexcept {
+    assert_column_sizes();
+    return _relative_offset_index.size();
+}
+
+chunked_vector<uint32_t>
+compressed_index_columns::copy_relative_offset_index() const noexcept {
+    chunked_vector<uint32_t> res;
+    res.reserve(size());
+    for (const auto r : _relative_offset_index) {
+        res.push_back(static_cast<uint32_t>(r));
+    }
+    return res;
+}
+
+chunked_vector<uint32_t>
+compressed_index_columns::copy_relative_time_index() const noexcept {
+    chunked_vector<uint32_t> res;
+    res.reserve(size());
+    for (const auto r : _relative_time_index) {
+        res.push_back(static_cast<uint32_t>(r));
+    }
+    return res;
+}
+
+chunked_vector<uint64_t>
+compressed_index_columns::copy_position_index() const noexcept {
+    chunked_vector<uint64_t> res;
+    res.reserve(size());
+    for (const auto r : _position_index) {
+        res.push_back(r);
+    }
+    return res;
+}
+
+void compressed_index_columns::write(iobuf& buf) const {
+    serde::write(buf, copy_relative_offset_index());
+    serde::write(buf, copy_relative_time_index());
+    serde::write(buf, copy_position_index());
+}
+
+void compressed_index_columns::read_nested(iobuf_parser& p) {
+    chunked_vector<uint32_t> offsets;
+    chunked_vector<uint32_t> timestamps;
+    chunked_vector<uint64_t> positions;
+    serde::read_nested(p, offsets, 0U);
+    serde::read_nested(p, timestamps, 0U);
+    serde::read_nested(p, positions, 0U);
+    assign_relative_offset_index(std::move(offsets));
+    assign_relative_time_index(std::move(timestamps));
+    assign_position_index(std::move(positions));
+}
+
+void compressed_index_columns::from(iobuf_parser& parser) {
+    chunked_vector<uint32_t> offsets;
+    chunked_vector<uint32_t> timestamps;
+    chunked_vector<uint64_t> positions;
+
+    const uint32_t vsize = ss::le_to_cpu(
+      reflection::adl<uint32_t>{}.from(parser));
+
+    offsets.reserve(vsize);
+    timestamps.reserve(vsize);
+    positions.reserve(vsize);
+
+    for (auto i = 0U; i < vsize; ++i) {
+        offsets.push_back(reflection::adl<uint32_t>{}.from(parser));
+    }
+    for (auto i = 0U; i < vsize; ++i) {
+        timestamps.push_back(reflection::adl<uint32_t>{}.from(parser));
+    }
+    for (auto i = 0U; i < vsize; ++i) {
+        positions.push_back(reflection::adl<uint64_t>{}.from(parser));
+    }
+
+    assign_relative_offset_index(std::move(offsets));
+    assign_relative_time_index(std::move(timestamps));
+    assign_position_index(std::move(positions));
+}
+
+void compressed_index_columns::to(iobuf& out) const {
+    auto sz = size();
+    reflection::adl<uint32_t>{}.to(out, sz);
+
+    for_each_relative_offset_index([&out](uint64_t n) {
+        reflection::adl<uint32_t>{}.to(out, static_cast<uint32_t>(n));
+    });
+    for_each_relative_time_index([&out](uint64_t n) {
+        reflection::adl<uint32_t>{}.to(out, static_cast<uint32_t>(n));
+    });
+    for_each_position_index(
+      [&out](uint64_t n) { reflection::adl<uint64_t>{}.to(out, n); });
+}
+
+void compressed_index_columns::checksum(incremental_xxhash64& xx) const {
+    for_each_relative_offset_index([&](uint32_t o) { xx.update(o); });
+    for_each_relative_time_index([&](uint32_t t) { xx.update(t); });
+    for_each_position_index([&](uint64_t p) { xx.update(p); });
+}
+
+void compressed_index_columns::assign_relative_offset_index(
+  chunked_vector<uint32_t> xs) noexcept {
+    _relative_offset_index = {};
+    for (auto x : xs) {
+        _relative_offset_index.append(x);
+    }
+}
+
+void compressed_index_columns::assign_relative_time_index(
+  chunked_vector<uint32_t> xs) noexcept {
+    _relative_time_index = {};
+    for (auto x : xs) {
+        _relative_time_index.append(x);
+    }
+}
+
+void compressed_index_columns::assign_position_index(
+  chunked_vector<uint64_t> xs) noexcept {
+    _position_index = {};
+    for (auto x : xs) {
+        _position_index.append(x);
+    }
+}
+
+void compressed_index_columns::add_entry(uint32_t o, uint32_t t, uint64_t p) {
+    auto ix = _relative_offset_index.size();
+    // Updates are transactional to guarantee that we're either add element to
+    // all three columns or to non of the columns.
+    auto offset_tx = _relative_offset_index.append_tx(o);
+    auto time_tx = _relative_time_index.append_tx(t);
+    auto pos_tx = _position_index.append_tx(p);
+
+    // Update hints
+    static constexpr int sampling_rate = 64;
+    if (ix % sampling_rate == 0) {
+        auto oh = _relative_offset_index.get_current_stream_pos();
+        auto th = _relative_time_index.get_current_stream_pos();
+        auto ph = _position_index.get_current_stream_pos();
+        if (oh.has_value() && th.has_value() && ph.has_value()) {
+            _hints[ix] = std::make_tuple(oh.value(), th.value(), ph.value());
+        }
+    }
+
+    // The code below is guaranteed not to throw exceptions
+    // because 'commit' is 'noexcept'
+    if (offset_tx.has_value()) {
+        std::move(offset_tx.value()).commit();
+    }
+    if (time_tx.has_value()) {
+        std::move(time_tx.value()).commit();
+    }
+    if (pos_tx.has_value()) {
+        std::move(pos_tx.value()).commit();
+    }
+    assert_column_sizes();
+}
+
+std::tuple<uint32_t, uint32_t, uint64_t>
+compressed_index_columns::get_entry(size_t i) const {
+    auto it = _hints.lower_bound(i);
+    if (it != _hints.end()) {
+        vassert(it->first <= i, "Found index {} instead of {}", i, it->first);
+        auto [offset_hint, time_hint, pos_hint] = it->second;
+        uint32_t offset = *_relative_offset_index.at_index(i, offset_hint);
+        uint32_t timestamp = *_relative_time_index.at_index(i, time_hint);
+        uint64_t pos = *_position_index.at_index(i, pos_hint);
+        return std::make_tuple(offset, timestamp, pos);
+    } else {
+        uint32_t offset = *_relative_offset_index.at_index(i);
+        uint32_t timestamp = *_relative_time_index.at_index(i);
+        uint64_t pos = *_position_index.at_index(i);
+        return std::make_tuple(offset, timestamp, pos);
+    }
+}
+
+void compressed_index_columns::pop_back(int n) {
+    // The 'pop_back' implementation partially copies all columns
+    // but this is OK because 'pop_back' is never invoked in the hot path
+    offset_column_t tmp_offsets;
+    column_t tmp_timestamps;
+    pos_column_t tmp_positions;
+    auto expected_size = _relative_offset_index.size();
+    if (static_cast<size_t>(n) >= expected_size) {
+        // Fast path for full cleanup
+        _relative_offset_index = {};
+        _relative_time_index = {};
+        _position_index = {};
+        return;
+    } else {
+        expected_size -= static_cast<size_t>(n);
+    }
+    std::for_each_n(
+      _relative_offset_index.begin(),
+      expected_size,
+      [&tmp_offsets](uint64_t o) { tmp_offsets.append(o); });
+    std::for_each_n(
+      _relative_time_index.begin(),
+      expected_size,
+      [&tmp_timestamps](uint64_t t) { tmp_timestamps.append(t); });
+    std::for_each_n(
+      _position_index.begin(), expected_size, [&tmp_positions](uint64_t p) {
+          tmp_positions.append(p);
+      });
+    _relative_offset_index = std::move(tmp_offsets);
+    _relative_time_index = std::move(tmp_timestamps);
+    _position_index = std::move(tmp_positions);
+    assert_column_sizes();
+}
+
+void compressed_index_columns::shrink_to_fit() { assert_column_sizes(); }
+
+std::unique_ptr<index_columns_base> compressed_index_columns::copy() const {
+    auto res = std::make_unique<compressed_index_columns>();
+    for_each_relative_offset_index(
+      [&res](uint32_t n) { res->_relative_offset_index.append(n); });
+    for_each_relative_time_index(
+      [&res](uint32_t n) { res->_relative_time_index.append(n); });
+    for_each_position_index(
+      [&res](uint64_t n) { res->_position_index.append(n); });
+    return res;
+}
+
+std::ostream& operator<<(std::ostream& o, const compressed_index_columns& s) {
+    fmt::print(
+      o,
+      "index({}, {}, {})",
+      s._relative_offset_index.size(),
+      s._relative_time_index.size(),
+      s._position_index.size());
+    return o;
 }
 
 std::optional<int>
@@ -81,24 +389,89 @@ index_columns::time_lower_bound(uint32_t needle) const noexcept {
     return std::distance(std::begin(_relative_time_index), it);
 }
 
-bool index_columns::try_reset_relative_time_index(uint32_t t) {
-    if (_relative_time_index.size() != 1) {
+bool index_columns::try_reset_relative_time_index(
+  chunked_vector<uint32_t> input) {
+    if (_relative_time_index.size() != input.size() || input.empty()) {
         return false;
     }
-    _relative_time_index[0] = t;
+    _relative_time_index = std::move(input);
     return true;
 }
 
-chunked_vector<uint32_t>
-index_columns::copy_relative_offset_index() const noexcept {
-    return _relative_offset_index.copy();
+void index_columns::write(iobuf& buf) const {
+    serde::write(buf, _relative_offset_index.copy());
+    serde::write(buf, _relative_time_index.copy());
+    serde::write(buf, _position_index.copy());
 }
-chunked_vector<uint32_t>
-index_columns::copy_relative_time_index() const noexcept {
-    return _relative_time_index.copy();
+
+void index_columns::read_nested(iobuf_parser& p) {
+    _relative_offset_index = {};
+    _relative_time_index = {};
+    _position_index = {};
+    serde::read_nested(p, _relative_offset_index, 0U);
+    serde::read_nested(p, _relative_time_index, 0U);
+    serde::read_nested(p, _position_index, 0U);
 }
-chunked_vector<uint64_t> index_columns::copy_position_index() const noexcept {
-    return _position_index.copy();
+
+size_t index_columns::size() const noexcept {
+    vassert(
+      _relative_offset_index.size() == _relative_time_index.size()
+        && _relative_offset_index.size() == _position_index.size(),
+      "ALL indexes must match in size. {}",
+      *this);
+    return _relative_offset_index.size();
+}
+
+void index_columns::from(iobuf_parser& parser) {
+    const uint32_t vsize = ss::le_to_cpu(
+      reflection::adl<uint32_t>{}.from(parser));
+
+    _relative_offset_index = {};
+    _relative_time_index = {};
+    _position_index = {};
+
+    _relative_offset_index.reserve(vsize);
+    _relative_time_index.reserve(vsize);
+    _position_index.reserve(vsize);
+
+    for (auto i = 0U; i < vsize; ++i) {
+        _relative_offset_index.push_back(
+          reflection::adl<uint32_t>{}.from(parser));
+    }
+    for (auto i = 0U; i < vsize; ++i) {
+        _relative_time_index.push_back(
+          reflection::adl<uint32_t>{}.from(parser));
+    }
+    for (auto i = 0U; i < vsize; ++i) {
+        _position_index.push_back(reflection::adl<uint64_t>{}.from(parser));
+    }
+}
+
+void index_columns::to(iobuf& out) const {
+    auto sz = size();
+    reflection::adl<uint32_t>{}.to(out, sz);
+
+    for (const auto n : _relative_offset_index) {
+        reflection::adl<uint32_t>{}.to(out, static_cast<uint32_t>(n));
+    }
+    for (const auto n : _relative_time_index) {
+        reflection::adl<uint32_t>{}.to(out, static_cast<uint32_t>(n));
+    }
+    for (const auto n : _position_index) {
+        reflection::adl<uint64_t>{}.to(out, n);
+    }
+}
+
+void index_columns::checksum(incremental_xxhash64& xx) const {
+    for (const auto o : _relative_offset_index) {
+        xx.update(o);
+    }
+    for (const auto t : _relative_time_index) {
+        xx.update(t);
+    }
+    for (const auto p : _position_index) {
+        xx.update(p);
+    }
 }
 
 void index_columns::assign_relative_offset_index(
@@ -121,6 +494,14 @@ void index_columns::add_entry(
     _position_index.push_back(pos);
 }
 
+std::tuple<uint32_t, uint32_t, uint64_t>
+index_columns::get_entry(size_t i) const {
+    uint32_t offset = _relative_offset_index.at(i);
+    uint32_t timestamp = _relative_time_index.at(i);
+    uint64_t pos = _position_index.at(i);
+    return std::make_tuple(offset, timestamp, pos);
+}
+
 void index_columns::shrink_to_fit() {
     vassert(
       _relative_offset_index.size() == _relative_time_index.size()
@@ -132,35 +513,17 @@ void index_columns::shrink_to_fit() {
     _position_index.shrink_to_fit();
 }
 
-index_columns index_columns::copy() const {
+std::unique_ptr<index_columns_base> index_columns::copy() const {
     vassert(
       _relative_offset_index.size() == _relative_time_index.size()
         && _relative_offset_index.size() == _position_index.size(),
       "ALL indexes must match in size. {}",
       *this);
-    index_columns c;
-    c.assign_relative_offset_index(_relative_offset_index.copy());
-    c.assign_relative_time_index(_relative_time_index.copy());
-    c.assign_position_index(_position_index.copy());
+    auto c = std::make_unique<index_columns>();
+    c->assign_relative_offset_index(_relative_offset_index.copy());
+    c->assign_relative_time_index(_relative_time_index.copy());
+    c->assign_position_index(_position_index.copy());
     return c;
-}
-
-bool index_columns::empty() const noexcept {
-    vassert(
-      _relative_offset_index.size() == _relative_time_index.size()
-        && _relative_offset_index.size() == _position_index.size(),
-      "ALL indexes must match in size. {}",
-      *this);
-    return _relative_offset_index.empty();
-}
-
-size_t index_columns::size() const noexcept {
-    vassert(
-      _relative_offset_index.size() == _relative_time_index.size()
-        && _relative_offset_index.size() == _position_index.size(),
-      "ALL indexes must match in size. {}",
-      *this);
-    return _relative_offset_index.size();
 }
 
 void index_columns::pop_back(int n) {
@@ -215,6 +578,14 @@ index_state index_state::make_empty_index(offset_delta_time with_offset) {
     return idx;
 }
 
+index_state::index_state() {
+    if (config::shard_local_cfg().log_segment_index_compression.value()) {
+        index = std::make_unique<compressed_index_columns>();
+    } else {
+        index = std::make_unique<index_columns>();
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const index_state::entry& e) {
     return o << "{offset:" << e.offset << ", time:" << e.timestamp
              << ", filepos:" << e.filepos << "}";
@@ -245,18 +616,19 @@ bool index_state::maybe_index(
     // to override the timestamps of any config batch that was indexed
     // by virtue of being the first in the segment.
     if (user_data && non_data_timestamps) {
-        auto time_col_reset = index.try_reset_relative_time_index(
-          offset_time_index{last_timestamp, with_offset}.raw_value());
+        auto time_col_reset = index->try_reset_relative_time_index(
+          {offset_time_index{last_timestamp, with_offset}.raw_value()});
         // We can only add a non-data timestamp to the empty index. This
         // is why we can assume that the index size is 1. The
-        // 'try_reset_relative_time_index' will return true if this is the case.
-        // Otherwise it will be impossible to to reset the non-data timestamp.
+        // 'try_reset_relative_time_index' will return true if this is the
+        // case. Otherwise it will be impossible to to reset the non-data
+        // timestamp.
         vassert(
           time_col_reset,
           "Relative time index can not be reset, unexpected index size {} "
           "(expected 1). This can only happen if more than one non-data "
           "timestamp was added to the index.",
-          index.size());
+          index->size());
 
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
@@ -265,12 +637,13 @@ bool index_state::maybe_index(
 
     // index_state
     if (empty()) {
-        // Ordinarily, we do not allow configuration batches to contribute to
-        // the segment's timestamp bounds (because config batches use walltime
-        // but user data timestamps may be anything).  However, for the first
-        // batch we set the timestamps, and then set a `non_data_timestamps`
-        // flag so that the next time we see user data we will overwrite
-        // the walltime timestamps with the user data timestamps.
+        // Ordinarily, we do not allow configuration batches to contribute
+        // to the segment's timestamp bounds (because config batches use
+        // walltime but user data timestamps may be anything).  However, for
+        // the first batch we set the timestamps, and then set a
+        // `non_data_timestamps` flag so that the next time we see user data
+        // we will overwrite the walltime timestamps with the user data
+        // timestamps.
         non_data_timestamps = !user_data;
 
         base_timestamp = first_timestamp;
@@ -282,12 +655,13 @@ bool index_state::maybe_index(
     // offsets ourselves and it would be a bug otherwise - see assert above
     max_offset = batch_max_offset;
 
-    // Do not allow config batches to contribute to segment timestamp bounds,
-    // because their timestamps may differ wildly from user-provided timestamps
+    // Do not allow config batches to contribute to segment timestamp
+    // bounds, because their timestamps may differ wildly from user-provided
+    // timestamps
     if (user_data) {
-        // some clients leave max timestamp uninitialized in cases there is a
-        // single record in a batch in this case we use first timestamp as a
-        // last one
+        // some clients leave max timestamp uninitialized in cases there is
+        // a single record in a batch in this case we use first timestamp as
+        // a last one
         last_timestamp = std::max(first_timestamp, last_timestamp);
         max_timestamp = std::max(max_timestamp, last_timestamp);
         if (new_broker_timestamp.has_value()) {
@@ -338,9 +712,9 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, max_offset);
     write(tmp, base_timestamp);
     write(tmp, max_timestamp);
-    write(tmp, index.copy_relative_offset_index());
-    write(tmp, index.copy_relative_time_index());
-    write(tmp, index.copy_position_index());
+
+    index->write(tmp);
+
     write(tmp, batch_timestamps_are_monotonic);
     write(tmp, with_offset);
     write(tmp, non_data_timestamps);
@@ -362,8 +736,8 @@ void read_nested(
   iobuf_parser& in, index_state& st, const size_t bytes_left_limit) {
     /*
      * peek at the 1-byte version prefix. this will either correspond to a
-     * version from the deprecated format, or a version in the range supported
-     * by the serde format.
+     * version from the deprecated format, or a version in the range
+     * supported by the serde format.
      */
     const auto compat_version = serde::peek_version(in);
 
@@ -411,21 +785,13 @@ void read_nested(
     }
 
     // unwrap actual fields
-    chunked_vector<uint32_t> relative_offset_index;
-    chunked_vector<uint32_t> relative_time_index;
-    chunked_vector<uint64_t> position_index;
     iobuf_parser p(std::move(tmp));
     read_nested(p, st.bitflags, 0U);
     read_nested(p, st.base_offset, 0U);
     read_nested(p, st.max_offset, 0U);
     read_nested(p, st.base_timestamp, 0U);
     read_nested(p, st.max_timestamp, 0U);
-    read_nested(p, relative_offset_index, 0U);
-    read_nested(p, relative_time_index, 0U);
-    read_nested(p, position_index, 0U);
-    st.index.assign_relative_offset_index(std::move(relative_offset_index));
-    st.index.assign_relative_time_index(std::move(relative_time_index));
-    st.index.assign_position_index(std::move(position_index));
+    st.index->read_nested(p);
 
     if (hdr._version < index_state::monotonic_timestamps_version) {
         st.batch_timestamps_are_monotonic = false;
@@ -435,10 +801,10 @@ void read_nested(
     if (hdr._version >= index_state::monotonic_timestamps_version) {
         read_nested(p, st.batch_timestamps_are_monotonic, 0U);
         read_nested(p, st.with_offset, 0U);
-        // if we are deserializing we are likely dealing with a closed segment,
-        // this means that the value of this flag is unused in this object,
-        // since no new data will be appended. but it's still necessary to read
-        // it.
+        // if we are deserializing we are likely dealing with a closed
+        // segment, this means that the value of this flag is unused in this
+        // object, since no new data will be appended. but it's still
+        // necessary to read it.
         read_nested(p, st.non_data_timestamps, 0U);
     }
 
@@ -464,35 +830,35 @@ void read_nested(
 
 index_state index_state::copy() const { return *this; }
 
-size_t index_state::size() const { return index.size(); }
+size_t index_state::size() const { return index->size(); }
 
-bool index_state::empty() const { return index.empty(); }
+bool index_state::empty() const { return index->size() == 0; }
 
 void index_state::add_entry(
   uint32_t relative_offset, offset_time_index relative_time, uint64_t pos) {
-    index.add_entry(relative_offset, relative_time.raw_value(), pos);
+    index->add_entry(relative_offset, relative_time.raw_value(), pos);
 }
+
 void index_state::pop_back(size_t n) {
-    index.pop_back(n);
+    index->pop_back(n);
     if (empty()) {
         non_data_timestamps = false;
     }
 }
+
 std::tuple<uint32_t, offset_time_index, uint64_t>
 index_state::get_entry(size_t i) const {
-    return {
-      index.get_relative_offset_index(i),
-      offset_time_index{index.get_relative_time_index(i), with_offset},
-      index.get_position_index(i)};
+    auto [offset, ts, pos] = index->get_entry(i);
+    return {offset, offset_time_index{ts, with_offset}, pos};
 }
 
-void index_state::shrink_to_fit() { index.shrink_to_fit(); }
+void index_state::shrink_to_fit() { index->shrink_to_fit(); }
 
 std::optional<std::tuple<uint32_t, offset_time_index, uint64_t>>
 index_state::find_entry(model::timestamp ts) {
     const auto idx = offset_time_index{ts, with_offset};
 
-    const auto dist = index.time_lower_bound(idx.raw_value());
+    const auto dist = index->time_lower_bound(idx.raw_value());
     if (!dist.has_value()) {
         return std::nullopt;
     }
@@ -518,7 +884,7 @@ index_state::index_state(const index_state& o) noexcept
   , max_offset(o.max_offset)
   , base_timestamp(o.base_timestamp)
   , max_timestamp(o.max_timestamp)
-  , index(o.index.copy())
+  , index(o.index->copy())
   , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
   , with_offset(o.with_offset)
   , non_data_timestamps(o.non_data_timestamps)
@@ -530,26 +896,14 @@ index_state::index_state(const index_state& o) noexcept
 namespace serde_compat {
 uint64_t index_state_serde::checksum(const index_state& r) {
     auto xx = incremental_xxhash64{};
-    auto relative_offset_index = r.index.copy_relative_offset_index();
-    auto relative_time_index = r.index.copy_relative_time_index();
-    auto position_index = r.index.copy_position_index();
     xx.update_all(
       r.bitflags,
       r.base_offset(),
       r.max_offset(),
       r.base_timestamp(),
       r.max_timestamp(),
-      uint32_t(relative_offset_index.size()));
-    const uint32_t vsize = relative_offset_index.size();
-    for (auto i = 0U; i < vsize; ++i) {
-        xx.update(relative_offset_index[i]);
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        xx.update(relative_time_index[i]);
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        xx.update(position_index[i]);
-    }
+      uint32_t(r.index->size()));
+    r.index->checksum(xx);
     return xx.digest();
 }
 
@@ -576,31 +930,7 @@ index_state index_state_serde::decode(iobuf_parser& parser) {
     retval.max_timestamp = model::timestamp(
       reflection::adl<model::timestamp::type>{}.from(parser));
 
-    const uint32_t vsize = ss::le_to_cpu(
-      reflection::adl<uint32_t>{}.from(parser));
-
-    chunked_vector<uint32_t> relative_offset_index;
-    relative_offset_index.reserve(vsize);
-    chunked_vector<uint32_t> relative_time_index;
-    relative_time_index.reserve(vsize);
-    chunked_vector<uint64_t> position_index;
-    position_index.reserve(vsize);
-    for (auto i = 0U; i < vsize; ++i) {
-        relative_offset_index.push_back(
-          reflection::adl<uint32_t>{}.from(parser));
-    }
-
-    for (auto i = 0U; i < vsize; ++i) {
-        relative_time_index.push_back(reflection::adl<uint32_t>{}.from(parser));
-    }
-
-    for (auto i = 0U; i < vsize; ++i) {
-        position_index.push_back(reflection::adl<uint64_t>{}.from(parser));
-    }
-
-    retval.index.assign_relative_offset_index(std::move(relative_offset_index));
-    retval.index.assign_relative_time_index(std::move(relative_time_index));
-    retval.index.assign_position_index(std::move(position_index));
+    retval.index->from(parser);
 
     const auto computed_checksum = checksum(retval);
     if (unlikely(expected_checksum != computed_checksum)) {
@@ -624,7 +954,7 @@ iobuf index_state_serde::encode(const index_state& st) {
         + sizeof(storage::index_state::base_timestamp)
         + sizeof(storage::index_state::max_timestamp)
         + sizeof(uint32_t) // index size
-        + (st.index.size() * (sizeof(uint32_t) * 2 + sizeof(uint64_t)));
+        + (st.index->size() * (sizeof(uint32_t) * 2 + sizeof(uint64_t)));
     const uint64_t computed_checksum = checksum(st);
     reflection::serialize(
       out,
@@ -635,20 +965,9 @@ iobuf index_state_serde::encode(const index_state& st) {
       st.base_offset(),
       st.max_offset(),
       st.base_timestamp(),
-      st.max_timestamp(),
-      uint32_t(st.index.size()));
-    const uint32_t vsize = st.index.size();
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(
-          out, st.index.get_relative_offset_index(i));
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(
-          out, st.index.get_relative_time_index(i));
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint64_t>{}.to(out, st.index.get_position_index(i));
-    }
+      st.max_timestamp());
+    st.index->to(out);
+
     // add back the version and size field
     const auto expected_size = final_size + sizeof(int8_t) + sizeof(uint32_t);
     vassert(
@@ -676,12 +995,13 @@ std::optional<index_state::entry> index_state::find_nearest(model::offset o) {
     }
     const uint32_t needle = o() - base_offset();
 
-    auto ix = index.offset_lower_bound(needle).value_or(index.size() - 1);
+    auto ix = index->offset_lower_bound(needle).value_or(index->size() - 1);
 
     // make it signed so it can be negative
     do {
-        if (index.get_relative_offset_index(ix) <= needle) {
-            return translate_index_entry(get_entry(ix));
+        auto entry = get_entry(ix);
+        if (std::get<0>(entry) <= needle) {
+            return translate_index_entry(entry);
         }
     } while (ix-- > 0);
 
@@ -711,7 +1031,7 @@ index_state::find_above_size_bytes(size_t distance) {
     if (empty()) {
         return std::nullopt;
     }
-    auto it = index.position_upper_bound(distance);
+    auto it = index->position_upper_bound(distance);
 
     if (it == std::nullopt) {
         return std::nullopt;
@@ -725,9 +1045,9 @@ index_state::find_below_size_bytes(size_t distance) {
     if (empty()) {
         return std::nullopt;
     }
-    auto it = index.position_upper_bound(distance);
+    auto it = index->position_upper_bound(distance);
 
-    auto ix = it.value_or(index.size());
+    auto ix = it.value_or(index->size());
     if (ix > 0) {
         ix--;
     } else {
@@ -744,8 +1064,8 @@ bool index_state::truncate(
         return needs_persistence;
     }
     const uint32_t i = new_max_offset() - base_offset();
-    auto res = index.offset_lower_bound(i);
-    size_t remove_back_elems = index.size() - res.value_or(index.size());
+    auto res = index->offset_lower_bound(i);
+    size_t remove_back_elems = index->size() - res.value_or(index->size());
     if (remove_back_elems > 0) {
         needs_persistence = true;
         pop_back(remove_back_elems);
