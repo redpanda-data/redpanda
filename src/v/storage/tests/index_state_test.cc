@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include <boost/test/tools/old/interface.hpp>
 #define BOOST_TEST_MODULE storage
 
 #include "bytes/bytes.h"
@@ -36,14 +37,19 @@ static storage::index_state make_random_index_state(
         }
     }
 
+    uint32_t offset = random_generators::get_int<uint32_t>(1, 10000);
+    uint32_t tx = random_generators::get_int<uint32_t>(1, 10000);
+    uint64_t pos = random_generators::get_int<uint64_t>(1, 10000);
+
     const auto n = random_generators::get_int(1, 10000);
     for (auto i = 0; i < n; ++i) {
         st.add_entry(
-          random_generators::get_int<uint32_t>(),
-          storage::offset_time_index{
-            model::timestamp{random_generators::get_int<int64_t>()},
-            apply_offset},
-          random_generators::get_int<uint64_t>());
+          offset,
+          storage::offset_time_index{model::timestamp{tx}, apply_offset},
+          pos);
+        offset += random_generators::get_int<uint32_t>(0, 1000);
+        tx += random_generators::get_int<uint32_t>(0, 1000);
+        pos += random_generators::get_int<uint64_t>(0, 1000);
     }
 
     if (apply_offset == storage::offset_delta_time::no) {
@@ -355,4 +361,87 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
     auto actual_bytes = bytes_to_iobuf(serde_serialized);
     BOOST_REQUIRE_EQUAL(expected_bytes.size_bytes(), actual_bytes.size_bytes());
     BOOST_REQUIRE(expected_bytes == actual_bytes);
+}
+
+auto make_random_index_columns() {
+    storage::index_columns col;
+    storage::compressed_index_columns zip;
+
+    uint32_t offset = random_generators::get_int<uint32_t>(1, 10000);
+    uint32_t tx = random_generators::get_int<uint32_t>(1, 10000);
+    uint64_t pos = random_generators::get_int<uint64_t>(1, 10000);
+
+    const auto n = random_generators::get_int(1, 10000);
+    for (auto i = 0; i < n; ++i) {
+        col.add_entry(offset, tx, pos);
+        zip.add_entry(offset, tx, pos);
+        offset += random_generators::get_int<uint32_t>(0, 1000);
+        tx += random_generators::get_int<uint32_t>(0, 1000);
+        pos += random_generators::get_int<uint64_t>(0, 1000);
+    }
+
+    return std::make_tuple(std::move(col), std::move(zip));
+}
+
+BOOST_AUTO_TEST_CASE(index_columns_AB) {
+    auto [a, b] = make_random_index_columns();
+    BOOST_REQUIRE_EQUAL(a.empty(), b.empty());
+    BOOST_REQUIRE_EQUAL(a.size(), b.size());
+    for (size_t i = 0; i < a.size(); i++) {
+        BOOST_REQUIRE_EQUAL(a.get_position_index(i), b.get_position_index(i));
+        BOOST_REQUIRE_EQUAL(
+          a.get_relative_offset_index(i), b.get_relative_offset_index(i));
+        BOOST_REQUIRE_EQUAL(
+          a.get_relative_time_index(i), b.get_relative_time_index(i));
+    }
+    auto offset_index = a.copy_relative_offset_index();
+    auto time_index = a.copy_relative_time_index();
+    auto pos_index = a.copy_position_index();
+
+    for (auto needle : offset_index) {
+        auto r1 = a.offset_lower_bound(needle);
+        auto r2 = b.offset_lower_bound(needle);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        r1 = a.offset_lower_bound(needle - 1);
+        r2 = b.offset_lower_bound(needle - 1);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        if (needle != offset_index.back()) {
+            r1 = a.offset_lower_bound(needle + 1);
+            r2 = b.offset_lower_bound(needle + 1);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+        }
+    }
+
+    for (auto needle : time_index) {
+        auto r1 = a.time_lower_bound(needle);
+        auto r2 = b.time_lower_bound(needle);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        r1 = a.time_lower_bound(needle - 1);
+        r2 = b.time_lower_bound(needle - 1);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        if (needle != time_index.back()) {
+            r1 = a.time_lower_bound(needle + 1);
+            r2 = b.time_lower_bound(needle + 1);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+        }
+    }
+
+    for (auto needle : pos_index) {
+        auto r1 = a.position_upper_bound(needle - 1);
+        auto r2 = b.position_upper_bound(needle - 1);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        if (needle != pos_index.back()) {
+            r1 = a.position_upper_bound(needle);
+            r2 = b.position_upper_bound(needle);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+            r1 = a.position_upper_bound(needle + 1);
+            r2 = b.position_upper_bound(needle + 1);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+        }
+    }
 }

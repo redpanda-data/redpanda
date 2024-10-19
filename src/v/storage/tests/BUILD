@@ -120,6 +120,7 @@ redpanda_cc_btest(
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/storage:index_state",
+        "//src/v/utils:delta_for",
         "@boost//:test",
         "@seastar//:testing",
     ],
