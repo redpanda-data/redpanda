@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#define BOOST_TEST_MODULE utils
+#define BOOST_TEST_MODULE strings
 
 #include "strings/string_switch.h"
 
