@@ -100,7 +100,7 @@ void fill_raft_state(
         ss::httpd::debug_json::stm_state state;
         state.name = stm.name;
         state.last_applied_offset = stm.last_applied_offset;
-        state.max_collectible_offset = stm.last_applied_offset;
+        state.max_collectible_offset = stm.max_collectible_offset;
         raft_state.stms.push(std::move(state));
     }
     if (src.recovery_state) {
