@@ -726,11 +726,8 @@ index_state::find_below_size_bytes(size_t distance) {
         return std::nullopt;
     }
     auto it = index.position_upper_bound(distance);
-    if (it == std::nullopt) {
-        return std::nullopt;
-    }
 
-    auto ix = it.value();
+    auto ix = it.value_or(index.size());
     if (ix > 0) {
         ix--;
     } else {
