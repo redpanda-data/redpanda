@@ -72,6 +72,10 @@ replicated_partition::sync_effective_start(
       });
 }
 
+model::offset replicated_partition::local_start_offset() const {
+    return _translator->from_log_offset(_partition->raft_start_offset());
+}
+
 model::offset replicated_partition::start_offset() const {
     const auto start_offset_override
       = _partition->kafka_start_offset_override();

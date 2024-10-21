@@ -36,6 +36,8 @@ public:
     ss::future<result<model::offset, error_code>>
     sync_effective_start(model::timeout_clock::duration timeout) final;
 
+    model::offset local_start_offset() const final;
+
     model::offset start_offset() const final;
 
     model::offset high_watermark() const final;
