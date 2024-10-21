@@ -23,6 +23,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/when_all.h"
 
 namespace kafka {
 
@@ -193,7 +194,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
 
 static ss::future<list_offset_topic_response>
 list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
-    std::vector<ss::future<list_offset_partition_response>> partitions;
+    chunked_vector<ss::future<list_offset_partition_response>> partitions;
     partitions.reserve(topic.partitions.size());
 
     const auto* disabled_set
@@ -232,9 +233,11 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
         partitions.push_back(std::move(pr));
     }
 
-    return when_all_succeed(partitions.begin(), partitions.end())
+    return ssx::when_all_succeed<
+             chunked_vector<list_offset_partition_response>>(
+             std::move(partitions))
       .then([name = std::move(topic.name)](
-              std::vector<list_offset_partition_response> parts) mutable {
+              chunked_vector<list_offset_partition_response> parts) mutable {
           return list_offset_topic_response{
             .name = std::move(name),
             .partitions = chunked_vector<list_offset_partition_response>{
@@ -341,8 +344,9 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
 
     return ss::do_with(std::move(octx), [](list_offsets_ctx& octx) {
         auto topics = list_offsets_topics(octx);
-        return ss::when_all_succeed(topics.begin(), topics.end())
-          .then([&octx](std::vector<list_offset_topic_response> topics) {
+        return ssx::when_all_succeed<
+                 chunked_vector<list_offset_topic_response>>(std::move(topics))
+          .then([&octx](chunked_vector<list_offset_topic_response> topics) {
               octx.response.data.topics = {
                 std::make_move_iterator(topics.begin()),
                 std::make_move_iterator(topics.end())};
