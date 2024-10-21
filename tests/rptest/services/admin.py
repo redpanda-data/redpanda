@@ -320,8 +320,9 @@ class OutboundDataMigration:
 
 
 class InboundTopic:
-    def __init__(self, src_topic: NamespacedTopic,
-                 alias: NamespacedTopic | None):
+    def __init__(self,
+                 src_topic: NamespacedTopic,
+                 alias: NamespacedTopic | None = None):
         self.src_topic = src_topic
         self.alias = alias
 
