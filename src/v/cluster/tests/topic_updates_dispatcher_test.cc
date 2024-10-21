@@ -14,8 +14,6 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-#include <bits/stdint-uintn.h>
-
 #include <cstdint>
 using namespace std::chrono_literals;
 
@@ -172,7 +170,8 @@ FIXTURE_TEST(
     auto check_allocated_counts = [&](std::vector<size_t> expected) {
         std::vector<size_t> counts;
         for (const auto& [id, node] : allocation_nodes) {
-            BOOST_REQUIRE(id() == counts.size() + 1); // 1-based node ids
+            BOOST_REQUIRE(
+              id() == static_cast<int>(counts.size()) + 1); // 1-based node ids
             counts.push_back(node->allocated_partitions());
         }
         logger.debug("allocated counts: {}, expected: {}", counts, expected);
@@ -182,7 +181,8 @@ FIXTURE_TEST(
     auto check_final_counts = [&](std::vector<size_t> expected) {
         std::vector<size_t> counts;
         for (const auto& [id, node] : allocation_nodes) {
-            BOOST_REQUIRE(id() == counts.size() + 1); // 1-based node ids
+            BOOST_REQUIRE(
+              id() == static_cast<int>(counts.size()) + 1); // 1-based node ids
             counts.push_back(node->final_partitions());
         }
         logger.debug("final counts: {}, expected: {}", counts, expected);

@@ -11,8 +11,8 @@
 
 #include "base/seastarx.h"
 #include "cluster/logger.h"
+#include "cluster/tests/local_monitor_fixture.h"
 #include "config/configuration.h"
-#include "local_monitor_fixture.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/types.h"
 

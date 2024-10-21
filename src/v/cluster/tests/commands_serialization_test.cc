@@ -10,6 +10,7 @@
 #include "base/units.h"
 #include "cluster/commands.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tests/topic_table_fixture.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "model/compression.h"
@@ -17,7 +18,6 @@
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 #include "test_utils/fixture.h"
-#include "topic_table_fixture.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -27,7 +27,6 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/variant_utils.hh>
 
-#include <bits/stdint-intn.h>
 #include <boost/test/tools/old/interface.hpp>
 
 #include <vector>
@@ -195,7 +194,7 @@ FIXTURE_TEST(test_move_partition_replicass_command, cmd_test_fixture) {
 
     ss::visit(deser, [&cmd](cluster::move_partition_replicas_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key, cmd.key);
-        for (int i = 0; i < cmd.value.size(); ++i) {
+        for (size_t i = 0; i < cmd.value.size(); ++i) {
             BOOST_REQUIRE_EQUAL(c.value[i].node_id, cmd.value[i].node_id);
             BOOST_REQUIRE_EQUAL(c.value[i].shard, cmd.value[i].shard);
         }
