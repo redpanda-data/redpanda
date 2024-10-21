@@ -34,6 +34,7 @@
 #include "storage/tests/utils/log_gap_analysis.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/directory_walker.h"
 #include "utils/to_string.h"
@@ -113,6 +114,23 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, batches.back().last_offset());
     validate_offsets(model::offset(0), headers, batches);
 };
+
+FIXTURE_TEST(append_with_zero_segment_fallocation_step, storage_test_fixture) {
+    scoped_config cluster_config{};
+    cluster_config.get("segment_fallocation_step").set_value(size_t(0));
+
+    storage::log_manager mgr = make_log_manager();
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+    auto headers = append_random_batches(log, 10);
+    log->flush().get0();
+    auto batches = read_and_validate_all_batches(log);
+
+    BOOST_REQUIRE_EQUAL(headers.size(), batches.size());
+}
 
 FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
