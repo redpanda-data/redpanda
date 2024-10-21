@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
+#include "utils/delta_for.h"
 
 #include <seastar/util/bool_class.hh>
 
@@ -26,6 +27,166 @@
 class iobuf_parser;
 
 namespace storage {
+
+inline constexpr uint64_t position_index_step = 32 * 1024;
+
+class compressed_index_columns {
+public:
+    // Accessors
+    uint32_t get_relative_offset_index(int ix) const noexcept;
+    uint32_t get_relative_time_index(int ix) const noexcept;
+    uint64_t get_position_index(int ix) const noexcept;
+
+    template<class Fn>
+    void for_each_relative_offset_index(const Fn& fn) const {
+      assert_column_sizes();
+      for (uint64_t n: _relative_offset_index) {
+        std::invoke(fn, n);
+      }
+    }
+
+    template<class Fn>
+    void for_each_relative_time_index(const Fn& fn) const {
+      assert_column_sizes();
+      for (uint64_t n: _relative_time_index) {
+        std::invoke(fn, n);
+      }
+    }
+
+    template<class Fn>
+    void for_each_position_index(const Fn& fn) const {
+      assert_column_sizes();
+      for (uint64_t n: _position_index) {
+        std::invoke(fn, n);
+      }
+    }
+
+    void assert_column_sizes() const {
+      auto ro = _relative_offset_index.size();
+      auto rt = _relative_time_index.size();
+      auto ps = _position_index.size();
+      vassert(ro == rt && rt == ps, "Column sizes differ: {}, {}, {}", ro, rt, ps);
+    }
+
+    /// Return index of the element or nullopt
+    std::optional<int> offset_lower_bound(uint32_t needle) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> position_upper_bound(uint64_t needle) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> time_lower_bound(uint32_t needle) const noexcept;
+
+    /// If the size() ==  1 reset the time column with the
+    /// provided value.
+    /// If the relative_time_index column is empty or size() > 1
+    /// the operation fails and method returns 'false'.
+    bool try_reset_relative_time_index(uint32_t);
+
+    bool empty() const noexcept;
+    size_t size() const noexcept;
+
+    // These methods are used by serialization
+    chunked_vector<uint32_t> copy_relative_offset_index() const noexcept;
+    chunked_vector<uint32_t> copy_relative_time_index() const noexcept;
+    chunked_vector<uint64_t> copy_position_index() const noexcept;
+    void assign_relative_offset_index(chunked_vector<uint32_t>) noexcept;
+    void assign_relative_time_index(chunked_vector<uint32_t>) noexcept;
+    void assign_position_index(chunked_vector<uint64_t>) noexcept;
+
+    void
+    add_entry(uint32_t relative_offset, uint32_t relative_time, uint64_t pos);
+
+    /// Pop back one element. This is ineffective with columnar format but
+    /// it's not invoked often and when it is invoked it usually invoked not
+    /// that many times.
+    void pop_back(int n = 1);
+
+    void shrink_to_fit();
+
+    /// Make deep copy
+    compressed_index_columns copy() const;
+
+    friend bool operator==(
+      const compressed_index_columns& lhs,
+      const compressed_index_columns& rhs);
+
+    friend std::ostream&
+    operator<<(std::ostream&, const compressed_index_columns&);
+
+private:
+    // using column_t
+    //   = deltafor_column<uint64_t, details::delta_delta<uint64_t>, 0>;
+    // using pos_column_t = deltafor_column<
+    //   uint64_t,
+    //   details::delta_delta<uint64_t>,
+    //   position_index_step>;
+    using column_t
+      = deltafor_column<uint64_t, details::delta_xor, 0>;
+    using pos_column_t
+      = deltafor_column<uint64_t, details::delta_xor, 0>;
+
+    column_t _relative_offset_index;
+    column_t _relative_time_index;
+    column_t _position_index;
+};
+
+class index_columns {
+public:
+    // Accessors
+    uint32_t get_relative_offset_index(int ix) const noexcept;
+    uint32_t get_relative_time_index(int ix) const noexcept;
+    uint64_t get_position_index(int ix) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> offset_lower_bound(uint32_t needle) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> position_upper_bound(uint64_t needle) const noexcept;
+
+    /// Return index of the element or nullopt
+    std::optional<int> time_lower_bound(uint32_t needle) const noexcept;
+
+    /// If the size() ==  1 reset the time column with the
+    /// provided value.
+    /// If the relative_time_index column is empty or size() > 1
+    /// the operation fails and method returns 'false'.
+    bool try_reset_relative_time_index(uint32_t);
+
+    bool empty() const noexcept;
+    size_t size() const noexcept;
+
+    // These methods are used by serialization
+    chunked_vector<uint32_t> copy_relative_offset_index() const noexcept;
+    chunked_vector<uint32_t> copy_relative_time_index() const noexcept;
+    chunked_vector<uint64_t> copy_position_index() const noexcept;
+    void assign_relative_offset_index(chunked_vector<uint32_t>) noexcept;
+    void assign_relative_time_index(chunked_vector<uint32_t>) noexcept;
+    void assign_position_index(chunked_vector<uint64_t>) noexcept;
+
+    void
+    add_entry(uint32_t relative_offset, uint32_t relative_time, uint64_t pos);
+
+    /// Pop back one element. This is ineffective with columnar format but
+    /// it's not invoked often and when it is invoked it usually invoked not
+    /// that many times.
+    void pop_back(int n = 1);
+
+    void shrink_to_fit();
+
+    /// Make deep copy
+    index_columns copy() const;
+
+    friend bool operator==(const index_columns&, const index_columns&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream&, const index_columns&);
+
+private:
+    chunked_vector<uint32_t> _relative_offset_index;
+    chunked_vector<uint32_t> _relative_time_index;
+    chunked_vector<uint64_t> _position_index;
+};
 
 using offset_delta_time = ss::bool_class<struct offset_delta_time_tag>;
 
@@ -83,6 +244,13 @@ struct index_state
 
     static index_state make_empty_index(offset_delta_time with_offset);
 
+    struct entry {
+        model::offset offset;
+        model::timestamp timestamp;
+        size_t filepos;
+        friend std::ostream& operator<<(std::ostream&, const entry&);
+    };
+
     index_state() = default;
 
     index_state(index_state&&) noexcept = default;
@@ -91,6 +259,17 @@ struct index_state
     ~index_state() noexcept = default;
 
     index_state copy() const;
+
+    std::optional<entry> find_nearest(model::offset o);
+
+    std::optional<entry> find_nearest(model::timestamp);
+
+    std::optional<entry> find_above_size_bytes(size_t distance);
+
+    std::optional<entry> find_below_size_bytes(size_t distance);
+
+    bool
+    truncate(model::offset new_max_offset, model::timestamp new_max_timestamp);
 
     /// \brief unused
     uint32_t bitflags{0};
@@ -103,10 +282,7 @@ struct index_state
     // the batch's max_timestamp of the last batch
     model::timestamp max_timestamp{0};
 
-    /// breaking indexes into their own has a 6x latency reduction
-    chunked_vector<uint32_t> relative_offset_index;
-    chunked_vector<uint32_t> relative_time_index;
-    chunked_vector<uint64_t> position_index;
+    compressed_index_columns index;
 
     // flag indicating whether the maximum timestamp on the batches
     // of this segment are monontonically increasing.
@@ -151,7 +327,7 @@ struct index_state
     void add_entry(
       uint32_t relative_offset, offset_time_index relative_time, uint64_t pos);
 
-    void pop_back();
+    void pop_back(int i = 1);
 
     std::tuple<uint32_t, offset_time_index, uint64_t> get_entry(size_t i) const;
 
@@ -183,6 +359,8 @@ struct index_state
 
 private:
     index_state(const index_state& o) noexcept;
+    entry translate_index_entry(
+      std::tuple<uint32_t, offset_time_index, uint64_t> entry);
 };
 
 namespace serde_compat {
