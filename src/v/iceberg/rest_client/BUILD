@@ -4,6 +4,9 @@ package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 redpanda_cc_library(
     name = "rest_client_types",
+    srcs = [
+        "types.cc",
+    ],
     hdrs = [
         "types.h",
     ],
