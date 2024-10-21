@@ -112,13 +112,18 @@ persisted_stm<T>::persisted_stm(
 }
 
 template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::apply(
+  const model::record_batch& b, const ssx::semaphore_units&) {
+    return do_apply(b);
+}
+
+template<supported_stm_snapshot T>
 ss::future<std::optional<stm_snapshot>>
 persisted_stm<T>::load_local_snapshot() {
     return _snapshot_backend.load_snapshot();
 }
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::stop() {
-    _apply_lock.broken();
     co_await raft::state_machine_base::stop();
     co_await _gate.close();
 }

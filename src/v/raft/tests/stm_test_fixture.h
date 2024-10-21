@@ -98,7 +98,8 @@ struct simple_kv : public raft::state_machine_base {
     ss::future<> start() override { return ss::now(); }
     ss::future<> stop() override { co_await raft::state_machine_base::stop(); };
 
-    ss::future<> apply(const model::record_batch& batch) override {
+    ss::future<> apply(
+      const model::record_batch& batch, const ssx::semaphore_units&) override {
         apply_to_state(batch, state);
         co_return;
     }
