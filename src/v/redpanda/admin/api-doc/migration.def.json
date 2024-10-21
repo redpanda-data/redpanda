@@ -14,6 +14,34 @@
         }
     }
 },
+"unmounted_topic": {
+    "type": "object",
+    "properties": {
+        "topic": {
+            "type": "string",
+            "description": "Topic name"
+        },
+        "topic_location": {
+            "type": "string",
+            "description": "Unique topic location in the cloud storage with the format <topic name>/<cluster_uuid>/<initial_revision>"
+        },
+        "ns": {
+            "type": "string",
+            "description": "Topic namespace, if not present it is assumed that topic is in kafka namespace"
+        }
+    }
+},
+"unmounted_topics_response": {
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "$ref": "unmounted_topic"
+            }
+        }
+    }
+},
 "outbound_migration": {
     "type": "object",
     "required": [

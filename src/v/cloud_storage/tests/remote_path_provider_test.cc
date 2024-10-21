@@ -386,6 +386,39 @@ TEST(RemotePathProviderTest, TestTopicMountManifestPath) {
     EXPECT_STREQ(
       path_provider.topic_mount_manifest_path(manifest).c_str(),
       "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/21");
+
+    const auto reverse = topic_mount_manifest_path::parse(
+      path_provider.topic_mount_manifest_path(manifest));
+    ASSERT_TRUE(reverse.has_value());
+    EXPECT_EQ(reverse->cluster_uuid(), test_label.cluster_uuid);
+    EXPECT_EQ(reverse->tp_ns(), test_tp_ns);
+}
+
+// Test that we return empty parse result for invalid topic mount manifest
+// paths and don't fail with unexpected exceptions.
+TEST(BogusManifestPath, TestTopicMountManifestPath) {
+    for (const auto& path : {
+           "foobarbaz",
+           "migration",
+           "migration/",
+           "migration/foo",
+           "migration/foo/bar",
+           "migration/foo/bar/baz",
+           "migration/foo/bar/baz/qux",
+           // Valid label/uuid but bogus revision (non-numerical). Include
+           // cases for common pitfalls when parsing integers.
+           "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/abc",
+           "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/abc21",
+           "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/21abc",
+           // Valid label/uuid/revision but too many path components.
+           "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/21/qux",
+         }) {
+        const auto tmp = topic_mount_manifest_path::parse(path);
+        ASSERT_FALSE(tmp.has_value()) << fmt::format(
+          R"(Expected to fail parsing "{}" but parsed as "{}")",
+          path,
+          ss::sstring(*tmp));
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

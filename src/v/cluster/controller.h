@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cloud_storage/fwd.h"
 #include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
@@ -33,6 +32,10 @@
 
 #include <chrono>
 #include <vector>
+
+namespace cloud_storage {
+class topic_mount_handler;
+}
 
 namespace cluster {
 
@@ -326,6 +329,7 @@ private:
     ss::sharded<client_quota::store> _quota_store;       // instance per core
     ss::sharded<client_quota::backend> _quota_backend;   // single instance
     ss::sharded<data_migrations::worker> _data_migration_worker;
+    ss::sharded<cloud_storage::topic_mount_handler> _topic_mount_handler;
     ssx::single_sharded<data_migrations::backend> _data_migration_backend;
     ss::sharded<data_migrations::irpc_frontend> _data_migration_irpc_frontend;
     ss::gate _gate;
