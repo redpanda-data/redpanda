@@ -36,7 +36,9 @@ TS_LOG_ALLOW_LIST = [
     # v23.2.x specific log
     re.compile(".*archival_metadata_stm.*Can't apply override"),
     # topic deletion may happen before data were uploaded
-    re.compile(".*cloud_storage.*Failed to fetch manifest during finalize().*")
+    re.compile(".*cloud_storage.*Failed to fetch manifest during finalize().*"
+               ),
+    re.compile(".*archival -.* System error during SSL read:.*")
 ]
 
 
