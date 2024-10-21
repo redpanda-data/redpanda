@@ -24,7 +24,7 @@ class struct_converter;
 
 class arrow_translator {
 public:
-    explicit arrow_translator(iceberg::struct_type schema);
+    explicit arrow_translator(const iceberg::struct_type& schema);
 
     ~arrow_translator();
 

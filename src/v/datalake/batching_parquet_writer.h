@@ -40,7 +40,7 @@ namespace datalake {
 class batching_parquet_writer : public data_writer {
 public:
     batching_parquet_writer(
-      iceberg::struct_type schema,
+      const iceberg::struct_type& schema,
       size_t row_count_threshold,
       size_t byte_count_threshold,
       local_path output_file_path);
@@ -87,7 +87,7 @@ public:
       size_t byte_count_threshold);
 
     ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
-    create_writer(iceberg::struct_type schema) override;
+    create_writer(const iceberg::struct_type& schema) override;
 
 private:
     local_path create_filename() const;

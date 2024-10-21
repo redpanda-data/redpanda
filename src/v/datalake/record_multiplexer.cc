@@ -107,8 +107,7 @@ record_multiplexer::get_writer() {
     if (!_writer) {
         auto& translator = get_translator();
         auto schema = translator.get_schema();
-        auto writer_result = co_await _writer_factory->create_writer(
-          std::move(schema));
+        auto writer_result = co_await _writer_factory->create_writer(schema);
         if (!writer_result.has_value()) {
             co_return writer_result.error();
         }
