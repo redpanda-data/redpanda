@@ -4623,7 +4623,8 @@ public:
 
     size_t max_step_size() const {
         fragmented_vector<size_t> diffs;
-        auto& pos = _index._state.position_index;
+        chunked_vector<uint64_t> pos
+          = _index._state.index.copy_position_index();
         diffs.reserve(pos.size() + 1);
         std::adjacent_difference(
           pos.begin(), pos.end(), std::back_inserter(diffs));
