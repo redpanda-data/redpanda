@@ -80,7 +80,7 @@ class Finjector:
             self.enable_loop = True
             f_injector = make_failure_injector(self.redpanda)
             self.finjector_thread = threading.Thread(
-                target=self._failure_injector_loop, args=(f_injector))
+                target=self._failure_injector_loop, args=(f_injector, ))
             self.finjector_thread.start()
             yield
         finally:
@@ -136,7 +136,7 @@ class Finjector:
 
             delay = self.failure_delay_provier()
             if f_injector.cnt_in_flight() >= self.max_concurrent_failures:
-                delay = max(delay, f_injector.time_till_next_recovery)
+                delay = max(delay, f_injector.time_till_next_recovery())
             self.redpanda.logger.info(
                 f"waiting {delay} seconds before next failure")
             time.sleep(delay)
