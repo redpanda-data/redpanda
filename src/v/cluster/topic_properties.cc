@@ -17,7 +17,7 @@ namespace cluster {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
+      "{{ compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
       "read_replica: {}, read_replica_bucket: {}, "
@@ -40,7 +40,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "flush_ms: {}, "
       "flush_bytes: {}, "
       "remote_label: {}, iceberg_enabled: {}, "
-      "leaders_preference: {}",
+      "leaders_preference: {} ",
+      "iceberg_translation_interval_ms: {} ",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -75,7 +76,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.flush_bytes,
       properties.remote_label,
       properties.iceberg_enabled,
-      properties.leaders_preference);
+      properties.leaders_preference,
+      properties.iceberg_translation_interval_ms);
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         fmt::print(
@@ -86,7 +88,6 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
 
     return o;
 }
-
 bool topic_properties::is_compacted() const {
     if (!cleanup_policy_bitflags) {
         return false;
@@ -121,7 +122,8 @@ bool topic_properties::has_overrides() const {
         || write_caching.has_value() || flush_ms.has_value()
         || flush_bytes.has_value() || remote_label.has_value()
         || (iceberg_enabled != storage::ntp_config::default_iceberg_enabled)
-        || leaders_preference.has_value();
+        || leaders_preference.has_value()
+        || iceberg_translation_interval_ms.has_value();
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         return overrides
@@ -163,6 +165,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.flush_bytes = flush_bytes;
     ret.iceberg_enabled = iceberg_enabled;
     ret.cloud_topic_enabled = cloud_topic_enabled;
+    ret.iceberg_translation_interval_ms = iceberg_translation_interval_ms;
     return ret;
 }
 
@@ -253,7 +256,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       false,
       std::nullopt,
-      false};
+      false,
+      std::nullopt};
 }
 
 } // namespace reflection

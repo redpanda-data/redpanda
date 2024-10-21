@@ -106,11 +106,16 @@ redpanda_cc_library(
     include_prefix = "datalake",
     visibility = ["//visibility:public"],
     deps = [
+        ":cloud_data_io",
         ":logger",
         ":types",
         "//src/v/base",
         "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:chunked_hash_map",
         "//src/v/datalake/coordinator:frontend",
+        "//src/v/datalake/translation:partition_translator",
+        "//src/v/features",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/serde",
@@ -176,5 +181,32 @@ redpanda_cc_library(
     deps = [
         "//src/v/utils:named_type",
         "@fmt",
+    ],
+)
+
+redpanda_cc_library(
+    name = "cloud_data_io",
+    srcs = [
+        "cloud_data_io.cc",
+    ],
+    hdrs = [
+        "cloud_data_io.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":base_types",
+        ":logger",
+        "//src/v/base",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/utils:lazy_abort_source",
+        "//src/v/utils:named_type",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/utils:stream_provider",
+        "@fmt",
+        "@seastar",
     ],
 )

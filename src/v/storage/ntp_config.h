@@ -80,6 +80,8 @@ public:
         std::optional<size_t> flush_bytes;
         bool iceberg_enabled{default_iceberg_enabled};
         bool cloud_topic_enabled{default_cloud_topic_enabled};
+        std::optional<std::chrono::milliseconds>
+          iceberg_translation_interval_ms{std::nullopt};
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -317,6 +319,14 @@ public:
         }
         return _overrides ? _overrides->cloud_topic_enabled
                           : default_cloud_topic_enabled;
+    }
+    std::chrono::milliseconds iceberg_translation_interval_ms() const {
+        auto default_value
+          = config::shard_local_cfg().iceberg_translation_interval_ms_default();
+        return _overrides
+                 ? _overrides->iceberg_translation_interval_ms.value_or(
+                     default_value)
+                 : default_value;
     }
 
 private:

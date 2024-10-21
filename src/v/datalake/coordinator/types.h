@@ -18,19 +18,23 @@
 
 namespace datalake::coordinator {
 
-struct translated_data_file_entry
-  : serde::envelope<
-      translated_data_file_entry,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    model::topic_partition tp;
-
-    // Translated data files, expected to be contiguous, with no gaps or
-    // overlaps, ordered in increasing offset order.
-    chunked_vector<translated_offset_range> translated_ranges;
-
-    auto serde_fields() { return std::tie(tp, translated_ranges); }
+enum class errc : int16_t {
+    ok,
+    coordinator_topic_not_exists,
+    not_leader,
+    timeout,
+    fenced,
+    stale,
+    concurrent_requests,
 };
+
+constexpr bool is_retriable(errc errc) {
+    return errc == errc::coordinator_topic_not_exists
+           || errc == errc::not_leader || errc == errc::timeout
+           || errc == errc::concurrent_requests;
+}
+
+std::ostream& operator<<(std::ostream&, const errc&);
 
 struct add_translated_data_files_reply
   : serde::envelope<
@@ -40,10 +44,13 @@ struct add_translated_data_files_reply
     using rpc_adl_exempt = std::true_type;
 
     add_translated_data_files_reply() = default;
-    explicit add_translated_data_files_reply(coordinator_errc err)
+    explicit add_translated_data_files_reply(errc err)
       : errc(err) {}
 
-    coordinator_errc errc;
+    friend std::ostream&
+    operator<<(std::ostream&, const add_translated_data_files_reply&);
+
+    errc errc;
 
     auto serde_fields() { return std::tie(errc); }
 };
@@ -58,12 +65,27 @@ struct add_translated_data_files_request
     add_translated_data_files_request() = default;
 
     model::topic_partition tp;
-    chunked_vector<translated_data_file_entry> files;
+    // Translated data files, expected to be contiguous, with no gaps or
+    // overlaps, ordered in increasing offset order.
+    chunked_vector<translated_offset_range> ranges;
     model::term_id translator_term;
+
+    add_translated_data_files_request copy() const {
+        add_translated_data_files_request result;
+        result.tp = tp;
+        for (auto& range : ranges) {
+            result.ranges.push_back(range.copy());
+        }
+        result.translator_term = translator_term;
+        return result;
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const add_translated_data_files_request&);
 
     const model::topic_partition& topic_partition() const { return tp; }
 
-    auto serde_fields() { return std::tie(tp, files, translator_term); }
+    auto serde_fields() { return std::tie(tp, ranges, translator_term); }
 };
 
 struct fetch_latest_data_file_reply
@@ -74,17 +96,20 @@ struct fetch_latest_data_file_reply
     using rpc_adl_exempt = std::true_type;
 
     fetch_latest_data_file_reply() = default;
-    explicit fetch_latest_data_file_reply(coordinator_errc err)
+    explicit fetch_latest_data_file_reply(errc err)
       : errc(err) {}
     explicit fetch_latest_data_file_reply(std::optional<kafka::offset> o)
       : last_added_offset(o)
-      , errc(coordinator_errc::ok) {}
+      , errc(errc::ok) {}
 
     // The offset of the latest data file added to the coordinator.
     std::optional<kafka::offset> last_added_offset;
 
     // If not ok, the request processing has a problem.
-    coordinator_errc errc;
+    errc errc;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const fetch_latest_data_file_reply&);
 
     auto serde_fields() { return std::tie(last_added_offset, errc); }
 };
@@ -102,6 +127,9 @@ struct fetch_latest_data_file_request
     model::topic_partition tp;
 
     const model::topic_partition& topic_partition() const { return tp; }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const fetch_latest_data_file_request&);
 
     auto serde_fields() { return std::tie(tp); }
 };

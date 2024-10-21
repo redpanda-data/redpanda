@@ -86,11 +86,13 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/coordinator_manager.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/service.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/datalake_manager.h"
+#include "datalake/translation/state_machine.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
@@ -1983,9 +1985,8 @@ void application::wire_up_redpanda_services(
           "cloud topics currently requires archival storage to be enabled");
         construct_service(_reconciler, &partition_manager, &cloud_io).get();
     }
+
     if (datalake_enabled()) {
-        // Construct datalake subsystems, now that dependencies are
-        // already constructed.
         syschecks::systemd_message("Starting datalake services").get();
         construct_service(
           _datalake_coordinator_mgr,
@@ -1994,6 +1995,10 @@ void application::wire_up_redpanda_services(
           std::ref(partition_manager),
           std::ref(cloud_io),
           cloud_configs.local().bucket_name)
+          .get();
+        ;
+        _datalake_coordinator_mgr
+          .invoke_on_all(&datalake::coordinator::coordinator_manager::start)
           .get();
         construct_service(
           _datalake_coordinator_fe,
@@ -2004,7 +2009,8 @@ void application::wire_up_redpanda_services(
           &controller->get_topics_frontend(),
           &metadata_cache,
           &controller->get_partition_leaders(),
-          &controller->get_shard_table())
+          &controller->get_shard_table(),
+          &_connection_cache)
           .get();
 
         construct_service(
@@ -2016,10 +2022,15 @@ void application::wire_up_redpanda_services(
           &controller->get_topics_frontend(),
           &controller->get_partition_leaders(),
           &controller->get_shard_table(),
+          &feature_table,
           &_datalake_coordinator_fe,
+          &cloud_io,
           &_as,
+          cloud_configs.local().bucket_name,
           sched_groups.datalake_sg(),
           memory_groups().datalake_max_memory())
+          .get();
+        _datalake_manager.invoke_on_all(&datalake::datalake_manager::start)
           .get();
     }
 
@@ -2923,6 +2934,7 @@ void application::start_runtime_services(
             storage.local().kvs(),
             config::shard_local_cfg().rm_sync_timeout_ms.bind());
           pm.register_factory<datalake::coordinator::stm_factory>();
+          pm.register_factory<datalake::translation::stm_factory>();
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

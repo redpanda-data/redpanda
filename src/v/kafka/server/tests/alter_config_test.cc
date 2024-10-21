@@ -431,6 +431,7 @@ FIXTURE_TEST(
       "flush.bytes",
       "redpanda.iceberg.enabled",
       "redpanda.leaders.preference",
+      "redpanda.iceberg.translation.interval.ms",
     };
 
     // All properties_request
