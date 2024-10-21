@@ -14,7 +14,7 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "bytes/iobuf.h"
-#include "cloud_topics/batcher/write_request.h"
+#include "cloud_topics/core/write_request.h"
 #include "cloud_topics/types.h"
 #include "config/property.h"
 #include "model/fundamental.h"
@@ -101,7 +101,7 @@ private:
     struct size_limited_write_req_list {
         /// Write requests list which are ready for
         /// upload or expired.
-        details::write_request_list<Clock> ready;
+        core::write_request_list<Clock> ready;
         /// If the batcher contains more write requests which
         /// were not included because the size limit was reached
         /// this field will be set to false.
@@ -139,12 +139,11 @@ private:
     ss::abort_source _as;
 
     // List of new write requests
-    details::write_request_list<Clock> _pending;
+    core::write_request_list<Clock> _pending;
 
     static constexpr size_t max_buffer_size = 16_MiB;
     static constexpr size_t max_cardinality = 1000;
 
-    details::batcher_req_index _index{0};
     size_t _current_size{0};
     basic_retry_chain_node<Clock> _rtc;
     basic_retry_chain_logger<Clock> _logger;

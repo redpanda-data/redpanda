@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/batcher/write_request.h"
+#include "cloud_topics/core/write_request.h"
 #include "model/namespace.h"
 
 #include <seastar/core/manual_clock.hh>
@@ -20,11 +20,8 @@
 namespace cloud_topics = experimental::cloud_topics;
 
 TEST(WriteRequestTest, Expiration) {
-    cloud_topics::details::write_request<ss::manual_clock> req(
-      model::kvstore_ntp(ss::shard_id(0)),
-      cloud_topics::details::batcher_req_index(0),
-      {},
-      std::chrono::milliseconds(100));
+    cloud_topics::core::write_request<ss::manual_clock> req(
+      model::kvstore_ntp(ss::shard_id(0)), {}, std::chrono::milliseconds(100));
     ASSERT_FALSE(req.has_expired());
     ss::manual_clock::advance(std::chrono::milliseconds(10));
     ASSERT_FALSE(req.has_expired());

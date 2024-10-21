@@ -8,12 +8,12 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/core/serializer.h"
 
 #include "model/timeout_clock.h"
 #include "storage/record_batch_utils.h"
 
-namespace experimental::cloud_topics::details {
+namespace experimental::cloud_topics::core {
 
 lw_placeholder::lw_placeholder(
   int32_t num_records,
@@ -66,4 +66,4 @@ serialize_in_memory_record_batch_reader(model::record_batch_reader rdr) {
       serializing_consumer{}, model::no_timeout);
 }
 
-} // namespace experimental::cloud_topics::details
+} // namespace experimental::cloud_topics::core

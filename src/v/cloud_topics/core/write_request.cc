@@ -8,21 +8,17 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/batcher/write_request.h"
+#include "cloud_topics/core/write_request.h"
 
-#include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/core/serializer.h"
 #include "cloud_topics/logger.h"
 
-namespace experimental::cloud_topics::details {
+namespace experimental::cloud_topics::core {
 
 template<class Clock>
 write_request<Clock>::write_request(
-  model::ntp ntp,
-  batcher_req_index index,
-  serialized_chunk chunk,
-  std::chrono::milliseconds timeout)
+  model::ntp ntp, serialized_chunk chunk, std::chrono::milliseconds timeout)
   : ntp(std::move(ntp))
-  , index(index)
   , data_chunk(std::move(chunk))
   , ingestion_time(Clock::now())
   , expiration_time(Clock::now() + timeout) {}
@@ -62,4 +58,4 @@ bool write_request<Clock>::has_expired() const noexcept {
 
 template struct write_request<ss::lowres_clock>;
 template struct write_request<ss::manual_clock>;
-} // namespace experimental::cloud_topics::details
+} // namespace experimental::cloud_topics::core

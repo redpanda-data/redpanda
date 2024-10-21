@@ -143,7 +143,6 @@ TEST_CORO(batcher_test, single_write_request) {
     const auto timeout = 1s;
     auto fut = batcher.write_and_debounce(
       model::controller_ntp, std::move(reader), timeout);
-
     // Make sure the write request is in the _pending list
     co_await sleep_until(
       10ms, [&] { return accessor.write_requests_pending(1); });

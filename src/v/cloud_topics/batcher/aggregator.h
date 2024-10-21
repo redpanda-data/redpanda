@@ -11,7 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cloud_topics/batcher/write_request.h"
+#include "cloud_topics/core/write_request.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/types.h"
 #include "container/fragmented_vector.h"
@@ -22,7 +22,7 @@
 
 #include <absl/container/btree_map.h>
 
-namespace experimental::cloud_topics::details {
+namespace experimental::cloud_topics {
 
 /// List of placeholder batches that has to be propagated
 /// to the particular write request.
@@ -31,7 +31,7 @@ struct batches_for_req {
     /// Generated placeholder batches
     ss::circular_buffer<model::record_batch> placeholders;
     /// Source write request
-    ss::weak_ptr<write_request<Clock>> ref;
+    ss::weak_ptr<core::write_request<Clock>> ref;
 };
 
 // This component aggregates a bunch of write
@@ -53,7 +53,7 @@ public:
     /// included into L0 object. The size value returned by
     /// the 'size_bytes' call will not match the actual size
     /// of the object.
-    void add(write_request<Clock>& req);
+    void add(core::write_request<Clock>& req);
 
     /// Estimate L0 object size
     size_t size_bytes() const noexcept;
@@ -77,11 +77,12 @@ private:
     iobuf get_stream();
 
     object_id _id;
+
     /// Source data for the aggregator
-    absl::btree_map<model::ntp, write_request_list<Clock>> _staging;
+    absl::btree_map<model::ntp, core::write_request_list<Clock>> _staging;
     /// Prepared placeholders
     chunked_vector<std::unique_ptr<batches_for_req<Clock>>> _aggregated;
     size_t _size_bytes{0};
 };
 
-} // namespace experimental::cloud_topics::details
+} // namespace experimental::cloud_topics

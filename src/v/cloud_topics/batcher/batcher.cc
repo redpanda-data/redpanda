@@ -13,7 +13,7 @@
 #include "base/unreachable.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/batcher/aggregator.h"
-#include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/core/serializer.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
@@ -89,7 +89,7 @@ batcher<Clock>::get_write_requests(size_t max_bytes) {
 
 template<class Clock>
 void batcher<Clock>::remove_timed_out_write_requests() {
-    chunked_vector<ss::weak_ptr<details::write_request<Clock>>> expired;
+    chunked_vector<ss::weak_ptr<core::write_request<Clock>>> expired;
     for (auto& wr : _pending) {
         if (wr.has_expired()) {
             expired.push_back(wr.weak_from_this());
@@ -220,7 +220,7 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
             co_return true;
         }
 
-        details::aggregator<Clock> aggregator;
+        aggregator<Clock> aggregator;
         while (!list.ready.empty()) {
             auto& wr = list.ready.back();
             wr._hook.unlink();
@@ -305,16 +305,15 @@ batcher<Clock>::write_and_debounce(
   model::record_batch_reader reader,
   std::chrono::milliseconds timeout) {
     auto h = _gate.hold();
-    auto index = _index++;
     // The write request is stored on the stack of the
     // fiber until the 'response' promise is set. The
     // promise can be set by any fiber that uploaded the
     // data from the write request.
-    auto data_chunk = co_await details::serialize_in_memory_record_batch_reader(
+    auto data_chunk = co_await core::serialize_in_memory_record_batch_reader(
       std::move(reader));
     _current_size += data_chunk.payload.size_bytes();
-    details::write_request<Clock> request(
-      std::move(ntp), index, std::move(data_chunk), timeout);
+    core::write_request<Clock> request(
+      std::move(ntp), std::move(data_chunk), timeout);
     auto fut = request.response.get_future();
     _pending.push_back(request);
     if (_current_size > 10_MiB) { // NOLINT
