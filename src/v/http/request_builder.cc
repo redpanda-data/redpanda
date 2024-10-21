@@ -34,7 +34,7 @@ namespace http {
 request_builder& request_builder::host(std::string_view host) {
     _url = ada::parse<ada::url_aggregator>(host);
     if (!_url) {
-        _error = fmt::format("failed to parse host: {}", host);
+        _error = url_build_error{fmt::format("failed to parse host: {}", host)};
     } else {
         // Mark url state as good, the default state is that the host is not set
         _error = std::nullopt;

@@ -28,16 +28,6 @@ using base_path = named_type<ss::sstring, struct base_path_t>;
 using prefix_path = named_type<ss::sstring, struct prefix_t>;
 using api_version = named_type<ss::sstring, struct api_version_t>;
 
-// A client source generates low level http clients for the catalog client to
-// make API calls with. Once a generic http client pool is implemented, it can
-// use the same interface and hand out client leases instead of unique ptrs.
-struct client_source {
-    // A client returned by this method call is owned by the caller. It should
-    // be shut down after use by the caller.
-    virtual std::unique_ptr<http::abstract_client> acquire() = 0;
-    virtual ~client_source() = default;
-};
-
 // Holds parts of a root path used by catalog client
 struct path_components {
     path_components(
@@ -87,7 +77,7 @@ public:
     /// if valid. If expired, a new one will be acquired \param retry_policy a
     /// retry policy used to determine how failing calls will be retried
     catalog_client(
-      client_source& client_source,
+      std::unique_ptr<http::abstract_client> client,
       ss::sstring endpoint,
       credentials credentials,
       std::optional<base_path> base_path = std::nullopt,
@@ -118,7 +108,7 @@ private:
       http::request_builder request_builder,
       std::optional<iobuf> payload = std::nullopt);
 
-    std::reference_wrapper<client_source> _client_source;
+    std::unique_ptr<http::abstract_client> _http_client;
     ss::sstring _endpoint;
     credentials _credentials;
     path_components _path_components;

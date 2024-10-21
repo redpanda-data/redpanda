@@ -55,6 +55,7 @@ v_cc_library(
     struct_accessor.cc
     table_io.cc
     table_metadata_json.cc
+    table_requests_json.cc
     table_update_applier.cc
     time_transform_visitor.cc
     transaction.cc
@@ -68,6 +69,8 @@ v_cc_library(
     rest_client/parsers.cc
     rest_client/retry_policy.cc
     rest_client/catalog_client.cc
+    rest_client/entities.cc
+    rest_client/types.cc
   DEPS
     Avro::avro
     v::bytes

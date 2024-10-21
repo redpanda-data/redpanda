@@ -4,12 +4,16 @@ package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 redpanda_cc_library(
     name = "rest_client_types",
+    srcs = [
+        "types.cc",
+    ],
     hdrs = [
         "types.h",
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
         "//src/v/base",
+        "//src/v/http:request_builder",
         "//src/v/thirdparty/ada",
         "//src/v/utils:named_type",
         "@boost//:beast",
@@ -28,6 +32,8 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     deps = [
         ":rest_client_types",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/iceberg:table_metadata_json",
         "//src/v/json",
         "//src/v/utils:named_type",
     ],
@@ -46,6 +52,22 @@ redpanda_cc_library(
         ":rest_client_types",
         "//src/v/http",
         "//src/v/net",
+    ],
+)
+
+redpanda_cc_library(
+    name = "entities",
+    srcs = [
+        "entities.cc",
+    ],
+    hdrs = [
+        "entities.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/http:rest_entity",
+        "//src/v/ssx:sformat",
     ],
 )
 

@@ -52,7 +52,7 @@ expected<json::Document> parse_json(iobuf&& raw_response) {
 }
 
 catalog_client::catalog_client(
-  client_source& client_source,
+  std::unique_ptr<http::abstract_client> http_client,
   ss::sstring endpoint,
   credentials credentials,
   std::optional<base_path> base_path,
@@ -60,7 +60,7 @@ catalog_client::catalog_client(
   std::optional<api_version> api_version,
   std::optional<oauth_token> token,
   std::unique_ptr<retry_policy> retry_policy)
-  : _client_source{client_source}
+  : _http_client(std::move(http_client))
   , _endpoint{std::move(endpoint)}
   , _credentials{std::move(credentials)}
   , _path_components{std::move(base_path), std::move(prefix), std::move(api_version)}
@@ -123,11 +123,9 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
 
     std::vector<http_call_error> retriable_errors{};
 
-    auto client_ptr = _client_source.get().acquire();
     while (true) {
         const auto permit = rtc.retry();
         if (!permit.is_allowed) {
-            co_await client_ptr->shutdown_and_stop();
             co_return tl::unexpected(
               retries_exhausted{.errors = std::move(retriable_errors)});
         }
@@ -137,30 +135,22 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
             request_payload.emplace(payload->copy());
         }
         auto response_f = co_await ss::coroutine::as_future(
-          client_ptr->request_and_collect_response(
+          _http_client->request_and_collect_response(
             std::move(request.value()), std::move(request_payload)));
         auto call_res = _retry_policy->should_retry(std::move(response_f));
 
         if (call_res.has_value()) {
-            co_await client_ptr->shutdown_and_stop();
             co_return std::move(call_res->body);
         }
 
         auto& error = call_res.error();
         if (!error.can_be_retried) {
-            co_await client_ptr->shutdown_and_stop();
             co_return tl::unexpected(std::move(error.err));
-        }
-
-        if (error.is_transport_error()) {
-            co_await client_ptr->shutdown_and_stop();
-            client_ptr = _client_source.get().acquire();
         }
 
         retriable_errors.emplace_back(std::move(error.err));
         co_await ss::sleep_abortable(permit.delay, rtc.root_abort_source());
     }
-    co_await client_ptr->shutdown_and_stop();
 }
 
 path_components::path_components(
