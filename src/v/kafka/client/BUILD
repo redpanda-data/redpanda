@@ -97,3 +97,28 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "record_batcher",
+    srcs = [
+        "logger.h",
+        "record_batcher.cc",
+    ],
+    hdrs = [
+        "record_batcher.h",
+    ],
+    implementation_deps = [
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:human",
+        "//src/v/utils:truncating_logger",
+        "@abseil-cpp//absl/algorithm:container",
+    ],
+    include_prefix = "kafka/client",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "@seastar",
+    ],
+)

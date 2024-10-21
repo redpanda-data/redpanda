@@ -24,6 +24,4 @@ std::string get_message_body(iobuf);
 
 model::transform_name random_transform_name(size_t len = 12);
 
-iobuf random_length_iobuf(size_t data_max);
-
 } // namespace transform::logging::testing

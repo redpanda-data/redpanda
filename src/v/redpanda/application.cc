@@ -1813,7 +1813,11 @@ void application::wire_up_redpanda_services(
 
     syschecks::systemd_message("Creating auditing subsystem").get();
     construct_service(
-      audit_mgr, controller.get(), std::ref(*_audit_log_client_config))
+      audit_mgr,
+      node_id,
+      controller.get(),
+      std::ref(*_audit_log_client_config),
+      &metadata_cache)
       .get();
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
