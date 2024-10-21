@@ -214,3 +214,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "when_all",
+    hdrs = [
+        "when_all.h",
+    ],
+    include_prefix = "ssx",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/serde",
+        "@seastar",
+    ],
+)
