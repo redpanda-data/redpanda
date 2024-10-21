@@ -12,12 +12,12 @@
 
 #include "base/seastarx.h"
 #include "http/request_builder.h"
+#include "thirdparty/ada/ada.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 
-#include <ada/expected.h>
 #include <boost/beast/http/status.hpp>
 
 namespace iceberg::rest_client {
