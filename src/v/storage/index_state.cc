@@ -61,7 +61,7 @@ index_columns::position_upper_bound(uint64_t needle) const noexcept {
       std::begin(_position_index),
       std::end(_position_index),
       needle,
-      std::less<uint32_t>());
+      std::less<uint64_t>());
     if (it == std::end(_position_index)) {
         return std::nullopt;
     }
