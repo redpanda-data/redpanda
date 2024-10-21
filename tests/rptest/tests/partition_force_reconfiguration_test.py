@@ -433,6 +433,23 @@ class NodeWiseRecoveryTest(RedpandaTest):
         self.producer.clean()
         self.producer.free()
 
+    def wait_for_final_manifest_uploads(self, topic):
+        def all_uploaded():
+            for p in self.rpk.describe_topic(topic):
+                status = self.admin.get_partition_cloud_storage_status(
+                    topic=topic,
+                    partition=p.id,
+                    node=self.redpanda.get_node_by_id(p.leader))
+                if ("ms_since_last_manifest_upload"
+                        not in status) or status["metadata_update_pending"]:
+                    return False
+            return True
+
+        wait_until(all_uploaded,
+                   timeout_sec=self.default_timeout_sec,
+                   backoff_sec=1,
+                   err_msg="Error waiting for partition manifests upload")
+
     @cluster(num_nodes=6)
     @matrix(dead_node_count=[1, 2])
     def test_node_wise_recovery(self, dead_node_count):
@@ -464,7 +481,8 @@ class NodeWiseRecoveryTest(RedpandaTest):
         ]
         for t in topics:
             self.produce_until_segments_removed(t.name)
-        self.redpanda.wait_for_manifest_uploads()
+        for t in topics:
+            self.wait_for_final_manifest_uploads(t.name)
 
         partitions_lost_majority = admin.get_majority_lost_partitions_from_nodes(
             dead_brokers=to_kill_node_ids)
