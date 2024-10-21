@@ -9,7 +9,6 @@
 #pragma once
 
 #include "datalake/data_writer_interface.h"
-#include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 

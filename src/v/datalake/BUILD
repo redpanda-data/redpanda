@@ -78,9 +78,15 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "writer",
+    srcs = [
+        "data_writer_interface.cc",
+    ],
     hdrs = [
         "data_writer_interface.h",
         "schemaless_translator.h",
+    ],
+    implementation_deps = [
+        "@fmt",
     ],
     include_prefix = "datalake",
     visibility = [":__subpackages__"],

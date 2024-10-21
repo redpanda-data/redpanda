@@ -66,6 +66,20 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "test_data_writer",
+    hdrs = [
+        "test_data_writer.h",
+    ],
+    include_prefix = "datalake/tests",
+    deps = [
+        "//src/v/datalake:writer",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "datalake_protobuf_test",
     timeout = "short",
