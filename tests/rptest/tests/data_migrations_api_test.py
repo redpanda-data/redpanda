@@ -747,7 +747,14 @@ class DataMigrationsApiTest(RedpandaTest):
         self.assert_no_topics()
 
     @ignore
-    @cluster(num_nodes=4, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    @cluster(
+        num_nodes=4,
+        log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
+            # dropping a topic while transferring its leadership
+            '/transfer_leadership\] reason - seastar::abort_requested_exception',
+            '/transfer_leadership\] reason - seastar::broken_named_semaphore',
+            '/transfer_leadership\] reason - seastar::gate_closed_exception',
+        ])
     @matrix(transfer_leadership=[True, False],
             params=generate_tmptpdi_params())
     def test_migrated_topic_data_integrity(self, transfer_leadership: bool,
