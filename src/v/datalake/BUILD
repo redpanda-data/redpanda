@@ -30,6 +30,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "schema_identifier",
+    hdrs = [
+        "schema_identifier.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/pandaproxy",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_protobuf",
     srcs = [
         "schema_protobuf.cc",
