@@ -402,8 +402,13 @@ class StatusThread(threading.Thread):
     def _ingest_status(self, worker_statuses):
         self.logger.debug(f"{self.who_am_i} status: {worker_statuses}")
         reduced = self._status_cls(**worker_statuses[0])
+        self.logger.info(
+            f"first args={worker_statuses[0]}, newly created={reduced}")
         for s in worker_statuses[1:]:
             reduced.merge(self._status_cls(**s))
+            self.logger.info(
+                f"args={s}, newly created={self._status_cls(**s)}, reduced={reduced}"
+            )
 
         if self._status_cls == ProduceStatus:
             progress = (worker_statuses[0]['sent'] /
@@ -414,6 +419,9 @@ class StatusThread(threading.Thread):
         else:
             self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
 
+        self.logger.info(
+            f"self={id(self)}, parent={id(self._parent)}, setting parent status"
+        )
         self._parent._status = reduced
 
     def poll_status(self):
@@ -539,6 +547,7 @@ class ConsumerStatus:
         self.active = active
 
     def merge(self, rhs: ConsumerStatus):
+        self.logger.debug(f"merge: {self} + {rhs}")
         self.active = self.active or rhs.active
         self.errors += rhs.errors
         self.validator.merge(rhs.validator)

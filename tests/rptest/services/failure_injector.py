@@ -132,7 +132,8 @@ class FailureInjectorBase:
         return len(self._in_flight)
 
     def time_till_next_recovery(self):
-        return min(run_time for spec, run_time in self._in_flight) - self.now()
+        return min(run_time
+                   for spec, run_time in self._in_flight.items()) - self.now()
 
     @classmethod
     def now(cls):
