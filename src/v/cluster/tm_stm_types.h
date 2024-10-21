@@ -12,6 +12,7 @@
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "utils/log_hist.h"
 namespace cluster {
 
 /*
@@ -364,4 +365,18 @@ struct transaction_metadata_v0 {
         return result;
     };
 };
+
+// probe for transaction metrics
+struct probe {
+    size_t open_transactions{0};
+    size_t committed_transactions{0};
+    size_t aborted_transactions{0};
+    size_t expired_transaction_ids{0};
+    log_hist_tx_participants participants_per_transaction;
+
+    void add_ongoing();
+    void add_committed(size_t num_partitions, size_t num_groups);
+    void add_aborted(size_t num_partitions, size_t num_groups);
+};
+
 } // namespace cluster
