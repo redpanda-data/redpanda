@@ -24,6 +24,7 @@ from ducktape.mark import parametrize
 
 from rptest.services.utils import LogSearchLocal
 from rptest.util import wait_until_result, wait_until
+from rptest.utils.mode_checks import skip_fips_mode
 
 
 class TestMode(IntEnum):
@@ -183,6 +184,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
                 timeout_s=timeout_sec,
                 backoff_s=1))
 
+    @skip_fips_mode
     @cluster(num_nodes=3)
     @parametrize(mode=TestMode.CFG_OVERRIDE)
     @parametrize(mode=TestMode.NO_OVERRIDE)
@@ -309,6 +311,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
                    backoff_sec=1,
                    retry_on_exc=True)
 
+    @skip_fips_mode
     @cluster(num_nodes=3)
     @parametrize(mode=TestMode.CFG_OVERRIDE)
     @parametrize(mode=TestMode.CLI_OVERRIDE)
