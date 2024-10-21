@@ -15,6 +15,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "topic_mount_manifest_path",
+    srcs = [
+        "topic_mount_manifest_path.cc",
+    ],
+    hdrs = [
+        "topic_mount_manifest_path.h",
+    ],
+    include_prefix = "cloud_storage",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "cloud_storage",
     srcs = [
         "access_time_tracker.cc",
@@ -119,6 +137,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":remote_label",
+        ":topic_mount_manifest_path",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",

@@ -18,6 +18,7 @@ v_cc_library(
     cache_probe.cc
     download_exception.cc
     topic_mount_manifest.cc
+    topic_mount_manifest_path.cc
     partition_manifest.cc
     partition_manifest_downloader.cc
     partition_path_utils.cc
