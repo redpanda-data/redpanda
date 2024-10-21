@@ -712,8 +712,6 @@ class DataMigrationsApiTest(RedpandaTest):
         )
         consumer.wait()
         consumer.stop()
-        #self.redpanda.si_settings.set_expected_damage(
-        #    {"ntr_no_topic_manifest", "missing_segments"})
 
     def cancel(self, migration_id, topic_name):
         admin = Admin(self.redpanda)
