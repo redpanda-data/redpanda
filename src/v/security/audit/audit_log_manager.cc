@@ -18,7 +18,7 @@
 #include "config/configuration.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
-#include "kafka/client/record_batcher.h"
+#include "kafka/data/record_batcher.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_response.h"
 #include "kafka/protocol/topic_properties.h"
@@ -633,7 +633,7 @@ ss::future<> audit_sink::publish_app_lifecycle_event(
     iobuf b;
     b.append(as_json.c_str(), as_json.size());
     auto batch
-      = kafka::client::
+      = kafka::data::
           record_batcher{config::shard_local_cfg().kafka_batch_max_bytes(), &adtlog}
             .make_batch_of_one(std::nullopt, std::move(b));
     chunked_vector<partition_batch> rs;
@@ -944,7 +944,7 @@ ss::future<> audit_log_manager::drain() {
       _queue.size());
 
     /// Combine all queued audit msgs into record_batches
-    kafka::client::record_batcher batcher{
+    kafka::data::record_batcher batcher{
       config::shard_local_cfg().kafka_batch_max_bytes(), &adtlog};
 
     auto records = std::exchange(_queue, underlying_t{});

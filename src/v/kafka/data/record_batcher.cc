@@ -17,7 +17,7 @@
 #include "storage/record_batch_builder.h"
 #include "utils/human.h"
 
-namespace kafka::client {
+namespace kafka::data {
 
 namespace detail {
 class batcher_impl {
@@ -26,7 +26,7 @@ public:
     explicit batcher_impl(
       size_t batch_max_bytes, std::optional<ss::logger*> log)
       : _batch_max_bytes(batch_max_bytes)
-      , _log(log.value_or(&kclog)) {
+      , _log(log.value_or(&kdlog)) {
         vassert(_log != nullptr, "Injected logger must not be nullptr");
     }
     ~batcher_impl() = default;
@@ -152,4 +152,4 @@ ss::chunked_fifo<model::record_batch> record_batcher::finish() {
     return _impl->finish();
 }
 
-} // namespace kafka::client
+} // namespace kafka::data
