@@ -63,6 +63,31 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partitioning_writer",
+    srcs = [
+        "partitioning_writer.cc",
+    ],
+    hdrs = [
+        "partitioning_writer.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":table_definition",
+        "//src/v/base",
+        "//src/v/iceberg:struct_accessor",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":writer",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:partition_key",
+        "//src/v/iceberg:values",
+    ],
+)
+
+redpanda_cc_library(
     name = "types",
     hdrs = [
         "errors.h",

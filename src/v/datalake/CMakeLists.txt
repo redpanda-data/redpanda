@@ -24,6 +24,7 @@ v_cc_library(
     schema_registry.cc
     schemaless_translator.cc
     schema_protobuf.cc
+    partitioning_writer.cc
     protobuf_utils.cc
     values_protobuf.cc
     base_types.cc

@@ -36,14 +36,15 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
-  BINARY_NAME parquet_writer_test
-  SOURCES parquet_writer_test.cc
+  BINARY_NAME datalake
+  SOURCES
+    parquet_writer_test.cc
+    partitioning_writer_test.cc
   LIBRARIES
     v::gtest_main
     v::datalake
     v::iceberg_test_utils
   LABELS datalake
-  ARGS "-- -c 1"
 )
 
 set(PROTO_FILES
@@ -108,4 +109,3 @@ rp_test(
   LABELS storage
   ARGS "-- -c 1"
 )
-
