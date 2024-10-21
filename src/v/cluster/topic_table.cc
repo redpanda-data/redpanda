@@ -24,6 +24,7 @@
 #include "storage/ntp_config.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
@@ -33,6 +34,61 @@
 #include <vector>
 
 namespace cluster {
+
+namespace {
+enum class properties_source {
+    create,
+    update,
+    snapshot,
+};
+
+std::string_view to_string_view(properties_source ps) {
+    switch (ps) {
+    case properties_source::create:
+        return "created topic";
+    case properties_source::update:
+        return "topic properties update";
+    case properties_source::snapshot:
+        return "topic snapshot";
+    }
+}
+
+void check_cloud_storage_properties(
+  model::topic_namespace_view tp,
+  const topic_properties& props,
+  properties_source ps) {
+    // topic table is materialized on every shard, so only warn on shard 0
+    if (
+      ss::this_shard_id() != 0
+      || !config::shard_local_cfg().cloud_storage_enabled()) {
+        return;
+    }
+
+    auto compute_mode =
+      [mode = props.shadow_indexing]() -> model::shadow_indexing_mode {
+        if (mode.has_value()) {
+            return mode.value();
+        }
+        // TODO(oren): if it's not set, you get the cluster default, but has
+        // that been applied by the time we perform the check?
+        // I don't think so... so we need to compute the mode based on
+        // cluster config I guess?
+        // NOTE(oren): config::cloud_storage_enable_remote_{write,read} only
+        // applies to newly created topics.
+        return model::shadow_indexing_mode::disabled;
+    };
+
+    if (auto mode = compute_mode(); mode != model::shadow_indexing_mode::full) {
+        vlog(
+          clusterlog.warn,
+          "Cloud storage not fully enabled for {}: ns_tp: {{{}}} - si_mode: "
+          "{{{}}}",
+          ps,
+          tp,
+          mode);
+    }
+}
+} // namespace
 
 topic_table::topic_table(
   data_migrations::migrated_resources& migrated_resources)
@@ -62,6 +118,11 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         return ss::make_ready_future<std::error_code>(
           schema_id_validation_validator::ec);
     }
+
+    check_cloud_storage_properties(
+      model::topic_namespace_view{cmd.key},
+      cmd.value.cfg.properties,
+      properties_source::create);
 
     std::optional<model::initial_revision_id> remote_revision
       = cmd.value.cfg.properties.remote_topic_properties
@@ -1036,6 +1097,11 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
         co_return schema_id_validation_validator::ec;
     }
 
+    check_cloud_storage_properties(
+      model::topic_namespace_view{tp->first},
+      updated_properties,
+      properties_source::update);
+
     // Apply the changes
     properties = std::move(updated_properties);
 
@@ -1486,6 +1552,10 @@ ss::future<> topic_table::apply_snapshot(
 
     // Next, go over the new topics set and add state for new topics.
     for (const auto& [ns_tp, topic] : snap.topics) {
+        check_cloud_storage_properties(
+          model::topic_namespace_view{ns_tp},
+          topic.metadata.configuration.properties,
+          properties_source::snapshot);
         if (!_topics.contains(ns_tp)) {
             _topics.emplace(ns_tp, co_await applier.create_topic(ns_tp, topic));
             _topics_map_revision++;
