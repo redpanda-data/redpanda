@@ -63,6 +63,9 @@ inline constexpr std::string_view topic_property_write_caching
 inline constexpr std::string_view topic_property_flush_ms = "flush.ms";
 inline constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
 
+inline constexpr std::string_view topic_property_delete_retention_ms
+  = "delete.retention.ms";
+
 // Server side schema id validation
 inline constexpr std::string_view topic_property_record_key_schema_id_validation
   = "redpanda.key.schema.id.validation";
@@ -122,7 +125,6 @@ inline constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
   "follower.replication.throttled.replicas",
   "flush.messages",
   "file.delete.delay.ms",
-  "delete.retention.ms",
   "preallocate",
 };
 
@@ -152,5 +154,55 @@ to_cluster_type(const creatable_topic& t);
 std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);
+
+// Either parse configuration or return nullopt
+inline std::optional<bool>
+get_bool_value(const config_map_t& config, std::string_view key) {
+    if (auto it = config.find(key); it != config.end()) {
+        try {
+            // Ignore case.
+            auto str_value = it->second;
+            std::transform(
+              str_value.begin(),
+              str_value.end(),
+              str_value.begin(),
+              [](const auto& c) { return std::tolower(c); });
+            return string_switch<std::optional<bool>>(str_value)
+              .match("true", true)
+              .match("false", false);
+        } catch (const std::runtime_error&) {
+            throw boost::bad_lexical_cast();
+        };
+    }
+    return std::nullopt;
+}
+
+inline model::shadow_indexing_mode
+get_shadow_indexing_mode(const config_map_t& config) {
+    auto arch_enabled = get_bool_value(config, topic_property_remote_write);
+    auto si_enabled = get_bool_value(config, topic_property_remote_read);
+
+    // If topic properties are missing, patch them with the cluster config.
+    if (!arch_enabled) {
+        arch_enabled
+          = config::shard_local_cfg().cloud_storage_enable_remote_write();
+    }
+
+    if (!si_enabled) {
+        si_enabled
+          = config::shard_local_cfg().cloud_storage_enable_remote_read();
+    }
+
+    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
+    if (*arch_enabled) {
+        mode = model::shadow_indexing_mode::archival;
+    }
+    if (*si_enabled) {
+        mode = mode == model::shadow_indexing_mode::archival
+                 ? model::shadow_indexing_mode::full
+                 : model::shadow_indexing_mode::fetch;
+    }
+    return mode;
+}
 
 } // namespace kafka

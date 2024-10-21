@@ -288,6 +288,13 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Preferred location (e.g. rack) for partition leaders of this topic."
             ),
+            "delete.retention.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="-1",
+                doc_string=
+                "The retention time for tombstone records in a compacted topic."
+            )
         }
 
         tp_spec = TopicSpec()

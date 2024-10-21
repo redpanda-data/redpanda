@@ -50,6 +50,8 @@ class AlterTopicConfiguration(RedpandaTest):
     @parametrize(property=TopicSpec.PROPERTY_RETENTION_TIME, value=360000)
     @parametrize(property=TopicSpec.PROPERTY_TIMESTAMP_TYPE,
                  value="LogAppendTime")
+    @parametrize(property=TopicSpec.PROPERTY_DELETE_RETENTION_MS,
+                 value=123456789)
     def test_altering_topic_configuration(self, property, value):
         topic = self.topics[0].name
         self.client().alter_topic_configs(topic, {property: value})
@@ -70,7 +72,8 @@ class AlterTopicConfiguration(RedpandaTest):
         kcl.raw_alter_topic_config(
             1, topic, {
                 TopicSpec.PROPERTY_RETENTION_TIME: 360000,
-                TopicSpec.PROPERTY_TIMESTAMP_TYPE: "LogAppendTime"
+                TopicSpec.PROPERTY_TIMESTAMP_TYPE: "LogAppendTime",
+                TopicSpec.PROPERTY_DELETE_RETENTION_MS: 1234567890
             })
         kafka_tools = KafkaCliTools(self.redpanda)
         spec = kafka_tools.describe_topic(topic)
@@ -78,6 +81,7 @@ class AlterTopicConfiguration(RedpandaTest):
         assert spec.replication_factor == 3
         assert spec.retention_ms == 360000
         assert spec.message_timestamp_type == "LogAppendTime"
+        assert spec.delete_retention_ms == 1234567890
 
     @cluster(num_nodes=3)
     def test_altering_multiple_topic_configurations(self):
@@ -87,13 +91,15 @@ class AlterTopicConfiguration(RedpandaTest):
             topic, {
                 TopicSpec.PROPERTY_SEGMENT_SIZE: 1024 * 1024,
                 TopicSpec.PROPERTY_RETENTION_TIME: 360000,
-                TopicSpec.PROPERTY_TIMESTAMP_TYPE: "LogAppendTime"
+                TopicSpec.PROPERTY_TIMESTAMP_TYPE: "LogAppendTime",
+                TopicSpec.PROPERTY_DELETE_RETENTION_MS: 1234567890
             })
         spec = kafka_tools.describe_topic(topic)
 
         assert spec.segment_bytes == 1024 * 1024
         assert spec.retention_ms == 360000
         assert spec.message_timestamp_type == "LogAppendTime"
+        assert spec.delete_retention_ms == 1234567890
 
     def random_string(self, size):
         return ''.join(

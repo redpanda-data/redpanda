@@ -679,6 +679,11 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # to RP's data dir for it to start
                 continue
 
+            if name == 'tombstone_retention_ms':
+                # Don't modify tombstone_retention_ms, leave it as nullopt in case of
+                # cloud storage read/write properties.
+                continue
+
             if name == 'record_key_subject_name_strategy' or name == 'record_value_subject_name_strategy':
                 valid_value = random.choice(
                     [e for e in p['enum_values'] if e != initial_value])

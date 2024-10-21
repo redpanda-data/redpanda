@@ -10,6 +10,7 @@
 
 #include "cluster/config_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/incremental_alter_configs.h"
@@ -361,6 +362,14 @@ create_topic_properties_update(
                 }
                 throw validation_error("Cloud topics is not enabled");
             }
+            if (cfg.name == topic_property_delete_retention_ms) {
+                parse_and_set_tristate(
+                  update.properties.delete_retention_ms,
+                  cfg.value,
+                  op,
+                  delete_retention_ms_validator{});
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(
@@ -416,6 +425,7 @@ inline std::string_view map_config_name(std::string_view input) {
       .match("log.message.timestamp.type", "log_message_timestamp_type")
       .match("log.compression.type", "log_compression_type")
       .match("log.roll.ms", "log_segment_ms")
+      .match("log.cleaner.delete.retention.ms", "tombstone_retention_ms")
       .default_match(input);
 }
 
