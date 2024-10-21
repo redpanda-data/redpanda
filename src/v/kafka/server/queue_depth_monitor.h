@@ -11,23 +11,12 @@
 #pragma once
 #include "base/vlog.h"
 #include "kafka/server/logger.h"
+#include "kafka/server/queue_depth_monitor_config.h"
 #include "utils/queue_depth_control.h"
 
 namespace kafka {
 
 struct qdc_monitor {
-    struct config {
-        double latency_alpha;
-        std::chrono::milliseconds max_latency;
-        size_t window_count;
-        std::chrono::milliseconds window_size;
-        double depth_alpha;
-        size_t idle_depth;
-        size_t min_depth;
-        size_t max_depth;
-        std::chrono::milliseconds depth_update_freq;
-    };
-
     exponential_moving_average<std::chrono::steady_clock::duration> ema;
     queue_depth_control qdc;
     ss::timer<ss::lowres_clock> timer;
@@ -38,7 +27,7 @@ struct qdc_monitor {
      * isn't really a perfect value here. its purpose is to bootstrap the
      * algorithm and is irrelevant after a full time window has elapsed.
      */
-    explicit qdc_monitor(const config& cfg)
+    explicit qdc_monitor(const qdc_monitor_config& cfg)
       : ema(cfg.latency_alpha, cfg.max_latency / 2, cfg.window_count)
       , qdc(
           cfg.max_latency,

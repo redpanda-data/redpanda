@@ -100,10 +100,9 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/group_tx_tracker_stm.h"
-#include "kafka/server/queue_depth_monitor.h"
+#include "kafka/server/queue_depth_monitor_config.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
-#include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
 #include "metrics/prometheus_sanitize.h"
@@ -280,8 +279,8 @@ application::~application() {
 void application::shutdown() {
     storage.invoke_on_all(&storage::api::stop_cluster_uuid_waiters).get();
     // Stop accepting new requests.
-    if (_kafka_server.local_is_initialized()) {
-        _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
+    if (_kafka_server.ref().local_is_initialized()) {
+        _kafka_server.shutdown_input().get();
     }
     if (_rpc.local_is_initialized()) {
         _rpc.invoke_on_all(&rpc::rpc_server::shutdown_input).get();
@@ -353,8 +352,8 @@ void application::shutdown() {
 
     // Wait for all requests to finish before destructing services that may be
     // used by pending requests.
-    if (_kafka_server.local_is_initialized()) {
-        _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
+    if (_kafka_server.ref().local_is_initialized()) {
+        _kafka_server.wait_for_shutdown().get();
         _kafka_server.stop().get();
     }
     if (_kafka_conn_quotas.local_is_initialized()) {
@@ -1175,7 +1174,7 @@ void application::configure_admin_server() {
       &_transform_service,
       std::ref(audit_mgr),
       std::ref(_tx_manager_migrator),
-      std::ref(_kafka_server),
+      std::ref(_kafka_server.ref()),
       std::ref(tx_gateway_frontend),
       std::ref(_debug_bundle_service))
       .get();
@@ -2286,9 +2285,9 @@ void application::wire_up_redpanda_services(
           });
       })
       .get();
-    std::optional<kafka::qdc_monitor::config> qdc_config;
+    std::optional<kafka::qdc_monitor_config> qdc_config;
     if (config::shard_local_cfg().kafka_qdc_enable()) {
-        qdc_config = kafka::qdc_monitor::config{
+        qdc_config = kafka::qdc_monitor_config{
           .latency_alpha = config::shard_local_cfg().kafka_qdc_latency_alpha(),
           .max_latency = config::shard_local_cfg().kafka_qdc_max_latency_ms(),
           .window_count = config::shard_local_cfg().kafka_qdc_window_count(),
@@ -2304,7 +2303,7 @@ void application::wire_up_redpanda_services(
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg.local())
       .get();
     _kafka_server
-      .start(
+      .init(
         &kafka_cfg,
         smp_service_groups.kafka_smp_sg(),
         sched_groups.fetch_sg(),
@@ -3230,7 +3229,7 @@ void application::start_kafka(
         cvar.wait().get();
     }
 
-    _kafka_server.invoke_on_all(&net::server::start).get();
+    _kafka_server.start().get();
     vlog(
       _log.info,
       "Started Kafka API server listening at {}",

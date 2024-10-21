@@ -1,6 +1,15 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "qdc_monitor_config",
+    hdrs = [
+        "queue_depth_monitor_config.h",
+    ],
+    include_prefix = "kafka/server",
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
     name = "server",
     srcs = [
         "client_quota_translator.cc",
@@ -148,6 +157,7 @@ redpanda_cc_library(
     include_prefix = "kafka/server",
     visibility = ["//visibility:public"],
     deps = [
+        ":qdc_monitor_config",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
@@ -317,5 +327,24 @@ redpanda_cc_library(
     deps = [
         "//src/v/cluster",
         "//src/v/kafka/protocol",
+    ],
+)
+
+redpanda_cc_library(
+    name = "app",
+    srcs = [
+        "app.cc",
+    ],
+    hdrs = [
+        "app.h",
+    ],
+    implementation_deps = [
+        ":server",
+    ],
+    include_prefix = "kafka/server",
+    visibility = ["//src/v/redpanda:__pkg__"],
+    deps = [
+        ":qdc_monitor_config",
+        "@seastar",
     ],
 )

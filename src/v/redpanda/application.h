@@ -34,6 +34,7 @@
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
+#include "kafka/server/app.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "metrics/aggregate_metrics_watcher.h"
@@ -184,7 +185,7 @@ public:
     std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
 
     ss::sharded<crypto::ossl_context_service> ossl_context_service;
-    ss::sharded<kafka::server> _kafka_server;
+    kafka::server_app _kafka_server;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<experimental::cloud_topics::reconciler::app> _reconciler;

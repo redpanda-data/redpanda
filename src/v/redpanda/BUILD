@@ -38,6 +38,8 @@ redpanda_cc_library(
         "//src/v/finjector",
         "//src/v/kafka/client",
         "//src/v/kafka/server",
+        "//src/v/kafka/server:app",
+        "//src/v/kafka/server:qdc_monitor_config",
         "//src/v/metrics",
         "//src/v/migrations",
         "//src/v/model",
