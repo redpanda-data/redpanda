@@ -46,6 +46,21 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME translation_task
+  SOURCES translation_task_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake
+    v::cloud_io_utils
+    v::s3_imposter
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
+
 set(PROTO_FILES
   testdata/person.proto
   testdata/complex.proto

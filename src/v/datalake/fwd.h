@@ -16,4 +16,5 @@ class coordinator_manager;
 class frontend;
 }; // namespace coordinator
 class datalake_manager;
+class cloud_data_io;
 } // namespace datalake
