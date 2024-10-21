@@ -80,14 +80,15 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
             'aws', 'ec2', 'describe-instances',
             '--filters="Name=tag:Name, Values=redpanda-{}-rp"'.format(
                 self._clusterId),
-            '--query="Reservations[0].Instances[*].InstanceType"'
+            '--query="Reservations[*].Instances[*].InstanceType"'
         ]
         res = subprocess.check_output(cmd)
         resd = json.loads(res)
+        resd = [machine for reservation in resd for machine in reservation]
 
         self.logger.debug(
             "asserting nodes_count: expected: {}, actual: {}".format(
-                self._configProfile['nodes_count'], len(resd)))
+                self._configProfile['nodes_count'], resd))
         assert len(resd) == self._configProfile['nodes_count']
 
         self.logger.debug(
