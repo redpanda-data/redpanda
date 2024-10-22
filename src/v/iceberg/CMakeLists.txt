@@ -58,6 +58,7 @@ v_cc_library(
     table_requests_json.cc
     table_update_applier.cc
     time_transform_visitor.cc
+    table_identifier.cc
     transaction.cc
     transform.cc
     transform_json.cc
