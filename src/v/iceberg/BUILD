@@ -708,6 +708,7 @@ redpanda_cc_library(
     deps = [
         ":partition",
         ":schema",
+        ":storage_credentials",
         ":table_identifier",
         ":table_metadata",
         ":table_requirement",
