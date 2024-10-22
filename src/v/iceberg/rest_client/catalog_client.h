@@ -88,6 +88,9 @@ public:
       std::optional<oauth_token> token = std::nullopt,
       std::unique_ptr<retry_policy> retry_policy = nullptr);
 
+    // Must be called before destroying the client to prevent resource leak
+    ss::future<> shutdown() { return _http_client->shutdown_and_stop(); }
+
 private:
     // The root url calculated from base url, prefix and api version. Given a
     // base url of "/b", an api version "v2" and a prefix of "x/y", the root url
