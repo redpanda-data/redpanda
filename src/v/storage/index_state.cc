@@ -61,7 +61,7 @@ index_columns::position_upper_bound(uint64_t needle) const noexcept {
       std::begin(_position_index),
       std::end(_position_index),
       needle,
-      std::less<uint32_t>());
+      std::less<uint64_t>());
     if (it == std::end(_position_index)) {
         return std::nullopt;
     }
@@ -247,7 +247,16 @@ bool index_state::maybe_index(
     if (user_data && non_data_timestamps) {
         auto time_col_reset = index.try_reset_relative_time_index(
           offset_time_index{last_timestamp, with_offset}.raw_value());
-        vassert(time_col_reset, "Unexpected index state");
+        // We can only add a non-data timestamp to the empty index. This
+        // is why we can assume that the index size is 1. The
+        // 'try_reset_relative_time_index' will return true if this is the case.
+        // Otherwise it will be impossible to to reset the non-data timestamp.
+        vassert(
+          time_col_reset,
+          "Relative time index can not be reset, unexpected index size {} "
+          "(expected 1). This can only happen if more than one non-data "
+          "timestamp was added to the index.",
+          index.size());
 
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
@@ -717,11 +726,8 @@ index_state::find_below_size_bytes(size_t distance) {
         return std::nullopt;
     }
     auto it = index.position_upper_bound(distance);
-    if (it == std::nullopt) {
-        return std::nullopt;
-    }
 
-    auto ix = it.value();
+    auto ix = it.value_or(index.size());
     if (ix > 0) {
         ix--;
     } else {
