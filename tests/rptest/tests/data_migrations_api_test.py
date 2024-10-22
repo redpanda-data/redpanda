@@ -253,11 +253,11 @@ class DataMigrationsApiTest(RedpandaTest):
     def wait_partitions_appear(self, topics: list[TopicSpec]):
         # we may be unlucky to query a slow node
         def topic_has_all_partitions(t: TopicSpec):
-            exp_part_cnt = len(self.client().describe_topic(t.name).partitions)
+            part_cnt = len(self.client().describe_topic(t.name).partitions)
             self.logger.debug(
-                f"topic {t.name} has {t.partition_count} partitions out of {exp_part_cnt} expected"
+                f"topic {t.name} has {part_cnt} partitions out of {t.partition_count} expected"
             )
-            return t.partition_count == exp_part_cnt
+            return t.partition_count == part_cnt
 
         wait_until(lambda: all(topic_has_all_partitions(t) for t in topics),
                    timeout_sec=90,
