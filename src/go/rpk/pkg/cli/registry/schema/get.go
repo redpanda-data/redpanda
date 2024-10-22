@@ -50,12 +50,10 @@ To print the schema, use the '--print-schema' flag.
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
-			var helpFormat any
-			helpFormat = []subjectSchema{}
-			if printSchema {
-				helpFormat = ""
+			if printSchema && f.Kind != "text" {
+				out.Die("--print-schema cannot be used along with --format %v", f.Kind)
 			}
-			if h, ok := f.Help(helpFormat); ok {
+			if h, ok := f.Help([]subjectSchema{}); ok {
 				out.Exit(h)
 			}
 			p, err := p.LoadVirtualProfile(fs)
