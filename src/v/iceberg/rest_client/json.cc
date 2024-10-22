@@ -15,7 +15,7 @@
 namespace iceberg::rest_client {
 oauth_token parse_oauth_token(const json::Document& doc) {
     oauth_token ret;
-    ret.token = parse_required_str(doc, "access_token");
+    ret.access_token = parse_required_str(doc, "access_token");
     auto expires_in = parse_optional_i32(doc, "expires_in");
     if (expires_in) {
         ret.expires_at = ss::lowres_clock::now()

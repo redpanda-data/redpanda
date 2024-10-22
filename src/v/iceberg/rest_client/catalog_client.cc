@@ -121,10 +121,10 @@ catalog_client::ensure_token(retry_chain_node& rtc) {
         co_return (co_await acquire_token(rtc))
           .and_then([this](auto t) -> expected<ss::sstring> {
               _oauth_token.emplace(t);
-              return t.token;
+              return t.access_token;
           });
     }
-    co_return _oauth_token->token;
+    co_return _oauth_token->access_token;
 }
 
 ss::future<expected<iobuf>> catalog_client::perform_request(

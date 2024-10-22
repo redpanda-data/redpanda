@@ -146,7 +146,7 @@ TEST(token_tests, acquire_token) {
 
 TEST(token_tests, supplied_token_used) {
     const r::oauth_token supplied_token{
-      .token = "t", .expires_at = ss::lowres_clock::now() + 1h};
+      .access_token = "t", .expires_at = ss::lowres_clock::now() + 1h};
     r::catalog_client cc{
       make_http_client([](mock_client& m) {
           EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
@@ -162,12 +162,12 @@ TEST(token_tests, supplied_token_used) {
     r::catalog_client_tester t{cc};
     auto token = t.get_current_token().get();
     ASSERT_TRUE(token.has_value());
-    ASSERT_EQ(token, supplied_token.token);
+    ASSERT_EQ(token, supplied_token.access_token);
 }
 
 TEST(token_tests, supplied_token_expired) {
     const r::oauth_token expired_token{
-      .token = "t", .expires_at = ss::lowres_clock::now()};
+      .access_token = "t", .expires_at = ss::lowres_clock::now()};
     r::catalog_client cc{
       make_http_client([](mock_client& m) {
           EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
