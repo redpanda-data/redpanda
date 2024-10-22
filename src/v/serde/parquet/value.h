@@ -78,6 +78,14 @@ struct fixed_byte_array_value {
 
 struct list_element;
 struct map_entry;
+struct struct_field;
+
+// The struct field ordering here matters - it must be the same as specified in
+// the schema.
+using struct_value = chunked_vector<struct_field>;
+
+using list_value = chunked_vector<list_element>;
+using map_value = chunked_vector<map_entry>;
 
 // Parquet proper actually supports a lot more types than this, but we only need
 // a few of them for iceberg.
@@ -96,8 +104,13 @@ using value = std::variant<
   uuid_value,
   byte_array_value,
   fixed_byte_array_value,
-  chunked_vector<list_element>,
-  chunked_vector<map_entry>>;
+  struct_value,
+  map_value,
+  list_value>;
+
+struct struct_field {
+    value field;
+};
 
 struct list_element {
     value element;
