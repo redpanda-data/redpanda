@@ -19,7 +19,10 @@ namespace iceberg::rest_client {
 // Oauth token returned by the catalog server, in exchange for credentials
 struct oauth_token {
     ss::sstring token;
+    ss::sstring token_type;
     ss::lowres_clock::time_point expires_at;
+    std::optional<ss::sstring> refresh_token;
+    std::optional<ss::sstring> scope;
 };
 
 } // namespace iceberg::rest_client
