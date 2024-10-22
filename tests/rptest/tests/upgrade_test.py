@@ -220,7 +220,7 @@ class UpgradeBackToBackTest(PreallocNodesTest):
         # Is our producer/consumer currently stopped (having already been started)?
         paused = False
 
-        wrote_at_least = None
+        wrote_at_least = 0
 
         for current_version in self.upgrade_through_versions(self.versions):
             if not started:
