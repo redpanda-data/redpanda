@@ -12,6 +12,8 @@
 
 #include "iceberg/partition_json.h"
 #include "iceberg/schema_json.h"
+#include "iceberg/table_requirement_json.h"
+#include "iceberg/table_update_json.h"
 
 namespace json {
 
@@ -50,6 +52,40 @@ void rjson_serialize(
         w.EndObject();
     }
 
+    w.EndObject();
+}
+
+void rjson_serialize(
+  iceberg::json_writer& w, const iceberg::table_identifier& r) {
+    w.StartObject();
+    w.Key("name");
+    w.String(r.table);
+    w.Key("namespace");
+    w.StartArray();
+    for (const auto& n : r.ns) {
+        w.String(n);
+    }
+    w.EndArray();
+    w.EndObject();
+}
+
+void rjson_serialize(
+  iceberg::json_writer& w, const iceberg::commit_table_request& req) {
+    w.StartObject();
+    w.Key("identifier");
+    rjson_serialize(w, req.identifier);
+    w.Key("requirements");
+    w.StartArray();
+    for (const auto& requirement : req.requirements) {
+        rjson_serialize(w, requirement);
+    }
+    w.EndArray();
+    w.Key("updates");
+    w.StartArray();
+    for (const auto& update : req.updates) {
+        rjson_serialize(w, update);
+    }
+    w.EndArray();
     w.EndObject();
 }
 

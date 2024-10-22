@@ -18,4 +18,10 @@ namespace json {
 void rjson_serialize(
   iceberg::json_writer& w, const iceberg::create_table_request& r);
 
-}
+void rjson_serialize(
+  iceberg::json_writer& w, const iceberg::table_identifier& r);
+
+void rjson_serialize(
+  iceberg::json_writer& w, const iceberg::commit_table_request& r);
+
+} // namespace json

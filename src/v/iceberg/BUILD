@@ -1007,6 +1007,8 @@ redpanda_cc_library(
     deps = [
         ":json_writer",
         ":table_requests",
+        ":table_requirement_json",
+        ":table_update_json",
         "//src/v/json",
     ],
 )
