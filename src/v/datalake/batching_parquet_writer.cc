@@ -31,11 +31,11 @@
 namespace datalake {
 
 batching_parquet_writer::batching_parquet_writer(
-  iceberg::struct_type schema,
+  const iceberg::struct_type& schema,
   size_t row_count_threshold,
   size_t byte_count_threshold,
   local_path output_file_path)
-  : _iceberg_to_arrow(std::move(schema))
+  : _iceberg_to_arrow(schema)
   , _arrow_to_iobuf(_iceberg_to_arrow.build_arrow_schema())
   , _row_count_threshold{row_count_threshold}
   , _byte_count_threshold{byte_count_threshold}
@@ -217,7 +217,8 @@ local_path batching_parquet_writer_factory::create_filename() const {
       / fmt::format("{}-{}.parquet", _file_name_prefix, uuid_t::create())};
 }
 ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
-batching_parquet_writer_factory::create_writer(iceberg::struct_type schema) {
+batching_parquet_writer_factory::create_writer(
+  const iceberg::struct_type& schema) {
     auto ret = std::make_unique<batching_parquet_writer>(
       std::move(schema),
       _row_count_threshold,

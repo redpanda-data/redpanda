@@ -9,7 +9,6 @@
 #pragma once
 
 #include "datalake/data_writer_interface.h"
-#include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 
@@ -22,8 +21,9 @@ namespace datalake {
 
 class test_data_writer : public data_writer {
 public:
-    explicit test_data_writer(iceberg::struct_type schema, bool return_error)
-      : _schema(std::move(schema))
+    explicit test_data_writer(
+      const iceberg::struct_type& schema, bool return_error)
+      : _schema(schema.copy())
       , _result{}
       , _return_error{return_error} {}
 
@@ -53,7 +53,7 @@ public:
       : _return_error{return_error} {}
 
     ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
-    create_writer(iceberg::struct_type schema) override {
+    create_writer(const iceberg::struct_type& schema) override {
         co_return std::make_unique<test_data_writer>(
           std::move(schema), _return_error);
     }

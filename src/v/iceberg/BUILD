@@ -514,6 +514,7 @@ redpanda_cc_library(
         "struct_accessor.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         ":values",

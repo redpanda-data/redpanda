@@ -68,7 +68,7 @@ public:
     virtual ~data_writer_factory() = default;
 
     virtual ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
-      create_writer(iceberg::struct_type /* schema */) = 0;
+    create_writer(const iceberg::struct_type& /* schema */) = 0;
 };
 
 } // namespace datalake

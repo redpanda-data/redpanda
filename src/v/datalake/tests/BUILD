@@ -66,6 +66,20 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "test_data_writer",
+    hdrs = [
+        "test_data_writer.h",
+    ],
+    include_prefix = "datalake/tests",
+    deps = [
+        "//src/v/datalake:writer",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "datalake_protobuf_test",
     timeout = "short",
@@ -90,5 +104,23 @@ redpanda_cc_gtest(
         "@protobuf//src/google/protobuf/compiler:importer",
         "@protobuf//src/google/protobuf/io:tokenizer",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partitioning_writer_test",
+    timeout = "short",
+    srcs = [
+        "partitioning_writer_test.cc",
+    ],
+    deps = [
+        ":test_data_writer",
+        "//src/v/datalake:partitioning_writer",
+        "//src/v/datalake:table_definition",
+        "//src/v/iceberg/tests:test_schemas",
+        "//src/v/iceberg/tests:value_generator",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )

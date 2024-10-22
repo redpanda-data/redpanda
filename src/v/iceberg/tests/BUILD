@@ -9,6 +9,7 @@ redpanda_test_cc_library(
         "test_schemas.h",
     ],
     include_prefix = "iceberg/tests",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/iceberg:datatypes",
     ],
@@ -34,6 +35,7 @@ redpanda_test_cc_library(
         "value_generator.h",
     ],
     include_prefix = "iceberg/tests",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:random",
         "//src/v/iceberg:datatypes",
