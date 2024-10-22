@@ -17,6 +17,7 @@
 #include "iceberg/rest_client/error.h"
 #include "iceberg/rest_client/oauth_token.h"
 #include "iceberg/rest_client/retry_policy.h"
+#include "iceberg/table_requests.h"
 #include "json/document.h"
 #include "utils/named_type.h"
 #include "utils/retry_chain_node.h"
@@ -87,6 +88,43 @@ public:
       std::optional<api_version> api_version = std::nullopt,
       std::optional<oauth_token> token = std::nullopt,
       std::unique_ptr<retry_policy> retry_policy = nullptr);
+    /**
+     * The REST client allows interaction with Iceberg REST catalog implementing
+     * the Iceberg Catalog OpenApi Specification as stated here:
+     *
+     * https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml
+     *
+     * Public method documentation will refer to the endpoints listed in the
+     * specification.
+     */
+
+    /**
+     * Load Table API
+     *
+     * GET /v1/{prefix}/namespaces/{namespace}/tables/{table}
+     */
+    ss::future<expected<load_table_result>> load_table(
+      const chunked_vector<ss::sstring>& ns,
+      const ss::sstring& table,
+      retry_chain_node&);
+
+    /**
+     * Create Table API
+     *
+     * POST /v1/{prefix}/namespaces/{namespace}/tables
+     */
+    ss::future<expected<load_table_result>> create_table(
+      const chunked_vector<ss::sstring>&,
+      create_table_request,
+      retry_chain_node&);
+
+    /**
+     * Commit Table Updates API
+     *
+     * POST /v1/{prefix}/namespaces/{namespace}/tables/{table}
+     */
+    ss::future<expected<commit_table_response>>
+    commit_table_update(commit_table_request, retry_chain_node&);
 
     // Must be called before destroying the client to prevent resource leak
     ss::future<> shutdown() { return _http_client->shutdown_and_stop(); }
