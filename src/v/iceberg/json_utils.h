@@ -39,6 +39,9 @@ parse_optional_i32(const json::Value& v, std::string_view member_name);
 std::optional<int64_t>
 parse_optional_i64(const json::Value& v, std::string_view member_name);
 
+std::optional<ss::sstring>
+parse_optional_str(const json::Value& v, std::string_view member_name);
+
 bool parse_required_bool(const json::Value& v, std::string_view member_name);
 
 std::string_view
