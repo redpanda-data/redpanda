@@ -21,6 +21,7 @@ rp_test(
   SOURCES
     async_algorithm_test.cc
     work_queue_test.cc
+    when_all_test.cc
   LIBRARIES v::gtest_main v::ssx
   LABELS ssx
 )
