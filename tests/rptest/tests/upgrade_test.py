@@ -220,7 +220,7 @@ class UpgradeBackToBackTest(PreallocNodesTest):
         # Is our producer/consumer currently stopped (having already been started)?
         paused = False
 
-        wrote_at_least = None
+        wrote_at_least = 0
 
         for current_version in self.upgrade_through_versions(self.versions):
             if not started:
@@ -244,12 +244,19 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             elif current_version[0:2] == (22, 1) and paused:
                 self._producer.start(clean=False)
 
-        for consumer in self._consumers:
-            consumer.wait()
+            # Wait for consumers to finish work and check invariants.
+            for consumer in self._consumers:
+                consumer.wait()
 
-        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
-        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+            # Check consumer invariants after each upgrade.
+            assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+            assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+            assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+
+            # Restart the consumers for the next upgrade.
+            for consumer in self._consumers:
+                consumer.stop()
+                consumer.start(clean=False)
 
         # Validate that the data structures written by a mixture of historical
         # versions remain readable by our current debug tools
