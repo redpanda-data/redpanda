@@ -13,6 +13,12 @@ redpanda_cc_library(
         "monitor_unsafe.h",
     ],
     include_prefix = "redpanda",
+    # TODO(iceberg): Remove once arrow is bazel friendly
+    # and all the datalake components are ported over to
+    # bazel.
+    local_defines = [
+        "BAZEL_DISABLE_DATALAKE_FEATURE=1",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -28,7 +34,7 @@ redpanda_cc_library(
         "//src/v/compression",
         "//src/v/config",
         "//src/v/crypto",
-        "//src/v/datalake:manager",
+        #       "//src/v/datalake:manager",
         "//src/v/datalake:types",
         "//src/v/datalake/coordinator:coordinator_manager",
         "//src/v/datalake/coordinator:frontend",
