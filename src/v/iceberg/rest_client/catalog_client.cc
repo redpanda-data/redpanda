@@ -13,13 +13,14 @@
 #include "bytes/iobuf_parser.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
-#include "iceberg/rest_client/parsers.h"
+#include "iceberg/rest_client/json.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <absl/strings/str_join.h>
 #include <absl/strings/strip.h>
+#include <rapidjson/error/en.h>
 
 namespace {
 
@@ -34,6 +35,24 @@ T trim_slashes(std::optional<T> input, typename T::type default_value) {
 } // namespace
 
 namespace iceberg::rest_client {
+namespace {
+template<typename Func>
+auto parse_as_expected(std::string_view ctx, Func&& parse_func) {
+    using ret_t = std::invoke_result_t<Func, const json::Document&>;
+    return [f = std::forward<Func>(parse_func),
+            ctx](const json::Document& document) -> expected<ret_t> {
+        try {
+            return f(document);
+        } catch (...) {
+            return tl::unexpected<domain_error>(json_parse_error{
+              .context = ss::sstring(ctx),
+              .error = parse_error_msg{fmt::format(
+                "error parsing JSON - {}", std::current_exception())},
+            });
+        }
+    };
+}
+} // namespace
 
 expected<json::Document> parse_json(iobuf&& raw_response) {
     iobuf_parser p{std::move(raw_response)};
@@ -86,7 +105,7 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
     });
     co_return (co_await perform_request(rtc, token_request, std::move(payload)))
       .and_then(parse_json)
-      .and_then(parse_oauth_token);
+      .and_then(parse_as_expected("oauth_token", parse_oauth_token));
 }
 
 ss::sstring catalog_client::root_path() const {

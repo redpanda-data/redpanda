@@ -3,12 +3,12 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 redpanda_cc_library(
-    name = "rest_client_types",
+    name = "error",
     srcs = [
-        "types.cc",
+        "error.cc",
     ],
     hdrs = [
-        "types.h",
+        "error.h",
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
@@ -22,17 +22,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "rest_client_parsers",
+    name = "json",
     srcs = [
-        "parsers.cc",
+        "json.cc",
     ],
     hdrs = [
-        "parsers.h",
+        "json.h",
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
         ":oauth_token",
-        ":rest_client_types",
+        "//src/v/iceberg:json_utils",
         "//src/v/json",
         "//src/v/utils:named_type",
     ],
@@ -48,7 +48,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
-        ":rest_client_types",
+        ":error",
         "//src/v/http",
         "//src/v/net",
     ],
@@ -95,7 +95,7 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "rest_catalog_client",
+    name = "client",
     srcs = [
         "catalog_client.cc",
     ],
@@ -105,9 +105,9 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     deps = [
         ":credentials",
+        ":error",
+        ":json",
         ":oauth_token",
-        ":rest_client_parsers",
-        ":rest_client_types",
         ":retry_policy",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -118,6 +118,7 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:retry_chain_node",
         "@abseil-cpp//absl/strings",
+        "@rapidjson",
         "@seastar",
     ],
 )

@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "iceberg/rest_client/types.h"
+#include "iceberg/rest_client/error.h"
 
 namespace {
 struct domain_error_printing_visitor {

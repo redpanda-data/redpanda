@@ -11,17 +11,11 @@
 #pragma once
 
 #include "iceberg/rest_client/oauth_token.h"
-#include "iceberg/rest_client/types.h"
 #include "json/document.h"
-#include "json/schema.h"
 
 namespace iceberg::rest_client {
 
-// Extracts a readable/loggable error from a json schema validator which has
-// failed.
-parse_error_msg get_schema_validation_error(const json::SchemaValidator& v);
-
 // Parses oauth token from a JSON response sent from catalog server
-expected<oauth_token> parse_oauth_token(json::Document&& doc);
+oauth_token parse_oauth_token(const json::Document& doc);
 
 } // namespace iceberg::rest_client

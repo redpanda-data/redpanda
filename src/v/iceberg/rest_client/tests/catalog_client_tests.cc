@@ -126,7 +126,8 @@ ss::future<http::downloaded_response> validate_token_request(
 
     co_return http::downloaded_response{
       .status = bh::status::ok,
-      .body = iobuf::from(R"J({"access_token": "token", "expires_in": 1})J")};
+      .body = iobuf::from(
+        R"J({"access_token": "token","token_type":"bearer", "expires_in": 1})J")};
 }
 
 TEST(token_tests, acquire_token) {
@@ -235,12 +236,12 @@ TEST(token_tests, handle_retriable_http_status) {
               t::Return(ss::make_ready_future<http::downloaded_response>(
                 http::downloaded_response{
                   .status = bh::status::gateway_timeout, .body = iobuf()})))
-            .WillOnce(
-              t::Return(ss::make_ready_future<http::downloaded_response>(
-                http::downloaded_response{
-                  .status = bh::status::ok,
-                  .body = iobuf::from(
-                    R"J({"access_token": "token", "expires_in": 1})J")})));
+            .WillOnce(t::Return(ss::make_ready_future<
+                                http::
+                                  downloaded_response>(http::downloaded_response{
+              .status = bh::status::ok,
+              .body = iobuf::from(
+                R"J({"access_token": "token","token_type": "bearer", "expires_in": 1})J")})));
       }),
       endpoint,
       credentials};
