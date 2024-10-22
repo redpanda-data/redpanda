@@ -718,6 +718,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_requirement_json",
+    srcs = [
+        "table_requirement_json.cc",
+    ],
+    hdrs = [
+        "table_requirement_json.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":json_writer",
+        ":table_requirement",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_update",
     hdrs = [
         "table_update.h",
