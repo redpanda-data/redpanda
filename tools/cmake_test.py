@@ -302,7 +302,6 @@ class TestRunner():
 
         # setup llvm symbolizer. first look for location in ci, then in redpanda
         # vbuild directory. if none, then asan will look in PATH
-        env = os.environ.copy()
         llvm_symbolizer = shutil.which("llvm-symbolizer",
                                        path="/vectorized/llvm/bin")
         if llvm_symbolizer is None:
