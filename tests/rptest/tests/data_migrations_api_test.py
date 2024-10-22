@@ -62,12 +62,14 @@ class TransferLeadersBackgroundThread:
 
     def _loop(self):
         while not self.stop_ev.is_set():
-            partitions = self.admin.get_partitions(namespace="kafka",
-                                                   topic=self.topic)
-            partition = random.choice(partitions)
-            p_id = partition['partition_id']
-            self.logger.info(f"Transferring leadership of {self.topic}/{p_id}")
+            p_id = None
             try:
+                partitions = self.admin.get_partitions(namespace="kafka",
+                                                       topic=self.topic)
+                partition = random.choice(partitions)
+                p_id = partition['partition_id']
+                self.logger.info(
+                    f"Transferring leadership of {self.topic}/{p_id}")
                 self.admin.partition_transfer_leadership(namespace="kafka",
                                                          topic=self.topic,
                                                          partition=p_id)
