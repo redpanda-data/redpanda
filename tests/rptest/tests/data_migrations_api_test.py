@@ -492,6 +492,10 @@ class DataMigrationsApiTest(RedpandaTest):
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_conflicting_names(self):
+        def on_delivery(err, msg):
+            if err is not None:
+                raise ck.KafkaException(err)
+
         def make_msg(i: int):
             return {
                 component: str.encode(f"{component}{i}")
@@ -506,9 +510,9 @@ class DataMigrationsApiTest(RedpandaTest):
         revisions = {}
         for i in range(3):
             self.client().create_topic(topic)
+            producer.produce(topic.name, **make_msg(i), callback=on_delivery)
+            producer.flush()
             revisions[i] = self.get_topic_initial_revision(topic.name)
-            producer.produce(topic.name, **make_msg(i))
-
             out_migr_id = self.admin.unmount_topics([ns_topic]).json()["id"]
             self.wait_partitions_disappear([topic])
             self.wait_migration_disappear(out_migr_id)
@@ -525,12 +529,16 @@ class DataMigrationsApiTest(RedpandaTest):
 
             with self.ck_consumer() as consumer:
                 consumer.subscribe([topic.name])
-                records = consumer.consume(1, 10)
-                assert len(records) == 1
-                assert {
-                    'key': records[0].key(),
-                    'value': records[0].value()
-                } == make_msg(i)
+                msg = consumer.poll(20)
+                self.logger.debug(f"first msg={msg}")
+                assert (msg.error() is None and {
+                    'key': msg.key(),
+                    'value': msg.value()
+                } == make_msg(i))
+                msg = consumer.poll(10)
+                self.logger.debug(f"second msg={msg}")
+                assert msg is None
+
             self.client().delete_topic(topic.name)
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
