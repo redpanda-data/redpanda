@@ -380,7 +380,7 @@ FIXTURE_TEST(test_truncation_with_write_caching, storage_test_fixture) {
     const auto truncate_batch_ix = headers.size() - 2;
     const auto truncate_offset = [&]() {
         model::offset o{0};
-        for (auto i = 0; i < truncate_batch_ix; i++) {
+        for (size_t i = 0; i < truncate_batch_ix; i++) {
             o += headers[i].record_count;
         }
         return o;
@@ -937,7 +937,7 @@ ss::future<storage::append_result> append_exactly(
 
     val_sz -= real_batch_size;
 
-    for (int i = 0; i < batch_count; ++i) {
+    for (size_t i = 0; i < batch_count; ++i) {
         storage::record_batch_builder builder(batch_type, model::offset{});
         iobuf value = bytes_to_iobuf(random_generators::get_bytes(val_sz));
         builder.add_raw_kv(key_buf.copy(), std::move(value));
@@ -1050,7 +1050,7 @@ FIXTURE_TEST(append_concurrent_with_prefix_truncate, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
 
     bool stop = false;
-    int cnt = 0;
+    size_t cnt = 0;
     std::vector<model::record_batch_type> types{
       model::record_batch_type::raft_data,
       model::record_batch_type::raft_configuration};
@@ -2445,7 +2445,7 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
 
     // add a segment, some of the record keys in batches are random and some of
     // them are the same to generate offset gaps after compaction
-    auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
+    auto add_segment = [&log, disk_log](size_t size) {
         do {
             // 10 records per batch
             for (int i = 0; i < 10; ++i) {
@@ -2481,11 +2481,11 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
         } while (disk_log->segments().back()->size_bytes() < size);
     };
     // add 2 log segments
-    add_segment(1_MiB, model::term_id(1));
+    add_segment(1_MiB);
     disk_log->force_roll(ss::default_priority_class()).get();
-    add_segment(1_MiB, model::term_id(1));
+    add_segment(1_MiB);
     disk_log->force_roll(ss::default_priority_class()).get();
-    add_segment(1_MiB, model::term_id(1));
+    add_segment(1_MiB);
     log->flush().get();
 
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
@@ -3840,7 +3840,7 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
         auto deferred_rm = ss::defer(
           [&mgr, ntp]() mutable { mgr.remove(ntp).get(); });
 
-        for (int i = 0; i < batch_cnt; ++i) {
+        for (size_t i = 0; i < batch_cnt; ++i) {
             append_exactly(log, 1, batch_size).get();
         }
         auto disk_log = log;
@@ -4261,7 +4261,7 @@ FIXTURE_TEST(test_offset_range_size, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < num_segments; i++) {
+    for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
           log,
           10,
@@ -4374,7 +4374,7 @@ FIXTURE_TEST(test_offset_range_size2, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < num_segments; i++) {
+    for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
           log,
           10,
@@ -4578,7 +4578,7 @@ FIXTURE_TEST(test_offset_range_size_compacted, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < num_segments; i++) {
+    for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
           log, 10, model::term_id(i), key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
@@ -4777,7 +4777,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < num_segments; i++) {
+    for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
           log, 10, model::term_id(0), key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
@@ -5079,7 +5079,7 @@ FIXTURE_TEST(test_offset_range_size_incremental, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get();
 
     model::offset first_segment_last_offset;
-    for (int i = 0; i < num_segments; i++) {
+    for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
           log,
           10,
