@@ -54,6 +54,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "credentials",
+    hdrs = [
+        "credentials.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "entities",
     srcs = [
         "entities.cc",
@@ -79,6 +91,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
+        ":credentials",
         ":rest_client_parsers",
         ":rest_client_types",
         ":retry_policy",

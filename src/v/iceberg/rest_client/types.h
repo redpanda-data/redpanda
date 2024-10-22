@@ -60,13 +60,6 @@ struct oauth_token {
     ss::lowres_clock::time_point expires_at;
 };
 
-// Static credentials expected to be supplied by redpanda when requesting an
-// oauth token
-struct credentials {
-    ss::sstring client_id;
-    ss::sstring client_secret;
-};
-
 } // namespace iceberg::rest_client
 template<>
 struct fmt::formatter<iceberg::rest_client::domain_error>
