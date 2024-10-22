@@ -628,10 +628,12 @@ class DataMigrationsApiTest(RedpandaTest):
             def __init__(self, *args, msg_count, **kwargs):
                 self.producer = KgoVerifierProducer(*args, **kwargs)
                 self.producer.start(clean=False)
+                timeout_sec = 120
                 wait_until( \
                     lambda: self.producer.produce_status.acked > msg_count,
-                    timeout_sec=120,
-                    backoff_sec=1)
+                    timeout_sec=timeout_sec,
+                    backoff_sec=1,
+                    err_msg=f"failed to produce {msg_count} messages in {timeout_sec} seconds")
 
             def stop_if_running(self):
                 if self.producer:
