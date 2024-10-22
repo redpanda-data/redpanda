@@ -9,11 +9,11 @@
 import random
 import threading
 import time
-from contextlib import contextmanager
 from enum import Enum
 from typing import Callable, NamedTuple, Literal, List
 import typing
 from requests.exceptions import ConnectionError
+from contextlib import contextmanager, nullcontext
 
 from rptest.services.admin import Admin, MigrationAction
 from rptest.services.admin import OutboundDataMigration, InboundDataMigration, NamespacedTopic, InboundTopic
@@ -31,7 +31,6 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.e2e_finjector import Finjector
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.mark import matrix, ignore
-from contextlib import nullcontext
 import requests
 import re
 
@@ -120,6 +119,7 @@ class DataMigrationsApiTest(RedpandaTest):
             cloud_storage_enable_remote_write=True,
         )
         super().__init__(test_context=test_context, *args, **kwargs)
+        self.flaky_admin = Admin(self.redpanda, retry_codes=[503, 504])
         self.admin = Admin(self.redpanda)
         self.last_producer_id = 0
         self.last_consumer_id = 0
@@ -153,6 +153,27 @@ class DataMigrationsApiTest(RedpandaTest):
             yield consumer
         finally:
             consumer.close()
+
+    @contextmanager
+    def flaky_admin_cm(self, other_cm):
+        with other_cm:
+            old_admin = self.admin
+            try:
+                self.admin = self.flaky_admin
+                yield
+            finally:
+                self.admin = old_admin
+
+    def finj_thread(self):
+        return self.flaky_admin_cm(
+            Finjector(self.redpanda, self.scale,
+                      max_concurrent_failures=1).finj_thread())
+
+    def tl_thread(self, topic_name):
+        if topic_name is None:
+            return nullcontext()
+        return self.flaky_admin_cm(
+            TransferLeadersBackgroundThread(self.redpanda, topic_name))
 
     def get_migrations_map(self, node=None):
         migrations = self.admin.list_data_migrations(node).json()
@@ -336,10 +357,8 @@ class DataMigrationsApiTest(RedpandaTest):
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_mount_inexistent(self):
         topic = TopicSpec(partition_count=3)
-        admin = Admin(self.redpanda)
 
-        with Finjector(self.redpanda, self.scale,
-                       max_concurrent_failures=1).finj_thread():
+        with self.finj_thread():
             in_migration = InboundDataMigration(
                 topics=[InboundTopic(make_namespaced_topic(topic.name))],
                 consumer_groups=[])
@@ -353,8 +372,8 @@ class DataMigrationsApiTest(RedpandaTest):
             assert len(migrations_map[in_migration_id]['migration']
                        ['topics']) == 1, "migration should contain one topic"
 
-            admin.execute_data_migration_action(in_migration_id,
-                                                MigrationAction.prepare)
+            self.admin.execute_data_migration_action(in_migration_id,
+                                                     MigrationAction.prepare)
             self.wait_for_migration_states(in_migration_id, ['preparing'])
             time.sleep(10)
             # still preparing, i.e. stuck
@@ -362,15 +381,15 @@ class DataMigrationsApiTest(RedpandaTest):
             # and the topic is not there
             self.wait_partitions_disappear([topic])
 
-            admin.execute_data_migration_action(in_migration_id,
-                                                MigrationAction.cancel)
+            self.admin.execute_data_migration_action(in_migration_id,
+                                                     MigrationAction.cancel)
             self.wait_for_migration_states(in_migration_id,
                                            ['canceling', 'cancelled'])
             self.wait_for_migration_states(in_migration_id, ['cancelled'])
             # still not there
             self.wait_partitions_disappear([topic])
 
-            admin.delete_data_migration(in_migration_id)
+            self.admin.delete_data_migration(in_migration_id)
             self.wait_migration_disappear(in_migration_id)
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
@@ -380,13 +399,11 @@ class DataMigrationsApiTest(RedpandaTest):
         for t in topics:
             self.client().create_topic(t)
 
-        admin = Admin(self.redpanda)
         migrations_map = self.get_migrations_map()
 
         assert len(migrations_map) == 0, "There should be no data migrations"
 
-        with Finjector(self.redpanda, self.scale,
-                       max_concurrent_failures=1).finj_thread():
+        with self.finj_thread():
             # out
             outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             out_migration = OutboundDataMigration(outbound_topics,
@@ -404,18 +421,18 @@ class DataMigrationsApiTest(RedpandaTest):
             assert len(migrations_map[out_migration_id]['migration']['topics']
                        ) == len(topics), "migration should contain all topics"
 
-            admin.execute_data_migration_action(out_migration_id,
-                                                MigrationAction.prepare)
+            self.admin.execute_data_migration_action(out_migration_id,
+                                                     MigrationAction.prepare)
             self.wait_for_migration_states(out_migration_id,
                                            ['preparing', 'prepared'])
             self.wait_for_migration_states(out_migration_id, ['prepared'])
-            admin.execute_data_migration_action(out_migration_id,
-                                                MigrationAction.execute)
+            self.admin.execute_data_migration_action(out_migration_id,
+                                                     MigrationAction.execute)
             self.wait_for_migration_states(out_migration_id,
                                            ['executing', 'executed'])
             self.wait_for_migration_states(out_migration_id, ['executed'])
-            admin.execute_data_migration_action(out_migration_id,
-                                                MigrationAction.finish)
+            self.admin.execute_data_migration_action(out_migration_id,
+                                                     MigrationAction.finish)
             self.wait_for_migration_states(out_migration_id,
                                            ['cut_over', 'finished'])
             self.wait_for_migration_states(out_migration_id, ['finished'])
@@ -448,18 +465,18 @@ class DataMigrationsApiTest(RedpandaTest):
                     f"inbound topic: {self.client().describe_topic(t.src_topic.topic)}"
                 )
 
-            admin.execute_data_migration_action(in_migration_id,
-                                                MigrationAction.prepare)
+            self.admin.execute_data_migration_action(in_migration_id,
+                                                     MigrationAction.prepare)
             self.wait_for_migration_states(in_migration_id,
                                            ['preparing', 'prepared'])
             self.wait_for_migration_states(in_migration_id, ['prepared'])
-            admin.execute_data_migration_action(in_migration_id,
-                                                MigrationAction.execute)
+            self.admin.execute_data_migration_action(in_migration_id,
+                                                     MigrationAction.execute)
             self.wait_for_migration_states(in_migration_id,
                                            ['executing', 'executed'])
             self.wait_for_migration_states(in_migration_id, ['executed'])
-            admin.execute_data_migration_action(in_migration_id,
-                                                MigrationAction.finish)
+            self.admin.execute_data_migration_action(in_migration_id,
+                                                     MigrationAction.finish)
             self.wait_for_migration_states(in_migration_id,
                                            ['cut_over', 'finished'])
             self.wait_for_migration_states(in_migration_id, ['finished'])
@@ -532,8 +549,7 @@ class DataMigrationsApiTest(RedpandaTest):
         producer.begin_transaction()
         producer.produce(topics[0].name, key="key2", value="value2")
 
-        with Finjector(self.redpanda, self.scale,
-                       max_concurrent_failures=1).finj_thread():
+        with self.finj_thread():
             # out
             outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             reply = self.admin.unmount_topics(outbound_topics).json()
@@ -714,11 +730,10 @@ class DataMigrationsApiTest(RedpandaTest):
         consumer.stop()
 
     def cancel(self, migration_id, topic_name):
-        admin = Admin(self.redpanda)
-        admin.execute_data_migration_action(migration_id,
-                                            MigrationAction.cancel)
+        self.admin.execute_data_migration_action(migration_id,
+                                                 MigrationAction.cancel)
         self.wait_for_migration_states(migration_id, ['cancelled'])
-        admin.delete_data_migration(migration_id)
+        self.admin.delete_data_migration(migration_id)
 
     def assert_no_topics(self):
         rpk = RpkTool(self.redpanda)
@@ -768,18 +783,15 @@ class DataMigrationsApiTest(RedpandaTest):
 
         producer = self.start_producer(workload_topic.name)
 
-        out_tl_thread = TransferLeadersBackgroundThread(
-            self.redpanda,
-            workload_topic.name) if transfer_leadership else nullcontext()
-        with out_tl_thread:
-            admin = Admin(self.redpanda)
+        tl_topic_name = workload_topic.name if transfer_leadership else None
+        with self.tl_thread(tl_topic_name):
             workload_ns_topic = make_namespaced_topic(workload_topic.name)
             out_migration = OutboundDataMigration(topics=[workload_ns_topic],
                                                   consumer_groups=[])
             out_migration_id = self.create_and_wait(out_migration)
 
-            admin.execute_data_migration_action(out_migration_id,
-                                                MigrationAction.prepare)
+            self.admin.execute_data_migration_action(out_migration_id,
+                                                     MigrationAction.prepare)
             if cancellation == CancellationStage('out', 'preparing'):
                 self.wait_for_migration_states(out_migration_id,
                                                ['preparing', 'prepared'])
@@ -801,8 +813,8 @@ class DataMigrationsApiTest(RedpandaTest):
                 return self.cancel_outbound(out_migration_id,
                                             workload_topic.name, producer)
 
-            admin.execute_data_migration_action(out_migration_id,
-                                                MigrationAction.execute)
+            self.admin.execute_data_migration_action(out_migration_id,
+                                                     MigrationAction.execute)
             if cancellation == CancellationStage('out', 'executing'):
                 self.wait_for_migration_states(out_migration_id,
                                                ['executing', 'executed'])
@@ -823,8 +835,8 @@ class DataMigrationsApiTest(RedpandaTest):
                 return self.cancel_outbound(out_migration_id,
                                             workload_topic.name, producer)
 
-            admin.execute_data_migration_action(out_migration_id,
-                                                MigrationAction.finish)
+            self.admin.execute_data_migration_action(out_migration_id,
+                                                     MigrationAction.finish)
 
             self.validate_topic_access(topic=workload_topic.name,
                                        metadata_locked=True,
@@ -846,7 +858,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                        produce_blocked=True,
                                        assert_topic_present=False)
 
-            admin.delete_data_migration(out_migration_id)
+            self.admin.delete_data_migration(out_migration_id)
 
         # attach topic back
         inbound_topic_name = "aliased-workload-topic" if params.use_alias else workload_topic.name
@@ -854,10 +866,8 @@ class DataMigrationsApiTest(RedpandaTest):
         if params.use_alias:
             alias = make_namespaced_topic(topic=inbound_topic_name)
 
-        in_tl_thread = TransferLeadersBackgroundThread(
-            self.redpanda,
-            inbound_topic_name) if transfer_leadership else nullcontext()
-        with in_tl_thread:
+        tl_topic_name = inbound_topic_name if transfer_leadership else None
+        with self.tl_thread(tl_topic_name):
             remounted = False
             # two cycles max: to cancel halfway and to complete + check e2e
             while not remounted:
@@ -875,8 +885,8 @@ class DataMigrationsApiTest(RedpandaTest):
                     expected_to_pass=False,
                     operation=lambda topic: rpk.create_topic(topic=topic,
                                                              replicas=3))
-                admin.execute_data_migration_action(in_migration_id,
-                                                    MigrationAction.prepare)
+                self.admin.execute_data_migration_action(
+                    in_migration_id, MigrationAction.prepare)
 
                 if cancellation == CancellationStage('in', 'preparing'):
                     cancellation = None
@@ -909,8 +919,8 @@ class DataMigrationsApiTest(RedpandaTest):
                 )
                 assert inbound_topic_name in topics, "workload topic should be present after the inbound migration is prepared"
 
-                admin.execute_data_migration_action(in_migration_id,
-                                                    MigrationAction.execute)
+                self.admin.execute_data_migration_action(
+                    in_migration_id, MigrationAction.execute)
                 if cancellation == CancellationStage('in', 'executing'):
                     cancellation = None
                     self.wait_for_migration_states(in_migration_id,
@@ -934,11 +944,11 @@ class DataMigrationsApiTest(RedpandaTest):
                     self.cancel_inbound(in_migration_id, inbound_topic_name)
                     continue
 
-                admin.execute_data_migration_action(in_migration_id,
-                                                    MigrationAction.finish)
+                self.admin.execute_data_migration_action(
+                    in_migration_id, MigrationAction.finish)
 
                 self.wait_for_migration_states(in_migration_id, ['finished'])
-                admin.delete_data_migration(in_migration_id)
+                self.admin.delete_data_migration(in_migration_id)
                 # now the topic should be fully operational
                 self.consume_and_validate(inbound_topic_name,
                                           producer.acked_records)
