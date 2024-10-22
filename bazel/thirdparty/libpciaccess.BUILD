@@ -58,6 +58,7 @@ cc_library(
         # Quiet some build warnings
         "-Wno-unused-result",
         "-Wno-tautological-constant-out-of-range-compare",
+        "-Wno-deprecated-declarations",
     ],
     # This is only consumed by a make library that produces a static library,
     # so this library only needs to produce a static library. Doing this means
