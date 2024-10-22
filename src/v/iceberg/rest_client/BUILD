@@ -31,6 +31,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
+        ":oauth_token",
         ":rest_client_types",
         "//src/v/json",
         "//src/v/utils:named_type",
@@ -66,6 +67,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "oauth_token",
+    hdrs = [
+        "oauth_token.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "entities",
     srcs = [
         "entities.cc",
@@ -92,6 +105,7 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     deps = [
         ":credentials",
+        ":oauth_token",
         ":rest_client_parsers",
         ":rest_client_types",
         ":retry_policy",

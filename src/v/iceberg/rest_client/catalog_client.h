@@ -14,6 +14,7 @@
 #include "http/client.h"
 #include "http/request_builder.h"
 #include "iceberg/rest_client/credentials.h"
+#include "iceberg/rest_client/oauth_token.h"
 #include "iceberg/rest_client/retry_policy.h"
 #include "iceberg/rest_client/types.h"
 #include "json/document.h"

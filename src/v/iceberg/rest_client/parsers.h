@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "iceberg/rest_client/oauth_token.h"
 #include "iceberg/rest_client/types.h"
 #include "json/document.h"
 #include "json/schema.h"

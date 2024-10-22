@@ -54,12 +54,6 @@ using domain_error = std::variant<
 template<typename T>
 using expected = tl::expected<T, domain_error>;
 
-// Oauth token returned by the catalog server, in exchange for credentials
-struct oauth_token {
-    ss::sstring token;
-    ss::lowres_clock::time_point expires_at;
-};
-
 } // namespace iceberg::rest_client
 template<>
 struct fmt::formatter<iceberg::rest_client::domain_error>
