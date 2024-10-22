@@ -12,6 +12,7 @@
 #include "container/fragmented_vector.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
+#include "iceberg/table_identifier.h"
 #include "iceberg/table_requirement.h"
 #include "iceberg/table_update.h"
 
@@ -33,6 +34,7 @@ struct create_table_request {
 };
 
 struct commit_table_request {
+    table_identifier identifier;
     chunked_vector<table_update::update> updates;
     chunked_vector<table_requirement::requirement> requirements;
 };
