@@ -5,8 +5,10 @@ set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 v_cc_library(
   NAME iceberg_test_utils
   HDRS
+    test_schemas.h
     value_generator.h
   SRCS
+    test_schemas.cc
     value_generator.cc
   DEPS
     v::iceberg
@@ -36,7 +38,6 @@ rp_test(
     struct_accessor_test.cc
     table_metadata_json_test.cc
     table_update_applier_test.cc
-    test_schemas.cc
     test_table_metadata.cc
     transform_json_test.cc
     transform_utils_test.cc
