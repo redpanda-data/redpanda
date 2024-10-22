@@ -11,18 +11,13 @@
 #include "base/seastarx.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
+#include "iceberg/table_identifier.h"
 #include "iceberg/transaction.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 
 namespace iceberg {
-
-struct table_identifier {
-    chunked_vector<ss::sstring> ns;
-    ss::sstring table;
-};
-std::ostream& operator<<(std::ostream& o, const table_identifier& id);
 
 class catalog {
 public:

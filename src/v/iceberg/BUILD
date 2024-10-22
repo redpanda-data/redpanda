@@ -92,6 +92,7 @@ redpanda_cc_library(
     deps = [
         ":partition",
         ":schema",
+        ":table_identifier",
         ":transaction",
         "//src/v/base",
         "@seastar",
@@ -621,6 +622,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_identifier",
+    srcs = [
+        "table_identifier.cc",
+    ],
+    hdrs = [
+        "table_identifier.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_metadata",
     hdrs = [
         "table_metadata.h",
@@ -674,6 +692,7 @@ redpanda_cc_library(
     deps = [
         ":partition",
         ":schema",
+        ":table_identifier",
         ":table_requirement",
         ":table_update",
         "//src/v/container:chunked_hash_map",
