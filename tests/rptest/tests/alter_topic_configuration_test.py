@@ -406,10 +406,13 @@ class AlterConfigMixedNodeTest(EndToEndTest):
                 props = set()
                 for line in desc.split('\n'):
                     line = line.rstrip()
+                    # normalize spaces/tabs from outputs across nodes
+                    line = " ".join(line.split())
                     if 'redpanda.remote.read' in line:
                         props.add(line)
                     elif 'redpanda.remote.write' in line:
                         props.add(line)
+                self.logger.debug(f"{props}")
                 assert len(props) == 2
                 node_props.append(props)
             return all(p == node_props[0] for p in node_props)
