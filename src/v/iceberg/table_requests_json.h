@@ -17,6 +17,8 @@
 namespace iceberg {
 
 load_table_result parse_load_table_result(const json::Value&);
+commit_table_response parse_commit_table_response(const json::Value&);
+
 } // namespace iceberg
 namespace json {
 

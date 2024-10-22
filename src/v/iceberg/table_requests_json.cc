@@ -39,6 +39,13 @@ load_table_result parse_load_table_result(const json::Value& value) {
 
     return ret;
 }
+
+commit_table_response parse_commit_table_response(const json::Value& value) {
+    return commit_table_response{
+      .metadata_location = parse_required_str(value, "metadata-location"),
+      .table_metadata = parse_table_meta(parse_required(value, "metadata")),
+    };
+}
 } // namespace iceberg
 namespace json {
 
