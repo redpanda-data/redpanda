@@ -25,4 +25,9 @@ void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s);
 void rjson_serialize(
   iceberg::json_writer& w, const iceberg::snapshot_reference& s);
 
+// serializes snapshot reference properties without writing start and end object
+// markers
+void serialize_snapshot_reference_properties(
+  iceberg::json_writer& w, const iceberg::snapshot_reference& s);
+
 } // namespace json

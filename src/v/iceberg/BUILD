@@ -733,6 +733,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_update_json",
+    srcs = [
+        "table_update_json.cc",
+    ],
+    hdrs = [
+        "table_update_json.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":json_writer",
+        ":partition_json",
+        ":schema_json",
+        ":snapshot_json",
+        ":table_update",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_update_applier",
     srcs = [
         "table_update_applier.cc",
