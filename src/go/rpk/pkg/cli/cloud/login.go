@@ -135,7 +135,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 			if noProfile {
 				// The current profile is seemingly pointing to a container cluster.
 				if p.Name == common.ContainerProfileName {
-					fmt.Printf("You are talking to a localhost 'rpk container' cluster (rpk profile name: %q)", p.Name)
+					fmt.Printf("You are talking to a localhost 'rpk container' cluster (rpk profile name: %q)\n", p.Name)
 					fmt.Println("To talk to a cloud cluster, use 'rpk cloud cluster select'.")
 					return
 				}
