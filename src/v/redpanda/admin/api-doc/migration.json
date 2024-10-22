@@ -7,7 +7,25 @@
         ],
         "produces": [
             "application/json"
-        ]
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "outbound_migration_state"
+                            },
+                            {
+                                "type": "inbound_migration_state"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
     },
     "put": {
         "operationId": "add_migration",
@@ -50,7 +68,22 @@
                 "required": true,
                 "type": "int"
             }
-        ]
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "oneOf": [
+                        {
+                            "type": "outbound_migration_state"
+                        },
+                        {
+                            "type": "inbound_migration_state"
+                        }
+                    ]
+                }
+            }
+        }
     },
     "post": {
         "summary": "Execute migration action",
