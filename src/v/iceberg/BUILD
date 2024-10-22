@@ -1022,7 +1022,9 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
+        ":json_utils",
         ":json_writer",
+        ":table_metadata_json",
         ":table_requests",
         ":table_requirement_json",
         ":table_update_json",

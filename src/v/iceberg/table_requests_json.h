@@ -12,7 +12,12 @@
 
 #include "iceberg/json_writer.h"
 #include "iceberg/table_requests.h"
+#include "json/document.h"
 
+namespace iceberg {
+
+load_table_result parse_load_table_result(const json::Value&);
+} // namespace iceberg
 namespace json {
 
 void rjson_serialize(

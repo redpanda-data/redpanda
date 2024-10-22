@@ -10,11 +10,36 @@
 
 #include "iceberg/table_requests_json.h"
 
+#include "iceberg/json_utils.h"
 #include "iceberg/partition_json.h"
 #include "iceberg/schema_json.h"
+#include "iceberg/table_metadata_json.h"
 #include "iceberg/table_requirement_json.h"
 #include "iceberg/table_update_json.h"
+namespace iceberg {
+load_table_result parse_load_table_result(const json::Value& value) {
+    load_table_result ret{
+      .metadata = parse_table_meta(parse_required(value, "metadata")),
+    };
+    ret.metadata_location = parse_optional_str(value, "metadata-location");
+    ret.config = parse_optional_string_map(value, "config");
 
+    auto storage_credentials = parse_optional_array(
+      value, "storage-credentials");
+    if (storage_credentials) {
+        ret.storage_credentials.emplace();
+        for (auto& sc_value : *storage_credentials) {
+            iceberg::storage_credentials sc;
+            sc.prefix = parse_required_str(sc_value, "prefix");
+            sc.config = parse_required_string_map(sc_value, "config");
+
+            ret.storage_credentials->push_back(std::move(sc));
+        }
+    }
+
+    return ret;
+}
+} // namespace iceberg
 namespace json {
 
 void rjson_serialize(
