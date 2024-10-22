@@ -63,7 +63,10 @@ public:
       = ss::bool_class<struct audit_event_permitted_tag>;
 
     audit_log_manager(
-      cluster::controller* controller, kafka::client::configuration&);
+      model::node_id self,
+      cluster::controller* controller,
+      kafka::client::configuration&,
+      ss::sharded<cluster::metadata_cache>*);
 
     audit_log_manager(const audit_log_manager&) = delete;
     audit_log_manager& operator=(const audit_log_manager&) = delete;
@@ -224,6 +227,12 @@ private:
       kafka::api_key,
       const security::acl_principal&,
       const model::topic&) const;
+
+    /**
+     * Compute an output partition for some audit record batch by per-shard
+     * round-robin, biased toward partitions with a locally hosted leader.
+     */
+    model::partition_id compute_partition_id();
 
     ss::future<> drain();
     ss::future<> pause();
@@ -397,9 +406,12 @@ private:
     std::unique_ptr<audit_sink> _sink;
 
     /// Other references
+    model::node_id _self;
     cluster::controller* _controller;
     kafka::client::configuration& _config;
     std::unique_ptr<audit_probe> _probe;
+
+    ss::sharded<cluster::metadata_cache>* _metadata_cache;
 };
 
 } // namespace security::audit
