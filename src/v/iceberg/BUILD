@@ -641,6 +641,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "storage_credentials",
+    hdrs = [
+        "storage_credentials.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_metadata",
     hdrs = [
         "table_metadata.h",
