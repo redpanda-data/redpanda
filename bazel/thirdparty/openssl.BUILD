@@ -45,6 +45,7 @@ configure_make(
     configure_command = "Configure",
     configure_options = [
         "--libdir=lib",
+        "no-tests",
     ] + select({
         ":debug_mode": ["--debug"],
         ":release_mode": ["--release"],
