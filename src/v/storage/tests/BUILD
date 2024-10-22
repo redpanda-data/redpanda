@@ -63,6 +63,48 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "common",
+    hdrs = [
+        "common.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        "//src/v/storage",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "storage_test_fixture",
+    hdrs = [
+        "storage_test_fixture.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        "//src/v/compression",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/model/tests:random",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "log_gap_analysis",
+    srcs = [
+        "utils/log_gap_analysis.cc",
+    ],
+    hdrs = [
+        "utils/log_gap_analysis.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        "//src/v/model",
+        "//src/v/storage:parser_utils",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "segment_offset_tracker_test",
     timeout = "short",
