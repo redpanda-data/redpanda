@@ -695,6 +695,7 @@ redpanda_cc_library(
         ":partition",
         ":schema",
         ":table_identifier",
+        ":table_metadata",
         ":table_requirement",
         ":table_update",
         "//src/v/container:chunked_hash_map",

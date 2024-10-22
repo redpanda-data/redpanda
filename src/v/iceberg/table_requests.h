@@ -13,6 +13,7 @@
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_identifier.h"
+#include "iceberg/table_metadata.h"
 #include "iceberg/table_requirement.h"
 #include "iceberg/table_update.h"
 
@@ -37,6 +38,11 @@ struct commit_table_request {
     table_identifier identifier;
     chunked_vector<table_update::update> updates;
     chunked_vector<table_requirement::requirement> requirements;
+};
+
+struct commit_table_response {
+    ss::sstring metadata_location;
+    table_metadata table_metadata;
 };
 
 } // namespace iceberg
