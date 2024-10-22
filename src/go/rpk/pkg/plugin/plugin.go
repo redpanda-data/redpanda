@@ -337,9 +337,13 @@ func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, autocomplete
 // If the url ends in ".gz", this unzips the binary before shasumming. If the
 // url ends in ".tar.gz", this unzips, then untars ONE file, then shasums.
 func Download(ctx context.Context, url string, isKnownCompressed bool, expShaPrefix string) ([]byte, error) {
+	timeout, err := GetPluginDownloadTimeout()
+	if err != nil {
+		return nil, err
+	}
 	cl := httpapi.NewClient(
 		httpapi.HTTPClient(&http.Client{
-			Timeout: 100 * time.Second,
+			Timeout: timeout,
 		}),
 	)
 
@@ -366,7 +370,6 @@ func Download(ctx context.Context, url string, isKnownCompressed bool, expShaPre
 		plugin = untar
 	}
 
-	var err error
 	if raw, err = io.ReadAll(plugin); err != nil {
 		return nil, fmt.Errorf("unable to read plugin: %w", err)
 	}
@@ -380,4 +383,16 @@ func Download(ctx context.Context, url string, isKnownCompressed bool, expShaPre
 	}
 
 	return raw, nil
+}
+
+func GetPluginDownloadTimeout() (time.Duration, error) {
+	timeout := 300 * time.Second
+	if t := os.Getenv("RPK_PLUGIN_DOWNLOAD_TIMEOUT"); t != "" {
+		duration, err := time.ParseDuration(t)
+		if err != nil {
+			return 0, fmt.Errorf("unable to parse RPK_PLUGIN_DOWNLOAD_TIMEOUT: %v", err)
+		}
+		timeout = duration
+	}
+	return timeout, nil
 }
