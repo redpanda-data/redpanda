@@ -18,6 +18,8 @@
 #include "storage/logger.h"
 #include "storage/offset_translator_state.h"
 #include "storage/parser_errc.h"
+#include "storage/segment_set.h"
+#include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -299,14 +301,14 @@ log_reader::log_reader(
   probe& probe,
   ss::lw_shared_ptr<const storage::offset_translator_state> tr) noexcept
   : _lease(std::move(l))
-  , _iterator(_lease->range.begin())
-  , _config(config)
-  , _expected_next(
-      _config.fill_gaps
-        ? std::make_optional<model::offset>(_config.start_offset)
-        : std::nullopt)
+  , _iterator({})                // overwritten in reset() below
+  , _config(empty_reader_config) // overwritten in reset() below
   , _probe(probe)
   , _translator(std::move(tr)) {
+    // we lean on reset_config for most of the initialization as much as so that
+    // it is shared with the reset path (which occurs on reader cache hit).
+    reset(config, iterator_pair{_lease->range.begin()}, false);
+
     if (config.abort_source) {
         auto op_sub = config.abort_source.value().get().subscribe(
           [this]() noexcept { set_end_of_stream(); });
@@ -542,16 +544,23 @@ std::optional<log_reader::private_flags> log_reader::get_flags() const {
 };
 
 void log_reader::reset_config(log_reader_config cfg) {
+    reset(
+      cfg, {_iterator.current_reader_seg, std::move(_iterator.reader)}, true);
+};
+
+void log_reader::reset(
+  log_reader_config cfg, iterator_pair itr, bool cache_hit) {
     _config = cfg;
-    _iterator.next_seg = _iterator.current_reader_seg;
+    _iterator = std::move(itr);
     _expected_next = _config.fill_gaps
-                       ? std::make_optional<model::offset>(_config.start_offset)
+                       ? std::make_optional(_config.start_offset)
                        : std::nullopt;
 
     _last_base = {};
 
-    // reset_config is only called in the context of a reader cache hit
-    _was_cached = true;
+    // indicates that this reader was reset because it will be re-used as a
+    // result of a reader cache hit
+    _was_cached = cache_hit;
 };
 
 static inline bool is_finished_offset(segment_set& s, model::offset o) {

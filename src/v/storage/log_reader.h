@@ -216,12 +216,15 @@ private:
 
 private:
     struct iterator_pair {
-        iterator_pair(segment_set::iterator i)
+        iterator_pair(
+          segment_set::iterator i,
+          std::unique_ptr<log_segment_batch_reader> reader = nullptr)
           : next_seg(i)
-          , current_reader_seg(i) {}
+          , current_reader_seg(i)
+          , reader{std::move(reader)} {}
         segment_set::iterator next_seg;
         segment_set::iterator current_reader_seg;
-        std::unique_ptr<log_segment_batch_reader> reader = nullptr;
+        std::unique_ptr<log_segment_batch_reader> reader;
 
         explicit operator bool() { return bool(reader); }
         ss::future<> close() {
@@ -238,6 +241,11 @@ private:
     unsigned _load_slice_depth{0};
     bool log_load_slice_depth_warning() const;
     void maybe_log_load_slice_depth_warning(std::string_view) const;
+
+    // Reset the internal state of the reader, using the given config and
+    // the given segment set iterator. This method is shared between the
+    // constructor and the reader cache hit path (which calls reset_config()).
+    void reset(log_reader_config, iterator_pair, bool cache_hit);
 
     std::unique_ptr<lock_manager::lease> _lease;
     iterator_pair _iterator;
