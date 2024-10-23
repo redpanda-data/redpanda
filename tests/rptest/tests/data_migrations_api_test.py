@@ -639,7 +639,10 @@ class DataMigrationsApiTest(RedpandaTest):
         class ProducerWrapper:
             def __init__(self, *args, msg_count, **kwargs):
                 self.producer = KgoVerifierProducer(
-                    *args, tolerate_failed_produce=True, **kwargs)
+                    *args,
+                    tolerate_failed_produce=True,
+                    trace_logs=True,
+                    **kwargs)
                 self.producer.start(clean=False)
                 timeout_sec = 120
                 wait_until( \
@@ -673,7 +676,8 @@ class DataMigrationsApiTest(RedpandaTest):
                                                     topic,
                                                     self.msg_size,
                                                     readers=3,
-                                                    group_name="test-group")
+                                                    group_name="test-group",
+                                                    trace_logs=True)
 
         consumer.start(clean=False)
         return consumer
@@ -743,13 +747,19 @@ class DataMigrationsApiTest(RedpandaTest):
 
     def consume_and_validate(self, topic_name, expected_records):
         consumer = self.start_consumer(topic=topic_name)
+
+        def check():
+            self.logger.info(
+                f"consumer={id(consumer)}, consumer._status={consumer._status}, expected_records={expected_records}"
+            )
+            return consumer._status.validator.valid_reads >= expected_records
+
         wait_until(
-            lambda: \
-                consumer._status.validator.valid_reads >= expected_records,
+            check,
             timeout_sec=180,
             backoff_sec=0.5,
-            err_msg=
-            f"Error waiting for consumer to see all {expected_records} produced messages",
+            err_msg=f"Error waiting for consumer to see all {expected_records} "
+            f"produced messages, seeing {consumer._status}",
         )
         consumer.wait()
         consumer.stop()
