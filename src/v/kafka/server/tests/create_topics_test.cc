@@ -438,3 +438,53 @@ FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
     BOOST_CHECK_EQUAL(resp.data.topics[0].error_code, kafka::error_code::none);
     BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic1");
 }
+
+FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
+    revoke_license();
+    auto si_props = {
+      ss::sstring{kafka::topic_property_remote_read},
+      ss::sstring{kafka::topic_property_remote_write},
+      ss::sstring{kafka::topic_property_recovery},
+      ss::sstring{kafka::topic_property_read_replica},
+    };
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    for (const auto& prop : si_props) {
+        auto topic = make_topic(
+          ssx::sformat("topic_{}", prop),
+          std::nullopt,
+          std::nullopt,
+          std::map<ss::sstring, ss::sstring>{{prop, "true"}});
+
+        auto resp
+          = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+        BOOST_CHECK_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+    }
+}
+
+FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
+    revoke_license();
+
+    const std::initializer_list<std::string_view> si_configs{
+      lconf().cloud_storage_enable_remote_read.name(),
+      lconf().cloud_storage_enable_remote_write.name()};
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    for (const auto& config : si_configs) {
+        update_cluster_config(config, "true");
+        auto topic = make_topic(ssx::sformat("topic_{}", config));
+
+        auto resp
+          = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+        BOOST_CHECK_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+        update_cluster_config(config, "false");
+    }
+}
