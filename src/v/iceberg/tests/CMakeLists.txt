@@ -47,6 +47,7 @@ rp_test(
     values_avro_test.cc
     values_bytes_test.cc
     metadata_query_test.cc
+    rest_catalog_test.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams
