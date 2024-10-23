@@ -8,10 +8,13 @@ redpanda_cc_library(
     hdrs = [
         "transform_offsets_stm.h",
     ],
+    implementation_deps = [
+        "//src/v/cluster",
+    ],
     include_prefix = "transform/stm",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/cluster",
+        "//src/v/cluster:state_machine_registry",
         "//src/v/model",
         "@seastar",
     ],

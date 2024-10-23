@@ -252,6 +252,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "state_machine_registry",
+    hdrs = [
+        "state_machine_registry.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/raft",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster",
     srcs = [
         "archival/adjacent_segment_merger.cc",
@@ -574,7 +586,6 @@ redpanda_cc_library(
         "shard_table.h",
         "simple_batch_builder.h",
         "snapshot.h",
-        "state_machine_registry.h",
         "tm_stm.h",
         "tm_stm_types.h",
         "topic_configuration.h",
@@ -620,6 +631,7 @@ redpanda_cc_library(
         ":partition_balancer_rpc",
         ":run_quota",
         ":self_test_rpc",
+        ":state_machine_registry",
         ":topic_recovery_status_rpc",
         ":tx_gateway_rpc",
         ":tx_manager_migrator_rpc",
