@@ -22,6 +22,9 @@
 
 #include <seastar/util/noncopyable_function.hh>
 
+#include <absl/container/flat_hash_set.h>
+
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <functional>
@@ -69,6 +72,7 @@ public:
 template<class T>
 class property : public base_property {
 public:
+    using underlying = T;
     using validator =
       typename ss::noncopyable_function<std::optional<ss::sstring>(const T&)>;
 
@@ -130,6 +134,10 @@ public:
     bool is_hidden() const override {
         return get_visibility() == visibility::deprecated;
     }
+
+    bool is_enterprise_only() const override { return false; }
+
+    virtual bool check_restricted(const T&) const { return false; }
 
     const T& operator()() { return value(); }
 
@@ -952,6 +960,102 @@ public:
     bool is_hidden() const override {
         return this->value() == this->default_value();
     }
+};
+
+namespace detail {
+template<typename P>
+concept Property
+  = (std::derived_from<P, property<typename P::underlying>> || std::is_same_v<P, property<typename P::underlying>>);
+
+template<typename T>
+concept Array = !(std::is_same_v<std::decay_t<T>, ss::sstring>
+                  || std::is_same_v<std::decay_t<T>, std::string>)
+                && is_collection<T>;
+
+template<typename T>
+concept OptArray = reflection::is_std_optional<T>
+                   && Array<typename T::value_type>;
+
+} // namespace detail
+
+template<detail::Property P>
+class enterprise : public P {
+    template<typename T, typename = void>
+    struct value_type {
+        using type = T;
+    };
+    template<detail::Array T>
+    struct value_type<T, std::void_t<typename T::value_type>> {
+        using type = T::value_type;
+    };
+    template<reflection::is_std_optional T>
+    struct value_type<T, std::void_t<typename T::value_type>> {
+        using type = T::value_type;
+    };
+
+    using T = typename P::underlying;
+    using ValT = typename value_type<T>::type;
+    using val_container_t = absl::flat_hash_set<ValT>;
+    using restrict_check_t = std::function<bool(const ValT&)>;
+
+public:
+    // TODO(oren): gonna need to wire this up to property_type_name, which
+    // should be fine, just reach in!
+    using PropertyType = P;
+
+    // TODO(oren): take a range
+    template<typename R, typename... Args>
+    requires std::ranges::range<R>
+               && std::is_same_v<std::ranges::range_value_t<R>, ValT>
+    enterprise(config_store& conf, R restrict, Args&&... args)
+      : P(conf, std::forward<Args>(args)...)
+      , _conf(conf)
+      , _restricted_vals(
+          std::make_move_iterator(restrict.begin()),
+          std::make_move_iterator(restrict.end())) {}
+
+    template<typename... Args>
+    enterprise(config_store& conf, ValT restrict, Args&&... args)
+      : P(conf, std::forward<Args>(args)...)
+      , _conf(conf)
+      , _restricted_vals({restrict}) {}
+
+    template<typename... Args>
+    enterprise(config_store& conf, restrict_check_t restrict, Args&&... args)
+      : P(conf, std::forward<Args>(args)...)
+      , _conf(conf)
+      , _restricted_check(restrict) {}
+
+    bool check_restricted(const T& setting) const final {
+        auto chkr = _restricted_check.value_or(
+          [](const ValT&) { return false; });
+
+        if constexpr (detail::Array<T>) {
+            return std::any_of(
+              setting.begin(), setting.end(), [this, &chkr](const auto& v) {
+                  return _restricted_vals.contains(v) || chkr(v);
+              });
+        }
+        if constexpr (reflection::is_std_optional<T>) {
+            return setting.has_value()
+              && (_restricted_vals.contains(setting.value()) || chkr(setting.value()));
+        }
+
+        if constexpr (std::is_same_v<T, ValT>) {
+            return _restricted_vals.contains(setting) || chkr(setting);
+        }
+    }
+
+    bool is_enterprise_only() const final { return true; }
+
+    std::string_view type_name() const {
+        return detail::property_type_name<T>();
+    }
+
+private:
+    config_store& _conf;
+    val_container_t _restricted_vals;
+    std::optional<restrict_check_t> _restricted_check;
 };
 
 }; // namespace config

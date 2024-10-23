@@ -12,7 +12,9 @@ set(srcs
     validator_tests.cc
     throughput_control_group_test.cc
     node_override_test.cc
-    leaders_preference_test.cc)
+    leaders_preference_test.cc
+    enterprise_property_test.cc
+  )
 
 rp_test(
   UNIT_TEST

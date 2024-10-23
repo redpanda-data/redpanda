@@ -107,6 +107,7 @@ public:
     virtual void reset() = 0;
     virtual bool is_default() const = 0;
     virtual bool is_hidden() const = 0;
+    virtual bool is_enterprise_only() const = 0;
 
     /**
      * Helper for logging string-ized values of a property, e.g.
