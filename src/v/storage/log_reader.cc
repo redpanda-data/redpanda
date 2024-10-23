@@ -309,18 +309,6 @@ log_reader::log_reader(
     // it is shared with the reset path (which occurs on reader cache hit).
     reset(config, iterator_pair{_lease->range.begin()}, false);
 
-    if (config.abort_source) {
-        auto op_sub = config.abort_source.value().get().subscribe(
-          [this]() noexcept { set_end_of_stream(); });
-
-        if (op_sub) {
-            _as_sub = std::move(*op_sub);
-        } else {
-            // already aborted
-            set_end_of_stream();
-        }
-    }
-
     if (_iterator.next_seg != _lease->range.end()) {
         _iterator.reader = std::make_unique<log_segment_batch_reader>(
           **_iterator.next_seg, _config, _probe);
@@ -561,6 +549,18 @@ void log_reader::reset(
     // indicates that this reader was reset because it will be re-used as a
     // result of a reader cache hit
     _was_cached = cache_hit;
+
+    if (_config.abort_source) {
+        auto op_sub = _config.abort_source.value().get().subscribe(
+          [this]() noexcept { set_end_of_stream(); });
+
+        if (op_sub) {
+            _as_sub = std::move(*op_sub);
+        } else {
+            // already aborted
+            set_end_of_stream();
+        }
+    }
 };
 
 static inline bool is_finished_offset(segment_set& s, model::offset o) {
