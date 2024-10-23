@@ -1472,11 +1472,15 @@ configuration::configuration()
       false)
   , sasl_mechanisms(
       *this,
+      std::vector<ss::sstring>{"GSSAPI", "OAUTHBEARER"},
       "sasl_mechanisms",
       "A list of supported SASL mechanisms. Accepted values: `SCRAM`, "
       "`GSSAPI`, `OAUTHBEARER`.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      {"SCRAM"},
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
+      std::vector<ss::sstring>{"SCRAM"},
       validate_sasl_mechanisms)
   , sasl_kerberos_config(
       *this,
@@ -1720,11 +1724,15 @@ configuration::configuration()
       true)
   , audit_enabled(
       *this,
+      true, /* restricted values */
       "audit_enabled",
       "Enables or disables audit logging. When you set this to true, Redpanda "
       "checks for an existing topic named `_redpanda.audit_log`. If none is "
       "found, Redpanda automatically creates one for you.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
       false)
   , audit_log_num_partitions(
       *this,
@@ -1813,10 +1821,14 @@ configuration::configuration()
       {})
   , cloud_storage_enabled(
       *this,
+      true,
       "cloud_storage_enabled",
       "Enable object storage. Must be set to `true` to use Tiered Storage or "
       "Remote Read Replicas.",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::yes,
+        .visibility = visibility::user,
+      },
       false)
   , cloud_storage_enable_remote_read(
       *this,
@@ -2965,6 +2977,7 @@ configuration::configuration()
 
   , partition_autobalancing_mode(
       *this,
+      model::partition_autobalancing_mode::continuous,
       "partition_autobalancing_mode",
       "Mode of partition balancing for a cluster. * `node_add`: partition "
       "balancing happens when a node is added. * `continuous`: partition "
@@ -2976,11 +2989,13 @@ configuration::configuration()
       "`partition_autobalancing_max_disk_usage_percent` properties. * `off`: "
       "partition balancing is disabled. This option is not recommended for "
       "production clusters.",
-      {.needs_restart = needs_restart::no,
-       .example = "node_add",
-       .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::no,
+        .example = "node_add",
+        .visibility = visibility::user,
+      },
       model::partition_autobalancing_mode::node_add,
-      {
+      std::vector<model::partition_autobalancing_mode>{
         model::partition_autobalancing_mode::off,
         model::partition_autobalancing_mode::node_add,
         model::partition_autobalancing_mode::continuous,
@@ -3086,12 +3101,18 @@ configuration::configuration()
       {.min = 1, .max = 2048})
   , default_leaders_preference(
       *this,
+      [](const config::leaders_preference& v) {
+          return v != config::leaders_preference{};
+      },
       "default_leaders_preference",
       "Default settings for preferred location of topic partition leaders. "
       "It can be either \"none\" (no preference), "
       "or \"racks:<rack1>,<rack2>,...\" (prefer brokers with rack id from the "
       "list).",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
       config::leaders_preference{})
   , core_balancing_on_core_count_change(
       *this,
@@ -3103,10 +3124,14 @@ configuration::configuration()
       true)
   , core_balancing_continuous(
       *this,
+      true,
       "core_balancing_continuous",
       "If set to `true`, move partitions between cores in runtime to maintain "
       "balanced partition distribution.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
       false)
   , core_balancing_debounce_timeout(
       *this,
@@ -3495,6 +3520,10 @@ configuration::configuration()
       300s)
   , enable_schema_id_validation(
       *this,
+      std::vector<pandaproxy::schema_registry::schema_id_validation_mode>{
+        pandaproxy::schema_registry::schema_id_validation_mode::compat,
+        pandaproxy::schema_registry::schema_id_validation_mode::redpanda,
+      },
       "enable_schema_id_validation",
       "Mode to enable server-side schema ID validation. Accepted Values: * "
       "`none`: Schema validation is disabled (no schema ID checks are done). "
@@ -3502,11 +3531,15 @@ configuration::configuration()
       "validation is enabled. Only Redpanda topic properties are accepted. * "
       "`compat`: Schema validation is enabled. Both Redpanda and compatible "
       "topic properties are accepted.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
       pandaproxy::schema_registry::schema_id_validation_mode::none,
-      {pandaproxy::schema_registry::schema_id_validation_mode::none,
-       pandaproxy::schema_registry::schema_id_validation_mode::redpanda,
-       pandaproxy::schema_registry::schema_id_validation_mode::compat})
+      std::vector<pandaproxy::schema_registry::schema_id_validation_mode>{
+        pandaproxy::schema_registry::schema_id_validation_mode::none,
+        pandaproxy::schema_registry::schema_id_validation_mode::redpanda,
+        pandaproxy::schema_registry::schema_id_validation_mode::compat})
   , kafka_schema_id_validation_cache_capacity(
       *this,
       "kafka_schema_id_validation_cache_capacity",
@@ -3641,11 +3674,15 @@ configuration::configuration()
       1h)
   , http_authentication(
       *this,
+      "OIDC",
       "http_authentication",
       "A list of supported HTTP authentication mechanisms. Accepted Values: "
       "`BASIC`, `OIDC`",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      {"BASIC"},
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
+      std::vector<ss::sstring>{"BASIC"},
       validate_http_authn_mechanisms)
   , enable_mpx_extensions(
       *this,
@@ -3682,6 +3719,7 @@ configuration::configuration()
        tls_version::v1_3})
   , iceberg_enabled(
       *this,
+      true,
       "iceberg_enabled",
       "Enables the translation of topic data into Iceberg tables. Setting "
       "iceberg_enabled to true activates the feature at the cluster level, but "
@@ -3689,7 +3727,10 @@ configuration::configuration()
       "property to true to use it. If iceberg_enabled is set to false, the "
       "feature is disabled for all topics in the cluster, overriding any "
       "topic-level settings.",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      meta{
+        .needs_restart = needs_restart::yes,
+        .visibility = visibility::user,
+      },
       false)
   , iceberg_translation_interval_ms_default(
       *this,

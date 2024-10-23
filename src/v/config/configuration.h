@@ -107,6 +107,7 @@ private:
 };
 
 struct configuration final : public config_store {
+    using meta = base_property::metadata;
     constexpr static auto target_produce_quota_byte_rate_default
       = 0; // disabled
 
@@ -320,7 +321,7 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;
-    property<std::vector<ss::sstring>> sasl_mechanisms;
+    enterprise<property<std::vector<ss::sstring>>> sasl_mechanisms;
     property<ss::sstring> sasl_kerberos_config;
     property<ss::sstring> sasl_kerberos_keytab;
     property<ss::sstring> sasl_kerberos_principal;
@@ -361,7 +362,7 @@ struct configuration final : public config_store {
     property<bool> kafka_enable_describe_log_dirs_remote_storage;
 
     // Audit logging
-    property<bool> audit_enabled;
+    enterprise<property<bool>> audit_enabled;
     property<int32_t> audit_log_num_partitions;
     property<std::optional<int16_t>> audit_log_replication_factor;
     property<size_t> audit_client_max_buffer_size;
@@ -372,7 +373,7 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> audit_excluded_principals;
 
     // Archival storage
-    property<bool> cloud_storage_enabled;
+    enterprise<property<bool>> cloud_storage_enabled;
     property<bool> cloud_storage_enable_remote_read;
     property<bool> cloud_storage_enable_remote_write;
     property<bool> cloud_storage_disable_archiver_manager;
@@ -560,7 +561,7 @@ struct configuration final : public config_store {
     deprecated_property full_raft_configuration_recovery_pattern;
     property<bool> enable_auto_rebalance_on_node_add;
 
-    enum_property<model::partition_autobalancing_mode>
+    enterprise<enum_property<model::partition_autobalancing_mode>>
       partition_autobalancing_mode;
     property<std::chrono::seconds>
       partition_autobalancing_node_availability_timeout_sec;
@@ -579,10 +580,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
     bounded_property<size_t> leader_balancer_transfer_limit_per_shard;
-    property<config::leaders_preference> default_leaders_preference;
+    enterprise<property<config::leaders_preference>> default_leaders_preference;
 
     property<bool> core_balancing_on_core_count_change;
-    property<bool> core_balancing_continuous;
+    enterprise<property<bool>> core_balancing_continuous;
     property<std::chrono::milliseconds> core_balancing_debounce_timeout;
 
     property<int> internal_topic_replication_factor;
@@ -655,7 +656,8 @@ struct configuration final : public config_store {
     property<std::chrono::seconds> legacy_unsafe_log_warning_interval_sec;
 
     // schema id validation
-    enum_property<pandaproxy::schema_registry::schema_id_validation_mode>
+    enterprise<
+      enum_property<pandaproxy::schema_registry::schema_id_validation_mode>>
       enable_schema_id_validation;
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
@@ -682,7 +684,7 @@ struct configuration final : public config_store {
     property<std::chrono::seconds> oidc_keys_refresh_interval;
 
     // HTTP Authentication
-    property<std::vector<ss::sstring>> http_authentication;
+    enterprise<property<std::vector<ss::sstring>>> http_authentication;
 
     // MPX
     property<bool> enable_mpx_extensions;
@@ -694,7 +696,7 @@ struct configuration final : public config_store {
     enum_property<tls_version> tls_min_version;
 
     // datalake configurations
-    property<bool> iceberg_enabled;
+    enterprise<property<bool>> iceberg_enabled;
     bounded_property<std::chrono::milliseconds>
       iceberg_translation_interval_ms_default;
     bounded_property<std::chrono::milliseconds>
