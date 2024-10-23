@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 load("//bazel/thirdparty:avro.bzl", "avro_cc_library")
 
 avro_cc_library(
@@ -7,6 +7,25 @@ avro_cc_library(
     include_prefix = "serde/avro/tests",
     namespace = "serde::avro::tests",
     schema = "testdata/array",
+)
+
+redpanda_test_cc_library(
+    name = "data_generator",
+    srcs = [
+        "data_generator.cc",
+    ],
+    hdrs = [
+        "data_generator.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/random:generators",
+    ],
+    include_prefix = "serde/avro/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@avro",
+    ],
 )
 
 redpanda_cc_gtest(
@@ -52,6 +71,7 @@ redpanda_cc_gtest(
     memory = "128MiB",
     deps = [
         ":avro_test_array",
+        ":data_generator",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
