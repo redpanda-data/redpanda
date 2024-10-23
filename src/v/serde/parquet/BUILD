@@ -82,3 +82,23 @@ redpanda_cc_library(
         "//src/v/utils:vint",
     ],
 )
+
+redpanda_cc_library(
+    name = "shredder",
+    srcs = [
+        "shredder.cc",
+    ],
+    hdrs = [
+        "shredder.h",
+    ],
+    include_prefix = "serde/parquet",
+    deps = [
+        ":schema",
+        ":value",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:vint",
+        "@seastar",
+    ],
+)
