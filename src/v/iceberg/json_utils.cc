@@ -148,6 +148,19 @@ parse_optional_i64(const json::Value& v, std::string_view member_name) {
     return json->get().GetInt64();
 }
 
+std::optional<ss::sstring>
+parse_optional_str(const json::Value& v, std::string_view member_name) {
+    const auto json = parse_optional(v, member_name);
+    if (!json.has_value()) {
+        return std::nullopt;
+    }
+    if (!json->get().IsString()) {
+        throw std::invalid_argument(
+          fmt::format("Expected string for field '{}'", member_name));
+    }
+    return json->get().GetString();
+}
+
 bool parse_required_bool(const json::Value& v, std::string_view member_name) {
     const auto& bool_json = parse_required(v, member_name);
     if (!bool_json.IsBool()) {

@@ -13,13 +13,14 @@
 #include "bytes/iobuf_parser.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
-#include "iceberg/rest_client/parsers.h"
+#include "iceberg/rest_client/json.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <absl/strings/str_join.h>
 #include <absl/strings/strip.h>
+#include <rapidjson/error/en.h>
 
 namespace {
 
@@ -34,6 +35,24 @@ T trim_slashes(std::optional<T> input, typename T::type default_value) {
 } // namespace
 
 namespace iceberg::rest_client {
+namespace {
+template<typename Func>
+auto parse_as_expected(std::string_view ctx, Func&& parse_func) {
+    using ret_t = std::invoke_result_t<Func, const json::Document&>;
+    return [f = std::forward<Func>(parse_func),
+            ctx](const json::Document& document) -> expected<ret_t> {
+        try {
+            return f(document);
+        } catch (...) {
+            return tl::unexpected<domain_error>(json_parse_error{
+              .context = ss::sstring(ctx),
+              .error = parse_error_msg{fmt::format(
+                "error parsing JSON - {}", std::current_exception())},
+            });
+        }
+    };
+}
+} // namespace
 
 expected<json::Document> parse_json(iobuf&& raw_response) {
     iobuf_parser p{std::move(raw_response)};
@@ -52,7 +71,7 @@ expected<json::Document> parse_json(iobuf&& raw_response) {
 }
 
 catalog_client::catalog_client(
-  client_source& client_source,
+  std::unique_ptr<http::abstract_client> http_client,
   ss::sstring endpoint,
   credentials credentials,
   std::optional<base_path> base_path,
@@ -60,7 +79,7 @@ catalog_client::catalog_client(
   std::optional<api_version> api_version,
   std::optional<oauth_token> token,
   std::unique_ptr<retry_policy> retry_policy)
-  : _client_source{client_source}
+  : _http_client(std::move(http_client))
   , _endpoint{std::move(endpoint)}
   , _credentials{std::move(credentials)}
   , _path_components{std::move(base_path), std::move(prefix), std::move(api_version)}
@@ -86,7 +105,7 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
     });
     co_return (co_await perform_request(rtc, token_request, std::move(payload)))
       .and_then(parse_json)
-      .and_then(parse_oauth_token);
+      .and_then(parse_as_expected("oauth_token", parse_oauth_token));
 }
 
 ss::sstring catalog_client::root_path() const {
@@ -102,10 +121,10 @@ catalog_client::ensure_token(retry_chain_node& rtc) {
         co_return (co_await acquire_token(rtc))
           .and_then([this](auto t) -> expected<ss::sstring> {
               _oauth_token.emplace(t);
-              return t.token;
+              return t.access_token;
           });
     }
-    co_return _oauth_token->token;
+    co_return _oauth_token->access_token;
 }
 
 ss::future<expected<iobuf>> catalog_client::perform_request(
@@ -123,11 +142,9 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
 
     std::vector<http_call_error> retriable_errors{};
 
-    auto client_ptr = _client_source.get().acquire();
     while (true) {
         const auto permit = rtc.retry();
         if (!permit.is_allowed) {
-            co_await client_ptr->shutdown_and_stop();
             co_return tl::unexpected(
               retries_exhausted{.errors = std::move(retriable_errors)});
         }
@@ -137,30 +154,22 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
             request_payload.emplace(payload->copy());
         }
         auto response_f = co_await ss::coroutine::as_future(
-          client_ptr->request_and_collect_response(
+          _http_client->request_and_collect_response(
             std::move(request.value()), std::move(request_payload)));
         auto call_res = _retry_policy->should_retry(std::move(response_f));
 
         if (call_res.has_value()) {
-            co_await client_ptr->shutdown_and_stop();
             co_return std::move(call_res->body);
         }
 
         auto& error = call_res.error();
         if (!error.can_be_retried) {
-            co_await client_ptr->shutdown_and_stop();
             co_return tl::unexpected(std::move(error.err));
-        }
-
-        if (error.is_transport_error()) {
-            co_await client_ptr->shutdown_and_stop();
-            client_ptr = _client_source.get().acquire();
         }
 
         retriable_errors.emplace_back(std::move(error.err));
         co_await ss::sleep_abortable(permit.delay, rtc.root_abort_source());
     }
-    co_await client_ptr->shutdown_and_stop();
 }
 
 path_components::path_components(

@@ -11,7 +11,7 @@
 #pragma once
 
 #include "http/client.h"
-#include "iceberg/rest_client/types.h"
+#include "iceberg/rest_client/error.h"
 
 namespace iceberg::rest_client {
 

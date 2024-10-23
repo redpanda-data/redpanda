@@ -13,8 +13,10 @@
 #include "bytes/iobuf.h"
 #include "http/client.h"
 #include "http/request_builder.h"
+#include "iceberg/rest_client/credentials.h"
+#include "iceberg/rest_client/error.h"
+#include "iceberg/rest_client/oauth_token.h"
 #include "iceberg/rest_client/retry_policy.h"
-#include "iceberg/rest_client/types.h"
 #include "json/document.h"
 #include "utils/named_type.h"
 #include "utils/retry_chain_node.h"
@@ -27,16 +29,6 @@ namespace iceberg::rest_client {
 using base_path = named_type<ss::sstring, struct base_path_t>;
 using prefix_path = named_type<ss::sstring, struct prefix_t>;
 using api_version = named_type<ss::sstring, struct api_version_t>;
-
-// A client source generates low level http clients for the catalog client to
-// make API calls with. Once a generic http client pool is implemented, it can
-// use the same interface and hand out client leases instead of unique ptrs.
-struct client_source {
-    // A client returned by this method call is owned by the caller. It should
-    // be shut down after use by the caller.
-    virtual std::unique_ptr<http::abstract_client> acquire() = 0;
-    virtual ~client_source() = default;
-};
 
 // Holds parts of a root path used by catalog client
 struct path_components {
@@ -87,7 +79,7 @@ public:
     /// if valid. If expired, a new one will be acquired \param retry_policy a
     /// retry policy used to determine how failing calls will be retried
     catalog_client(
-      client_source& client_source,
+      std::unique_ptr<http::abstract_client> client,
       ss::sstring endpoint,
       credentials credentials,
       std::optional<base_path> base_path = std::nullopt,
@@ -95,6 +87,9 @@ public:
       std::optional<api_version> api_version = std::nullopt,
       std::optional<oauth_token> token = std::nullopt,
       std::unique_ptr<retry_policy> retry_policy = nullptr);
+
+    // Must be called before destroying the client to prevent resource leak
+    ss::future<> shutdown() { return _http_client->shutdown_and_stop(); }
 
 private:
     // The root url calculated from base url, prefix and api version. Given a
@@ -118,7 +113,7 @@ private:
       http::request_builder request_builder,
       std::optional<iobuf> payload = std::nullopt);
 
-    std::reference_wrapper<client_source> _client_source;
+    std::unique_ptr<http::abstract_client> _http_client;
     ss::sstring _endpoint;
     credentials _credentials;
     path_components _path_components;

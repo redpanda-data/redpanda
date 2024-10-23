@@ -3,13 +3,17 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 
 redpanda_cc_library(
-    name = "rest_client_types",
+    name = "error",
+    srcs = [
+        "error.cc",
+    ],
     hdrs = [
-        "types.h",
+        "error.h",
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
         "//src/v/base",
+        "//src/v/http:request_builder",
         "//src/v/thirdparty/ada",
         "//src/v/utils:named_type",
         "@boost//:beast",
@@ -18,16 +22,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "rest_client_parsers",
+    name = "json",
     srcs = [
-        "parsers.cc",
+        "json.cc",
     ],
     hdrs = [
-        "parsers.h",
+        "json.h",
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
-        ":rest_client_types",
+        ":oauth_token",
+        "//src/v/iceberg:json_utils",
         "//src/v/json",
         "//src/v/utils:named_type",
     ],
@@ -43,14 +48,54 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
-        ":rest_client_types",
+        ":error",
         "//src/v/http",
         "//src/v/net",
     ],
 )
 
 redpanda_cc_library(
-    name = "rest_catalog_client",
+    name = "credentials",
+    hdrs = [
+        "credentials.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "oauth_token",
+    hdrs = [
+        "oauth_token.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "entities",
+    srcs = [
+        "entities.cc",
+    ],
+    hdrs = [
+        "entities.h",
+    ],
+    include_prefix = "iceberg/rest_client",
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/http:rest_entity",
+        "//src/v/ssx:sformat",
+    ],
+)
+
+redpanda_cc_library(
+    name = "client",
     srcs = [
         "catalog_client.cc",
     ],
@@ -59,8 +104,10 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg/rest_client",
     deps = [
-        ":rest_client_parsers",
-        ":rest_client_types",
+        ":credentials",
+        ":error",
+        ":json",
+        ":oauth_token",
         ":retry_policy",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -71,6 +118,7 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:retry_chain_node",
         "@abseil-cpp//absl/strings",
+        "@rapidjson",
         "@seastar",
     ],
 )

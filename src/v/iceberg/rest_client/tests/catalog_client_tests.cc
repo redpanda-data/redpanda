@@ -46,27 +46,12 @@ public:
     MOCK_METHOD(ss::future<>, shutdown_and_stop, (), (override));
 };
 
-// A client source for testing. Allows setting expectation on a client before
-// returning to the catalog client.
-struct client_source : public r::client_source {
-    client_source(
-      std::function<void(std::reference_wrapper<mock_client>)> expectation)
-      : _expectation{std::move(expectation)} {}
-
-    std::unique_ptr<http::abstract_client> acquire() final {
-        auto ptr = std::make_unique<mock_client>();
-        _expectation(*(ptr.get()));
-
-        // Client passed to caller should always be shut down, and exactly once
-        EXPECT_CALL(*(ptr.get()), shutdown_and_stop())
-          .Times(1)
-          .WillOnce(t::Return(ss::make_ready_future()));
-        return ptr;
-    }
-
-private:
-    std::function<void(std::reference_wrapper<mock_client>)> _expectation;
-};
+std::unique_ptr<http::abstract_client>
+make_http_client(std::function<void(mock_client& mock)> set_expectations) {
+    auto client = std::make_unique<mock_client>();
+    set_expectations(*client);
+    return client;
+}
 
 namespace iceberg::rest_client {
 
@@ -109,9 +94,8 @@ TEST(path_components, path_with_prefix) {
 }
 
 TEST(client, root_url_computed) {
-    client_source cs{[](mock_client&) {}};
     r::catalog_client cc{
-      cs,
+      make_http_client([](mock_client&) {}),
       endpoint,
       credentials,
       r::base_path{"api/catalog/"},
@@ -142,15 +126,18 @@ ss::future<http::downloaded_response> validate_token_request(
 
     co_return http::downloaded_response{
       .status = bh::status::ok,
-      .body = iobuf::from(R"J({"access_token": "token", "expires_in": 1})J")};
+      .body = iobuf::from(
+        R"J({"access_token": "token","token_type":"bearer", "expires_in": 1})J")};
 }
 
 TEST(token_tests, acquire_token) {
-    client_source cs{[](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
-          .WillOnce(validate_token_request);
-    }};
-    r::catalog_client cc{cs, endpoint, credentials};
+    r::catalog_client cc{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .WillOnce(validate_token_request);
+      }),
+      endpoint,
+      credentials};
     r::catalog_client_tester t{cc};
     auto token = t.get_current_token().get();
     ASSERT_TRUE(token.has_value());
@@ -158,13 +145,13 @@ TEST(token_tests, acquire_token) {
 }
 
 TEST(token_tests, supplied_token_used) {
-    client_source cs{[](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_)).Times(0);
-    }};
     const r::oauth_token supplied_token{
-      .token = "t", .expires_at = ss::lowres_clock::now() + 1h};
+      .access_token = "t", .expires_at = ss::lowres_clock::now() + 1h};
     r::catalog_client cc{
-      cs,
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .Times(0);
+      }),
       endpoint,
       credentials,
       std::nullopt,
@@ -175,18 +162,17 @@ TEST(token_tests, supplied_token_used) {
     r::catalog_client_tester t{cc};
     auto token = t.get_current_token().get();
     ASSERT_TRUE(token.has_value());
-    ASSERT_EQ(token, supplied_token.token);
+    ASSERT_EQ(token, supplied_token.access_token);
 }
 
 TEST(token_tests, supplied_token_expired) {
-    client_source cs{[](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
-          .WillOnce(validate_token_request);
-    }};
     const r::oauth_token expired_token{
-      .token = "t", .expires_at = ss::lowres_clock::now()};
+      .access_token = "t", .expires_at = ss::lowres_clock::now()};
     r::catalog_client cc{
-      cs,
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .WillOnce(validate_token_request);
+      }),
       endpoint,
       credentials,
       std::nullopt,
@@ -202,13 +188,16 @@ TEST(token_tests, supplied_token_expired) {
 }
 
 TEST(token_tests, handle_bad_json) {
-    client_source cs{[](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
-          .WillOnce(t::Return(ss::make_ready_future<http::downloaded_response>(
-            http::downloaded_response{
-              .status = bh::status::ok, .body = iobuf::from(R"J({)J")})));
-    }};
-    r::catalog_client cc{cs, endpoint, credentials};
+    r::catalog_client cc{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .WillOnce(
+              t::Return(ss::make_ready_future<http::downloaded_response>(
+                http::downloaded_response{
+                  .status = bh::status::ok, .body = iobuf::from(R"J({)J")})));
+      }),
+      endpoint,
+      credentials};
     r::catalog_client_tester t{cc};
     auto token = t.get_current_token().get();
     ASSERT_FALSE(token.has_value());
@@ -219,14 +208,16 @@ TEST(token_tests, handle_bad_json) {
 }
 
 TEST(token_tests, handle_non_retriable_http_status) {
-    client_source cs{[](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
-          .WillOnce(t::Return(ss::make_ready_future<http::downloaded_response>(
-            http::downloaded_response{
-              .status = bh::status::bad_request, .body = iobuf()})));
-    }};
-
-    r::catalog_client cc{cs, endpoint, credentials};
+    r::catalog_client cc{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .WillOnce(
+              t::Return(ss::make_ready_future<http::downloaded_response>(
+                http::downloaded_response{
+                  .status = bh::status::bad_request, .body = iobuf()})));
+      }),
+      endpoint,
+      credentials};
     r::catalog_client_tester t{cc};
 
     auto token = t.get_current_token().get();
@@ -238,18 +229,22 @@ TEST(token_tests, handle_non_retriable_http_status) {
 }
 
 TEST(token_tests, handle_retriable_http_status) {
-    client_source cs{[](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
-          .WillOnce(t::Return(ss::make_ready_future<http::downloaded_response>(
-            http::downloaded_response{
-              .status = bh::status::gateway_timeout, .body = iobuf()})))
-          .WillOnce(t::Return(ss::make_ready_future<http::downloaded_response>(
-            http::downloaded_response{
+    r::catalog_client cc{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .WillOnce(
+              t::Return(ss::make_ready_future<http::downloaded_response>(
+                http::downloaded_response{
+                  .status = bh::status::gateway_timeout, .body = iobuf()})))
+            .WillOnce(t::Return(ss::make_ready_future<
+                                http::
+                                  downloaded_response>(http::downloaded_response{
               .status = bh::status::ok,
               .body = iobuf::from(
-                R"J({"access_token": "token", "expires_in": 1})J")})));
-    }};
-    r::catalog_client cc{cs, endpoint, credentials};
+                R"J({"access_token": "token","token_type": "bearer", "expires_in": 1})J")})));
+      }),
+      endpoint,
+      credentials};
     r::catalog_client_tester t{cc};
 
     auto token = t.get_current_token().get();
@@ -266,12 +261,13 @@ TEST(token_tests, handle_retries_exhausted) {
           http::downloaded_response{.status = bh::status::gateway_timeout});
     };
 
-    client_source cs{[&ret](mock_client& m) {
-        EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
-          .WillRepeatedly(ret);
-    }};
-
-    r::catalog_client cc{cs, endpoint, credentials};
+    r::catalog_client cc{
+      make_http_client([&ret](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(t::_, t::_, t::_))
+            .WillRepeatedly(ret);
+      }),
+      endpoint,
+      credentials};
     r::catalog_client_tester t{cc};
 
     auto token = t.get_current_token().get();
