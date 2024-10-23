@@ -356,6 +356,18 @@ class DataMigrationsApiTest(RedpandaTest):
         self.redpanda.set_cluster_config({param_to_disable: True},
                                          expect_restart=True)
 
+    def execute_data_migration_action_flaky(self, migration_id, action):
+        try:
+            self.admin.execute_data_migration_action(migration_id, action)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 400:
+                # previous attempt might be successful but response lost
+                self.logger.info(
+                    f"operation {action} on migration {migration_id} failed with {e}, ignoring"
+                )
+                return
+            raise
+
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_mount_inexistent(self):
         topic = TopicSpec(partition_count=3)
@@ -374,7 +386,7 @@ class DataMigrationsApiTest(RedpandaTest):
             assert len(migrations_map[in_migration_id]['migration']
                        ['topics']) == 1, "migration should contain one topic"
 
-            self.admin.execute_data_migration_action(in_migration_id,
+            self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.prepare)
             self.wait_for_migration_states(in_migration_id, ['preparing'])
             time.sleep(10)
@@ -383,7 +395,7 @@ class DataMigrationsApiTest(RedpandaTest):
             # and the topic is not there
             self.wait_partitions_disappear([topic])
 
-            self.admin.execute_data_migration_action(in_migration_id,
+            self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.cancel)
             self.wait_for_migration_states(in_migration_id,
                                            ['canceling', 'cancelled'])
@@ -423,17 +435,17 @@ class DataMigrationsApiTest(RedpandaTest):
             assert len(migrations_map[out_migration_id]['migration']['topics']
                        ) == len(topics), "migration should contain all topics"
 
-            self.admin.execute_data_migration_action(out_migration_id,
+            self.execute_data_migration_action_flaky(out_migration_id,
                                                      MigrationAction.prepare)
             self.wait_for_migration_states(out_migration_id,
                                            ['preparing', 'prepared'])
             self.wait_for_migration_states(out_migration_id, ['prepared'])
-            self.admin.execute_data_migration_action(out_migration_id,
+            self.execute_data_migration_action_flaky(out_migration_id,
                                                      MigrationAction.execute)
             self.wait_for_migration_states(out_migration_id,
                                            ['executing', 'executed'])
             self.wait_for_migration_states(out_migration_id, ['executed'])
-            self.admin.execute_data_migration_action(out_migration_id,
+            self.execute_data_migration_action_flaky(out_migration_id,
                                                      MigrationAction.finish)
             self.wait_for_migration_states(out_migration_id,
                                            ['cut_over', 'finished'])
@@ -467,17 +479,17 @@ class DataMigrationsApiTest(RedpandaTest):
                     f"inbound topic: {self.client().describe_topic(t.src_topic.topic)}"
                 )
 
-            self.admin.execute_data_migration_action(in_migration_id,
+            self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.prepare)
             self.wait_for_migration_states(in_migration_id,
                                            ['preparing', 'prepared'])
             self.wait_for_migration_states(in_migration_id, ['prepared'])
-            self.admin.execute_data_migration_action(in_migration_id,
+            self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.execute)
             self.wait_for_migration_states(in_migration_id,
                                            ['executing', 'executed'])
             self.wait_for_migration_states(in_migration_id, ['executed'])
-            self.admin.execute_data_migration_action(in_migration_id,
+            self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.finish)
             self.wait_for_migration_states(in_migration_id,
                                            ['cut_over', 'finished'])
