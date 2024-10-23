@@ -417,6 +417,16 @@ errc topics_frontend::validate_topic_configuration(
             }
         }
     }
+
+    if (
+      _features.local().should_sanction()
+      && (assignable_config.cfg.properties.shadow_indexing
+           != model::shadow_indexing_mode::disabled
+      || assignable_config.is_recovery_enabled()
+      || assignable_config.is_read_replica())) {
+        return errc::feature_disabled;
+    }
+
     if (
       (assignable_config.is_read_replica()
        || assignable_config.is_recovery_enabled())
