@@ -243,3 +243,18 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "schema_registry",
+    srcs = ["schema_registry.cc"],
+    hdrs = ["schema_registry.h"],
+    implementation_deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/pandaproxy",
+    ],
+)
