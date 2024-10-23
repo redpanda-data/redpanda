@@ -18,4 +18,5 @@ v_cc_library(
     v::cloud_topics
 )
 
+add_subdirectory(dl_stm)
 add_subdirectory(reconciler)
