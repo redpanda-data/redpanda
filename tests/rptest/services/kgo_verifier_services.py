@@ -570,7 +570,8 @@ class KgoVerifierProducer(KgoVerifierService):
                  enable_tls=False,
                  msgs_per_producer_id=None,
                  max_buffered_records=None,
-                 tolerate_data_loss=False):
+                 tolerate_data_loss=False,
+                 tolerate_failed_produce=False):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
                              debug_logs, trace_logs, username, password,
@@ -588,6 +589,7 @@ class KgoVerifierProducer(KgoVerifierService):
         self._msgs_per_producer_id = msgs_per_producer_id
         self._max_buffered_records = max_buffered_records
         self._tolerate_data_loss = tolerate_data_loss
+        self._tolerate_failed_produce = tolerate_failed_produce
 
     @property
     def produce_status(self):
@@ -691,6 +693,9 @@ class KgoVerifierProducer(KgoVerifierService):
 
         if self._tolerate_data_loss:
             cmd += " --tolerate-data-loss"
+
+        if self._tolerate_failed_produce:
+            cmd += " --tolerate-failed-produce"
 
         self.spawn(cmd, node)
 
@@ -927,7 +932,8 @@ class ProduceStatus:
                  latency=None,
                  active=False,
                  failed_transactions=0,
-                 aborted_transaction_msgs=0):
+                 aborted_transaction_msgs=0,
+                 fails=0):
         self.topic = topic
         self.sent = sent
         self.acked = acked
@@ -940,7 +946,8 @@ class ProduceStatus:
         self.active = active
         self.failed_transactions = failed_transactions
         self.aborted_transaction_messages = aborted_transaction_msgs
+        self.fails = fails
 
     def __str__(self):
         l = self.latency
-        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {l['p50']}/{l['p90']}/{l['p99']}>"
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {self.fails} {l['p50']}/{l['p90']}/{l['p99']}>"
