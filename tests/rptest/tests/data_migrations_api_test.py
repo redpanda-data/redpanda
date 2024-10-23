@@ -638,7 +638,8 @@ class DataMigrationsApiTest(RedpandaTest):
     def start_producer(self, topic):
         class ProducerWrapper:
             def __init__(self, *args, msg_count, **kwargs):
-                self.producer = KgoVerifierProducer(*args, **kwargs)
+                self.producer = KgoVerifierProducer(
+                    *args, tolerate_failed_produce=True, **kwargs)
                 self.producer.start(clean=False)
                 timeout_sec = 120
                 wait_until( \
