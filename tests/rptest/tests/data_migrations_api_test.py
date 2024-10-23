@@ -368,6 +368,18 @@ class DataMigrationsApiTest(RedpandaTest):
                 return
             raise
 
+    def assure_exactly_one_message(self,
+                                   topic_name,
+                                   predicate=lambda msg: True):
+        with self.ck_consumer() as consumer:
+            consumer.subscribe([topic_name])
+            msg = consumer.poll(20)
+            self.logger.debug(f"first msg={msg}")
+            assert msg.error() is None and predicate(msg)
+            msg = consumer.poll(10)
+            self.logger.debug(f"second msg={msg}")
+            assert msg is None
+
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_mount_inexistent(self):
         topic = TopicSpec(partition_count=3)
@@ -540,19 +552,11 @@ class DataMigrationsApiTest(RedpandaTest):
             in_migr_id = self.admin.mount_topics([in_topic]).json()["id"]
             self.wait_partitions_appear([topic])
             self.wait_migration_disappear(in_migr_id)
-
-            with self.ck_consumer() as consumer:
-                consumer.subscribe([topic.name])
-                msg = consumer.poll(20)
-                self.logger.debug(f"first msg={msg}")
-                assert (msg.error() is None and {
-                    'key': msg.key(),
-                    'value': msg.value()
-                } == make_msg(i))
-                msg = consumer.poll(10)
-                self.logger.debug(f"second msg={msg}")
-                assert msg is None
-
+            expected_msg_predicate = lambda msg: {
+                'key': msg.key(),
+                'value': msg.value()
+            } == make_msg(i)
+            self.assure_exactly_one_message(topic.name, expected_msg_predicate)
             self.client().delete_topic(topic.name)
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
@@ -613,11 +617,7 @@ class DataMigrationsApiTest(RedpandaTest):
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
 
-        with self.ck_consumer() as consumer:
-            consumer.subscribe([topics[0].name])
-            records = consumer.consume(2, 10)
-            self.logger.debug(f"consumed: {records}")
-            assert len(records) == 1
+        self.assure_exactly_one_message(topics[0].name)
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(
