@@ -124,3 +124,33 @@ struct map_entry {
 };
 
 } // namespace serde::parquet
+
+template<>
+struct fmt::formatter<serde::parquet::value>
+  : fmt::formatter<std::string_view> {
+    auto format(const serde::parquet::value&, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<serde::parquet::struct_field>
+  : fmt::formatter<std::string_view> {
+    auto format(const serde::parquet::struct_field&, fmt::format_context& ctx)
+      const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<serde::parquet::list_element>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(const serde::parquet::list_element&, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<serde::parquet::map_entry>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(const serde::parquet::map_entry&, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};
