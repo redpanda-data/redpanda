@@ -36,6 +36,11 @@ struct leaders_preference
     friend bool operator==(const leaders_preference&, const leaders_preference&)
       = default;
 
+    template<typename H>
+    friend H AbslHashValue(H h, const leaders_preference& e) {
+        return H::combine(std::move(h), e.type, e.racks);
+    }
+
     auto serde_fields() { return std::tie(type, racks); }
 };
 
