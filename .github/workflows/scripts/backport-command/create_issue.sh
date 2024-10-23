@@ -16,10 +16,9 @@ fi
 
 additional_body=""
 if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
-  additional_body="Note that this issue was created as a placeholder, since the original PR's commit(s) could not be automatically cherry-picked."
+  additional_body="This issue was created as a placeholder because the original PR's commit(s) could not be automatically cherry-picked."
 
-  local_user=$(gh api user --jq .login)
-  local_branch="$local_user/backport-$PR_NUMBER-$BACKPORT_BRANCH-$((RANDOM % 1000))"
+  local_branch="manual-backport-$PR_NUMBER-$BACKPORT_BRANCH-$((RANDOM % 1000))"
 
   additional_body="$additional_body
   Here are the commands to execute:
