@@ -216,6 +216,51 @@ cluster::errc map_errc(std::error_code ec) {
     return errc::replication_error;
 }
 
+namespace {
+bool has_enterprise(
+  const metadata_cache& metadata, const topic_properties_update& update) {
+    using op = incremental_update_operation;
+    using si_mode = model::shadow_indexing_mode;
+
+    constexpr auto is_set_true = [](const auto& v) {
+        return v.op == op::set && v.value == true;
+    };
+
+    constexpr auto maybe_remove_flag = [](auto& mode, auto upd, auto flag) {
+        if (upd.op == op::remove || (upd.op == op::set && upd.value == false)) {
+            mode = add_shadow_indexing_flag(mode, flag);
+        }
+    };
+
+    const auto& update_props = update.properties;
+
+    if (
+      is_set_true(update_props.remote_read)
+      || is_set_true(update_props.remote_write)
+      || is_set_true(update_props.remote_delete)) {
+        return true;
+    }
+
+    // Build what the final mode would be.
+    auto mode = metadata.get_default_shadow_indexing_mode();
+    auto meta = metadata.get_topic_metadata_ref(update.tp_ns);
+    if (meta.has_value()) {
+        mode
+          = meta->get().get_configuration().properties.shadow_indexing.value_or(
+            mode);
+    };
+
+    maybe_remove_flag(mode, update_props.remote_read, si_mode::drop_fetch);
+    maybe_remove_flag(mode, update_props.remote_write, si_mode::drop_archival);
+
+    if (mode != si_mode::disabled) {
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
 ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
   topic_properties_update_vector updates,
   model::timeout_clock::time_point timeout) {
@@ -249,6 +294,12 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
 
         auto results = co_await ssx::parallel_transform(
           std::move(updates), [this, timeout](topic_properties_update update) {
+              if (
+                _features.local().should_sanction()
+                && has_enterprise(_metadata_cache, update)) {
+                  return ss::make_ready_future<topic_result>(
+                    topic_result(update.tp_ns, errc::feature_disabled));
+              }
               return do_update_topic_properties(std::move(update), timeout);
           });
 

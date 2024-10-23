@@ -20,18 +20,22 @@
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_response.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
+#include "kafka/protocol/types.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/tests/topic_properties_helpers.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "test_utils/scoped_config.h"
+#include "topic_properties.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/test/tools/context.hpp>
 
 #include <optional>
 
@@ -263,25 +267,28 @@ public:
 
     void assert_property_value(
       const model::topic& topic,
-      const ss::sstring& key,
-      const ss::sstring& value,
+      const std::string_view& key,
+      const std::string_view& value,
       const kafka::describe_configs_response& resp) {
-        auto it = std::find_if(
-          resp.data.results.begin(),
-          resp.data.results.end(),
-          [&topic](const kafka::describe_configs_result& res) {
-              return res.resource_name == topic;
-          });
-        BOOST_REQUIRE(it != resp.data.results.end());
+        BOOST_TEST_CONTEXT(
+          fmt::format("topic: {}, key: {}, value: {}", topic, key, value)) {
+            auto it = std::find_if(
+              resp.data.results.begin(),
+              resp.data.results.end(),
+              [&topic](const kafka::describe_configs_result& res) {
+                  return res.resource_name == topic;
+              });
+            BOOST_REQUIRE(it != resp.data.results.end());
 
-        auto cfg_it = std::find_if(
-          it->configs.begin(),
-          it->configs.end(),
-          [&key](const kafka::describe_configs_resource_result& res) {
-              return res.name == key;
-          });
-        BOOST_REQUIRE(cfg_it != it->configs.end());
-        BOOST_REQUIRE_EQUAL(cfg_it->value, value);
+            auto cfg_it = std::find_if(
+              it->configs.begin(),
+              it->configs.end(),
+              [&key](const kafka::describe_configs_resource_result& res) {
+                  return res.name == key;
+              });
+            BOOST_REQUIRE(cfg_it != it->configs.end());
+            BOOST_REQUIRE_EQUAL(cfg_it->value, value);
+        }
     }
 };
 
@@ -1209,4 +1216,248 @@ FIXTURE_TEST(
       test_tp, "redpanda.remote.write", "true", describe_resp);
     assert_property_value(
       test_tp, "redpanda.remote.read", "true", describe_resp);
+}
+
+FIXTURE_TEST(
+  test_unlicensed_shadow_indexing_alter_configs, alter_config_test_fixture) {
+    revoke_license();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
+    std::vector<std::pair<map_t, kafka::error_code>> test_cases;
+
+    const auto si_props = {
+      ss::sstring{kafka::topic_property_remote_read},
+      ss::sstring{kafka::topic_property_remote_write},
+      ss::sstring{kafka::topic_property_remote_delete}};
+
+    constexpr auto success = kafka::error_code::none;
+    constexpr auto failure = kafka::error_code::unknown_server_error;
+    for (const auto& prop : si_props) {
+        test_cases.emplace_back(map_t{{prop, "false"}}, success);
+        test_cases.emplace_back(map_t{{prop, "true"}}, failure);
+    }
+
+    for (const auto& test_case : test_cases) {
+        auto resp = alter_configs(
+          make_alter_topic_config_resource_cv(test_tp, test_case.first));
+
+        BOOST_TEST_CONTEXT("property: " << test_case.first.begin()->first) {
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            BOOST_CHECK_EQUAL(
+              resp.data.responses[0].error_code, test_case.second);
+
+            auto describe_resp = describe_configs(test_tp);
+            auto prop = test_case.first.begin()->first;
+            assert_property_value(test_tp, prop, "false", describe_resp);
+        }
+    }
+}
+
+FIXTURE_TEST(
+  test_unlicensed_shadow_indexing_incremental_alter_configs,
+  alter_config_test_fixture) {
+    revoke_license();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
+    std::vector<std::pair<map_t, kafka::error_code>> test_cases;
+
+    const auto si_props = {
+      ss::sstring{kafka::topic_property_remote_read},
+      ss::sstring{kafka::topic_property_remote_write},
+      ss::sstring{kafka::topic_property_remote_delete},
+    };
+
+    constexpr auto success = kafka::error_code::none;
+    constexpr auto failure = kafka::error_code::unknown_server_error;
+    using op = kafka::config_resource_operation;
+    for (const auto& prop : si_props) {
+        test_cases.emplace_back(map_t{{prop, {"false", op::set}}}, success);
+        test_cases.emplace_back(map_t{{prop, {"true", op::set}}}, failure);
+    }
+
+    for (const auto& test_case : test_cases) {
+        const auto& diff = test_case.first.begin();
+        BOOST_TEST_CONTEXT(fmt::format(
+          "with {} {}={}",
+          diff->second.second,
+          diff->first,
+          diff->second.first.value())) {
+            auto resp = incremental_alter_configs(
+              make_incremental_alter_topic_config_resource_cv(
+                test_tp, test_case.first));
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            BOOST_CHECK_EQUAL(
+              resp.data.responses[0].error_code, test_case.second);
+
+            auto describe_resp = describe_configs(test_tp);
+            auto prop = test_case.first.begin()->first;
+            assert_property_value(test_tp, prop, "false", describe_resp);
+        }
+    }
+}
+
+// It should be possible to remove SI configs without a valid licence
+FIXTURE_TEST(
+  test_unlicensed_incremental_remove_si_configs, alter_config_test_fixture) {
+    using si_mode = model::shadow_indexing_mode;
+
+    constexpr auto success = kafka::error_code::none;
+    constexpr auto failure = kafka::error_code::unknown_server_error;
+
+    const auto create_topic_with = [this](std::string_view name, si_mode mode) {
+        model::topic test_tp{name};
+        auto props = app.metadata_cache.local().get_default_properties();
+        props.shadow_indexing = mode;
+        create_topic(test_tp, 3, std::move(props));
+        return test_tp;
+    };
+
+    const auto remove_property = [this](
+                                   model::topic tp, std::string_view prop) {
+        return make_incremental_alter_topic_config_resource_cv(
+          tp,
+          {{ss::sstring{prop},
+            {std::nullopt, kafka::config_resource_operation::remove}}});
+    };
+
+    auto archival_tp = create_topic_with("archival", si_mode::archival);
+    auto fetch_tp = create_topic_with("fetch", si_mode::fetch);
+    auto full_tp = create_topic_with("full", si_mode::full);
+
+    revoke_license();
+
+    const auto assert_no_si = [this](model::topic tp) {
+        auto describe_resp = describe_configs(tp);
+        assert_property_value(
+          tp, kafka::topic_property_remote_read, "false", describe_resp);
+        assert_property_value(
+          tp, kafka::topic_property_remote_write, "false", describe_resp);
+    };
+
+    BOOST_TEST_CONTEXT(archival_tp) {
+        auto resp = incremental_alter_configs(
+          remove_property(archival_tp, kafka::topic_property_remote_write));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, success);
+        assert_no_si(archival_tp);
+    }
+
+    BOOST_TEST_CONTEXT(fetch_tp) {
+        auto resp = incremental_alter_configs(
+          remove_property(fetch_tp, kafka::topic_property_remote_read));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, success);
+        assert_no_si(fetch_tp);
+    }
+
+    BOOST_TEST_CONTEXT("full with partial removal") {
+        auto resp = incremental_alter_configs(
+          remove_property(full_tp, kafka::topic_property_remote_write));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, failure);
+    }
+
+    BOOST_TEST_CONTEXT("full with partial removal") {
+        auto resp = incremental_alter_configs(
+          remove_property(full_tp, kafka::topic_property_remote_read));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, failure);
+    }
+
+    BOOST_TEST_CONTEXT("full") {
+        auto cfg = make_incremental_alter_topic_config_resource_cv(
+          full_tp,
+          {{ss::sstring{kafka::topic_property_remote_read},
+            {std::nullopt, kafka::config_resource_operation::remove}},
+           {ss::sstring{kafka::topic_property_remote_write},
+            {std::nullopt, kafka::config_resource_operation::remove}}});
+        auto resp = incremental_alter_configs(std::move(cfg));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, success);
+    }
+}
+
+// It should be possible to set SI configs false without a valid licence
+FIXTURE_TEST(
+  test_unlicensed_incremental_set_false_si_configs, alter_config_test_fixture) {
+    using si_mode = model::shadow_indexing_mode;
+
+    constexpr auto success = kafka::error_code::none;
+    constexpr auto failure = kafka::error_code::unknown_server_error;
+
+    const auto create_topic_with = [this](std::string_view name, si_mode mode) {
+        model::topic test_tp{name};
+        auto props = app.metadata_cache.local().get_default_properties();
+        props.shadow_indexing = mode;
+        create_topic(test_tp, 3, std::move(props));
+        return test_tp;
+    };
+
+    const auto remove_property = [this](
+                                   model::topic tp, std::string_view prop) {
+        return make_incremental_alter_topic_config_resource_cv(
+          tp,
+          {{ss::sstring{prop},
+            {"false", kafka::config_resource_operation::set}}});
+    };
+
+    auto archival_tp = create_topic_with("archival", si_mode::archival);
+    auto fetch_tp = create_topic_with("fetch", si_mode::fetch);
+    auto full_tp = create_topic_with("full", si_mode::full);
+
+    revoke_license();
+
+    const auto assert_no_si = [this](model::topic tp) {
+        auto describe_resp = describe_configs(tp);
+        assert_property_value(
+          tp, kafka::topic_property_remote_read, "false", describe_resp);
+        assert_property_value(
+          tp, kafka::topic_property_remote_write, "false", describe_resp);
+    };
+
+    BOOST_TEST_CONTEXT(archival_tp) {
+        auto resp = incremental_alter_configs(
+          remove_property(archival_tp, kafka::topic_property_remote_write));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, success);
+        assert_no_si(archival_tp);
+    }
+
+    BOOST_TEST_CONTEXT(fetch_tp) {
+        auto resp = incremental_alter_configs(
+          remove_property(fetch_tp, kafka::topic_property_remote_read));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, success);
+        assert_no_si(fetch_tp);
+    }
+
+    BOOST_TEST_CONTEXT("full with partial removal") {
+        auto resp = incremental_alter_configs(
+          remove_property(full_tp, kafka::topic_property_remote_write));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, failure);
+    }
+
+    BOOST_TEST_CONTEXT("full with partial removal") {
+        auto resp = incremental_alter_configs(
+          remove_property(full_tp, kafka::topic_property_remote_read));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, failure);
+    }
+
+    BOOST_TEST_CONTEXT("full") {
+        auto cfg = make_incremental_alter_topic_config_resource_cv(
+          full_tp,
+          {{ss::sstring{kafka::topic_property_remote_read},
+            {std::nullopt, kafka::config_resource_operation::remove}},
+           {ss::sstring{kafka::topic_property_remote_write},
+            {std::nullopt, kafka::config_resource_operation::remove}}});
+        auto resp = incremental_alter_configs(std::move(cfg));
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].error_code, success);
+    }
 }
