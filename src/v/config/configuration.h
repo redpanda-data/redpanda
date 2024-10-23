@@ -695,6 +695,8 @@ struct configuration final : public config_store {
 
     // datalake configurations
     property<bool> iceberg_enabled;
+    bounded_property<std::chrono::milliseconds>
+      iceberg_translation_interval_ms_default;
 
     configuration();
 

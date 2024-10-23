@@ -555,6 +555,9 @@ private:
         sync_effective_start(model::timeout_clock::duration) final {
             throw std::runtime_error("unimplemented");
         }
+        model::offset local_start_offset() const final {
+            throw std::runtime_error("unimplemented");
+        }
         model::offset start_offset() const final {
             throw std::runtime_error("unimplemented");
         }

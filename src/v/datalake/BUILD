@@ -126,30 +126,37 @@ redpanda_cc_library(
     ],
 )
 
-redpanda_cc_library(
-    name = "manager",
-    srcs = [
-        "datalake_manager.cc",
-    ],
-    hdrs = [
-        "datalake_manager.h",
-    ],
-    include_prefix = "datalake",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":logger",
-        ":types",
-        "//src/v/base",
-        "//src/v/cluster",
-        "//src/v/datalake/coordinator:frontend",
-        "//src/v/model",
-        "//src/v/raft",
-        "//src/v/serde",
-        "//src/v/ssx:semaphore",
-        "@fmt",
-        "@seastar",
-    ],
-)
+# TODO(iceberg): uncomment once partition_translator
+# and dependencies are bazel friendly.
+#redpanda_cc_library(
+#    name = "manager",
+#    srcs = [
+#        "datalake_manager.cc",
+#    ],
+#    hdrs = [
+#        "datalake_manager.h",
+#    ],
+#    include_prefix = "datalake",
+#    visibility = ["//visibility:public"],
+#    deps = [
+#        ":cloud_data_io",
+#        ":logger",
+#        ":types",
+#        "//src/v/base",
+#        "//src/v/cluster",
+#        "//src/v/config",
+#        "//src/v/container:chunked_hash_map",
+#        "//src/v/datalake/coordinator:frontend",
+#        "//src/v/datalake/translation:partition_translator",
+#        "//src/v/features",
+#        "//src/v/model",
+#        "//src/v/raft",
+#        "//src/v/serde",
+#        "//src/v/ssx:semaphore",
+#        "@fmt",
+#        "@seastar",
+#    ],
+#)
 
 redpanda_cc_library(
     name = "table_definition",

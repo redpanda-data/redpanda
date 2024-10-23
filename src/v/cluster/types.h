@@ -634,6 +634,8 @@ struct incremental_topic_updates
       incremental_update_operation::none};
     property_update<std::optional<config::leaders_preference>>
       leaders_preference;
+    property_update<std::optional<std::chrono::milliseconds>>
+      iceberg_translation_interval_ms;
 
     // To allow us to better control use of the deprecated shadow_indexing
     // field, use getters and setters instead.
@@ -671,7 +673,8 @@ struct incremental_topic_updates
           iceberg_enabled,
           leaders_preference,
           remote_read,
-          remote_write);
+          remote_write,
+          iceberg_translation_interval_ms);
     }
 
     friend std::ostream&

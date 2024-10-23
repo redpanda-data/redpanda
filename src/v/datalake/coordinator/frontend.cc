@@ -25,15 +25,15 @@
 namespace datalake::coordinator {
 
 namespace {
-coordinator_errc to_rpc_errc(coordinator::errc e) {
+errc to_rpc_errc(coordinator::errc e) {
     switch (e) {
     case coordinator::errc::shutting_down:
     case coordinator::errc::not_leader:
-        return coordinator_errc::not_leader;
+        return errc::not_leader;
     case coordinator::errc::stm_apply_error:
-        return coordinator_errc::stale;
+        return errc::stale;
     case coordinator::errc::timedout:
-        return coordinator_errc::timeout;
+        return errc::timeout;
     }
 }
 ss::future<add_translated_data_files_reply> add_files(
@@ -42,21 +42,13 @@ ss::future<add_translated_data_files_reply> add_files(
   add_translated_data_files_request req) {
     auto crd = mgr.get(coordinator_ntp);
     if (!crd) {
-        co_return add_translated_data_files_reply{coordinator_errc::not_leader};
+        co_return add_translated_data_files_reply{errc::not_leader};
     }
-    chunked_vector<translated_offset_range> files;
-    for (auto& fs : req.files) {
-        // XXX: does each file need to be a vector?
-        std::move(
-          fs.translated_ranges.begin(),
-          fs.translated_ranges.end(),
-          std::back_inserter(files));
-    }
-    auto ret = co_await crd->sync_add_files(req.tp, std::move(files));
+    auto ret = co_await crd->sync_add_files(req.tp, std::move(req.ranges));
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
-    co_return add_translated_data_files_reply{coordinator_errc::ok};
+    co_return add_translated_data_files_reply{errc::ok};
 }
 ss::future<fetch_latest_data_file_reply> fetch_latest_offset(
   coordinator_manager& mgr,
@@ -64,7 +56,7 @@ ss::future<fetch_latest_data_file_reply> fetch_latest_offset(
   fetch_latest_data_file_request req) {
     auto crd = mgr.get(coordinator_ntp);
     if (!crd) {
-        co_return fetch_latest_data_file_reply{coordinator_errc::not_leader};
+        co_return fetch_latest_data_file_reply{errc::not_leader};
     }
     auto ret = co_await crd->sync_get_last_added_offset(req.tp);
     if (ret.has_error()) {
@@ -99,7 +91,7 @@ auto frontend::remote_dispatch(req_t request, model::node_id leader_id) {
                 "got error {} on coordinator {}",
                 r.error().message(),
                 leader_id);
-              return resp_t{datalake::coordinator_errc::timeout};
+              return resp_t{errc::timeout};
           }
           return r.value();
       });
@@ -116,7 +108,7 @@ auto frontend::process(req_t req, bool local_only) {
                                         bool exists) mutable {
         if (!exists) {
             return ss::make_ready_future<resp_t>(
-              resp_t{datalake::coordinator_errc::coordinator_topic_not_exists});
+              resp_t{errc::coordinator_topic_not_exists});
         }
         auto cp = coordinator_partition(req.topic_partition());
         model::ntp c_ntp{
@@ -133,8 +125,7 @@ auto frontend::process(req_t req, bool local_only) {
         } else if (leader && !local_only) {
             return remote_dispatch<RemoteFunc>(std::move(req), leader.value());
         }
-        return ss::make_ready_future<resp_t>(
-          resp_t{datalake::coordinator_errc::not_leader});
+        return ss::make_ready_future<resp_t>(resp_t{errc::not_leader});
     });
 }
 
@@ -167,7 +158,8 @@ frontend::frontend(
   ss::sharded<cluster::topics_frontend>* topics_frontend,
   ss::sharded<cluster::metadata_cache>* metadata,
   ss::sharded<cluster::partition_leaders_table>* leaders,
-  ss::sharded<cluster::shard_table>* shards)
+  ss::sharded<cluster::shard_table>* shards,
+  ss::sharded<::rpc::connection_cache>* connections)
   : _self(self)
   , _coordinator_mgr(coordinator_mgr)
   , _group_mgr(group_mgr)
@@ -175,7 +167,8 @@ frontend::frontend(
   , _topics_frontend(topics_frontend)
   , _metadata(metadata)
   , _leaders(leaders)
-  , _shard_table(shards) {}
+  , _shard_table(shards)
+  , _connection_cache(connections) {}
 
 ss::future<> frontend::stop() { return _gate.close(); }
 
@@ -288,8 +281,7 @@ frontend::fetch_latest_data_file_locally(
        req = std::move(request)](coordinator_manager& mgr) mutable {
           auto partition = mgr.get(coordinator_partition);
           if (!partition) {
-              return ssx::now(
-                fetch_latest_data_file_reply{coordinator_errc::not_leader});
+              return ssx::now(fetch_latest_data_file_reply{errc::not_leader});
           }
           return fetch_latest_offset(
             mgr, coordinator_partition, std::move(req));

@@ -3,6 +3,7 @@ find_package(Parquet REQUIRED)
 find_package(Protobuf REQUIRED)
 
 add_subdirectory(coordinator)
+add_subdirectory(translation)
 
 v_cc_library(
   NAME datalake_common
@@ -13,10 +14,22 @@ v_cc_library(
 )
 
 v_cc_library(
-  NAME datalake
+  NAME datalake_manager
+  SRCS
+    datalake_manager.cc
+  DEPS
+    v::datalake_translation
+    v::datalake_coordinator
+    v::cluster
+    v::raft
+    v::storage
+    Seastar::seastar
+)
+
+v_cc_library(
+  NAME datalake_writer
   SRCS
     arrow_translator.cc
-    datalake_manager.cc
     batching_parquet_writer.cc
     data_writer_interface.cc
     parquet_writer.cc
@@ -33,7 +46,6 @@ v_cc_library(
   DEPS
     v::cloud_io
     v::datalake_common
-    v::datalake_coordinator
     v::storage
     Seastar::seastar
     Arrow::arrow_shared

@@ -65,7 +65,8 @@ v_cc_library(
     Seastar::seastar
     v::crypto
     v::cluster
-    v::datalake
+    v::datalake_coordinator
+    v::datalake_manager
     v::debug_bundle
     v::kafka_recovery
     v::finjector

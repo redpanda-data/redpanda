@@ -10,7 +10,7 @@ rp_test(
     v::features
     v::gtest_main
     v::kafka_test_utils
-    v::datalake
+    v::datalake_writer
     v::model_test_utils
   LABELS datalake
   ARGS "-- -c 1"
@@ -26,7 +26,7 @@ rp_test(
     v::features
     v::gtest_main
     v::kafka_test_utils
-    v::datalake
+    v::datalake_writer
     v::model_test_utils
     v::iceberg_test_utils
   LABELS datalake
@@ -42,7 +42,7 @@ rp_test(
     partitioning_writer_test.cc
   LIBRARIES
     v::gtest_main
-    v::datalake
+    v::datalake_writer
     v::iceberg_test_utils
   LABELS datalake
 )
@@ -54,8 +54,26 @@ rp_test(
   SOURCES translation_task_test.cc
   LIBRARIES
     v::gtest_main
-    v::datalake
+    v::datalake_writer
     v::cloud_io_utils
+    v::s3_imposter
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  FIXTURE_TEST
+  GTEST
+  BINARY_NAME translator_test
+  SOURCES translator_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake_translation
+    v::application
+    v::iceberg_test_utils
+    v::kafka_test_utils
+    v::model_test_utils
+    v::http_test_utils
     v::s3_imposter
   LABELS datalake
   ARGS "-- -c 1"
@@ -89,7 +107,7 @@ rp_test(
     datalake_protobuf_tests.cc
   LIBRARIES
     v::gtest_main
-    v::datalake
+    v::datalake_writer
     v::iceberg_test_utils
     v::datalake_test_proto_cc_files
   INPUT_FILES
@@ -104,7 +122,7 @@ rp_test(
   SOURCES schema_registry_test.cc
   LIBRARIES
     v::gtest_main
-    v::datalake
+    v::datalake_writer
   LABELS datalake
   ARGS "-- -c 1"
 )
@@ -119,7 +137,7 @@ rp_test(
   SOURCES batching_parquet_writer_test.cc
   LIBRARIES
     v::gtest_main
-    v::datalake
+    v::datalake_writer
     v::iceberg_test_utils
   LABELS storage
   ARGS "-- -c 1"

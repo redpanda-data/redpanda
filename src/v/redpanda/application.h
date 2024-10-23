@@ -198,6 +198,11 @@ public:
         return _transform_rpc_client;
     }
 
+    ss::sharded<datalake::coordinator::frontend>&
+    datalake_coordinator_frontend() {
+        return _datalake_coordinator_fe;
+    }
+
 private:
     using deferred_actions
       = std::deque<ss::deferred_action<std::function<void()>>>;

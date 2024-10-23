@@ -41,7 +41,8 @@ public:
       ss::sharded<cluster::topics_frontend>*,
       ss::sharded<cluster::metadata_cache>*,
       ss::sharded<cluster::partition_leaders_table>*,
-      ss::sharded<cluster::shard_table>*);
+      ss::sharded<cluster::shard_table>*,
+      ss::sharded<::rpc::connection_cache>*);
 
     ss::future<> stop();
 
@@ -100,5 +101,7 @@ private:
     ss::sharded<cluster::shard_table>* _shard_table;
     ss::sharded<::rpc::connection_cache>* _connection_cache;
     ss::gate _gate;
+
+    friend class datalake::tests::datalake_cluster_test_fixture;
 };
 } // namespace datalake::coordinator
