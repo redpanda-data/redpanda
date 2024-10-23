@@ -115,18 +115,21 @@ avro_compatibility_result check_compatible(
                       *reader.leafAt(int(r_idx)),
                       *writer.leafAt(int(w_idx)),
                       fields_p / std::to_string(r_idx) / "type"));
-                } else if (
-                  reader.defaultValueAt(int(r_idx)).type() == avro::AVRO_NULL) {
-                    // if the reader's record schema has a field with no default
-                    // value, and writer's schema does not have a field with the
-                    // same name, an error is signalled.
+                } else {
+                    // if the reader's record schema has a field with no
+                    // default value, and writer's schema does not have a
+                    // field with the same name, an error is signalled.
 
-                    // For union, the default must correspond to the first type.
-                    // The default may be null.
+                    // For union, the default must correspond to the first
+                    // type. The default may be null.
                     const auto& r_leaf = reader.leafAt(int(r_idx));
-                    if (
-                      r_leaf->type() != avro::Type::AVRO_UNION
-                      || r_leaf->leafAt(0)->type() != avro::Type::AVRO_NULL) {
+                    const auto& r_def = reader.defaultValueAt(int(r_idx));
+
+                    auto expected_type = (r_leaf->type()
+                                          == avro::Type::AVRO_UNION)
+                                           ? r_leaf->leafAt(0)->type()
+                                           : r_leaf->type();
+                    if (!r_def || r_def->type() != expected_type) {
                         compat_result.emplace<avro_incompatibility>(
                           fields_p / std::to_string(r_idx),
                           avro_incompatibility::Type::
@@ -139,7 +142,7 @@ avro_compatibility_result check_compatible(
             // if the writer's symbol is not present in the reader's enum and
             // the reader has a default value, then that value is used,
             // otherwise an error is signalled.
-            if (reader.defaultValueAt(0).type() == avro::AVRO_NULL) {
+            if (!reader.defaultValueAt(0)) {
                 std::vector<std::string_view> missing;
                 for (size_t w_idx = 0; w_idx < writer.names(); ++w_idx) {
                     size_t r_idx{0};
