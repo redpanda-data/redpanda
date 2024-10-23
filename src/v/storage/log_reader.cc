@@ -541,6 +541,19 @@ std::optional<log_reader::private_flags> log_reader::get_flags() const {
       .was_cached = _was_cached};
 };
 
+void log_reader::reset_config(log_reader_config cfg) {
+    _config = cfg;
+    _iterator.next_seg = _iterator.current_reader_seg;
+    _expected_next = _config.fill_gaps
+                       ? std::make_optional<model::offset>(_config.start_offset)
+                       : std::nullopt;
+
+    _last_base = {};
+
+    // reset_config is only called in the context of a reader cache hit
+    _was_cached = true;
+};
+
 static inline bool is_finished_offset(segment_set& s, model::offset o) {
     if (s.empty()) {
         return true;

@@ -173,17 +173,7 @@ public:
      *
      * Resetting a reader also sets its "was cached" attribute to true.
      */
-    void reset_config(log_reader_config cfg) {
-        _config = cfg;
-        _iterator.next_seg = _iterator.current_reader_seg;
-        _expected_next = _config.fill_gaps ? std::make_optional<model::offset>(
-                                               _config.start_offset)
-                                           : std::nullopt;
-        _last_base = {};
-
-        // reset_config is only called in the context of a reader cache hit
-        _was_cached = true;
-    };
+    void reset_config(log_reader_config cfg);
 
     /**
      * Return next read request lower bound. i.e. lowest offset that can be read
