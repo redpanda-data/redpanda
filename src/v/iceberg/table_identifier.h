@@ -16,6 +16,13 @@ namespace iceberg {
 struct table_identifier {
     chunked_vector<ss::sstring> ns;
     ss::sstring table;
+
+    table_identifier copy() const {
+        return table_identifier{
+          .ns = ns.copy(),
+          .table = table,
+        };
+    }
 };
 std::ostream& operator<<(std::ostream& o, const table_identifier& id);
 } // namespace iceberg
