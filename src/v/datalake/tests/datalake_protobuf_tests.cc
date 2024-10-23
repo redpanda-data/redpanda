@@ -152,6 +152,31 @@ TEST(SchemaProtobuf, TestComplexSchema) {
         IsField(1, "id", long_type{}), IsField(2, "shard", int_type{})));
 }
 
+/**
+ * message StructWithOneOf {
+ *   oneof oneof_field {
+ *       int32 oneof_uint32 = 1;
+ *       string oneof_string = 2;
+ *       bytes oneof_bytes = 3;
+ *       bool oneof_bool = 4;
+ *   }
+ *}
+ */
+
+TEST_CORO(SchemaProtobuf, TestMessageWithOneOfField) {
+    auto d = StructWithOneOf::GetDescriptor();
+    auto result = datalake::type_to_iceberg(*d);
+    ASSERT_FALSE_CORO(result.has_error());
+    auto field = std::move(result.value());
+    EXPECT_THAT(
+      field.fields,
+      ElementsAre(
+        IsField(1, "oneof_uint32", long_type{}),
+        IsField(2, "oneof_string", string_type{}),
+        IsField(3, "oneof_bytes", binary_type{}),
+        IsField(4, "oneof_bool", boolean_type{})));
+}
+
 TEST_CORO(SchemaProtobuf, TestProtoTestMessages) {
     auto d = protobuf_test_messages::editions::TestAllTypesEdition2023::
       GetDescriptor();

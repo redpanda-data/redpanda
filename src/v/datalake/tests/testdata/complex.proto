@@ -45,3 +45,12 @@ message StructWithUnsignedFixed {
     int64 valid = 1;
     fixed64 invalid = 2;
 }
+
+message StructWithOneOf {
+    oneof oneof_field {
+        uint32 oneof_uint32 = 1;
+        string oneof_string = 2;
+        bytes oneof_bytes = 3;
+        bool oneof_bool = 4;
+    }
+}
