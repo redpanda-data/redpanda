@@ -1031,3 +1031,31 @@ redpanda_cc_library(
         "//src/v/json",
     ],
 )
+
+redpanda_cc_library(
+    name = "rest_catalog",
+    srcs = [
+        "rest_catalog.cc",
+    ],
+    hdrs = [
+        "rest_catalog.h",
+    ],
+    implementation_deps = [
+        ":partition_json",
+        ":schema_json",
+        ":snapshot_json",
+        ":table_metadata_json",
+        ":table_update_json",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":catalog",
+        ":json_utils",
+        ":json_writer",
+        ":table_requests",
+        ":table_requirement_json",
+        "//src/v/iceberg/rest_client:client",
+        "//src/v/json",
+        "//src/v/utils:mutex",
+    ],
+)
