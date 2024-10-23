@@ -3697,6 +3697,16 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(1min),
       {.min = 10ms})
+  , iceberg_catalog_commit_interval_ms(
+      *this,
+      "iceberg_catalog_commit_interval_ms",
+      "The frequency at which the Iceberg coordinator commits topic files to "
+      "the catalog. This is the interval between commit transactions across "
+      "all topics monitored by the coordinator, not the interval between "
+      "individual commits.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::milliseconds(1min),
+      {.min = 10ms})
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
