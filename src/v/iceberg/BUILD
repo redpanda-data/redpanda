@@ -539,6 +539,7 @@ redpanda_cc_library(
         ":datatypes",
         "@avro",
         "@fmt",
+        "@seastar",
     ],
 )
 
