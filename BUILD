@@ -23,3 +23,13 @@ filegroup(
     srcs = [".clang-tidy"],
     visibility = ["//visibility:public"],
 )
+
+alias(
+    name = "redpanda",
+    actual = "//src/v/redpanda:redpanda",
+)
+
+alias(
+    name = "rpk",
+    actual = "//src/go/rpk/cmd/rpk:rpk",
+)
