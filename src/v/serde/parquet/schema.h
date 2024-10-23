@@ -22,13 +22,24 @@
 
 namespace serde::parquet {
 
-struct bool_type {};
-struct i32_type {};
-struct i64_type {};
-struct f32_type {};
-struct f64_type {};
+struct bool_type {
+    bool operator==(const bool_type&) const = default;
+};
+struct i32_type {
+    bool operator==(const i32_type&) const = default;
+};
+struct i64_type {
+    bool operator==(const i64_type&) const = default;
+};
+struct f32_type {
+    bool operator==(const f32_type&) const = default;
+};
+struct f64_type {
+    bool operator==(const f64_type&) const = default;
+};
 struct byte_array_type {
     std::optional<int32_t> fixed_length;
+    bool operator==(const byte_array_type&) const = default;
 };
 
 /**
@@ -244,6 +255,72 @@ struct schema_element {
             child.for_each(func);
         }
     }
+
+    /** If this is a leaf in the schema.*/
+    bool is_leaf() const;
 };
 
+/**
+ * A schema_element with it's index within the tree when flattened.
+ */
+struct indexed_schema_element {
+    /** the overall index of the schema element within the schema. */
+    int32_t column_index;
+
+    /**
+     * The physical encoding of the data. Left unset for intermediate nodes.
+     */
+    physical_type type;
+
+    /**
+     * repetition of the field. The root of the schema does not have a
+     * repetition_type. All other nodes must have one.
+     *
+     * (this field is ignored on the schema root).
+     */
+    field_repetition_type repetition_type;
+
+    /** Name of the field in the schema. */
+    ss::sstring name;
+
+    /**
+     * Nested fields.
+     */
+    chunked_vector<indexed_schema_element> children;
+
+    /**
+     * When the original schema supports field ids, this will save the
+     * original field id in the parquet schema
+     */
+    std::optional<int32_t> field_id;
+
+    /**
+     * For leaf nodes, the logical type the physical bytes represent.
+     */
+    logical_type logical_type;
+
+    /** If this is a leaf in the schema.*/
+    bool is_leaf() const;
+};
+
+/**
+ * Index the schema such that the column index is known for each element.
+ */
+indexed_schema_element index_schema(const schema_element& root);
+
 } // namespace serde::parquet
+
+template<>
+struct fmt::formatter<serde::parquet::schema_element>
+  : fmt::formatter<std::string_view> {
+    auto format(const serde::parquet::schema_element&, fmt::format_context& ctx)
+      const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<serde::parquet::indexed_schema_element>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      const serde::parquet::indexed_schema_element&,
+      fmt::format_context& ctx) const -> decltype(ctx.out());
+};

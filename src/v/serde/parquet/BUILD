@@ -8,6 +8,7 @@ redpanda_cc_library(
     name = "schema",
     srcs = [
         "flattened_schema.cc",
+        "schema.cc",
     ],
     hdrs = [
         "flattened_schema.h",
