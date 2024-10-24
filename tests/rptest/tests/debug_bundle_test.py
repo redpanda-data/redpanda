@@ -343,7 +343,43 @@ class DebugBundleTest(DebugBundleTestBase):
         """
         This test verifies the functionality of the debug bundle metrics
         """
+        def _check_node_metric(node, expected_values):
+            def within_two_seconds(time, expected_time):
+                return expected_time - 2 <= time <= expected_time + 2
+
+            samples = self._get_metrics_from_node(node)
+
+            sgc = samples['successful_generation_count'].samples[0].value
+            expected_sgc = expected_values['successful_generation_count']
+            if sgc != expected_sgc:
+                return False
+
+            lsbt = samples['last_successful_bundle_timestamp_seconds'].samples[
+                0].value
+            expected_lsbt = expected_values[
+                'last_successful_bundle_timestamp_seconds']
+            if not within_two_seconds(lsbt, expected_lsbt):
+                return False
+
+            fgc = samples['failed_generation_count'].samples[0].value
+            expected_fgc = expected_values['failed_generation_count']
+            if fgc != expected_fgc:
+                return False
+
+            lfbt = samples['last_failed_bundle_timestamp_seconds'].samples[
+                0].value
+            expected_lfbt = expected_values[
+                'last_failed_bundle_timestamp_seconds']
+            return within_two_seconds(lfbt, expected_lfbt)
+
         node = random.choice(self.redpanda.started_nodes())
+
+        expected_values = {
+            'successful_generation_count': 0,
+            'last_successful_bundle_timestamp_seconds': 0,
+            'failed_generation_count': 0,
+            'last_failed_bundle_timestamp_seconds': 0
+        }
 
         job_id = uuid4()
         self._run_debug_bundle(job_id=job_id,
@@ -351,33 +387,34 @@ class DebugBundleTest(DebugBundleTestBase):
                                cancel_after_start=False)
         success_generation_time = int(time.time())
 
-        samples = self._get_metrics_from_node(node)
-        assert samples['successful_generation_count'].samples[
-            0].value == 1, f"Expected 1 successful generation, got {samples['successful_generation_count'].samples[0].value}"
-        assert success_generation_time - 2 <= samples[
-            'last_successful_bundle_timestamp_seconds'].samples[
-                0].value <= success_generation_time + 2, f"Expected to see generation time {samples['last_successful_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {success_generation_time}"
-        assert samples['failed_generation_count'].samples[
-            0].value == 0, f"Expected 0 failed generation, got {samples['failed_generation_count'].samples[0].value}"
-        assert samples['last_failed_bundle_timestamp_seconds'].samples[
-            0].value == 0, f"Expected 0 failed generation, got {samples['last_failed_bundle_timestamp_seconds'].samples[0].value}"
+        expected_values['successful_generation_count'] += 1
+        expected_values[
+            'last_successful_bundle_timestamp_seconds'] = success_generation_time
+
+        wait_until(
+            lambda: _check_node_metric(node, expected_values),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=
+            f"Successful generation event: Metrics failed to update to expected values: {expected_values}."
+        )
 
         self._run_debug_bundle(job_id=job_id,
                                node=node,
                                cancel_after_start=True)
         failed_generation_time = int(time.time())
 
-        samples = self._get_metrics_from_node(node)
-        assert samples['successful_generation_count'].samples[
-            0].value == 1, f"Expected 1 successful generation, got {samples['successful_generation_count'].samples[0].value}"
-        assert success_generation_time - 2 <= samples[
-            'last_successful_bundle_timestamp_seconds'].samples[
-                0].value <= success_generation_time + 2, f"Expected to see generation time {samples['last_successful_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {success_generation_time}"
-        assert samples['failed_generation_count'].samples[
-            0].value == 1, f"Expected 0 failed generation, got {samples['failed_generation_count'].samples[0].value}"
-        assert failed_generation_time - 2 <= samples[
-            'last_failed_bundle_timestamp_seconds'].samples[
-                0].value <= failed_generation_time + 2, f"Expected to see failed generation {samples['last_failed_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {failed_generation_time}"
+        expected_values['failed_generation_count'] += 1
+        expected_values[
+            'last_failed_bundle_timestamp_seconds'] = failed_generation_time
+
+        wait_until(
+            lambda: _check_node_metric(node, expected_values),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=
+            f"Failed generation event: Metrics failed to update to expected values: {expected_values}."
+        )
 
     @cluster(num_nodes=1)
     @matrix(fail_bundle_generation=[True, False])
