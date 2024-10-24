@@ -20,12 +20,11 @@
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_response.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
-#include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/rm_group_frontend.h"
+#include "kafka/server/tests/topic_properties_helpers.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "redpanda/tests/fixture.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/core/loop.hh>
@@ -33,6 +32,7 @@
 #include <seastar/util/defer.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/test/tools/context.hpp>
 
 #include <optional>
 
@@ -40,7 +40,7 @@ using namespace std::chrono_literals; // NOLINT
 
 inline ss::logger test_log("test"); // NOLINT
 
-class alter_config_test_fixture : public redpanda_thread_fixture {
+class alter_config_test_fixture : public topic_properties_test_fixture {
 public:
     void create_topic(
       model::topic name,
@@ -224,17 +224,15 @@ public:
       const ss::sstring& key,
       const kafka::describe_configs_response& resp,
       const bool presented) {
-        auto it = std::find_if(
-          resp.data.results.begin(),
-          resp.data.results.end(),
+        auto it = std::ranges::find_if(
+          resp.data.results,
           [&resource_name](const kafka::describe_configs_result& res) {
               return res.resource_name == resource_name;
           });
         BOOST_REQUIRE(it != resp.data.results.end());
 
-        auto cfg_it = std::find_if(
-          it->configs.begin(),
-          it->configs.end(),
+        auto cfg_it = std::ranges::find_if(
+          it->configs,
           [&key](const kafka::describe_configs_resource_result& res) {
               return res.name == key;
           });
@@ -249,9 +247,8 @@ public:
       const ss::sstring& resource_name,
       const kafka::describe_configs_response& resp,
       const size_t amount) {
-        auto it = std::find_if(
-          resp.data.results.begin(),
-          resp.data.results.end(),
+        auto it = std::ranges::find_if(
+          resp.data.results,
           [&resource_name](const kafka::describe_configs_result& res) {
               return res.resource_name == resource_name;
           });
@@ -259,37 +256,37 @@ public:
         vlog(test_log.trace, "amount: {}", amount);
         vlog(test_log.trace, "it->configs.size(): {}", it->configs.size());
         vlog(test_log.trace, "it->configs: {}", it->configs);
-        BOOST_REQUIRE(it->configs.size() == amount);
+        BOOST_CHECK_EQUAL(it->configs.size(), amount);
     }
 
     void assert_property_value(
       const model::topic& topic,
-      const ss::sstring& key,
-      const ss::sstring& value,
+      std::string_view key,
+      std::string_view value,
       const kafka::describe_configs_response& resp) {
-        auto it = std::find_if(
-          resp.data.results.begin(),
-          resp.data.results.end(),
-          [&topic](const kafka::describe_configs_result& res) {
-              return res.resource_name == topic;
-          });
-        BOOST_REQUIRE(it != resp.data.results.end());
+        BOOST_TEST_CONTEXT(
+          fmt::format("topic: {}, key: {}, value: {}", topic, key, value)) {
+            auto it = std::ranges::find_if(
+              resp.data.results,
+              [&topic](const kafka::describe_configs_result& res) {
+                  return res.resource_name == topic;
+              });
+            BOOST_REQUIRE(it != resp.data.results.end());
 
-        auto cfg_it = std::find_if(
-          it->configs.begin(),
-          it->configs.end(),
-          [&key](const kafka::describe_configs_resource_result& res) {
-              return res.name == key;
-          });
-        BOOST_REQUIRE(cfg_it != it->configs.end());
-        BOOST_REQUIRE_EQUAL(cfg_it->value, value);
+            auto cfg_it = std::ranges::find_if(
+              it->configs,
+              [&key](const kafka::describe_configs_resource_result& res) {
+                  return res.name == key;
+              });
+            BOOST_REQUIRE(cfg_it != it->configs.end());
+            BOOST_CHECK_EQUAL(cfg_it->value, value);
+        }
     }
 };
 
 FIXTURE_TEST(
   test_broker_describe_configs_requested_properties,
   alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
 
@@ -389,8 +386,6 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(
   test_topic_describe_configs_requested_properties, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
-
     cluster::config_update_request r{
       .upsert = {{"enable_schema_id_validation", "compat"}}};
     app.controller->get_config_frontend()
@@ -509,7 +504,6 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
 
@@ -541,7 +535,6 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
 }
 
 FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic topic_1{"topic-1"};
     model::topic topic_2{"topic-2"};
     create_topic(topic_1, 1);
@@ -598,7 +591,6 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
 
 FIXTURE_TEST(
   test_alter_topic_kafka_config_allowlist, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
 
@@ -614,7 +606,6 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
 
@@ -643,7 +634,6 @@ FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
 
 FIXTURE_TEST(
   test_alter_configuration_should_override, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
     /**
@@ -705,7 +695,6 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
     // set custom properties
@@ -779,7 +768,6 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
 FIXTURE_TEST(
   test_incremental_alter_config_kafka_config_allowlist,
   alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
 
@@ -799,7 +787,6 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
     // set custom properties
@@ -909,8 +896,6 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
 }
 
 FIXTURE_TEST(test_iceberg_property, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
-
     auto do_create_topic = [&](model::topic tp, bool iceberg) {
         absl::flat_hash_map<ss::sstring, ss::sstring> properties;
         properties.emplace(
@@ -1068,7 +1053,6 @@ FIXTURE_TEST(test_iceberg_property, alter_config_test_fixture) {
 }
 
 FIXTURE_TEST(test_shadow_indexing_alter_configs, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
     using map_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
@@ -1122,7 +1106,6 @@ FIXTURE_TEST(test_shadow_indexing_alter_configs, alter_config_test_fixture) {
 
 FIXTURE_TEST(
   test_shadow_indexing_incremental_alter_configs, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
     using map_t = absl::flat_hash_map<
@@ -1237,7 +1220,6 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(
   test_shadow_indexing_uppercase_alter_config, alter_config_test_fixture) {
-    wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp, 6);
     using map_t = absl::flat_hash_map<
