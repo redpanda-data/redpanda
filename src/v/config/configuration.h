@@ -699,6 +699,7 @@ struct configuration final : public config_store {
       iceberg_translation_interval_ms_default;
     bounded_property<std::chrono::milliseconds>
       iceberg_catalog_commit_interval_ms;
+    property<ss::sstring> iceberg_catalog_base_location;
 
     configuration();
 

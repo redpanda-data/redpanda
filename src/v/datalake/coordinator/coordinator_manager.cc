@@ -21,23 +21,20 @@
 #include <seastar/core/shared_ptr.hh>
 
 namespace datalake::coordinator {
-namespace {
-// TODO: make this configurable.
-const ss::sstring base_location = "redpanda-iceberg-catalog";
-} // namespace
 
 coordinator_manager::coordinator_manager(
   model::node_id self,
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cloud_io::remote>& io,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  ss::sstring base_location)
   : self_(self)
   , gm_(gm.local())
   , pm_(pm.local())
   , manifest_io_(io.local(), bucket)
   , catalog_(std::make_unique<iceberg::filesystem_catalog>(
-      io.local(), bucket, base_location))
+      io.local(), bucket, std::move(base_location)))
   , file_committer_(
       std::make_unique<iceberg_file_committer>(*catalog_, manifest_io_)) {}
 
